@@ -1,6 +1,8 @@
 use crate::daemon::cli::CliRunner;
 use crate::daemon::state::DaemonState;
 use crate::daemon::types::Provider;
+use crate::persistence::audit::AuditLog;
+use log::error;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -16,44 +18,60 @@ pub async fn provider_list(state: State<'_, SharedState>) -> Result<Vec<Provider
 #[tauri::command]
 pub async fn provider_add(
     cli: State<'_, Arc<CliRunner>>,
+    audit: State<'_, Arc<AuditLog>>,
     name: String,
 ) -> Result<(), String> {
-    cli.run_raw(&["provider", "add", &name])
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = cli.run_raw(&["provider", "add", &name]).await;
+    let success = result.is_ok();
+    if let Err(e) = audit.record("add", "provider", &name, "", success) {
+        error!("Failed to record audit entry: {}", e);
+    }
+    result.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn provider_delete(
     cli: State<'_, Arc<CliRunner>>,
+    audit: State<'_, Arc<AuditLog>>,
     name: String,
 ) -> Result<(), String> {
-    cli.run_raw(&["provider", "delete", &name])
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = cli.run_raw(&["provider", "delete", &name]).await;
+    let success = result.is_ok();
+    if let Err(e) = audit.record("delete", "provider", &name, "", success) {
+        error!("Failed to record audit entry: {}", e);
+    }
+    result.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn provider_use(
     cli: State<'_, Arc<CliRunner>>,
+    audit: State<'_, Arc<AuditLog>>,
     name: String,
 ) -> Result<(), String> {
-    cli.run_raw(&["provider", "use", &name])
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = cli.run_raw(&["provider", "use", &name]).await;
+    let success = result.is_ok();
+    if let Err(e) = audit.record("use", "provider", &name, "", success) {
+        error!("Failed to record audit entry: {}", e);
+    }
+    result.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn provider_update(
     cli: State<'_, Arc<CliRunner>>,
+    audit: State<'_, Arc<AuditLog>>,
     name: String,
 ) -> Result<(), String> {
-    cli.run_raw(&["provider", "update", &name])
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = cli.run_raw(&["provider", "update", &name]).await;
+    let success = result.is_ok();
+    if let Err(e) = audit.record("update", "provider", &name, "", success) {
+        error!("Failed to record audit entry: {}", e);
+    }
+    result.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -70,12 +88,18 @@ pub async fn provider_options(
 #[tauri::command]
 pub async fn provider_set_options(
     cli: State<'_, Arc<CliRunner>>,
+    audit: State<'_, Arc<AuditLog>>,
     name: String,
     options: Vec<String>,
 ) -> Result<(), String> {
     let mut args: Vec<&str> = vec!["provider", "set-options", &name];
     let option_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
     args.extend(option_refs);
-    cli.run_raw(&args).await.map_err(|e| e.to_string())?;
+    let result = cli.run_raw(&args).await;
+    let success = result.is_ok();
+    if let Err(e) = audit.record("set-options", "provider", &name, "", success) {
+        error!("Failed to record audit entry: {}", e);
+    }
+    result.map_err(|e| e.to_string())?;
     Ok(())
 }
