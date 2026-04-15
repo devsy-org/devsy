@@ -12,8 +12,11 @@ import {
   workspaceStop,
   workspaceRebuild,
   workspaceDelete,
+  workspaceLogsList,
+  workspaceLogRead,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
+import type { LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "@tauri-apps/api/event"
 
 let id = $derived($page.params.id)
@@ -21,6 +24,11 @@ let workspace = $derived($workspaces.find((ws) => ws.id === id))
 
 let outputLines = $state<string[]>([])
 let unlisten: UnlistenFn | null = null
+
+let logEntries = $state<LogEntry[]>([])
+let selectedLog = $state<string | null>(null)
+let logContent = $state<string>("")
+let logsLoading = $state(false)
 
 onMount(async () => {
   try {
@@ -32,11 +40,33 @@ onMount(async () => {
   } catch {
     // Event listener setup failed
   }
+
+  loadLogs()
 })
 
 onDestroy(() => {
   unlisten?.()
 })
+
+async function loadLogs() {
+  logsLoading = true
+  try {
+    logEntries = await workspaceLogsList(id)
+  } catch {
+    logEntries = []
+  } finally {
+    logsLoading = false
+  }
+}
+
+async function viewLog(entry: LogEntry) {
+  selectedLog = entry.filename
+  try {
+    logContent = await workspaceLogRead(id, entry.filename)
+  } catch {
+    logContent = "Failed to load log content."
+  }
+}
 
 async function handleStop() {
   try {
@@ -93,6 +123,7 @@ async function handleDelete() {
       <Tabs.List>
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="output">Live Output</Tabs.Trigger>
+        <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
       </Tabs.List>
 
       <Tabs.Content value="overview">
@@ -149,6 +180,41 @@ async function handleDelete() {
             <pre class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
           {/if}
         </ScrollArea>
+      </Tabs.Content>
+
+      <Tabs.Content value="logs">
+        <div class="mt-4 space-y-4">
+          {#if logsLoading}
+            <p class="text-sm text-muted-foreground">Loading logs...</p>
+          {:else if logEntries.length === 0}
+            <p class="text-sm text-muted-foreground">
+              No logs found for this workspace.
+            </p>
+          {:else}
+            <div class="flex gap-4">
+              <div class="w-64 space-y-1">
+                {#each logEntries as entry}
+                  <button
+                    class="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted {selectedLog === entry.filename ? 'bg-muted font-medium' : ''}"
+                    onclick={() => viewLog(entry)}
+                  >
+                    <div class="truncate">{entry.filename}</div>
+                    <div class="text-xs text-muted-foreground">
+                      {Math.round(entry.sizeBytes / 1024)}KB
+                    </div>
+                  </button>
+                {/each}
+              </div>
+              <ScrollArea class="h-96 flex-1 rounded-md border bg-muted/50 p-4">
+                {#if selectedLog}
+                  <pre class="text-xs font-mono whitespace-pre-wrap">{logContent}</pre>
+                {:else}
+                  <p class="text-sm text-muted-foreground">Select a log file to view.</p>
+                {/if}
+              </ScrollArea>
+            </div>
+          {/if}
+        </div>
       </Tabs.Content>
     </Tabs.Root>
   {/if}
