@@ -6,7 +6,7 @@ import { Separator } from "$lib/components/ui/separator/index.js"
 import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import { theme, applyTheme } from "$lib/stores/settings.js"
 import type { Theme } from "$lib/stores/settings.js"
-import { auditRecent } from "$lib/ipc/commands.js"
+import { auditRecent, devpodVersion } from "$lib/ipc/commands.js"
 import type { AuditEntry } from "$lib/types/index.js"
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -22,10 +22,27 @@ function setTheme(value: Theme) {
 
 let activity = $state<AuditEntry[]>([])
 let activityLoading = $state(false)
+let cliVersion = $state<string | null>(null)
+
+const shortcuts = [
+  { keys: "Cmd/Ctrl + K", action: "Open command palette" },
+  { keys: "Escape", action: "Close dialogs and palette" },
+  { keys: "Arrow Up/Down", action: "Navigate palette items" },
+  { keys: "Enter", action: "Select palette item" },
+]
 
 onMount(() => {
   loadActivity()
+  loadVersion()
 })
+
+async function loadVersion() {
+  try {
+    cliVersion = (await devpodVersion()).trim()
+  } catch {
+    cliVersion = null
+  }
+}
 
 async function loadActivity() {
   activityLoading = true
@@ -115,10 +132,27 @@ function formatTimestamp(ts: string): string {
 	<Separator />
 
 	<div class="space-y-4">
+		<h2 class="text-lg font-semibold">Keyboard Shortcuts</h2>
+		<div class="rounded-md border divide-y">
+			{#each shortcuts as shortcut}
+				<div class="flex items-center justify-between px-4 py-2 text-sm">
+					<span class="text-muted-foreground">{shortcut.action}</span>
+					<kbd class="rounded border bg-muted px-2 py-0.5 text-xs font-mono">{shortcut.keys}</kbd>
+				</div>
+			{/each}
+		</div>
+	</div>
+
+	<Separator />
+
+	<div class="space-y-4">
 		<h2 class="text-lg font-semibold">About</h2>
 		<div class="space-y-1 text-sm text-muted-foreground">
 			<p>DevPod Desktop</p>
 			<p>Built with Tauri v2 + SvelteKit + shadcn-svelte</p>
+			{#if cliVersion}
+				<p>DevPod CLI: <span class="font-mono">{cliVersion}</span></p>
+			{/if}
 		</div>
 	</div>
 </div>

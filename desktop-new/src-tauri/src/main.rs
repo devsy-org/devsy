@@ -69,6 +69,7 @@ fn main() {
             commands::logs::workspace_log_read,
             commands::contexts::context_list,
             commands::contexts::context_use,
+            commands::system::devpod_version,
         ])
         .setup(move |app| {
             let window = app.get_webview_window("main").unwrap();

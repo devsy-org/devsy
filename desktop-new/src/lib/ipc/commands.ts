@@ -137,6 +137,11 @@ export async function auditByResource(
   })
 }
 
+// System commands
+export async function devpodVersion(): Promise<string> {
+  return invoke<string>("devpod_version")
+}
+
 // Log commands
 export async function workspaceLogsList(
   workspaceId: string,
