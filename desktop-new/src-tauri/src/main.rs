@@ -67,6 +67,8 @@ fn main() {
             commands::audit::audit_by_resource,
             commands::logs::workspace_logs_list,
             commands::logs::workspace_log_read,
+            commands::contexts::context_list,
+            commands::contexts::context_use,
         ])
         .setup(move |app| {
             let window = app.get_webview_window("main").unwrap();

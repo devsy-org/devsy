@@ -9,10 +9,18 @@ use tokio::time::sleep;
 
 use super::cli::CliRunner;
 use super::state::DaemonState;
-use super::types::{Machine, Provider, Workspace};
+use super::types::{Context, Machine, Provider, Workspace};
 use crate::events::{
-    event_names, MachinesPayload, ProvidersPayload, WorkspacesPayload,
+    event_names, ContextsPayload, MachinesPayload, ProvidersPayload, WorkspacesPayload,
 };
+
+#[derive(Debug, serde::Deserialize)]
+struct ContextListOutput {
+    #[serde(default)]
+    contexts: Vec<Context>,
+    #[serde(default)]
+    active: String,
+}
 
 pub struct Watcher<R: Runtime> {
     cli: Arc<CliRunner>,
@@ -52,6 +60,7 @@ impl<R: Runtime> Watcher<R> {
         self.poll_workspaces().await;
         self.poll_providers().await;
         self.poll_machines().await;
+        self.poll_contexts().await;
     }
 
     async fn poll_workspaces(&self) {
@@ -126,6 +135,34 @@ impl<R: Runtime> Watcher<R> {
             }
             Err(e) => {
                 warn!("Failed to poll machines: {}", e);
+            }
+        }
+    }
+
+    async fn poll_contexts(&self) {
+        match self
+            .cli
+            .run::<ContextListOutput>(&["context", "list"])
+            .await
+        {
+            Ok(output) => {
+                let changed = {
+                    let mut state = self.state.write().await;
+                    state.update_contexts(output.contexts, output.active)
+                };
+                if changed {
+                    let state = self.state.read().await;
+                    let _ = self.app_handle.emit(
+                        event_names::CONTEXTS_CHANGED,
+                        ContextsPayload {
+                            contexts: state.contexts.clone(),
+                            active_context: state.active_context.clone(),
+                        },
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("Failed to poll contexts: {}", e);
             }
         }
     }

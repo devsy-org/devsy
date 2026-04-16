@@ -54,10 +54,10 @@ export function onMachinesChanged(
 }
 
 export function onContextsChanged(
-  callback: (contexts: Context[]) => void,
+  callback: (contexts: Context[], activeContext: string) => void,
 ): Promise<UnlistenFn> {
   return listen<ContextsPayload>(EVENT_NAMES.CONTEXTS_CHANGED, (event) => {
-    callback(event.payload.contexts)
+    callback(event.payload.contexts, event.payload.activeContext)
   })
 }
 

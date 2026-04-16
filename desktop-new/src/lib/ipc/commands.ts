@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import type {
   AuditEntry,
+  Context,
   LogEntry,
   Machine,
   OptionValue,
@@ -102,6 +103,18 @@ export async function machineStop(id: string): Promise<void> {
 
 export async function machineStatus(id: string): Promise<string> {
   return invoke<string>("machine_status", { id })
+}
+
+// Context commands
+export async function contextList(): Promise<{
+  contexts: Context[]
+  activeContext: string
+}> {
+  return invoke("context_list")
+}
+
+export async function contextUse(name: string): Promise<void> {
+  return invoke("context_use", { name })
 }
 
 // Audit commands
