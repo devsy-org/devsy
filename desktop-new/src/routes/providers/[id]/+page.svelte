@@ -7,6 +7,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import { providers } from "$lib/stores/providers.js"
 import {
   providerUse,
@@ -25,6 +26,8 @@ let options = $state<Record<string, ProviderOption>>({})
 let optionValues = $state<Record<string, string>>({})
 let saving = $state(false)
 let loading = $state(true)
+let confirmDeleteOpen = $state(false)
+let deleting = $state(false)
 
 // Group options by their group field, with ungrouped options first
 let groupedOptions = $derived.by(() => {
@@ -81,12 +84,16 @@ async function handleUpdate() {
 }
 
 async function handleDelete() {
+  deleting = true
   try {
     await providerDelete(id)
     toasts.success(`Deleted ${id}`)
+    confirmDeleteOpen = false
     goto("/providers")
   } catch (err) {
     toasts.error(`Failed to delete: ${err}`)
+  } finally {
+    deleting = false
   }
 }
 
@@ -124,7 +131,7 @@ async function handleSaveOptions() {
   <div class="flex gap-2">
     <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
     <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
-    <Button variant="destructive" size="sm" onclick={handleDelete}>Delete</Button>
+    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
   </div>
 
   {#if !provider}
@@ -194,3 +201,12 @@ async function handleSaveOptions() {
     </div>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={confirmDeleteOpen}
+  title="Delete provider"
+  description="This will remove provider '{id}' and its configuration. Any workspaces using this provider will need a new one."
+  confirmLabel="Delete"
+  loading={deleting}
+  onconfirm={handleDelete}
+/>
