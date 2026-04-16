@@ -32,6 +32,7 @@ let submitting = $state(false)
 
 let commandId = $state<string | null>(null)
 let outputLines = $state<string[]>([])
+let outputEl = $state<HTMLPreElement | null>(null)
 let unlisten: UnlistenFn | null = null
 
 onDestroy(() => {
@@ -63,6 +64,9 @@ async function handleSubmit() {
       if (commandId && progress.commandId === commandId) {
         if (progress.message) {
           outputLines = [...outputLines, progress.message]
+          requestAnimationFrame(() => {
+            outputEl?.scrollIntoView({ block: "end", behavior: "smooth" })
+          })
         }
         if (progress.done) {
           submitting = false
@@ -185,7 +189,7 @@ async function handleSubmit() {
         </Button>
       </div>
       <ScrollArea class="h-64 rounded-md border bg-muted/50 p-4">
-        <pre class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
+        <pre bind:this={outputEl} class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
       </ScrollArea>
     </div>
   {/if}

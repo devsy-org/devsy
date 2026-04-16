@@ -25,16 +25,16 @@ export async function workspaceUp(params: {
   return invoke<string>("workspace_up", params)
 }
 
-export async function workspaceStop(workspaceId: string): Promise<void> {
-  return invoke("workspace_stop", { workspaceId })
+export async function workspaceStop(workspaceId: string): Promise<string> {
+  return invoke<string>("workspace_stop", { workspaceId })
 }
 
-export async function workspaceDelete(workspaceId: string): Promise<void> {
-  return invoke("workspace_delete", { workspaceId })
+export async function workspaceDelete(workspaceId: string): Promise<string> {
+  return invoke<string>("workspace_delete", { workspaceId })
 }
 
-export async function workspaceRebuild(workspaceId: string): Promise<void> {
-  return invoke("workspace_rebuild", { workspaceId })
+export async function workspaceRebuild(workspaceId: string): Promise<string> {
+  return invoke<string>("workspace_rebuild", { workspaceId })
 }
 
 export async function workspaceStatus(workspaceId: string): Promise<string> {

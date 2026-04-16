@@ -47,8 +47,10 @@ function statusBadgeVariant(): "default" | "secondary" | "outline" {
 let activeTab = $state("overview")
 let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
-let starting = $state(false)
+let operationLabel = $state("")
+let operationRunning = $state(false)
 let unlisten: UnlistenFn | null = null
+let outputEl = $state<HTMLPreElement | null>(null)
 
 let logEntries = $state<LogEntry[]>([])
 let selectedLog = $state<string | null>(null)
@@ -62,6 +64,12 @@ let deleting = $state(false)
 
 let sshSessionId = $state<string | null>(null)
 let connecting = $state(false)
+
+function scrollToBottom() {
+  if (outputEl) {
+    outputEl.scrollIntoView({ block: "end", behavior: "smooth" })
+  }
+}
 
 async function copyToClipboard(text: string) {
   try {
@@ -78,13 +86,21 @@ onMount(async () => {
       if (commandId && progress.commandId === commandId) {
         if (progress.message) {
           outputLines = [...outputLines, progress.message]
+          requestAnimationFrame(scrollToBottom)
         }
         if (progress.done) {
-          starting = false
-          if (progress.message.includes("Exit code: 0")) {
-            toasts.success(`Started ${id}`)
+          operationRunning = false
+          const success = progress.message.includes("Exit code: 0")
+          if (success) {
+            toasts.success(`${operationLabel} ${id} succeeded`)
           } else {
-            toasts.error(`Failed to start ${id}. Check output for details.`)
+            toasts.error(
+              `${operationLabel} ${id} failed. Check output for details.`,
+            )
+          }
+          if (operationLabel === "Delete" && success) {
+            goto("/workspaces")
+            return
           }
           loadAudit()
           loadLogs()
@@ -177,47 +193,53 @@ function handleSshExit() {
   }
 }
 
-async function handleStart() {
-  starting = true
+function startStreamingOp(label: string) {
+  operationLabel = label
+  operationRunning = true
   outputLines = []
   activeTab = "output"
+}
+
+async function handleStart() {
+  startStreamingOp("Start")
   try {
     commandId = await workspaceUp({ source: id })
   } catch (err) {
-    starting = false
+    operationRunning = false
     toasts.error(`Failed to start: ${err}`)
   }
 }
 
 async function handleStop() {
+  startStreamingOp("Stop")
   try {
-    await workspaceStop(id)
-    toasts.success(`Stopped ${id}`)
+    commandId = await workspaceStop(id)
   } catch (err) {
+    operationRunning = false
     toasts.error(`Failed to stop: ${err}`)
   }
 }
 
 async function handleRebuild() {
+  startStreamingOp("Rebuild")
   try {
-    await workspaceRebuild(id)
-    toasts.success(`Rebuilding ${id}`)
+    commandId = await workspaceRebuild(id)
   } catch (err) {
+    operationRunning = false
     toasts.error(`Failed to rebuild: ${err}`)
   }
 }
 
 async function handleDelete() {
+  confirmDeleteOpen = false
+  startStreamingOp("Delete")
   deleting = true
   try {
-    await workspaceDelete(id)
-    toasts.success(`Deleted ${id}`)
-    confirmDeleteOpen = false
-    goto("/workspaces")
+    commandId = await workspaceDelete(id)
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
-  } finally {
+    operationRunning = false
     deleting = false
+    toasts.error(`Failed to delete: ${err}`)
   }
 }
 </script>
@@ -245,17 +267,17 @@ async function handleDelete() {
       </Button>
     {/if}
     {#if isStopped}
-      <Button size="sm" onclick={handleStart} disabled={starting || connecting}>
-        {starting ? "Starting..." : "Start"}
+      <Button size="sm" onclick={handleStart} disabled={operationRunning || connecting}>
+        {operationRunning ? "Starting..." : "Start"}
       </Button>
     {/if}
     {#if isRunning || isBusy}
-      <Button variant="outline" size="sm" onclick={handleStop} disabled={starting}>Stop</Button>
+      <Button variant="outline" size="sm" onclick={handleStop} disabled={operationRunning}>Stop</Button>
     {/if}
-    <Button variant="outline" size="sm" onclick={handleRebuild} disabled={starting}>Rebuild</Button>
-    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={starting}>Delete</Button>
-    {#if starting}
-      <span class="text-xs text-muted-foreground animate-pulse">Starting workspace...</span>
+    <Button variant="outline" size="sm" onclick={handleRebuild} disabled={operationRunning}>Rebuild</Button>
+    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={operationRunning}>Delete</Button>
+    {#if operationRunning}
+      <span class="text-xs text-muted-foreground animate-pulse">{operationLabel}ing workspace...</span>
     {/if}
   </div>
 
@@ -331,10 +353,10 @@ async function handleDelete() {
         <ScrollArea class="mt-2 h-96 rounded-md border bg-muted/50 p-4">
           {#if outputLines.length === 0}
             <p class="text-sm text-muted-foreground">
-              {starting ? "Waiting for output..." : "No output yet. Start the workspace to see live output."}
+              {operationRunning ? "Waiting for output..." : "No output yet. Run an operation to see live output."}
             </p>
           {:else}
-            <pre class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
+            <pre bind:this={outputEl} class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
           {/if}
         </ScrollArea>
       </Tabs.Content>
