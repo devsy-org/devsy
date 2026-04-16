@@ -130,7 +130,7 @@ async function handleSubmit() {
 
     <div class="space-y-2">
       <Label>Provider</Label>
-      <Select.Root type="single" onValueChange={(v) => (selectedProvider = v)} disabled={submitting}>
+      <Select.Root type="single" bind:value={selectedProvider} disabled={submitting}>
         <Select.Trigger>
           {#if selectedProvider}
             <span>{selectedProvider}</span>
@@ -148,7 +148,7 @@ async function handleSubmit() {
 
     <div class="space-y-2">
       <Label>IDE</Label>
-      <Select.Root type="single" onValueChange={(v) => (selectedIde = v)} disabled={submitting}>
+      <Select.Root type="single" bind:value={selectedIde} disabled={submitting}>
         <Select.Trigger>
           {#if selectedIde}
             <span>{IDE_OPTIONS.find((i) => i.value === selectedIde)?.label ?? selectedIde}</span>

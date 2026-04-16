@@ -12,7 +12,11 @@ import {
 import { theme } from "$lib/stores/settings.js"
 import { get } from "svelte/store"
 
-let { sessionId, onExit }: { sessionId: string; onExit?: () => void } = $props()
+let {
+  sessionId,
+  active = true,
+  onExit,
+}: { sessionId: string; active?: boolean; onExit?: () => void } = $props()
 
 let containerEl: HTMLDivElement | undefined = $state()
 
@@ -92,6 +96,17 @@ onMount(async () => {
   resizeObserver.observe(containerEl)
 })
 
+// Refit and focus when tab becomes active
+$effect(() => {
+  if (active && fitAddon && term) {
+    // Use requestAnimationFrame to ensure the container is visible before fitting
+    requestAnimationFrame(() => {
+      fitAddon?.fit()
+      term?.focus()
+    })
+  }
+})
+
 onDestroy(() => {
   resizeObserver?.disconnect()
   unlistenOutput?.()
@@ -101,4 +116,4 @@ onDestroy(() => {
 })
 </script>
 
-<div bind:this={containerEl} class="h-full w-full"></div>
+<div bind:this={containerEl} class="h-full w-full p-2"></div>

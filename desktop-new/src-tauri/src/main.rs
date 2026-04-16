@@ -128,7 +128,7 @@ fn main() {
                     path
                 }
                 Err(e) => {
-                    error!("Failed to resolve devpod binary: {}. Polling disabled.", e);
+                    error!("Failed to resolve devpod binary: {}. CLI commands will fail.", e);
                     return Ok(());
                 }
             };
@@ -136,11 +136,12 @@ fn main() {
             let cli = match CliRunner::new(binary_path) {
                 Ok(runner) => Arc::new(runner),
                 Err(e) => {
-                    error!("Failed to create CLI runner: {}. Polling disabled.", e);
+                    error!("Failed to create CLI runner: {}. CLI commands will fail.", e);
                     return Ok(());
                 }
             };
 
+            // Register CLI state BEFORE starting watcher so all commands can access it
             app.manage(cli.clone());
 
             let watcher = Arc::new(Watcher::new(

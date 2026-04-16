@@ -135,9 +135,9 @@ function handleExit() {
 
     <div class="flex-1 overflow-hidden">
       {#each $terminals as session (session.id)}
-        {#if session.id === activeSessionId}
-          <TerminalComponent sessionId={session.id} onExit={handleExit} />
-        {/if}
+        <div class="h-full" class:hidden={session.id !== activeSessionId}>
+          <TerminalComponent sessionId={session.id} active={session.id === activeSessionId} onExit={handleExit} />
+        </div>
       {/each}
     </div>
   {:else}
