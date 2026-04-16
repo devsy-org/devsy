@@ -10,6 +10,7 @@ import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import { workspaces } from "$lib/stores/workspaces.js"
 import {
+  workspaceUp,
   workspaceStop,
   workspaceRebuild,
   workspaceDelete,
@@ -25,7 +26,10 @@ import type { UnlistenFn } from "@tauri-apps/api/event"
 let id = $derived($page.params.id as string)
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
 
+let activeTab = $state("overview")
 let outputLines = $state<string[]>([])
+let commandId = $state<string | null>(null)
+let starting = $state(false)
 let unlisten: UnlistenFn | null = null
 
 let logEntries = $state<LogEntry[]>([])
@@ -41,8 +45,20 @@ let deleting = $state(false)
 onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
-      if (progress.message) {
-        outputLines = [...outputLines, progress.message]
+      if (commandId && progress.commandId === commandId) {
+        if (progress.message) {
+          outputLines = [...outputLines, progress.message]
+        }
+        if (progress.done) {
+          starting = false
+          if (progress.message.includes("Exit code: 0")) {
+            toasts.success(`Started ${id}`)
+          } else {
+            toasts.error(`Failed to start ${id}. Check output for details.`)
+          }
+          loadAudit()
+          loadLogs()
+        }
       }
     })
   } catch {
@@ -96,6 +112,18 @@ async function viewLog(entry: LogEntry) {
   }
 }
 
+async function handleStart() {
+  starting = true
+  outputLines = []
+  activeTab = "output"
+  try {
+    commandId = await workspaceUp({ source: id })
+  } catch (err) {
+    starting = false
+    toasts.error(`Failed to start: ${err}`)
+  }
+}
+
 async function handleStop() {
   try {
     await workspaceStop(id)
@@ -143,10 +171,16 @@ async function handleDelete() {
     {/if}
   </div>
 
-  <div class="flex gap-2">
-    <Button variant="outline" size="sm" onclick={handleStop}>Stop</Button>
-    <Button variant="outline" size="sm" onclick={handleRebuild}>Rebuild</Button>
-    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
+  <div class="flex items-center gap-2">
+    <Button size="sm" onclick={handleStart} disabled={starting}>
+      {starting ? "Starting..." : "Start"}
+    </Button>
+    <Button variant="outline" size="sm" onclick={handleStop} disabled={starting}>Stop</Button>
+    <Button variant="outline" size="sm" onclick={handleRebuild} disabled={starting}>Rebuild</Button>
+    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={starting}>Delete</Button>
+    {#if starting}
+      <span class="text-xs text-muted-foreground animate-pulse">Starting workspace...</span>
+    {/if}
   </div>
 
   <Separator />
@@ -154,7 +188,7 @@ async function handleDelete() {
   {#if !workspace}
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
-    <Tabs.Root value="overview">
+    <Tabs.Root bind:value={activeTab}>
       <Tabs.List>
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="output">Live Output</Tabs.Trigger>
@@ -210,7 +244,7 @@ async function handleDelete() {
         <ScrollArea class="mt-4 h-96 rounded-md border bg-muted/50 p-4">
           {#if outputLines.length === 0}
             <p class="text-sm text-muted-foreground">
-              No output yet. Run a command to see live output.
+              {starting ? "Waiting for output..." : "No output yet. Start the workspace to see live output."}
             </p>
           {:else}
             <pre class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
