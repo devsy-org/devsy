@@ -9,6 +9,8 @@ import {
   onTerminalOutput,
   onTerminalExit,
 } from "$lib/ipc/terminal.js"
+import { theme } from "$lib/stores/settings.js"
+import { get } from "svelte/store"
 
 let { sessionId, onExit }: { sessionId: string; onExit?: () => void } = $props()
 
@@ -18,7 +20,30 @@ let term: Terminal | undefined
 let fitAddon: FitAddon | undefined
 let unlistenOutput: (() => void) | undefined
 let unlistenExit: (() => void) | undefined
+let unsubscribeTheme: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
+
+const darkTheme = {
+  background: "#1e1e2e",
+  foreground: "#cdd6f4",
+  cursor: "#f5e0dc",
+  selectionBackground: "#585b70",
+}
+
+const lightTheme = {
+  background: "#eff1f5",
+  foreground: "#4c4f69",
+  cursor: "#dc8a78",
+  selectionBackground: "#ccd0da",
+}
+
+function isDark(): boolean {
+  const current = get(theme)
+  if (current === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+  }
+  return current === "dark"
+}
 
 onMount(async () => {
   if (!containerEl) return
@@ -27,10 +52,13 @@ onMount(async () => {
     cursorBlink: true,
     fontSize: 14,
     fontFamily: "monospace",
-    theme: {
-      background: "#1e1e2e",
-      foreground: "#cdd6f4",
-    },
+    theme: isDark() ? darkTheme : lightTheme,
+  })
+
+  unsubscribeTheme = theme.subscribe(() => {
+    if (term) {
+      term.options.theme = isDark() ? darkTheme : lightTheme
+    }
   })
 
   fitAddon = new FitAddon()
@@ -68,6 +96,7 @@ onDestroy(() => {
   resizeObserver?.disconnect()
   unlistenOutput?.()
   unlistenExit?.()
+  unsubscribeTheme?.()
   term?.dispose()
 })
 </script>
