@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Input } from "$lib/components/ui/input/index.js"
+import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import MachineCard from "$lib/components/machine/MachineCard.svelte"
 import { machines, machinesLoading } from "$lib/stores/machines.js"
 import { Server, SearchX } from "lucide-svelte"
@@ -53,7 +54,7 @@ let filtered = $derived.by(() => {
   {#if $machinesLoading}
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {#each Array(3) as _}
-        <div class="h-32 animate-pulse rounded-lg border bg-muted"></div>
+        <CardSkeleton />
       {/each}
     </div>
   {:else if filtered.length === 0}

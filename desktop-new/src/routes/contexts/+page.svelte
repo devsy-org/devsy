@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import {
   contexts,
   activeContext,
@@ -28,7 +29,7 @@ async function handleUse(name: string) {
   {#if $contextsLoading}
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {#each Array(2) as _}
-        <div class="h-28 animate-pulse rounded-lg border bg-muted"></div>
+        <CardSkeleton />
       {/each}
     </div>
   {:else if $contexts.length === 0}

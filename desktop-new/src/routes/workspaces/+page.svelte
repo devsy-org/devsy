@@ -2,6 +2,7 @@
 import { goto } from "$app/navigation"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
+import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import WorkspaceCard from "$lib/components/workspace/WorkspaceCard.svelte"
 import { workspaces, workspacesLoading } from "$lib/stores/workspaces.js"
 import { Box, SearchX } from "lucide-svelte"
@@ -58,7 +59,7 @@ let filtered = $derived.by(() => {
   {#if $workspacesLoading}
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {#each Array(3) as _}
-        <div class="h-36 animate-pulse rounded-lg border bg-muted"></div>
+        <CardSkeleton />
       {/each}
     </div>
   {:else if filtered.length === 0}
