@@ -1,0 +1,26 @@
+import { vi } from "vitest"
+
+/**
+ * Mock for @tauri-apps/api/core invoke function.
+ * Tests can configure responses via mockInvoke.mockImplementation()
+ */
+export const mockInvoke = vi.fn()
+
+/**
+ * Mock for @tauri-apps/api/event listen function.
+ * Returns a no-op unlisten by default.
+ */
+export const mockListen = vi.fn().mockResolvedValue(() => {})
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mockInvoke,
+}))
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
+}))
+
+export function resetTauriMocks() {
+  mockInvoke.mockReset()
+  mockListen.mockReset().mockResolvedValue(() => {})
+}
