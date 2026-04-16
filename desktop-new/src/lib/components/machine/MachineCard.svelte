@@ -3,6 +3,7 @@ import { goto } from "$app/navigation"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { machineStop, machineDelete } from "$lib/ipc/commands.js"
+import { toasts } from "$lib/stores/toasts.js"
 import type { Machine } from "$lib/types/index.js"
 
 let { machine }: { machine: Machine } = $props()
@@ -23,8 +24,9 @@ async function handleStop(e: Event) {
   e.stopPropagation()
   try {
     await machineStop(machine.id)
-  } catch {
-    // handled by event system
+    toasts.success(`Stopped ${machine.id}`)
+  } catch (err) {
+    toasts.error(`Failed to stop: ${err}`)
   }
 }
 
@@ -32,8 +34,9 @@ async function handleDelete(e: Event) {
   e.stopPropagation()
   try {
     await machineDelete(machine.id)
-  } catch {
-    // handled by event system
+    toasts.success(`Deleted ${machine.id}`)
+  } catch (err) {
+    toasts.error(`Failed to delete: ${err}`)
   }
 }
 </script>

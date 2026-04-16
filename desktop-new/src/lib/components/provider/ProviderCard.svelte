@@ -2,6 +2,7 @@
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { providerUse, providerDelete } from "$lib/ipc/commands.js"
+import { toasts } from "$lib/stores/toasts.js"
 import type { Provider } from "$lib/types/index.js"
 import { goto } from "$app/navigation"
 
@@ -18,8 +19,9 @@ async function handleSetDefault(e: Event) {
   e.stopPropagation()
   try {
     await providerUse(provider.name)
-  } catch {
-    // handled by event system
+    toasts.success(`Set ${provider.name} as default`)
+  } catch (err) {
+    toasts.error(`Failed to set default: ${err}`)
   }
 }
 
@@ -27,8 +29,9 @@ async function handleDelete(e: Event) {
   e.stopPropagation()
   try {
     await providerDelete(provider.name)
-  } catch {
-    // handled by event system
+    toasts.success(`Deleted ${provider.name}`)
+  } catch (err) {
+    toasts.error(`Failed to delete: ${err}`)
   }
 }
 </script>

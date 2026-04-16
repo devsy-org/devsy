@@ -3,6 +3,7 @@ import "../app.css"
 import { onMount, onDestroy } from "svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
+import Toaster from "$lib/components/layout/Toaster.svelte"
 import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
@@ -40,4 +41,6 @@ onDestroy(() => {
       {@render children()}
     </main>
   </div>
+
+  <Toaster />
 </div>

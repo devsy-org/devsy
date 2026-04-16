@@ -3,6 +3,7 @@ import { goto } from "$app/navigation"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { workspaceStop, workspaceDelete } from "$lib/ipc/commands.js"
+import { toasts } from "$lib/stores/toasts.js"
 import type { Workspace } from "$lib/types/index.js"
 
 let { workspace }: { workspace: Workspace } = $props()
@@ -30,8 +31,9 @@ async function handleStop(e: Event) {
   e.stopPropagation()
   try {
     await workspaceStop(workspace.id)
-  } catch {
-    // handled by event system
+    toasts.success(`Stopped ${workspace.id}`)
+  } catch (err) {
+    toasts.error(`Failed to stop: ${err}`)
   }
 }
 
@@ -39,8 +41,9 @@ async function handleDelete(e: Event) {
   e.stopPropagation()
   try {
     await workspaceDelete(workspace.id)
-  } catch {
-    // handled by event system
+    toasts.success(`Deleted ${workspace.id}`)
+  } catch (err) {
+    toasts.error(`Failed to delete: ${err}`)
   }
 }
 </script>

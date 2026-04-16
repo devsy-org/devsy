@@ -35,19 +35,21 @@ async function handleSubmit() {
   submitting = true
 
   try {
-    const id =
+    const workspaceId =
       name.trim() ||
       source
         .trim()
         .split("/")
         .pop()
         ?.replace(/\.git$/, "") ||
-      "workspace"
-    const options: Record<string, string> = { source: source.trim() }
-    if (selectedProvider) options.provider = selectedProvider
-    if (selectedIde) options.ide = selectedIde
+      undefined
 
-    await workspaceUp(id, options)
+    await workspaceUp({
+      source: source.trim(),
+      workspaceId,
+      provider: selectedProvider,
+      ide: selectedIde,
+    })
     goto("/workspaces")
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)

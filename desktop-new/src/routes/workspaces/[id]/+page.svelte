@@ -14,9 +14,11 @@ import {
   workspaceDelete,
   workspaceLogsList,
   workspaceLogRead,
+  auditByResource,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
-import type { LogEntry } from "$lib/types/index.js"
+import { toasts } from "$lib/stores/toasts.js"
+import type { AuditEntry, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "@tauri-apps/api/event"
 
 let id = $derived($page.params.id)
@@ -30,6 +32,9 @@ let selectedLog = $state<string | null>(null)
 let logContent = $state<string>("")
 let logsLoading = $state(false)
 
+let auditEntries = $state<AuditEntry[]>([])
+let auditLoading = $state(false)
+
 onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
@@ -42,6 +47,7 @@ onMount(async () => {
   }
 
   loadLogs()
+  loadAudit()
 })
 
 onDestroy(() => {
@@ -59,6 +65,25 @@ async function loadLogs() {
   }
 }
 
+async function loadAudit() {
+  auditLoading = true
+  try {
+    auditEntries = await auditByResource("workspace", id)
+  } catch {
+    auditEntries = []
+  } finally {
+    auditLoading = false
+  }
+}
+
+function formatTimestamp(ts: string): string {
+  try {
+    return new Date(ts).toLocaleString()
+  } catch {
+    return ts
+  }
+}
+
 async function viewLog(entry: LogEntry) {
   selectedLog = entry.filename
   try {
@@ -71,25 +96,28 @@ async function viewLog(entry: LogEntry) {
 async function handleStop() {
   try {
     await workspaceStop(id)
-  } catch {
-    // handled by event system
+    toasts.success(`Stopped ${id}`)
+  } catch (err) {
+    toasts.error(`Failed to stop: ${err}`)
   }
 }
 
 async function handleRebuild() {
   try {
     await workspaceRebuild(id)
-  } catch {
-    // handled by event system
+    toasts.success(`Rebuilding ${id}`)
+  } catch (err) {
+    toasts.error(`Failed to rebuild: ${err}`)
   }
 }
 
 async function handleDelete() {
   try {
     await workspaceDelete(id)
+    toasts.success(`Deleted ${id}`)
     goto("/workspaces")
-  } catch {
-    // handled by event system
+  } catch (err) {
+    toasts.error(`Failed to delete: ${err}`)
   }
 }
 </script>
@@ -124,6 +152,7 @@ async function handleDelete() {
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="output">Live Output</Tabs.Trigger>
         <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
+        <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
       </Tabs.List>
 
       <Tabs.Content value="overview">
@@ -212,6 +241,40 @@ async function handleDelete() {
                   <p class="text-sm text-muted-foreground">Select a log file to view.</p>
                 {/if}
               </ScrollArea>
+            </div>
+          {/if}
+        </div>
+      </Tabs.Content>
+
+      <Tabs.Content value="activity">
+        <div class="mt-4 space-y-4">
+          {#if auditLoading}
+            <p class="text-sm text-muted-foreground">Loading activity...</p>
+          {:else if auditEntries.length === 0}
+            <p class="text-sm text-muted-foreground">
+              No activity recorded for this workspace.
+            </p>
+          {:else}
+            <div class="divide-y rounded-md border">
+              {#each auditEntries as entry}
+                <div class="flex items-center gap-3 px-4 py-3">
+                  <span
+                    class={badgeVariants({
+                      variant: entry.success ? "default" : "destructive",
+                    })}
+                  >
+                    {entry.action}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    {#if entry.details}
+                      <span class="text-sm text-muted-foreground">{entry.details}</span>
+                    {/if}
+                  </div>
+                  <span class="shrink-0 text-xs text-muted-foreground">
+                    {formatTimestamp(entry.timestamp)}
+                  </span>
+                </div>
+              {/each}
             </div>
           {/if}
         </div>

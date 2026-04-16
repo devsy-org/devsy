@@ -14,26 +14,25 @@ export async function workspaceList(): Promise<Workspace[]> {
   return invoke<Workspace[]>("workspace_list")
 }
 
-export async function workspaceUp(
-  id: string,
-  options?: Record<string, OptionValue>,
-): Promise<void> {
-  return invoke("workspace_up", { id, options })
+export async function workspaceUp(params: {
+  source: string
+  workspaceId?: string
+  provider?: string
+  ide?: string
+}): Promise<string> {
+  return invoke<string>("workspace_up", params)
 }
 
-export async function workspaceStop(id: string): Promise<void> {
-  return invoke("workspace_stop", { id })
+export async function workspaceStop(workspaceId: string): Promise<void> {
+  return invoke("workspace_stop", { workspaceId })
 }
 
-export async function workspaceDelete(
-  id: string,
-  force?: boolean,
-): Promise<void> {
-  return invoke("workspace_delete", { id, force: force ?? false })
+export async function workspaceDelete(workspaceId: string): Promise<void> {
+  return invoke("workspace_delete", { workspaceId })
 }
 
-export async function workspaceRebuild(id: string): Promise<void> {
-  return invoke("workspace_rebuild", { id })
+export async function workspaceRebuild(workspaceId: string): Promise<void> {
+  return invoke("workspace_rebuild", { workspaceId })
 }
 
 // Provider commands
