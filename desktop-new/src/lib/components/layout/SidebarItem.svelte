@@ -1,15 +1,18 @@
 <script lang="ts">
 import { page } from "$app/stores"
 import { cn } from "$lib/utils.js"
+import type { Component } from "svelte"
 
 let {
   href,
   label,
   badgeCount,
+  icon,
 }: {
   href: string
   label: string
   badgeCount?: number
+  icon?: Component<{ class?: string }>
 } = $props()
 
 let isActive = $derived(
@@ -28,7 +31,13 @@ let isActive = $derived(
       : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
   )}
 >
-  <span>{label}</span>
+  <span class="flex items-center gap-2">
+    {#if icon}
+      {@const Icon = icon}
+      <Icon class="h-4 w-4" />
+    {/if}
+    {label}
+  </span>
   {#if badgeCount != null && badgeCount > 0}
     <span
       class="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground"

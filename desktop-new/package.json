@@ -28,6 +28,7 @@
     "@xterm/xterm": "^6.0.0",
     "bits-ui": "^2.17.3",
     "clsx": "^2.1.1",
+    "lucide-svelte": "^1.0.1",
     "svelte": "^5.0.0",
     "tailwind-merge": "^3.5.0",
     "tailwind-variants": "^3.2.2"

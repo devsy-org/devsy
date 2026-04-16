@@ -6,6 +6,16 @@ import { providers } from "$lib/stores/providers.js"
 import { machines } from "$lib/stores/machines.js"
 import { contexts } from "$lib/stores/contexts.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
+import {
+  LayoutDashboard,
+  Box,
+  Plug,
+  Server,
+  Layers,
+  TerminalSquare,
+  Settings,
+  Search,
+} from "lucide-svelte"
 
 let { terminalCount = 0 }: { terminalCount?: number } = $props()
 </script>
@@ -18,23 +28,26 @@ let { terminalCount = 0 }: { terminalCount?: number } = $props()
   <Separator />
 
   <nav class="flex flex-1 flex-col gap-1 p-3">
-    <SidebarItem href="/" label="Dashboard" />
-    <SidebarItem href="/workspaces" label="Workspaces" badgeCount={$workspaces.length} />
-    <SidebarItem href="/providers" label="Providers" badgeCount={$providers.length} />
-    <SidebarItem href="/machines" label="Machines" badgeCount={$machines.length} />
-    <SidebarItem href="/contexts" label="Contexts" badgeCount={$contexts.length} />
-    <SidebarItem href="/terminals" label="Terminals" badgeCount={terminalCount} />
+    <SidebarItem href="/" label="Dashboard" icon={LayoutDashboard} />
+    <SidebarItem href="/workspaces" label="Workspaces" badgeCount={$workspaces.length} icon={Box} />
+    <SidebarItem href="/providers" label="Providers" badgeCount={$providers.length} icon={Plug} />
+    <SidebarItem href="/machines" label="Machines" badgeCount={$machines.length} icon={Server} />
+    <SidebarItem href="/contexts" label="Contexts" badgeCount={$contexts.length} icon={Layers} />
+    <SidebarItem href="/terminals" label="Terminals" badgeCount={terminalCount} icon={TerminalSquare} />
 
     <div class="flex-1"></div>
 
     <Separator class="my-2" />
-    <SidebarItem href="/settings" label="Settings" />
+    <SidebarItem href="/settings" label="Settings" icon={Settings} />
 
     <button
       class="mt-1 flex items-center justify-between rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground"
       onclick={togglePalette}
     >
-      <span>Search</span>
+      <span class="flex items-center gap-2">
+        <Search class="h-4 w-4" />
+        Search
+      </span>
       <kbd class="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">&#8984;K</kbd>
     </button>
   </nav>
