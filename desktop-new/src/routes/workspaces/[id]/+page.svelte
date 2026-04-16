@@ -8,7 +8,10 @@ import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Tabs from "$lib/components/ui/tabs/index.js"
 import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
+import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
+import { terminalCreateSsh, terminalClose } from "$lib/ipc/terminal.js"
 import {
   workspaceUp,
   workspaceStop,
@@ -42,6 +45,9 @@ let auditLoading = $state(false)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 
+let sshSessionId = $state<string | null>(null)
+let connecting = $state(false)
+
 onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
@@ -71,6 +77,11 @@ onMount(async () => {
 
 onDestroy(() => {
   unlisten?.()
+  // Clean up SSH session if navigating away
+  if (sshSessionId) {
+    terminalClose(sshSessionId).catch(() => {})
+    removeTerminal(sshSessionId)
+  }
 })
 
 async function loadLogs() {
@@ -109,6 +120,44 @@ async function viewLog(entry: LogEntry) {
     logContent = await workspaceLogRead(id, entry.filename)
   } catch {
     logContent = "Failed to load log content."
+  }
+}
+
+async function handleConnect() {
+  connecting = true
+  try {
+    const sessionId = await terminalCreateSsh(id, 80, 24)
+    sshSessionId = sessionId
+    addTerminal({
+      id: sessionId,
+      label: `SSH: ${id}`,
+      type: "ssh",
+      workspaceId: id,
+    })
+    activeTab = "terminal"
+    toasts.success(`Connected to ${id}`)
+  } catch (err) {
+    toasts.error(`Failed to connect: ${err}`)
+  } finally {
+    connecting = false
+  }
+}
+
+async function handleDisconnect() {
+  if (!sshSessionId) return
+  try {
+    await terminalClose(sshSessionId)
+  } catch {
+    // session may already be gone
+  }
+  removeTerminal(sshSessionId)
+  sshSessionId = null
+}
+
+function handleSshExit() {
+  if (sshSessionId) {
+    removeTerminal(sshSessionId)
+    sshSessionId = null
   }
 }
 
@@ -172,7 +221,14 @@ async function handleDelete() {
   </div>
 
   <div class="flex items-center gap-2">
-    <Button size="sm" onclick={handleStart} disabled={starting}>
+    {#if sshSessionId}
+      <Button variant="outline" size="sm" onclick={handleDisconnect}>Disconnect</Button>
+    {:else}
+      <Button size="sm" onclick={handleConnect} disabled={connecting || starting}>
+        {connecting ? "Connecting..." : "Connect"}
+      </Button>
+    {/if}
+    <Button variant="outline" size="sm" onclick={handleStart} disabled={starting || connecting}>
       {starting ? "Starting..." : "Start"}
     </Button>
     <Button variant="outline" size="sm" onclick={handleStop} disabled={starting}>Stop</Button>
@@ -192,6 +248,7 @@ async function handleDelete() {
       <Tabs.List>
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="output">Live Output</Tabs.Trigger>
+        <Tabs.Trigger value="terminal">Terminal</Tabs.Trigger>
         <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
         <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
       </Tabs.List>
@@ -250,6 +307,28 @@ async function handleDelete() {
             <pre class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
           {/if}
         </ScrollArea>
+      </Tabs.Content>
+
+      <Tabs.Content value="terminal">
+        <div class="mt-4">
+          {#if sshSessionId}
+            <div class="h-96 rounded-md border overflow-hidden">
+              <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
+            </div>
+            <div class="mt-2 flex justify-end">
+              <Button variant="outline" size="sm" onclick={handleDisconnect}>Disconnect</Button>
+            </div>
+          {:else}
+            <div class="flex h-96 items-center justify-center rounded-md border bg-muted/50">
+              <div class="text-center">
+                <p class="text-muted-foreground">No active terminal session.</p>
+                <Button size="sm" class="mt-3" onclick={handleConnect} disabled={connecting}>
+                  {connecting ? "Connecting..." : "Connect to workspace"}
+                </Button>
+              </div>
+            </div>
+          {/if}
+        </div>
       </Tabs.Content>
 
       <Tabs.Content value="logs">

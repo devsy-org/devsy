@@ -1,14 +1,25 @@
 <script lang="ts">
-import { terminalCreate, terminalClose } from "$lib/ipc/terminal.js"
+import {
+  terminalCreate,
+  terminalCreateSsh,
+  terminalClose,
+} from "$lib/ipc/terminal.js"
 import {
   terminals,
   addTerminal,
   removeTerminal,
 } from "$lib/stores/terminals.js"
+import { workspaces } from "$lib/stores/workspaces.js"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import { Button } from "$lib/components/ui/button/index.js"
+import { toasts } from "$lib/stores/toasts.js"
 
 let activeSessionId: string | undefined = $state()
+let showSshMenu = $state(false)
+
+let runningWorkspaces = $derived(
+  $workspaces.filter((ws) => ws.status?.toLowerCase() === "running"),
+)
 
 async function createShell() {
   try {
@@ -18,6 +29,18 @@ async function createShell() {
     activeSessionId = id
   } catch (e) {
     console.error("Failed to create terminal:", e)
+  }
+}
+
+async function createSsh(workspaceId: string) {
+  showSshMenu = false
+  try {
+    const id = await terminalCreateSsh(workspaceId, 80, 24)
+    addTerminal({ id, label: `SSH: ${workspaceId}`, type: "ssh", workspaceId })
+    activeSessionId = id
+    toasts.success(`Connected to ${workspaceId}`)
+  } catch (e) {
+    toasts.error(`Failed to connect to ${workspaceId}: ${e}`)
   }
 }
 
@@ -33,6 +56,12 @@ async function closeSession(id: string) {
   }
 }
 
+function closeSshMenu(e: MouseEvent) {
+  if (showSshMenu && !(e.target as HTMLElement).closest("[data-ssh-menu]")) {
+    showSshMenu = false
+  }
+}
+
 function handleExit() {
   if (activeSessionId) {
     removeTerminal(activeSessionId)
@@ -41,10 +70,35 @@ function handleExit() {
 }
 </script>
 
-<div class="flex h-full flex-col">
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<div class="flex h-full flex-col" onclick={closeSshMenu}>
   <div class="flex items-center justify-between border-b px-4 py-2">
     <h1 class="text-lg font-semibold">Terminals</h1>
-    <Button size="sm" onclick={createShell}>New Shell</Button>
+    <div class="flex gap-2">
+      <div class="relative" data-ssh-menu>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => (showSshMenu = !showSshMenu)}
+          disabled={runningWorkspaces.length === 0}
+        >
+          SSH into Workspace
+        </Button>
+        {#if showSshMenu && runningWorkspaces.length > 0}
+          <div class="absolute right-0 top-full z-10 mt-1 w-56 rounded-md border bg-popover p-1 shadow-md">
+            {#each runningWorkspaces as ws (ws.id)}
+              <button
+                class="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
+                onclick={() => createSsh(ws.id)}
+              >
+                {ws.id}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+      <Button size="sm" onclick={createShell}>New Shell</Button>
+    </div>
   </div>
 
   {#if $terminals.length > 0}
@@ -90,7 +144,14 @@ function handleExit() {
     <div class="flex flex-1 items-center justify-center">
       <div class="text-center text-muted-foreground">
         <p class="mb-2 text-lg">No active terminals</p>
-        <Button size="sm" onclick={createShell}>Create a shell</Button>
+        <div class="flex gap-2 justify-center">
+          <Button size="sm" onclick={createShell}>New Shell</Button>
+          {#if runningWorkspaces.length > 0}
+            <Button variant="outline" size="sm" onclick={() => (showSshMenu = !showSshMenu)}>
+              SSH into Workspace
+            </Button>
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
