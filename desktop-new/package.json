@@ -12,7 +12,8 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ci": "vitest run && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

@@ -17,7 +17,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let tray = TrayIconBuilder::new()
-        .icon(app.default_window_icon().cloned().unwrap())
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .ok_or("No default window icon configured")?,
+        )
         .tooltip("DevPod Desktop")
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
