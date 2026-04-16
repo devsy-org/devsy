@@ -70,7 +70,10 @@ export async function providerSetOptions(
   name: string,
   options: Record<string, OptionValue>,
 ): Promise<void> {
-  return invoke("provider_set_options", { name, options })
+  const optionArgs = Object.entries(options).map(
+    ([key, val]) => `${key}=${val}`,
+  )
+  return invoke("provider_set_options", { name, options: optionArgs })
 }
 
 // Machine commands
