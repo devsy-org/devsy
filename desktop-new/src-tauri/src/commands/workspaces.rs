@@ -147,6 +147,16 @@ pub async fn workspace_rebuild(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn workspace_status(
+    cli: State<'_, Arc<CliRunner>>,
+    workspace_id: String,
+) -> Result<String, String> {
+    cli.run_raw(&["status", &workspace_id, "--output", "json", "--timeout", "5s"])
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn rand_id() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

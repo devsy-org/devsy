@@ -36,6 +36,10 @@ export async function workspaceRebuild(workspaceId: string): Promise<void> {
   return invoke("workspace_rebuild", { workspaceId })
 }
 
+export async function workspaceStatus(workspaceId: string): Promise<string> {
+  return invoke<string>("workspace_status", { workspaceId })
+}
+
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")

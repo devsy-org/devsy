@@ -44,6 +44,7 @@ fn main() {
             commands::workspaces::workspace_stop,
             commands::workspaces::workspace_delete,
             commands::workspaces::workspace_rebuild,
+            commands::workspaces::workspace_status,
             commands::providers::provider_list,
             commands::providers::provider_add,
             commands::providers::provider_delete,
