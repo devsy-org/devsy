@@ -21,6 +21,7 @@ use persistence::audit::AuditLog;
 use persistence::logs::LogStore;
 use tauri::{Manager, RunEvent, WindowEvent};
 use terminal::pty::PtyManager;
+use tauri::async_runtime;
 use tokio::sync::RwLock;
 
 pub type SharedState = Arc<RwLock<DaemonState>>;
@@ -88,7 +89,7 @@ fn main() {
                     app.manage(log_store.clone());
 
                     // Prune old logs on startup (> 30 days)
-                    tokio::spawn(async move {
+                    async_runtime::spawn(async move {
                         if let Err(e) = log_store.prune(30).await {
                             error!("Failed to prune old logs: {}", e);
                         }
@@ -106,7 +107,7 @@ fn main() {
 
                     // Prune old audit entries on startup (> 90 days)
                     let audit_prune = audit_log.clone();
-                    tokio::spawn(async move {
+                    async_runtime::spawn(async move {
                         if let Err(e) = audit_prune.prune(90) {
                             error!("Failed to prune old audit entries: {}", e);
                         }
