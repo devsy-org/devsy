@@ -12,6 +12,8 @@ import {
   machineStatus,
   providerAdd,
   providerSetOptions,
+  sshKeyGenerate,
+  sshKeyList,
   workspaceDelete,
   workspaceRebuild,
   workspaceStatus,
@@ -190,6 +192,74 @@ describe("IPC commands", () => {
       const result = await devpodVersion()
       expect(result).toBe("v0.5.0")
       expect(mockInvoke).toHaveBeenCalledWith("devpod_version")
+    })
+  })
+
+  describe("SSH key commands", () => {
+    it("sshKeyList returns key list", async () => {
+      const mockKeys = [
+        {
+          name: "id_ed25519",
+          keyType: "ed25519",
+          fingerprint: "SHA256:abc123",
+          comment: "user@host",
+          publicKey: "ssh-ed25519 AAAA...",
+          path: "/home/user/.ssh/id_ed25519",
+          hasPassphrase: true,
+        },
+      ]
+      mockInvoke.mockResolvedValue(mockKeys)
+
+      const result = await sshKeyList()
+
+      expect(mockInvoke).toHaveBeenCalledWith("ssh_key_list")
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe("id_ed25519")
+      expect(result[0].hasPassphrase).toBe(true)
+    })
+
+    it("sshKeyGenerate passes all parameters", async () => {
+      const mockKey = {
+        name: "devpod-aws",
+        keyType: "ed25519",
+        fingerprint: "SHA256:xyz789",
+        comment: "dev@example.com",
+        publicKey: "ssh-ed25519 BBBB...",
+        path: "/home/user/.ssh/devpod-aws",
+        hasPassphrase: false,
+      }
+      mockInvoke.mockResolvedValue(mockKey)
+
+      const result = await sshKeyGenerate({
+        name: "devpod-aws",
+        keyType: "ed25519",
+        comment: "dev@example.com",
+      })
+
+      expect(mockInvoke).toHaveBeenCalledWith("ssh_key_generate", {
+        name: "devpod-aws",
+        keyType: "ed25519",
+        comment: "dev@example.com",
+      })
+      expect(result.name).toBe("devpod-aws")
+    })
+
+    it("sshKeyGenerate works with minimal parameters", async () => {
+      mockInvoke.mockResolvedValue({
+        name: "test-key",
+        keyType: "ed25519",
+        fingerprint: "",
+        comment: "",
+        publicKey: "",
+        path: "",
+        hasPassphrase: false,
+      })
+
+      await sshKeyGenerate({ name: "test-key" })
+
+      expect(mockInvoke).toHaveBeenCalledWith("ssh_key_generate", {
+        name: "test-key",
+      })
     })
   })
 })
