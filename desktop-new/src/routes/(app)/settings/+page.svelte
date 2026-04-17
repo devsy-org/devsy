@@ -208,7 +208,7 @@ function toggleLocal(key: keyof LocalOptions) {
 }
 </script>
 
-<div class="mx-auto max-w-2xl space-y-6">
+<div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Settings</h1>
 
   <Tabs.Root bind:value={activeTab} class="w-full">

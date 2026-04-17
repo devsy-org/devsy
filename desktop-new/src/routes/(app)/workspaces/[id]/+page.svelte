@@ -369,7 +369,7 @@ async function handleDelete() {
   {#if !workspace}
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
-    <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1">
+    <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 overflow-hidden">
       <Tabs.List variant="line">
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
@@ -444,9 +444,9 @@ async function handleDelete() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value="logs" class="min-h-0 flex-1">
-        <div class="mt-4 flex min-h-0 flex-1 flex-col h-full">
-          <Accordion.Root type="multiple" value={["live-output", "log-files"]}>
+      <Tabs.Content value="logs" class="min-h-0 flex-1 overflow-hidden">
+        <div class="mt-4 flex min-h-0 flex-1 flex-col h-full overflow-hidden">
+          <Accordion.Root type="multiple" value={["live-output", "log-files"]} class="w-full overflow-hidden">
             <Accordion.Item value="live-output">
               <Accordion.Trigger>
                 Live Output
@@ -506,7 +506,7 @@ async function handleDelete() {
                 {:else if logEntries.length === 0}
                   <p class="text-sm text-muted-foreground">No log files found for this workspace.</p>
                 {:else}
-                  <div class="flex gap-4">
+                  <div class="flex gap-4 min-w-0">
                     <div class="w-64 space-y-1 shrink-0">
                       {#each logEntries as entry}
                         <div class="group/log flex items-center gap-1 rounded hover:bg-muted {selectedLog === entry.filename ? 'bg-muted' : ''}">
@@ -530,7 +530,7 @@ async function handleDelete() {
                         </div>
                       {/each}
                     </div>
-                    <ScrollArea class="max-h-96 flex-1 rounded-md border">
+                    <ScrollArea class="max-h-96 flex-1 min-w-0 rounded-md border">
                       {#if selectedLog}
                         <LogTable lines={logContent.split("\n")} />
                       {:else}
@@ -545,7 +545,7 @@ async function handleDelete() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value="terminal" class="min-h-0 flex-1">
+      <Tabs.Content value="terminal" class="min-h-0 flex-1 overflow-hidden">
         <div class="mt-4 flex min-h-0 flex-1 flex-col h-full">
           {#if sshSessionId}
             <div class="min-h-0 flex-1 rounded-md border overflow-hidden">

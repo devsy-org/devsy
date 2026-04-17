@@ -9,7 +9,7 @@ let { lines, class: className = "" }: { lines: string[]; class?: string } =
 let parsed = $derived(lines.map(parseLogLine))
 </script>
 
-<Table.Root class={className}>
+<Table.Root class="w-full table-fixed {className}">
   <Table.Header>
     <Table.Row>
       <Table.Head class="w-20">Time</Table.Head>
@@ -44,7 +44,7 @@ let parsed = $derived(lines.map(parseLogLine))
             </span>
           {/if}
         </Table.Cell>
-        <Table.Cell class="text-sm">{line.message}</Table.Cell>
+        <Table.Cell class="text-sm truncate" title={line.message}>{line.message}</Table.Cell>
         <Table.Cell class="font-mono text-xs text-muted-foreground text-right">{line.source}</Table.Cell>
       </Table.Row>
     {/each}

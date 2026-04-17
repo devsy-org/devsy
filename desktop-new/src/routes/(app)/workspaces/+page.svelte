@@ -1,8 +1,9 @@
 <script lang="ts">
-import { Box, SearchX } from "@lucide/svelte"
+import { Box, Ellipsis, Play, SearchX, Square, Trash2 } from "@lucide/svelte"
 import { goto } from "$app/navigation"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import * as Table from "$lib/components/ui/table/index.js"
@@ -161,7 +162,7 @@ async function handleDelete() {
             <Table.Head>IDE</Table.Head>
             <Table.Head>Status</Table.Head>
             <Table.Head>Last Used</Table.Head>
-            <Table.Head class="text-right">Actions</Table.Head>
+            <Table.Head class="w-12"></Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -189,25 +190,44 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsedTimestamp)}</Table.Cell>
-              <Table.Cell class="text-right">
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="flex items-center justify-end gap-1" onclick={(e) => e.stopPropagation()}>
-                  {#if isRunning(ws)}
-                    <Button size="sm" variant="default" onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
-                      Open
-                    </Button>
-                    <Button size="sm" variant="outline" onclick={() => handleStop(ws)} disabled={busy}>
-                      {busy ? "..." : "Stop"}
-                    </Button>
-                  {:else if isStopped(ws)}
-                    <Button size="sm" onclick={() => handleStart(ws)} disabled={busy}>
-                      {busy ? "..." : "Start"}
-                    </Button>
-                  {/if}
-                  <Button size="sm" variant="destructive" onclick={() => { confirmDeleteId = ws.id; confirmDeleteOpen = true }} disabled={busy}>
-                    Delete
-                  </Button>
-                </div>
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button {...props} variant="ghost" size="icon" class="h-8 w-8">
+                        <Ellipsis class="h-4 w-4" />
+                        <span class="sr-only">Actions</span>
+                      </Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content align="end">
+                    {#if isRunning(ws)}
+                      <DropdownMenu.Item onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
+                        <Play class="mr-2 h-4 w-4" />
+                        Open IDE
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item onclick={() => handleStop(ws)} disabled={busy}>
+                        <Square class="mr-2 h-4 w-4" />
+                        Stop
+                      </DropdownMenu.Item>
+                    {:else if isStopped(ws)}
+                      <DropdownMenu.Item onclick={() => handleStart(ws)} disabled={busy}>
+                        <Play class="mr-2 h-4 w-4" />
+                        Start
+                      </DropdownMenu.Item>
+                    {/if}
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item
+                      class="text-destructive data-[highlighted]:text-destructive"
+                      onclick={() => { confirmDeleteId = ws.id; confirmDeleteOpen = true }}
+                      disabled={busy}
+                    >
+                      <Trash2 class="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
               </Table.Cell>
             </Table.Row>
           {/each}

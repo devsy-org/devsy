@@ -107,8 +107,13 @@ const TEMPLATES = [
 
 let source = $state("")
 let name = $state("")
-let selectedProvider = $state<string | undefined>(undefined)
-let selectedIde = $state<string | undefined>(undefined)
+let selectedProvider = $state("")
+let selectedIde = $state("")
+
+const providerTriggerContent = $derived(selectedProvider || "Select a provider")
+const ideTriggerContent = $derived(
+  ALL_IDES.find((i) => i.value === selectedIde)?.label ?? "Select an IDE",
+)
 
 // Auto-select if only one provider is available
 $effect(() => {
@@ -172,8 +177,8 @@ async function handleSubmit() {
     commandId = await workspaceUp({
       source: source.trim(),
       workspaceId,
-      provider: selectedProvider,
-      ide: selectedIde,
+      provider: selectedProvider || undefined,
+      ide: selectedIde || undefined,
     })
   } catch (err) {
     toasts.error(`Failed to create workspace: ${err}`)
@@ -235,38 +240,39 @@ async function handleSubmit() {
 
     <div class="space-y-2">
       <Label>Provider</Label>
-      <Select.Root type="single" bind:value={selectedProvider} disabled={submitting}>
-        <Select.Trigger class="w-full text-left">
-          {#if selectedProvider}
-            <span class="truncate">{selectedProvider}</span>
-          {:else}
-            <span class="truncate text-muted-foreground">Select a provider</span>
-          {/if}
+      <Select.Root type="single" name="provider" bind:value={selectedProvider} disabled={submitting}>
+        <Select.Trigger class="w-full">
+          {providerTriggerContent}
         </Select.Trigger>
-        <Select.Content class="w-[var(--bits-select-trigger-width)]">
-          {#each $providers as p (p.name)}
-            <Select.Item value={p.name} label={p.name} />
-          {/each}
+        <Select.Content>
+          <Select.Group>
+            <Select.Label>Providers</Select.Label>
+            {#each $providers as p (p.name)}
+              <Select.Item value={p.name} label={p.name}>
+                {p.name}
+              </Select.Item>
+            {/each}
+          </Select.Group>
         </Select.Content>
       </Select.Root>
     </div>
 
     <div class="space-y-2">
       <Label>IDE</Label>
-      <Select.Root type="single" bind:value={selectedIde} disabled={submitting}>
-        <Select.Trigger class="w-full text-left">
-          {#if selectedIde}
-            <span class="truncate">{ALL_IDES.find((i) => i.value === selectedIde)?.label ?? selectedIde}</span>
-          {:else}
-            <span class="truncate text-muted-foreground">Select an IDE</span>
-          {/if}
+      <Select.Root type="single" name="ide" bind:value={selectedIde} disabled={submitting}>
+        <Select.Trigger class="w-full">
+          {ideTriggerContent}
         </Select.Trigger>
-        <Select.Content class="max-h-80 w-[var(--bits-select-trigger-width)]">
+        <Select.Content class="max-h-80">
           {#each IDE_GROUPS as group (group.label)}
-            <div class="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{group.label}</div>
-            {#each group.options as ide (ide.value)}
-              <Select.Item value={ide.value} label={ide.label} />
-            {/each}
+            <Select.Group>
+              <Select.Label>{group.label}</Select.Label>
+              {#each group.options as ide (ide.value)}
+                <Select.Item value={ide.value} label={ide.label}>
+                  {ide.label}
+                </Select.Item>
+              {/each}
+            </Select.Group>
           {/each}
         </Select.Content>
       </Select.Root>
