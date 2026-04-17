@@ -145,6 +145,14 @@ onMount(async () => {
 
   loadLogs()
   loadAudit()
+
+  // Auto-trigger IDE open when navigated with ?action=open-ide
+  const action = $page.url.searchParams.get("action")
+  if (action === "open-ide") {
+    // Clear query param so refresh doesn't re-trigger
+    history.replaceState({}, "", $page.url.pathname)
+    handleOpenIde()
+  }
 })
 
 onDestroy(() => {
@@ -346,7 +354,7 @@ async function handleDelete() {
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
     <Tabs.Root bind:value={activeTab}>
-      <Tabs.List>
+      <Tabs.List variant="line">
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="output">Live Output</Tabs.Trigger>
         <Tabs.Trigger value="terminal">Terminal</Tabs.Trigger>

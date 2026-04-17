@@ -212,7 +212,7 @@ function toggleLocal(key: keyof LocalOptions) {
   <h1 class="text-2xl font-bold">Settings</h1>
 
   <Tabs.Root bind:value={activeTab}>
-    <Tabs.List class="flex-wrap">
+    <Tabs.List variant="line" class="flex-wrap">
       <Tabs.Trigger value="general">General</Tabs.Trigger>
       <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
       <Tabs.Trigger value="experimental">Experimental</Tabs.Trigger>
@@ -225,7 +225,7 @@ function toggleLocal(key: keyof LocalOptions) {
           <h2 class="text-lg font-semibold">Default IDE</h2>
           <p class="text-xs text-muted-foreground">IDE used when creating new workspaces</p>
           <Popover.Root bind:open={ideComboOpen}>
-            <Popover.Trigger>
+            <Popover.Trigger class="w-full">
               {#snippet child({ props })}
                 <Button variant="outline" class="w-full justify-between" {...props}>
                   {IDE_OPTIONS.find((i) => i.value === $defaultIde)?.label ?? "Select IDE..."}
@@ -236,7 +236,7 @@ function toggleLocal(key: keyof LocalOptions) {
             <Popover.Content class="w-[var(--bits-popover-anchor-width)] p-0" align="start">
               <Command.Root shouldFilter={false}>
                 <Command.Input placeholder="Search IDEs..." bind:value={ideSearch} />
-                <Command.List>
+                <Command.List class="max-h-60">
                   <Command.Empty>No IDE found.</Command.Empty>
                   <Command.Group>
                     {#each filteredIdes as ide (ide.value)}

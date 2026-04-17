@@ -32,18 +32,9 @@ function sourceDisplay(ws: Workspace): string {
   return "Unknown source"
 }
 
-async function handleOpen(e: Event) {
+function handleOpen(e: Event) {
   e.stopPropagation()
-  acting = true
-  try {
-    const ide = workspace.ide?.name || undefined
-    await workspaceUp({ source: workspace.id, ide })
-    toasts.success(`Opening ${workspace.id}${ide ? ` with ${ide}` : ""}...`)
-  } catch (err) {
-    toasts.error(`Failed to open: ${err}`)
-  } finally {
-    acting = false
-  }
+  goto(`/workspaces/${workspace.id}?action=open-ide`)
 }
 
 async function handleStart(e: Event) {
@@ -131,8 +122,8 @@ async function handleDelete() {
 
   <div class="mt-4 flex items-center gap-2">
     {#if isRunning}
-      <Button size="sm" onclick={handleOpen} disabled={acting}>
-        {acting ? "Opening..." : "Open"}
+      <Button size="sm" onclick={handleOpen}>
+        Open
       </Button>
     {:else if isStopped}
       <Button size="sm" onclick={handleStart} disabled={acting}>

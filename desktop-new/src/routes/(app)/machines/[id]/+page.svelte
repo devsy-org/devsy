@@ -155,7 +155,7 @@ async function handleDelete(force = false) {
     <p class="text-muted-foreground">Machine not found.</p>
   {:else}
     <Tabs.Root value="details">
-      <Tabs.List>
+      <Tabs.List variant="line">
         <Tabs.Trigger value="details">Details</Tabs.Trigger>
         <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
       </Tabs.List>
