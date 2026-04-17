@@ -27,6 +27,13 @@ let source = $state("")
 let name = $state("")
 let selectedProvider = $state<string | undefined>(undefined)
 let selectedIde = $state<string | undefined>(undefined)
+
+// Auto-select if only one provider is available
+$effect(() => {
+  if (!selectedProvider && $providers.length === 1) {
+    selectedProvider = $providers[0].name
+  }
+})
 let error = $state("")
 let submitting = $state(false)
 
