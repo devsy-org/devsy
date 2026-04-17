@@ -10,6 +10,7 @@ import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { stripAnsi } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "@tauri-apps/api/event"
 
 const IDE_GROUPS = [
@@ -158,7 +159,7 @@ async function handleSubmit() {
         }
         if (progress.done) {
           submitting = false
-          if (progress.message.includes("Exit code: 0")) {
+          if (stripAnsi(progress.message).includes("Exit code: 0")) {
             toasts.success(`Workspace ${workspaceId ?? "created"} is ready`)
             goto(`/workspaces/${workspaceId}`)
           } else {
@@ -271,9 +272,11 @@ async function handleSubmit() {
       </Select.Root>
     </div>
 
-    <Button type="submit" disabled={submitting} class="w-full">
-      {submitting ? "Creating..." : "Create Workspace"}
-    </Button>
+    <div class="pt-2">
+      <Button type="submit" disabled={submitting} class="w-full">
+        {submitting ? "Creating..." : "Create Workspace"}
+      </Button>
+    </div>
   </form>
 
   {#if outputLines.length > 0}
@@ -285,7 +288,7 @@ async function handleSubmit() {
           size="sm"
           onclick={async () => {
             try {
-              await navigator.clipboard.writeText(outputLines.join("\n"))
+              await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
               toasts.success("Copied to clipboard")
             } catch {
               toasts.error("Failed to copy")
@@ -296,7 +299,7 @@ async function handleSubmit() {
         </Button>
       </div>
       <ScrollArea class="h-64 rounded-md border bg-muted/50 p-4">
-        <pre bind:this={outputEl} class="text-xs font-mono whitespace-pre-wrap">{outputLines.join("\n")}</pre>
+        <pre bind:this={outputEl} class="text-xs font-mono whitespace-pre-wrap">{outputLines.map(stripAnsi).join("\n")}</pre>
       </ScrollArea>
     </div>
   {/if}
