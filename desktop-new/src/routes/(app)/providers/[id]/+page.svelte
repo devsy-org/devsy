@@ -253,7 +253,7 @@ async function handleSaveOptions() {
 
         <div class="flex items-center gap-3">
           <Button onclick={handleSaveOptions} disabled={saving || !isDirty}>
-            {saving ? "Saving..." : isSetup ? "Save & Finish Setup" : "Save Options"}
+            {saving ? "Saving..." : "Save"}
           </Button>
           {#if isSetup && !hasUnfilledRequired}
             <Button variant="outline" onclick={() => goto("/providers")}>

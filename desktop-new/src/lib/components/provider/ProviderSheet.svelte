@@ -319,7 +319,7 @@ async function handleSaveOptions() {
     <Sheet.Footer class="p-6">
       <div class="flex items-center gap-2">
         <Button onclick={handleSaveOptions} disabled={saving || !isDirty} size="sm">
-          {saving ? "Saving..." : setup ? "Save & Finish" : "Save Options"}
+          {saving ? "Saving..." : "Save"}
         </Button>
         {#if isDirty}
           <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }}>
