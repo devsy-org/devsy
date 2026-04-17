@@ -37,6 +37,10 @@ export async function workspaceRebuild(workspaceId: string): Promise<string> {
   return invoke<string>("workspace_rebuild", { workspaceId })
 }
 
+export async function workspaceReset(workspaceId: string): Promise<string> {
+  return invoke<string>("workspace_reset", { workspaceId })
+}
+
 export async function workspaceStatus(workspaceId: string): Promise<string> {
   return invoke<string>("workspace_status", { workspaceId })
 }

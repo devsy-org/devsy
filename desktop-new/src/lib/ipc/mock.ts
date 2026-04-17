@@ -232,6 +232,7 @@ const COMMANDS: Record<string, Handler> = {
   workspace_stop: () => nextId(),
   workspace_delete: () => nextId(),
   workspace_rebuild: () => nextId(),
+  workspace_reset: () => nextId(),
   workspace_status: (args) => {
     const ws = WORKSPACES.find((w) => w.id === args.workspaceId)
     return ws?.status ?? "NotFound"

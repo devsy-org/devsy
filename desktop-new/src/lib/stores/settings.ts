@@ -2,8 +2,38 @@ import { writable } from "svelte/store"
 import { browser } from "$app/environment"
 
 export type Theme = "light" | "dark" | "system"
+export type FontSize = "small" | "medium" | "large"
 
 const STORAGE_KEY = "devpod-theme"
+const FONT_SIZE_KEY = "devpod-font-size"
+
+const FONT_SIZE_CLASSES: Record<FontSize, string> = {
+  small: "text-sm",
+  medium: "text-base",
+  large: "text-lg",
+}
+
+function getInitialFontSize(): FontSize {
+  if (browser) {
+    const stored = localStorage.getItem(FONT_SIZE_KEY)
+    if (stored === "small" || stored === "medium" || stored === "large") {
+      return stored
+    }
+  }
+  return "medium"
+}
+
+export const fontSize = writable<FontSize>(getInitialFontSize())
+
+export function applyFontSize(value: FontSize) {
+  if (!browser) return
+  localStorage.setItem(FONT_SIZE_KEY, value)
+  const root = document.documentElement
+  for (const cls of Object.values(FONT_SIZE_CLASSES)) {
+    root.classList.remove(cls)
+  }
+  root.classList.add(FONT_SIZE_CLASSES[value])
+}
 
 function getInitialTheme(): Theme {
   if (browser) {
@@ -43,9 +73,16 @@ export function cycleTheme() {
 }
 
 export function initSettings() {
-  const unsubscribe = theme.subscribe((value) => {
+  const unsubTheme = theme.subscribe((value) => {
     applyTheme(value)
   })
+  const unsubFont = fontSize.subscribe((value) => {
+    applyFontSize(value)
+  })
+  const unsubscribe = () => {
+    unsubTheme()
+    unsubFont()
+  }
 
   if (browser) {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")

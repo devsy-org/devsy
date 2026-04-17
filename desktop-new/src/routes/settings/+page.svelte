@@ -4,8 +4,13 @@ import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
-import { theme, applyTheme } from "$lib/stores/settings.js"
-import type { Theme } from "$lib/stores/settings.js"
+import {
+  theme,
+  applyTheme,
+  fontSize,
+  applyFontSize,
+} from "$lib/stores/settings.js"
+import type { Theme, FontSize } from "$lib/stores/settings.js"
 import { auditRecent, devpodVersion } from "$lib/ipc/commands.js"
 import type { AuditEntry } from "$lib/types/index.js"
 import { formatTimestamp } from "$lib/utils/time.js"
@@ -19,6 +24,17 @@ const THEMES: { value: Theme; label: string }[] = [
 function setTheme(value: Theme) {
   theme.set(value)
   applyTheme(value)
+}
+
+const FONT_SIZES: { value: FontSize; label: string }[] = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "large", label: "Large" },
+]
+
+function setFontSize(value: FontSize) {
+  fontSize.set(value)
+  applyFontSize(value)
 }
 
 let activity = $state<AuditEntry[]>([])
@@ -77,6 +93,22 @@ async function loadActivity() {
 					onclick={() => setTheme(t.value)}
 				>
 					{t.label}
+				</Button>
+			{/each}
+		</div>
+	</div>
+
+	<Separator />
+
+	<div class="space-y-4">
+		<h2 class="text-lg font-semibold">Font Size</h2>
+		<div class="flex gap-2">
+			{#each FONT_SIZES as f (f.value)}
+				<Button
+					variant={$fontSize === f.value ? "default" : "outline"}
+					onclick={() => setFontSize(f.value)}
+				>
+					{f.label}
 				</Button>
 			{/each}
 		</div>

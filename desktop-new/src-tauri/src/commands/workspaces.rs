@@ -271,6 +271,62 @@ pub async fn workspace_rebuild(
 }
 
 #[tauri::command]
+pub async fn workspace_reset(
+    app: AppHandle,
+    cli: State<'_, Arc<CliRunner>>,
+    log_store: State<'_, Arc<LogStore>>,
+    audit: State<'_, Arc<AuditLog>>,
+    workspace_id: String,
+) -> Result<String, String> {
+    let cmd_id = format!("{:x}", rand_id());
+    let cmd_id_clone = cmd_id.clone();
+
+    let log_path = log_store
+        .create_log_file(&workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Err(e) = audit.record("reset", "workspace", &workspace_id, "", true) {
+        error!("Failed to record audit entry: {}", e);
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<OutputLine>(256);
+    let _handle = cli.run_streaming(&["up", &workspace_id, "--reset"], tx);
+
+    tokio::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            match &line {
+                OutputLine::Stdout(text) | OutputLine::Stderr(text) => {
+                    let _ = LogStore::append_log(&log_path, text).await;
+                    let _ = app.emit(
+                        event_names::COMMAND_PROGRESS,
+                        CommandProgressPayload {
+                            command_id: cmd_id_clone.clone(),
+                            message: text.clone(),
+                            done: false,
+                        },
+                    );
+                }
+                OutputLine::Exit(code) => {
+                    let exit_msg = format!("Exit code: {}", code);
+                    let _ = LogStore::append_log(&log_path, &exit_msg).await;
+                    let _ = app.emit(
+                        event_names::COMMAND_PROGRESS,
+                        CommandProgressPayload {
+                            command_id: cmd_id_clone.clone(),
+                            message: exit_msg,
+                            done: true,
+                        },
+                    );
+                }
+            }
+        }
+    });
+
+    Ok(cmd_id)
+}
+
+#[tauri::command]
 pub async fn workspace_status(
     cli: State<'_, Arc<CliRunner>>,
     workspace_id: String,

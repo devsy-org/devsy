@@ -16,6 +16,7 @@ import {
   workspaceUp,
   workspaceStop,
   workspaceRebuild,
+  workspaceReset,
   workspaceDelete,
   workspaceLogsList,
   workspaceLogRead,
@@ -26,6 +27,17 @@ import { toasts } from "$lib/stores/toasts.js"
 import type { AuditEntry, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "@tauri-apps/api/event"
 import { formatTimestamp } from "$lib/utils/time.js"
+
+const IDE_OPTIONS = [
+  { value: "vscode", label: "VS Code" },
+  { value: "openvscode", label: "OpenVSCode" },
+  { value: "intellij", label: "IntelliJ" },
+  { value: "goland", label: "GoLand" },
+  { value: "pycharm", label: "PyCharm" },
+  { value: "fleet", label: "Fleet" },
+  { value: "jupyternotebook", label: "Jupyter Notebook" },
+  { value: "none", label: "None" },
+]
 
 let id = $derived($page.params.id as string)
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
@@ -230,6 +242,16 @@ async function handleRebuild() {
   }
 }
 
+async function handleReset() {
+  startStreamingOp("Reset")
+  try {
+    commandId = await workspaceReset(id)
+  } catch (err) {
+    operationRunning = false
+    toasts.error(`Failed to reset: ${err}`)
+  }
+}
+
 async function handleDelete() {
   confirmDeleteOpen = false
   startStreamingOp("Delete")
@@ -275,6 +297,7 @@ async function handleDelete() {
       <Button variant="outline" size="sm" onclick={handleStop} disabled={operationRunning}>Stop</Button>
     {/if}
     <Button variant="outline" size="sm" onclick={handleRebuild} disabled={operationRunning}>Rebuild</Button>
+    <Button variant="outline" size="sm" onclick={handleReset} disabled={operationRunning}>Reset</Button>
     <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={operationRunning}>Delete</Button>
     {#if operationRunning}
       <span class="text-xs text-muted-foreground animate-pulse">{operationLabel}ing workspace...</span>
@@ -310,7 +333,26 @@ async function handleDelete() {
           <div>{workspace.machine?.id ?? "N/A"}</div>
 
           <div class="text-muted-foreground">IDE</div>
-          <div>{workspace.ide?.name ?? "N/A"}</div>
+          <div>
+            <select
+              class="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              value={workspace.ide?.name ?? ""}
+              onchange={async (e) => {
+                const newIde = e.currentTarget.value
+                try {
+                  startStreamingOp("Change IDE")
+                  commandId = await workspaceUp({ source: id, ide: newIde })
+                } catch (err) {
+                  operationRunning = false
+                  toasts.error(`Failed to change IDE: ${err}`)
+                }
+              }}
+            >
+              {#each IDE_OPTIONS as ide (ide.value)}
+                <option value={ide.value}>{ide.label}</option>
+              {/each}
+            </select>
+          </div>
 
           <div class="text-muted-foreground">Source</div>
           <div class="truncate">
