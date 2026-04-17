@@ -18,6 +18,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import * as Table from "$lib/components/ui/table/index.js"
 import TableSkeleton from "$lib/components/ui/skeleton/TableSkeleton.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
+import CreateWorkspaceSheet from "$lib/components/workspace/CreateWorkspaceSheet.svelte"
 import {
   workspaceUp,
   workspaceStop,
@@ -28,6 +29,7 @@ import { workspaces, workspacesLoading } from "$lib/stores/workspaces.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
 
+let createSheetOpen = $state(false)
 let search = $state("")
 let sortBy = $state<"recent" | "name">("recent")
 
@@ -126,7 +128,7 @@ async function handleDelete() {
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">Workspaces</h1>
-    <Button onclick={() => goto("/workspaces/new")}>Create Workspace</Button>
+    <Button onclick={() => (createSheetOpen = true)}>Create Workspace</Button>
   </div>
 
   <div class="flex gap-2">
@@ -172,7 +174,7 @@ async function handleDelete() {
       {:else}
         <Box class="h-10 w-10 text-muted-foreground" />
         <p class="text-muted-foreground">No workspaces yet.</p>
-        <Button onclick={() => goto("/workspaces/new")}>Create your first workspace</Button>
+        <Button onclick={() => (createSheetOpen = true)}>Create your first workspace</Button>
       {/if}
     </div>
   {:else}
@@ -269,3 +271,5 @@ async function handleDelete() {
   loading={deleting}
   onconfirm={handleDelete}
 />
+
+<CreateWorkspaceSheet bind:open={createSheetOpen} />
