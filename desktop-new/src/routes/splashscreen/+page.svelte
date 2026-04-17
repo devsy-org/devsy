@@ -46,7 +46,7 @@
     height: 80px;
     margin: 0 auto 24px;
     border-radius: 16px;
-    background: #3b82f6;
+    background: #059669;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -76,7 +76,7 @@
     height: 24px;
     margin: 0 auto;
     border: 2px solid #27272a;
-    border-top-color: #3b82f6;
+    border-top-color: #059669;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
