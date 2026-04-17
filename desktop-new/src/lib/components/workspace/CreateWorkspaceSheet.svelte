@@ -163,11 +163,13 @@ $effect(() => {
     outputLines = []
     commandId = null
     submitting = false
+    createdId = null
   }
 })
 
 let error = $state("")
 let submitting = $state(false)
+let createdId = $state<string | null>(null)
 
 let commandId = $state<string | null>(null)
 let outputLines = $state<string[]>([])
@@ -209,9 +211,8 @@ async function handleSubmit() {
         if (progress.done) {
           submitting = false
           if (stripAnsi(progress.message).includes("Exit code: 0")) {
+            createdId = workspaceId ?? null
             toasts.success(`Workspace ${workspaceId ?? "created"} is ready`)
-            open = false
-            goto(`/workspaces/${workspaceId}`)
           } else {
             toasts.error("Workspace creation failed. Check output for details.")
           }
@@ -386,6 +387,12 @@ async function handleSubmit() {
             <div bind:this={outputEl}></div>
           </div>
         </div>
+      {/if}
+
+      {#if createdId}
+        <Button class="w-full" onclick={() => { open = false; goto(`/workspaces/${createdId}`) }}>
+          Open Workspace
+        </Button>
       {/if}
     </div>
   </Sheet.ResizableContent>
