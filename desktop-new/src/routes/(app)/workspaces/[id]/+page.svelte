@@ -493,11 +493,6 @@ async function handleDelete() {
                 {/if}
               </Accordion.Trigger>
               <Accordion.Content>
-                <div class="flex justify-end gap-2 mb-2">
-                  <Button variant="outline" size="sm" onclick={loadLogs} disabled={logsLoading}>
-                    {logsLoading ? "Loading..." : "Refresh"}
-                  </Button>
-                </div>
                 {#if logsLoading}
                   <p class="text-sm text-muted-foreground">Loading logs...</p>
                 {:else if logEntries.length === 0}
