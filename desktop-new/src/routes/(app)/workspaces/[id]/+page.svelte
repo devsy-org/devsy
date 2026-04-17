@@ -2,12 +2,13 @@
 import { page } from "$app/stores"
 import { goto } from "$app/navigation"
 import { onMount, onDestroy } from "svelte"
-import { Trash2 } from "@lucide/svelte"
+import { Check, ChevronsUpDown, Trash2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import * as Command from "$lib/components/ui/command/index.js"
+import * as Popover from "$lib/components/ui/popover/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Accordion from "$lib/components/ui/accordion/index.js"
-import * as Select from "$lib/components/ui/select/index.js"
 import * as Tabs from "$lib/components/ui/tabs/index.js"
 import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
@@ -99,6 +100,13 @@ let deleting = $state(false)
 
 let sshSessionId = $state<string | null>(null)
 let connecting = $state(false)
+let ideComboOpen = $state(false)
+let ideSearch = $state("")
+let filteredIdes = $derived(
+  IDE_OPTIONS.filter((i) =>
+    i.label.toLowerCase().includes(ideSearch.toLowerCase()),
+  ),
+)
 
 function scrollToBottom() {
   if (tableEndEl) {
@@ -397,28 +405,46 @@ async function handleDelete() {
 
           <div class="text-muted-foreground">IDE</div>
           <div>
-            <Select.Root
-              type="single"
-              value={workspace.ide?.name ?? "none"}
-              onValueChange={async (newIde) => {
-                try {
-                  startStreamingOp("Change IDE")
-                  commandId = await workspaceUp({ source: id, ide: newIde })
-                } catch (err) {
-                  operationRunning = false
-                  toasts.error(`Failed to change IDE: ${err}`)
-                }
-              }}
-            >
-              <Select.Trigger class="h-8 w-48 text-left">
-                <span class="truncate">{IDE_OPTIONS.find((i) => i.value === (workspace.ide?.name ?? "none"))?.label ?? "None"}</span>
-              </Select.Trigger>
-              <Select.Content class="max-h-80">
-                {#each IDE_OPTIONS as ide (ide.value)}
-                  <Select.Item value={ide.value} label={ide.label} />
-                {/each}
-              </Select.Content>
-            </Select.Root>
+            <Popover.Root bind:open={ideComboOpen}>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <Button variant="outline" class="h-8 w-48 justify-between text-left" {...props}>
+                    <span class="truncate">{IDE_OPTIONS.find((i) => i.value === (workspace.ide?.name ?? "none"))?.label ?? "None"}</span>
+                    <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Content class="w-48 p-0" align="start">
+                <Command.Root shouldFilter={false}>
+                  <Command.Input placeholder="Search IDEs..." bind:value={ideSearch} />
+                  <Command.List class="max-h-60">
+                    <Command.Empty>No IDE found.</Command.Empty>
+                    <Command.Group>
+                      {#each filteredIdes as ide (ide.value)}
+                        <Command.Item
+                          value={ide.value}
+                          class="justify-start"
+                          onSelect={async () => {
+                            ideComboOpen = false
+                            ideSearch = ""
+                            try {
+                              startStreamingOp("Change IDE")
+                              commandId = await workspaceUp({ source: id, ide: ide.value })
+                            } catch (err) {
+                              operationRunning = false
+                              toasts.error(`Failed to change IDE: ${err}`)
+                            }
+                          }}
+                        >
+                          <Check class="mr-2 h-4 w-4 {(workspace.ide?.name ?? 'none') === ide.value ? 'opacity-100' : 'opacity-0'}" />
+                          {ide.label}
+                        </Command.Item>
+                      {/each}
+                    </Command.Group>
+                  </Command.List>
+                </Command.Root>
+              </Popover.Content>
+            </Popover.Root>
           </div>
 
           <div class="text-muted-foreground">Source</div>
