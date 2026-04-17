@@ -1,5 +1,12 @@
 <script lang="ts">
 import {
+  Plus,
+  Terminal as TerminalIcon,
+  Monitor,
+  X,
+  SquareTerminal,
+} from "@lucide/svelte"
+import {
   terminalCreate,
   terminalCreateSsh,
   terminalClose,
@@ -13,11 +20,14 @@ import {
 import { workspaces } from "$lib/stores/workspaces.js"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import { Button } from "$lib/components/ui/button/index.js"
+import { Input } from "$lib/components/ui/input/index.js"
+import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
+import * as Tooltip from "$lib/components/ui/tooltip/index.js"
+import { Separator } from "$lib/components/ui/separator/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { onMount } from "svelte"
 
 let activeSessionId: string | undefined = $state()
-let showSshMenu = $state(false)
 let renamingId: string | undefined = $state()
 let renameValue = $state("")
 
@@ -33,7 +43,6 @@ function commitRename() {
   renamingId = undefined
 }
 
-// Auto-select first terminal when navigating to this page
 onMount(() => {
   if (!activeSessionId && $terminals.length > 0) {
     activeSessionId = $terminals[0].id
@@ -56,7 +65,6 @@ async function createShell() {
 }
 
 async function createSsh(workspaceId: string) {
-  showSshMenu = false
   try {
     const id = await terminalCreateSsh(workspaceId, 80, 24)
     addTerminal({ id, label: `SSH: ${workspaceId}`, type: "ssh", workspaceId })
@@ -79,12 +87,6 @@ async function closeSession(id: string) {
   }
 }
 
-function closeSshMenu(e: MouseEvent) {
-  if (showSshMenu && !(e.target as HTMLElement).closest("[data-ssh-menu]")) {
-    showSshMenu = false
-  }
-}
-
 function handleExit() {
   if (activeSessionId) {
     removeTerminal(activeSessionId)
@@ -93,52 +95,34 @@ function handleExit() {
 }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="flex h-full flex-col" role="presentation" onclick={closeSshMenu}>
-  <div class="flex items-center justify-between border-b px-4 py-2">
-    <h1 class="text-lg font-semibold">Terminals</h1>
-    <div class="flex gap-2">
-      <div class="relative" data-ssh-menu>
-        <Button
-          variant="outline"
-          size="sm"
-          onclick={() => (showSshMenu = !showSshMenu)}
-          disabled={runningWorkspaces.length === 0}
-        >
-          SSH into Workspace
-        </Button>
-        {#if showSshMenu && runningWorkspaces.length > 0}
-          <div class="absolute right-0 top-full z-10 mt-1 w-56 rounded-md border bg-popover p-1 shadow-md">
-            {#each runningWorkspaces as ws (ws.id)}
-              <button
-                class="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
-                onclick={() => createSsh(ws.id)}
-              >
-                {ws.id}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      <Button size="sm" onclick={createShell}>New Shell</Button>
-    </div>
-  </div>
-
-  {#if $terminals.length > 0}
-    <div class="flex gap-1 border-b px-4 py-1">
+<div class="flex h-full flex-col">
+  <!-- Tab bar -->
+  <div class="flex items-center gap-1 border-b bg-muted/30 px-2">
+    <!-- Tabs -->
+    <div class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-1.5">
       {#each $terminals as session (session.id)}
-        <button
-          class="flex items-center gap-1 rounded px-3 py-1 text-sm transition-colors {activeSessionId ===
-          session.id
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50'}"
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="group/tab flex max-w-48 cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors {activeSessionId === session.id
+            ? 'bg-background text-foreground shadow-sm border'
+            : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'}"
+          role="tab"
+          tabindex="0"
+          aria-selected={activeSessionId === session.id}
           onclick={() => (activeSessionId = session.id)}
           ondblclick={() => startRename(session.id, session.label)}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") activeSessionId = session.id }}
         >
+          {#if session.type === "ssh"}
+            <Monitor class="h-3.5 w-3.5 shrink-0" />
+          {:else}
+            <TerminalIcon class="h-3.5 w-3.5 shrink-0" />
+          {/if}
+
           {#if renamingId === session.id}
             <!-- svelte-ignore a11y_autofocus -->
             <input
-              class="w-20 rounded border bg-background px-1 text-sm"
+              class="w-20 rounded border bg-background px-1 text-xs"
               bind:value={renameValue}
               autofocus
               onblur={commitRename}
@@ -149,29 +133,69 @@ function handleExit() {
               onclick={(e) => e.stopPropagation()}
             />
           {:else}
-            {session.label}
+            <span class="truncate">{session.label}</span>
           {/if}
-          <span
-            role="button"
-            tabindex="0"
-            class="ml-1 rounded-full px-1 hover:bg-destructive/20"
-            onclick={(e) => {
-              e.stopPropagation();
-              closeSession(session.id);
-            }}
-            onkeydown={(e) => {
-              if (e.key === "Enter") {
-                e.stopPropagation();
-                closeSession(session.id);
-              }
-            }}
+
+          <button
+            type="button"
+            class="ml-auto shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/tab:opacity-60 hover:!opacity-100"
+            title="Close"
+            onclick={(e) => { e.stopPropagation(); closeSession(session.id) }}
           >
-            x
-          </span>
-        </button>
+            <X class="h-3 w-3" />
+          </button>
+        </div>
       {/each}
     </div>
 
+    <Separator orientation="vertical" class="mx-1 h-5" />
+
+    <!-- Actions -->
+    <div class="flex shrink-0 items-center gap-0.5">
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          {#snippet child({ props })}
+            <Button variant="ghost" size="icon-sm" onclick={createShell} {...props}>
+              <Plus class="h-4 w-4" />
+            </Button>
+          {/snippet}
+        </Tooltip.Trigger>
+        <Tooltip.Content>New shell</Tooltip.Content>
+      </Tooltip.Root>
+
+      {#if runningWorkspaces.length > 0}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            {#snippet child({ props })}
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props: tipProps })}
+                    <Button variant="ghost" size="icon-sm" {...props} {...tipProps}>
+                      <Monitor class="h-4 w-4" />
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content>SSH into workspace</Tooltip.Content>
+              </Tooltip.Root>
+            {/snippet}
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content align="end" class="w-56">
+            <DropdownMenu.Label>Running Workspaces</DropdownMenu.Label>
+            <DropdownMenu.Separator />
+            {#each runningWorkspaces as ws (ws.id)}
+              <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
+                <Monitor class="mr-2 h-4 w-4" />
+                {ws.id}
+              </DropdownMenu.Item>
+            {/each}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Terminal content -->
+  {#if $terminals.length > 0}
     <div class="flex-1 overflow-hidden">
       {#each $terminals as session (session.id)}
         <div class="h-full" class:hidden={session.id !== activeSessionId}>
@@ -181,28 +205,40 @@ function handleExit() {
     </div>
   {:else}
     <div class="flex flex-1 items-center justify-center">
-      <div class="text-center text-muted-foreground">
-        <p class="mb-2 text-lg">No active terminals</p>
-        <div class="flex gap-2 justify-center">
-          <Button size="sm" onclick={createShell}>New Shell</Button>
+      <div class="flex flex-col items-center gap-4 text-center">
+        <div class="rounded-full bg-muted p-4">
+          <SquareTerminal class="h-8 w-8 text-muted-foreground" />
+        </div>
+        <div>
+          <p class="text-lg font-medium">No active terminals</p>
+          <p class="mt-1 text-sm text-muted-foreground">Create a local shell or SSH into a running workspace</p>
+        </div>
+        <div class="flex gap-2">
+          <Button onclick={createShell}>
+            <Plus class="mr-2 h-4 w-4" />
+            New Shell
+          </Button>
           {#if runningWorkspaces.length > 0}
-            <div class="relative" data-ssh-menu>
-              <Button variant="outline" size="sm" onclick={() => (showSshMenu = !showSshMenu)}>
-                SSH into Workspace
-              </Button>
-              {#if showSshMenu}
-                <div class="absolute left-1/2 -translate-x-1/2 top-full z-10 mt-1 w-56 rounded-md border bg-popover p-1 shadow-md">
-                  {#each runningWorkspaces as ws (ws.id)}
-                    <button
-                      class="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent"
-                      onclick={() => createSsh(ws.id)}
-                    >
-                      {ws.id}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button variant="outline" {...props}>
+                    <Monitor class="mr-2 h-4 w-4" />
+                    SSH into Workspace
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content class="w-56">
+                <DropdownMenu.Label>Running Workspaces</DropdownMenu.Label>
+                <DropdownMenu.Separator />
+                {#each runningWorkspaces as ws (ws.id)}
+                  <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
+                    <Monitor class="mr-2 h-4 w-4" />
+                    {ws.id}
+                  </DropdownMenu.Item>
+                {/each}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
           {/if}
         </div>
       </div>

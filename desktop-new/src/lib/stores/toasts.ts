@@ -36,6 +36,10 @@ function dismiss(id: string) {
   activeToasts.update((list) => list.filter((t) => t.id !== id))
 }
 
+function removeFromHistory(id: string) {
+  historyStore.update((list) => list.filter((t) => t.id !== id))
+}
+
 function clearHistory() {
   historyStore.set([])
 }
@@ -55,6 +59,7 @@ export const toasts = {
 
 export const notificationHistory = {
   subscribe: historyStore.subscribe,
+  remove: removeFromHistory,
   clear: clearHistory,
   unreadCount,
 }

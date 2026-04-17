@@ -79,21 +79,21 @@ async function handleDelete() {
 
 <button
   type="button"
-  class="rounded-lg border bg-card p-4 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full"
+  class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full"
   onclick={() => goto(`/workspaces/${workspace.id}`)}
 >
-  <div class="flex items-start justify-between gap-2">
-    <h3 class="font-semibold truncate">{workspace.id}</h3>
-    <span class="text-xs text-muted-foreground whitespace-nowrap">
+  <div class="flex items-start justify-between gap-3">
+    <h3 class="text-lg font-semibold truncate">{workspace.id}</h3>
+    <span class="text-xs text-muted-foreground whitespace-nowrap pt-1">
       {timeAgo(workspace.lastUsedTimestamp)}
     </span>
   </div>
 
-  <p class="mt-1 text-sm text-muted-foreground truncate">
+  <p class="mt-2 text-sm text-muted-foreground truncate">
     {sourceDisplay(workspace)}
   </p>
 
-  <div class="mt-3 flex flex-wrap items-center gap-2">
+  <div class="mt-4 flex flex-wrap items-center gap-2">
     {#if workspace.provider?.name}
       <span class={badgeVariants({ variant: "secondary" })}>
         {workspace.provider.name}
@@ -115,7 +115,7 @@ async function handleDelete() {
     {/if}
   </div>
 
-  <div class="mt-3 flex items-center gap-2">
+  <div class="mt-4 flex items-center gap-2">
     {#if isRunning}
       <Button size="sm" onclick={(e) => { e.stopPropagation(); goto(`/workspaces/${workspace.id}?tab=terminal`) }}>
         Open

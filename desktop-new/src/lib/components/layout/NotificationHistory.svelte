@@ -1,8 +1,7 @@
 <script lang="ts">
-import { Bell, CircleCheck, CircleX, Info, Trash2 } from "@lucide/svelte"
+import { Bell, CircleCheck, CircleX, Info, Trash2, X } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
-import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import { notificationHistory } from "$lib/stores/toasts.js"
 
 const unreadCount = notificationHistory.unreadCount
@@ -43,9 +42,9 @@ function formatTime(ts: number): string {
         No notifications yet
       </div>
     {:else}
-      <ScrollArea class="max-h-80">
+      <div class="max-h-80 overflow-y-auto">
         {#each $notificationHistory as item (item.id)}
-          <div class="flex items-start gap-2 px-3 py-2.5">
+          <div class="group/item flex items-start gap-2 px-3 py-2.5">
             {#if item.variant === "success"}
               <CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
             {:else if item.variant === "error"}
@@ -57,9 +56,17 @@ function formatTime(ts: number): string {
               <p class="text-sm break-words {item.variant === 'error' ? 'text-destructive' : ''}">{item.message}</p>
               <p class="text-xs text-muted-foreground">{formatTime(item.timestamp)}</p>
             </div>
+            <button
+              type="button"
+              class="mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/item:opacity-60 hover:!opacity-100"
+              title="Dismiss"
+              onclick={() => notificationHistory.remove(item.id)}
+            >
+              <X class="h-3 w-3" />
+            </button>
           </div>
         {/each}
-      </ScrollArea>
+      </div>
     {/if}
   </DropdownMenu.Content>
 </DropdownMenu.Root>

@@ -57,7 +57,7 @@ let filtered = $derived.by(() => {
   </div>
 
   {#if $workspacesLoading}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each Array(3) as _}
         <CardSkeleton />
       {/each}
@@ -74,7 +74,7 @@ let filtered = $derived.by(() => {
       {/if}
     </div>
   {:else}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each filtered as workspace (workspace.id)}
         <WorkspaceCard {workspace} />
       {/each}

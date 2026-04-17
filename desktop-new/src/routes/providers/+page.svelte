@@ -1,14 +1,39 @@
 <script lang="ts">
 import { Plug, SearchX } from "@lucide/svelte"
 import { goto } from "$app/navigation"
+import { page } from "$app/stores"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ProviderCard from "$lib/components/provider/ProviderCard.svelte"
+import ProviderSheet from "$lib/components/provider/ProviderSheet.svelte"
 import { providers, providersLoading } from "$lib/stores/providers.js"
 
 let search = $state("")
 let sortBy = $state<"name" | "version">("name")
+
+// Sheet state for setup flow (redirected from /providers/add)
+let setupProviderName = $state<string | null>(null)
+let setupSheetOpen = $state(false)
+
+let setupProvider = $derived(
+  setupProviderName
+    ? $providers.find((p) => p.name === setupProviderName)
+    : undefined,
+)
+
+// Auto-open sheet when arriving with ?setup=<name>
+$effect(() => {
+  const setup = $page.url.searchParams.get("setup")
+  if (setup && $providers.length > 0) {
+    setupProviderName = setup
+    setupSheetOpen = true
+    // Clean up the URL
+    const url = new URL($page.url)
+    url.searchParams.delete("setup")
+    history.replaceState({}, "", url.pathname)
+  }
+})
 
 let filtered = $derived.by(() => {
   const q = search.toLowerCase()
@@ -55,7 +80,7 @@ let filtered = $derived.by(() => {
   </div>
 
   {#if $providersLoading}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each Array(3) as _}
         <CardSkeleton />
       {/each}
@@ -72,10 +97,19 @@ let filtered = $derived.by(() => {
       {/if}
     </div>
   {:else}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each filtered as provider (provider.name)}
         <ProviderCard {provider} />
       {/each}
     </div>
   {/if}
 </div>
+
+{#if setupProvider}
+  <ProviderSheet
+    provider={setupProvider}
+    bind:open={setupSheetOpen}
+    setup={true}
+    ondeleted={() => { setupProviderName = null }}
+  />
+{/if}

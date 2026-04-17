@@ -139,13 +139,16 @@
   }
 }
 
-/* Zoom levels */
-.zoom-sm {
+/* UI scale */
+.ui-scale-xs {
+  font-size: 13px;
+}
+.ui-scale-sm {
   font-size: 14px;
 }
-.zoom-lg {
+.ui-scale-lg {
   font-size: 18px;
 }
-.zoom-xl {
+.ui-scale-xl {
   font-size: 20px;
 }

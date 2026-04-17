@@ -72,7 +72,7 @@ onDestroy(() => {
   <div class="flex flex-1 flex-col overflow-hidden">
     <header class="flex h-12 items-center justify-between border-b px-4">
       <Breadcrumbs />
-      <div class="flex items-center gap-1">
+      <div class="ml-auto flex items-center gap-1">
         <NotificationHistory />
         <ThemeSwitcher />
       </div>

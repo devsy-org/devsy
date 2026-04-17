@@ -75,6 +75,8 @@ fn main() {
             commands::contexts::context_options,
             commands::contexts::context_set_options,
             commands::system::devpod_version,
+            commands::system::devpod_upgrade,
+            commands::system::devpod_upgrade_dry_run,
             commands::ssh_keys::ssh_key_list,
             commands::ssh_keys::ssh_key_generate,
         ])

@@ -6,3 +6,23 @@ use tauri::State;
 pub async fn devpod_version(cli: State<'_, Arc<CliRunner>>) -> Result<String, String> {
     cli.run_raw(&["version"]).await.map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn devpod_upgrade(
+    cli: State<'_, Arc<CliRunner>>,
+    version: String,
+) -> Result<String, String> {
+    cli.run_raw(&["upgrade", "--version", &version])
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn devpod_upgrade_dry_run(
+    cli: State<'_, Arc<CliRunner>>,
+    version: String,
+) -> Result<String, String> {
+    cli.run_raw(&["upgrade", "--version", &version, "--dry-run"])
+        .await
+        .map_err(|e| e.to_string())
+}

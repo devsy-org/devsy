@@ -42,7 +42,7 @@ async function handleAdd(name: string, source?: string) {
   try {
     await providerAdd(name, source)
     toasts.success(`Added provider ${name}`)
-    goto(`/providers/${name}?setup=true`)
+    goto(`/providers?setup=${name}`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes("already exists")) {

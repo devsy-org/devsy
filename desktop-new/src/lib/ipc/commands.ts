@@ -164,6 +164,14 @@ export async function devpodVersion(): Promise<string> {
   return invoke<string>("devpod_version")
 }
 
+export async function devpodUpgrade(version: string): Promise<string> {
+  return invoke<string>("devpod_upgrade", { version })
+}
+
+export async function devpodUpgradeDryRun(version: string): Promise<string> {
+  return invoke<string>("devpod_upgrade_dry_run", { version })
+}
+
 // Log commands
 export async function workspaceLogsList(
   workspaceId: string,

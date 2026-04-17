@@ -1,5 +1,5 @@
 <script lang="ts">
-import { CircleCheck, CircleX, Info, X } from "@lucide/svelte"
+import { CircleCheck, CircleX, ClipboardCopy, Info, X } from "@lucide/svelte"
 import { toasts } from "$lib/stores/toasts.js"
 import type { Toast } from "$lib/stores/toasts.js"
 import { fly } from "svelte/transition"
@@ -77,38 +77,54 @@ function progressBarColor(variant: Toast["variant"]): string {
 </script>
 
 {#if $toasts.length > 0}
-  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+  <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md">
     {#each $toasts as toast (toast.id)}
-      <button
-        type="button"
-        class="group relative flex items-center gap-3 overflow-hidden rounded-md border px-4 py-3 text-sm shadow-lg {toast.variant === 'error'
-          ? 'border-destructive bg-destructive/10 text-destructive'
+      <div
+        class="group relative flex items-start gap-3 overflow-hidden rounded-md border px-4 py-3 text-sm shadow-lg {toast.variant === 'error'
+          ? 'border-destructive/50 bg-destructive text-destructive-foreground'
           : toast.variant === 'success'
-            ? 'border-green-500 bg-green-500/10 text-green-700 dark:text-green-400'
+            ? 'border-green-600 bg-green-600 text-white'
             : 'border-border bg-card text-card-foreground'}"
-        onclick={() => toasts.dismiss(toast.id)}
+        role="alert"
         onmouseenter={() => pauseTimer(toast.id)}
         onmouseleave={() => resumeTimer(toast.id)}
         transition:fly={{ x: 100, duration: 200 }}
       >
         {#if toast.variant === "success"}
-          <CircleCheck class="h-4 w-4 shrink-0" />
+          <CircleCheck class="mt-0.5 h-4 w-4 shrink-0" />
         {:else if toast.variant === "error"}
-          <CircleX class="h-4 w-4 shrink-0" />
+          <CircleX class="mt-0.5 h-4 w-4 shrink-0" />
         {:else}
-          <Info class="h-4 w-4 shrink-0" />
+          <Info class="mt-0.5 h-4 w-4 shrink-0" />
         {/if}
-        <span class="flex-1 text-left">{toast.message}</span>
-        <X class="h-3 w-3 shrink-0 opacity-50" />
+        <span class="flex-1 select-text break-words text-left">{toast.message}</span>
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            class="rounded p-0.5 opacity-60 hover:opacity-100 transition-opacity"
+            title="Copy to clipboard"
+            onclick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(toast.message) }}
+          >
+            <ClipboardCopy class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            class="rounded p-0.5 opacity-60 hover:opacity-100 transition-opacity"
+            title="Dismiss"
+            onclick={() => toasts.dismiss(toast.id)}
+          >
+            <X class="h-3.5 w-3.5" />
+          </button>
+        </div>
 
         <!-- Progress bar -->
-        <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-transparent">
+        <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-black/10">
           <div
-            class="h-full {progressBarColor(toast.variant)} toast-progress group-hover:[animation-play-state:paused]"
+            class="h-full {progressBarColor(toast.variant)} toast-progress"
             style="animation-duration: {toast.duration}ms;"
           ></div>
         </div>
-      </button>
+      </div>
     {/each}
   </div>
 {/if}
@@ -124,5 +140,8 @@ function progressBarColor(variant: Toast["variant"]): string {
   }
   .toast-progress {
     animation: shrink linear forwards;
+  }
+  :global(.group):hover .toast-progress {
+    animation-play-state: paused;
   }
 </style>

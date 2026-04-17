@@ -12,10 +12,8 @@ import {
   applyTheme,
   colorScheme,
   setColorScheme,
-  fontSize,
-  applyFontSize,
-  zoomLevel,
-  applyZoom,
+  uiScale,
+  applyUIScale,
   sidebarPosition,
   setSidebarPosition,
   autoUpdate,
@@ -24,22 +22,20 @@ import {
   setDefaultIde,
   fixedIde,
   setFixedIde,
-  contextOptions as contextOptionsStore,
-  parseContextOptions,
-  CONTEXT_OPTION_KEYS,
+  localOptions as localOptionsStore,
+  loadLocalOptions,
+  saveLocalOption,
 } from "$lib/stores/settings.js"
 import type {
   Theme,
   ColorScheme,
-  FontSize,
-  ZoomLevel,
-  SidebarPosition,
-  ContextOptions,
+  UIScale,
+  LocalOptions,
 } from "$lib/stores/settings.js"
 import {
-  contextOptions as fetchContextOptions,
-  contextSetOptions,
   devpodVersion,
+  devpodUpgrade,
+  devpodUpgradeDryRun,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 
@@ -64,31 +60,19 @@ const COLOR_SCHEMES: { value: ColorScheme; label: string; swatch: string }[] = [
   { value: "purple", label: "Purple", swatch: "bg-purple-600" },
 ]
 
-// ── Font Size ───────────────────────────────────────────────────────
+// ── UI Scale ────────────────────────────────────────────────────────
 
-const FONT_SIZES: { value: FontSize; label: string }[] = [
-  { value: "small", label: "Small" },
-  { value: "medium", label: "Medium" },
-  { value: "large", label: "Large" },
-]
-
-function setFontSize(value: FontSize) {
-  fontSize.set(value)
-  applyFontSize(value)
-}
-
-// ── Zoom ────────────────────────────────────────────────────────────
-
-const ZOOM_LEVELS: { value: ZoomLevel; label: string }[] = [
+const UI_SCALES: { value: UIScale; label: string }[] = [
+  { value: "xs", label: "Extra Small" },
   { value: "sm", label: "Small" },
-  { value: "md", label: "Regular" },
+  { value: "md", label: "Default" },
   { value: "lg", label: "Large" },
   { value: "xl", label: "Extra Large" },
 ]
 
-function setZoom(value: ZoomLevel) {
-  zoomLevel.set(value)
-  applyZoom(value)
+function setUIScale(value: UIScale) {
+  uiScale.set(value)
+  applyUIScale(value)
 }
 
 // ── IDE Options ─────────────────────────────────────────────────────
@@ -127,27 +111,55 @@ let cliVersion = $state<string | null>(null)
 let loading = $state(true)
 let saving = $state(false)
 
-// Context options (mutable local copy)
-let opts = $state<ContextOptions>({
+// Local-only options (not stored in DevPod CLI)
+let local = $state<LocalOptions>({
   debugFlag: false,
-  telemetry: true,
-  agentUrl: "",
-  dotfilesUrl: "",
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
   noProxy: "",
-  dockerCredentialForwarding: false,
-  gitCredentialForwarding: false,
-  gitSshSignatureForwarding: false,
-  sshAgentForwarding: false,
-  sshAddPrivateKeys: false,
-  sshStrictHostKeyChecking: false,
-  gpgAgentForwarding: false,
   additionalCliFlags: "",
   additionalEnvVars: "",
   experimentalMultiDevcontainer: false,
 })
+
+// ── Version management ──────────────────────────────────────────────
+
+let targetVersion = $state("")
+let upgrading = $state(false)
+let upgradeResult = $state<string | null>(null)
+
+async function handleUpgrade() {
+  if (!targetVersion) return
+  const version = targetVersion.startsWith("v")
+    ? targetVersion
+    : `v${targetVersion}`
+
+  // Dry-run first to validate
+  try {
+    const info = await devpodUpgradeDryRun(version)
+    if (info.includes("already up-to-date")) {
+      toasts.info(`Already running ${version}`)
+      return
+    }
+  } catch (err) {
+    toasts.error(`Invalid version: ${err}`)
+    return
+  }
+
+  upgrading = true
+  upgradeResult = null
+  try {
+    await devpodUpgrade(version)
+    upgradeResult = version
+    cliVersion = version.trim()
+    toasts.success(`Upgraded to ${version}. Restart the app to complete.`)
+  } catch (err) {
+    toasts.error(`Upgrade failed: ${err}`)
+  } finally {
+    upgrading = false
+  }
+}
 
 // ── Keyboard shortcuts ──────────────────────────────────────────────
 
@@ -161,7 +173,10 @@ const shortcuts = [
 // ── Load / Save ─────────────────────────────────────────────────────
 
 onMount(async () => {
-  await Promise.all([loadContextOptions(), loadVersion()])
+  local = loadLocalOptions()
+  localOptionsStore.set(local)
+  loading = false
+  await loadVersion()
 })
 
 async function loadVersion() {
@@ -172,42 +187,14 @@ async function loadVersion() {
   }
 }
 
-async function loadContextOptions() {
-  loading = true
-  try {
-    const raw = await fetchContextOptions()
-    const parsed = parseContextOptions(raw)
-    opts = parsed
-    contextOptionsStore.set(parsed)
-  } catch {
-    // Keep defaults
-  } finally {
-    loading = false
-  }
+function saveLocal(key: keyof LocalOptions, value: string | boolean) {
+  saveLocalOption(key, value)
+  ;(local as unknown as Record<string, string | boolean>)[key] = value
 }
 
-async function saveContextOption(
-  key: keyof ContextOptions,
-  value: string | boolean,
-) {
-  saving = true
-  const cliKey = CONTEXT_OPTION_KEYS[key]
-  const strValue = String(value)
-  try {
-    await contextSetOptions([`${cliKey}=${strValue}`])
-    ;(opts as unknown as Record<string, string | boolean>)[key] = value
-    contextOptionsStore.set({ ...opts })
-    toasts.success("Setting saved")
-  } catch (err) {
-    toasts.error(`Failed to save: ${err}`)
-  } finally {
-    saving = false
-  }
-}
-
-function toggleContextOption(key: keyof ContextOptions) {
-  const current = opts[key]
-  saveContextOption(key, !current)
+function toggleLocal(key: keyof LocalOptions) {
+  const current = local[key]
+  saveLocal(key, !current)
 }
 </script>
 
@@ -226,37 +213,12 @@ function toggleContextOption(key: keyof ContextOptions) {
     <!-- ═══ GENERAL ═══ -->
     <Tabs.Content value="general">
       <div class="mt-4 space-y-6">
-        <div class="space-y-2">
-          <h2 class="text-lg font-semibold">CLI</h2>
-          {#if cliVersion}
-            <p class="text-sm text-muted-foreground">DevPod CLI: <span class="font-mono">{cliVersion}</span></p>
-          {:else}
-            <p class="text-sm text-muted-foreground">CLI version not available</p>
-          {/if}
-        </div>
-
-        <Separator />
-
         <div class="flex items-center justify-between">
           <div>
             <Label>Debug Mode</Label>
             <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
           </div>
-          <Switch checked={opts.debugFlag} onCheckedChange={() => toggleContextOption("debugFlag")} disabled={loading || saving} />
-        </div>
-
-        <Separator />
-
-        <div class="space-y-2">
-          <Label>Agent URL</Label>
-          <p class="text-xs text-muted-foreground">Custom agent endpoint URL</p>
-          <Input
-            value={opts.agentUrl}
-            placeholder="Leave empty for default"
-            oninput={(e) => (opts.agentUrl = e.currentTarget.value)}
-            onblur={() => saveContextOption("agentUrl", opts.agentUrl)}
-            disabled={loading || saving}
-          />
+          <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
         </div>
 
         <Separator />
@@ -266,43 +228,33 @@ function toggleContextOption(key: keyof ContextOptions) {
           <div class="space-y-2">
             <Label>HTTP Proxy</Label>
             <Input
-              value={opts.httpProxy}
+              value={local.httpProxy}
               placeholder="http://proxy:8080"
-              oninput={(e) => (opts.httpProxy = e.currentTarget.value)}
-              onblur={() => saveContextOption("httpProxy", opts.httpProxy)}
+              oninput={(e) => (local.httpProxy = e.currentTarget.value)}
+              onblur={() => saveLocal("httpProxy", local.httpProxy)}
               disabled={loading || saving}
             />
           </div>
           <div class="space-y-2">
             <Label>HTTPS Proxy</Label>
             <Input
-              value={opts.httpsProxy}
+              value={local.httpsProxy}
               placeholder="https://proxy:8443"
-              oninput={(e) => (opts.httpsProxy = e.currentTarget.value)}
-              onblur={() => saveContextOption("httpsProxy", opts.httpsProxy)}
+              oninput={(e) => (local.httpsProxy = e.currentTarget.value)}
+              onblur={() => saveLocal("httpsProxy", local.httpsProxy)}
               disabled={loading || saving}
             />
           </div>
           <div class="space-y-2">
             <Label>No Proxy</Label>
             <Input
-              value={opts.noProxy}
+              value={local.noProxy}
               placeholder="localhost,127.0.0.1,.internal"
-              oninput={(e) => (opts.noProxy = e.currentTarget.value)}
-              onblur={() => saveContextOption("noProxy", opts.noProxy)}
+              oninput={(e) => (local.noProxy = e.currentTarget.value)}
+              onblur={() => saveLocal("noProxy", local.noProxy)}
               disabled={loading || saving}
             />
           </div>
-        </div>
-
-        <Separator />
-
-        <div class="flex items-center justify-between">
-          <div>
-            <Label>Telemetry</Label>
-            <p class="text-xs text-muted-foreground">Send anonymous usage data</p>
-          </div>
-          <Switch checked={opts.telemetry} onCheckedChange={() => toggleContextOption("telemetry")} disabled={loading || saving} />
         </div>
 
         <Separator />
@@ -357,89 +309,15 @@ function toggleContextOption(key: keyof ContextOptions) {
         <Separator />
 
         <div class="space-y-2">
-          <Label>Dotfiles Repository</Label>
-          <p class="text-xs text-muted-foreground">Git repository URL for dotfiles to apply in workspaces</p>
-          <Input
-            value={opts.dotfilesUrl}
-            placeholder="https://github.com/user/dotfiles"
-            oninput={(e) => (opts.dotfilesUrl = e.currentTarget.value)}
-            onblur={() => saveContextOption("dotfilesUrl", opts.dotfilesUrl)}
-            disabled={loading || saving}
-          />
-        </div>
-
-        <div class="space-y-2">
           <Label>SSH Key for Git Commit Signing</Label>
           <p class="text-xs text-muted-foreground">Path to SSH key for signing Git commits</p>
           <Input
-            value={opts.sshKeyPath}
+            value={local.sshKeyPath}
             placeholder="~/.ssh/id_ed25519"
-            oninput={(e) => (opts.sshKeyPath = e.currentTarget.value)}
-            onblur={() => saveContextOption("sshKeyPath", opts.sshKeyPath)}
+            oninput={(e) => (local.sshKeyPath = e.currentTarget.value)}
+            onblur={() => saveLocal("sshKeyPath", local.sshKeyPath)}
             disabled={loading || saving}
           />
-        </div>
-
-        <Separator />
-
-        <h2 class="text-lg font-semibold">Forwarding</h2>
-
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>Docker Credentials</Label>
-              <p class="text-xs text-muted-foreground">Forward Docker credentials to workspaces</p>
-            </div>
-            <Switch checked={opts.dockerCredentialForwarding} onCheckedChange={() => toggleContextOption("dockerCredentialForwarding")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>Git Credentials</Label>
-              <p class="text-xs text-muted-foreground">Forward Git credential helper to workspaces</p>
-            </div>
-            <Switch checked={opts.gitCredentialForwarding} onCheckedChange={() => toggleContextOption("gitCredentialForwarding")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>Git SSH Signature</Label>
-              <p class="text-xs text-muted-foreground">Forward Git SSH signature to workspaces</p>
-            </div>
-            <Switch checked={opts.gitSshSignatureForwarding} onCheckedChange={() => toggleContextOption("gitSshSignatureForwarding")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>SSH Agent</Label>
-              <p class="text-xs text-muted-foreground">Forward SSH agent to workspaces</p>
-            </div>
-            <Switch checked={opts.sshAgentForwarding} onCheckedChange={() => toggleContextOption("sshAgentForwarding")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>SSH Add Private Keys</Label>
-              <p class="text-xs text-muted-foreground">Automatically add private SSH keys to agent</p>
-            </div>
-            <Switch checked={opts.sshAddPrivateKeys} onCheckedChange={() => toggleContextOption("sshAddPrivateKeys")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>SSH Strict Host Key Checking</Label>
-              <p class="text-xs text-muted-foreground">Enable strict SSH host key verification</p>
-            </div>
-            <Switch checked={opts.sshStrictHostKeyChecking} onCheckedChange={() => toggleContextOption("sshStrictHostKeyChecking")} disabled={loading || saving} />
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>GPG Agent</Label>
-              <p class="text-xs text-muted-foreground">Forward GPG agent to workspaces</p>
-            </div>
-            <Switch checked={opts.gpgAgentForwarding} onCheckedChange={() => toggleContextOption("gpgAgentForwarding")} disabled={loading || saving} />
-          </div>
         </div>
       </div>
     </Tabs.Content>
@@ -482,30 +360,15 @@ function toggleContextOption(key: keyof ContextOptions) {
         <Separator />
 
         <div class="space-y-2">
-          <h2 class="text-lg font-semibold">Font Size</h2>
+          <h2 class="text-lg font-semibold">UI Scale</h2>
+          <p class="text-xs text-muted-foreground">Adjust the overall size of text and interface elements</p>
           <div class="flex gap-2">
-            {#each FONT_SIZES as f (f.value)}
+            {#each UI_SCALES as s (s.value)}
               <Button
-                variant={$fontSize === f.value ? "default" : "outline"}
-                onclick={() => setFontSize(f.value)}
+                variant={$uiScale === s.value ? "default" : "outline"}
+                onclick={() => setUIScale(s.value)}
               >
-                {f.label}
-              </Button>
-            {/each}
-          </div>
-        </div>
-
-        <Separator />
-
-        <div class="space-y-2">
-          <h2 class="text-lg font-semibold">Zoom Level</h2>
-          <div class="flex gap-2">
-            {#each ZOOM_LEVELS as z (z.value)}
-              <Button
-                variant={$zoomLevel === z.value ? "default" : "outline"}
-                onclick={() => setZoom(z.value)}
-              >
-                {z.label}
+                {s.label}
               </Button>
             {/each}
           </div>
@@ -554,6 +417,37 @@ function toggleContextOption(key: keyof ContextOptions) {
             <p class="text-sm text-muted-foreground">Version information not available</p>
           {/if}
         </div>
+
+        <Separator />
+
+        <div class="space-y-3">
+          <h2 class="text-lg font-semibold">Switch Version</h2>
+          <p class="text-xs text-muted-foreground">Install a specific DevPod CLI version. Useful for downgrading if a newer version introduced issues.</p>
+          <div class="flex gap-2">
+            <Input
+              value={targetVersion}
+              placeholder="e.g. v0.20.0"
+              oninput={(e) => (targetVersion = e.currentTarget.value)}
+              onkeydown={(e) => { if (e.key === "Enter") handleUpgrade() }}
+              disabled={upgrading}
+              class="max-w-48 font-mono"
+            />
+            <Button
+              onclick={handleUpgrade}
+              disabled={upgrading || !targetVersion}
+              variant="outline"
+            >
+              {upgrading ? "Installing..." : "Install"}
+            </Button>
+          </div>
+          {#if upgradeResult}
+            <div class="rounded-md border border-green-600/30 bg-green-600/10 p-3">
+              <p class="text-sm text-green-700 dark:text-green-400">
+                Switched to {upgradeResult}. Restart the application to use the new version.
+              </p>
+            </div>
+          {/if}
+        </div>
       </div>
     </Tabs.Content>
 
@@ -571,7 +465,7 @@ function toggleContextOption(key: keyof ContextOptions) {
             <Label>Multiple Devcontainer Detection</Label>
             <p class="text-xs text-muted-foreground">Check for multiple devcontainers when creating workspaces. May take longer for larger repos.</p>
           </div>
-          <Switch checked={opts.experimentalMultiDevcontainer} onCheckedChange={() => toggleContextOption("experimentalMultiDevcontainer")} disabled={loading || saving} />
+          <Switch checked={local.experimentalMultiDevcontainer} onCheckedChange={() => toggleLocal("experimentalMultiDevcontainer")} disabled={loading || saving} />
         </div>
 
         <Separator />
@@ -580,10 +474,10 @@ function toggleContextOption(key: keyof ContextOptions) {
           <Label>Additional CLI Flags</Label>
           <p class="text-xs text-muted-foreground">Append custom flags to all DevPod CLI commands</p>
           <Input
-            value={opts.additionalCliFlags}
+            value={local.additionalCliFlags}
             placeholder="--flag1 --flag2=value"
-            oninput={(e) => (opts.additionalCliFlags = e.currentTarget.value)}
-            onblur={() => saveContextOption("additionalCliFlags", opts.additionalCliFlags)}
+            oninput={(e) => (local.additionalCliFlags = e.currentTarget.value)}
+            onblur={() => saveLocal("additionalCliFlags", local.additionalCliFlags)}
             disabled={loading || saving}
           />
         </div>
@@ -592,10 +486,10 @@ function toggleContextOption(key: keyof ContextOptions) {
           <Label>Additional Environment Variables</Label>
           <p class="text-xs text-muted-foreground">Comma-separated environment variables passed to DevPod commands</p>
           <Input
-            value={opts.additionalEnvVars}
+            value={local.additionalEnvVars}
             placeholder="FOO=bar,BAZ=false"
-            oninput={(e) => (opts.additionalEnvVars = e.currentTarget.value)}
-            onblur={() => saveContextOption("additionalEnvVars", opts.additionalEnvVars)}
+            oninput={(e) => (local.additionalEnvVars = e.currentTarget.value)}
+            onblur={() => saveLocal("additionalEnvVars", local.additionalEnvVars)}
             disabled={loading || saving}
           />
         </div>

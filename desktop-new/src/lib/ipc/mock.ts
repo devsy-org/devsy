@@ -263,24 +263,22 @@ const COMMANDS: Record<string, Handler> = {
   context_list: () => ({ contexts: CONTEXTS, activeContext: "default" }),
   context_use: () => undefined,
   context_options: () => ({
-    DEBUG: { value: "false" },
     TELEMETRY: { value: "true" },
     AGENT_URL: { value: "" },
     DOTFILES_URL: { value: "" },
-    SSH_KEY_PATH: { value: "" },
-    HTTP_PROXY: { value: "" },
-    HTTPS_PROXY: { value: "" },
-    NO_PROXY: { value: "" },
-    DOCKER_CREDENTIAL_HELPER_ENABLED: { value: "false" },
-    GIT_CREDENTIAL_HELPER_ENABLED: { value: "false" },
-    GIT_SSH_SIGNATURE_FORWARDING_ENABLED: { value: "false" },
-    SSH_AGENT_FORWARDING: { value: "false" },
-    SSH_ADD_PRIVATE_KEYS: { value: "false" },
+    DOTFILES_SCRIPT: { value: "" },
+    SSH_INJECT_DOCKER_CREDENTIALS: { value: "true" },
+    SSH_INJECT_GIT_CREDENTIALS: { value: "true" },
+    GIT_SSH_SIGNATURE_FORWARDING: { value: "true" },
+    SSH_AGENT_FORWARDING: { value: "true" },
+    SSH_ADD_PRIVATE_KEYS: { value: "true" },
     SSH_STRICT_HOST_KEY_CHECKING: { value: "false" },
     GPG_AGENT_FORWARDING: { value: "false" },
-    ADDITIONAL_FLAGS: { value: "" },
-    ADDITIONAL_ENV_VARS: { value: "" },
-    EXPERIMENTAL_MULTI_DEVCONTAINER: { value: "false" },
+    AGENT_INJECT_TIMEOUT: { value: "20" },
+    REGISTRY_CACHE: { value: "" },
+    EXIT_AFTER_TIMEOUT: { value: "true" },
+    SSH_CONFIG_PATH: { value: "" },
+    SSH_CONFIG_INCLUDE_PATH: { value: "" },
   }),
   context_set_options: () => undefined,
 
@@ -298,6 +296,9 @@ const COMMANDS: Record<string, Handler> = {
 
   // System
   devpod_version: () => "v0.6.0-mock",
+  devpod_upgrade: () => "Successfully upgraded",
+  devpod_upgrade_dry_run: (args) =>
+    `asset_name=devpod-linux-arm64\nversion=${(args.version as string).replace(/^v/, "")}\nos=linux\narch=arm64\nurl=https://github.com/example/devpod/releases/download/${args.version}/devpod-linux-arm64\nsize=110624952`,
 
   // Logs
   workspace_logs_list: () => LOG_ENTRIES,

@@ -5,30 +5,23 @@ import { browser } from "$app/environment"
 
 export type Theme = "light" | "dark" | "system"
 export type ColorScheme = "default" | "emerald" | "purple"
-export type FontSize = "small" | "medium" | "large"
-export type ZoomLevel = "sm" | "md" | "lg" | "xl"
+export type UIScale = "xs" | "sm" | "md" | "lg" | "xl"
 export type SidebarPosition = "left" | "right"
 
 const STORAGE_KEY = "devpod-theme"
 const COLOR_SCHEME_KEY = "devpod-color-scheme"
-const FONT_SIZE_KEY = "devpod-font-size"
-const ZOOM_KEY = "devpod-zoom"
+const UI_SCALE_KEY = "devpod-ui-scale"
 const SIDEBAR_KEY = "devpod-sidebar-position"
 const AUTO_UPDATE_KEY = "devpod-auto-update"
 const FIXED_IDE_KEY = "devpod-fixed-ide"
 const DEFAULT_IDE_KEY = "devpod-default-ide"
 
-const FONT_SIZE_CLASSES: Record<FontSize, string> = {
-  small: "text-sm",
-  medium: "text-base",
-  large: "text-lg",
-}
-
-const ZOOM_CLASSES: Record<ZoomLevel, string> = {
-  sm: "zoom-sm",
+const UI_SCALE_CLASSES: Record<UIScale, string> = {
+  xs: "ui-scale-xs",
+  sm: "ui-scale-sm",
   md: "",
-  lg: "zoom-lg",
-  xl: "zoom-xl",
+  lg: "ui-scale-lg",
+  xl: "ui-scale-xl",
 }
 
 function getStored<T extends string>(
@@ -94,7 +87,7 @@ export const colorScheme = writable<ColorScheme>(
   getStored(
     COLOR_SCHEME_KEY,
     ["default", "emerald", "purple"] as const,
-    "default",
+    "emerald",
   ),
 )
 
@@ -117,34 +110,19 @@ export function setColorScheme(value: ColorScheme) {
   applyColorScheme(value)
 }
 
-// Font size
-export const fontSize = writable<FontSize>(
-  getStored(FONT_SIZE_KEY, ["small", "medium", "large"] as const, "medium"),
+// UI Scale
+export const uiScale = writable<UIScale>(
+  getStored(UI_SCALE_KEY, ["xs", "sm", "md", "lg", "xl"] as const, "md"),
 )
 
-export function applyFontSize(value: FontSize) {
+export function applyUIScale(value: UIScale) {
   if (!browser) return
-  localStorage.setItem(FONT_SIZE_KEY, value)
+  localStorage.setItem(UI_SCALE_KEY, value)
   const root = document.documentElement
-  for (const cls of Object.values(FONT_SIZE_CLASSES)) {
-    root.classList.remove(cls)
-  }
-  root.classList.add(FONT_SIZE_CLASSES[value])
-}
-
-// Zoom level
-export const zoomLevel = writable<ZoomLevel>(
-  getStored(ZOOM_KEY, ["sm", "md", "lg", "xl"] as const, "md"),
-)
-
-export function applyZoom(value: ZoomLevel) {
-  if (!browser) return
-  localStorage.setItem(ZOOM_KEY, value)
-  const root = document.documentElement
-  for (const cls of Object.values(ZOOM_CLASSES)) {
+  for (const cls of Object.values(UI_SCALE_CLASSES)) {
     if (cls) root.classList.remove(cls)
   }
-  const cls = ZOOM_CLASSES[value]
+  const cls = UI_SCALE_CLASSES[value]
   if (cls) root.classList.add(cls)
 }
 
@@ -188,15 +166,12 @@ export function setFixedIde(value: boolean) {
 
 // ── Context Options (DevPod CLI) ────────────────────────────────────
 
+// Options stored in DevPod CLI context (devpod context set-options)
 export interface ContextOptions {
-  debugFlag: boolean
   telemetry: boolean
   agentUrl: string
   dotfilesUrl: string
-  sshKeyPath: string
-  httpProxy: string
-  httpsProxy: string
-  noProxy: string
+  dotfilesScript: string
   dockerCredentialForwarding: boolean
   gitCredentialForwarding: boolean
   gitSshSignatureForwarding: boolean
@@ -204,88 +179,138 @@ export interface ContextOptions {
   sshAddPrivateKeys: boolean
   sshStrictHostKeyChecking: boolean
   gpgAgentForwarding: boolean
+  agentInjectTimeout: string
+  registryCache: string
+  exitAfterTimeout: boolean
+  sshConfigPath: string
+  sshConfigIncludePath: string
+}
+
+// Options stored locally (not supported by DevPod CLI context)
+export interface LocalOptions {
+  debugFlag: boolean
+  sshKeyPath: string
+  httpProxy: string
+  httpsProxy: string
+  noProxy: string
   additionalCliFlags: string
   additionalEnvVars: string
   experimentalMultiDevcontainer: boolean
 }
 
 export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
-  debugFlag: false,
   telemetry: true,
   agentUrl: "",
   dotfilesUrl: "",
+  dotfilesScript: "",
+  dockerCredentialForwarding: true,
+  gitCredentialForwarding: true,
+  gitSshSignatureForwarding: true,
+  sshAgentForwarding: true,
+  sshAddPrivateKeys: true,
+  sshStrictHostKeyChecking: false,
+  gpgAgentForwarding: false,
+  agentInjectTimeout: "20",
+  registryCache: "",
+  exitAfterTimeout: true,
+  sshConfigPath: "",
+  sshConfigIncludePath: "",
+}
+
+export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
+  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
   noProxy: "",
-  dockerCredentialForwarding: false,
-  gitCredentialForwarding: false,
-  gitSshSignatureForwarding: false,
-  sshAgentForwarding: false,
-  sshAddPrivateKeys: false,
-  sshStrictHostKeyChecking: false,
-  gpgAgentForwarding: false,
   additionalCliFlags: "",
   additionalEnvVars: "",
   experimentalMultiDevcontainer: false,
 }
 
-// Map from our keys to DevPod context option keys
+// Map from our keys to DevPod CLI context option keys
 export const CONTEXT_OPTION_KEYS: Record<keyof ContextOptions, string> = {
-  debugFlag: "DEBUG",
   telemetry: "TELEMETRY",
   agentUrl: "AGENT_URL",
   dotfilesUrl: "DOTFILES_URL",
-  sshKeyPath: "SSH_KEY_PATH",
-  httpProxy: "HTTP_PROXY",
-  httpsProxy: "HTTPS_PROXY",
-  noProxy: "NO_PROXY",
-  dockerCredentialForwarding: "DOCKER_CREDENTIAL_HELPER_ENABLED",
-  gitCredentialForwarding: "GIT_CREDENTIAL_HELPER_ENABLED",
-  gitSshSignatureForwarding: "GIT_SSH_SIGNATURE_FORWARDING_ENABLED",
+  dotfilesScript: "DOTFILES_SCRIPT",
+  dockerCredentialForwarding: "SSH_INJECT_DOCKER_CREDENTIALS",
+  gitCredentialForwarding: "SSH_INJECT_GIT_CREDENTIALS",
+  gitSshSignatureForwarding: "GIT_SSH_SIGNATURE_FORWARDING",
   sshAgentForwarding: "SSH_AGENT_FORWARDING",
   sshAddPrivateKeys: "SSH_ADD_PRIVATE_KEYS",
   sshStrictHostKeyChecking: "SSH_STRICT_HOST_KEY_CHECKING",
   gpgAgentForwarding: "GPG_AGENT_FORWARDING",
-  additionalCliFlags: "ADDITIONAL_FLAGS",
-  additionalEnvVars: "ADDITIONAL_ENV_VARS",
-  experimentalMultiDevcontainer: "EXPERIMENTAL_MULTI_DEVCONTAINER",
+  agentInjectTimeout: "AGENT_INJECT_TIMEOUT",
+  registryCache: "REGISTRY_CACHE",
+  exitAfterTimeout: "EXIT_AFTER_TIMEOUT",
+  sshConfigPath: "SSH_CONFIG_PATH",
+  sshConfigIncludePath: "SSH_CONFIG_INCLUDE_PATH",
 }
 
 export const contextOptions = writable<ContextOptions>({
   ...DEFAULT_CONTEXT_OPTIONS,
 })
 
+const LOCAL_OPTIONS_KEY = "devpod-local-options"
+
+export const localOptions = writable<LocalOptions>({
+  ...DEFAULT_LOCAL_OPTIONS,
+})
+
+export function loadLocalOptions(): LocalOptions {
+  if (!browser) return { ...DEFAULT_LOCAL_OPTIONS }
+  try {
+    const stored = localStorage.getItem(LOCAL_OPTIONS_KEY)
+    if (stored) {
+      return { ...DEFAULT_LOCAL_OPTIONS, ...JSON.parse(stored) }
+    }
+  } catch {
+    // ignore
+  }
+  return { ...DEFAULT_LOCAL_OPTIONS }
+}
+
+export function saveLocalOption(
+  key: keyof LocalOptions,
+  value: string | boolean,
+) {
+  if (!browser) return
+  const current = loadLocalOptions()
+  ;(current as unknown as Record<string, string | boolean>)[key] = value
+  localStorage.setItem(LOCAL_OPTIONS_KEY, JSON.stringify(current))
+  localOptions.set(current)
+}
+
 export function parseContextOptions(
   raw: Record<string, { value?: string }>,
 ): ContextOptions {
-  function str(key: string): string {
-    return raw[key]?.value ?? ""
+  function str(key: string, fallback = ""): string {
+    return raw[key]?.value ?? fallback
   }
-  function bool(key: string): boolean {
+  function bool(key: string, fallback = false): boolean {
     const v = raw[key]?.value
-    return v === "true"
+    if (v === undefined || v === "") return fallback
+    return v !== "false"
   }
 
   return {
-    debugFlag: bool("DEBUG"),
-    telemetry: str("TELEMETRY") !== "false",
+    telemetry: bool("TELEMETRY", true),
     agentUrl: str("AGENT_URL"),
     dotfilesUrl: str("DOTFILES_URL"),
-    sshKeyPath: str("SSH_KEY_PATH"),
-    httpProxy: str("HTTP_PROXY"),
-    httpsProxy: str("HTTPS_PROXY"),
-    noProxy: str("NO_PROXY"),
-    dockerCredentialForwarding: bool("DOCKER_CREDENTIAL_HELPER_ENABLED"),
-    gitCredentialForwarding: bool("GIT_CREDENTIAL_HELPER_ENABLED"),
-    gitSshSignatureForwarding: bool("GIT_SSH_SIGNATURE_FORWARDING_ENABLED"),
-    sshAgentForwarding: bool("SSH_AGENT_FORWARDING"),
-    sshAddPrivateKeys: bool("SSH_ADD_PRIVATE_KEYS"),
+    dotfilesScript: str("DOTFILES_SCRIPT"),
+    dockerCredentialForwarding: bool("SSH_INJECT_DOCKER_CREDENTIALS", true),
+    gitCredentialForwarding: bool("SSH_INJECT_GIT_CREDENTIALS", true),
+    gitSshSignatureForwarding: bool("GIT_SSH_SIGNATURE_FORWARDING", true),
+    sshAgentForwarding: bool("SSH_AGENT_FORWARDING", true),
+    sshAddPrivateKeys: bool("SSH_ADD_PRIVATE_KEYS", true),
     sshStrictHostKeyChecking: bool("SSH_STRICT_HOST_KEY_CHECKING"),
     gpgAgentForwarding: bool("GPG_AGENT_FORWARDING"),
-    additionalCliFlags: str("ADDITIONAL_FLAGS"),
-    additionalEnvVars: str("ADDITIONAL_ENV_VARS"),
-    experimentalMultiDevcontainer: bool("EXPERIMENTAL_MULTI_DEVCONTAINER"),
+    agentInjectTimeout: str("AGENT_INJECT_TIMEOUT", "20"),
+    registryCache: str("REGISTRY_CACHE"),
+    exitAfterTimeout: bool("EXIT_AFTER_TIMEOUT", true),
+    sshConfigPath: str("SSH_CONFIG_PATH"),
+    sshConfigIncludePath: str("SSH_CONFIG_INCLUDE_PATH"),
   }
 }
 
@@ -298,17 +323,13 @@ export function initSettings() {
   const unsubColor = colorScheme.subscribe((value) => {
     applyColorScheme(value)
   })
-  const unsubFont = fontSize.subscribe((value) => {
-    applyFontSize(value)
-  })
-  const unsubZoom = zoomLevel.subscribe((value) => {
-    applyZoom(value)
+  const unsubScale = uiScale.subscribe((value) => {
+    applyUIScale(value)
   })
   const unsubscribe = () => {
     unsubTheme()
     unsubColor()
-    unsubFont()
-    unsubZoom()
+    unsubScale()
   }
 
   if (browser) {
