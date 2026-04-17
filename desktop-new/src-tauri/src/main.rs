@@ -74,6 +74,7 @@ fn main() {
             commands::contexts::context_use,
             commands::contexts::context_options,
             commands::contexts::context_set_options,
+            commands::system::app_ready,
             commands::system::devpod_version,
             commands::system::devpod_upgrade,
             commands::system::devpod_upgrade_dry_run,
@@ -81,9 +82,6 @@ fn main() {
             commands::ssh_keys::ssh_key_generate,
         ])
         .setup(move |app| {
-            let window = app.get_webview_window("main").unwrap();
-            window.show().unwrap();
-
             let pty_manager = Arc::new(PtyManager::new(app.handle().clone()));
             app.manage(pty_manager);
 

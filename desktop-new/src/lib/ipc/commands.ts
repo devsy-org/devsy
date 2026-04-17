@@ -159,6 +159,11 @@ export async function auditByResource(
   })
 }
 
+// App lifecycle
+export async function appReady(): Promise<void> {
+  return invoke<void>("app_ready")
+}
+
 // System commands
 export async function devpodVersion(): Promise<string> {
   return invoke<string>("devpod_version")

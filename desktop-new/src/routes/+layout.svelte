@@ -16,6 +16,7 @@ import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
 import { initSettings } from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
+import { appReady } from "$lib/ipc/commands.js"
 
 let { children } = $props()
 
@@ -54,6 +55,9 @@ onMount(() => {
   initMachines()
   initContexts()
   destroySettings = initSettings()
+
+  // Signal Tauri that the frontend is ready — closes splash, shows main window
+  appReady().catch(() => {})
 })
 
 onDestroy(() => {

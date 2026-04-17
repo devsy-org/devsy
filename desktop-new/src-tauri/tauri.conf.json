@@ -30,6 +30,7 @@
     },
     "windows": [
       {
+        "label": "main",
         "title": "DevPod",
         "width": 1200,
         "height": 800,
@@ -37,6 +38,18 @@
         "minHeight": 700,
         "visible": false,
         "resizable": true
+      },
+      {
+        "label": "splash",
+        "title": "DevPod",
+        "url": "splash.html",
+        "width": 380,
+        "height": 420,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "center": true,
+        "alwaysOnTop": true
       }
     ]
   }

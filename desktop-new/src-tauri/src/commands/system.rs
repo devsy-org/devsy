@@ -1,6 +1,18 @@
 use crate::daemon::cli::CliRunner;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
+
+#[tauri::command]
+pub async fn app_ready(app: tauri::AppHandle) -> Result<(), String> {
+    // Close splash screen and show main window
+    if let Some(splash) = app.get_webview_window("splash") {
+        let _ = splash.close();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        main.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn devpod_version(cli: State<'_, Arc<CliRunner>>) -> Result<String, String> {
