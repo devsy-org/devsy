@@ -1,3 +1,21 @@
+<!--
+  KNOWN ISSUE: macOS WKWebView first-click navigation bug
+
+  SvelteKit's goto() and <a href> navigation silently fail on the first
+  click in Tauri's WKWebView on macOS. Plain onclick handlers (counters,
+  toggles) work fine — only SvelteKit router navigation is affected.
+
+  Root cause: SvelteKit SSR hydration leaves the client-side router in a
+  state where goto() silently drops its first invocation in WKWebView.
+  The Tauri docs require `export const ssr = false` in +layout.ts to fix
+  this, but that currently causes a black screen in dev mode (needs
+  further investigation into Vite/adapter-static SPA configuration).
+
+  See: https://github.com/orgs/tauri-apps/discussions/6423
+  See: https://tauri.app/start/frontend/sveltekit/
+  See: https://github.com/tauri-apps/tauri/issues/6781
+  See: https://github.com/tauri-apps/tauri/issues/4316
+-->
 <!doctype html>
 <html lang="en" class="dark">
   <head>
