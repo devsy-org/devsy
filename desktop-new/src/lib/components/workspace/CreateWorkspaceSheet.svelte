@@ -9,6 +9,7 @@ import { Label } from "$lib/components/ui/label/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Sheet from "$lib/components/ui/sheet/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
+import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
@@ -72,47 +73,38 @@ const TEMPLATES = [
   {
     name: "Python",
     source: "https://github.com/microsoft/vscode-remote-try-python",
-    icon: "PY",
   },
   {
     name: "Node.js",
     source: "https://github.com/microsoft/vscode-remote-try-node",
-    icon: "JS",
   },
   {
     name: "Go",
     source: "https://github.com/microsoft/vscode-remote-try-go",
-    icon: "GO",
   },
   {
     name: "Rust",
     source: "https://github.com/microsoft/vscode-remote-try-rust",
-    icon: "RS",
   },
   {
     name: "Java",
     source: "https://github.com/microsoft/vscode-remote-try-java",
-    icon: "JV",
   },
   {
     name: "PHP",
     source: "https://github.com/microsoft/vscode-remote-try-php",
-    icon: "PHP",
   },
   {
     name: "C++",
     source: "https://github.com/microsoft/vscode-remote-try-cpp",
-    icon: "C++",
   },
   {
     name: ".NET",
     source: "https://github.com/microsoft/vscode-remote-try-dotnet",
-    icon: "C#",
   },
   {
     name: "Ruby",
     source: "https://github.com/skevetter/devpod-quickstart-ruby",
-    icon: "RB",
   },
 ]
 
@@ -264,7 +256,7 @@ async function handleSubmit() {
               onclick={() => { source = template.source; name = template.name.toLowerCase().replace(/[^a-z0-9]/g, '-') }}
               disabled={submitting}
             >
-              <span class="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-bold">{template.icon}</span>
+              <LanguageIcon name={template.name} class="h-8 w-8" />
               <span class="truncate text-xs">{template.name}</span>
             </button>
           {/each}
