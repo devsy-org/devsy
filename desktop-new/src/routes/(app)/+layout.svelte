@@ -81,7 +81,7 @@ onDestroy(() => {
 <SidebarUI.Provider>
   <Sidebar terminalCount={$terminalCount} />
 
-  <SidebarUI.Inset>
+  <SidebarUI.Inset class="min-h-0 overflow-hidden">
     <header class="flex h-12 items-center justify-between border-b px-4">
       <div class="flex items-center gap-2">
         <SidebarUI.Trigger class="-ml-1" />
@@ -93,7 +93,7 @@ onDestroy(() => {
       </div>
     </header>
 
-    <main class="flex flex-1 flex-col overflow-hidden p-6">
+    <main class="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
       {@render children()}
     </main>
   </SidebarUI.Inset>

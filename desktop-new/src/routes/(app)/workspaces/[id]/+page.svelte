@@ -446,7 +446,7 @@ async function handleDelete() {
 
       <Tabs.Content value="logs" class="min-h-0 flex-1 overflow-hidden">
         <div class="mt-4 flex min-h-0 flex-1 flex-col h-full overflow-hidden">
-          <Accordion.Root type="multiple" value={["live-output", "log-files"]} class="w-full overflow-hidden">
+          <Accordion.Root type="multiple" value={["live-output"]} class="w-full overflow-hidden">
             <Accordion.Item value="live-output">
               <Accordion.Trigger>
                 Live Output
@@ -495,49 +495,53 @@ async function handleDelete() {
                   <Button variant="outline" size="sm" onclick={loadLogs} disabled={logsLoading}>
                     {logsLoading ? "Loading..." : "Refresh"}
                   </Button>
-                  {#if selectedLog && logContent}
-                    <Button variant="outline" size="sm" onclick={() => copyToClipboard(logContent)}>
-                      Copy Log
-                    </Button>
-                  {/if}
                 </div>
                 {#if logsLoading}
                   <p class="text-sm text-muted-foreground">Loading logs...</p>
                 {:else if logEntries.length === 0}
                   <p class="text-sm text-muted-foreground">No log files found for this workspace.</p>
                 {:else}
-                  <div class="flex gap-4 min-w-0">
-                    <div class="w-64 space-y-1 shrink-0">
-                      {#each logEntries as entry}
-                        <div class="group/log flex items-center gap-1 rounded hover:bg-muted {selectedLog === entry.filename ? 'bg-muted' : ''}">
-                          <button
-                            class="min-w-0 flex-1 px-3 py-2 text-left text-sm {selectedLog === entry.filename ? 'font-medium' : ''}"
-                            onclick={() => viewLog(entry)}
-                          >
-                            <div class="truncate">{entry.filename}</div>
-                            <div class="text-xs text-muted-foreground">
-                              {Math.round(entry.sizeBytes / 1024)}KB
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            class="shrink-0 rounded p-1.5 mr-1 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover/log:opacity-60 hover:!opacity-100"
-                            title="Delete log"
-                            onclick={() => deleteLog(entry)}
-                          >
-                            <Trash2 class="h-3.5 w-3.5" />
-                          </button>
+                  <Accordion.Root type="single" class="w-full">
+                    {#each logEntries as entry (entry.filename)}
+                      <Accordion.Item value={entry.filename}>
+                        <div class="group/log flex items-center">
+                          <Accordion.Trigger class="flex-1" onclick={() => viewLog(entry)}>
+                            <span class="truncate">{entry.filename}</span>
+                            <span class="ml-2 text-xs text-muted-foreground">{Math.round(entry.sizeBytes / 1024)}KB</span>
+                          </Accordion.Trigger>
+                          <div class="flex items-center gap-1 shrink-0 pr-2">
+                            {#if selectedLog === entry.filename && logContent}
+                              <button
+                                type="button"
+                                class="rounded p-1.5 opacity-0 transition-opacity hover:bg-muted group-hover/log:opacity-60 hover:!opacity-100"
+                                title="Copy log"
+                                onclick={() => copyToClipboard(logContent)}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                              </button>
+                            {/if}
+                            <button
+                              type="button"
+                              class="rounded p-1.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover/log:opacity-60 hover:!opacity-100"
+                              title="Delete log"
+                              onclick={() => deleteLog(entry)}
+                            >
+                              <Trash2 class="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      {/each}
-                    </div>
-                    <ScrollArea class="max-h-96 flex-1 min-w-0 rounded-md border">
-                      {#if selectedLog}
-                        <LogTable lines={logContent.split("\n")} />
-                      {:else}
-                        <p class="p-4 text-sm text-muted-foreground">Select a log file to view.</p>
-                      {/if}
-                    </ScrollArea>
-                  </div>
+                        <Accordion.Content>
+                          <ScrollArea class="max-h-96 rounded-md border">
+                            {#if selectedLog === entry.filename}
+                              <LogTable lines={logContent.split("\n")} />
+                            {:else}
+                              <p class="p-4 text-sm text-muted-foreground">Loading...</p>
+                            {/if}
+                          </ScrollArea>
+                        </Accordion.Content>
+                      </Accordion.Item>
+                    {/each}
+                  </Accordion.Root>
                 {/if}
               </Accordion.Content>
             </Accordion.Item>
@@ -545,8 +549,8 @@ async function handleDelete() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value="terminal" class="min-h-0 flex-1 overflow-hidden">
-        <div class="mt-4 flex min-h-0 flex-1 flex-col h-full">
+      <Tabs.Content value="terminal" class="min-h-0 flex-1 flex flex-col overflow-hidden">
+        <div class="mt-4 flex min-h-0 flex-1 flex-col">
           {#if sshSessionId}
             <div class="min-h-0 flex-1 rounded-md border overflow-hidden">
               <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
