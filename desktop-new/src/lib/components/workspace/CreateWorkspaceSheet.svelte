@@ -13,6 +13,7 @@ import LogTable from "$lib/components/log/LogTable.svelte"
 import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { providers } from "$lib/stores/providers.js"
+import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "@tauri-apps/api/event"
@@ -186,20 +187,28 @@ async function handleSubmit() {
     return
   }
 
+  const workspaceId =
+    name.trim() ||
+    source
+      .trim()
+      .split("/")
+      .pop()
+      ?.replace(/\.git$/, "") ||
+    undefined
+
+  if (
+    workspaceId &&
+    $workspaces.some((ws) => ws.id.toLowerCase() === workspaceId.toLowerCase())
+  ) {
+    error = `Workspace "${workspaceId}" already exists. Choose a different name.`
+    return
+  }
+
   error = ""
   submitting = true
   outputLines = []
 
   try {
-    const workspaceId =
-      name.trim() ||
-      source
-        .trim()
-        .split("/")
-        .pop()
-        ?.replace(/\.git$/, "") ||
-      undefined
-
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
         if (progress.message) {
@@ -240,7 +249,7 @@ async function handleSubmit() {
       <Sheet.Description>Set up a new development workspace from a source repository, image, or local path.</Sheet.Description>
     </Sheet.Header>
 
-    <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-6">
+    <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-16">
       <div class="space-y-3">
         <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick Start Templates</h3>
         <div class="grid grid-cols-3 gap-2">
