@@ -65,11 +65,20 @@ function resourceHref(entry: AuditEntry): string | null {
   if (!entry.resourceId) return null
   switch (entry.resourceType) {
     case "workspace":
-      return `/workspaces/${entry.resourceId}`
+      if ($workspaces.some((ws) => ws.id === entry.resourceId)) {
+        return `/workspaces/${entry.resourceId}`
+      }
+      return null
     case "provider":
-      return `/providers/${entry.resourceId}`
+      if ($providers.some((p) => p.name === entry.resourceId)) {
+        return `/providers`
+      }
+      return null
     case "machine":
-      return `/machines/${entry.resourceId}`
+      if ($machines.some((m) => m.id === entry.resourceId)) {
+        return `/machines/${entry.resourceId}`
+      }
+      return null
     default:
       return null
   }
@@ -167,7 +176,7 @@ async function quickStop(wsId: string) {
           {#each activity as entry}
             {@const href = resourceHref(entry)}
             <a
-              class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 cursor-pointer"
+              class="flex items-center gap-3 px-4 py-3 transition-colors {href ? 'hover:bg-accent/50 cursor-pointer' : 'cursor-default'}"
               href={href ?? "#"}
               onclick={(e) => { if (!href) e.preventDefault() }}
             >

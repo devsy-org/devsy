@@ -14,7 +14,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import { providerAdd } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
-const POPULAR_PROVIDERS: {
+const PROVIDERS: {
   name: string
   description: string
   icon: typeof Container
@@ -89,9 +89,9 @@ async function handleSubmit() {
   </form>
 
   <div class="space-y-3">
-    <h2 class="text-lg font-semibold">Popular Providers</h2>
+    <h2 class="text-lg font-semibold">Providers</h2>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {#each POPULAR_PROVIDERS as p (p.name)}
+      {#each PROVIDERS as p (p.name)}
         {@const Icon = p.icon}
         <button
           type="button"
