@@ -162,7 +162,7 @@ async function handleSubmit() {
             toasts.success(`Workspace ${workspaceId ?? "created"} is ready`)
             goto(`/workspaces/${workspaceId}`)
           } else {
-            error = "Workspace creation failed. Check output for details."
+            toasts.error("Workspace creation failed. Check output for details.")
           }
         }
       }
@@ -175,7 +175,7 @@ async function handleSubmit() {
       ide: selectedIde,
     })
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err)
+    toasts.error(`Failed to create workspace: ${err}`)
     submitting = false
   }
 }
