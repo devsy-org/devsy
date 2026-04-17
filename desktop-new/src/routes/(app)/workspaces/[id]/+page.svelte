@@ -103,6 +103,8 @@ let sshSessionId = $state<string | null>(null)
 let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
+let selectedIde = $state<string | null>(null)
+let currentIde = $derived(selectedIde ?? workspace?.ide?.name ?? "none")
 let filteredIdes = $derived(
   IDE_OPTIONS.filter((i) =>
     i.label.toLowerCase().includes(ideSearch.toLowerCase()),
@@ -280,7 +282,7 @@ async function handleStart() {
 }
 
 async function handleOpenIde() {
-  const ide = workspace?.ide?.name || undefined
+  const ide = currentIde !== "none" ? currentIde : undefined
   startStreamingOp("Open IDE")
   try {
     commandId = await workspaceUp({ source: id, ide })
@@ -413,7 +415,7 @@ async function handleDelete() {
               <Popover.Trigger>
                 {#snippet child({ props })}
                   <Button variant="outline" class="h-8 w-48 justify-between text-left" {...props}>
-                    <span class="truncate">{IDE_OPTIONS.find((i) => i.value === (workspace.ide?.name ?? "none"))?.label ?? "None"}</span>
+                    <span class="truncate">{IDE_OPTIONS.find((i) => i.value === currentIde)?.label ?? "None"}</span>
                     <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 {/snippet}
@@ -428,19 +430,13 @@ async function handleDelete() {
                         <Command.Item
                           value={ide.value}
                           class="justify-start"
-                          onSelect={async () => {
+                          onSelect={() => {
+                            selectedIde = ide.value
                             ideComboOpen = false
                             ideSearch = ""
-                            try {
-                              startStreamingOp("Change IDE")
-                              commandId = await workspaceUp({ source: id, ide: ide.value })
-                            } catch (err) {
-                              operationRunning = false
-                              toasts.error(`Failed to change IDE: ${err}`)
-                            }
                           }}
                         >
-                          <Check class="mr-2 h-4 w-4 {(workspace.ide?.name ?? 'none') === ide.value ? 'opacity-100' : 'opacity-0'}" />
+                          <Check class="mr-2 h-4 w-4 {currentIde === ide.value ? 'opacity-100' : 'opacity-0'}" />
                           {ide.label}
                         </Command.Item>
                       {/each}
