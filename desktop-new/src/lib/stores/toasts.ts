@@ -1,4 +1,5 @@
 import { derived, writable } from "svelte/store"
+import { toast as sonnerToast } from "svelte-sonner"
 
 export interface Toast {
   id: string
@@ -16,7 +17,6 @@ export const DURATION_MS: Record<Toast["variant"], number> = {
 
 const MAX_HISTORY = 50
 
-const activeToasts = writable<Toast[]>([])
 const historyStore = writable<Toast[]>([])
 
 let nextId = 0
@@ -26,14 +26,17 @@ function add(message: string, variant: Toast["variant"] = "default") {
   const duration = DURATION_MS[variant]
   const toast: Toast = { id, message, variant, timestamp: Date.now(), duration }
 
-  activeToasts.update((list) => [...list, toast])
   historyStore.update((list) => [toast, ...list].slice(0, MAX_HISTORY))
 
-  return id
-}
+  if (variant === "success") {
+    sonnerToast.success(message, { duration })
+  } else if (variant === "error") {
+    sonnerToast.error(message, { duration })
+  } else {
+    sonnerToast.info(message, { duration })
+  }
 
-function dismiss(id: string) {
-  activeToasts.update((list) => list.filter((t) => t.id !== id))
+  return id
 }
 
 function removeFromHistory(id: string) {
@@ -50,11 +53,10 @@ const unreadCount = derived(historyStore, ($history) => {
 })
 
 export const toasts = {
-  subscribe: activeToasts.subscribe,
   success: (message: string) => add(message, "success"),
   error: (message: string) => add(message, "error"),
   info: (message: string) => add(message, "default"),
-  dismiss,
+  dismiss: (id?: string | number) => sonnerToast.dismiss(id),
 }
 
 export const notificationHistory = {

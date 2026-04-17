@@ -1,93 +1,80 @@
 import { get } from "svelte/store"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { toasts } from "./toasts.js"
+import { describe, expect, it, vi } from "vitest"
+
+// Mock svelte-sonner before importing toasts
+vi.mock("svelte-sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}))
+
+import { toast as sonnerToast } from "svelte-sonner"
+import { notificationHistory, toasts } from "./toasts.js"
 
 describe("toasts store", () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    // Clear any existing toasts
-    const current = get(toasts)
-    for (const t of current) {
-      toasts.dismiss(t.id)
-    }
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it("starts empty", () => {
-    expect(get(toasts)).toEqual([])
-  })
-
-  it("adds a success toast", () => {
+  it("success calls sonner.success and adds to history", () => {
     toasts.success("It worked!")
-    const current = get(toasts)
-    expect(current).toHaveLength(1)
-    expect(current[0].message).toBe("It worked!")
-    expect(current[0].variant).toBe("success")
+    expect(sonnerToast.success).toHaveBeenCalledWith("It worked!", {
+      duration: 5000,
+    })
+    const history = get(notificationHistory)
+    expect(history.length).toBeGreaterThanOrEqual(1)
+    expect(history[0].message).toBe("It worked!")
+    expect(history[0].variant).toBe("success")
   })
 
-  it("adds an error toast", () => {
+  it("error calls sonner.error and adds to history", () => {
     toasts.error("Something failed")
-    const current = get(toasts)
-    expect(current).toHaveLength(1)
-    expect(current[0].variant).toBe("error")
+    expect(sonnerToast.error).toHaveBeenCalledWith("Something failed", {
+      duration: 8000,
+    })
+    const history = get(notificationHistory)
+    expect(history[0].message).toBe("Something failed")
+    expect(history[0].variant).toBe("error")
   })
 
-  it("adds an info toast with default variant", () => {
+  it("info calls sonner.info and adds to history", () => {
     toasts.info("FYI")
-    const current = get(toasts)
-    expect(current).toHaveLength(1)
-    expect(current[0].variant).toBe("default")
+    expect(sonnerToast.info).toHaveBeenCalledWith("FYI", { duration: 5000 })
+    const history = get(notificationHistory)
+    expect(history[0].message).toBe("FYI")
+    expect(history[0].variant).toBe("default")
   })
 
-  it("assigns unique ids to each toast", () => {
+  it("assigns unique ids in history", () => {
     toasts.success("first")
     toasts.error("second")
-    const current = get(toasts)
-    expect(current).toHaveLength(2)
-    expect(current[0].id).not.toBe(current[1].id)
+    const history = get(notificationHistory)
+    expect(history[0].id).not.toBe(history[1].id)
   })
 
-  it("dismisses a toast by id", () => {
-    const id = toasts.success("will be dismissed")
-    expect(get(toasts)).toHaveLength(1)
-    toasts.dismiss(id)
-    expect(get(toasts)).toHaveLength(0)
+  it("dismiss calls sonner.dismiss", () => {
+    toasts.dismiss(123)
+    expect(sonnerToast.dismiss).toHaveBeenCalledWith(123)
   })
 
-  it("auto-dismisses after 4 seconds", () => {
-    toasts.success("temporary")
-    expect(get(toasts)).toHaveLength(1)
-
-    vi.advanceTimersByTime(3999)
-    expect(get(toasts)).toHaveLength(1)
-
-    vi.advanceTimersByTime(1)
-    expect(get(toasts)).toHaveLength(0)
+  it("removes an item from history", () => {
+    toasts.success("to remove")
+    const history = get(notificationHistory)
+    const id = history[0].id
+    notificationHistory.remove(id)
+    const updated = get(notificationHistory)
+    expect(updated.find((t) => t.id === id)).toBeUndefined()
   })
 
-  it("dismissing non-existent id is a no-op", () => {
-    toasts.success("stays")
-    toasts.dismiss("nonexistent-id")
-    expect(get(toasts)).toHaveLength(1)
+  it("clears all history", () => {
+    toasts.success("a")
+    toasts.error("b")
+    notificationHistory.clear()
+    expect(get(notificationHistory)).toEqual([])
   })
 
-  it("handles multiple toasts with independent auto-dismiss", () => {
-    toasts.success("first")
-    vi.advanceTimersByTime(2000)
-    toasts.error("second")
-
-    expect(get(toasts)).toHaveLength(2)
-
-    // First toast should dismiss at t=4000
-    vi.advanceTimersByTime(2000)
-    expect(get(toasts)).toHaveLength(1)
-    expect(get(toasts)[0].message).toBe("second")
-
-    // Second toast should dismiss at t=6000
-    vi.advanceTimersByTime(2000)
-    expect(get(toasts)).toHaveLength(0)
+  it("unreadCount reflects recent items", () => {
+    notificationHistory.clear()
+    toasts.success("recent")
+    expect(get(notificationHistory.unreadCount)).toBe(1)
   })
 })

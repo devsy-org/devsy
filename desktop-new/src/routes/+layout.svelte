@@ -5,7 +5,7 @@ import { onMount, onDestroy } from "svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
 import NotificationHistory from "$lib/components/layout/NotificationHistory.svelte"
-import Toaster from "$lib/components/layout/Toaster.svelte"
+import { Toaster } from "$lib/components/ui/sonner/index.js"
 import CommandPalette from "$lib/components/layout/CommandPalette.svelte"
 import Breadcrumbs from "$lib/components/layout/Breadcrumbs.svelte"
 import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
@@ -83,6 +83,6 @@ onDestroy(() => {
     </main>
   </div>
 
-  <Toaster />
+  <Toaster richColors closeButton position="bottom-right" />
   <CommandPalette />
 </div>
