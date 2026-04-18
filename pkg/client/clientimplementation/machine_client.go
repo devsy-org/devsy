@@ -9,16 +9,16 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/options"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/options"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/skevetter/log"
 )
 
 func NewMachineClient(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 	machine *provider.Machine,
 	log log.Logger,
@@ -33,7 +33,7 @@ func NewMachineClient(
 	}
 
 	mc := &machineClient{
-		devPodConfig: devPodConfig,
+		devsyConfig: devsyConfig,
 		config:       provider,
 		machine:      machine,
 		log:          log,
@@ -44,7 +44,7 @@ func NewMachineClient(
 }
 
 type machineClient struct {
-	devPodConfig *config.Config
+	devsyConfig *config.Config
 	config       *provider.ProviderConfig
 	machine      *provider.Machine
 	log          log.Logger
@@ -73,7 +73,7 @@ type execConfig struct {
 func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 	var done chan struct{}
 	if cfg.withProgress {
-		done = scheduleLogMessage("Devpod "+cfg.name+" operation is in progress", e.client.log)
+		done = scheduleLogMessage("Devsy "+cfg.name+" operation is in progress", e.client.log)
 		defer close(done)
 	}
 
@@ -87,7 +87,7 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 		Command:  cfg.command,
 		Context:  e.client.machine.Context,
 		Machine:  e.client.machine,
-		Options:  e.client.devPodConfig.ProviderOptions(e.client.config.Name),
+		Options:  e.client.devsyConfig.ProviderOptions(e.client.config.Name),
 		Config:   e.client.config,
 		Stdout:   cfg.stdout,
 		Stderr:   cfg.stderr,
@@ -157,7 +157,7 @@ func (s *machineClient) RefreshOptions(
 
 	machine, err := options.ResolveAndSaveOptionsMachine(
 		ctx,
-		s.devPodConfig,
+		s.devsyConfig,
 		s.config,
 		s.machine,
 		userOptions,
@@ -172,12 +172,12 @@ func (s *machineClient) RefreshOptions(
 }
 
 func (s *machineClient) AgentPath() string {
-	return options.ResolveAgentConfig(s.devPodConfig, s.config, nil, s.machine).Path
+	return options.ResolveAgentConfig(s.devsyConfig, s.config, nil, s.machine).Path
 }
 
 func (s *machineClient) AgentLocal() bool {
 	return options.ResolveAgentConfig(
-		s.devPodConfig,
+		s.devsyConfig,
 		s.config,
 		nil,
 		s.machine,
@@ -185,7 +185,7 @@ func (s *machineClient) AgentLocal() bool {
 }
 
 func (s *machineClient) AgentURL() string {
-	return options.ResolveAgentConfig(s.devPodConfig, s.config, nil, s.machine).DownloadURL
+	return options.ResolveAgentConfig(s.devsyConfig, s.config, nil, s.machine).DownloadURL
 }
 
 func (s *machineClient) Context() string {

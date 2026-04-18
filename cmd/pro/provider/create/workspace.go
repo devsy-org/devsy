@@ -8,13 +8,13 @@ import (
 	"os"
 
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/form"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/form"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/terminal"
 	"github.com/spf13/cobra"
@@ -61,7 +61,7 @@ func (cmd *WorkspaceCmd) Run(
 	// fully serialized instance, right now only used by GUI
 	instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv)
 	if instanceEnv != "" {
-		instance := &managementv1.DevPodWorkspaceInstance{} // init pointer
+		instance := &managementv1.DevsyWorkspaceInstance{} // init pointer
 		err := json.Unmarshal([]byte(instanceEnv), instance)
 		if err != nil {
 			return fmt.Errorf("unmarshal workpace instance %s: %w", instanceEnv, err)
@@ -153,16 +153,16 @@ func (cmd *WorkspaceCmd) Run(
 func createInstance(
 	ctx context.Context,
 	client client.Client,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
 		return nil, err
 	}
 
 	updatedInstance, err := managementClient.Loft().ManagementV1().
-		DevPodWorkspaceInstances(instance.GetNamespace()).
+		DevsyWorkspaceInstances(instance.GetNamespace()).
 		Create(ctx, instance, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("create workspace instance: %w", err)

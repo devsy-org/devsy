@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os/user"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )

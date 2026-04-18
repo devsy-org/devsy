@@ -14,12 +14,12 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/compose"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/feature"
-	"github.com/skevetter/devpod/pkg/devcontainer/metadata"
-	"github.com/skevetter/devpod/pkg/dockerfile"
-	"github.com/skevetter/devpod/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/compose"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/dockerfile"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"gopkg.in/yaml.v2"
 )
 
@@ -291,7 +291,7 @@ func (r *runner) runDockerCompose(
 	if mergedConfig.RemoteEnv == nil {
 		mergedConfig.RemoteEnv = map[string]string{}
 	}
-	mergedConfig.RemoteEnv["DEVPOD_COMPOSE_PROJECT_NAME"] = project.Name
+	mergedConfig.RemoteEnv["DEVSY_COMPOSE_PROJECT_NAME"] = project.Name
 	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = project.Name
 
 	// setup container
@@ -818,7 +818,7 @@ func (r *runner) setBuildPathsForContext(
 	// from the custom build context. This ensures that the features folder is referenced in the
 	// Dockerfile.
 	pattern := regexp.MustCompile(
-		`(COPY|ADD)(\s+)\./` + regexp.QuoteMeta(config.DevPodContextFeatureFolder) + `/`,
+		`(COPY|ADD)(\s+)\./` + regexp.QuoteMeta(config.DevsyContextFeatureFolder) + `/`,
 	)
 	modifiedDockerfileContent = pattern.ReplaceAllString(
 		dockerfileContent,

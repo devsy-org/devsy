@@ -1,7 +1,7 @@
 import { ProClient } from "@/client"
 import { TWorkspaceOwnerFilterState } from "@/components"
-import { ManagementV1Project } from "@loft-enterprise/client/gen/models/managementV1Project"
-import { ManagementV1Self } from "@loft-enterprise/client/gen/models/managementV1Self"
+import { ManagementV1Project } from "@devsy/client/gen/models/managementV1Project"
+import { ManagementV1Self } from "@devsy/client/gen/models/managementV1Self"
 import { UseQueryResult } from "@tanstack/react-query"
 import { Dispatch, SetStateAction, createContext, useContext } from "react"
 

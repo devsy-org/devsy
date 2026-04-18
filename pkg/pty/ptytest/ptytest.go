@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/skevetter/devpod/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/driver"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	corev1 "k8s.io/api/core/v1"
 )
 

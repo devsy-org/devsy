@@ -8,11 +8,11 @@ import (
 	"os"
 
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/form"
-	"github.com/skevetter/devpod/pkg/platform/project"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/form"
+	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/terminal"
 	"github.com/spf13/cobra"
@@ -59,7 +59,7 @@ func (cmd *WorkspaceCmd) Run(
 	// GUI
 	instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv)
 	if instanceEnv != "" {
-		newInstance := &managementv1.DevPodWorkspaceInstance{}
+		newInstance := &managementv1.DevsyWorkspaceInstance{}
 		err := json.Unmarshal([]byte(instanceEnv), newInstance)
 		if err != nil {
 			return fmt.Errorf("unmarshal workspace instance %s: %w", instanceEnv, err)
@@ -139,10 +139,10 @@ func (cmd *WorkspaceCmd) Run(
 func updateInstance(
 	ctx context.Context,
 	client client.Client,
-	oldInstance *managementv1.DevPodWorkspaceInstance,
-	newInstance *managementv1.DevPodWorkspaceInstance,
+	oldInstance *managementv1.DevsyWorkspaceInstance,
+	newInstance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	// This ensures the template is kept up to date with configuration changes
 	if newInstance.Spec.TemplateRef != nil {
 		newInstance.Spec.TemplateRef.SyncOnce = true

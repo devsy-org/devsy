@@ -1,13 +1,13 @@
 # Ztunnel example
 
 ```bash
-curl -L -o devpod "https://github.com/skevetter/devpod/releases/latest/download/devpod-darwin-arm64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/devsy-darwin-arm64" && sudo install -c -m 0755 devsy /usr/local/bin && rm -f devsy
 ```
 
 Update the provider
 
 ```bash
-devpod provider update kubernetes kubernetes
+devsy provider update kubernetes kubernetes
 ```
 
 Version deployed and version of source code matters. Make sure they match. Pull the latest version of the source code. And copy the devcontainer.json file to the source code. Or you can use the latest version of `gcr.io/istio-testing/build-tools` image.
@@ -20,10 +20,10 @@ istioctl uninstall --purge -y
 istioctl install -y --set profile=ambient --set meshConfig.accessLogFile=/dev/stdout
 ```
 
-Also, if you want to start from scratch, better you delete the devpod:
+Also, if you want to start from scratch, better you delete the devsy:
 
 ```bash
-devpod delete . --force
+devsy delete . --force
 ```
 
 Let's deploy an app to test ambient:
@@ -72,14 +72,14 @@ Output:
 
 At this point, traffic flows through the ztunnel.
 
-Let's label with `devpod-ztunnel=enabled` only one node to deploy devpod-ztunnel in there:
+Let's label with `devsy-ztunnel=enabled` only one node to deploy devsy-ztunnel in there:
 
 ```shell
 FIRST_NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
-kubectl label node $FIRST_NODE devpod-ztunnel=enabled
+kubectl label node $FIRST_NODE devsy-ztunnel=enabled
 ```
 
-Next command add nodeAffinity to make sure that the upstream ztunnel is not deployed in any node so our test if focused on one node and one devpod-ztunnel:
+Next command add nodeAffinity to make sure that the upstream ztunnel is not deployed in any node so our test if focused on one node and one devsy-ztunnel:
 
 ```bash
 kubectl patch daemonset -n istio-system ztunnel --type=merge -p='{"spec":{"template":{"spec":{"affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"upstream-ztunnel","operator":"In","values":["no"]}]}]}}}}}}}'
@@ -100,25 +100,25 @@ Make sure you have docker installed:
 docker --version
 ```
 
-Go to the root of the project and run the devpod:
+Go to the root of the project and run the devsy:
 
-**Note** Normally, to start a Devpod is a straight forward simple command. However, given the complexty of ztunnel setup, we need to adjut it a bit.
+**Note** Normally, to start a Devsy is a straight forward simple command. However, given the complexty of ztunnel setup, we need to adjut it a bit.
 
 - `devcontainer.json` is overriden. In our version, we create a `postStartCommand` required to set the secret in the place that ztunnel app can find. Also, some `remoteEnv` are set to help on builing the app in the remote container.
 - Using Kind cluster, the `STORAGE_CLASS` is `standard`. If you are using a different cluster, you may need to change it (i.e in EKS it would be `gp2`)
 - The template of the pod is also overriden to match what ztunnel needs to run.
 
 ```bash
-devpod up . --provider-option STORAGE_CLASS=gp2 --provider-option KUBECTL_PATH=/usr/local/bin/kubectl --provider-option KUBERNETES_NAMESPACE=istio-system --provider-option POD_MANIFEST_TEMPLATE=$(pwd)/devpod/pod_manifest.yaml --devcontainer-path devpod/devcontainer.json --ide vscode --debug \
+devsy up . --provider-option STORAGE_CLASS=gp2 --provider-option KUBECTL_PATH=/usr/local/bin/kubectl --provider-option KUBERNETES_NAMESPACE=istio-system --provider-option POD_MANIFEST_TEMPLATE=$(pwd)/devsy/pod_manifest.yaml --devcontainer-path devsy/devcontainer.json --ide vscode --debug \
   --recreate --reset
 ```
 
-You will see DevPod cli copying your project files to the remote container. In the case of ztunnel project, make sure that the `out` folder is deleted before starting devpod. That folder is usully too heavy and unnecesary to be copied to the container.
+You will see Devsy cli copying your project files to the remote container. In the case of ztunnel project, make sure that the `out` folder is deleted before starting devsy. That folder is usully too heavy and unnecesary to be copied to the container.
 
 At the moment, changes in the project when working in the container are not reflected in the local files. To do so, you can run the following command:
 
 ```bash
-rsync -rlptzv --progress --delete --exclude=.git --exclude=out "ztunnel.devpod:/workspaces/ztunnel" .
+rsync -rlptzv --progress --delete --exclude=.git --exclude=out "ztunnel.devsy:/workspaces/ztunnel" .
 ```
 
 When the process finishes, you can build the project:

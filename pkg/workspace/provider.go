@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/download"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/devpod/providers"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/download"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/providers"
 	"github.com/skevetter/log"
 )
 
@@ -29,7 +29,7 @@ type ProviderWithOptions struct {
 }
 
 type ProviderParams struct {
-	DevPodConfig *config.Config
+	DevsyConfig *config.Config
 	ProviderName string
 	Raw          []byte
 	Source       *provider.ProviderSource
@@ -38,11 +38,11 @@ type ProviderParams struct {
 
 // LoadProviders loads all known providers for the given context.
 func LoadProviders(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	log log.Logger,
 ) (*ProviderWithOptions, map[string]*ProviderWithOptions, error) {
-	defaultContext := devPodConfig.Current()
-	retProviders, err := LoadAllProviders(devPodConfig, log)
+	defaultContext := devsyConfig.Current()
+	retProviders, err := LoadAllProviders(devsyConfig, log)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,14 +61,14 @@ func LoadProviders(
 }
 
 func LoadAllProviders(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	log log.Logger,
 ) (map[string]*ProviderWithOptions, error) {
 	retProviders := map[string]*ProviderWithOptions{}
 
-	loadConfiguredProviders(devPodConfig, retProviders, log)
+	loadConfiguredProviders(devsyConfig, retProviders, log)
 
-	if err := loadUnconfiguredProviders(devPodConfig, retProviders); err != nil {
+	if err := loadUnconfiguredProviders(devsyConfig, retProviders); err != nil {
 		return nil, err
 	}
 
@@ -76,11 +76,11 @@ func LoadAllProviders(
 }
 
 func FindProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	name string,
 	log log.Logger,
 ) (*ProviderWithOptions, error) {
-	retProviders, err := LoadAllProviders(devPodConfig, log)
+	retProviders, err := LoadAllProviders(devsyConfig, log)
 	if err != nil {
 		return nil, err
 	}
@@ -93,16 +93,16 @@ func FindProvider(
 
 func ProviderFromHost(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	proHost string,
 	log log.Logger,
 ) (*provider.ProviderConfig, error) {
-	proInstanceConfig, err := provider.LoadProInstanceConfig(devPodConfig.DefaultContext, proHost)
+	proInstanceConfig, err := provider.LoadProInstanceConfig(devsyConfig.DefaultContext, proHost)
 	if err != nil {
 		return nil, fmt.Errorf("load pro instance %s: %w", proHost, err)
 	}
 
-	foundProvider, err := FindProvider(devPodConfig, proInstanceConfig.Provider, log)
+	foundProvider, err := FindProvider(devsyConfig, proInstanceConfig.Provider, log)
 	if err != nil {
 		return nil, fmt.Errorf("find provider: %w", err)
 	}
@@ -114,7 +114,7 @@ func ProviderFromHost(
 }
 
 func AddProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 	log log.Logger,
 ) (*provider.ProviderConfig, error) {
@@ -124,7 +124,7 @@ func AddProvider(
 	}
 
 	return AddProviderRaw(ProviderParams{
-		DevPodConfig: devPodConfig,
+		DevsyConfig: devsyConfig,
 		ProviderName: providerName,
 		Source:       providerSource,
 		Raw:          providerRaw,
@@ -138,16 +138,16 @@ func AddProviderRaw(p ProviderParams) (*provider.ProviderConfig, error) {
 		return nil, err
 	}
 
-	if p.DevPodConfig.Current().Providers == nil {
-		p.DevPodConfig.Current().Providers = map[string]*config.ProviderConfig{}
+	if p.DevsyConfig.Current().Providers == nil {
+		p.DevsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
 	}
-	if p.DevPodConfig.Current().Providers[providerConfig.Name] == nil {
-		p.DevPodConfig.Current().Providers[providerConfig.Name] = &config.ProviderConfig{
+	if p.DevsyConfig.Current().Providers[providerConfig.Name] == nil {
+		p.DevsyConfig.Current().Providers[providerConfig.Name] = &config.ProviderConfig{
 			CreationTimestamp: types.Now(),
 		}
 	}
 
-	if err := config.SaveConfig(p.DevPodConfig); err != nil {
+	if err := config.SaveConfig(p.DevsyConfig); err != nil {
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 
@@ -155,16 +155,16 @@ func AddProviderRaw(p ProviderParams) (*provider.ProviderConfig, error) {
 }
 
 func UpdateProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 	log log.Logger,
 ) (*provider.ProviderConfig, error) {
-	if devPodConfig.Current().Providers[providerName] == nil {
+	if devsyConfig.Current().Providers[providerName] == nil {
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	if providerSourceRaw == "" {
-		s, err := ResolveProviderSource(devPodConfig, providerName, log)
+		s, err := ResolveProviderSource(devsyConfig, providerName, log)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func UpdateProvider(
 	}
 
 	return updateProvider(ProviderParams{
-		DevPodConfig: devPodConfig,
+		DevsyConfig: devsyConfig,
 		ProviderName: providerName,
 		Raw:          providerRaw,
 		Source:       providerSource,
@@ -186,18 +186,18 @@ func UpdateProvider(
 }
 
 func CloneProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 	log log.Logger,
 ) (*ProviderWithOptions, error) {
-	sourceProvider, err := FindProvider(devPodConfig, providerSourceRaw, log)
+	sourceProvider, err := FindProvider(devsyConfig, providerSourceRaw, log)
 	if err != nil {
 		return nil, err
 	}
 
 	providerConfig, err := installProvider(
 		ProviderParams{
-			DevPodConfig: devPodConfig,
+			DevsyConfig: devsyConfig,
 			ProviderName: providerName,
 			Source:       &sourceProvider.Config.Source,
 			Log:          log,
@@ -212,11 +212,11 @@ func CloneProvider(
 }
 
 func ResolveProviderSource(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName string,
 	log log.Logger,
 ) (string, error) {
-	providerConfig, err := FindProvider(devPodConfig, providerName, log)
+	providerConfig, err := FindProvider(devsyConfig, providerName, log)
 	if err != nil {
 		return "", fmt.Errorf("find provider: %w", err)
 	}
@@ -334,11 +334,11 @@ func downloadProviderGithub(
 }
 
 func loadConfiguredProviders(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	retProviders map[string]*ProviderWithOptions,
 	log log.Logger,
 ) {
-	defaultContext := devPodConfig.Current()
+	defaultContext := devsyConfig.Current()
 	for providerName, providerState := range defaultContext.Providers {
 		if retProviders[providerName] != nil {
 			retProviders[providerName].State = providerState
@@ -346,7 +346,7 @@ func loadConfiguredProviders(
 		}
 
 		providerConfig, err := provider.LoadProviderConfig(
-			devPodConfig.DefaultContext,
+			devsyConfig.DefaultContext,
 			providerName,
 		)
 		if err != nil {
@@ -362,10 +362,10 @@ func loadConfiguredProviders(
 }
 
 func loadUnconfiguredProviders(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	retProviders map[string]*ProviderWithOptions,
 ) error {
-	providerDir, err := provider.GetProvidersDir(devPodConfig.DefaultContext)
+	providerDir, err := provider.GetProvidersDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func loadUnconfiguredProviders(
 			continue
 		}
 
-		if err := loadProviderEntry(devPodConfig, entry, retProviders); err != nil {
+		if err := loadProviderEntry(devsyConfig, entry, retProviders); err != nil {
 			return err
 		}
 	}
@@ -394,11 +394,11 @@ func shouldSkipEntry(entry os.DirEntry, retProviders map[string]*ProviderWithOpt
 }
 
 func loadProviderEntry(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	entry os.DirEntry,
 	retProviders map[string]*ProviderWithOptions,
 ) error {
-	providerConfig, err := provider.LoadProviderConfig(devPodConfig.DefaultContext, entry.Name())
+	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, entry.Name())
 	if err != nil {
 		return err
 	}
@@ -416,7 +416,7 @@ func installRawProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 		return nil, err
 	}
 	return installProvider(ProviderParams{
-		DevPodConfig: p.DevPodConfig,
+		DevsyConfig: p.DevsyConfig,
 		ProviderName: p.ProviderName,
 		Source:       p.Source,
 		Log:          p.Log,
@@ -436,7 +436,7 @@ func installProvider(
 		providerConfig.Name = p.ProviderName
 	}
 
-	if err := checkProviderNotExists(p.DevPodConfig, providerConfig.Name); err != nil {
+	if err := checkProviderNotExists(p.DevsyConfig, providerConfig.Name); err != nil {
 		return nil, err
 	}
 
@@ -453,9 +453,9 @@ func updateProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 		return nil, err
 	}
 
-	cleanupOldOptions(p.DevPodConfig, providerConfig)
+	cleanupOldOptions(p.DevsyConfig, providerConfig)
 
-	if err := config.SaveConfig(p.DevPodConfig); err != nil {
+	if err := config.SaveConfig(p.DevsyConfig); err != nil {
 		return nil, err
 	}
 
@@ -486,12 +486,12 @@ func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error
 	return providerConfig, nil
 }
 
-func checkProviderNotExists(devPodConfig *config.Config, providerName string) error {
-	if devPodConfig.Current().Providers[providerName] != nil {
+func checkProviderNotExists(devsyConfig *config.Config, providerName string) error {
+	if devsyConfig.Current().Providers[providerName] != nil {
 		return fmt.Errorf("provider %s already exists", providerName)
 	}
 
-	providerDir, err := provider.GetProviderDir(devPodConfig.DefaultContext, providerName)
+	providerDir, err := provider.GetProviderDir(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return err
 	}
@@ -505,14 +505,14 @@ func checkProviderNotExists(devPodConfig *config.Config, providerName string) er
 
 func downloadAndSaveProvider(p ProviderParams, providerConfig *provider.ProviderConfig) error {
 	binariesDir, err := provider.GetProviderBinariesDir(
-		p.DevPodConfig.DefaultContext,
+		p.DevsyConfig.DefaultContext,
 		providerConfig.Name,
 	)
 	if err != nil {
 		return fmt.Errorf("get binaries dir: %w", err)
 	}
 
-	providerDir, err := provider.GetProviderDir(p.DevPodConfig.DefaultContext, providerConfig.Name)
+	providerDir, err := provider.GetProviderDir(p.DevsyConfig.DefaultContext, providerConfig.Name)
 	if err != nil {
 		return fmt.Errorf("get provider dir: %w", err)
 	}
@@ -526,11 +526,11 @@ func downloadAndSaveProvider(p ProviderParams, providerConfig *provider.Provider
 		return fmt.Errorf("download binaries: %w", err)
 	}
 
-	return provider.SaveProviderConfig(p.DevPodConfig.DefaultContext, providerConfig)
+	return provider.SaveProviderConfig(p.DevsyConfig.DefaultContext, providerConfig)
 }
 
-func cleanupOldOptions(devPodConfig *config.Config, providerConfig *provider.ProviderConfig) {
-	providerState := devPodConfig.Current().Providers[providerConfig.Name]
+func cleanupOldOptions(devsyConfig *config.Config, providerConfig *provider.ProviderConfig) {
+	providerState := devsyConfig.Current().Providers[providerConfig.Name]
 	if providerState == nil || providerState.Options == nil {
 		return
 	}
@@ -621,7 +621,7 @@ func resolveFileProvider(
 }
 
 func downloadProvider(url string) ([]byte, error) {
-	resp, err := devpodhttp.GetHTTPClient().Get(url)
+	resp, err := devsyhttp.GetHTTPClient().Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("download binary: %w", err)
 	}
@@ -646,7 +646,7 @@ func buildGithubURL(path, release string) string {
 // can locate the already-renamed provider directory.
 func SwitchProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	workspace *provider.Workspace,
 	newProviderName string,
 ) error {
@@ -665,7 +665,7 @@ func SwitchProvider(
 	}
 
 	client, err := Get(ctx, GetOptions{
-		DevPodConfig: devPodConfig,
+		DevsyConfig: devsyConfig,
 		Args:         []string{workspace.ID},
 		Owner:        platform.AllOwnerFilter,
 		Log:          log.Default,
@@ -701,13 +701,13 @@ func SwitchProvider(
 // MoveProvider renames a provider's directory on disk and migrates its state
 // in config.json. This preserves all options, initialized flag, and other state
 // that CloneProvider would lose.
-func MoveProvider(devPodConfig *config.Config, oldName, newName string) error {
-	oldDir, err := provider.GetProviderDir(devPodConfig.DefaultContext, oldName)
+func MoveProvider(devsyConfig *config.Config, oldName, newName string) error {
+	oldDir, err := provider.GetProviderDir(devsyConfig.DefaultContext, oldName)
 	if err != nil {
 		return fmt.Errorf("get old provider dir: %w", err)
 	}
 
-	newDir, err := provider.GetProviderDir(devPodConfig.DefaultContext, newName)
+	newDir, err := provider.GetProviderDir(devsyConfig.DefaultContext, newName)
 	if err != nil {
 		return fmt.Errorf("get new provider dir: %w", err)
 	}
@@ -716,15 +716,15 @@ func MoveProvider(devPodConfig *config.Config, oldName, newName string) error {
 		return fmt.Errorf("rename provider dir: %w", err)
 	}
 
-	if err := updateProviderConfigName(devPodConfig, newName); err != nil {
+	if err := updateProviderConfigName(devsyConfig, newName); err != nil {
 		_ = os.Rename(newDir, oldDir)
 		return err
 	}
 
-	if err := migrateProviderState(devPodConfig, oldName, newName); err != nil {
+	if err := migrateProviderState(devsyConfig, oldName, newName); err != nil {
 		// Revert the config name before moving the directory back to avoid
 		// a corrupted provider.json (dir at old path but name field says new name).
-		_ = revertProviderConfigName(devPodConfig, oldName, newName)
+		_ = revertProviderConfigName(devsyConfig, oldName, newName)
 		_ = os.Rename(newDir, oldDir)
 		return err
 	}
@@ -734,13 +734,13 @@ func MoveProvider(devPodConfig *config.Config, oldName, newName string) error {
 
 // updateProviderConfigName loads the provider config from the new directory and
 // updates its Name field to match the new directory name.
-func updateProviderConfigName(devPodConfig *config.Config, newName string) error {
-	providerConfig, err := provider.LoadProviderConfig(devPodConfig.DefaultContext, newName)
+func updateProviderConfigName(devsyConfig *config.Config, newName string) error {
+	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, newName)
 	if err != nil {
 		return fmt.Errorf("load provider config after move: %w", err)
 	}
 	providerConfig.Name = newName
-	if err := provider.SaveProviderConfig(devPodConfig.DefaultContext, providerConfig); err != nil {
+	if err := provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig); err != nil {
 		return fmt.Errorf("save provider config: %w", err)
 	}
 	return nil
@@ -749,20 +749,20 @@ func updateProviderConfigName(devPodConfig *config.Config, newName string) error
 // revertProviderConfigName restores the provider config Name field back to
 // oldName. This is used during rollback when migrateProviderState fails after
 // updateProviderConfigName has already written the new name.
-func revertProviderConfigName(devPodConfig *config.Config, oldName, newName string) error {
-	providerConfig, err := provider.LoadProviderConfig(devPodConfig.DefaultContext, newName)
+func revertProviderConfigName(devsyConfig *config.Config, oldName, newName string) error {
+	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, newName)
 	if err != nil {
 		return fmt.Errorf("load provider config for revert: %w", err)
 	}
 	providerConfig.Name = oldName
-	return provider.SaveProviderConfig(devPodConfig.DefaultContext, providerConfig)
+	return provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig)
 }
 
 // migrateProviderState moves the provider's entry in the config Providers map
 // from oldName to newName, rewrites any option values that embed the old
 // provider directory path, and persists the change.
-func migrateProviderState(devPodConfig *config.Config, oldName, newName string) error {
-	ctx := devPodConfig.Current()
+func migrateProviderState(devsyConfig *config.Config, oldName, newName string) error {
+	ctx := devsyConfig.Current()
 	if ctx.Providers[oldName] == nil {
 		return nil
 	}
@@ -771,13 +771,13 @@ func migrateProviderState(devPodConfig *config.Config, oldName, newName string) 
 	delete(ctx.Providers, oldName)
 
 	// Rewrite option values that reference the old provider directory.
-	oldDir, _ := provider.GetProviderDir(devPodConfig.DefaultContext, oldName)
-	newDir, _ := provider.GetProviderDir(devPodConfig.DefaultContext, newName)
+	oldDir, _ := provider.GetProviderDir(devsyConfig.DefaultContext, oldName)
+	newDir, _ := provider.GetProviderDir(devsyConfig.DefaultContext, newName)
 	if oldDir != "" && newDir != "" {
 		rewriteOptionPaths(ctx.Providers[newName].Options, oldDir, newDir)
 	}
 
-	if err := config.SaveConfig(devPodConfig); err != nil {
+	if err := config.SaveConfig(devsyConfig); err != nil {
 		// Undo the map move and path rewrite on failure.
 		if oldDir != "" && newDir != "" {
 			rewriteOptionPaths(ctx.Providers[newName].Options, newDir, oldDir)

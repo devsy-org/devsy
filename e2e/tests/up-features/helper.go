@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 func createTarGzArchive(outputFilePath string, filePaths []string) error {

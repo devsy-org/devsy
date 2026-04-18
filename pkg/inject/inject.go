@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/skevetter/log"
 )
 

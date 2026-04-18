@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/pty"
 )
 
 type filePair struct {

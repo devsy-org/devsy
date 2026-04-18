@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 )
 
@@ -42,7 +42,7 @@ func Head(rawURL string) (int, error) {
 		return 0, err
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("download file: %w", err)
 	}
@@ -87,7 +87,7 @@ func File(rawURL string, log log.Logger) (io.ReadCloser, error) {
 		}
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download file: %w", err)
 	} else if resp.StatusCode >= 400 {
@@ -137,7 +137,7 @@ func downloadGithubRelease(org, repo, release, file, token string) (io.ReadClose
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func downloadGithubRelease(org, repo, release, file, token string) (io.ReadClose
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/octet-stream")
-	downloadResp, err := devpodhttp.GetHTTPClient().Do(req)
+	downloadResp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	} else if downloadResp.StatusCode >= 400 {

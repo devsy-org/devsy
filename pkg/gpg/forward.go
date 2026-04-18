@@ -4,8 +4,8 @@ import (
 	"os"
 	"os/exec"
 
-	client2 "github.com/skevetter/devpod/pkg/client"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/skevetter/log"
 )
 

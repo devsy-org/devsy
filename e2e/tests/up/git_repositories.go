@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
@@ -28,10 +28,10 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				name := "sha256-0c1547c"
-				ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, name)
+				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
 
-				// Wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(
+				// Wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(
 					ctx,
 					"github.com/microsoft/vscode-remote-try-python@sha256:0c1547c",
 				)
@@ -46,10 +46,10 @@ var _ = ginkgo.Describe(
 				f, err := setupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 
-				name := "devpod"
-				ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, name)
+				name := "devsy"
+				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
 
-				err = f.DevPodUp(ctx, "github.com/skevetter/devpod@pull/1/head")
+				err = f.DevsyUp(ctx, "github.com/devsy-org/devsy@pull/1/head")
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.GetTimeout()*3),
@@ -61,27 +61,27 @@ var _ = ginkgo.Describe(
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			// provider add, use and delete afterwards
-			err := f.DevPodProviderAdd(ctx, "docker", "--name", providerName)
+			err := f.DevsyProviderAdd(ctx, "docker", "--name", providerName)
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, providerName)
+			err = f.DevsyProviderUse(ctx, providerName)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				err := f.DevPodProviderDelete(cleanupCtx, providerName)
+				err := f.DevsyProviderDelete(cleanupCtx, providerName)
 				framework.ExpectNoError(err)
 			})
 
-			err = f.DevPodUp(
+			err = f.DevsyUp(
 				ctx,
-				"https://github.com/loft-sh/examples@subpath:/devpod/jupyter-notebook-hello-world",
+				"https://github.com/loft-sh/examples@subpath:/devsy/jupyter-notebook-hello-world",
 			)
 			framework.ExpectNoError(err)
 
-			id := "subpath--devpod-jupyter-notebook-hello-world"
-			out, err := f.DevPodSSH(ctx, id, "pwd")
+			id := "subpath--devsy-jupyter-notebook-hello-world"
+			out, err := f.DevsySSH(ctx, id, "pwd")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, fmt.Sprintf("/workspaces/%s\n", id), "should be subpath")
 
-			err = f.DevPodWorkspaceDelete(ctx, id)
+			err = f.DevsyWorkspaceDelete(ctx, id)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 	},

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/devcontainer"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +55,7 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 
 	// create new runner
 	runner, err := devcontainer.NewRunner(
-		agent.ContainerDevPodHelperLocation,
+		agent.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
 		logger,

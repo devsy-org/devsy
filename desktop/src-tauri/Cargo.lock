@@ -1003,7 +1003,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "devpod-desktop"
+name = "devsy-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",

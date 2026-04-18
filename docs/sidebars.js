@@ -9,7 +9,7 @@ module.exports = {
   adminSidebar: [
     {
       type: "doc",
-      id: "what-is-devpod",
+      id: "what-is-devsy",
     },
     {
       type: "category",
@@ -49,7 +49,7 @@ module.exports = {
             },
             {
               type: "doc",
-              id: "quickstart/devpod-cli",
+              id: "quickstart/devsy-cli",
             },
           ],
         },
@@ -253,12 +253,12 @@ module.exports = {
     },
     {
       type: "doc",
-      id: "licenses/devpod",
+      id: "licenses/devsy",
     },
     {
       type: "link",
       label: "community maintained",
-      href: "https://github.com/skevetter/devpod",
+      href: "https://github.com/devsy-org/devsy",
     },
   ],
 };

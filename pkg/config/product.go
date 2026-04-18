@@ -2,7 +2,7 @@ package config
 
 const (
 	// ProductName is the display name for the product.
-	ProductName = "DevPod"
+	ProductName = "Devsy"
 
 	// ProductNamePro is the display name for the Pro product.
 	ProductNamePro = ProductName + " Pro"

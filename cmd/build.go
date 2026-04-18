@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/image"
-	"github.com/skevetter/devpod/pkg/provider"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/provider"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +37,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Builds a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
@@ -71,14 +71,14 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 				}
 			}
 
-			if devPodConfig.ContextOption(
+			if devsyConfig.ContextOption(
 				config.ContextOptionSSHStrictHostKeyChecking,
 			) == config.BoolTrue {
 				cmd.StrictHostKeyChecking = true
 			}
 
 			// create a temporary workspace
-			exists := workspace2.Exists(ctx, devPodConfig, args, "", cmd.Owner, log.Default)
+			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner, log.Default)
 			sshConfigFile, err := os.CreateTemp("", config.BinaryName+"ssh.config")
 			if err != nil {
 				return err
@@ -89,7 +89,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 			baseWorkspaceClient, err := workspace2.Resolve(
 				ctx,
-				devPodConfig,
+				devsyConfig,
 				workspace2.ResolveParams{
 					IDE:                  "",
 					IDEOptions:           nil,
@@ -163,7 +163,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 	)
 	buildCmd.Flags().
 		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
-			"The git clone strategy DevPod uses to checkout git based workspaces. "+
+			"The git clone strategy Devsy uses to checkout git based workspaces. "+
 				"Can be full (default), blobless, treeless or shallow")
 	buildCmd.Flags().
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,

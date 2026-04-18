@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/image"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/scanner"
 	"k8s.io/apimachinery/pkg/util/wait"

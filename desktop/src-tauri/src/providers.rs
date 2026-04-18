@@ -1,6 +1,6 @@
 use crate::commands::delete_pro_instance::DeleteProInstanceCommand;
 use crate::commands::list_pro_instances::ListProInstancesCommand;
-use crate::commands::{delete_provider::DeleteProviderCommand, DevpodCommandConfig};
+use crate::commands::{delete_provider::DeleteProviderCommand, DevsyCommandConfig};
 use crate::resource_watcher::{Identifiable, ProInstance};
 use crate::AppHandle;
 use log::{debug, error, info};

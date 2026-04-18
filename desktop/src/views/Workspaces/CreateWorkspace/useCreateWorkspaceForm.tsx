@@ -24,7 +24,7 @@ import { randomWords } from "@/lib/randomWords"
 import { TIDEs, TProviders, TWorkspace } from "@/types"
 import { FieldName, TCreateWorkspaceArgs, TFormValues } from "./types"
 
-const DEFAULT_PREBUILD_REPOSITORY_KEY = "devpod-create-prebuild-repository"
+const DEFAULT_PREBUILD_REPOSITORY_KEY = "devsy-create-prebuild-repository"
 const DEFAULT_CONTAINER_PATH = "__internal-default"
 
 export function useCreateWorkspaceForm(onCreateWorkspace: (args: TCreateWorkspaceArgs) => void) {

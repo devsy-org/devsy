@@ -5,9 +5,9 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/graph"
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 func combine(

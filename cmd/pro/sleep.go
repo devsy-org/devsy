@@ -8,10 +8,10 @@ import (
 
 	clusterv1 "github.com/skevetter/agentapi/pkg/apis/devsy/cluster/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/project"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +49,7 @@ func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c.Flags().
 		Int64Var(&cmd.ForceDuration, "prevent-wakeup", -1,
 			"The amount of seconds this workspace should sleep until it can be woken up again (use 0 for infinite sleeping). "+
-				"During this time the space can only be woken up by `devpod pro wakeup`, "+
+				"During this time the space can only be woken up by `devsy pro wakeup`, "+
 				"manually deleting the annotation on the namespace or through the UI")
 	_ = c.MarkFlagRequired("project")
 	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
@@ -64,12 +64,12 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 	}
 	targetWorkspace := args[0]
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, "")
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devPodConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 
 	_, err = managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
+		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 		func(ctx context.Context) (done bool, err error) {
 			workspaceInstance, err := managementClient.Loft().
 				ManagementV1().
-				DevPodWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
+				DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 				Get(ctx, workspaceInstance.Name, metav1.GetOptions{})
 			if err != nil {
 				return false, err

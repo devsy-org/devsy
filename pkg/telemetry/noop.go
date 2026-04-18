@@ -1,6 +1,6 @@
 package telemetry
 
-import "github.com/skevetter/devpod/pkg/client"
+import "github.com/devsy-org/devsy/pkg/client"
 
 type noopCollector struct{}
 

@@ -1,9 +1,9 @@
 name: kubernetes
 version: v0.0.1
-icon: https://devpod.sh/assets/kubernetes.svg
-home: https://github.com/skevetter/devpod
+icon: https://devsy.sh/assets/kubernetes.svg
+home: https://github.com/devsy-org/devsy
 description: |-
-  DevPod on Kubernetes
+  Devsy on Kubernetes
 optionGroups:
   - options:
       - KUBERNETES_NAMESPACE
@@ -39,23 +39,23 @@ options:
   KUBERNETES_CONFIG:
     description: The kubernetes config to use, e.g. /path/to/my/kube/config.yaml
   KUBERNETES_PULL_SECRETS_ENABLED:
-    description: If true, DevPod will create Kubernetes pull secrets from your injected Docker credentials for private registries. This setting requires the global Docker credentials forwarding setting (SSH_INJECT_DOCKER_CREDENTIALS) to be enabled. If Docker credential injection is disabled, pull secrets cannot be created regardless of this setting.
+    description: If true, Devsy will create Kubernetes pull secrets from your injected Docker credentials for private registries. This setting requires the global Docker credentials forwarding setting (SSH_INJECT_DOCKER_CREDENTIALS) to be enabled. If Docker credential injection is disabled, pull secrets cannot be created regardless of this setting.
     default: "true"
     type: boolean
     global: true
   KUBERNETES_NAMESPACE:
-    description: The kubernetes namespace to use. Defaults to devpod.
-    default: "devpod"
+    description: The kubernetes namespace to use. Defaults to devsy.
+    default: "devsy"
   CREATE_NAMESPACE:
-    description: If true, DevPod will try to create the namespace.
+    description: If true, Devsy will try to create the namespace.
     default: "true"
     type: boolean
     global: true
   CLUSTER_ROLE:
-    description: If defined, DevPod will create a role binding for the given cluster role.
+    description: If defined, Devsy will create a role binding for the given cluster role.
     global: true
   SERVICE_ACCOUNT:
-    description: If defined, DevPod will use the given service account for the dev container.
+    description: If defined, Devsy will use the given service account for the dev container.
     global: true
   INACTIVITY_TIMEOUT:
     description: "If defined, will automatically stop the pod after the inactivity period. Examples: 10m, 1h"
@@ -63,13 +63,13 @@ options:
     description: "Determines how long the provider waits for the workspace pod to come up. Examples: 10m, 1h"
     default: 10m
   STORAGE_CLASS:
-    description: If defined, DevPod will use the given storage class to create the persistent volume claim. You will need to ensure the storage class exists in your cluster!
+    description: If defined, Devsy will use the given storage class to create the persistent volume claim. You will need to ensure the storage class exists in your cluster!
     global: true
   PVC_ACCESS_MODE:
-    description: If defined, DevPod will use the given access mode to create the persistent volume claim. You will need to ensure the storage class supports the given access mode, e.g. RWO or ROX or RWX or RWOP
+    description: If defined, Devsy will use the given access mode to create the persistent volume claim. You will need to ensure the storage class supports the given access mode, e.g. RWO or ROX or RWX or RWOP
     global: true
   PVC_ANNOTATIONS:
-    description: If defined, DevPod will use add the given annotations to the main workspace pvc
+    description: If defined, Devsy will use add the given annotations to the main workspace pvc
     global: true
   NODE_SELECTOR:
     description: The node selector to use for the workspace pod, e.g. my-label=value,my-label-2=value-2
@@ -78,17 +78,17 @@ options:
     description: The resources to use for the workspace container, e.g. requests.cpu=500m,limits.memory=5Gi,limits.gpu-vendor.example/example-gpu=1
     global: true
   POD_MANIFEST_TEMPLATE:
-    description: Pod manifest template file path used as template to build the devpod pod, e.g. /path/pod_manifest.yaml. Alternatively can be an inline yaml string.
+    description: Pod manifest template file path used as template to build the devsy pod, e.g. /path/pod_manifest.yaml. Alternatively can be an inline yaml string.
     global: true
     type: multiline
   LABELS:
-    description: The labels to use for the workspace pod, e.g. devpod.sh/example=value,devpod.sh/example2=value2
+    description: The labels to use for the workspace pod, e.g. devsy.sh/example=value,devsy.sh/example2=value2
     global: true
   DOCKERLESS_IMAGE:
     description: The dockerless image to use.
     global: true
   DOCKERLESS_DISABLED:
-    description: If dockerless should be disabled. Dockerless is the way DevPod uses to build images directly within Kubernetes. If dockerless is disabled and no image is specified, DevPod will fail instead.
+    description: If dockerless should be disabled. Dockerless is the way Devsy uses to build images directly within Kubernetes. If dockerless is disabled and no image is specified, Devsy will fail instead.
     global: true
     default: "false"
   STRICT_SECURITY:
@@ -131,4 +131,4 @@ agent:
     strictSecurity: ${STRICT_SECURITY}
 exec:
   command: |-
-    "${DEVPOD}" helper sh -c "${COMMAND}"
+    "${DEVSY}" helper sh -c "${COMMAND}"

@@ -1,7 +1,7 @@
 package provider
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewProviderCmd(flags *flags.GlobalFlags) *cobra.Command {
 	providerCmd := &cobra.Command{
 		Use:   "provider",
-		Short: "DevPod Provider commands",
+		Short: "Devsy Provider commands",
 	}
 
 	providerCmd.AddCommand(NewListCmd(flags))

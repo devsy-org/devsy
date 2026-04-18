@@ -55,7 +55,7 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: devpod-ztunnel
+              - key: devsy-ztunnel
                 operator: In
                 values:
                 - enabled

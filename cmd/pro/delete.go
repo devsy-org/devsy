@@ -7,14 +7,14 @@ import (
 	"sync"
 	"time"
 
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	providercmd "github.com/skevetter/devpod/cmd/provider"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	providercmd "github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -34,7 +34,7 @@ func NewDeleteCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 	deleteCmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Delete or logout from a DevPod Pro Instance",
+		Short: "Delete or logout from a Devsy Pro Instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -50,7 +50,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("please specify an pro instance to delete")
 	}
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	// load pro instance config
 	proInstanceName := args[0]
 	proInstanceConfig, err := provider.LoadProInstanceConfig(
-		devPodConfig.DefaultContext,
+		devsyConfig.DefaultContext,
 		proInstanceName,
 	)
 	if err != nil {
@@ -70,7 +70,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	providerConfig, err := provider.LoadProviderConfig(
-		devPodConfig.DefaultContext,
+		devsyConfig.DefaultContext,
 		proInstanceConfig.Provider,
 	)
 	if err != nil {
@@ -81,7 +81,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	if providerConfig.IsDaemonProvider() {
 		// clean up local workspaces
 		workspaces, err := workspace.ListLocalWorkspaces(
-			devPodConfig.DefaultContext,
+			devsyConfig.DefaultContext,
 			false,
 			log.Default,
 		)
@@ -90,7 +90,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		} else {
 			cleanupLocalWorkspaces(
 				ctx,
-				devPodConfig,
+				devsyConfig,
 				workspaces,
 				providerConfig.Name,
 				cmd.Owner,
@@ -111,14 +111,14 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// delete the provider config
-	err = providercmd.DeleteProviderConfig(devPodConfig, proInstanceConfig.Provider, true)
+	err = providercmd.DeleteProviderConfig(devsyConfig, proInstanceConfig.Provider, true)
 	if err != nil {
 		return err
 	}
 
 	// delete the pro instance dir itself
 	proInstanceDir, err := provider.GetProInstanceDir(
-		devPodConfig.DefaultContext,
+		devsyConfig.DefaultContext,
 		proInstanceConfig.Host,
 	)
 	if err != nil {
@@ -136,7 +136,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 
 func cleanupLocalWorkspaces(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	workspaces []*provider.Workspace,
 	providerName string,
 	owner platform.OwnerFilter,
@@ -158,7 +158,7 @@ func cleanupLocalWorkspaces(
 			go func(w provider.Workspace) {
 				defer wg.Done()
 				client, err := workspace.Get(ctx, workspace.GetOptions{
-					DevPodConfig: devPodConfig,
+					DevsyConfig: devsyConfig,
 					Args:         []string{w.ID},
 					Owner:        owner,
 					LocalOnly:    true,
@@ -171,7 +171,7 @@ func cleanupLocalWorkspaces(
 				// delete workspace folder
 				err = clientimplementation.DeleteWorkspaceFolder(
 					clientimplementation.DeleteWorkspaceFolderParams{
-						Context:              devPodConfig.DefaultContext,
+						Context:              devsyConfig.DefaultContext,
 						WorkspaceID:          client.Workspace(),
 						SSHConfigPath:        client.WorkspaceConfig().SSHConfigPath,
 						SSHConfigIncludePath: client.WorkspaceConfig().SSHConfigIncludePath,

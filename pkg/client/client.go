@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"golang.org/x/crypto/ssh"
 )
 

@@ -3,9 +3,9 @@ title: Drivers
 sidebar_label: Drivers
 ---
 
-In DevPod you can specify a **Driver** in the [Agent's configuration](./agent.mdx).
+In Devsy you can specify a **Driver** in the [Agent's configuration](./agent.mdx).
 
-A Driver indicates how DevPod deploys the workspace container.
+A Driver indicates how Devsy deploys the workspace container.
 
 There are two types of drivers:
 
@@ -18,7 +18,7 @@ If no driver is specified, the default is **Docker**
 
 ## Docker Driver
 
-The Docker driver is the default driver that DevPod uses to deploy the workspace container.
+The Docker driver is the default driver that Devsy uses to deploy the workspace container.
 
 This container (specified through a [devcontainer.json](../developing-in-workspaces/devcontainer-json.mdx)),
 is executed through Docker inside the provider environment, for example in a VM [in case of Machine Providers](../managing-providers/what-are-providers.mdx).
@@ -40,26 +40,26 @@ agent:
 
 ## Kubernetes Driver
 
-Instead of Docker, DevPod is also able to use Kubernetes as a Driver, which allows you to deploy the workspace to a Kubernetes cluster instead.
+Instead of Docker, Devsy is also able to use Kubernetes as a Driver, which allows you to deploy the workspace to a Kubernetes cluster instead.
 For example, this makes it possible to create a provider that spins up a remote Kubernetes cluster (or just a namespace), connect to it, and create a workspace there.
-DevPod also has a default Kubernetes provider that uses the local Kubernetes config file to deploy the workspace.
+Devsy also has a default Kubernetes provider that uses the local Kubernetes config file to deploy the workspace.
 
-DevPod also allows building an image through Kubernetes with [buildkit](https://github.com/moby/buildkit).
-DevPod will automatically determine if building is necessary or if a prebuild can be used. However, the `buildRepository` option needs to be specified for this to work.
+Devsy also allows building an image through Kubernetes with [buildkit](https://github.com/moby/buildkit).
+Devsy will automatically determine if building is necessary or if a prebuild can be used. However, the `buildRepository` option needs to be specified for this to work.
 
 The allowed options for the Kubernetes driver are:
 - **path**: where to find the `kubectl` binary or a drop-in replacement
 - **namespace**: which namespace to use (if empty will use current namespace or default)
 - **context**: which kube context to use (if empty will use current kube context)
 - **config**: path to which kube config to use (if empty will use default kube config at `~/.kube/config`)
-- **clusterRole**: If defined, DevPod will create a role binding for the given cluster role for the workspace container. This is useful if you need Kubernetes access within the workspace container
-- **serviceAccount**: If defined, DevPod will use the given service account for the dev container
-- **buildRepository**: If defined, DevPod will build and push images to the given repository. If empty, DevPod will not build any images. Make sure you have push permissions for the given repository locally.
-- **helperImage**: The image DevPod will use to find out the cluster architecture. Defaults to alpine.
+- **clusterRole**: If defined, Devsy will create a role binding for the given cluster role for the workspace container. This is useful if you need Kubernetes access within the workspace container
+- **serviceAccount**: If defined, Devsy will use the given service account for the dev container
+- **buildRepository**: If defined, Devsy will build and push images to the given repository. If empty, Devsy will not build any images. Make sure you have push permissions for the given repository locally.
+- **helperImage**: The image Devsy will use to find out the cluster architecture. Defaults to alpine.
 - **buildkitImage**: The buildkit image to use for building dev containers.
 - **buildkitPrivileged**: If the buildkit pod should run as a privileged pod
 - **persistentVolumeSize**: The default size for the persistent volume to use.
-- **createNamespace**: If true, DevPod will try to create the namespace
+- **createNamespace**: If true, Devsy will try to create the namespace
 
 ### Example Kubernetes Provider
 
@@ -70,11 +70,11 @@ name: simple-kubernetes
 version: v0.0.1
 agent:
   containerInactivityTimeout: 300 # Pod will automatically kill itself after timeout
-  path: ${DEVPOD}
+  path: ${DEVSY}
   driver: kubernetes
   kubernetes:
     # path: /usr/bin/kubectl
-    # namespace: my-namespace-for-devpod
+    # namespace: my-namespace-for-devsy
     # context: default
     # clusterRole: ""
     # serviceAccount: ""
@@ -86,7 +86,7 @@ agent:
     createNamespace: true
 exec:
   command: |-
-    ${DEVPOD} helper sh -c "${COMMAND}"
+    ${DEVSY} helper sh -c "${COMMAND}"
 ```
 
-Then add the provider via `devpod provider add ./simple-kubernetes.yaml`
+Then add the provider via `devsy provider add ./simple-kubernetes.yaml`

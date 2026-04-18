@@ -5,8 +5,8 @@ import (
 	"io"
 	"net"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	"github.com/skevetter/devpod/pkg/stdio"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/stdio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"

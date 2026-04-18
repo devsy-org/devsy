@@ -11,8 +11,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/skevetter/log"
 )
 
@@ -193,7 +193,7 @@ func handleLoftPlatformCredentialsRequest(
 	}
 
 	log.Debugf("received loft platform credentials post data: bytes=%d", len(out))
-	response, err := client.LoftConfig(ctx, &tunnel.Message{Message: string(out)})
+	response, err := client.DevsyConfig(ctx, &tunnel.Message{Message: string(out)})
 	if err != nil {
 		log.Errorf("error receiving platform credentials: error=%v", err)
 		return fmt.Errorf("get platform credentials: %w", err)

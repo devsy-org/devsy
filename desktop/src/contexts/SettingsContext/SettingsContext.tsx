@@ -33,7 +33,7 @@ const initialSettings: TSettings = {
   experimental_windsurf: true,
   experimental_antigravity: true,
   experimental_bob: true,
-  experimental_devPodPro: false,
+  experimental_devsyPro: false,
 }
 function getSettingKeys(): readonly TSetting[] {
   return getKeys(initialSettings)

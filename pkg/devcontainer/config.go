@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"slices"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/crane"
-	"github.com/skevetter/devpod/pkg/language"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
+	"github.com/devsy-org/devsy/pkg/language"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
 func (r *runner) getRawConfig(options provider2.CLIOptions) (*config.DevContainerConfig, error) {

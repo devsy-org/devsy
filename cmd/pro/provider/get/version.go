@@ -7,11 +7,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -87,7 +87,7 @@ func (cmd *VersionCmd) Run(
 
 	v := VersionInfo{
 		ServerVersion:          platformVersion.Version,
-		RemoteProviderVersion:  platformVersion.DevPodVersion,
+		RemoteProviderVersion:  platformVersion.DevsyVersion,
 		CurrentProviderVersion: providerVersion,
 	}
 	out, err := json.Marshal(v)

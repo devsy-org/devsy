@@ -2,7 +2,7 @@ import { TWorkspaceStatusFilterState, WorkspaceSorter, WorkspaceStatusFilter } f
 import { DeleteWorkspacesModal } from "@/components/DeleteWorkspacesModal"
 import { WorkspaceListSelection } from "@/components/ListSelection"
 import { useProviders, useWorkspaceStore, useWorkspaces } from "@/contexts"
-import { removeWorkspaceAction, stopWorkspaceAction } from "@/contexts/DevPodContext/workspaces"
+import { removeWorkspaceAction, stopWorkspaceAction } from "@/contexts/DevsyContext/workspaces"
 import { Stack3D } from "@/icons"
 import { exists, useSelection, useSortWorkspaces } from "@/lib"
 import { DEFAULT_SORT_WORKSPACE_MODE } from "@/lib/sortWorkspaceConstants"

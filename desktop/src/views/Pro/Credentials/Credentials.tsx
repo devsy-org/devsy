@@ -40,7 +40,7 @@ import {
   useColorMode,
   useDisclosure,
 } from "@chakra-ui/react"
-import { ManagementV1UserProfile } from "@loft-enterprise/client/gen/models/managementV1UserProfile"
+import { ManagementV1UserProfile } from "@devsy/client/gen/models/managementV1UserProfile"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 import { BackToWorkspaces } from "../BackToWorkspaces"
@@ -91,7 +91,7 @@ export function Credentials() {
           </Button>
         </HStack>
         <Text my="4" variant="muted">
-          Credentials connect DevPod Pro to one or multiple of your git providers. You can upload
+          Credentials connect Devsy Pro to one or multiple of your git providers. You can upload
           both HTTPS tokens and SSH private keys.
         </Text>
         {isLoading ? (

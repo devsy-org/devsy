@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/upgrade"
+	"github.com/devsy-org/devsy/pkg/upgrade"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,7 @@ func NewUpgradeCmd() *cobra.Command {
 	cmd := &UpgradeCmd{log: log.GetInstance()}
 	upgradeCmd := &cobra.Command{
 		Use:   "upgrade",
-		Short: "Upgrade the DevPod CLI to the newest version",
+		Short: "Upgrade the Devsy CLI to the newest version",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()

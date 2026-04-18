@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -33,16 +33,16 @@ func NewInspectCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devPodConfig, args, log.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args, log.Default)
 	if err != nil {
 		return err
 	}
-	p, err := provider.LoadProviderConfig(devPodConfig.DefaultContext, machineClient.Provider())
+	p, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, machineClient.Provider())
 	if err != nil {
 		return err
 	}

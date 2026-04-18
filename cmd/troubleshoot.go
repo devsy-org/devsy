@@ -7,16 +7,16 @@ import (
 	"fmt"
 
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/provider"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	"github.com/skevetter/devpod/pkg/platform"
-	pkgprovider "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/version"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/platform"
+	pkgprovider "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/version"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,10 +60,10 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		CLIVersion            string
 		Config                *config.Config
 		Providers             map[string]provider.ProviderWithDefault
-		DevPodProInstances    []DevPodProInstance
+		DevsyProInstances    []DevsyProInstance
 		Workspace             *pkgprovider.Workspace
 		WorkspaceStatus       client.Status
-		WorkspaceTroubleshoot *managementv1.DevPodWorkspaceInstanceTroubleshoot
+		WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
 		DaemonStatus          *daemon.Status
 
 		Errors []PrintableError `json:",omitempty"`
@@ -91,7 +91,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	info.Config, err = config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("load config: %w", err)})
-		// (ThomasK33): It's fine to return early here, as without the devpod config
+		// (ThomasK33): It's fine to return early here, as without the devsy config
 		// we cannot do any further troubleshooting.
 		return
 	}
@@ -102,7 +102,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("collect providers: %w", err)})
 	}
 
-	info.DevPodProInstances, err = collectPlatformInfo(info.Config, logger)
+	info.DevsyProInstances, err = collectPlatformInfo(info.Config, logger)
 	if err != nil {
 		info.Errors = append(
 			info.Errors,
@@ -111,7 +111,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	}
 
 	workspaceClient, err := workspace.Get(ctx, workspace.GetOptions{
-		DevPodConfig: info.Config,
+		DevsyConfig: info.Config,
 		Args:         args,
 		Owner:        cmd.Owner,
 		Log:          logger,
@@ -129,9 +129,9 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		if info.Workspace.Pro != nil {
 			// (ThomasK33): As there can be multiple pro instances configured
 			// we want to iterate over all and find the host that this workspace belongs to.
-			var proInstance DevPodProInstance
+			var proInstance DevsyProInstance
 
-			for _, instance := range info.DevPodProInstances {
+			for _, instance := range info.DevsyProInstances {
 				if instance.ProviderName == info.Workspace.Provider.Name {
 					proInstance = instance
 					break
@@ -173,18 +173,18 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	}
 }
 
-// collectProWorkspaceInfo collects troubleshooting information for a DevPod Pro instance.
+// collectProWorkspaceInfo collects troubleshooting information for a Devsy Pro instance.
 // It initializes a client from the host, finds the workspace instance in the project, and retrieves
 // troubleshooting information using the management client.
 func collectProWorkspaceInfo(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	host string,
 	logger log.Logger,
 	workspaceUID string,
 	project string,
-) (*managementv1.DevPodWorkspaceInstanceTroubleshoot, error) {
-	baseClient, err := platform.InitClientFromHost(ctx, devPodConfig, host, logger)
+) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, host, logger)
 	if err != nil {
 		return nil, fmt.Errorf("init client from host: %w", err)
 	}
@@ -205,7 +205,7 @@ func collectProWorkspaceInfo(
 	troubleshoot, err := managementClient.
 		Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(workspace.Namespace).
+		DevsyWorkspaceInstances(workspace.Namespace).
 		Troubleshoot(ctx, workspace.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("troubleshoot: %w", err)
@@ -214,18 +214,18 @@ func collectProWorkspaceInfo(
 	return troubleshoot, nil
 }
 
-// collectProviders collects and configures providers based on the given devPodConfig.
+// collectProviders collects and configures providers based on the given devsyConfig.
 // It returns a map of providers with their default settings and an error if any occurs.
 func collectProviders(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	logger log.Logger,
 ) (map[string]provider.ProviderWithDefault, error) {
-	providers, err := workspace.LoadAllProviders(devPodConfig, logger)
+	providers, err := workspace.LoadAllProviders(devsyConfig, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	configuredProviders := devPodConfig.Current().Providers
+	configuredProviders := devsyConfig.Current().Providers
 	if configuredProviders == nil {
 		configuredProviders = map[string]*config.ProviderConfig{}
 	}
@@ -243,41 +243,41 @@ func collectProviders(
 		entry.Config.Options = srcOptions
 		retMap[k] = provider.ProviderWithDefault{
 			ProviderWithOptions: *entry,
-			Default:             devPodConfig.Current().DefaultProvider == entry.Config.Name,
+			Default:             devsyConfig.Current().DefaultProvider == entry.Config.Name,
 		}
 	}
 
 	return retMap, nil
 }
 
-type DevPodProInstance struct {
+type DevsyProInstance struct {
 	Host         string
 	ProviderName string
 	Version      string
 }
 
-// collectPlatformInfo collects information about all platform instances in a given devPodConfig.
+// collectPlatformInfo collects information about all platform instances in a given devsyConfig.
 // It iterates over the pro instances, retrieves their versions, and appends them to the ProInstance slice.
 // Any errors encountered during this process are combined and returned along with the ProInstance slice.
 // This means that even when an error value is returned, the pro instance slice will contain valid values.
 func collectPlatformInfo(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	logger log.Logger,
-) ([]DevPodProInstance, error) {
-	proInstanceList, err := workspace.ListProInstances(devPodConfig, logger)
+) ([]DevsyProInstance, error) {
+	proInstanceList, err := workspace.ListProInstances(devsyConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("list pro instances: %w", err)
 	}
 
-	var proInstances []DevPodProInstance
+	var proInstances []DevsyProInstance
 	var combinedErrs error
 
 	for _, proInstance := range proInstanceList {
-		version, err := platform.GetProInstanceDevPodVersion(
+		version, err := platform.GetProInstanceDevsyVersion(
 			&pkgprovider.ProInstance{Host: proInstance.Host},
 		)
 		combinedErrs = errors.Join(combinedErrs, err)
-		proInstances = append(proInstances, DevPodProInstance{
+		proInstances = append(proInstances, DevsyProInstance{
 			Host:         proInstance.Host,
 			ProviderName: proInstance.Provider,
 			Version:      version,

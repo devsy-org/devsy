@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/skevetter/log"
 )
 

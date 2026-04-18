@@ -11,8 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 )
 
@@ -185,7 +185,7 @@ func (s *HTTPDownloadSource) downloadFile(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download binary: %w", err)
 	}

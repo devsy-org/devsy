@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/skevetter/devpod/pkg/machineid"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/machineid"
+	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/skevetter/log"
 )
 

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +37,7 @@ func NewGetWorkspaceConfigCommand(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "get-workspace-config",
 		Short: "Retrieves a workspace config",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
@@ -47,7 +47,7 @@ func NewGetWorkspaceConfigCommand(flags *flags.GlobalFlags) *cobra.Command {
 				cmd.maxDepth = 0
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, args)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, args)
 		},
 	}
 
@@ -61,7 +61,7 @@ func NewGetWorkspaceConfigCommand(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *GetWorkspaceConfigCommand) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) error {
 	if len(args) != 1 {
@@ -98,7 +98,7 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 			rawSource,
 			tmpDir,
 			cmd.maxDepth,
-			devPodConfig.ContextOption(
+			devsyConfig.ContextOption(
 				config.ContextOptionSSHStrictHostKeyChecking,
 			) == config.BoolTrue,
 			logger,

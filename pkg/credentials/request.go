@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -29,7 +29,7 @@ func PostWithRetry(port int, endpoint string, body io.Reader, log log.Logger) ([
 		return errors.Is(err, syscall.ECONNREFUSED)
 	}, func() error {
 		url := fmt.Sprintf("http://localhost:%s/%s", strconv.Itoa(port), endpoint)
-		response, err := devpodhttp.GetHTTPClient().Post(url, "application/json", body)
+		response, err := devsyhttp.GetHTTPClient().Post(url, "application/json", body)
 		if err != nil {
 			log.Errorf("Error calling %s: %v", endpoint, err)
 			return err

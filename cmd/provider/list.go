@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/table"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -51,17 +51,17 @@ type ProviderWithDefault struct {
 
 // Run runs the command logic.
 func (cmd *ListCmd) Run(ctx context.Context) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	providers, err := workspace.LoadAllProviders(devPodConfig, log.Default.ErrorStreamOnly())
+	providers, err := workspace.LoadAllProviders(devsyConfig, log.Default.ErrorStreamOnly())
 	if err != nil {
 		return err
 	}
 
-	configuredProviders := devPodConfig.Current().Providers
+	configuredProviders := devsyConfig.Current().Providers
 	if configuredProviders == nil {
 		configuredProviders = map[string]*config.ProviderConfig{}
 	}
@@ -73,7 +73,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			tableEntries = append(tableEntries, []string{
 				entry.Config.Name,
 				entry.Config.Version,
-				strconv.FormatBool(devPodConfig.Current().DefaultProvider == entry.Config.Name),
+				strconv.FormatBool(devsyConfig.Current().DefaultProvider == entry.Config.Name),
 				strconv.FormatBool(entry.State != nil && entry.State.Initialized),
 				entry.Config.Description,
 			})
@@ -101,7 +101,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			entry.Config.Options = srcOptions
 			retMap[k] = ProviderWithDefault{
 				ProviderWithOptions: *entry,
-				Default:             devPodConfig.Current().DefaultProvider == entry.Config.Name,
+				Default:             devsyConfig.Current().DefaultProvider == entry.Config.Name,
 			}
 		}
 

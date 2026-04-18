@@ -1,4 +1,4 @@
-import { TWorkspaceResult } from "@/contexts/DevPodContext/workspaces/useWorkspace"
+import { TWorkspaceResult } from "@/contexts/DevsyContext/workspaces/useWorkspace"
 import { ChevronRightIcon } from "@chakra-ui/icons"
 import {
   Button,
@@ -277,17 +277,17 @@ function useShareWorkspace(
   const toast = useToast()
 
   const handleShareClicked = useCallback(async () => {
-    const devpodProHost = proInstance?.host
+    const devsyProHost = proInstance?.host
     const workspace_id = workspace?.id
     const workspace_uid = workspace?.uid
-    if (!devpodProHost || !workspace_id || !workspace_uid) {
+    if (!devsyProHost || !workspace_id || !workspace_uid) {
       return
     }
 
     const searchParams = new URLSearchParams()
     searchParams.set("workspace-uid", workspace_uid)
     searchParams.set("workspace-id", workspace_id)
-    searchParams.set(`${BINARY_NAME}-pro-host`, devpodProHost)
+    searchParams.set(`${BINARY_NAME}-pro-host`, devsyProHost)
 
     const link = `${WEBSITE_BASE_URL}/import#${searchParams.toString()}`
     const res = await client.writeToClipboard(link)

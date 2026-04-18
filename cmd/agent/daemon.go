@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/driver/custom"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/driver/custom"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +50,7 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	}
 
 	logger := log.NewFileLogger(filepath.Join(logFolder, "agent-daemon.log"), logrus.InfoLevel)
-	logger.Infof("starting DevPod daemon patrol at %s", logFolder)
+	logger.Infof("starting Devsy daemon patrol at %s", logFolder)
 
 	// start patrolling
 	cmd.patrol(ctx, logger)

@@ -13,15 +13,15 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/agent/tunnelserver"
-	"github.com/skevetter/devpod/pkg/compress"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/crane"
-	"github.com/skevetter/devpod/pkg/devcontainer/sshtunnel"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/ide"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	"github.com/devsy-org/devsy/pkg/compress"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
+	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/ide"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 )
 
@@ -80,7 +80,7 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 			)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             agent.ContainerDevPodHelperLocation,
+		RemoteAgentPath:             agent.ContainerDevsyHelperLocation,
 		DownloadURL:                 agent.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: agent.Bool(false),
 		Log:                         r.Log,
@@ -176,7 +176,7 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string) string {
 	r.Log.Infof("setting up container")
 	args := []string{
-		shellescape.Quote(agent.ContainerDevPodHelperLocation),
+		shellescape.Quote(agent.ContainerDevsyHelperLocation),
 		"agent", "container", "setup",
 		"--setup-info", shellescape.Quote(compressed),
 		"--container-workspace-info", shellescape.Quote(workspaceConfigCompressed),
@@ -283,7 +283,7 @@ func (r *runner) executeSetup(
 
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
-		shellescape.Quote(agent.ContainerDevPodHelperLocation),
+		shellescape.Quote(agent.ContainerDevsyHelperLocation),
 		"helper", "ssh-server", "--stdio",
 	}
 

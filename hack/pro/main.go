@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 //go:embed provider.yaml

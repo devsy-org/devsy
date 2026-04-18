@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/scanner"
 	"github.com/skevetter/log/survey"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -23,18 +23,18 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	setOptionsCmd := &cobra.Command{
 		Use:   "set-options",
-		Short: "Set options for a DevPod context",
+		Short: "Set options for a Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return fmt.Errorf("please specify the context")
 			}
 
-			devPodContext := ""
+			devsyContext := ""
 			if len(args) == 1 {
-				devPodContext = args[0]
+				devsyContext = args[0]
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodContext)
+			return cmd.Run(cobraCmd.Context(), devsyContext)
 		},
 	}
 
@@ -45,27 +45,27 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *SetOptionsCmd) Run(ctx context.Context, context string) error {
-	devPodConfig, err := config.LoadConfig("", cmd.Provider)
+	devsyConfig, err := config.LoadConfig("", cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	// check for context
 	if context == "" {
-		context = devPodConfig.DefaultContext
-	} else if devPodConfig.Contexts[context] == nil {
+		context = devsyConfig.DefaultContext
+	} else if devsyConfig.Contexts[context] == nil {
 		return fmt.Errorf("context '%s' doesn't exist", context)
 	}
 
 	// check if there are setOptions options set
 	if len(cmd.Options) > 0 {
-		err = setOptions(devPodConfig, context, cmd.Options)
+		err = setOptions(devsyConfig, context, cmd.Options)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = config.SaveConfig(devPodConfig)
+	err = config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

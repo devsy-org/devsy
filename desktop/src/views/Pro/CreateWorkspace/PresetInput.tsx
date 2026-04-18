@@ -10,12 +10,12 @@ import {
   Spinner,
   useColorModeValue,
 } from "@chakra-ui/react"
-import { ManagementV1DevPodWorkspacePreset } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspacePreset"
+import { ManagementV1DevsyWorkspacePreset } from "@devsy/client/gen/models/managementV1DevsyWorkspacePreset"
 import { AiOutlineCodeSandbox } from "react-icons/ai"
 
 type TPresetInputProps = Readonly<{
-  preset?: ManagementV1DevPodWorkspacePreset
-  presets?: readonly ManagementV1DevPodWorkspacePreset[]
+  preset?: ManagementV1DevsyWorkspacePreset
+  presets?: readonly ManagementV1DevsyWorkspacePreset[]
   setPreset?: (presetId: string | undefined) => void
   loading?: boolean
   isUpdate?: boolean

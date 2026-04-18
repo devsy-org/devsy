@@ -1,10 +1,10 @@
 name: docker123
 version: v0.0.1
 description: |-
-  DevPod on Docker
+  Devsy on Docker
 options:
   LOCATION:
-    description: The location DevPod should use
+    description: The location Devsy should use
 agent:
   local: true
   docker:
@@ -27,4 +27,4 @@ exec:
     cat ${LOCATION}/${MACHINE_ID}/status.txt 2>/dev/null || echo "NOTFOUND"
 
   command: |-
-    "${DEVPOD}" helper sh -c "${COMMAND}"
+    "${DEVSY}" helper sh -c "${COMMAND}"

@@ -1,7 +1,7 @@
 package reset
 
 import (
-	"github.com/skevetter/devpod/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 

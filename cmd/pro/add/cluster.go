@@ -12,11 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/workspace"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/survey"
 	"github.com/spf13/cobra"
@@ -53,7 +53,7 @@ func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "cluster <cluster-name>",
-		Short: "add current cluster to DevPod Pro",
+		Short: "add current cluster to Devsy Pro",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
@@ -86,12 +86,12 @@ func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, "")
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
 
-	cmd.Host, err = ensureHost(devPodConfig, cmd.Host, cmd.Log)
+	cmd.Host, err = ensureHost(devsyConfig, cmd.Host, cmd.Log)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	// Get clusterName from command argument
 	clusterName := args[0]
 
-	baseClient, err := platform.InitClientFromHost(ctx, devPodConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	loftVersion, err := baseClient.Version()
+	devsyVersion, err := baseClient.Version()
 	if err != nil {
 		return fmt.Errorf("get pro version: %w", err)
 	}
@@ -164,18 +164,18 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 			"--set",
 			"image=" + cmp.Or(
 				os.Getenv("DEVELOPMENT_IMAGE"),
-				"ghcr.io/loft-sh/enterprise:release-test",
+				"ghcr.io/devsy-org/enterprise:release-test",
 			),
 		}
 	} else {
 		if cmd.HelmChartPath != "" {
 			helmArgs = append(helmArgs, cmd.HelmChartPath)
 		} else {
-			helmArgs = append(helmArgs, "loft", "--repo", "https://charts.loft.sh")
+			helmArgs = append(helmArgs, "loft", "--repo", "https://charts.devsy.sh")
 		}
 
-		if loftVersion.Version != "" {
-			helmArgs = append(helmArgs, "--version", loftVersion.Version)
+		if devsyVersion.Version != "" {
+			helmArgs = append(helmArgs, "--version", devsyVersion.Version)
 		}
 
 		if cmd.HelmChartVersion != "" {
@@ -201,8 +201,8 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		helmArgs = append(helmArgs, "--values", values)
 	}
 
-	if accessKey.LoftHost != "" {
-		helmArgs = append(helmArgs, "--set", "url="+accessKey.LoftHost)
+	if accessKey.DevsyHost != "" {
+		helmArgs = append(helmArgs, "--set", "url="+accessKey.DevsyHost)
 	}
 
 	if accessKey.AccessKey != "" {
@@ -317,12 +317,12 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func ensureHost(devPodConfig *config.Config, host string, log log.Logger) (string, error) {
+func ensureHost(devsyConfig *config.Config, host string, log log.Logger) (string, error) {
 	if host != "" {
 		return host, nil
 	}
 
-	proInstances, err := workspace.ListProInstances(devPodConfig, log)
+	proInstances, err := workspace.ListProInstances(devsyConfig, log)
 	if err != nil {
 		return "", fmt.Errorf("list pro instances: %w", err)
 	}

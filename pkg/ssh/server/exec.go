@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/skevetter/devpod/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/skevetter/log"
 	"github.com/skevetter/ssh"
 )

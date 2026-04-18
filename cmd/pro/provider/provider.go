@@ -3,16 +3,16 @@ package provider
 import (
 	"os"
 
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/cmd/pro/provider/create"
-	"github.com/skevetter/devpod/cmd/pro/provider/get"
-	"github.com/skevetter/devpod/cmd/pro/provider/list"
-	"github.com/skevetter/devpod/cmd/pro/provider/update"
-	"github.com/skevetter/devpod/cmd/pro/provider/watch"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/provider/create"
+	"github.com/devsy-org/devsy/cmd/pro/provider/get"
+	"github.com/devsy-org/devsy/cmd/pro/provider/list"
+	"github.com/devsy-org/devsy/cmd/pro/provider/update"
+	"github.com/devsy-org/devsy/cmd/pro/provider/watch"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -21,12 +21,12 @@ import (
 func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "provider",
-		Short:  "DevPod Pro provider commands",
+		Short:  "Devsy Pro provider commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if (globalFlags.Config == "" || globalFlags.Config == client.DefaultCacheConfig) &&
-				os.Getenv("LOFT_CONFIG") != "" {
+				os.Getenv("DEVSY_CONFIG") != "" {
 				globalFlags.Config = os.Getenv(platform.ConfigEnv)
 			}
 
@@ -36,7 +36,7 @@ func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				globalFlags.Debug = true
 			}
 
-			// Disable debug hints if we execute pro commands from DevPod Desktop
+			// Disable debug hints if we execute pro commands from Devsy Desktop
 			// We're reusing the agent.AgentExecutedAnnotation for simplicity, could rename in the future
 			if os.Getenv(config.EnvUI) == config.BoolTrue {
 				cmd.VisitParents(func(c *cobra.Command) {

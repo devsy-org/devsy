@@ -19,8 +19,8 @@ import {
 } from "@/lib"
 import { Routes } from "@/routes.constants"
 import { Box, Heading, HStack, VStack } from "@chakra-ui/react"
-import { getProjectNamespace, NewResource, Resources } from "@loft-enterprise/client"
-import { ManagementV1DevPodWorkspaceInstance } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspaceInstance"
+import { getProjectNamespace, NewResource, Resources } from "@devsy/client"
+import { ManagementV1DevsyWorkspaceInstance } from "@devsy/client/gen/models/managementV1DevsyWorkspaceInstance"
 import * as jsyaml from "js-yaml"
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
@@ -131,8 +131,8 @@ async function buildWorkspaceInstance(
   projectNamespacePrefix: string | undefined,
   preset: string | undefined,
   shouldUseRunner: boolean
-): Promise<Result<{ workspaceID: string; instance: ManagementV1DevPodWorkspaceInstance }>> {
-  const instance = NewResource(Resources.ManagementV1DevPodWorkspaceInstance)
+): Promise<Result<{ workspaceID: string; instance: ManagementV1DevsyWorkspaceInstance }>> {
+  const instance = NewResource(Resources.ManagementV1DevsyWorkspaceInstance)
   const workspaceSource = new Source(values.sourceType, values.source)
 
   // Workspace name

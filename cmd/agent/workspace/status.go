@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/client"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )

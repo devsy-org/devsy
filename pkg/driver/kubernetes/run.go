@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/driver"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,17 +25,17 @@ const (
 )
 
 const (
-	DevPodCreatedLabel      = pkgconfig.BinaryName + ".sh/created"
-	DevPodWorkspaceLabel    = pkgconfig.BinaryName + ".sh/workspace"
-	DevPodWorkspaceUIDLabel = pkgconfig.BinaryName + ".sh/workspace-uid"
+	DevsyCreatedLabel      = pkgconfig.BinaryName + ".sh/created"
+	DevsyWorkspaceLabel    = pkgconfig.BinaryName + ".sh/workspace"
+	DevsyWorkspaceUIDLabel = pkgconfig.BinaryName + ".sh/workspace-uid"
 
-	DevPodInfoAnnotation                   = pkgconfig.BinaryName + ".sh/info"
-	DevPodLastAppliedAnnotation            = pkgconfig.BinaryName + ".sh/last-applied-configuration"
+	DevsyInfoAnnotation                   = pkgconfig.BinaryName + ".sh/info"
+	DevsyLastAppliedAnnotation            = pkgconfig.BinaryName + ".sh/last-applied-configuration"
 	ClusterAutoscalerSaveToEvictAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict"
 )
 
-var ExtraDevPodLabels = map[string]string{
-	DevPodCreatedLabel: "true",
+var ExtraDevsyLabels = map[string]string{
+	DevsyCreatedLabel: "true",
 }
 
 type DevContainerInfo struct {
@@ -200,7 +200,7 @@ func (k *KubernetesDriver) runContainer(
 	if err != nil {
 		return err
 	}
-	labels[DevPodWorkspaceUIDLabel] = options.UID
+	labels[DevsyWorkspaceUIDLabel] = options.UID
 
 	// node selector
 	nodeSelector, err := getNodeSelector(pod, k.options.NodeSelector)
@@ -278,7 +278,7 @@ func (k *KubernetesDriver) runContainer(
 	if existingPod != nil {
 		existingOptions := &provider2.ProviderKubernetesDriverConfig{}
 		err := json.Unmarshal(
-			[]byte(existingPod.GetAnnotations()[DevPodLastAppliedAnnotation]),
+			[]byte(existingPod.GetAnnotations()[DevsyLastAppliedAnnotation]),
 			existingOptions,
 		)
 		if err != nil {
@@ -322,7 +322,7 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[DevPodLastAppliedAnnotation] = string(lastAppliedConfigRaw)
+	pod.Annotations[DevsyLastAppliedAnnotation] = string(lastAppliedConfigRaw)
 	pod.Annotations[ClusterAutoscalerSaveToEvictAnnotation] = "false"
 
 	// marshal the pod
@@ -369,7 +369,7 @@ func getContainers(
 			MountPath: "/var/run/secrets/" + DevContainerName,
 		})
 	}
-	devPodContainer := corev1.Container{
+	devsyContainer := corev1.Container{
 		Name:         DevContainerName,
 		Image:        imageName,
 		Command:      []string{entrypoint},
@@ -387,37 +387,37 @@ func getContainers(
 	}
 
 	if strictSecurity == pkgconfig.BoolTrue {
-		devPodContainer.SecurityContext = nil
+		devsyContainer.SecurityContext = nil
 	}
 
 	// merge with existing container if it exists
-	var existingDevPodContainer *corev1.Container
+	var existingDevsyContainer *corev1.Container
 	retContainers := []corev1.Container{}
 	if pod != nil {
 		for i, container := range pod.Spec.Containers {
 			if container.Name == DevContainerName {
-				existingDevPodContainer = &pod.Spec.Containers[i]
+				existingDevsyContainer = &pod.Spec.Containers[i]
 			} else {
 				retContainers = append(retContainers, container)
 			}
 		}
 	}
 
-	if existingDevPodContainer != nil {
-		devPodContainer.Env = append(existingDevPodContainer.Env, devPodContainer.Env...)
-		devPodContainer.EnvFrom = existingDevPodContainer.EnvFrom
-		devPodContainer.Ports = existingDevPodContainer.Ports
-		devPodContainer.VolumeMounts = append(
-			existingDevPodContainer.VolumeMounts,
-			devPodContainer.VolumeMounts...)
-		devPodContainer.ImagePullPolicy = existingDevPodContainer.ImagePullPolicy
+	if existingDevsyContainer != nil {
+		devsyContainer.Env = append(existingDevsyContainer.Env, devsyContainer.Env...)
+		devsyContainer.EnvFrom = existingDevsyContainer.EnvFrom
+		devsyContainer.Ports = existingDevsyContainer.Ports
+		devsyContainer.VolumeMounts = append(
+			existingDevsyContainer.VolumeMounts,
+			devsyContainer.VolumeMounts...)
+		devsyContainer.ImagePullPolicy = existingDevsyContainer.ImagePullPolicy
 
-		if devPodContainer.SecurityContext == nil &&
-			existingDevPodContainer.SecurityContext != nil {
-			devPodContainer.SecurityContext = existingDevPodContainer.SecurityContext
+		if devsyContainer.SecurityContext == nil &&
+			existingDevsyContainer.SecurityContext != nil {
+			devsyContainer.SecurityContext = existingDevsyContainer.SecurityContext
 		}
 	}
-	retContainers = append(retContainers, devPodContainer)
+	retContainers = append(retContainers, devsyContainer)
 
 	return retContainers
 }
@@ -477,8 +477,8 @@ func getLabels(pod *corev1.Pod, rawLabels string) (map[string]string, error) {
 		}
 		maps.Copy(labels, extraLabels)
 	}
-	// make sure we don't overwrite the devpod labels
-	maps.Copy(labels, ExtraDevPodLabels)
+	// make sure we don't overwrite the devsy labels
+	maps.Copy(labels, ExtraDevsyLabels)
 
 	return labels, nil
 }

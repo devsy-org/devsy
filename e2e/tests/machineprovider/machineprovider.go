@@ -10,11 +10,11 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
-	"devpod machine provider test suite",
+	"devsy machine provider test suite",
 	ginkgo.Label("machineprovider"),
 	ginkgo.Ordered,
 	func() {
@@ -39,18 +39,18 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				// create docker provider
-				err = f.DevPodProviderAdd(
+				err = f.DevsyProviderAdd(
 					ctx,
 					filepath.Join(tempDir, "provider.yaml"),
 				)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err = f.DevPodWorkspaceDelete(cleanupCtx, tempDir)
+					err = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.ExpectNoError(err)
 				})
 
-				// wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir, "--debug")
+				// wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir, "--debug")
 				framework.ExpectNoError(err)
 
 				// expect workspace
@@ -58,7 +58,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				// check status
-				status, err := f.DevPodStatus(ctx, tempDir)
+				status, err := f.DevsyStatus(ctx, tempDir)
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(
 					strings.ToUpper(status.State),
@@ -67,11 +67,11 @@ var _ = ginkgo.Describe(
 				)
 
 				// stop container
-				err = f.DevPodStop(ctx, tempDir)
+				err = f.DevsyStop(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				// check status
-				status, err = f.DevPodStatus(ctx, tempDir)
+				status, err = f.DevsyStatus(ctx, tempDir)
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(
 					strings.ToUpper(status.State),
@@ -79,12 +79,12 @@ var _ = ginkgo.Describe(
 					"workspace status did not match",
 				)
 
-				// wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir)
+				// wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				// check if ssh works as it should start the container
-				out, err := f.DevPodSSH(
+				out, err := f.DevsySSH(
 					ctx,
 					tempDir,
 					fmt.Sprintf("cat /workspaces/%s/test.txt", workspace.ID),
@@ -97,7 +97,7 @@ var _ = ginkgo.Describe(
 				)
 			})
 
-		ginkgo.It("test devpod inactivity timeout",
+		ginkgo.It("test devsy inactivity timeout",
 			ginkgo.SpecTimeout(framework.GetTimeout()*5),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
@@ -110,22 +110,22 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				// create provider
-				_ = f.DevPodProviderDelete(ctx, "docker123")
-				err = f.DevPodProviderAdd(ctx, filepath.Join(tempDir, "provider.yaml"))
+				_ = f.DevsyProviderDelete(ctx, "docker123")
+				err = f.DevsyProviderAdd(ctx, filepath.Join(tempDir, "provider.yaml"))
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err = f.DevPodWorkspaceDelete(cleanupCtx, tempDir)
+					err = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.ExpectNoError(err)
-					err = f.DevPodProviderDelete(cleanupCtx, "docker123")
+					err = f.DevsyProviderDelete(cleanupCtx, "docker123")
 					framework.ExpectNoError(err)
 				})
 
-				// wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir, "--debug", "--daemon-interval=3s")
+				// wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir, "--debug", "--daemon-interval=3s")
 				framework.ExpectNoError(err)
 
 				// check status
-				status, err := f.DevPodStatus(ctx, tempDir, "--container-status=false")
+				status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(
 					strings.ToUpper(status.State),
@@ -134,11 +134,11 @@ var _ = ginkgo.Describe(
 				)
 
 				// stop container
-				err = f.DevPodStop(ctx, tempDir)
+				err = f.DevsyStop(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				// check status
-				status, err = f.DevPodStatus(ctx, tempDir, "--container-status=false")
+				status, err = f.DevsyStatus(ctx, tempDir, "--container-status=false")
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(
 					strings.ToUpper(status.State),
@@ -146,12 +146,12 @@ var _ = ginkgo.Describe(
 					"workspace status did not match",
 				)
 
-				// wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir, "--daemon-interval=3s")
+				// wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir, "--daemon-interval=3s")
 				framework.ExpectNoError(err)
 
 				// check status
-				status, err = f.DevPodStatus(ctx, tempDir, "--container-status=false")
+				status, err = f.DevsyStatus(ctx, tempDir, "--container-status=false")
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(
 					strings.ToUpper(status.State),
@@ -161,7 +161,7 @@ var _ = ginkgo.Describe(
 
 				// wait until workspace is stopped again
 				gomega.Eventually(func() string {
-					status, err := f.DevPodStatus(ctx, tempDir, "--container-status=false")
+					status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
 					framework.ExpectNoError(err)
 					return strings.ToUpper(status.State)
 				}, time.Minute*2, time.Second*2).Should(

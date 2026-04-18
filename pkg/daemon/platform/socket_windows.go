@@ -11,7 +11,7 @@ import (
 )
 
 func GetSocketAddr(providerName string) string {
-	return fmt.Sprintf("\\\\.\\pipe\\devpod.%s", providerName)
+	return fmt.Sprintf("\\\\.\\pipe\\devsy.%s", providerName)
 }
 
 func Dial(addr string) (net.Conn, error) {

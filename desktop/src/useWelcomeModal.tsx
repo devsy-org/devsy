@@ -17,8 +17,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import { client } from "./client"
 import { BINARY_NAME, GITHUB_RELEASES_URL, WEBSITE_DOCS_URL } from "./client/repo"
-import { LoftOSSBadge, Step, Steps, useInstallCLI } from "./components"
-import { Briefcase, CommandLine, DevpodWordmark } from "./icons"
+import { DevsyOSSBadge, Step, Steps, useInstallCLI } from "./components"
+import { Briefcase, CommandLine, DevsyWordmark } from "./icons"
 import { Routes } from "./routes.constants"
 
 const IS_FIRST_VISIT_KEY = `${BINARY_NAME}-is-first-visit`
@@ -84,19 +84,19 @@ export function useWelcomeModal() {
                       <Heading as="h1" size="lg">
                         Welcome to
                       </Heading>
-                      <DevpodWordmark width="40" height="16" />
+                      <DevsyWordmark width="40" height="16" />
                     </HStack>
-                    <LoftOSSBadge />
+                    <DevsyOSSBadge />
                   </HStack>
 
                   <Text fontWeight="bold">
-                    DevPod is a tool to create reproducible developer environments.
+                    Devsy is a tool to create reproducible developer environments.
                   </Text>
                   <Text>
                     Each developer environment runs in a separate container and is specified through
-                    a devcontainer.json. Through DevPod providers these containers can be created on
+                    a devcontainer.json. Through Devsy providers these containers can be created on
                     the local computer, any reachable remote machine or in a public or private
-                    cloud. It&apos;s also possible to extend DevPod and write your own custom
+                    cloud. It&apos;s also possible to extend Devsy and write your own custom
                     providers. <br />
                     For more information, head over to our{" "}
                     <Link onClick={() => client.openUrl(WEBSITE_DOCS_URL)}>documentation.</Link>
@@ -114,7 +114,7 @@ export function useWelcomeModal() {
                   </HStack>
 
                   <Text>
-                    DevPod ships with a powerful CLI that allows you to create, manage and connect
+                    Devsy ships with a powerful CLI that allows you to create, manage and connect
                     to your workspaces and providers. You can either{" "}
                     <Link onClick={() => client.openUrl(GITHUB_RELEASES_URL)}>
                       download the standalone binary

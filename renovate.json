@@ -63,7 +63,7 @@
       "allowedVersions": "v2.4.0"
     },
     {
-      "matchPackageNames": ["@loft-enterprise/client"],
+      "matchPackageNames": ["@devsy/client"],
       "allowedVersions": "<=4.4.1"
     },
     {

@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	portpkg "github.com/skevetter/devpod/pkg/port"
-	"github.com/skevetter/devpod/pkg/random"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	portpkg "github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/skevetter/log"
 )
 
@@ -69,7 +69,7 @@ func PingURL(ctx context.Context, url string) error {
 		return err
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return err
 	}

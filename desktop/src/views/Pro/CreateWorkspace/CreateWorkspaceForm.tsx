@@ -25,7 +25,7 @@ import {
   VStack,
   useColorModeValue,
 } from "@chakra-ui/react"
-import { ManagementV1DevPodWorkspaceTemplate } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspaceTemplate"
+import { ManagementV1DevsyWorkspaceTemplate } from "@devsy/client/gen/models/managementV1DevsyWorkspaceTemplate"
 import { ReactNode, useCallback, useEffect, useMemo, useRef } from "react"
 import { Controller, DefaultValues, FormProvider, useForm } from "react-hook-form"
 import { DevContainerInput } from "./DevContainerInput"
@@ -34,18 +34,18 @@ import { InfrastructureTemplateInput } from "./InfrastructureTemplateInput"
 import { SourceInput } from "./SourceInput"
 import { FieldName, TFormValues } from "./types"
 import { TargetInput } from "@/views/Pro/CreateWorkspace/RunnerInput"
-import { ManagementV1DevPodWorkspacePreset } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspacePreset"
+import { ManagementV1DevsyWorkspacePreset } from "@devsy/client/gen/models/managementV1DevsyWorkspacePreset"
 import { Gold } from "@/icons/Gold"
 import { PresetInput } from "@/views/Pro/CreateWorkspace/PresetInput"
 
 type TCreateWorkspaceFormProps = Readonly<{
   instance?: ProWorkspaceInstance
-  template?: ManagementV1DevPodWorkspaceTemplate
+  template?: ManagementV1DevsyWorkspaceTemplate
   onSubmit: (data: TFormValues) => void
   onReset: VoidFunction
   error: Failed | null
-  preset?: ManagementV1DevPodWorkspacePreset
-  presets?: readonly ManagementV1DevPodWorkspacePreset[]
+  preset?: ManagementV1DevsyWorkspacePreset
+  presets?: readonly ManagementV1DevsyWorkspacePreset[]
   setPreset?: (preset: string | undefined) => void
   loading?: boolean
 }>
@@ -333,7 +333,7 @@ function CreateWorkspaceRow({ label, children }: TCreateWorkspaceRowProps) {
 
 function getDefaultValues(
   instance: ProWorkspaceInstance | undefined,
-  template: ManagementV1DevPodWorkspaceTemplate | undefined
+  template: ManagementV1DevsyWorkspaceTemplate | undefined
 ): DefaultValues<TFormValues> | undefined {
   if (instance === undefined) {
     return undefined

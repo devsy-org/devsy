@@ -3,9 +3,9 @@ package container
 import (
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/credentials"
-	"github.com/skevetter/devpod/pkg/loftconfig"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/loftconfig"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +27,7 @@ func NewSetupLoftPlatformAccessCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 	setupLoftPlatformAccessCmd := &cobra.Command{
 		Use:   "setup-loft-platform-access",
-		Short: "used to setup Loft Platform access",
+		Short: "used to setup Devsy Platform access",
 		RunE:  cmd.Run,
 	}
 
@@ -47,7 +47,7 @@ func NewSetupLoftPlatformAccessCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run executes main command logic.
-// It fetches Loft Platform credentials from credentials server and sets it up inside the workspace.
+// It fetches Devsy Platform credentials from credentials server and sets it up inside the workspace.
 func (c *SetupLoftPlatformAccessCmd) Run(_ *cobra.Command, args []string) error {
 	logger := log.Default.ErrorStreamOnly()
 
@@ -60,23 +60,23 @@ func (c *SetupLoftPlatformAccessCmd) Run(_ *cobra.Command, args []string) error 
 		port = c.Port
 	}
 
-	loftConfig, err := loftconfig.GetLoftConfig(c.Context, c.Provider, port, logger)
+	loftConfig, err := devsyconfig.GetDevsyConfig(c.Context, c.Provider, port, logger)
 	if err != nil {
 		return err
 	}
 
 	if loftConfig == nil {
-		logger.Debug("Got empty loft config response, Loft Platform access won't be set up.")
+		logger.Debug("Got empty devsy config response, Devsy Platform access won't be set up.")
 		return nil
 	}
 
-	err = loftconfig.AuthDevpodCliToPlatform(loftConfig, logger)
+	err = devsyconfig.AuthDevsyCliToPlatform(loftConfig, logger)
 	if err != nil {
 		// log error but don't return to allow other CLIs to install as well
-		logger.Warnf("unable to authenticate devpod cli: %w", err)
+		logger.Warnf("unable to authenticate devsy cli: %w", err)
 	}
 
-	err = loftconfig.AuthVClusterCliToPlatform(loftConfig, logger)
+	err = devsyconfig.AuthVClusterCliToPlatform(loftConfig, logger)
 	if err != nil {
 		// log error but don't return to allow other CLIs to install as well
 		logger.Warnf("unable to authenticate vcluster cli: %w", err)

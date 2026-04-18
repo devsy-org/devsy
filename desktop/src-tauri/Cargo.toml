@@ -1,8 +1,8 @@
 [package]
-name = "devpod-desktop"
+name = "devsy-desktop"
 version = "0.1.0"
-description = "Devpod Desktop Application"
-authors = ["loft.sh"]
+description = "Devsy Desktop Application"
+authors = ["devsy.sh"]
 license = ""
 repository = ""
 edition = "2024"

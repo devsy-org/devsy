@@ -7,15 +7,15 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	providercmd "github.com/skevetter/devpod/cmd/provider"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	versionpkg "github.com/skevetter/devpod/pkg/version"
-	"github.com/skevetter/devpod/pkg/workspace"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	providercmd "github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	versionpkg "github.com/devsy-org/devsy/pkg/version"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -47,11 +47,11 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 	loginCmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log into a DevPod Pro instance",
+		Short: "Log into a Devsy Pro instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf(
-					"please specify the DevPod Pro host, e.g. devpod pro login my-pro.my-domain.com",
+					"please specify the Devsy Pro host, e.g. devsy pro login my-pro.my-domain.com",
 				)
 			}
 
@@ -62,13 +62,13 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	loginCmd.Flags().
 		StringVar(&cmd.AccessKey, "access-key", "", "If defined will use the given access key to login")
 	loginCmd.Flags().
-		BoolVar(&cmd.Login, "login", true, "If enabled will automatically try to log into the Loft DevPod Pro")
+		BoolVar(&cmd.Login, "login", true, "If enabled will automatically try to log into Devsy Pro")
 	loginCmd.Flags().
 		BoolVar(&cmd.Use, "use", true, "If enabled will automatically activate the provider")
 	loginCmd.Flags().
-		StringVar(&cmd.Provider, "provider", "", "Optional name how the DevPod Pro provider will be named")
+		StringVar(&cmd.Provider, "provider", "", "Optional name how the Devsy Pro provider will be named")
 	loginCmd.Flags().
-		StringVar(&cmd.Version, "version", "", "The version to use for the DevPod provider")
+		StringVar(&cmd.Version, "version", "", "The version to use for the Devsy provider")
 	loginCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
 	loginCmd.Flags().
@@ -83,7 +83,7 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 // Run runs the command logic.
 func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) error {
 	if strings.HasPrefix(fullURL, "http://") {
-		return fmt.Errorf("http is not supported for DevPod Pro, please use https:// instead")
+		return fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
 	} else if !strings.HasPrefix(fullURL, "https://") {
 		fullURL = "https://" + fullURL
 	} else if cmd.Provider != "" && len(cmd.Provider) > 32 {
@@ -99,14 +99,14 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 	// extract host
 	host := parsedURL.Host
 
-	// load devpod config
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	// load devsy config
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	// check if there is already a pro instance with that url
-	proInstances, err := workspace.ListProInstances(devPodConfig, log)
+	proInstances, err := workspace.ListProInstances(devsyConfig, log)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 		cmd.Provider = provider.ToProInstanceID(cmd.Provider)
 
 		// check if provider already exists
-		providers, err := workspace.LoadAllProviders(devPodConfig, log)
+		providers, err := workspace.LoadAllProviders(devsyConfig, log)
 		if err != nil {
 			return fmt.Errorf("load providers: %w", err)
 		}
@@ -155,7 +155,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 			CreationTimestamp: types.Now(),
 		}
 
-		remoteVersion, err := platform.GetDevPodVersion(fullURL)
+		remoteVersion, err := platform.GetDevsyVersion(fullURL)
 		if err != nil {
 			return err
 		}
@@ -168,32 +168,32 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 			log.Debug("remote version < 0.7.0, installing proxy provider")
 			// proxy providers are deprecated and shouldn't be used
 			// unless explicitly the server version is below 0.7.0
-			err = cmd.addLoftProvider(devPodConfig, fullURL, log)
+			err = cmd.addLoftProvider(devsyConfig, fullURL, log)
 			if err != nil {
 				return err
 			}
 		} else {
 			// add built-in pro (daemon) provider
-			_, err = workspace.AddProvider(devPodConfig, cmd.Provider, "pro", log)
+			_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro", log)
 			if err != nil {
 				return err
 			}
 		}
 
-		err = provider.SaveProInstanceConfig(devPodConfig.DefaultContext, currentInstance)
+		err = provider.SaveProInstanceConfig(devsyConfig.DefaultContext, currentInstance)
 		if err != nil {
 			return err
 		}
 
-		// reload devpod config
-		devPodConfig, err = config.LoadConfig(devPodConfig.DefaultContext, cmd.Provider)
+		// reload devsy config
+		devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 		if err != nil {
 			return err
 		}
 	}
 
 	// get provider config
-	providerConfig, err := provider.LoadProviderConfig(devPodConfig.DefaultContext, cmd.Provider)
+	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 	if cmd.Login {
 		err = login(
 			ctx,
-			devPodConfig,
+			devsyConfig,
 			fullURL,
 			cmd.Provider,
 			cmd.AccessKey,
@@ -213,14 +213,14 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 		if err != nil {
 			return err
 		}
-		log.Donef("logged into DevPod Pro instance: url=%s", fullURL)
+		log.Donef("logged into Devsy Pro instance: url=%s", fullURL)
 	}
 
 	// 3. Configure provider
 	if cmd.Use {
 		err := providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
 			Provider:       providerConfig,
-			Context:        devPodConfig.DefaultContext,
+			Context:        devsyConfig.DefaultContext,
 			UserOptions:    cmd.Options,
 			Reconfigure:    false,
 			SkipRequired:   false,
@@ -234,12 +234,12 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 		}
 	}
 
-	log.Done("configured DevPod Pro")
+	log.Done("configured Devsy Pro")
 	return nil
 }
 
 func (cmd *LoginCmd) addLoftProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	url string,
 	log log.Logger,
 ) error {
@@ -250,13 +250,13 @@ func (cmd *LoginCmd) addLoftProvider(
 	}
 
 	// add the provider
-	log.Infof("Add DevPod Pro provider...")
+	log.Infof("Add Devsy Pro provider...")
 
 	// is development?
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {
 		log.Debugf("Add development provider")
 		_, err = workspace.AddProviderRaw(workspace.ProviderParams{
-			DevPodConfig: devPodConfig,
+			DevsyConfig: devsyConfig,
 			ProviderName: cmd.Provider,
 			Source:       &provider.ProviderSource{},
 			Raw:          []byte(fallbackProvider),
@@ -266,7 +266,7 @@ func (cmd *LoginCmd) addLoftProvider(
 			return err
 		}
 	} else {
-		_, err = workspace.AddProvider(devPodConfig, cmd.Provider, cmd.ProviderSource, log)
+		_, err = workspace.AddProvider(devsyConfig, cmd.Provider, cmd.ProviderSource, log)
 		if err != nil {
 			return err
 		}
@@ -284,7 +284,7 @@ func (cmd *LoginCmd) resolveProviderSource(url string) error {
 		return nil
 	}
 
-	version, err := platform.GetDevPodVersion(url)
+	version, err := platform.GetDevsyVersion(url)
 	if err != nil {
 		return fmt.Errorf("get version: %w", err)
 	}
@@ -295,14 +295,14 @@ func (cmd *LoginCmd) resolveProviderSource(url string) error {
 
 func login(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	url string,
 	providerName string,
 	accessKey string,
 	skipBrowserLogin, forceBrowser bool,
 	log log.Logger,
 ) error {
-	configPath, err := platform.LoftConfigPath(devPodConfig.DefaultContext, providerName)
+	configPath, err := platform.DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return err
 	}
@@ -339,33 +339,33 @@ func login(
 	return nil
 }
 
-var fallbackProvider = `name: devpod-pro
+var fallbackProvider = `name: devsy-pro
 version: v0.0.0
-icon: https://devpod.sh/assets/devpod.svg
-description: DevPod Pro
+icon: https://devsy.sh/assets/devsy.svg
+description: Devsy Pro
 options:
-  LOFT_CONFIG:
+  DEVSY_CONFIG:
     global: true
     hidden: true
     required: true
-    default: "${PROVIDER_FOLDER}/loft-config.json"
+    default: "${PROVIDER_FOLDER}/devsy-config.json"
 binaries:
   PRO_PROVIDER:
     - os: linux
       arch: amd64
-      path: /usr/local/bin/devpod
+      path: /usr/local/bin/devsy
     - os: linux
       arch: arm64
-      path: /usr/local/bin/devpod
+      path: /usr/local/bin/devsy
     - os: darwin
       arch: amd64
-      path: /usr/local/bin/devpod
+      path: /usr/local/bin/devsy
     - os: darwin
       arch: arm64
-      path: /usr/local/bin/devpod
+      path: /usr/local/bin/devsy
     - os: windows
       arch: amd64
-      path: "C:\\Users\\pasca\\workspace\\devpod\\desktop\\src-tauri\\bin\\devpod-x86_64-pc-windows-msvc.exe"
+      path: "C:\\Users\\pasca\\workspace\\devsy\\desktop\\src-tauri\\bin\\devsy-x86_64-pc-windows-msvc.exe"
 exec:
   proxy:
     up: |-

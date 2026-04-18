@@ -10,12 +10,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	copy2 "github.com/skevetter/devpod/pkg/copy"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	copy2 "github.com/devsy-org/devsy/pkg/copy"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/scanner"
 )
@@ -86,7 +86,7 @@ func (o *FleetServer) Install(projectDir string) error {
 
 	// download binary
 	o.log.Infof("Downloading fleet...")
-	resp, err := devpodhttp.GetHTTPClient().Get(url)
+	resp, err := devsyhttp.GetHTTPClient().Get(url)
 	if err != nil {
 		return err
 	}

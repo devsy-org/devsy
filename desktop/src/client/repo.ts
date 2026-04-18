@@ -1,8 +1,8 @@
-export const REPO_OWNER = "skevetter"
-export const REPO_NAME = "devpod"
+export const REPO_OWNER = "devsy-org"
+export const REPO_NAME = "devsy"
 export const REPO_SLUG = `${REPO_OWNER}/${REPO_NAME}`
 export const BINARY_NAME = REPO_NAME
-export const PRODUCT_NAME = "DevPod"
+export const PRODUCT_NAME = "Devsy"
 export const PRODUCT_NAME_PRO = `${PRODUCT_NAME} Pro`
 export const PRO_RELEASE_NAME = `${REPO_NAME}-pro`
 export const PROVIDER_PREFIX = `${REPO_NAME}-provider-`
@@ -16,6 +16,6 @@ export const WEBSITE_DOCS_URL = `${WEBSITE_BASE_URL}/docs`
 export const WEBSITE_PRO_URL = `${WEBSITE_BASE_URL}/pro`
 export const WEBSITE_ASSETS_URL = `${WEBSITE_BASE_URL}/assets`
 
-export const FLATPAK_ID = `sh.loft.${REPO_NAME}`
+export const FLATPAK_ID = `sh.devsy.${REPO_NAME}`
 export const CONTAINER_NAME = BINARY_NAME
 export const SHARED_MACHINE_PREFIX = `${BINARY_NAME}-shared-`

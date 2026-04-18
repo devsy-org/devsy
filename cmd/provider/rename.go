@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	workspace "github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	workspace "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -47,20 +47,20 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	if err := validateProviderRename(devPodConfig, oldName); err != nil {
+	if err := validateProviderRename(devsyConfig, oldName); err != nil {
 		return err
 	}
 
-	if devPodConfig.Current().Providers[newName] != nil {
+	if devsyConfig.Current().Providers[newName] != nil {
 		return fmt.Errorf("provider %s already exists", newName)
 	}
 
-	return renameProvider(ctx, devPodConfig, oldName, newName)
+	return renameProvider(ctx, devsyConfig, oldName, newName)
 }
 
 // validateProviderName checks that the given name is non-empty, matches the
@@ -82,11 +82,11 @@ func validateProviderName(newName string) error {
 // getWorkspacesForProvider returns all local workspaces whose provider matches
 // the given name.
 func getWorkspacesForProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName string,
 ) ([]*provider.Workspace, error) {
 	workspaces, err := workspace.ListLocalWorkspaces(
-		devPodConfig.DefaultContext,
+		devsyConfig.DefaultContext,
 		false,
 		log.Default,
 	)
@@ -105,10 +105,10 @@ func getWorkspacesForProvider(
 // getMachinesForProvider returns all machines whose provider matches the given
 // name.
 func getMachinesForProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName string,
 ) ([]*provider.Machine, error) {
-	machines, err := workspace.ListMachines(devPodConfig, log.Default)
+	machines, err := workspace.ListMachines(devsyConfig, log.Default)
 	if err != nil {
 		return nil, fmt.Errorf("listing machines: %w", err)
 	}
@@ -126,13 +126,13 @@ func getMachinesForProvider(
 // workspaces so the caller can roll them back.
 func switchWorkspaces(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	workspaces []*provider.Workspace,
 	newName string,
 ) ([]*provider.Workspace, error) {
 	var switched []*provider.Workspace
 	for _, ws := range workspaces {
-		if err := workspace.SwitchProvider(ctx, devPodConfig, ws, newName); err != nil {
+		if err := workspace.SwitchProvider(ctx, devsyConfig, ws, newName); err != nil {
 			return switched, fmt.Errorf("failed to switch workspace %s: %w", ws.ID, err)
 		}
 		switched = append(switched, ws)
@@ -159,13 +159,13 @@ func switchMachines(machines []*provider.Machine, newName string) ([]*provider.M
 
 // setDefaultProvider updates the default provider setting if it currently
 // points to oldName. Returns true if the default was changed.
-func setDefaultProvider(devPodConfig *config.Config, oldName, newName string) (bool, error) {
-	if devPodConfig.Current().DefaultProvider != oldName {
+func setDefaultProvider(devsyConfig *config.Config, oldName, newName string) (bool, error) {
+	if devsyConfig.Current().DefaultProvider != oldName {
 		return false, nil
 	}
-	devPodConfig.Current().DefaultProvider = newName
-	if err := config.SaveConfig(devPodConfig); err != nil {
-		devPodConfig.Current().DefaultProvider = oldName
+	devsyConfig.Current().DefaultProvider = newName
+	if err := config.SaveConfig(devsyConfig); err != nil {
+		devsyConfig.Current().DefaultProvider = oldName
 		return false, err
 	}
 	return true, nil
@@ -174,7 +174,7 @@ func setDefaultProvider(devPodConfig *config.Config, oldName, newName string) (b
 // renameState tracks the mutations performed during a rename so they can be
 // undone if a later step fails.
 type renameState struct {
-	devPodConfig       *config.Config
+	devsyConfig       *config.Config
 	switchedWorkspaces []*provider.Workspace
 	switchedMachines   []*provider.Machine
 	defaultChanged     bool
@@ -188,19 +188,19 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 	var errs error
 
 	if r.defaultChanged {
-		r.devPodConfig.Current().DefaultProvider = r.oldName
-		if err := config.SaveConfig(r.devPodConfig); err != nil {
+		r.devsyConfig.Current().DefaultProvider = r.oldName
+		if err := config.SaveConfig(r.devsyConfig); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("rollback default provider: %w", err))
 		}
 	}
 
-	_, err := switchWorkspaces(ctx, r.devPodConfig, r.switchedWorkspaces, r.oldName)
+	_, err := switchWorkspaces(ctx, r.devsyConfig, r.switchedWorkspaces, r.oldName)
 	errs = errors.Join(errs, err)
 
 	_, err = switchMachines(r.switchedMachines, r.oldName)
 	errs = errors.Join(errs, err)
 
-	if moveErr := workspace.MoveProvider(r.devPodConfig, r.newName, r.oldName); moveErr != nil {
+	if moveErr := workspace.MoveProvider(r.devsyConfig, r.newName, r.oldName); moveErr != nil {
 		errs = errors.Join(errs, fmt.Errorf("rollback move provider: %w", moveErr))
 	}
 
@@ -209,8 +209,8 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 
 // validateProviderRename verifies that the provider exists, is not a pro
 // provider, is not backing a pro instance, and has configuration state.
-func validateProviderRename(devPodConfig *config.Config, oldName string) error {
-	providerWithOptions, err := workspace.FindProvider(devPodConfig, oldName, log.Default)
+func validateProviderRename(devsyConfig *config.Config, oldName string) error {
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName, log.Default)
 	if err != nil {
 		return fmt.Errorf("provider %s not found", oldName)
 	}
@@ -220,7 +220,7 @@ func validateProviderRename(devPodConfig *config.Config, oldName string) error {
 		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
 	}
 
-	proInstances, err := workspace.ListProInstances(devPodConfig, log.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig, log.Default)
 	if err != nil {
 		return fmt.Errorf("listing pro instances: %w", err)
 	}
@@ -234,7 +234,7 @@ func validateProviderRename(devPodConfig *config.Config, oldName string) error {
 		}
 	}
 
-	if devPodConfig.Current().Providers[oldName] == nil {
+	if devsyConfig.Current().Providers[oldName] == nil {
 		return fmt.Errorf("provider %s has no configuration state", oldName)
 	}
 
@@ -246,26 +246,26 @@ func validateProviderRename(devPodConfig *config.Config, oldName string) error {
 // step fails the entire operation is rolled back.
 func renameProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	oldName, newName string,
 ) error {
-	workspaces, err := getWorkspacesForProvider(devPodConfig, oldName)
+	workspaces, err := getWorkspacesForProvider(devsyConfig, oldName)
 	if err != nil {
 		return err
 	}
 
-	machines, err := getMachinesForProvider(devPodConfig, oldName)
+	machines, err := getMachinesForProvider(devsyConfig, oldName)
 	if err != nil {
 		return err
 	}
 
-	if err := workspace.MoveProvider(devPodConfig, oldName, newName); err != nil {
+	if err := workspace.MoveProvider(devsyConfig, oldName, newName); err != nil {
 		return fmt.Errorf("moving provider: %w", err)
 	}
 
-	rb := &renameState{devPodConfig: devPodConfig, oldName: oldName, newName: newName}
+	rb := &renameState{devsyConfig: devsyConfig, oldName: oldName, newName: newName}
 
-	rb.switchedWorkspaces, err = switchWorkspaces(ctx, devPodConfig, workspaces, newName)
+	rb.switchedWorkspaces, err = switchWorkspaces(ctx, devsyConfig, workspaces, newName)
 	if err != nil {
 		return errors.Join(err, rb.restoreProviderState(ctx))
 	}
@@ -275,7 +275,7 @@ func renameProvider(
 		return errors.Join(err, rb.restoreProviderState(ctx))
 	}
 
-	rb.defaultChanged, err = setDefaultProvider(devPodConfig, oldName, newName)
+	rb.defaultChanged, err = setDefaultProvider(devsyConfig, oldName, newName)
 	if err != nil {
 		return errors.Join(err, rb.restoreProviderState(ctx))
 	}

@@ -1,4 +1,4 @@
-module github.com/skevetter/devpod
+module github.com/devsy-org/devsy
 
 go 1.25.8
 
@@ -146,6 +146,9 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
+	github.com/devsy-org/admin-apis v1.2.0 // indirect
+	github.com/devsy-org/agentapi v1.0.1 // indirect
+	github.com/devsy-org/apiserver v1.2.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
@@ -311,4 +314,12 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
 )
 
-replace tailscale.com => github.com/skevetter/tailscale v1.92.2
+replace (
+	github.com/skevetter/admin-apis => github.com/devsy-org/admin-apis v1.0.0
+	github.com/skevetter/agentapi => github.com/devsy-org/agentapi v1.0.0
+	github.com/skevetter/api => github.com/devsy-org/api v1.0.1
+	github.com/skevetter/apiserver => github.com/devsy-org/apiserver v1.0.2
+	github.com/skevetter/log => github.com/devsy-org/log v0.0.0-20260106023547-bfd26ab1367c
+	github.com/skevetter/ssh => github.com/devsy-org/ssh v0.1.0
+	tailscale.com => github.com/skevetter/tailscale v1.92.2
+)

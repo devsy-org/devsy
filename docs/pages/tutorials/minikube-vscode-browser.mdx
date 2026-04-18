@@ -75,22 +75,22 @@ NAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
 service/kubernetes   ClusterIP   xxx.yyy.zzz.qqq    <none>        443/TCP   4d14h
 ```
 
-## Install Devpods
+## Install Devsy
 
-Using the Devpods install for Linux deb [docs](https://devpod.sh/docs/getting-started/install)
+Using the Devsy install for Linux deb [docs](https://devsy.sh/docs/getting-started/install)
 
 Download the deb install
 
 ```sh
 
 cd ~/
-wget https://github.com/skevetter/devpod/releases/latest/download/DevPod_linux_amd64.deb?_gl=1*76i3lz*_ga*MTczNjE4NzI1My4xNjkxNDQ1ODU1*_ga_4RQQZ3WGE9*MTY5MjY4MTU4NS45LjAuMTY5MjY4MTU4Ny41OC4wLjA. -O DevPod_linux_amd64.deb
-sudo dpkg -i DevPod_linux_amd64.deb
+wget https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb?_gl=1*76i3lz*_ga*MTczNjE4NzI1My4xNjkxNDQ1ODU1*_ga_4RQQZ3WGE9*MTY5MjY4MTU4NS45LjAuMTY5MjY4MTU4Ny41OC4wLjA. -O Devsy_linux_amd64.deb
+sudo dpkg -i Devsy_linux_amd64.deb
 ```
 
-### Test the Devpods install
+### Test the Devsy install
 
-Start Devpods:
+Start Devsy:
 
 ```sh
 dev-pod
@@ -105,39 +105,39 @@ Before configuring the kubernetes provider we need to create a persistent volume
 Kubernetes persistent volume [docs](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
 
 ```
-mkdir ~/devpods
-cd ~/devpods
-touch devpod-pv.yml
-vim devpod-pv.yml # or your preferred text editor
+mkdir ~/devsys
+cd ~/devsys
+touch devsy-pv.yml
+vim devsy-pv.yml # or your preferred text editor
 ```
 
-Edit devpod-pv.yml and save
+Edit devsy-pv.yml and save
 ```yaml
 kind: PersistentVolume
 apiVersion: v1
 metadata:
-  name: devpod-pv
+  name: devsy-pv
   labels:
-    type: devpod
+    type: devsy
 spec:
   capacity:
     storage: 1Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/home/dev/devpods/share"
+    path: "/home/dev/devsys/share"
 ```
 
 Create a directory for the persistent volume
 
 ```sh
-mkdir /home/dev/devpods/share
+mkdir /home/dev/devsys/share
 ```
 
 Create the persisent volume for the Kubernetes Provider.
 
 ```sh
-kubectl create -f ~/devpods/devpod-pv.yml
+kubectl create -f ~/devsys/devsy-pv.yml
 ```
 
 Confirm the persisent volume has been created.
@@ -145,7 +145,7 @@ Confirm the persisent volume has been created.
 ```sh
 kubectl get pv
 NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   REASON   AGE
-devpod-pv                                  1Gi        RWO            Retain           Available                                   12d
+devsy-pv                                  1Gi        RWO            Retain           Available                                   12d
 ```
 
 ### Locate your kubeconfig
@@ -157,7 +157,7 @@ ls ~/.kube
 cache  completion.bash.inc  config
 ```
 
-Within .minikube the config file is the kubeconfig that can be used by Devpods kubernetes provider.
+Within .minikube the config file is the kubeconfig that can be used by Devsy kubernetes provider.
 
 Within the kubernetes provider the kubeconfig path will be
 
@@ -166,7 +166,7 @@ Within the kubernetes provider the kubeconfig path will be
 ```
 
 **Note**
-This is a simplification for a production setup where a kubeconfig should be provided for a kubernetes context, namespace and users. You will also need kubectl installed where your Devpods client is running from. The kubernetes provider uses the underlying kubectl providing the locally stored kubeconfig to access a remote cluster. This setup requires kubernetes administration support.
+This is a simplification for a production setup where a kubeconfig should be provided for a kubernetes context, namespace and users. You will also need kubectl installed where your Devsy client is running from. The kubernetes provider uses the underlying kubectl providing the locally stored kubeconfig to access a remote cluster. This setup requires kubernetes administration support.
 
 ### Identify your namespaces
 
@@ -186,7 +186,7 @@ kube-system       Active   12d
 Add a provider via 'Providers' > '+ Add'. Select the kubernetes provider.
 
 <figure>
-  <img src="/docs/media/add-provider-1.png" alt="DevPod Flow" />
+  <img src="/docs/media/add-provider-1.png" alt="Devsy Flow" />
   <figcaption>Select Provider</figcaption>
 </figure>
 
@@ -200,7 +200,7 @@ Add a provider via 'Providers' > '+ Add'. Select the kubernetes provider.
 | Kubernetes Config | /home/dev/.kube/config |
 
 <figure>
-  <img src="/docs/media/create-workspace-virtualbox-kubernetes-provider-configuration.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-virtualbox-kubernetes-provider-configuration.png" alt="Devsy Flow" />
   <figcaption>Kubernetes Provider Configuration</figcaption>
 </figure>
 
@@ -213,20 +213,20 @@ Select **Add Provider**
 Navigate to 'Workspaces' > '+ Create'. Enter your project url or choose one of the quickstart examples. Make sure to select 'VS Code Browser' under 'Default IDE'
 
 <figure>
-  <img src="/docs/media/create-workspace-virtualbox-workspace.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-virtualbox-workspace.png" alt="Devsy Flow" />
   <figcaption>Create Workspace</figcaption>
 </figure>
 
 Then press 'Create Workspace'.
 
 <figure>
-  <img src="/docs/media/create-workspace-virtualbox-workspace-create.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-virtualbox-workspace-create.png" alt="Devsy Flow" />
   <figcaption>Create Workspace</figcaption>
 </figure>
 
-A new window appears showing DevPod starting the workspace. After the workspace was created, VS Code should open automatically connected to the DevContainer.
+A new window appears showing Devsy starting the workspace. After the workspace was created, VS Code should open automatically connected to the DevContainer.
 
 <figure>
-  <img src="/docs/media/create-workspace-vscode-browser-2.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-vscode-browser-2.png" alt="Devsy Flow" />
   <figcaption>VS Code opens automatically in the browser</figcaption>
 </figure>

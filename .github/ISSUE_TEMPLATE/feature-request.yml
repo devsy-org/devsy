@@ -41,7 +41,7 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which part of DevPod does this affect?
+      description: Which part of Devsy does this affect?
       multiple: true
       options:
         - CLI
@@ -61,7 +61,7 @@ body:
       description: When is this feature complete? What should it do?
       placeholder: |
         - [ ] User can ...
-        - [ ] CLI command `devpod ...` supports ...
+        - [ ] CLI command `devsy ...` supports ...
         - [ ] Desktop UI shows ...
     validations:
       required: false

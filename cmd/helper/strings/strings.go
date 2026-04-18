@@ -1,7 +1,7 @@
 package strings
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewStringsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	stringsCmd := &cobra.Command{
 		Use:    "strings",
-		Short:  "DevPod String Utility Commands",
+		Short:  "Devsy String Utility Commands",
 		Hidden: true,
 	}
 

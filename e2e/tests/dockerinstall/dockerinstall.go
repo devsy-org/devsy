@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
@@ -29,14 +29,14 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			err = f.DevPodProviderAdd(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
-			err = f.DevPodUp(ctx, tempDir)
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			cmd := exec.Command("docker", "ps")

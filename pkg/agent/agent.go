@@ -14,22 +14,22 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/compress"
-	"github.com/skevetter/devpod/pkg/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/version"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/compress"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/skevetter/log"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20
 
-// ContainerDataDir is the base directory for DevPod data inside containers.
+// ContainerDataDir is the base directory for Devsy data inside containers.
 const ContainerDataDir = "/var/" + config.BinaryName
 
-const ContainerDevPodHelperLocation = "/usr/local/bin/" + config.BinaryName
+const ContainerDevsyHelperLocation = "/usr/local/bin/" + config.BinaryName
 
-const RemoteDevPodHelperLocation = "/tmp/" + config.BinaryName
+const RemoteDevsyHelperLocation = "/tmp/" + config.BinaryName
 
 const ContainerActivityFile = "/tmp/" + config.BinaryName + ".activity"
 
@@ -38,9 +38,9 @@ var defaultAgentDownloadURL = config.GitHubReleasesURL + "/download/"
 const WorkspaceBusyFile = "workspace.lock"
 
 func DefaultAgentDownloadURL() string {
-	devPodAgentURL := os.Getenv(config.EnvAgentURL)
-	if devPodAgentURL != "" {
-		return strings.TrimRight(devPodAgentURL, "/")
+	devsyAgentURL := os.Getenv(config.EnvAgentURL)
+	if devsyAgentURL != "" {
+		return strings.TrimRight(devsyAgentURL, "/")
 	}
 
 	if version.GetVersion() == version.DevVersion {
@@ -490,7 +490,7 @@ func Tunnel(
 			return exec(ctx, "root", command, stdin, stdout, stderr)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             ContainerDevPodHelperLocation,
+		RemoteAgentPath:             ContainerDevsyHelperLocation,
 		DownloadURL:                 DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: Bool(false),
 		Log:                         log,
@@ -501,7 +501,7 @@ func Tunnel(
 	}
 
 	// build command
-	command := fmt.Sprintf("'%s' helper ssh-server --stdio", ContainerDevPodHelperLocation)
+	command := fmt.Sprintf("'%s' helper ssh-server --stdio", ContainerDevsyHelperLocation)
 	if log.GetLevel() == logrus.DebugLevel {
 		command += " --debug"
 	}

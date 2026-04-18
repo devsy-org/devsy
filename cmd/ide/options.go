@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/ide/ideparse"
-	"github.com/skevetter/devpod/pkg/table"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/ideparse"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -51,12 +51,12 @@ type optionWithValue struct {
 
 // Run runs the command logic.
 func (cmd *OptionsCmd) Run(ctx context.Context, ide string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	values := devPodConfig.IDEOptions(ide)
+	values := devsyConfig.IDEOptions(ide)
 	ideOptions, err := ideparse.GetIDEOptions(ide)
 	if err != nil {
 		return err

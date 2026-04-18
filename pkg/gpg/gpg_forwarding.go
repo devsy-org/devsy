@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 )

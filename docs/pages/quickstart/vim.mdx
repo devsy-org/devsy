@@ -7,7 +7,7 @@ import AddProvider from '../fragments/add-provider.mdx'
 
 ## Quickstart with Vim/Nvim
 
-Make sure you have installed [DevPod](../getting-started/install.mdx) on your system.
+Make sure you have installed [Devsy](../getting-started/install.mdx) on your system.
 
 ### Add a Provider
 
@@ -18,34 +18,34 @@ Make sure you have installed [DevPod](../getting-started/install.mdx) on your sy
 Navigate to 'Workspaces' > '+ Create'. Enter your project url or choose one of the quickstart examples.
 
 <figure>
-<img src="/docs/media/create-workspace-repo.png" alt="DevPod Flow" />
+<img src="/docs/media/create-workspace-repo.png" alt="Devsy Flow" />
   <figcaption>Create Workspace</figcaption>
 </figure>
 
 Make sure to select 'None' under 'Default IDE'
 
 <figure>
-  <img src="/docs/media/create-workspace-vim.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-vim.png" alt="Devsy Flow" />
   <figcaption>Select IDE</figcaption>
 </figure>
 
 Then press 'Create Workspace'.
 
 <figure>
-  <img src="/docs/media/create-workspace-final-vim.png" alt="DevPod Flow" />
+  <img src="/docs/media/create-workspace-final-vim.png" alt="Devsy Flow" />
   <figcaption>Create Workspace</figcaption>
 </figure>
 
-A new window appears showing DevPod starting the workspace.
+A new window appears showing Devsy starting the workspace.
 After the workspace was created, you have a two options to start coding in vim:
 
 #### Netrw/SCP
 
 Vim/Neovim allow you to edit remote files using [Netrw](https://www.vim.org/scripts/script.php?script_id=1075).
 You can connect it either from within vim `:e scp://[user@]machine[[:#]port]/path` or by starting vim with `vim scp://[user@]machine[[:#]port]/path`.
-When you open the workspace, the DevPod logs give you the user/machine combination you'll need to connect to the workspace, usually in the format of `WORKSPACE_NAME.devpod`
+When you open the workspace, the Devsy logs give you the user/machine combination you'll need to connect to the workspace, usually in the format of `WORKSPACE_NAME.devsy`
 
 #### Spinning up your vim config in the workspace
 
-Since DevPod's target environment is a Docker container, you can also SSH into it and install your vim/neovim configuration like you would on any new machine.
-To connect to the workspace, run the command DevPod gives you after starting the workspace, usually `ssh WORKSPACE_NAME.devpod`.
+Since Devsy's target environment is a Docker container, you can also SSH into it and install your vim/neovim configuration like you would on any new machine.
+To connect to the workspace, run the command Devsy gives you after starting the workspace, usually `ssh WORKSPACE_NAME.devsy`.

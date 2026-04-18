@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/skevetter/log"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"

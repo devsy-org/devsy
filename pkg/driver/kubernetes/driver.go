@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/skevetter/devpod/pkg/driver"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/driver"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,7 +31,7 @@ func NewKubernetesDriver(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-	// Namespace can be defined in many ways, we first check the kube config, then the provider options KUBERNETES_NAMESPACE, then failing that the default "devpod"
+	// Namespace can be defined in many ways, we first check the kube config, then the provider options KUBERNETES_NAMESPACE, then failing that the default "devsy"
 	if namespace == "" || namespace == "default" || options.KubernetesNamespace != "" {
 		log.Debugf("Using Explicit Kubernetes Namespace")
 		namespace = options.KubernetesNamespace
@@ -76,13 +76,13 @@ func (k *KubernetesDriver) getDevContainerPvc(
 		}
 
 		return nil, nil, err
-	} else if pvc.Annotations == nil || pvc.Annotations[DevPodInfoAnnotation] == "" {
+	} else if pvc.Annotations == nil || pvc.Annotations[DevsyInfoAnnotation] == "" {
 		return nil, nil, fmt.Errorf("pvc is missing dev container info annotation")
 	}
 
 	// get container info
 	containerInfo := &DevContainerInfo{}
-	err = json.Unmarshal([]byte(pvc.GetAnnotations()[DevPodInfoAnnotation]), containerInfo)
+	err = json.Unmarshal([]byte(pvc.GetAnnotations()[DevsyInfoAnnotation]), containerInfo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode dev container info: %w", err)
 	}

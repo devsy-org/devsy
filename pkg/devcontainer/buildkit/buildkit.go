@@ -11,8 +11,8 @@ import (
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/skevetter/log"
 )
 

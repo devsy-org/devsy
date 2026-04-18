@@ -12,7 +12,7 @@
       "helm": "latest",
       "minikube": "none"
     },
-    "ghcr.io/loft-sh/devcontainer-features/vcluster:1": {
+    "ghcr.io/devsy-org/devcontainer-features/vcluster:1": {
       "version": "latest"
     },
     "ghcr.io/larsnieuwenhuizen/features/jqyq:0": {}

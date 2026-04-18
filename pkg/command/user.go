@@ -3,7 +3,7 @@ package command
 import (
 	"os/user"
 
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/util"
 )
 
 func GetHome(userName string) (string, error) {

@@ -3,12 +3,12 @@ title: Auto-Inactivity Timeout
 sidebar_label: Auto-Inactivity Timeout
 ---
 
-By default, most providers are able to automatically shutdown unused workspaces to save costs. For example, for cloud providers such as AWS, Azure and Google Cloud, DevPod will automatically stop the machine to save costs when workspaces are not used.
+By default, most providers are able to automatically shutdown unused workspaces to save costs. For example, for cloud providers such as AWS, Azure and Google Cloud, Devsy will automatically stop the machine to save costs when workspaces are not used.
 
-Machines stopped this way preserve the data and state, so when a workspace [is started again](./connect-to-a-workspace.mdx), DevPod will simply restart the machine and the workspace.
+Machines stopped this way preserve the data and state, so when a workspace [is started again](./connect-to-a-workspace.mdx), Devsy will simply restart the machine and the workspace.
 
 :::info
-All official DevPod providers offer this pre-configured to 5-10 minutes. Check the provider options to see how to change the timeout.
+All official Devsy providers offer this pre-configured to 5-10 minutes. Check the provider options to see how to change the timeout.
 :::
 
 ## Configuring the timeout
@@ -24,13 +24,13 @@ That will explain how this is done and what can be configured.
 
 ### Non-Machine Providers
 
-For non-machine providers, DevPod can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, kubernetes or ssh, where you don't want the container to be running if its not needed. If configured on the provider, DevPod will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, DevPod will restart the container again.
+For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, kubernetes or ssh, where you don't want the container to be running if its not needed. If configured on the provider, Devsy will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will restart the container again.
 
 ### Machine Providers
 
 For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused.
-Instead, DevPod will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, DevPod will automatically shutdown the machine or even delete it, based on what's cheaper for the given cloud provider.
-Then when the developer wants to resume development, DevPod will restart or recreate the virtual machine.
+Instead, Devsy will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, Devsy will automatically shutdown the machine or even delete it, based on what's cheaper for the given cloud provider.
+Then when the developer wants to resume development, Devsy will restart or recreate the virtual machine.
 
 :::info
 See [agent's development guide](../developing-providers/agent.mdx#machine-providers) to learn more about how inactivity-timeout works on the provider side.

@@ -90,11 +90,11 @@ export type TProviderOption = Readonly<{
   displayName: TMaybe<string>
   // A description of the option displayed to the user by a supporting tool.
   description: TMaybe<string>
-  // If required is true and the user doesn't supply a value, devpod will ask the user
+  // If required is true and the user doesn't supply a value, devsy will ask the user
   required: TMaybe<boolean>
   // Allowed values for this option.
   enum: TMaybe<TOptionEnum[]>
-  // Suggestions are suggestions to show in the DevPod UI for this option
+  // Suggestions are suggestions to show in the Devsy UI for this option
   suggestions: TMaybe<string[]>
   // Hidden specifies if the option should be hidden
   hidden: TMaybe<boolean>
@@ -210,7 +210,7 @@ export type TSupportedIDE = (typeof SUPPORTED_IDES)[number]
 export type TImportWorkspaceConfig = Readonly<{
   workspaceID: string
   workspaceUID: string
-  devPodProHost: string
+  devsyProHost: string
   project: string
   options: Record<string, string> | null
 }>
@@ -301,8 +301,8 @@ export type TPlatformUpdateCheck = Readonly<{
   newVersion: TMaybe<string>
 }>
 export const UserSecret = {
-  GIT_HTTP: "devpod-git-http",
-  GIT_SSH: "devpod-git-ssh",
+  GIT_HTTP: "devsy-git-http",
+  GIT_SSH: "devsy-git-ssh",
 } as const
 export type TUserSecretType = (typeof UserSecret)[keyof typeof UserSecret]
 export type TGitCredentialData = {

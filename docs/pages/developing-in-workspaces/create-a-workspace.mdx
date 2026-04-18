@@ -5,49 +5,49 @@ sidebar_label: Create a Workspace
 
 ## Create a Workspace
 
-You can create a workspace either from the DevPod CLI or through the DevPod desktop application. A workspace can be created from a Git repository, a local path or a Docker container (e.g. `golang:latest`).
+You can create a workspace either from the Devsy CLI or through the Devsy desktop application. A workspace can be created from a Git repository, a local path or a Docker container (e.g. `golang:latest`).
 
-Upon successful creation, DevPod will make the development container available through the ssh host `WORKSPACE_NAME.devpod`. Alternatively, DevPod can automatically open the workspace in a locally installed IDE, such as VS Code or Intellij.
+Upon successful creation, Devsy will make the development container available through the ssh host `WORKSPACE_NAME.devsy`. Alternatively, Devsy can automatically open the workspace in a locally installed IDE, such as VS Code or Intellij.
 
 :::info
-A workspace is defined through a `devcontainer.json`. If DevPod can't find one, it will automatically try to guess the programming language of your project and provide a fitting template.
+A workspace is defined through a `devcontainer.json`. If Devsy can't find one, it will automatically try to guess the programming language of your project and provide a fitting template.
 :::
 
-### Via DevPod Desktop Application
+### Via Devsy Desktop Application
 
 Navigate to the 'Workspaces' view and click on the 'Create' button in the title. Enter the Git repository you want to work on or select a local folder.
 
 :::info Add Provider
-If you haven't configured a provider yet, DevPod will automatically open the provider modal for you. You can later add providers in the same way by navigating to 'Providers' > 'Add'
+If you haven't configured a provider yet, Devsy will automatically open the provider modal for you. You can later add providers in the same way by navigating to 'Providers' > 'Add'
 :::
 
 You can also configure one of the additional settings:
 - **Provider**: The provider to use for this workspace. Cannot be changed later.
 - **Default IDE**: The ide to open after successfully creating this workspace. Can be changed later.
 - **Workspace Name**: Override the automatically determined workspace name with this option. Cannot be changed later.
-- **Prebuild Repository**: A docker image repository such as `ghcr.io/my-org/my-repo` that contains prebuilds for this workspace. DevPod will try to automatically find a fitting prebuild for this workspace in the given repository.
+- **Prebuild Repository**: A docker image repository such as `ghcr.io/my-org/my-repo` that contains prebuilds for this workspace. Devsy will try to automatically find a fitting prebuild for this workspace in the given repository.
 
 Then press `Create Workspace` to launch the workspace.
 
 :::info
-Under the hood, the Desktop Application will call the CLI command `devpod up REPOSITORY`
+Under the hood, the Desktop Application will call the CLI command `devsy up REPOSITORY`
 :::
 
 :::info Note
-You can set the location of your devpod home by passing the `--devpod-home={home_path}` flag,
-or by setting the env var `DEVPOD_HOME` to your desired home directory.
+You can set the location of your devsy home by passing the `--devsy-home={home_path}` flag,
+or by setting the env var `DEVSY_HOME` to your desired home directory.
 
 This can be useful if you are having trouble with a workspace trying to mount to a windows location when it should be mounting to a path inside the WSL VM.
 
-For example: setting `devpod-home=/mnt/c/Users/MyUser/` will result in a workspace path of something like `/mnt/c/Users/MyUser/.devpod/contexts/default/workspaces/...`
+For example: setting `devsy-home=/mnt/c/Users/MyUser/` will result in a workspace path of something like `/mnt/c/Users/MyUser/.devsy/contexts/default/workspaces/...`
 :::
 
-### Via DevPod CLI
+### Via Devsy CLI
 
-Make sure to [install the DevPod CLI locally](../getting-started/install.mdx#optional-install-devpod-cli) and select a provider you would like to host the workspace on (such as local docker) via:
+Make sure to [install the Devsy CLI locally](../getting-started/install.mdx#optional-install-devsy-cli) and select a provider you would like to host the workspace on (such as local docker) via:
 ```
 # Add a provider if you haven't already
-devpod provider add docker
+devsy provider add docker
 ```
 
 #### Git Repository
@@ -56,18 +56,18 @@ Run the following command in a terminal to start a new workspace:
 
 ```
 # Create from Git repository
-devpod up github.com/microsoft/vscode-remote-try-node
+devsy up github.com/microsoft/vscode-remote-try-node
 ```
 
 You can check out specific states of the repository by appending a commit hash, branch or Pull Request slug to the repository url:
 ```
-Branch: devpod up github.com/microsoft/vscode-remote-try-node@main
-Commit: devpod up github.com/microsoft/vscode-remote-try-node@sha256:15ba80171af11374143288fd3d54898860107323
-PR:     devpod up github.com/microsoft/vscode-remote-try-node@pull/108/head # Only works for GitHub!
+Branch: devsy up github.com/microsoft/vscode-remote-try-node@main
+Commit: devsy up github.com/microsoft/vscode-remote-try-node@sha256:15ba80171af11374143288fd3d54898860107323
+PR:     devsy up github.com/microsoft/vscode-remote-try-node@pull/108/head # Only works for GitHub!
 ```
 
 :::info Private Git Repositories
-DevPod will forward git credentials to a remote machine so that you can also pull private repositories.
+Devsy will forward git credentials to a remote machine so that you can also pull private repositories.
 :::
 
 
@@ -82,10 +82,10 @@ Run the following command in a terminal to create a new workspace:
 
 ```
 # Create from a local path
-devpod up ./path/to/my-folder
+devsy up ./path/to/my-folder
 ```
 
-DevPod will sync the folder into the remote machine and create a development environment from the `devcontainer.json`.
+Devsy will sync the folder into the remote machine and create a development environment from the `devcontainer.json`.
 
 #### Docker Image
 
@@ -93,10 +93,10 @@ Run the following command in a terminal to create a new workspace from a docker 
 
 ```
 # Create from a docker image
-devpod up ghcr.io/my-org/my-repo:latest
+devsy up ghcr.io/my-org/my-repo:latest
 ```
 
-DevPod will create the following `.devcontainer.json`:
+Devsy will create the following `.devcontainer.json`:
 ```
 {
     "image": "ghcr.io/my-org/my-repo:latest"
@@ -107,7 +107,7 @@ DevPod will create the following `.devcontainer.json`:
 
 If you have a local container running, you can create a workspace from it by running:
 ```
-devpod up my-workspace --source container:$CONTAINER_ID
+devsy up my-workspace --source container:$CONTAINER_ID
 ```
 
 This only works with the `docker` provider.
@@ -118,19 +118,19 @@ Using `--recreate` on a workspace based on an already existing container will be
 
 ## Recreating a workspace
 
-If you are working on the `devcontainer.json` or have pulled changes that affect the development environment, you can recreate a workspace. Recreating a workspace means to apply changes in the `devcontainer.json` or related `Dockerfile` to the development environment. If a prebuild repository is supplied, DevPod will try to find the updated development environment image inside the prebuild repository and if not found will fall back to building it.
+If you are working on the `devcontainer.json` or have pulled changes that affect the development environment, you can recreate a workspace. Recreating a workspace means to apply changes in the `devcontainer.json` or related `Dockerfile` to the development environment. If a prebuild repository is supplied, Devsy will try to find the updated development environment image inside the prebuild repository and if not found will fall back to building it.
 
 When recreating a workspace, changes only to the project path or mounted volumes will be preserved. **All other changes made in the container will be lost.**
 
-### Via DevPod Desktop Application
+### Via Devsy Desktop Application
 
 Navigate to the 'Workspaces' view and press on the 'More Options' button on the workspace you want to recreate. Then press 'Rebuild' and confirm to rebuild the workspace.
 
-### Via DevPod CLI
+### Via Devsy CLI
 
 Run the following command to rebuild an existing workspace:
 ```
-devpod up my-workspace --recreate
+devsy up my-workspace --recreate
 ```
 
 ## Resetting a workspace
@@ -139,13 +139,13 @@ Some scenarios require pulling in the latest changes from a Git repository or re
 
 ** When recreating a workspace, no changes will be preserved! **
 
-### Via DevPod Desktop Application
+### Via Devsy Desktop Application
 
 Navigate to the 'Workspaces' view and press on the 'More Options' button on the workspace you want to reset. Then press 'Reset' and confirm.
 
-### Via DevPod CLI
+### Via Devsy CLI
 
 Run the following command to reset an existing workspace:
 ```
-devpod up my-workspace --reset
+devsy up my-workspace --reset
 ```

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	"github.com/skevetter/devpod/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/skevetter/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

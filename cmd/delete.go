@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -59,17 +59,17 @@ If the workspace is not found, you can use the --ignore-not-found flag to treat 
 
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
-	devPodConfig, err := cmd.loadConfig()
+	devsyConfig, err := cmd.loadConfig()
 	if err != nil {
 		return err
 	}
 
 	ctx := cobraCmd.Context()
 	if len(args) <= 1 {
-		return cmd.deleteSingle(ctx, devPodConfig, args)
+		return cmd.deleteSingle(ctx, devsyConfig, args)
 	}
 
-	return cmd.deleteMultiple(ctx, devPodConfig, args)
+	return cmd.deleteMultiple(ctx, devsyConfig, args)
 }
 
 func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
@@ -90,10 +90,10 @@ func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
 
 func (cmd *DeleteCmd) deleteSingle(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) error {
-	name, err := cmd.deleteWorkspace(ctx, devPodConfig, args)
+	name, err := cmd.deleteWorkspace(ctx, devsyConfig, args)
 	if err != nil {
 		return err
 	}
@@ -105,12 +105,12 @@ func (cmd *DeleteCmd) deleteSingle(
 
 func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) error {
 	var errs []error
 	for _, arg := range args {
-		name, err := cmd.deleteWorkspace(ctx, devPodConfig, []string{arg})
+		name, err := cmd.deleteWorkspace(ctx, devsyConfig, []string{arg})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete workspace %s: %w", arg, err))
 
@@ -133,11 +133,11 @@ func (cmd *DeleteCmd) deleteMultiple(
 
 func (cmd *DeleteCmd) deleteWorkspace(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) (string, error) {
 	return workspace.Delete(ctx, workspace.DeleteOptions{
-		DevPodConfig:   devPodConfig,
+		DevsyConfig:   devsyConfig,
 		Args:           args,
 		IgnoreNotFound: cmd.IgnoreNotFound,
 		Force:          cmd.Force,

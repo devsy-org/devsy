@@ -13,12 +13,12 @@ import (
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
 	"github.com/skevetter/apiserver/pkg/builders"
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	devpodconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	devpodlog "github.com/skevetter/devpod/pkg/log"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/kube"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	devsyconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/skevetter/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,9 +45,9 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	}
 
 	// check if the workspace is migrated and we need to force recreate or reset
-	if instance.Annotations["loft.sh/migrated"] == devpodconfig.BoolTrue && !opt.Recreate &&
+	if instance.Annotations["devsy.sh/migrated"] == devsyconfig.BoolTrue && !opt.Recreate &&
 		!opt.Reset {
-		if os.Getenv(devpodconfig.EnvUI) == devpodconfig.BoolTrue {
+		if os.Getenv(devsyconfig.EnvUI) == devsyconfig.BoolTrue {
 			return nil, fmt.Errorf(
 				"workspace %s is migrated and needs to be rebuild or reset. "+
 					"Please click on rebuild or reset on the workspace to do this",
@@ -96,8 +96,8 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		c.log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
 		_, err = managementClient.Loft().
 			ManagementV1().
-			DevPodWorkspaceInstances(instance.Namespace).
-			Cancel(ctx, instance.Name, &managementv1.DevPodWorkspaceInstanceCancel{
+			DevsyWorkspaceInstances(instance.Namespace).
+			Cancel(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
 				TaskID: activeUpTask.ID,
 			}, metav1.CreateOptions{})
 		if err != nil {
@@ -108,9 +108,9 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	// create up task
 	task, err := managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(instance.Namespace).
-		Up(ctx, instance.Name, &managementv1.DevPodWorkspaceInstanceUp{
-			Spec: managementv1.DevPodWorkspaceInstanceUpSpec{
+		DevsyWorkspaceInstances(instance.Namespace).
+		Up(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
+			Spec: managementv1.DevsyWorkspaceInstanceUpSpec{
 				Debug:   opt.Debug,
 				Options: string(rawOptions),
 			},
@@ -127,7 +127,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 func waitTaskDone(
 	ctx context.Context,
 	managementClient kube.Interface,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
 	log log.Logger,
 ) (*config.Result, error) {
@@ -139,13 +139,13 @@ func waitTaskDone(
 	}
 
 	// get result
-	tasks := &managementv1.DevPodWorkspaceInstanceTasks{}
+	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
 	err = managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
-		Resource("devpodworkspaceinstances").
+		Resource("devsyworkspaceinstances").
 		Name(instance.Name).
 		SubResource("tasks").
-		VersionedParams(&managementv1.DevPodWorkspaceInstanceTasksOptions{
+		VersionedParams(&managementv1.DevsyWorkspaceInstanceTasksOptions{
 			TaskID: taskID,
 		}, builders.ParameterCodec).
 		Do(ctx).
@@ -169,7 +169,7 @@ func waitTaskDone(
 	return result, nil
 }
 
-func templateUpdateRequired(instance *managementv1.DevPodWorkspaceInstance) bool {
+func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool {
 	var templateResolved, templateChangesAvailable bool
 	for _, condition := range instance.Status.Conditions {
 		if condition.Type == storagev1.InstanceTemplateResolved {
@@ -187,7 +187,7 @@ func templateUpdateRequired(instance *managementv1.DevPodWorkspaceInstance) bool
 	return !templateResolved || templateChangesAvailable
 }
 
-func printInstanceInfo(instance *managementv1.DevPodWorkspaceInstance, log log.Logger) {
+func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log log.Logger) {
 	workspaceConfig, _ := json.Marshal(struct {
 		Target     storagev1.WorkspaceTarget
 		Template   *storagev1.TemplateRef
@@ -203,7 +203,7 @@ func printInstanceInfo(instance *managementv1.DevPodWorkspaceInstance, log log.L
 func observeTask(
 	ctx context.Context,
 	managementClient kube.Interface,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
 	log log.Logger,
 ) (int, error) {
@@ -226,8 +226,8 @@ func observeTask(
 
 			_, err := managementClient.Loft().
 				ManagementV1().
-				DevPodWorkspaceInstances(instance.Namespace).
-				Cancel(timeoutCtx, instance.Name, &managementv1.DevPodWorkspaceInstanceCancel{
+				DevsyWorkspaceInstances(instance.Namespace).
+				Cancel(timeoutCtx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
 					TaskID: taskID,
 				}, metav1.CreateOptions{})
 			if err != nil {
@@ -264,7 +264,7 @@ type Message struct {
 func printLogs(
 	ctx context.Context,
 	managementClient kube.Interface,
-	workspace *managementv1.DevPodWorkspaceInstance,
+	workspace *managementv1.DevsyWorkspaceInstance,
 	taskID string,
 	logger log.Logger,
 ) (int, error) {
@@ -272,10 +272,10 @@ func printLogs(
 	logger.Debugf("printing logs of task: %s", taskID)
 	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
-		Resource("devpodworkspaceinstances").
+		Resource("devsyworkspaceinstances").
 		Name(workspace.Name).
 		SubResource("log").
-		VersionedParams(&managementv1.DevPodWorkspaceInstanceLogOptions{
+		VersionedParams(&managementv1.DevsyWorkspaceInstanceLogOptions{
 			TaskID: taskID,
 			Follow: true,
 		}, builders.ParameterCodec).
@@ -295,8 +295,8 @@ func printLogs(
 	scanner.Buffer(buf, maxCapacity)
 
 	// create json streamer
-	stdoutStreamer, stdoutDone := devpodlog.PipeJSONStream(logger)
-	stderrStreamer, stderrDone := devpodlog.PipeJSONStream(logger.ErrorStreamOnly())
+	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream(logger)
+	stderrStreamer, stderrDone := devsylog.PipeJSONStream(logger.ErrorStreamOnly())
 	defer func() {
 		// close the streams
 		_ = stdoutStreamer.Close()
@@ -359,12 +359,12 @@ const (
 func findActiveUpTask(
 	ctx context.Context,
 	managementClient kube.Interface,
-	instance *managementv1.DevPodWorkspaceInstance,
-) (*managementv1.DevPodWorkspaceInstanceTask, error) {
-	tasks := &managementv1.DevPodWorkspaceInstanceTasks{}
+	instance *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceInstanceTask, error) {
+	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
 	err := managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
-		Resource("devpodworkspaceinstances").
+		Resource("devsyworkspaceinstances").
 		Name(instance.Name).
 		SubResource("tasks").
 		Do(ctx).

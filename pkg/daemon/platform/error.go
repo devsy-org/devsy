@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/client"
 )
 
 type DaemonNotAvailableError struct {
@@ -15,8 +15,8 @@ type DaemonNotAvailableError struct {
 
 func (e *DaemonNotAvailableError) Error() string {
 	return fmt.Sprintf(
-		"The DevPod Daemon for provider %s isn't reachable. "+
-			"Is DevPod Desktop or `devpod pro daemon start --host=$YOUR_PRO_HOST` running? %v",
+		"The Devsy Daemon for provider %s isn't reachable. "+
+			"Is Devsy Desktop or `devsy pro daemon start --host=$YOUR_PRO_HOST` running? %v",
 		e.Provider,
 		e.Err,
 	)

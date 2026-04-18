@@ -4,10 +4,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/util"
 )
 
-// ConfigDirName is the hidden directory name used for DevPod configuration.
+// ConfigDirName is the hidden directory name used for Devsy configuration.
 const ConfigDirName = "." + RepoName
 
 func GetConfigDir() (string, error) {

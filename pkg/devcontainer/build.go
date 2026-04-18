@@ -8,17 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/compose"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/devcontainer/buildkit"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/feature"
-	"github.com/skevetter/devpod/pkg/devcontainer/metadata"
-	"github.com/skevetter/devpod/pkg/dockerfile"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/image"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/buildkit"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/dockerfile"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 func (r *runner) build(
@@ -326,13 +326,13 @@ func (r *runner) buildImage(
 
 	// check if there is a prebuild image
 	if !options.ForceDockerless && !options.ForceBuild {
-		devPodCustomizations := config.GetDevPodCustomizations(parsedConfig.Config)
+		devsyCustomizations := config.GetDevsyCustomizations(parsedConfig.Config)
 		if options.Repository != "" {
 			options.PrebuildRepositories = append(options.PrebuildRepositories, options.Repository)
 		}
 		options.PrebuildRepositories = append(
 			options.PrebuildRepositories,
-			devPodCustomizations.PrebuildRepository...)
+			devsyCustomizations.PrebuildRepository...)
 
 		r.Log.Debugf(
 			"Try to find prebuild image %s in repositories %s",
@@ -523,22 +523,22 @@ func dockerlessFallback(
 	options provider.BuildOptions,
 ) (*config.BuildInfo, error) {
 	contextPath := config.GetContextPath(parsedConfig.Config)
-	devPodInternalFolder := filepath.Join(contextPath, config.DevPodContextFeatureFolder)
+	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(devPodInternalFolder, 0o755)
+	err := os.MkdirAll(devsyInternalFolder, 0o755)
 	if err != nil {
-		return nil, fmt.Errorf("create devpod folder: %w", err)
+		return nil, fmt.Errorf("create devsy folder: %w", err)
 	}
 
 	// build dockerfile
-	devPodDockerfile, err := build.RewriteDockerfile(dockerfileContent, extendedBuildInfo)
+	devsyDockerfile, err := build.RewriteDockerfile(dockerfileContent, extendedBuildInfo)
 	if err != nil {
 		return nil, fmt.Errorf("rewrite dockerfile: %w", err)
-	} else if devPodDockerfile == "" {
-		devPodDockerfile = filepath.Join(devPodInternalFolder, "Dockerfile-without-features")
-		err = os.WriteFile(devPodDockerfile, []byte(dockerfileContent), 0o600)
+	} else if devsyDockerfile == "" {
+		devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
+		err = os.WriteFile(devsyDockerfile, []byte(dockerfileContent), 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("write devpod dockerfile: %w", err)
+			return nil, fmt.Errorf("write devsy dockerfile: %w", err)
 		}
 	}
 
@@ -547,7 +547,7 @@ func dockerlessFallback(
 		localWorkspaceFolder,
 		containerWorkspaceFolder,
 		contextPath,
-		devPodDockerfile,
+		devsyDockerfile,
 	)
 	buildArgs, target := build.GetBuildArgsAndTarget(parsedConfig, extendedBuildInfo)
 	return &config.BuildInfo{
@@ -567,7 +567,7 @@ func dockerlessFallback(
 }
 
 func getContainerContextAndDockerfile(
-	localWorkspaceFolder, containerWorkspaceFolder, contextPath, devPodDockerfile string,
+	localWorkspaceFolder, containerWorkspaceFolder, contextPath, devsyDockerfile string,
 ) (string, string) {
 	prefixPath := path.Clean(filepath.ToSlash(localWorkspaceFolder))
 	containerContext := path.Join(
@@ -576,12 +576,12 @@ func getContainerContextAndDockerfile(
 	)
 	containerDockerfile := path.Join(
 		containerWorkspaceFolder,
-		strings.TrimPrefix(path.Clean(filepath.ToSlash(devPodDockerfile)), prefixPath),
+		strings.TrimPrefix(path.Clean(filepath.ToSlash(devsyDockerfile)), prefixPath),
 	)
 	return containerContext, containerDockerfile
 }
 
 func cleanupBuildInformation(c *config.DevContainerConfig) {
 	contextPath := config.GetContextPath(c)
-	_ = os.RemoveAll(filepath.Join(contextPath, config.DevPodContextFeatureFolder))
+	_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
 }

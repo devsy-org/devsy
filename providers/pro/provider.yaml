@@ -1,15 +1,15 @@
-name: devpod-pro
+name: devsy-pro
 version: v0.0.1
-icon: https://devpod.sh/assets/devpod.svg
-home: https://github.com/skevetter/devpod
-description: DevPod Pro
+icon: https://devsy.sh/assets/devsy.svg
+home: https://github.com/devsy-org/devsy
+description: Devsy Pro
 options:
-  LOFT_CONFIG:
+  DEVSY_CONFIG:
     global: true
     hidden: true
     required: true
-    default: "${PROVIDER_FOLDER}/loft-config.json"
+    default: "${PROVIDER_FOLDER}/devsy-config.json"
 exec:
   daemon:
-    start: ${DEVPOD} pro daemon start
-    status: ${DEVPOD} pro daemon status
+    start: ${DEVSY} pro daemon start
+    status: ${DEVSY} pro daemon status

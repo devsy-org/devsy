@@ -8,27 +8,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/command"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/daemon/agent"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/metadata"
-	"github.com/skevetter/devpod/pkg/driver"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/command"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/driver"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
-var dockerlessImage = "ghcr.io/loft-sh/dockerless:0.2.0"
+var dockerlessImage = "ghcr.io/devsy-org/dockerless:0.2.0"
 
 const (
-	DevPodExtraEnvVar           = "DEVPOD"
+	DevsyExtraEnvVar           = "DEVSY"
 	RemoteContainersExtraEnvVar = "REMOTE_CONTAINERS"
 
 	DefaultEntrypoint = `
-while ! command -v /usr/local/bin/devpod >/dev/null 2>&1; do
-  echo "waiting for devpod agent to be available"
+while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do
+  echo "waiting for devsy agent to be available"
   sleep 1
 done
-exec /usr/local/bin/devpod agent container daemon
+exec /usr/local/bin/devsy agent container daemon
 `
 )
 
@@ -84,7 +84,7 @@ func (r *runner) runSingleContainer(
 	}
 
 	if options.Recreate && parsedConfig.Config.ContainerID != "" {
-		return nil, fmt.Errorf("cannot recreate container not created by DevPod")
+		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
 	} else if !options.Recreate && containerDetails != nil {
 		resolved, err = r.resolveExistingContainer(ctx, containerDetails, params)
 	} else {
@@ -285,7 +285,7 @@ func (r *runner) injectDaemonEntrypoint(
 	if p.options.Platform.AccessKey == "" {
 		return
 	}
-	r.Log.Debugf("Platform config detected, injecting DevPod daemon entrypoint.")
+	r.Log.Debugf("Platform config detected, injecting Devsy daemon entrypoint.")
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
 		p.options.Platform,
@@ -500,13 +500,13 @@ func (r *runner) getRunOptions(
 }
 
 // add environment variables that signals that we are in a remote container
-// (vscode compatibility) and specifically that we are using devpod.
+// (vscode compatibility) and specifically that we are using devsy.
 func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 	if env == nil {
 		env = make(map[string]string)
 	}
 
-	env[DevPodExtraEnvVar] = "true"
+	env[DevsyExtraEnvVar] = "true"
 	env[RemoteContainersExtraEnvVar] = "true"
 	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil &&
 		r.WorkspaceConfig.Workspace.ID != "" {

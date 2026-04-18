@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/table"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List DevPod contexts",
+		Short:   "List Devsy contexts",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
@@ -47,7 +47,7 @@ type ContextWithDefault struct {
 
 // Run runs the command logic.
 func (cmd *ListCmd) Run(ctx context.Context) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
@@ -55,10 +55,10 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	switch cmd.Output {
 	case "plain":
 		tableEntries := [][]string{}
-		for contextName := range devPodConfig.Contexts {
+		for contextName := range devsyConfig.Contexts {
 			tableEntries = append(tableEntries, []string{
 				contextName,
-				strconv.FormatBool(devPodConfig.DefaultContext == contextName),
+				strconv.FormatBool(devsyConfig.DefaultContext == contextName),
 			})
 		}
 		sort.SliceStable(tableEntries, func(i, j int) bool {
@@ -71,10 +71,10 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		}, tableEntries)
 	case "json":
 		ides := []ContextWithDefault{}
-		for contextName := range devPodConfig.Contexts {
+		for contextName := range devsyConfig.Contexts {
 			ides = append(ides, ContextWithDefault{
 				Name:    contextName,
-				Default: devPodConfig.DefaultContext == contextName,
+				Default: devsyConfig.DefaultContext == contextName,
 			})
 		}
 

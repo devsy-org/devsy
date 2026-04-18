@@ -1,8 +1,8 @@
 import { createIcon } from "@chakra-ui/react"
 import { defaultProps } from "./defaultProps"
 
-export const DevpodWordmark = createIcon({
-  displayName: "DevpodWordmark",
+export const DevsyWordmark = createIcon({
+  displayName: "DevsyWordmark",
   viewBox: "0 0 648 153",
   defaultProps,
   path: [

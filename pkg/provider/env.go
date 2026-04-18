@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 	log2 "github.com/skevetter/log"
 )
 
@@ -24,9 +24,9 @@ func combineOptions(
 
 // ToEnvironment builds the full environment for provider subprocess execution.
 // The provider name is available to subprocesses as PROVIDER_ID (set by GetBaseEnvironment).
-// Do NOT add DEVPOD_PROVIDER to the subprocess env — it is reserved by the --provider
+// Do NOT add DEVSY_PROVIDER to the subprocess env — it is reserved by the --provider
 // CLI flag via inheritFlagsFromEnvironment in cmd/root.go, and setting it would override
-// the global provider selection for any child devpod process.
+// the global provider selection for any child devsy process.
 func ToEnvironment(
 	workspace *Workspace,
 	machine *Machine,
@@ -151,9 +151,9 @@ func Merge(m1 map[string]string, m2 map[string]string) map[string]string {
 func GetBaseEnvironment(context, provider string) map[string]string {
 	retVars := map[string]string{}
 
-	// devpod binary
-	devPodBinary, _ := os.Executable()
-	retVars[config.EnvBinaryPath] = filepath.ToSlash(devPodBinary)
+	// devsy binary
+	devsyBinary, _ := os.Executable()
+	retVars[config.EnvBinaryPath] = filepath.ToSlash(devsyBinary)
 	retVars[config.EnvOS] = runtime.GOOS
 	retVars[config.EnvArch] = runtime.GOARCH
 	retVars[config.EnvProviderID] = provider

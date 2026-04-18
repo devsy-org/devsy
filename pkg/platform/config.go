@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 const (
 	defaultTimeout                    = 10 * time.Minute
-	LoftPlatformConfigFileName string = "loft-config.json" // TODO: replace hardcoded strings with this
+	LoftPlatformConfigFileName string = "devsy-config.json" // TODO: replace hardcoded strings with this
 )
 
 func Timeout() time.Duration {

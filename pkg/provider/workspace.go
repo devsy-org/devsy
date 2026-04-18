@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/config"
-	devcontainerconfig "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/config"
+	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/util"
 )
 
 var (
@@ -72,7 +72,7 @@ type Workspace struct {
 	// Path to the file where the SSH config to access the workspace is stored
 	SSHConfigPath string `json:"sshConfigPath,omitempty"`
 
-	// Path to an alternate file where DevPod entries are written (for read-only SSH configs)
+	// Path to an alternate file where Devsy entries are written (for read-only SSH configs)
 	SSHConfigIncludePath string `json:"sshConfigIncludePath,omitempty"`
 }
 

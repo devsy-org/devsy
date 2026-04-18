@@ -5,12 +5,12 @@ import (
 )
 
 type Framework struct {
-	DevpodBinDir  string
-	DevpodBinName string
+	DevsyBinDir  string
+	DevsyBinName string
 }
 
 func NewDefaultFramework(path string) *Framework {
-	binName := "devpod-"
+	binName := "devsy-"
 	switch runtime.GOOS {
 	case "darwin":
 		binName = binName + "darwin-"
@@ -31,5 +31,5 @@ func NewDefaultFramework(path string) *Framework {
 		binName = binName + ".exe"
 	}
 
-	return &Framework{DevpodBinDir: path, DevpodBinName: binName}
+	return &Framework{DevsyBinDir: path, DevsyBinName: binName}
 }

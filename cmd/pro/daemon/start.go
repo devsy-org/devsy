@@ -10,17 +10,17 @@ import (
 	"syscall"
 
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/cmd/pro/completion"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/pro/completion"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
-// StartCmd holds the devpod daemon flags.
+// StartCmd holds the devsy daemon flags.
 type StartCmd struct {
 	*proflags.GlobalFlags
 
@@ -38,7 +38,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "start",
 		Short: "Start the client daemon",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -49,7 +49,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 	}
 
@@ -75,16 +75,16 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *StartCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *providerpkg.ProviderConfig,
 ) error {
 	isDesktopControlled := os.Getenv(config.EnvUI) == config.BoolTrue
-	dir, err := ensureDaemonDir(devPodConfig.DefaultContext, provider.Name)
+	dir, err := ensureDaemonDir(devsyConfig.DefaultContext, provider.Name)
 	if err != nil {
 		return err
 	}
 
-	loftConfigPath := filepath.Join(dir, "..", "loft-config.json")
+	loftConfigPath := filepath.Join(dir, "..", "devsy-config.json")
 	baseClient, err := client.InitClientFromPath(ctx, loftConfigPath)
 	if err != nil {
 		if daemon.IsAccessKeyNotFound(err) && isDesktopControlled {
@@ -106,7 +106,7 @@ func (cmd *StartCmd) Run(
 	d, err := daemon.Init(ctx, daemon.InitConfig{
 		RootDir:        dir,
 		ProviderName:   provider.Name,
-		Context:        devPodConfig.DefaultContext,
+		Context:        devsyConfig.DefaultContext,
 		UserName:       userName,
 		PlatformClient: baseClient,
 		Debug:          cmd.Debug,

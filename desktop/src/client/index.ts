@@ -1,5 +1,5 @@
 export { client } from "./client"
 export type { TArch, TPlatform } from "./client"
-export { DEVPOD_GIT_REPOSITORY } from "./constants"
+export { DEVSY_GIT_REPOSITORY } from "./constants"
 export type { TStreamEventListenerFn } from "./types"
 export { ProClient } from "./pro"

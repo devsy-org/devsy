@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/file"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/devpod/pkg/image"
+	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/skevetter/log"
 )
 

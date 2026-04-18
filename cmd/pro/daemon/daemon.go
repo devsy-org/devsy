@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +16,7 @@ import (
 func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "daemon",
-		Short:  "DevPod Pro Provider daemon commands",
+		Short:  "Devsy Pro Provider daemon commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}
@@ -33,15 +33,15 @@ func findProProvider(
 	context, provider, host string,
 	log log.Logger,
 ) (*config.Config, *providerpkg.ProviderConfig, error) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pCfg, err := workspace.ProviderFromHost(ctx, devPodConfig, host, log)
+	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host, log)
 	if err != nil {
-		return devPodConfig, nil, fmt.Errorf("load provider: %w", err)
+		return devsyConfig, nil, fmt.Errorf("load provider: %w", err)
 	}
 
-	return devPodConfig, pCfg, nil
+	return devsyConfig, pCfg, nil
 }

@@ -19,12 +19,12 @@ import (
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
 	"github.com/skevetter/api/pkg/auth"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	devpodopen "github.com/skevetter/devpod/pkg/open"
-	"github.com/skevetter/devpod/pkg/platform/kube"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/devpod/pkg/version"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	devsyopen "github.com/devsy-org/devsy/pkg/open"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/skevetter/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -50,7 +50,7 @@ const (
 
 func init() {
 	hd, _ := util.UserHomeDir()
-	if folder, ok := os.LookupEnv("LOFT_CACHE_FOLDER"); ok {
+	if folder, ok := os.LookupEnv("DEVSY_CACHE_FOLDER"); ok {
 		CacheFolder = filepath.Join(hd, folder)
 	} else {
 		CacheFolder = filepath.Join(hd, CacheFolder)
@@ -223,7 +223,7 @@ func (c *client) Save() error {
 		c.config.Kind = "Config"
 	}
 	if c.config.APIVersion == "" {
-		c.config.APIVersion = "storage.loft.sh/v1"
+		c.config.APIVersion = "storage.devsy.sh/v1"
 	}
 
 	err := os.MkdirAll(filepath.Dir(c.configPath), 0o755)
@@ -314,7 +314,7 @@ func (c *client) Login(host string, insecure bool, log log.Logger) error {
 	}
 
 	server := startServer(fmt.Sprintf(RedirectPath, host), keyChannel, log)
-	err = devpodopen.Run(fmt.Sprintf(LoginPath, host))
+	err = devsyopen.Run(fmt.Sprintf(LoginPath, host))
 	if err != nil {
 		return fmt.Errorf(
 			"couldn't open the login page in a browser: %w. Please use the --access-key flag for the login command. "+
@@ -330,7 +330,7 @@ func (c *client) Login(host string, insecure bool, log log.Logger) error {
 		}
 		msg += "'"
 		log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
-		log.Infof("Logging into DevPod Pro...")
+		log.Infof("Logging into Devsy Pro...")
 
 		key = <-keyChannel
 	}
@@ -470,7 +470,7 @@ func (c *client) restConfig(hostSuffix string) (*rest.Config, error) {
 		return nil, errors.New("no config loaded")
 	} else if c.config.Host == "" || c.config.AccessKey == "" {
 		return nil, errors.New(
-			"not logged in, run 'devpod pro start' or 'devpod pro login [devpod-pro-url]'",
+			"not logged in, run 'devsy pro start' or 'devsy pro login [devsy-pro-url]'",
 		)
 	}
 

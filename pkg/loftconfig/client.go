@@ -1,17 +1,17 @@
-package loftconfig
+package devsyconfig
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/credentials"
-	"github.com/skevetter/devpod/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/skevetter/log"
 )
 
-func GetLoftConfig(context, provider string, port int, logger log.Logger) (*client.Config, error) {
-	request := &LoftConfigRequest{
+func GetDevsyConfig(context, provider string, port int, logger log.Logger) (*client.Config, error) {
+	request := &DevsyConfigRequest{
 		Context:  context,
 		Provider: provider,
 	}
@@ -22,7 +22,7 @@ func GetLoftConfig(context, provider string, port int, logger log.Logger) (*clie
 		return nil, err
 	}
 
-	configResponse := &LoftConfigResponse{}
+	configResponse := &DevsyConfigResponse{}
 	out, err := credentials.PostWithRetry(
 		port,
 		"loft-platform-credentials",
@@ -37,5 +37,5 @@ func GetLoftConfig(context, provider string, port int, logger log.Logger) (*clie
 		return nil, fmt.Errorf("decode loft config %s: %w", string(out), err)
 	}
 
-	return configResponse.LoftConfig, nil
+	return configResponse.DevsyConfig, nil
 }

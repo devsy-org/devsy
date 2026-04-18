@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/skevetter/devpod/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/pty"
 )
 
 // testPTY is a pipe-based PTY implementation for in-process CLI testing on

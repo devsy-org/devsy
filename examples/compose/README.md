@@ -4,5 +4,5 @@ This folder holds a simple devcontainer configuration that uses docker-compose t
 
 You can start this project via:
 ```
-devpod up ./examples/compose
+devsy up ./examples/compose
 ```

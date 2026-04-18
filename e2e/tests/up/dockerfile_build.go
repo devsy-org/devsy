@@ -8,9 +8,9 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	docker "github.com/skevetter/devpod/pkg/docker"
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/skevetter/log"
 )
 
@@ -41,7 +41,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = f.DevPodUp(ctx, tempDir, "--debug")
+			err = f.DevsyUp(ctx, tempDir, "--debug")
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()*3))
 
@@ -55,7 +55,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--debug")
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.GetTimeout()*3),
@@ -71,8 +71,8 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				// Wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir)
+				// Wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				workspace, err := f.FindWorkspace(ctx, tempDir)
@@ -91,8 +91,8 @@ var _ = ginkgo.Describe(
 				err = os.WriteFile(scriptPath, []byte("alias yr='date +%Y'"), 0o600)
 				framework.ExpectNoError(err)
 
-				ginkgo.By("Starting DevPod again with --recreate")
-				err = f.DevPodUp(ctx, tempDir, "--debug", "--recreate")
+				ginkgo.By("Starting Devsy again with --recreate")
+				err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{
@@ -117,8 +117,8 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				// Wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir)
+				// Wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				workspace, err := f.FindWorkspace(ctx, tempDir)
@@ -138,8 +138,8 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ginkgo.By("Starting DevPod again with --recreate")
-				err = f.DevPodUp(ctx, tempDir, "--debug", "--recreate")
+				ginkgo.By("Starting Devsy again with --recreate")
+				err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{

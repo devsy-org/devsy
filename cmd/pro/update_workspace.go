@@ -6,11 +6,11 @@ import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +35,7 @@ func NewUpdateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Update workspace instance",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -46,7 +46,7 @@ func NewUpdateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 	}
 
@@ -60,10 +60,10 @@ func NewUpdateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *UpdateWorkspaceCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	opts := devPodConfig.ProviderOptions(provider.Name)
+	opts := devsyConfig.ProviderOptions(provider.Name)
 	opts[platform.WorkspaceInstanceEnv] = config.OptionValue{Value: cmd.Instance}
 
 	var buf bytes.Buffer
@@ -74,7 +74,7 @@ func (cmd *UpdateWorkspaceCmd) Run(
 		Ctx:     ctx,
 		Name:    "updateWorkspace",
 		Command: provider.Exec.Proxy.Update.Workspace,
-		Context: devPodConfig.DefaultContext,
+		Context: devsyConfig.DefaultContext,
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,

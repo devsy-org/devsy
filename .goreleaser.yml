@@ -1,83 +1,83 @@
 version: 2
-project_name: devpod
+project_name: devsy
 release:
   github:
     owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
     name: "{{ .ProjectName }}"
 builds:
-  - id: devpod
+  - id: devsy
     hooks:
       pre:
         - sh -c 'CGO_ENABLED=1 go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic'
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}
     overrides:
       - goos: linux
         goarch: amd64
-        ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+        ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
         tags:
           - netgo
           - osusergo
       - goos: linux
         goarch: arm64
-        ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+        ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
         tags:
           - netgo
           - osusergo
-    ldflags: -s -w -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    ldflags: -s -w -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
 
-  - id: devpod-linux
+  - id: devsy-linux
     hooks:
       pre:
         - sh -c 'CGO_ENABLED=1 go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic'
     goos: [linux]
     goarch: [amd64, arm64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}
-    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}
+    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
     tags:
       - netgo
       - osusergo
 
-  - id: devpod-darwin
+  - id: devsy-darwin
     hooks:
       pre:
         - sh -c 'go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic'
     goos: [darwin]
     goarch: [amd64, arm64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}
-    ldflags: -s -w -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}
+    ldflags: -s -w -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
 
-  - id: devpod-windows
+  - id: devsy-windows
     goos: [windows]
     goarch: [amd64, arm64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}
-    ldflags: -s -w -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}
+    ldflags: -s -w -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
 
-  - id: devpod-dev
+  - id: devsy-dev
     goos: [linux, darwin]
     goarch: [amd64, arm64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}
-    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}
+    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
     tags:
       - netgo
       - osusergo
 
-  - id: devpod-pro-dev
+  - id: devsy-pro-dev
     goos: [linux]
     goarch: [amd64]
-    binary: devpod-{{ .Os }}-{{ .Arch }}-pro
-    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVPOD_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/skevetter/devpod/pkg/version.version={{ .Env.DEVPOD_CLI_VERSION }}
+    binary: devsy-{{ .Os }}-{{ .Arch }}-pro
+    ldflags: -s -w -extldflags '-static' -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }}
     env:
       - CGO_ENABLED=0
     tags:
@@ -86,9 +86,9 @@ builds:
       - netgo
     hooks:
       post:
-        - cmd: kubectl -n "{{ .Env.DEVPOD_PRO_NS | default "default" }}" cp --no-preserve=true dist/devpod-pro_linux_amd64_v1/devpod-{{ .Os }}-{{ .Arch }}-pro "$(kubectl -n "{{ .Env.DEVPOD_PRO_NS | default "default" }}" get pods -l app=loft -o jsonpath="{.items[0].metadata.name}")":/usr/local/bin/devpod
+        - cmd: kubectl -n "{{ .Env.DEVSY_PRO_NS | default "default" }}" cp --no-preserve=true dist/devsy-pro_linux_amd64_v1/devsy-{{ .Os }}-{{ .Arch }}-pro "$(kubectl -n "{{ .Env.DEVSY_PRO_NS | default "default" }}" get pods -l app=devsy -o jsonpath="{.items[0].metadata.name}")":/usr/local/bin/devsy
           env:
-            - DEVPOD_PRO_NS={{ .Env.DEVPOD_PRO_NS | default "default" }}
+            - DEVSY_PRO_NS={{ .Env.DEVSY_PRO_NS | default "default" }}
 
 archives:
   - formats: [tar.gz]

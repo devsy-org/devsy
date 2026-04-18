@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/platform"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/platform"
 )
 
 func (c *client) Status(

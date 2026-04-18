@@ -1,12 +1,12 @@
 import { TWorkspaceOwnerFilterState } from "@/components"
 import { ProWorkspaceInstance } from "@/contexts"
 import { DaemonStatus } from "@/gen"
-import { ManagementV1DevPodWorkspaceInstance } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspaceInstance"
-import { ManagementV1Project } from "@loft-enterprise/client/gen/models/managementV1Project"
-import { ManagementV1ProjectClusters } from "@loft-enterprise/client/gen/models/managementV1ProjectClusters"
-import { ManagementV1ProjectTemplates } from "@loft-enterprise/client/gen/models/managementV1ProjectTemplates"
-import { ManagementV1Self } from "@loft-enterprise/client/gen/models/managementV1Self"
-import { ManagementV1UserProfile } from "@loft-enterprise/client/gen/models/managementV1UserProfile"
+import { ManagementV1DevsyWorkspaceInstance } from "@devsy/client/gen/models/managementV1DevsyWorkspaceInstance"
+import { ManagementV1Project } from "@devsy/client/gen/models/managementV1Project"
+import { ManagementV1ProjectClusters } from "@devsy/client/gen/models/managementV1ProjectClusters"
+import { ManagementV1ProjectTemplates } from "@devsy/client/gen/models/managementV1ProjectTemplates"
+import { ManagementV1Self } from "@devsy/client/gen/models/managementV1Self"
+import { ManagementV1UserProfile } from "@devsy/client/gen/models/managementV1UserProfile"
 import { Result, ResultError, Return, isError } from "@/lib"
 import {
   TGitCredentialHelperData,
@@ -79,7 +79,7 @@ export class ProClient implements TDebuggable {
       (event) => {
         if (event.type === "data") {
           const rawInstances =
-            event.data as unknown as readonly ManagementV1DevPodWorkspaceInstance[]
+            event.data as unknown as readonly ManagementV1DevsyWorkspaceInstance[]
           const workspaceInstances = rawInstances.map(
             (instance) => new ProWorkspaceInstance(instance)
           )
@@ -119,14 +119,14 @@ export class ProClient implements TDebuggable {
   }
 
   public async createWorkspace(
-    instance: ManagementV1DevPodWorkspaceInstance
-  ): Promise<Result<ManagementV1DevPodWorkspaceInstance>> {
+    instance: ManagementV1DevsyWorkspaceInstance
+  ): Promise<Result<ManagementV1DevsyWorkspaceInstance>> {
     return ProCommands.CreateWorkspace(this.id, instance)
   }
 
   public async updateWorkspace(
-    instance: ManagementV1DevPodWorkspaceInstance
-  ): Promise<Result<ManagementV1DevPodWorkspaceInstance>> {
+    instance: ManagementV1DevsyWorkspaceInstance
+  ): Promise<Result<ManagementV1DevsyWorkspaceInstance>> {
     return ProCommands.UpdateWorkspace(this.id, instance)
   }
 }
@@ -315,8 +315,8 @@ export class DaemonClient extends ProClient {
   }
 
   public async createWorkspace(
-    instance: ManagementV1DevPodWorkspaceInstance
-  ): Promise<Result<ManagementV1DevPodWorkspaceInstance>> {
+    instance: ManagementV1DevsyWorkspaceInstance
+  ): Promise<Result<ManagementV1DevsyWorkspaceInstance>> {
     try {
       const body = JSON.stringify(instance)
 
@@ -327,8 +327,8 @@ export class DaemonClient extends ProClient {
   }
 
   public async updateWorkspace(
-    instance: ManagementV1DevPodWorkspaceInstance
-  ): Promise<Result<ManagementV1DevPodWorkspaceInstance>> {
+    instance: ManagementV1DevsyWorkspaceInstance
+  ): Promise<Result<ManagementV1DevsyWorkspaceInstance>> {
     try {
       const body = JSON.stringify(instance)
 
@@ -445,7 +445,7 @@ class WorkspaceWatcher {
       lines.forEach((line) => {
         if (line.trim()) {
           try {
-            const rawInstances: readonly ManagementV1DevPodWorkspaceInstance[] = JSON.parse(line)
+            const rawInstances: readonly ManagementV1DevsyWorkspaceInstance[] = JSON.parse(line)
             const workspaceInstances = rawInstances.map(
               (instance) => new ProWorkspaceInstance(instance)
             )

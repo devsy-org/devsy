@@ -1,6 +1,6 @@
 import { useAppReady } from "@/App/useAppReady"
 import { useProContext, useProInstances } from "@/contexts"
-import { DevPodIcon } from "@/icons"
+import { DevsyIcon } from "@/icons"
 import disconnectedImage from "@/images/disconnected.svg"
 import disconnectedDarkImage from "@/images/disconnected_dark.svg"
 import { hasCapability, useConnectionStatus, useReLoginProModal } from "@/lib"
@@ -33,7 +33,7 @@ export function ProInstance() {
         </Heading>
         <Button
           variant="primary"
-          leftIcon={<DevPodIcon boxSize={5} />}
+          leftIcon={<DevsyIcon boxSize={5} />}
           onClick={() => handleReLoginClicked({ host })}>
           Log In
         </Button>

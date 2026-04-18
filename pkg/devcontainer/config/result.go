@@ -4,7 +4,7 @@ import (
 	"maps"
 	"slices"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 )
 
 const UserLabel = pkgconfig.BinaryName + ".user"
@@ -38,7 +38,7 @@ func GetMounts(result *Result) []*Mount {
 
 // GetRemoteUser determines the remote user using DevContainer specification priority order:
 // 1. remoteUser from configuration
-// 2. devpod.user label from container
+// 2. devsy.user label from container
 // 3. User field from Docker inspect
 // 4. containerUser from configuration
 //
@@ -67,19 +67,19 @@ func GetRemoteUser(result *Result) string {
 	return "root"
 }
 
-func GetDevPodCustomizations(parsedConfig *DevContainerConfig) *DevPodCustomizations {
+func GetDevsyCustomizations(parsedConfig *DevContainerConfig) *DevsyCustomizations {
 	if parsedConfig.Customizations == nil ||
 		parsedConfig.Customizations[pkgconfig.BinaryName] == nil {
-		return &DevPodCustomizations{}
+		return &DevsyCustomizations{}
 	}
 
-	devPod := &DevPodCustomizations{}
-	err := Convert(parsedConfig.Customizations[pkgconfig.BinaryName], devPod)
+	devsy := &DevsyCustomizations{}
+	err := Convert(parsedConfig.Customizations[pkgconfig.BinaryName], devsy)
 	if err != nil {
-		return &DevPodCustomizations{}
+		return &DevsyCustomizations{}
 	}
 
-	return devPod
+	return devsy
 }
 
 func GetVSCodeConfiguration(mergedConfig *MergedDevContainerConfig) *VSCodeCustomizations {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/platform"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/platform"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -69,7 +69,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 	// delete the workspace
 	err = managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(workspace.Namespace).
+		DevsyWorkspaceInstances(workspace.Namespace).
 		Delete(ctx, workspace.Name, metav1.DeleteOptions{})
 	if err != nil {
 		if !opt.Force {
@@ -111,7 +111,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 		func(ctx context.Context) (done bool, err error) {
 			workspaceInstance, err := managementClient.Loft().
 				ManagementV1().
-				DevPodWorkspaceInstances(workspace.Namespace).
+				DevsyWorkspaceInstances(workspace.Namespace).
 				Get(ctx, workspace.Name, metav1.GetOptions{})
 			if kerrors.IsNotFound(err) {
 				return true, nil

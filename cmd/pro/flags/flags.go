@@ -1,8 +1,8 @@
 package flags
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/platform/client"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/platform/client"
 	flag "github.com/spf13/pflag"
 )
 

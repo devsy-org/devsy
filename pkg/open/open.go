@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 	"github.com/skratchdot/open-golang/open"
 )
@@ -65,7 +65,7 @@ func tryOpen(ctx context.Context, url string, fn func(string) error, log log.Log
 		return err
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return err
 	}

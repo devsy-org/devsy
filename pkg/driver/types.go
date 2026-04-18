@@ -4,10 +4,10 @@ import (
 	"context"
 	"io"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-// Driver is the default interface for DevPod drivers.
+// Driver is the default interface for Devsy drivers.
 type Driver interface {
 	// FindDevContainer returns a running devcontainer details
 	FindDevContainer(ctx context.Context, workspaceID string) (*config.ContainerDetails, error)

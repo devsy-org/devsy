@@ -24,11 +24,11 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/sirupsen/logrus"
 	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/feature"
-	"github.com/skevetter/devpod/pkg/image"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/tonistiigi/fsutil"
 )
@@ -119,7 +119,7 @@ func validateRemoteBuildOptions(options provider.BuildOptions) error {
 		return fmt.Errorf("cannot build in this mode, rebuild the container with up command")
 	}
 	if !options.CLIOptions.Platform.Enabled {
-		return errors.New("remote builds are only supported in DevPod Pro")
+		return errors.New("remote builds are only supported in Devsy Pro")
 	}
 	if options.CLIOptions.Platform.Build == nil {
 		return errors.New("build options are required for remote builds")

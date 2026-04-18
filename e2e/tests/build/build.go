@@ -7,11 +7,11 @@ import (
 	"runtime"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/dockerfile"
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/skevetter/log"
 )
 
@@ -59,7 +59,7 @@ func getDevcontainerConfig(dir string) *config.DevContainerConfig {
 	}
 }
 
-var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo.Ordered, func() {
+var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.Ordered, func() {
 	var initialDir string
 	var dockerHelper *docker.DockerHelper
 
@@ -78,10 +78,10 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
 			cfg := getDevcontainerConfig(tempDir)
@@ -92,7 +92,7 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 
 			// do the build
 			platforms := "linux/amd64,linux/arm64"
-			err = f.DevPodBuild(
+			err = f.DevsyBuild(
 				ctx,
 				tempDir,
 				"--force-build",
@@ -154,12 +154,12 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			cfg := getDevcontainerConfig(tempDir)
 
@@ -168,7 +168,7 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 
 			// do the build
-			err = f.DevPodBuild(ctx, tempDir, "--skip-push")
+			err = f.DevsyBuild(ctx, tempDir, "--skip-push")
 			framework.ExpectNoError(err)
 
 			// parse the dockerfile
@@ -206,18 +206,18 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			prebuildRepo := prebuildRepoName
 
 			// do the build
-			err = f.DevPodBuild(ctx, tempDir, "--repository", prebuildRepo, "--skip-push")
+			err = f.DevsyBuild(ctx, tempDir, "--repository", prebuildRepo, "--skip-push")
 			framework.ExpectNoError(err)
 		},
 	)
@@ -233,15 +233,15 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
-			err = f.DevPodBuild(ctx, tempDir, "--skip-push")
+			err = f.DevsyBuild(ctx, tempDir, "--skip-push")
 			framework.ExpectNoError(err)
 		},
 	)
@@ -254,13 +254,13 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			cfg := getDevcontainerConfig(tempDir)
 
@@ -271,7 +271,7 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			prebuildRepo := prebuildRepoName
 
 			// do the build
-			err = f.DevPodBuild(
+			err = f.DevsyBuild(
 				ctx,
 				tempDir,
 				"--force-build",
@@ -316,25 +316,25 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "kubernetes")
-			err = f.DevPodProviderAdd(ctx, "kubernetes")
+			_ = f.DevsyProviderDelete(ctx, "kubernetes")
+			err = f.DevsyProviderAdd(ctx, "kubernetes")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(
+			err = f.DevsyProviderUse(
 				ctx,
 				"kubernetes",
 				"-o",
-				"KUBERNETES_NAMESPACE=devpod",
+				"KUBERNETES_NAMESPACE=devsy",
 			)
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			// do the up
-			err = f.DevPodUp(ctx, tempDir)
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// check if ssh works
-			out, err := f.DevPodSSH(ctx, tempDir, "echo -n $MY_TEST")
+			out, err := f.DevsySSH(ctx, tempDir, "echo -n $MY_TEST")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "test456", "should contain my-test")
 		})
@@ -346,7 +346,7 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 				ctx,
 				initialDir,
 				func(ctx context.Context, f *framework.Framework, tempDir string) error {
-					return f.DevPodUpRecreate(ctx, tempDir)
+					return f.DevsyUpRecreate(ctx, tempDir)
 				},
 			)
 		})
@@ -358,7 +358,7 @@ var _ = ginkgo.Describe("devpod build test suite", ginkgo.Label("build"), ginkgo
 				ctx,
 				initialDir,
 				func(ctx context.Context, f *framework.Framework, tempDir string) error {
-					return f.DevPodUpReset(ctx, tempDir)
+					return f.DevsyUpReset(ctx, tempDir)
 				},
 			)
 		})
@@ -378,32 +378,32 @@ func validateKubernetesDeploymentWithoutDocker(
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-	_ = f.DevPodProviderDelete(ctx, "kubernetes")
-	err = f.DevPodProviderAdd(ctx, "kubernetes")
+	_ = f.DevsyProviderDelete(ctx, "kubernetes")
+	err = f.DevsyProviderAdd(ctx, "kubernetes")
 	framework.ExpectNoError(err)
-	err = f.DevPodProviderUse(
+	err = f.DevsyProviderUse(
 		ctx,
 		"kubernetes",
 		"-o",
-		"KUBERNETES_NAMESPACE=devpod",
+		"KUBERNETES_NAMESPACE=devsy",
 	)
 	framework.ExpectNoError(err)
 
-	ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
-	err = f.DevPodUp(ctx, tempDir)
+	err = f.DevsyUp(ctx, tempDir)
 	framework.ExpectNoError(err)
 
-	_, err = f.DevPodSSH(ctx, tempDir, "touch /workspaces/"+filepath.Base(tempDir)+"/DATA")
+	_, err = f.DevsySSH(ctx, tempDir, "touch /workspaces/"+filepath.Base(tempDir)+"/DATA")
 	framework.ExpectNoError(err)
-	_, err = f.DevPodSSH(ctx, tempDir, "touch /ROOTFS")
+	_, err = f.DevsySSH(ctx, tempDir, "touch /ROOTFS")
 	framework.ExpectNoError(err)
 
 	err = action(ctx, f, tempDir)
 	framework.ExpectNoError(err)
 
-	_, err = f.DevPodSSH(ctx, tempDir, "ls /workspaces/"+filepath.Base(tempDir)+"/DATA")
+	_, err = f.DevsySSH(ctx, tempDir, "ls /workspaces/"+filepath.Base(tempDir)+"/DATA")
 	framework.ExpectNoError(err)
-	_, err = f.DevPodSSH(ctx, tempDir, "ls /ROOTFS")
+	_, err = f.DevsySSH(ctx, tempDir, "ls /ROOTFS")
 	framework.ExpectError(err)
 }

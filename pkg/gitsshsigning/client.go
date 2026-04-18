@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 )
 
@@ -121,7 +121,7 @@ func sendSignatureRequest(requestBody []byte, log log.Logger) ([]byte, error) {
 		return nil, err
 	}
 
-	response, err := devpodhttp.GetHTTPClient().Post(
+	response, err := devsyhttp.GetHTTPClient().Post(
 		url,
 		"application/json",
 		bytes.NewReader(requestBody),

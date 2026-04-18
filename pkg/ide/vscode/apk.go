@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/command"
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/skevetter/log"
 )
 

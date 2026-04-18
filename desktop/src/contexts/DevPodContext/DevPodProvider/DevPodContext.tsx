@@ -1,7 +1,7 @@
 import { createContext } from "react"
 import { TProviders, TQueryResult } from "@/types"
 
-export type TDevpodContext = Readonly<{
+export type TDevsyContext = Readonly<{
   providers: TQueryResult<TProviders>
 }>
-export const DevPodContext = createContext<TDevpodContext | null>(null)
+export const DevsyContext = createContext<TDevsyContext | null>(null)

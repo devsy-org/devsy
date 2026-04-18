@@ -101,8 +101,8 @@ func (s *HelperTestSuite) TestGet_WorkspaceServerFallback() {
 	)
 	defer workspaceServer.Close()
 
-	_ = os.Setenv("DEVPOD_WORKSPACE_CREDENTIALS_PORT", parsePortString(workspaceServer.URL))
-	defer func() { _ = os.Unsetenv("DEVPOD_WORKSPACE_CREDENTIALS_PORT") }()
+	_ = os.Setenv("DEVSY_WORKSPACE_CREDENTIALS_PORT", parsePortString(workspaceServer.URL))
+	defer func() { _ = os.Unsetenv("DEVSY_WORKSPACE_CREDENTIALS_PORT") }()
 
 	helper := NewHelper(parsePort(primaryServer.URL))
 	username, secret, err := helper.Get("docker.io")

@@ -10,11 +10,11 @@ import (
 	"github.com/sirupsen/logrus"
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/remotecommand"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -108,10 +108,10 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 
 func (cmd *UpCmd) up(
 	ctx context.Context,
-	workspace *managementv1.DevPodWorkspaceInstance,
+	workspace *managementv1.DevsyWorkspaceInstance,
 	client client.Client,
 ) error {
-	options := platform.OptionsFromEnv(storagev1.DevPodFlagsUp)
+	options := platform.OptionsFromEnv(storagev1.DevsyFlagsUp)
 	if options != nil && os.Getenv(config.EnvDebug) == config.BoolTrue {
 		options.Add("debug", config.BoolTrue)
 	}
@@ -136,7 +136,7 @@ func (cmd *UpCmd) up(
 	return nil
 }
 
-func templateUpdateRequired(instance *managementv1.DevPodWorkspaceInstance) bool {
+func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool {
 	var templateResolved, templateChangesAvailable bool
 	for _, condition := range instance.Status.Conditions {
 		if condition.Type == storagev1.InstanceTemplateResolved {
@@ -154,7 +154,7 @@ func templateUpdateRequired(instance *managementv1.DevPodWorkspaceInstance) bool
 	return !templateResolved || templateChangesAvailable
 }
 
-func printInstanceInfo(instance *managementv1.DevPodWorkspaceInstance, log log.Logger) {
+func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log log.Logger) {
 	workspaceConfig, _ := json.Marshal(struct {
 		// Cluster    storagev1.WorkspaceTargetNamespace
 		Template   *storagev1.TemplateRef

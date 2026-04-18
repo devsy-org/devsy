@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/agent"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/skevetter/log"
 )
 
@@ -22,18 +22,18 @@ type SetupParams struct {
 	EnvFiles     []string
 	EnvKeyValues []string
 	Client       client2.BaseWorkspaceClient
-	DevPodConfig *config.Config
+	DevsyConfig *config.Config
 	Log          log.Logger
 }
 
 // Setup clones and installs dotfiles into the devcontainer.
 func Setup(p SetupParams) error {
-	dotfilesRepo := p.DevPodConfig.ContextOption(config.ContextOptionDotfilesURL)
+	dotfilesRepo := p.DevsyConfig.ContextOption(config.ContextOptionDotfilesURL)
 	if p.Source != "" {
 		dotfilesRepo = p.Source
 	}
 
-	dotfilesScript := p.DevPodConfig.ContextOption(config.ContextOptionDotfilesScript)
+	dotfilesScript := p.DevsyConfig.ContextOption(config.ContextOptionDotfilesScript)
 	if p.Script != "" {
 		dotfilesScript = p.Script
 	}
@@ -47,7 +47,7 @@ func Setup(p SetupParams) error {
 	p.Log.Debug("Cloning dotfiles into the devcontainer...")
 
 	dotCmd, err := buildDotCmd(buildDotCmdParams{
-		devPodConfig:     p.DevPodConfig,
+		devsyConfig:     p.DevsyConfig,
 		dotfilesRepo:     dotfilesRepo,
 		dotfilesScript:   dotfilesScript,
 		envFiles:         p.EnvFiles,
@@ -107,7 +107,7 @@ func buildDotCmdAgentArguments(
 }
 
 type buildDotCmdParams struct {
-	devPodConfig     *config.Config
+	devsyConfig     *config.Config
 	dotfilesRepo     string
 	dotfilesScript   string
 	envFiles         []string
@@ -145,7 +145,7 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 		remoteUser = "root"
 	}
 
-	strictHostKey := p.devPodConfig.ContextOption(
+	strictHostKey := p.devsyConfig.ContextOption(
 		config.ContextOptionSSHStrictHostKeyChecking,
 	) == config.BoolTrue
 	debug := p.log.GetLevel() == logrus.DebugLevel
@@ -165,7 +165,7 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 		p.client.Workspace(),
 		"--log-output=raw",
 		"--command",
-		agent.ContainerDevPodHelperLocation+" "+strings.Join(agentArguments, " "),
+		agent.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
 	)
 	execPath, err := os.Executable()
 	if err != nil {

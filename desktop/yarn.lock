@@ -1252,6 +1252,14 @@
     "@types/lodash.mergewith" "4.6.9"
     lodash.mergewith "4.6.2"
 
+"@devsy/client@https://github.com/devsy-org/devsy-javascript-client#v4.4.1":
+  version "4.4.1"
+  resolved "https://github.com/devsy-org/devsy-javascript-client#e9052bb429e58ebd9a1a067690bbe8e32fd5c712"
+  dependencies:
+    "@kubernetes/client-node" "1.2.0"
+    js-cookie "3.0.1"
+    json-merge-patch "1.0.2"
+
 "@emotion/babel-plugin@^11.13.5":
   version "11.13.5"
   resolved "https://registry.yarnpkg.com/@emotion/babel-plugin/-/babel-plugin-11.13.5.tgz#eab8d65dbded74e0ecfd28dc218e75607c4e7bc0"
@@ -1751,14 +1759,6 @@
     stream-buffers "^3.0.2"
     tar-fs "^3.0.9"
     ws "^8.18.2"
-
-"@loft-enterprise/client@https://github.com/loft-sh/loft-javascript-client#v4.4.1":
-  version "0.1.0"
-  resolved "https://github.com/loft-sh/loft-javascript-client#72ad6a3e7b6f2aa0ea4ecc31c448fd6c3fd41f62"
-  dependencies:
-    "@kubernetes/client-node" "1.2.0"
-    js-cookie "3.0.1"
-    json-merge-patch "1.0.2"
 
 "@nicolo-ribaudo/eslint-scope-5-internals@5.1.1-v1":
   version "5.1.1-v1"

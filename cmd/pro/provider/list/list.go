@@ -1,7 +1,7 @@
 package list
 
 import (
-	"github.com/skevetter/devpod/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "list",
-		Short:  "DevPod Pro Provider list commands",
+		Short:  "Devsy Pro Provider list commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}

@@ -4,9 +4,9 @@ import { client } from "@/client/client"
 import { QueryKeys } from "@/queryKeys"
 import { REFETCH_PROVIDER_INTERVAL_MS } from "../constants"
 import { usePollWorkspaces } from "../workspaces"
-import { DevPodContext, TDevpodContext } from "./DevPodContext"
+import { DevsyContext, TDevsyContext } from "./DevsyContext"
 
-export function DevPodProvider({ children }: Readonly<{ children?: ReactNode }>) {
+export function DevsyProvider({ children }: Readonly<{ children?: ReactNode }>) {
   usePollWorkspaces()
 
   const providersQuery = useQuery({
@@ -16,7 +16,7 @@ export function DevPodProvider({ children }: Readonly<{ children?: ReactNode }>)
     enabled: true,
   })
 
-  const value = useMemo<TDevpodContext>(
+  const value = useMemo<TDevsyContext>(
     () => ({
       providers: [
         providersQuery.data,
@@ -26,7 +26,7 @@ export function DevPodProvider({ children }: Readonly<{ children?: ReactNode }>)
     [providersQuery.data, providersQuery.status, providersQuery.error]
   )
 
-  return <DevPodContext.Provider value={value}>{children}</DevPodContext.Provider>
+  return <DevsyContext.Provider value={value}>{children}</DevsyContext.Provider>
 }
 
 export function ProviderProvider({ children }: Readonly<{ children?: ReactNode }>) {
@@ -37,7 +37,7 @@ export function ProviderProvider({ children }: Readonly<{ children?: ReactNode }
     enabled: true,
   })
 
-  const value = useMemo<TDevpodContext>(
+  const value = useMemo<TDevsyContext>(
     () => ({
       providers: [
         providersQuery.data,
@@ -47,5 +47,5 @@ export function ProviderProvider({ children }: Readonly<{ children?: ReactNode }
     [providersQuery.data, providersQuery.status, providersQuery.error]
   )
 
-  return <DevPodContext.Provider value={value}>{children}</DevPodContext.Provider>
+  return <DevsyContext.Provider value={value}>{children}</DevsyContext.Provider>
 }

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os/user"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/credentials"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )

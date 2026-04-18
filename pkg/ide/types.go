@@ -4,7 +4,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/skevetter/log"
 )
 

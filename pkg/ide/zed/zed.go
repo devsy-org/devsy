@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/config"
-	devpodopen "github.com/skevetter/devpod/pkg/open"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/skevetter/log"
 )
 
@@ -26,7 +26,7 @@ func Open(
 
 	sshHost := workspaceID + config.SSHHostSuffix + workspaceFolder
 	openURL := fmt.Sprintf("zed://ssh/%s", sshHost)
-	err := devpodopen.Run(openURL)
+	err := devsyopen.Run(openURL)
 	if err != nil {
 		log.Debugf("Starting Zed caused error: %v", err)
 		log.Errorf("Seems like you don't have Zed installed on your computer locally")

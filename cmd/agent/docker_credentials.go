@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/docker/docker-credential-helpers/credentials"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )

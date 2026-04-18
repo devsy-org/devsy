@@ -1,4 +1,4 @@
 package labels
 
 // ProjectLabel holds the project name.
-const ProjectLabel = "loft.sh/project"
+const ProjectLabel = "devsy.sh/project"

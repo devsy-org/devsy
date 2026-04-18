@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -15,7 +15,7 @@ import (
 // NewGitSSHSignatureCmd creates new git-ssh-signature command
 // This agent command can be used as git ssh program by setting
 //
-//	> git config --global gpg.ssh.program "devpod agent git-ssh-signature"
+//	> git config --global gpg.ssh.program "devsy agent git-ssh-signature"
 //
 // Git by default uses ssh-keygen for signing commits with ssh. This CLI command is a drop-in
 // replacement for ssh-keygen and hence needs to support ssh-keygen interface that git uses.

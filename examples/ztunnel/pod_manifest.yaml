@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   namespace: istio-system
-  # name: devpod-ztunnel-1-21-0 # NOTE: This is ignored
+  # name: devsy-ztunnel-1-21-0 # NOTE: This is ignored
   annotations:
     ambient.istio.io/redirection: disabled
     prometheus.io/scrape: "true"
@@ -10,21 +10,21 @@ metadata:
   # generateName: ztunnel-
   labels:
     featureid: "1234"
-    devpod: ztunnel
+    devsy: ztunnel
     sidecar.istio.io/inject: "false"
-    app: devpod-ztunnel # NOTE: This make devpod fails
+    app: devsy-ztunnel # NOTE: This make devsy fails
 spec:
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
-          - key: devpod-ztunnel
+          - key: devsy-ztunnel
             operator: In
             values:
             - enabled
   containers:
-  - name: "devpod"
+  - name: "devsy"
     env:
     - name: CA_ADDRESS
       value: istiod.istio-system.svc:15012

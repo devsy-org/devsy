@@ -5,7 +5,7 @@ package container
 import (
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 

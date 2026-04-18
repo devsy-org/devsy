@@ -7,13 +7,13 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -54,13 +54,13 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
-		DevPodConfig: devPodConfig,
+		DevsyConfig: devsyConfig,
 		Args:         args,
 		Owner:        cmd.Owner,
 		Log:          log.Default,
@@ -93,7 +93,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// Get the timeout from the context options
-	timeout := config.ParseTimeOption(devPodConfig, config.ContextOptionAgentInjectTimeout)
+	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
 
 	// start ssh server in background
 	errChan := make(chan error, 1)

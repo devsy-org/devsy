@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const testBaseCommand = "devpod agent container credentials-server --user root"
+const testBaseCommand = "devsy agent container credentials-server --user root"
 
 func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 	command := testBaseCommand

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/pkg/version"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/spf13/cobra"
 )
 

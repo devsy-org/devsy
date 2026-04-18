@@ -10,7 +10,7 @@ import (
 )
 
 // ServeAgent will be a simple http file server that will expose our
-// freshly compiled devpod binaries to be downloaded as agents.
+// freshly compiled devsy binaries to be downloaded as agents.
 // useful for non-linux runners.
 func ServeAgent() {
 	// Specify the directory containing the files you want to serve
@@ -36,7 +36,7 @@ func ServeAgent() {
 	}
 
 	addr := listener.Addr().String()
-	err = os.Setenv("DEVPOD_AGENT_URL", "http://"+addr+"/files/")
+	err = os.Setenv("DEVSY_AGENT_URL", "http://"+addr+"/files/")
 	if err != nil {
 		log.Fatal(err)
 	}

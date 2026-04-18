@@ -26,25 +26,25 @@ import {
   VStack,
   useColorModeValue,
 } from "@chakra-ui/react"
-import { ManagementV1Cluster } from "@loft-enterprise/client/gen/models/managementV1Cluster"
-import { ManagementV1DevPodWorkspaceTemplate } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspaceTemplate"
+import { ManagementV1Cluster } from "@devsy/client/gen/models/managementV1Cluster"
+import { ManagementV1DevsyWorkspaceTemplate } from "@devsy/client/gen/models/managementV1DevsyWorkspaceTemplate"
 import dayjs from "dayjs"
 import { ReactElement, ReactNode, cloneElement, useMemo } from "react"
 import { WorkspaceStatus } from "./WorkspaceStatus"
-import { StorageV1DevPodWorkspaceInstanceKubernetesStatus } from "@loft-enterprise/client/gen/models/storageV1DevPodWorkspaceInstanceKubernetesStatus"
+import { StorageV1DevsyWorkspaceInstanceKubernetesStatus } from "@devsy/client/gen/models/storageV1DevsyWorkspaceInstanceKubernetesStatus"
 import {
-  StorageV1DevPodWorkspaceInstancePodStatus,
-  StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum,
-} from "@loft-enterprise/client/gen/models/storageV1DevPodWorkspaceInstancePodStatus"
+  StorageV1DevsyWorkspaceInstancePodStatus,
+  StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum,
+} from "@devsy/client/gen/models/storageV1DevsyWorkspaceInstancePodStatus"
 import {
-  StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatus,
-  StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum,
-} from "@loft-enterprise/client/gen/models/storageV1DevPodWorkspaceInstancePersistentVolumeClaimStatus"
+  StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatus,
+  StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum,
+} from "@devsy/client/gen/models/storageV1DevsyWorkspaceInstancePersistentVolumeClaimStatus"
 import { quantityToScalar } from "@kubernetes/client-node/dist/util"
 
 type TWorkspaceDetailsProps = Readonly<{
   instance: ProWorkspaceInstance
-  template: ManagementV1DevPodWorkspaceTemplate | undefined
+  template: ManagementV1DevsyWorkspaceTemplate | undefined
   cluster: ManagementV1Cluster | ManagementV1Runner | undefined
   parameters: readonly TParameterWithValue[]
   showDetails?: boolean
@@ -272,7 +272,7 @@ function getSourceInfo(
 
 function formatTemplateDetail(
   instance: ProWorkspaceInstance,
-  template: ManagementV1DevPodWorkspaceTemplate | undefined
+  template: ManagementV1DevsyWorkspaceTemplate | undefined
 ): ReactElement {
   const templateName = instance.spec?.templateRef?.name
   const templateDisplayName = getDisplayName(template, templateName)
@@ -342,7 +342,7 @@ function ParameterDetail({ icon: Icon, label, children }: TParameterDetailProps)
 }
 
 type TKubernetesDetailsProps = Readonly<{
-  status: StorageV1DevPodWorkspaceInstanceKubernetesStatus
+  status: StorageV1DevsyWorkspaceInstanceKubernetesStatus
 }>
 function KubernetesDetails({ status }: TKubernetesDetailsProps) {
   const storageCapacity = status.persistentVolumeClaimStatus?.capacity?.["storage"]
@@ -423,19 +423,19 @@ function KubernetesDetails({ status }: TKubernetesDetailsProps) {
   )
 }
 
-function PodStatus({ podStatus }: { podStatus: StorageV1DevPodWorkspaceInstancePodStatus }) {
+function PodStatus({ podStatus }: { podStatus: StorageV1DevsyWorkspaceInstancePodStatus }) {
   const phase = podStatus.phase
   const phaseColor = {
-    [StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Pending]: "yellow.500",
-    [StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Running]: "",
-    [StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Succeeded]: "red.400",
-    [StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Failed]: "red.400",
-    [StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Unknown]: "red.400",
+    [StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Pending]: "yellow.500",
+    [StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Running]: "",
+    [StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Succeeded]: "red.400",
+    [StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Failed]: "red.400",
+    [StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Unknown]: "red.400",
   }
 
   let reason = podStatus.reason
   let message = podStatus.message
-  if (phase !== StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Running) {
+  if (phase !== StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Running) {
     // check container status first
     const containerStatus = podStatus.containerStatuses?.find(
       (container) =>
@@ -491,7 +491,7 @@ function PodStatus({ podStatus }: { podStatus: StorageV1DevPodWorkspaceInstanceP
   return (
     <StackedWorkspaceInfoDetail icon={Dashboard} label={<Text>Pod</Text>}>
       <Text color={phase ? phaseColor[phase] : "gray.500"}>
-        {phase === StorageV1DevPodWorkspaceInstancePodStatusPhaseEnum.Running ? (
+        {phase === StorageV1DevsyWorkspaceInstancePodStatusPhaseEnum.Running ? (
           podStatus.phase
         ) : reason && message ? (
           <Tooltip label={message}>
@@ -514,18 +514,18 @@ function PodStatus({ podStatus }: { podStatus: StorageV1DevPodWorkspaceInstanceP
 function PvcStatus({
   pvcStatus,
 }: {
-  pvcStatus: StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatus
+  pvcStatus: StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatus
 }) {
   const phase = pvcStatus.phase
   const phaseColor = {
-    [StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Pending]: "yellow.500",
-    [StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound]: "",
-    [StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Lost]: "red.400",
+    [StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Pending]: "yellow.500",
+    [StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound]: "",
+    [StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Lost]: "red.400",
   }
 
   let reason: string | undefined = ""
   let message: string | undefined = ""
-  if (phase !== StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound) {
+  if (phase !== StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound) {
     reason = pvcStatus.conditions?.find((condition) => condition.status === "False")?.reason
     message = pvcStatus.conditions?.find((condition) => condition.status === "False")?.message
 
@@ -551,7 +551,7 @@ function PvcStatus({
   return (
     <StackedWorkspaceInfoDetail icon={Dashboard} label={<Text>Volume</Text>}>
       <Text color={phase ? phaseColor[phase] : "gray.500"}>
-        {phase === StorageV1DevPodWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound ? (
+        {phase === StorageV1DevsyWorkspaceInstancePersistentVolumeClaimStatusPhaseEnum.Bound ? (
           pvcStatus.phase
         ) : reason && message ? (
           <Tooltip label={message}>

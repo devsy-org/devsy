@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ func NewPingCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	troubleshootCmd := &cobra.Command{
 		Use:   "ping [workspace-path|workspace-name]",
-		Short: "Pings the DevPod Pro workspace",
+		Short: "Pings the Devsy Pro workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -46,13 +46,13 @@ func NewPingCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	client, err := workspace2.Get(ctx, workspace2.GetOptions{
-		DevPodConfig:   devPodConfig,
+		DevsyConfig:   devsyConfig,
 		Args:           args,
 		ChangeLastUsed: true,
 		Owner:          cmd.Owner,

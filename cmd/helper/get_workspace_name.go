@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/file"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/table"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -45,12 +45,12 @@ type optionWithValue struct {
 
 // Run runs the command logic.
 func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, "")
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
 
-	entryOptions := devPodConfig.Current().Options
+	entryOptions := devsyConfig.Current().Options
 	if entryOptions == nil {
 		entryOptions = map[string]config.OptionValue{}
 	}

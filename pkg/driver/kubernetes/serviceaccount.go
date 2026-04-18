@@ -30,7 +30,7 @@ func (k *KubernetesDriver) createServiceAccount(
 			Create(ctx, &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   serviceAccount,
-					Labels: ExtraDevPodLabels,
+					Labels: ExtraDevsyLabels,
 				},
 			}, metav1.CreateOptions{})
 		if err != nil && !kerrors.IsAlreadyExists(err) {
@@ -55,7 +55,7 @@ func (k *KubernetesDriver) createServiceAccount(
 				Create(ctx, &rbacv1.RoleBinding{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:   id,
-						Labels: ExtraDevPodLabels,
+						Labels: ExtraDevsyLabels,
 					},
 					Subjects: []rbacv1.Subject{
 						{

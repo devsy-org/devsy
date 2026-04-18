@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/machineid"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/machineid"
+	"github.com/devsy-org/devsy/pkg/util"
 )
 
 // GetMachineID retrieves machine ID and encodes it together with users $HOME path and

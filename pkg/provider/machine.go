@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 type Machine struct {

@@ -113,7 +113,7 @@ export function useInstallCLI() {
   const helpText = useMemo(() => {
     return (
       <>
-        Adds the DevPod CLI to your <Code>$PATH</Code>.{" "}
+        Adds the Devsy CLI to your <Code>$PATH</Code>.{" "}
         {isWindows ? (
           <>
             It will be placed in <Code>{`%APPDATA%\\${FLATPAK_ID}\\bin`}</Code>

@@ -3,28 +3,28 @@ title: Add a Provider
 sidebar_label: Add a Provider
 ---
 
-The DevPod team maintains providers for popular services such as:
+The Devsy team maintains providers for popular services such as:
 
-- [Docker (docker)](https://github.com/skevetter/devpod/tree/main/providers/docker)
-- [Kubernetes (kubernetes)](https://github.com/skevetter/devpod-provider-kubernetes)
-- [SSH (ssh)](https://github.com/skevetter/devpod-provider-ssh)
-- [AWS (aws)](https://github.com/skevetter/devpod-provider-aws)
-- [Google Cloud (gcloud)](https://github.com/skevetter/devpod-provider-gcloud)
-- [Azure (azure)](https://github.com/skevetter/devpod-provider-azure)
-- [Digital Ocean (digitalocean)](https://github.com/skevetter/devpod-provider-digitalocean)
+- [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
+- [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy-provider-kubernetes)
+- [SSH (ssh)](https://github.com/devsy-org/devsy-provider-ssh)
+- [AWS (aws)](https://github.com/devsy-org/devsy-provider-aws)
+- [Google Cloud (gcloud)](https://github.com/devsy-org/devsy-provider-gcloud)
+- [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
+- [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-These providers can be installed with the DevPod CLI in the following form:
+These providers can be installed with the Devsy CLI in the following form:
 ```
-devpod provider add docker
+devsy provider add docker
 ```
 
 You can get a list of available 1st party providers by using the command:
 
 ```
-devpod provider list-available
+devsy provider list-available
 ```
 
-## Via DevPod Desktop Application
+## Via Devsy Desktop Application
 
 Navigate to the 'Providers' view and click on the 'Add' button in the title.
 Select one of the providers supplied by default, or click on the '+' button to
@@ -34,7 +34,7 @@ You will be prompted to fill some additional settings if needed, depending on
 the provider's needs.
 
 :::info
-Under the hood, the Desktop Application will call a `devpod provider add PROVIDER`
+Under the hood, the Desktop Application will call a `devsy provider add PROVIDER`
 :::
 
 ### Adding a custom provider
@@ -46,21 +46,21 @@ big `+` button to add a custom provider, then fill the `Source` section with eit
 - An URL to a `provider.yaml`
 - A File Path to a `provider.yaml`
 
-## Via DevPod CLI
+## Via Devsy CLI
 The providers in this list can easily be installed like:
 
 ```sh
-devpod provider add docker
-devpod provider add kubernetes
-devpod provider add ssh
-devpod provider add aws
-devpod provider add azure
-devpod provider add gcloud
-devpod provider add digitalocean
+devsy provider add docker
+devsy provider add kubernetes
+devsy provider add ssh
+devsy provider add aws
+devsy provider add azure
+devsy provider add gcloud
+devsy provider add digitalocean
 ```
 
 :::info Multiple providers at the same time
-You can use the `--name` flag to add multiple providers of the same type with different options, for example `devpod provider add aws --name aws-gpu -o AWS_INSTANCE_TYPE=p3.8xlarge`
+You can use the `--name` flag to add multiple providers of the same type with different options, for example `devsy provider add aws --name aws-gpu -o AWS_INSTANCE_TYPE=p3.8xlarge`
 :::
 
 ### From GitHub
@@ -69,23 +69,23 @@ You can specify a custom provider, directly from GitHub, by using the format
 `my-username/repo`, so for example:
 
 ```sh
-devpod provider add skevetter/devpod-provider-terraform
+devsy provider add devsy-org/devsy-provider-terraform
 ```
 
-DevPod will search the latest release for a `provider.yaml` and download that automatically. This should work for private GitHub repositories where DevPod will use the local https credentials to connect to the GitHub repository.
+Devsy will search the latest release for a `provider.yaml` and download that automatically. This should work for private GitHub repositories where Devsy will use the local https credentials to connect to the GitHub repository.
 
 If you want to install the provider from a different release, you can do the following:
 ```sh
-devpod provider add my-org/my-repo@v0.0.1
+devsy provider add my-org/my-repo@v0.0.1
 ```
 
 ### From Local Path
 
 If you have locally downloaded providers, you can also add them directly to
-DevPod, by pointing to the file path of `provider.yaml` manifest:
+Devsy, by pointing to the file path of `provider.yaml` manifest:
 
 ```sh
-devpod provider add ../devpod-provider-mock/provider.yaml
+devsy provider add ../devsy-provider-mock/provider.yaml
 ```
 
 ### From URL
@@ -93,7 +93,7 @@ devpod provider add ../devpod-provider-mock/provider.yaml
 You can also specify the URL to the `provider.yaml` file, for example:
 
 ```sh
-devpod provider add https://github.com/skevetter/devpod-provider-ssh/releases/download/v0.0.3/provider.yaml
+devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/download/v0.0.3/provider.yaml
 ```
 
 ## Set Provider Options
@@ -101,23 +101,23 @@ devpod provider add https://github.com/skevetter/devpod-provider-ssh/releases/do
 Each provider has a set of options, those options can be different for each of
 them, as they are defined by the provider's developers.
 
-### Managing options from DevPod Desktop Application
+### Managing options from Devsy Desktop Application
 
 To manage options from the app, head over the `Providers` section, and click
 `Edit` on the provider you want to configure.
 
-### Managing options from DevPod CLI
+### Managing options from Devsy CLI
 
 Options for providers can be set during the `use` or `add` phase:
 
 ```sh
-devpod provider add <provider-name> -o KEY=value
+devsy provider add <provider-name> -o KEY=value
 ```
 
 or
 
 ```sh
-devpod provider use <provider-name> -o KEY=value
+devsy provider use <provider-name> -o KEY=value
 ```
 
 
@@ -125,7 +125,7 @@ Else, to can manage options afterwards from CLI, you can list the table of provi
 
 
 ```sh
-devpod provider options <provider-name>
+devsy provider options <provider-name>
 ```
 
 An example output for the AWS Provider is:
@@ -133,8 +133,8 @@ An example output for the AWS Provider is:
 ```
           NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
 ----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devpod | /var/lib/toolbox/devpod
-                          |          | DevPod agent to.               |                         |
+AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
+                          |          | Devsy agent to.               |                         |
 AWS_ACCESS_KEY_ID         | false    | The AWS access key id          |                         |
 AWS_AMI                   | false    | The disk image to use.         |                         |
 AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 40
@@ -146,10 +146,10 @@ AWS_VPC_ID                | false    | The vpc id to use.             |         
 INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
                           |          | stop the VM after the          |                         |
                           |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If DevPod should inject docker | true                    | true
+INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
                           |          | credentials into the remote    |                         |
                           |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If DevPod should inject git    | true                    | true
+INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
                           |          | credentials into the remote    |                         |
                           |          | host.                          |                         |
 ```
@@ -157,22 +157,22 @@ INJECT_GIT_CREDENTIALS    | false    | If DevPod should inject git    | true    
 You can see this table as an overview, you can change each option using:
 
 ```sh
-devpod provider set-options <provider-name> --option <KEY>=<VALUE>
+devsy provider set-options <provider-name> --option <KEY>=<VALUE>
 ```
 
 So for example, to change the default disk size from 40gb to 120gb, you could use:
 
 ```sh
-devpod provider set-options aws --option AWS_DISK_SIZE=120
+devsy provider set-options aws --option AWS_DISK_SIZE=120
 ```
 
-And check again the options for the provider using `devpod provider options aws`:
+And check again the options for the provider using `devsy provider options aws`:
 
 ```
           NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
 ----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devpod | /var/lib/toolbox/devpod
-                          |          | DevPod agent to.               |                         |
+AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
+                          |          | Devsy agent to.               |                         |
 AWS_ACCESS_KEY_ID         | false    | The aws access key id          |                         |
 AWS_AMI                   | false    | The disk image to use.         |                         |
 AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 120
@@ -184,17 +184,17 @@ AWS_VPC_ID                | false    | The vpc id to use.             |         
 INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
                           |          | stop the VM after the          |                         |
                           |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If DevPod should inject docker | true                    | true
+INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
                           |          | credentials into the remote    |                         |
                           |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If DevPod should inject git    | true                    | true
+INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
                           |          | credentials into the remote    |                         |
                           |          | host.                          |                         |
 ```
 
 ## Single Machine Provider
 
-By default, DevPod will use a separate machine for each workspace using the same provider,
+By default, Devsy will use a separate machine for each workspace using the same provider,
 you can enable `Reuse machine` in a provider in order to use a single machine for all workspaces.
 
 In **the desktop app** the option is available in the option management interface for the provider
@@ -203,12 +203,12 @@ In **the desktop app** the option is available in the option management interfac
 In **the CLI** you can set this option using:
 
 ```sh
-devpod provider use <provider-name> --single-machine
+devsy provider use <provider-name> --single-machine
 ```
 
 ## Default Provider
 
-When adding a provider to DevPod, you can specify it to be the **default provider**,
+When adding a provider to Devsy, you can specify it to be the **default provider**,
 this implies that when you create a Workspace, this provider will be used if no
 other is specified.
 
@@ -218,26 +218,26 @@ In **the desktop app**, you can set a provider to be default in the option manag
 In **the CLI** you can set this option using:
 
 ```sh
-devpod provider use <provider-name>
+devsy provider use <provider-name>
 ```
 
 ## Community Providers
 
 The community maintains providers for additional services.
 
-- [Cloudbit (cloudbit-ch/devpod-provider-cloudbit)](https://github.com/cloudbit-ch/devpod-provider-cloudbit)
-- [Flow (flowswiss/devpod-provider-flow)](https://github.com/flowswiss/devpod-provider-flow)
-- [Hetzner (mrsimonemms/devpod-provider-hetzner)](https://github.com/mrsimonemms/devpod-provider-hetzner)
-- [OVHcloud (alexandrevilain/devpod-provider-ovhcloud)](https://github.com/alexandrevilain/devpod-provider-ovhcloud)
-- [Scaleway (dirien/devpod-provider-scaleway)](https://github.com/dirien/devpod-provider-scaleway)
-- [Exoscale (dirien/devpod-provider-exoscale)](https://github.com/dirien/devpod-provider-exoscale)
-- [Multipass (minhio/devpod-provider-multipass)](https://github.com/minhio/devpod-provider-multipass)
-- [Open Telekom Cloud (akyriako/devpod-provider-opentelekomcloud)](https://github.com/akyriako/devpod-provider-opentelekomcloud)
-- [Vultr (navaneeth-dev/devpod-provider-vultr)](https://github.com/navaneeth-dev/devpod-provider-vultr)
-- [STACKIT (stackitcloud/devpod-provider-stackit)](https://github.com/stackitcloud/devpod-provider-stackit)
-- [Podman (kuju63/devpod-provider-podman)](https://github.com/kuju63/devpod-provider-podman)
+- [Cloudbit (cloudbit-ch/devsy-provider-cloudbit)](https://github.com/cloudbit-ch/devsy-provider-cloudbit)
+- [Flow (flowswiss/devsy-provider-flow)](https://github.com/flowswiss/devsy-provider-flow)
+- [Hetzner (mrsimonemms/devsy-provider-hetzner)](https://github.com/mrsimonemms/devsy-provider-hetzner)
+- [OVHcloud (alexandrevilain/devsy-provider-ovhcloud)](https://github.com/alexandrevilain/devsy-provider-ovhcloud)
+- [Scaleway (dirien/devsy-provider-scaleway)](https://github.com/dirien/devsy-provider-scaleway)
+- [Exoscale (dirien/devsy-provider-exoscale)](https://github.com/dirien/devsy-provider-exoscale)
+- [Multipass (minhio/devsy-provider-multipass)](https://github.com/minhio/devsy-provider-multipass)
+- [Open Telekom Cloud (akyriako/devsy-provider-opentelekomcloud)](https://github.com/akyriako/devsy-provider-opentelekomcloud)
+- [Vultr (navaneeth-dev/devsy-provider-vultr)](https://github.com/navaneeth-dev/devsy-provider-vultr)
+- [STACKIT (stackitcloud/devsy-provider-stackit)](https://github.com/stackitcloud/devsy-provider-stackit)
+- [Podman (kuju63/devsy-provider-podman)](https://github.com/kuju63/devsy-provider-podman)
 
-These providers can be installed with the DevPod CLI in the following form:
+These providers can be installed with the Devsy CLI in the following form:
 ```
-devpod provider add <user/repository>
+devsy provider add <user/repository>
 ```

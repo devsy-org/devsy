@@ -218,7 +218,7 @@ export function useAppReady() {
 
         await getCurrentWebviewWindow().setFocus()
         // ensure pro is enabled
-        setSetting("experimental_devPodPro", true)
+        setSetting("experimental_devsyPro", true)
         handleProLogin(data)
 
         return
@@ -267,7 +267,7 @@ export function useAppReady() {
         const importResult = await client.pro.importWorkspace({
           workspaceID: event.workspace_id,
           workspaceUID: event.workspace_uid,
-          devPodProHost: event.devpod_pro_host,
+          devsyProHost: event.devsy_pro_host,
           project: event.project,
           options: event.options,
         })

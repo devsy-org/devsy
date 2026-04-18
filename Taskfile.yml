@@ -22,30 +22,30 @@ tasks:
     cmd: golangci-lint fmt ./...
 
   cli:act:lint:
-    desc: run devpod linters using act
+    desc: run devsy linters using act
     cmd: act workflow_dispatch -W .github/workflows/lint.yml
 
   cli:build:
-    desc: build devpod CLI
+    desc: build devsy CLI
     env:
-      GITHUB_REPOSITORY_OWNER: skevetter
-    cmd: goreleaser build --id devpod --snapshot --clean
+      GITHUB_REPOSITORY_OWNER: devsy-org
+    cmd: goreleaser build --id devsy --snapshot --clean
 
   cli:build:dev:
-    desc: build devpod CLI for development
+    desc: build devsy CLI for development
     env:
-      GITHUB_REPOSITORY_OWNER: skevetter
-      DEVPOD_CLI_VERSION: v0.0.0
-    cmd: goreleaser build --id devpod-dev --snapshot --clean
+      GITHUB_REPOSITORY_OWNER: devsy-org
+      DEVSY_CLI_VERSION: v0.0.0
+    cmd: goreleaser build --id devsy-dev --snapshot --clean
 
   cli:build:dev:pro:
-    desc: build devpod CLI for pro feature
+    desc: build devsy CLI for pro feature
     vars:
       NS: '{{.NS | default "default"}}'
-    cmd: goreleaser build --id devpod-pro-dev --snapshot --clean
+    cmd: goreleaser build --id devsy-pro-dev --snapshot --clean
     env:
-      GITHUB_REPOSITORY_OWNER: skevetter
-      DEVPOD_PRO_NS: "{{.NS}}"
+      GITHUB_REPOSITORY_OWNER: devsy-org
+      DEVSY_PRO_NS: "{{.NS}}"
 
   cli:build:setup-cache:
     desc: setup cache for CLI builds
@@ -53,16 +53,16 @@ tasks:
       - cli:build:dev
     cmds:
       - task: cli:build:teardown-cache
-      - mkdir -p "${TMPDIR:-/tmp/}devpod-cache"
-      - cp dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 "${TMPDIR:-/tmp/}devpod-cache/devpod-linux-amd64"
+      - mkdir -p "${TMPDIR:-/tmp/}devsy-cache"
+      - cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 "${TMPDIR:-/tmp/}devsy-cache/devsy-linux-amd64"
 
   cli:build:teardown-cache:
     desc: teardown cache for CLI builds
     cmds:
-      - rm -rf "${TMPDIR:-/tmp/}devpod-cache"
+      - rm -rf "${TMPDIR:-/tmp/}devsy-cache"
 
   cli:build:grpc:
-    desc: build devpod gRPC code
+    desc: build devsy gRPC code
     dir: pkg/agent/tunnel
     cmd: |
       # sudo apt install protobuf-compiler
@@ -71,17 +71,17 @@ tasks:
       protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative
 
   cli:test:
-    desc: run devpod unit tests
+    desc: run devsy unit tests
     cmd: go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic
 
   cli:test:e2e:build:
-    desc: build devpod for e2e tests
+    desc: build devsy for e2e tests
     status:
-      - test -f e2e/bin/devpod-linux-amd64
+      - test -f e2e/bin/devsy-linux-amd64
     cmds:
       - task: cli:build:dev
       - mkdir -p e2e/bin
-      - cp dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 e2e/bin/devpod-linux-amd64
+      - cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 e2e/bin/devsy-linux-amd64
 
   cli:test:e2e:
     desc: run e2e tests
@@ -128,7 +128,7 @@ tasks:
     cmd: act workflow_dispatch -W .github/workflows/act.yml -j e2e-test --input test_focus={{ .CLI_ARGS }}
 
   desktop:build:
-    desc: build devpod Desktop application
+    desc: build devsy Desktop application
     dir: desktop
     cmds:
       - cmd: yarn install --frozen-lockfile
@@ -153,7 +153,7 @@ tasks:
     dir: desktop
     cmds:
       - task: cli:build:dev
-      - cmd: cp ../dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 ./src-tauri/bin/devpod-x86_64-unknown-linux-gnu
+      - cmd: cp ../dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 ./src-tauri/bin/devsy-x86_64-unknown-linux-gnu
       - cmd: yarn install --frozen-lockfile
 
   desktop:tauri:generate-types:
@@ -210,6 +210,6 @@ tasks:
     cmds:
       - cmd: |
           TMP_DIR="$(mktemp -d)"
-          cp dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 "$TMP_DIR/devpod-linux-amd64"
-          gh release upload v0.0.0-10 dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 --repo skevetter/devpod --clobber
+          cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 "$TMP_DIR/devsy-linux-amd64"
+          gh release upload v0.0.0-10 dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 --repo devsy-org/devsy --clobber
           rm -rf "$TMP_DIR"

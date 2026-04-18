@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"google.golang.org/grpc"
 )
 
@@ -68,7 +68,7 @@ func (m *mockTunnelClient) GitUser(
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *mockTunnelClient) LoftConfig(
+func (m *mockTunnelClient) DevsyConfig(
 	ctx context.Context,
 	in *tunnel.Message,
 	opts ...grpc.CallOption,

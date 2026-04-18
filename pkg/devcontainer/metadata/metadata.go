@@ -3,7 +3,7 @@ package metadata
 import (
 	"encoding/json"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/skevetter/log"
 )
 

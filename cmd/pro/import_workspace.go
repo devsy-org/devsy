@@ -7,17 +7,17 @@ import (
 
 	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
 	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/cmd/pro/provider/list"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/options"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/parameters"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/random"
-	"github.com/skevetter/devpod/pkg/workspace"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/provider/list"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/options"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/parameters"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/random"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
@@ -63,11 +63,11 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: devpod pro import-workspace <devpod-pro-host>")
+		return fmt.Errorf("usage: devsy pro import-workspace <devsy-pro-host>")
 	}
 
-	devPodProHost := args[0]
-	devPodConfig, err := config.LoadConfig(cmd.Context, "")
+	devsyProHost := args[0]
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
@@ -78,9 +78,9 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// check if workspace already exists
-	if provider2.WorkspaceExists(devPodConfig.DefaultContext, cmd.WorkspaceId) {
+	if provider2.WorkspaceExists(devsyConfig.DefaultContext, cmd.WorkspaceId) {
 		workspaceConfig, err := provider2.LoadWorkspaceConfig(
-			devPodConfig.DefaultContext,
+			devsyConfig.DefaultContext,
 			cmd.WorkspaceId,
 		)
 		if err != nil {
@@ -91,7 +91,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		}
 
 		newWorkspaceId := cmd.WorkspaceId + "-" + random.String(5)
-		if provider2.WorkspaceExists(devPodConfig.DefaultContext, newWorkspaceId) {
+		if provider2.WorkspaceExists(devsyConfig.DefaultContext, newWorkspaceId) {
 			return fmt.Errorf("workspace %s already exists", cmd.WorkspaceId)
 		}
 
@@ -105,12 +105,12 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		cmd.WorkspaceId = newWorkspaceId
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devPodConfig, devPodProHost, cmd.log)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost, cmd.log)
 	if err != nil {
 		return fmt.Errorf("resolve provider: %w", err)
 	}
 
-	baseClient, err := platform.InitClientFromProvider(ctx, devPodConfig, provider.Name, cmd.log)
+	baseClient, err := platform.InitClientFromProvider(ctx, devsyConfig, provider.Name, cmd.log)
 	if err != nil {
 		return fmt.Errorf("base client: %w", err)
 	}
@@ -130,7 +130,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("resolve instance options: %w", err)
 		}
 
-		err = cmd.writeWorkspaceDefinition(devPodConfig, provider, instanceOpts, instance)
+		err = cmd.writeWorkspaceDefinition(devsyConfig, provider, instanceOpts, instance)
 		if err != nil {
 			return fmt.Errorf("prepare workspace to import definition: %w", err)
 		}
@@ -139,7 +139,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// new pro provider
-	err = cmd.writeNewWorkspaceDefinition(devPodConfig, instance, provider.Name)
+	err = cmd.writeNewWorkspaceDefinition(devsyConfig, instance, provider.Name)
 	if err != nil {
 		return fmt.Errorf("prepare workspace to import definition: %w", err)
 	}
@@ -150,15 +150,15 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 }
 
 func (cmd *ImportCmd) writeNewWorkspaceDefinition(
-	devPodConfig *config.Config,
-	instance *managementv1.DevPodWorkspaceInstance,
+	devsyConfig *config.Config,
+	instance *managementv1.DevsyWorkspaceInstance,
 	providerName string,
 ) error {
 	workspaceObj := &provider2.Workspace{
 		ID:       cmd.WorkspaceId,
 		UID:      cmd.WorkspaceUid,
 		Provider: provider2.WorkspaceProviderConfig{Name: providerName},
-		Context:  devPodConfig.DefaultContext,
+		Context:  devsyConfig.DefaultContext,
 		Imported: !cmd.Own,
 		Pro: &provider2.ProMetadata{
 			InstanceName: instance.GetName(),
@@ -171,10 +171,10 @@ func (cmd *ImportCmd) writeNewWorkspaceDefinition(
 }
 
 func (cmd *ImportCmd) writeWorkspaceDefinition(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *provider2.ProviderConfig,
 	instanceOpts map[string]string,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 ) error {
 	workspaceObj := &provider2.Workspace{
 		ID:  cmd.WorkspaceId,
@@ -183,7 +183,7 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 			Name:    provider.Name,
 			Options: map[string]config.OptionValue{},
 		},
-		Context:  devPodConfig.DefaultContext,
+		Context:  devsyConfig.DefaultContext,
 		Imported: !cmd.Own,
 		Pro: &provider2.ProMetadata{
 			InstanceName: instance.GetName(),
@@ -192,9 +192,9 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 		},
 	}
 
-	devPodConfig, err := options.ResolveOptions(
+	devsyConfig, err := options.ResolveOptions(
 		context.Background(),
-		devPodConfig,
+		devsyConfig,
 		provider,
 		instanceOpts,
 		false,
@@ -205,10 +205,10 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 	if err != nil {
 		return fmt.Errorf("resolve options: %w", err)
 	}
-	if devPodConfig.Current() == nil || devPodConfig.Current().Providers[provider.Name] == nil {
+	if devsyConfig.Current() == nil || devsyConfig.Current().Providers[provider.Name] == nil {
 		return fmt.Errorf("unable to resolve provider config for provider %s", provider.Name)
 	}
-	workspaceObj.Provider.Options = devPodConfig.Current().Providers[provider.Name].Options
+	workspaceObj.Provider.Options = devsyConfig.Current().Providers[provider.Name].Options
 
 	err = provider2.SaveWorkspaceConfig(workspaceObj)
 	if err != nil {
@@ -220,7 +220,7 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 
 func resolveInstanceOptions(
 	ctx context.Context,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	baseClient client.Client,
 ) (map[string]string, error) {
 	opts := map[string]string{}

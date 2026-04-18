@@ -14,12 +14,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	copypkg "github.com/skevetter/devpod/pkg/copy"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	copypkg "github.com/devsy-org/devsy/pkg/copy"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/skevetter/log"
 )
 
@@ -36,7 +36,7 @@ var Options = ide.Options{
 	},
 	OpenOption: {
 		Name:        OpenOption,
-		Description: "If DevPod should automatically open the browser",
+		Description: "If Devsy should automatically open the browser",
 		Default:     "true",
 		Enum: []string{
 			"true",
@@ -49,7 +49,7 @@ const (
 	DefaultServerPort = 8787
 
 	downloadFolder = agent.ContainerDataDir + "/rstudio-server"
-	dataFolder     = "/usr/local/share/devpod/rstudio-server/data"
+	dataFolder     = "/usr/local/share/devsy/rstudio-server/data"
 	// rstudioConfigFolder is where RStudio expects configuration.
 	rstudioConfigFolder = "/etc/rstudio"
 	preferencesFile     = "rstudio-prefs.json"
@@ -230,7 +230,7 @@ func download(targetFolder, downloadURL string, log log.Logger) (string, error) 
 
 	targetPath := filepath.Join(filepath.ToSlash(targetFolder), "rstudio-server.deb")
 
-	resp, err := devpodhttp.GetHTTPClient().Get(downloadURL)
+	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
 	if err != nil {
 		return "", fmt.Errorf("download deb: %w", err)
 	}

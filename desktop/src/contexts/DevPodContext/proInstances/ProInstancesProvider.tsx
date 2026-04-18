@@ -14,7 +14,7 @@ export function ProInstancesProvider({ children }: Readonly<{ children?: ReactNo
     queryFn: async () => {
       const proInstances = (await client.pro.listProInstances({ authenticate: true })).unwrap()
       if (proInstances !== undefined && proInstances.length > 0) {
-        set("experimental_devPodPro", true)
+        set("experimental_devsyPro", true)
       }
 
       return proInstances

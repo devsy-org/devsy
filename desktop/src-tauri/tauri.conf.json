@@ -10,7 +10,7 @@
     "category": "DeveloperTool",
     "copyright": "",
     "externalBin": [
-      "bin/devpod"
+      "bin/devsy"
     ],
     "resources": [],
     "icon": [
@@ -25,10 +25,10 @@
     "targets": "all",
     "createUpdaterArtifacts": true
   },
-  "productName": "DevPod",
-  "mainBinaryName": "DevPod Desktop",
+  "productName": "Devsy",
+  "mainBinaryName": "Devsy Desktop",
   "version": "../package.json",
-  "identifier": "sh.loft.devpod",
+  "identifier": "sh.devsy.devsy",
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBGNjRFNEJERTMxODY1Q0QKUldUTlpSamp2ZVJrRDg3QWlWWkNPSm1GRDhZYm1yeTJ3SEZYR0s3OW8rZ1c1QWJCRDF2TjUzc2kK",
@@ -36,7 +36,7 @@
         "installMode": "passive"
       },
       "endpoints": [
-        "https://github.com/skevetter/devpod/releases/latest/download/latest.json"
+        "https://github.com/devsy-org/devsy/releases/latest/download/latest.json"
       ]
     }
   },
@@ -48,7 +48,7 @@
     },
     "windows": [
       {
-        "title": "DevPod",
+        "title": "Devsy",
         "width": 1200,
         "height": 800,
         "minWidth": 1000,

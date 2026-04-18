@@ -4,7 +4,7 @@ sidebar_label: Provider Options
 ---
 
 Inside the [`provider.yaml`](./quickstart.mdx#provideryaml), you can specify options
-that DevPod can pass to the provider when calling it.
+that Devsy can pass to the provider when calling it.
 Each option will be passed as an environment variable to the commands or can be used directly inside the `agent` section of a provider.
 
 ```yaml
@@ -29,13 +29,13 @@ Options are variables needed for the provider to function properly, for example:
 - VMs sizes
 - Account region
 
-These options are parsed and validated by DevPod when [Adding the provider](../managing-providers/add-provider.mdx)
+These options are parsed and validated by Devsy when [Adding the provider](../managing-providers/add-provider.mdx)
 and passed to the provider as **environment variables**.
 
 It's the provider's job to retrieve them from the environment and validate them.
-It's recommended to make use of the `init` command that will be called by DevPod when options change to validate environment variables on the provider side.
+It's recommended to make use of the `init` command that will be called by Devsy when options change to validate environment variables on the provider side.
 
-You can check our example in the [Devpod's AWS Provider](https://github.com/skevetter/devpod-provider-aws/blob/main/pkg/options/options.go#L44)
+You can check our example in the [Devsy's AWS Provider](https://github.com/devsy-org/devsy-provider-aws/blob/main/pkg/options/options.go#L44)
 where we parse and validate the variables:
 
 ```go
@@ -56,35 +56,35 @@ Options will also be passed to the agent and can be used in the `agent.exec` sec
 
 ### Option configuration
 
-Each option has a set of attributes that can modify how DevPod interprets it when
+Each option has a set of attributes that can modify how Devsy interprets it when
 configuring or adding the provider:
 
-- `description`: Description shown in `devpod provider options` and in the Desktop App
+- `description`: Description shown in `devsy provider options` and in the Desktop App
 - `default`: Default value of the option provided as a string. Can also reference other variables, e.g. `${MY_OTHER_VAR}-suffix`
-- `required`: Boolean if this option needs to be non-empty before using the provider. DevPod will ask in the CLI and make sure that this option is filled in the Desktop application.
-- `password`: Boolean to indicate this is a sensitive value. Prevents this value from showing up in the `devpod provider options` command and will be a password field in the Desktop application.
-- `suggestions`: An array of suggestions for this option. Will be shown as auto complete options in the DevPod desktop application
+- `required`: Boolean if this option needs to be non-empty before using the provider. Devsy will ask in the CLI and make sure that this option is filled in the Desktop application.
+- `password`: Boolean to indicate this is a sensitive value. Prevents this value from showing up in the `devsy provider options` command and will be a password field in the Desktop application.
+- `suggestions`: An array of suggestions for this option. Will be shown as auto complete options in the Devsy desktop application
 - `command`: A command to retrieve the option value automatically. Can also reference other variables in the command, e.g. `echo ${MY_OTHER_VAR}-suffix`. For compatibility reasons, this command will be executed in an emulated shell on Windows.
 - `local`: If true, the option will be filled individually for each machine / workspace
 - `global`: If true, the option will be reused for each machine / workspace
-- `cache`: If non-empty, DevPod will re-execute the command after the given timeout, e.g. if this is 5m, DevPod will re-execute the command after 5 minutes to re-fill this value. This is useful if you want to store a token or something that expires locally in a variable.
-- `hidden`: If true, DevPod will not show this option in the Desktop application or through `devpod provider options`. Can be used to calculate variables internally or save tokens or other things internally.
+- `cache`: If non-empty, Devsy will re-execute the command after the given timeout, e.g. if this is 5m, Devsy will re-execute the command after 5 minutes to re-fill this value. This is useful if you want to store a token or something that expires locally in a variable.
+- `hidden`: If true, Devsy will not show this option in the Desktop application or through `devsy provider options`. Can be used to calculate variables internally or save tokens or other things internally.
 
 ### Default values
 
 As the name implies, this is a default value for the option. It is always advisable
 to place a sensible default for any option.
 
-You can also reference other options inside the default value, e.g. `${MY_OTHER_VAR}-suffix`. DevPod will automatically figure out what options need to be resolved before this option.
+You can also reference other options inside the default value, e.g. `${MY_OTHER_VAR}-suffix`. Devsy will automatically figure out what options need to be resolved before this option.
 
 **If not specified, it defaults to an empty string**.
 
 ### Required options
 
-If an option is required, and no default is set, DevPod will prompt the user for
+If an option is required, and no default is set, Devsy will prompt the user for
 a value when adding the provider.
 
-In the DevPod Desktop App, the required options will be displayed and prompted
+In the Devsy Desktop App, the required options will be displayed and prompted
 right in the Provider's "Add" page.
 
 **If not specified, it defaults to false**.
@@ -97,12 +97,12 @@ won't be shown when listing options.
 Example:
 
 ```sh
-~$ adevpod provider options civo
+~$ adevsy provider options civo
 
           NAME            | REQUIRED |          DESCRIPTION           |               DEFAULT                |                VALUE
 ----------------------------+----------+--------------------------------+--------------------------------------+---------------------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devpod              | /var/lib/toolbox/devpod
-                          |          | DevPod agent to.               |                                      |
+AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy              | /var/lib/toolbox/devsy
+                          |          | Devsy agent to.               |                                      |
 CIVO_API_KEY              | true     | The civo api key to use        |                                      | ********
 CIVO_DISK_IMAGE           | false    | The disk image to use.         | d927ad2f-5073-4ed6-b2eb-b8e61aef29a8 | d927ad2f-5073-4ed6-b2eb-b8e61aef29a8
 
@@ -117,7 +117,7 @@ Suggestions are a list of possible values for the option. Suggested use-cases
 could be for regions/locations, VM sizes, etc...
 
 :::info
-This option is specifically for the DevPod desktop application, suggestions won't
+This option is specifically for the Devsy desktop application, suggestions won't
 be shown in the CLI app.
 :::
 
@@ -159,18 +159,18 @@ Or running an helper command (defined in the binaries section), and forwarding t
 
 ## Built-In Options
 
-There are a couple of predefined options from DevPod, that can be used within the default field of another option or in an option command. Some built-in options are only available for `local` options as the `MACHINE_ID` might not be available already.
+There are a couple of predefined options from Devsy, that can be used within the default field of another option or in an option command. Some built-in options are only available for `local` options as the `MACHINE_ID` might not be available already.
 Predefined options:
-- **DEVPOD**: Absolute path to the current DevPod CLI binary. Can be used to call a helper function within DevPod or any other DevPod command. Also available on the agent side.
-- **DEVPOD_OS**: Current Operating system. Can be either: linux, darwin or windows
-- **DEVPOD_ARCH**: Current operating system architecture. Can be either: amd64 or arm64.
+- **DEVSY**: Absolute path to the current Devsy CLI binary. Can be used to call a helper function within Devsy or any other Devsy command. Also available on the agent side.
+- **DEVSY_OS**: Current Operating system. Can be either: linux, darwin or windows
+- **DEVSY_ARCH**: Current operating system architecture. Can be either: amd64 or arm64.
 - **MACHINE_ID**: The machine id that should be used. (Only available for local options, commands and machine providers)
 - **MACHINE_FOLDER**: The machine folder that can be used to cache information locally. (Only available for local options, commands and machine providers)
-- **MACHINE_CONTEXT**: The DevPod context this machine was created in. (Only available for local options, commands and machine providers)
+- **MACHINE_CONTEXT**: The Devsy context this machine was created in. (Only available for local options, commands and machine providers)
 - **MACHINE_PROVIDER**: The provider name that was used to create this machine. (Only available for local options, commands and machine providers)
 - **WORKSPACE_ID**: The workspace id that should be used. (Only available for local options, commands and non-machine providers)
 - **WORKSPACE_FOLDER**: The workspace folder that can be used to cache information locally. (Only available for local options, commands and non-machine providers)
-- **WORKSPACE_CONTEXT**: The DevPod context this workspace was created in. (Only available for local options, commands and non-machine providers)
+- **WORKSPACE_CONTEXT**: The Devsy context this workspace was created in. (Only available for local options, commands and non-machine providers)
 - **WORKSPACE_PROVIDER**: The provider name that was used to create this workspace. (Only available for local options, commands and non-machine providers)
 - **PROVIDER_ID**: The provider name. (Only available for local options, commands and non-machine providers)
 - **PROVIDER_CONTEXT**: The provider context. (Only available for local options, commands and non-machine providers)
@@ -179,7 +179,7 @@ Predefined options:
 ## Option Groups
 
 :::info
-This section is specifically for organizing options in the DevPod Desktop app.
+This section is specifically for organizing options in the Devsy Desktop app.
 This has no effect on the CLI app.
 :::
 

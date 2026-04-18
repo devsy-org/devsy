@@ -166,7 +166,7 @@ fn main() -> anyhow::Result<()> {
                                 "Failed to resolve app cache dir for tray temp path: {}. Falling back to system temp dir.",
                                 err
                             );
-                            std::env::temp_dir().join("devpod")
+                            std::env::temp_dir().join("devsy")
                         });
 
                     let _tray = TrayIconBuilder::with_id("main")

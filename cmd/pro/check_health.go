@@ -6,11 +6,11 @@ import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +34,7 @@ func NewCheckHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Check platform health",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -45,7 +45,7 @@ func NewCheckHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			root := cmd.Root()
@@ -68,7 +68,7 @@ func NewCheckHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *CheckHealthCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
 	var buf bytes.Buffer
@@ -79,8 +79,8 @@ func (cmd *CheckHealthCmd) Run(
 		Ctx:     ctx,
 		Name:    "health",
 		Command: provider.Exec.Proxy.Health,
-		Context: devPodConfig.DefaultContext,
-		Options: devPodConfig.ProviderOptions(provider.Name),
+		Context: devsyConfig.DefaultContext,
+		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
 		Stdout:  &buf,
 		Stderr:  cmd.Log.Writer(logrus.ErrorLevel, true),

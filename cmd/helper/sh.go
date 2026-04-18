@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/pkg/shell"
+	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/spf13/cobra"
 )
 

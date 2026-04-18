@@ -5,8 +5,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/skevetter/devpod/pkg/netstat"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/netstat"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 )

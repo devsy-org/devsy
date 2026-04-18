@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/command"
-	devsshagent "github.com/skevetter/devpod/pkg/ssh/agent"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/command"
+	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
+	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 )

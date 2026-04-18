@@ -2,7 +2,7 @@ import { Box, Code, Container, Link, Text, VStack, useColorModeValue } from "@ch
 import { useEffect, useMemo } from "react"
 import { Link as RouterLink, useMatch, useRouteError } from "react-router-dom"
 import {
-  DevPodProvider,
+  DevsyProvider,
   ProInstancesProvider,
   WorkspaceStore,
   WorkspaceStoreProvider,
@@ -35,11 +35,11 @@ export function App() {
       )}>
       {routeMatchPro == null ? (
         <WorkspaceStoreProvider store={store!}>
-          <DevPodProvider>
+          <DevsyProvider>
             <ProInstancesProvider>
               <OSSApp />
             </ProInstancesProvider>
-          </DevPodProvider>
+          </DevsyProvider>
         </WorkspaceStoreProvider>
       ) : (
         <ProApp />

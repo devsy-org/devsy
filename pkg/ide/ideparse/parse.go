@@ -8,16 +8,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/ide/fleet"
-	"github.com/skevetter/devpod/pkg/ide/jetbrains"
-	"github.com/skevetter/devpod/pkg/ide/jupyter"
-	"github.com/skevetter/devpod/pkg/ide/openvscode"
-	"github.com/skevetter/devpod/pkg/ide/rstudio"
-	"github.com/skevetter/devpod/pkg/ide/vscode"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/fleet"
+	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
+	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/openvscode"
+	"github.com/devsy-org/devsy/pkg/ide/rstudio"
+	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 type AllowedIDE struct {
@@ -215,14 +215,14 @@ var AllowedIDEs = []AllowedIDE{
 		Name:         config.IDEBob,
 		DisplayName:  "IBM Bob",
 		Options:      vscode.Options,
-		Icon:         "https://devpod.sh/assets/bob.svg",
+		Icon:         "https://devsy.sh/assets/bob.svg",
 		Experimental: true,
 		Group:        config.IDEGroupPrimary,
 	},
 }
 
 func RefreshIDEOptions(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	workspace *provider.Workspace,
 	ide string,
 	options []string,
@@ -231,8 +231,8 @@ func RefreshIDEOptions(
 	if ide == "" {
 		if workspace.IDE.Name != "" {
 			ide = workspace.IDE.Name
-		} else if devPodConfig.Current().DefaultIDE != "" {
-			ide = devPodConfig.Current().DefaultIDE
+		} else if devsyConfig.Current().DefaultIDE != "" {
+			ide = devsyConfig.Current().DefaultIDE
 		} else {
 			ide = detect()
 		}
@@ -246,7 +246,7 @@ func RefreshIDEOptions(
 
 	// get global options and set them as non user
 	// provided.
-	retValues := devPodConfig.IDEOptions(ide)
+	retValues := devsyConfig.IDEOptions(ide)
 	for k, v := range retValues {
 		retValues[k] = config.OptionValue{
 			Value: v.Value,

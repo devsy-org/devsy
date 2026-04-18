@@ -1,7 +1,7 @@
 package update
 
 import (
-	"github.com/skevetter/devpod/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "update",
-		Short:  "DevPod Pro Provider update commands",
+		Short:  "Devsy Pro Provider update commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}

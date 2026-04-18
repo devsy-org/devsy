@@ -1,9 +1,9 @@
 package use
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/ide"
-	"github.com/skevetter/devpod/cmd/provider"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/ide"
+	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -11,7 +11,7 @@ import (
 func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 	useCmd := &cobra.Command{
 		Use:   "use",
-		Short: "Use DevPod resources",
+		Short: "Use Devsy resources",
 	}
 
 	// use provider

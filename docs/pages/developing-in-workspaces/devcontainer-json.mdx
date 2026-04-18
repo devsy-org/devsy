@@ -3,18 +3,18 @@ title: devcontainer.json
 sidebar_label: devcontainer.json
 ---
 
-DevPod uses the [open `devcontainer.json` standard](https://containers.dev/) to allow users to customize their development containers.
+Devsy uses the [open `devcontainer.json` standard](https://containers.dev/) to allow users to customize their development containers.
 Development containers are Docker containers that provide a user with a fully featured development environment.
-Within DevPod, this container is created based on the underlying provider either locally, in a remote virtual machine or even in a Kubernetes cluster.
-DevPod makes sure that no matter where you use this configuration the developer experience stays the same.
+Within Devsy, this container is created based on the underlying provider either locally, in a remote virtual machine or even in a Kubernetes cluster.
+Devsy makes sure that no matter where you use this configuration the developer experience stays the same.
 
 You can configure this development container for a certain Git repository so that each workspace gives you a custom development environment
 completely configured with the tooling and runtimes you need for working on that specific project.
-If DevPod doesn't find any configuration for the project it will automatically detect the programming language and provide a sane default configuration.
+If Devsy doesn't find any configuration for the project it will automatically detect the programming language and provide a sane default configuration.
 
 :::info Compatibility with VS Code & Codespaces
 The same format is used by VS Code for their development containers and by GitHub for their Codespaces.
-This makes it easy to reuse existing configurations and tooling around this standard within DevPod.
+This makes it easy to reuse existing configurations and tooling around this standard within Devsy.
 :::
 
 :::info Additional References
@@ -25,7 +25,7 @@ This page mostly gives you an introduction on how to work with devcontainers. Fo
 :::
 
 :::warning Unsupported Properties
-Currently, these `devcontainer.json` properties are not supported in DevPod. These may be implemented in future releases.
+Currently, these `devcontainer.json` properties are not supported in Devsy. These may be implemented in future releases.
 * userEnvProve
 * waitFor
 * Parallel lifecycle scripts
@@ -36,7 +36,7 @@ Currently, these `devcontainer.json` properties are not supported in DevPod. The
 The primary file to configure your workspace is the `devcontainer.json`, that lives in the `.devcontainer` sub-folder of your project.
 This file includes information on what frameworks, tools, VS Code extensions and port-forwarding should be used during development.
 The file also usually references a Dockerfile or a Docker image to use as the base for the development environment.
-If DevPod doesn't find any configuration for the project, it will automatically detect the programming language and provide a sane default configuration.
+If Devsy doesn't find any configuration for the project, it will automatically detect the programming language and provide a sane default configuration.
 
 The `devcontainer.json` can be located at the following places within your project:
 * `.devcontainer/devcontainer.json`
@@ -45,7 +45,7 @@ The `devcontainer.json` can be located at the following places within your proje
 
 You can specify a specific file to use via the `--devcontainer-path` CLI flag:
 ```
-devpod up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
+devsy up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
 ```
 
 A `devcontainer.json` is not able to import or inherit any settings from other `devcontainer.json` files, so make sure all dependent files and folders are available within the configuration subdirectory.
@@ -79,7 +79,7 @@ You can think of features as reusable Dockerfile parts that will be merged into 
 This makes it easy to reuse functionality such as `docker-in-docker` or install extra tooling such as `node` or `kubectl` without having to look up the exact Dockerfile commands.
 A list of available features can be found [here](https://containers.dev/features).
 
-Devpod is able to add HTTP headers when downloading
+Devsy is able to add HTTP headers when downloading
 feature archives as tar.gz files. To do so, add the needed headers in the `customizations`
 field of the `devcontainer.json` file as follows:
 
@@ -90,7 +90,7 @@ field of the `devcontainer.json` file as follows:
     "https://example.com/foo_feature.tar.gz": []
   },
   "customizations": {
-    "devpod": {
+    "devsy": {
       "featureDownloadHTTPHeaders": {
         "FOO_HEADER": "${env:FOO_ENV_VAR}"
         "BAR_HEADER": "bar"
@@ -102,10 +102,10 @@ field of the `devcontainer.json` file as follows:
 
 ## devcontainer.json Development Flow
 
-When working on the `devcontainer.json` itself, it's important to understand when DevPod will apply new configuration.
+When working on the `devcontainer.json` itself, it's important to understand when Devsy will apply new configuration.
 
-A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but DevPod allows you to make changes to the configuration on the fly and reapply them via `devpod up my-workspace --recreate`.
-This will apply **ALL** new configurations including Dockerfile changes as well as new mounts, new features or any other configuration that is not included in the above command. DevPod will only replace the existing running container if the command has succeeded, so if there is a mistake in the new configuration, the existing workspace should not be impacted.
+A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but Devsy allows you to make changes to the configuration on the fly and reapply them via `devsy up my-workspace --recreate`.
+This will apply **ALL** new configurations including Dockerfile changes as well as new mounts, new features or any other configuration that is not included in the above command. Devsy will only replace the existing running container if the command has succeeded, so if there is a mistake in the new configuration, the existing workspace should not be impacted.
 The Desktop app equivalent for this is the 'Rebuild' button.
 
 :::warning Recreating / Rebuilding

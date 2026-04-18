@@ -8,14 +8,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/skevetter/devpod/cmd/agent/workspace"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/encoding"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/agent/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/encoding"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -146,7 +146,7 @@ func StartContainer(
 	log log.Logger,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 ) (*config.Result, error) {
-	log.Debugf("starting DevPod container")
+	log.Debugf("starting Devsy container")
 	result, err := runner.Up(
 		ctx,
 		devcontainer.UpOptions{NoBuild: true},
@@ -155,6 +155,6 @@ func StartContainer(
 	if err != nil {
 		return result, err
 	}
-	log.Debugf("started DevPod container")
+	log.Debugf("started Devsy container")
 	return result, err
 }

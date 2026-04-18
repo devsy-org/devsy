@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/skevetter/devpod/cmd/agent/container"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/ts"
+	"github.com/devsy-org/devsy/cmd/agent/container"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/ts"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -123,7 +123,7 @@ func getCredentialsFromLocalMachine(
 	port int,
 ) *gitcredentials.GitCredentials {
 	credentials, credentialsErr := doRequest(
-		devpodhttp.GetHTTPClient(),
+		devsyhttp.GetHTTPClient(),
 		credentials,
 		"http://localhost:"+strconv.Itoa(port)+"/git-credentials",
 	)

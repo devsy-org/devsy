@@ -3,9 +3,9 @@ package completion
 import (
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -18,12 +18,12 @@ func GetPlatformHostSuggestions(
 	owner platform.OwnerFilter,
 	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	proInstances, err := workspace.ListProInstances(devPodConfig, logger)
+	proInstances, err := workspace.ListProInstances(devsyConfig, logger)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

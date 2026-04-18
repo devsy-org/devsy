@@ -9,7 +9,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 func waitForPodCount(
@@ -26,7 +26,7 @@ func waitForPodCount(
 			"get",
 			"pods",
 			"-l",
-			"devpod.sh/created=true",
+			"devsy.sh/created=true",
 			"-o",
 			"json",
 			"-n",
@@ -56,26 +56,26 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("runs devpod in Kubernetes", func(ctx context.Context) {
+		ginkgo.It("runs devsy in Kubernetes", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := framework.CopyToTempDir("tests/up/testdata/kubernetes")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-			_ = f.DevPodProviderDelete(ctx, "kubernetes")
-			err = f.DevPodProviderAdd(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devpod")
+			_ = f.DevsyProviderDelete(ctx, "kubernetes")
+			err = f.DevsyProviderAdd(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devsy")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				err := f.DevPodProviderDelete(cleanupCtx, "kubernetes")
+				err := f.DevsyProviderDelete(cleanupCtx, "kubernetes")
 				framework.ExpectNoError(err)
 			})
 
 			// run up
-			err = f.DevPodUp(ctx, tempDir)
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// check pod is there
-			list := waitForPodCount(ctx, "devpod", 1, "Expect 1 pod")
+			list := waitForPodCount(ctx, "devsy", 1, "Expect 1 pod")
 			framework.ExpectEqual(len(list.Items[0].Spec.Containers), 1, "Expect 1 container")
 			framework.ExpectEqual(
 				list.Items[0].Spec.Containers[0].Image,
@@ -84,26 +84,26 @@ var _ = ginkgo.Describe(
 			)
 
 			// check if ssh works
-			err = f.DevPodSSHEchoTestString(ctx, tempDir)
+			err = f.DevsySSHEchoTestString(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// stop workspace
-			err = f.DevPodWorkspaceStop(ctx, tempDir)
+			err = f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// check pod is gone
-			waitForPodCount(ctx, "devpod", 0, "Expect no pods")
+			waitForPodCount(ctx, "devsy", 0, "Expect no pods")
 
 			// run up
-			err = f.DevPodUp(ctx, tempDir)
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			// check pod is there
-			waitForPodCount(ctx, "devpod", 1, "Expect 1 pod")
+			waitForPodCount(ctx, "devsy", 1, "Expect 1 pod")
 
 			// check if ssh works
-			err = f.DevPodSSHEchoTestString(ctx, tempDir)
+			err = f.DevsySSHEchoTestString(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 	},

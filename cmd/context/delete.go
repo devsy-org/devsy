@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -21,18 +21,18 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	deleteCmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Delete a DevPod context",
+		Short: "Delete a Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return fmt.Errorf("please specify the context to delete")
 			}
 
-			devPodContext := ""
+			devsyContext := ""
 			if len(args) == 1 {
-				devPodContext = args[0]
+				devsyContext = args[0]
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodContext)
+			return cmd.Run(cobraCmd.Context(), devsyContext)
 		},
 	}
 
@@ -41,15 +41,15 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
-	devPodConfig, err := config.LoadConfig(context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	// check for context
 	if context == "" {
-		context = devPodConfig.DefaultContext
-	} else if devPodConfig.Contexts[context] == nil {
+		context = devsyConfig.DefaultContext
+	} else if devsyConfig.Contexts[context] == nil {
 		return fmt.Errorf("context '%s' doesn't exist", context)
 	}
 
@@ -58,15 +58,15 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 		return fmt.Errorf("cannot delete 'default' context")
 	}
 
-	delete(devPodConfig.Contexts, context)
-	if devPodConfig.DefaultContext == context {
-		devPodConfig.DefaultContext = "default"
+	delete(devsyConfig.Contexts, context)
+	if devsyConfig.DefaultContext == context {
+		devsyConfig.DefaultContext = "default"
 	}
-	if devPodConfig.OriginalContext == context {
-		devPodConfig.OriginalContext = "default"
+	if devsyConfig.OriginalContext == context {
+		devsyConfig.OriginalContext = "default"
 	}
 
-	err = config.SaveConfig(devPodConfig)
+	err = config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

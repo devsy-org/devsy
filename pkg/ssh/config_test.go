@@ -27,7 +27,7 @@ func (s *SSHConfigTestSuite) TestAddHostSection() {
 		workdir    string
 		command    string
 		gpgagent   bool
-		devPodHome string
+		devsyHome string
 		provider   string
 		expected   string
 	}{
@@ -42,9 +42,9 @@ func (s *SSHConfigTestSuite) TestAddHostSection() {
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -53,7 +53,7 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
 			name:       "AWS provider with ConnectTimeout",
@@ -66,9 +66,9 @@ Host testhost
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "aws",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -78,10 +78,10 @@ Host testhost
   ConnectTimeout 60
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
-			name:       "Basic host addition with DEVPOD_HOME",
+			name:       "Basic host addition with DEVSY_HOME",
 			config:     "",
 			execPath:   "/path/to/exec",
 			host:       "testhost",
@@ -91,18 +91,18 @@ Host testhost
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "C:\\\\White Space\\devpod\\test",
+			devsyHome: "C:\\\\White Space\\devsy\\test",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --devpod-home "C:\\White Space\devpod\test"
+  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --devsy-home "C:\\White Space\devsy\test"
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
 			name:       "Host addition with workdir",
@@ -115,9 +115,9 @@ Host testhost
 			workdir:    "/path/to/workdir",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -126,7 +126,7 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --workdir "/path/to/workdir"
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
 			name:       "Host addition with gpg agent",
@@ -139,9 +139,9 @@ Host testhost
 			workdir:    "",
 			command:    "",
 			gpgagent:   true,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -150,7 +150,7 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --gpg-agent-forwarding
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
 			name:       "Host addition with custom command",
@@ -163,9 +163,9 @@ Host testhost
 			workdir:    "",
 			command:    "ssh -W %h:%p bastion",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -174,7 +174,7 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "ssh -W %h:%p bastion"
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 		{
 			name: "Host addition to existing config",
@@ -188,9 +188,9 @@ Host testhost
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -199,13 +199,13 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost
+# Devsy End testhost
 Host existinghost
   User existinguser`,
 		},
 		{
-			name: "Host addition to existing config with DevPod host",
-			config: `# DevPod Start existingtesthost
+			name: "Host addition to existing config with Devsy host",
+			config: `# Devsy Start existingtesthost
 Host existingtesthost
   ForwardAgent yes
   LogLevel error
@@ -214,7 +214,7 @@ Host existingtesthost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost
+# Devsy End testhost
 
 Host existinghost
   User existinguser`,
@@ -226,9 +226,9 @@ Host existinghost
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
-			expected: `# DevPod Start testhost
+			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -237,8 +237,8 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost
-# DevPod Start existingtesthost
+# Devsy End testhost
+# Devsy Start existingtesthost
 Host existingtesthost
   ForwardAgent yes
   LogLevel error
@@ -247,7 +247,7 @@ Host existingtesthost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost
+# Devsy End testhost
 
 Host existinghost
   User existinguser`,
@@ -269,7 +269,7 @@ Include ~/config3`,
 			workdir:    "",
 			command:    "",
 			gpgagent:   false,
-			devPodHome: "",
+			devsyHome: "",
 			provider:   "",
 			expected: `Include ~/config1
 
@@ -278,7 +278,7 @@ Include ~/config2
 
 
 Include ~/config3
-# DevPod Start testhost
+# Devsy Start testhost
 Host testhost
   ForwardAgent yes
   LogLevel error
@@ -287,7 +287,7 @@ Host testhost
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
-# DevPod End testhost`,
+# Devsy End testhost`,
 		},
 	}
 
@@ -302,7 +302,7 @@ Host testhost
 				workdir:    tt.workdir,
 				command:    tt.command,
 				gpgagent:   tt.gpgagent,
-				devPodHome: tt.devPodHome,
+				devsyHome: tt.devsyHome,
 				provider:   tt.provider,
 			})
 

@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +70,7 @@ func (cmd *RequestCmd) Run(ctx context.Context, args []string) error {
 	}
 	request.Header = httpHeader
 
-	resp, err := devpodhttp.GetHTTPClient().Do(request)
+	resp, err := devsyhttp.GetHTTPClient().Do(request)
 	if err != nil {
 		return err
 	}

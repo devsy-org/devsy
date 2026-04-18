@@ -15,10 +15,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/extract"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/extract"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/skevetter/log"
 	"github.com/skevetter/log/hash"
 )
@@ -107,7 +107,7 @@ func ProcessFeatureID(
 		log.Debugf("process feature: type=%s, id=%s", "url", id)
 		return processDirectTarFeature(
 			id,
-			config.GetDevPodCustomizations(devContainerConfig).FeatureDownloadHTTPHeaders,
+			config.GetDevsyCustomizations(devContainerConfig).FeatureDownloadHTTPHeaders,
 			log,
 			forceBuild,
 		)
@@ -354,7 +354,7 @@ func tryDownload(url, destFile string, httpHeaders map[string]string) error {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("make request: %w", err)
 	}

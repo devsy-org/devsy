@@ -13,8 +13,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	docker "github.com/skevetter/devpod/pkg/docker"
+	"github.com/devsy-org/devsy/e2e/framework"
+	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/skevetter/log"
 )
 
@@ -44,7 +44,7 @@ var _ = ginkgo.Describe(
 			tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, dtc.initialDir, tempDir)
-			ginkgo.DeferCleanup(dtc.f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
 
 			err = dtc.dockerHelper.Run(
 				ctx,
@@ -52,7 +52,7 @@ var _ = ginkgo.Describe(
 					"run",
 					"-d",
 					"--label",
-					"devpod-e2e-test-container=true",
+					"devsy-e2e-test-container=true",
 					"-w",
 					"/workspaces/e2e",
 					"alpine",
@@ -69,7 +69,7 @@ var _ = ginkgo.Describe(
 			gomega.Eventually(func() bool {
 				ids, err = dtc.dockerHelper.FindContainer(
 					ctx,
-					[]string{"devpod-e2e-test-container=true"},
+					[]string{"devsy-e2e-test-container=true"},
 				)
 				if err != nil || len(ids) != 1 {
 					return false
@@ -87,7 +87,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(containerDetails[0].Config.WorkingDir).To(gomega.Equal("/workspaces/e2e"))
 
-			err = dtc.f.DevPodUp(
+			err = dtc.f.DevsyUp(
 				ctx,
 				tempDir,
 				"--source",
@@ -237,7 +237,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			extraPath := path.Join(tempDir, "extra.json")
-			err = dtc.f.DevPodUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+			err = dtc.f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
 			framework.ExpectNoError(err)
 
 			out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
@@ -248,7 +248,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "extra_value")
 
-			err = dtc.f.DevPodWorkspaceDelete(ctx, tempDir)
+			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
@@ -261,14 +261,14 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			extraPath := path.Join(tempDir, "override.json")
-			err = dtc.f.DevPodUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+			err = dtc.f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
 			framework.ExpectNoError(err)
 
 			out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/test-var.out")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(strings.TrimSpace(out), "overridden_value")
 
-			err = dtc.f.DevPodWorkspaceDelete(ctx, tempDir)
+			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
@@ -281,7 +281,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			// First up: postStartCommand should run
-			err = dtc.f.DevPodUp(ctx, tempDir)
+			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-start-count.log")
@@ -291,11 +291,11 @@ var _ = ginkgo.Describe(
 				"postStartCommand should have run once after initial up")
 
 			// Stop the workspace
-			err = dtc.f.DevPodWorkspaceStop(ctx, tempDir)
+			err = dtc.f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// Second up (restart): postStartCommand should run again
-			err = dtc.f.DevPodUp(ctx, tempDir)
+			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			out, err = dtc.execSSH(ctx, tempDir, "cat $HOME/post-start-count.log")
@@ -313,21 +313,21 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			// devpod up with --ide none returns when IDE would open,
+			// devsy up with --ide none returns when IDE would open,
 			// which should now be BEFORE postAttachCommand finishes
-			err = dtc.f.DevPodUp(ctx, tempDir)
+			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// postStartCommand should have completed (runs before result is sent)
 			out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-start.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("postStartDone"),
-				"postStartCommand should have completed before devpod up returned")
+				"postStartCommand should have completed before devsy up returned")
 
 			// postAttachCommand should NOT have completed yet (it sleeps 15s)
 			_, err = dtc.execSSH(ctx, tempDir, "cat $HOME/post-attach.out")
 			gomega.Expect(err).To(gomega.HaveOccurred(),
-				"postAttachCommand should still be running when devpod up returns")
+				"postAttachCommand should still be running when devsy up returns")
 
 			// Wait for postAttachCommand to finish and verify it does complete
 			gomega.Eventually(func() string {
@@ -350,24 +350,24 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = dtc.f.DevPodUp(ctx, tempDir, "--devcontainer-id", "python")
+			err = dtc.f.DevsyUp(ctx, tempDir, "--devcontainer-id", "python")
 			framework.ExpectNoError(err)
 
 			out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "python")
 
-			err = dtc.f.DevPodWorkspaceDelete(ctx, tempDir)
+			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			err = dtc.f.DevPodUp(ctx, tempDir, "--devcontainer-id", "go")
+			err = dtc.f.DevsyUp(ctx, tempDir, "--devcontainer-id", "go")
 			framework.ExpectNoError(err)
 
 			out, err = dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "go")
 
-			err = dtc.f.DevPodWorkspaceDelete(ctx, tempDir)
+			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 	},

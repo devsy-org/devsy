@@ -5,10 +5,10 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/credentials"
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	"github.com/skevetter/devpod/pkg/gpg"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )

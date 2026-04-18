@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/skevetter/devpod/pkg/compose"
-	config2 "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/feature"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/compose"
+	config2 "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 type RunDockerDevContainerParams struct {

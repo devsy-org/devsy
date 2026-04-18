@@ -8,10 +8,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/table"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -43,12 +43,12 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *ListCmd) Run(ctx context.Context) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	machineDir, err := provider.GetMachinesDir(devPodConfig.DefaultContext)
+	machineDir, err := provider.GetMachinesDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		tableEntries := [][]string{}
 		for _, entry := range entries {
 			machineConfig, err := provider.LoadMachineConfig(
-				devPodConfig.DefaultContext,
+				devsyConfig.DefaultContext,
 				entry.Name(),
 			)
 			if err != nil {
@@ -89,7 +89,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		tableEntries := []*provider.Machine{}
 		for _, entry := range entries {
 			machineConfig, err := provider.LoadMachineConfig(
-				devPodConfig.DefaultContext,
+				devsyConfig.DefaultContext,
 				entry.Name(),
 			)
 			if err != nil {

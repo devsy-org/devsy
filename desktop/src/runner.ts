@@ -1,17 +1,17 @@
-import { V1Affinity } from "@loft-enterprise/client/gen/models/V1Affinity"
-import { V1Container } from "@loft-enterprise/client/gen/models/V1Container"
-import { V1EnvFromSource } from "@loft-enterprise/client/gen/models/V1EnvFromSource"
-import { V1EnvVar } from "@loft-enterprise/client/gen/models/V1EnvVar"
-import { V1HostAlias } from "@loft-enterprise/client/gen/models/V1HostAlias"
-import { V1ObjectMeta } from "@loft-enterprise/client/gen/models/V1ObjectMeta"
-import { V1ResourceRequirements } from "@loft-enterprise/client/gen/models/V1ResourceRequirements"
-import { V1Toleration } from "@loft-enterprise/client/gen/models/V1Toleration"
-import { V1Volume } from "@loft-enterprise/client/gen/models/V1Volume"
-import { V1VolumeMount } from "@loft-enterprise/client/gen/models/V1VolumeMount"
-import { StorageV1Condition } from "@loft-enterprise/client/gen/models/agentstorageV1Condition"
-import { StorageV1Access } from "@loft-enterprise/client/gen/models/storageV1Access"
-import { StorageV1TemplateMetadata } from "@loft-enterprise/client/gen/models/storageV1TemplateMetadata"
-import { StorageV1UserOrTeam } from "@loft-enterprise/client/gen/models/storageV1UserOrTeam"
+import { V1Affinity } from "@devsy/client/gen/models/V1Affinity"
+import { V1Container } from "@devsy/client/gen/models/V1Container"
+import { V1EnvFromSource } from "@devsy/client/gen/models/V1EnvFromSource"
+import { V1EnvVar } from "@devsy/client/gen/models/V1EnvVar"
+import { V1HostAlias } from "@devsy/client/gen/models/V1HostAlias"
+import { V1ObjectMeta } from "@devsy/client/gen/models/V1ObjectMeta"
+import { V1ResourceRequirements } from "@devsy/client/gen/models/V1ResourceRequirements"
+import { V1Toleration } from "@devsy/client/gen/models/V1Toleration"
+import { V1Volume } from "@devsy/client/gen/models/V1Volume"
+import { V1VolumeMount } from "@devsy/client/gen/models/V1VolumeMount"
+import { StorageV1Condition } from "@devsy/client/gen/models/agentstorageV1Condition"
+import { StorageV1Access } from "@devsy/client/gen/models/storageV1Access"
+import { StorageV1TemplateMetadata } from "@devsy/client/gen/models/storageV1TemplateMetadata"
+import { StorageV1UserOrTeam } from "@devsy/client/gen/models/storageV1UserOrTeam"
 
 /**
  * Runner holds the Runner information
@@ -103,7 +103,7 @@ export class ManagementV1RunnerSpec {
   "networkPeerName"?: string
   "owner"?: StorageV1UserOrTeam
   /**
-   * If unusable is true, no DevPod workspaces can be scheduled on this runner.
+   * If unusable is true, no Devsy workspaces can be scheduled on this runner.
    */
   "unusable"?: boolean
 

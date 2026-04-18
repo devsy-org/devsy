@@ -40,14 +40,14 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: build --id devpod-${{ steps.os.outputs.runner_os }} --snapshot
+          args: build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
         env:
-          DEVPOD_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
 
       - uses: actions/upload-artifact@v7
         with:
-          name: devpod-${{ steps.os.outputs.runner_os }}
-          path: dist/devpod-${{ steps.os.outputs.runner_os }}_*/devpod-${{ steps.os.outputs.runner_os }}-*
+          name: devsy-${{ steps.os.outputs.runner_os }}
+          path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
   build-desktop:
     name: Build Desktop App for ${{ matrix.arch }} on ${{ matrix.runner }}
@@ -113,8 +113,8 @@ jobs:
       - name: download CLI artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: devpod-*
-          path: ${{ runner.temp }}/devpod-bin/
+          pattern: devsy-*
+          path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: setup executable
@@ -126,10 +126,10 @@ jobs:
             TEMP_DIR="${TEMP_DIR//\\//}"
           fi
 
-          ls -R "$TEMP_DIR/devpod-bin/"
+          ls -R "$TEMP_DIR/devsy-bin/"
           mkdir -p ./bin/
-          find "$TEMP_DIR/devpod-bin/" -type f -name "devpod-*" -exec cp {} ./bin \;
-          find ./bin -type f -name "devpod-*" -exec chmod +x {} \;
+          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
+          find ./bin -type f -name "devsy-*" -exec chmod +x {} \;
           mkdir ../../dist/ && cp ./bin/* ../../dist/
           ls -R ./bin/
 
@@ -142,12 +142,12 @@ jobs:
         shell: bash
         working-directory: ./desktop/src-tauri
         run: |
-          find ./bin -type f -name "devpod-linux-amd64" -exec mv {} ./bin/devpod-x86_64-unknown-linux-gnu \;
-          find ./bin -type f -name "devpod-linux-arm64" -exec mv {} ./bin/devpod-aarch64-unknown-linux-gnu \;
-          find ./bin -type f -name "devpod-darwin-amd64" -exec mv {} ./bin/devpod-x86_64-apple-darwin \;
-          find ./bin -type f -name "devpod-darwin-arm64" -exec mv {} ./bin/devpod-aarch64-apple-darwin \;
-          find ./bin -type f -name "devpod-windows-amd64.exe" -exec mv {} ./bin/devpod-x86_64-pc-windows-msvc.exe \;
-          find ./bin -type f -name "devpod-windows-arm64.exe" -exec mv {} ./bin/devpod-aarch64-pc-windows-msvc.exe \;
+          find ./bin -type f -name "devsy-linux-amd64" -exec mv {} ./bin/devsy-x86_64-unknown-linux-gnu \;
+          find ./bin -type f -name "devsy-linux-arm64" -exec mv {} ./bin/devsy-aarch64-unknown-linux-gnu \;
+          find ./bin -type f -name "devsy-darwin-amd64" -exec mv {} ./bin/devsy-x86_64-apple-darwin \;
+          find ./bin -type f -name "devsy-darwin-arm64" -exec mv {} ./bin/devsy-aarch64-apple-darwin \;
+          find ./bin -type f -name "devsy-windows-amd64.exe" -exec mv {} ./bin/devsy-x86_64-pc-windows-msvc.exe \;
+          find ./bin -type f -name "devsy-windows-arm64.exe" -exec mv {} ./bin/devsy-aarch64-pc-windows-msvc.exe \;
           ls -R ./bin/
 
       - name: install linux dependencies
@@ -179,15 +179,15 @@ jobs:
           projectPath: "./desktop"
           args: "--target ${{ matrix.target }}"
           tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "DevPod ${{ inputs.tag || github.ref_name }}"
+          releaseName: "Devsy ${{ inputs.tag || github.ref_name }}"
           releaseDraft: true
           generateReleaseNotes: true
           includeUpdaterJson: ${{ matrix.tauri_include_updater_json }}
           assetNamePattern: "[name]_[platform]_[arch][ext]"
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: "${{ secrets.DEVPOD_TAURI_PRIVATE_SIGNING_KEY }}"
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "${{ secrets.DEVPOD_TAURI_PRIVATE_SIGNING_KEY_PASSWORD }}"
+          TAURI_SIGNING_PRIVATE_KEY: "${{ secrets.DEVSY_TAURI_PRIVATE_SIGNING_KEY }}"
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "${{ secrets.DEVSY_TAURI_PRIVATE_SIGNING_KEY_PASSWORD }}"
           CI: ${{ matrix.tauri_ci }}
 
       - name: upload cli assets
@@ -203,8 +203,8 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7
         with:
-          name: devpod-flatpak
-          path: ./desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/DevPod_*_amd64.deb
+          name: devsy-flatpak
+          path: ./desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/Devsy_*_amd64.deb
 
   build-flatpak:
     name: Build Flatpak
@@ -224,8 +224,8 @@ jobs:
       - name: download desktop linux artifact
         uses: actions/download-artifact@v8
         with:
-          name: devpod-flatpak
-          path: /tmp/devpod/
+          name: devsy-flatpak
+          path: /tmp/devsy/
 
       - name: update flatpak metadata version and date
         shell: bash
@@ -233,8 +233,8 @@ jobs:
           DATE=$(date +%Y-%m-%d)
           VERSION="${{ inputs.tag || github.ref_name }}"
 
-          sed -i "s/__VERSION__/${VERSION}/g" ./desktop/flatpak/DevPod.metainfo.xml
-          sed -i "s/__DATE__/${DATE}/g" ./desktop/flatpak/DevPod.metainfo.xml
+          sed -i "s/__VERSION__/${VERSION}/g" ./desktop/flatpak/Devsy.metainfo.xml
+          sed -i "s/__DATE__/${DATE}/g" ./desktop/flatpak/Devsy.metainfo.xml
 
       - name: copy flatpak files to build workspace
         shell: bash
@@ -245,14 +245,14 @@ jobs:
       - name: prepare flatpak assets
         shell: bash
         run: |
-          DEB_SHA256=$(sha256sum /tmp/devpod/DevPod_*_amd64.deb | cut -d' ' -f1)
-          META_SHA256=$(sha256sum ./desktop/flatpak/DevPod.metainfo.xml | cut -d' ' -f1)
-          DESKTOP_SHA256=$(sha256sum ./desktop/flatpak/DevPod.desktop | cut -d' ' -f1)
+          DEB_SHA256=$(sha256sum /tmp/devsy/Devsy_*_amd64.deb | cut -d' ' -f1)
+          META_SHA256=$(sha256sum ./desktop/flatpak/Devsy.metainfo.xml | cut -d' ' -f1)
+          DESKTOP_SHA256=$(sha256sum ./desktop/flatpak/Devsy.desktop | cut -d' ' -f1)
 
-          sed -i "s/\${VERSION}/${VERSION}/g" ./desktop/flatpak/sh.loft.devpod.yml
-          sed -i "s/\${SHA256}/${DEB_SHA256}/g" ./desktop/flatpak/sh.loft.devpod.yml
-          sed -i "s/\${DESKTOP_SHA256}/${DESKTOP_SHA256}/g" ./desktop/flatpak/sh.loft.devpod.yml
-          sed -i "s/\${META_SHA256}/${META_SHA256}/g" ./desktop/flatpak/sh.loft.devpod.yml
+          sed -i "s/\${VERSION}/${VERSION}/g" ./desktop/flatpak/sh.devsy.devsy.yml
+          sed -i "s/\${SHA256}/${DEB_SHA256}/g" ./desktop/flatpak/sh.devsy.devsy.yml
+          sed -i "s/\${DESKTOP_SHA256}/${DESKTOP_SHA256}/g" ./desktop/flatpak/sh.devsy.devsy.yml
+          sed -i "s/\${META_SHA256}/${META_SHA256}/g" ./desktop/flatpak/sh.devsy.devsy.yml
 
       - name: upload flatpak assets
         uses: softprops/action-gh-release@v3
@@ -260,9 +260,9 @@ jobs:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
           files: |
-            ./desktop/flatpak/DevPod.metainfo.xml
-            ./desktop/flatpak/DevPod.desktop
-            ./desktop/flatpak/sh.loft.devpod.yml
+            ./desktop/flatpak/Devsy.metainfo.xml
+            ./desktop/flatpak/Devsy.desktop
+            ./desktop/flatpak/sh.devsy.devsy.yml
 
       - name: restore flatpak manifest for build
         shell: bash
@@ -277,17 +277,17 @@ jobs:
         run: |
           VERSION="${{ inputs.tag || github.ref_name }}"
           VERSION="${VERSION#v}"
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod_linux_amd64.deb|path: /tmp/devpod/DevPod_${VERSION}_amd64.deb|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod.desktop|path: $GITHUB_WORKSPACE/desktop/flatpak/DevPod.desktop|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod.metainfo.xml|path: $GITHUB_WORKSPACE/desktop/flatpak/DevPod.metainfo.xml|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${DESKTOP_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${META_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy_linux_amd64.deb|path: /tmp/devsy/Devsy_${VERSION}_amd64.deb|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.desktop|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.desktop|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.metainfo.xml|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${DESKTOP_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${META_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: DevPod.flatpak
-          manifest-path: desktop/flatpak/sh.loft.devpod.yml
+          bundle: Devsy.flatpak
+          manifest-path: desktop/flatpak/sh.devsy.devsy.yml
           cache-key: flatpak-builder-${{ github.sha }}
           upload-artifact: true
 
@@ -297,8 +297,8 @@ jobs:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
           files: |
-            ./DevPod.flatpak
-            ./DevPod-x86_64.flatpak.zip
+            ./Devsy.flatpak
+            ./Devsy-x86_64.flatpak.zip
 
   prerelease:
     name: Publish Prerelease

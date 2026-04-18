@@ -1,8 +1,8 @@
 package flags
 
 import (
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
 	flag "github.com/spf13/pflag"
 )
 
@@ -10,7 +10,7 @@ type GlobalFlags struct {
 	Context    string
 	Provider   string
 	AgentDir   string
-	DevPodHome string
+	DevsyHome string
 	UID        string
 	Owner      platform.OwnerFilter
 
@@ -24,10 +24,10 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 	globalFlags := &GlobalFlags{}
 
 	flags.StringVar(
-		&globalFlags.DevPodHome,
+		&globalFlags.DevsyHome,
 		config.BinaryName+"-home",
 		"",
-		"If defined will override the default devpod home",
+		"If defined will override the default devsy home",
 	)
 	flags.StringVar(
 		&globalFlags.LogOutput,
@@ -47,7 +47,7 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		&globalFlags.Silent,
 		"silent",
 		false,
-		"Run in silent mode and prevents any devpod log output except panics & fatals",
+		"Run in silent mode and prevents any devsy log output except panics & fatals",
 	)
 
 	flags.Var(&globalFlags.Owner, "owner", "Show pro workspaces for owner")

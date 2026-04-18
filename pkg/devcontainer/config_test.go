@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/skevetter/log"
 	"github.com/stretchr/testify/suite"
 )

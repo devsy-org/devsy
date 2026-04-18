@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
@@ -46,13 +46,13 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			name := "testprivaterepo"
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, name)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
 
-			err = f.DevPodUp(ctx, "https://github.com/"+username+"/test_private_repo.git")
+			err = f.DevsyUp(ctx, "https://github.com/"+username+"/test_private_repo.git")
 			framework.ExpectNoError(err)
 
 			// verify forwarded credentials by cloning the private repo from within the container
-			out, err := f.DevPodSSH(
+			out, err := f.DevsySSH(
 				ctx,
 				name,
 				"git clone https://github.com/"+username+"/test_private_repo",

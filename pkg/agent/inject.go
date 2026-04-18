@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/inject"
-	"github.com/skevetter/devpod/pkg/shell"
-	"github.com/skevetter/devpod/pkg/version"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/inject"
+	"github.com/devsy-org/devsy/pkg/shell"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/skevetter/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -33,7 +33,7 @@ const (
 
 var waitForInstanceConnectionTimeout = time.Minute * 5
 
-// InjectOptions defines the parameters for injecting the DevPod agent into a remote environment.
+// InjectOptions defines the parameters for injecting the Devsy agent into a remote environment.
 type InjectOptions struct {
 	// Ctx is the context for the injection operation. Required.
 	Ctx context.Context
@@ -46,7 +46,7 @@ type InjectOptions struct {
 	// IsLocal indicates if the injection target is the local machine.
 	IsLocal bool
 	// RemoteAgentPath is the path where the agent binary should be placed on the remote machine.
-	// Defaults to RemoteDevPodHelperLocation.
+	// Defaults to RemoteDevsyHelperLocation.
 	RemoteAgentPath string
 	// DownloadURL is the base URL to download the agent binary from. Defaults to DefaultAgentDownloadURL().
 	DownloadURL string
@@ -63,14 +63,14 @@ type InjectOptions struct {
 	Stdout io.Writer
 	Stderr io.Writer
 
-	// LocalVersion is the version of the local DevPod binary.
+	// LocalVersion is the version of the local Devsy binary.
 	// Defaults to version.GetVersion().
 	LocalVersion string
 	// RemoteVersion is the expected version of the remote agent.
 	// Defaults to LocalVersion.
 	RemoteVersion string
 	// SkipVersionCheck disables the validation of the remote agent's version.
-	// Defaults to false, unless DEVPOD_AGENT_URL is set.
+	// Defaults to false, unless DEVSY_AGENT_URL is set.
 	SkipVersionCheck bool
 }
 
@@ -99,7 +99,7 @@ func (o *InjectOptions) Validate() error {
 
 func (o *InjectOptions) applyPathDefaults() {
 	if o.RemoteAgentPath == "" {
-		o.RemoteAgentPath = RemoteDevPodHelperLocation
+		o.RemoteAgentPath = RemoteDevsyHelperLocation
 	}
 	if o.Timeout == 0 {
 		o.Timeout = waitForInstanceConnectionTimeout

@@ -13,11 +13,11 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	copy2 "github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	copy2 "github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/skevetter/log"
 )
 
@@ -97,7 +97,7 @@ type VsCodeServer struct {
 var Options = ide.Options{
 	OpenNewWindow: {
 		Name:        OpenNewWindow,
-		Description: "If true, DevPod will open the project in a new window",
+		Description: "If true, Devsy will open the project in a new window",
 		Default:     "true",
 		Enum: []string{
 			"false",

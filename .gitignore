@@ -2,9 +2,9 @@
 .DS_Store
 /test
 /e2e/bin
-/devpod
-/devpod.exe
-/devpod
+/devsy
+/devsy.exe
+/devsy
 /dist
 # Unit test targets
 /main

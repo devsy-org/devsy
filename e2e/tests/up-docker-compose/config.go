@@ -12,14 +12,14 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/compose"
-	docker "github.com/skevetter/devpod/pkg/docker"
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/compose"
+	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/skevetter/log"
 )
 
 var _ = ginkgo.Describe(
-	"devpod up docker compose test suite",
+	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose", "config"),
 	func() {
 		var tc *testContext
@@ -73,7 +73,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			devPodUpOutput, _, err := tc.f.ExecCommandCapture(
+			devsyUpOutput, _, err := tc.f.ExecCommandCapture(
 				ctx,
 				[]string{"up", "--debug", "--ide", "none", tempDir},
 			)
@@ -91,7 +91,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
-			gomega.Expect(devPodUpOutput).
+			gomega.Expect(devsyUpOutput).
 				NotTo(gomega.ContainSubstring("Defaulting to a blank string."))
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
@@ -103,7 +103,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = tc.f.DevPodUp(ctx, tempDir)
+			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
@@ -119,10 +119,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(initialIds).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			err = tc.f.DevPodWorkspaceStop(ctx, tempDir)
+			err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			err = tc.f.DevPodUp(ctx, tempDir)
+			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			restartIds, err := findComposeContainer(
@@ -224,7 +224,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ws, err := devPodUpAndFindWorkspace(ctx, tc.f, tempDir)
+				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
 				ids, err := findComposeContainer(
@@ -289,7 +289,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ws, err := devPodUpAndFindWorkspace(ctx, tc.f, tempDir)
+				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
 				ids, err := findComposeContainer(

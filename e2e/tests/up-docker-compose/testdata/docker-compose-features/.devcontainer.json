@@ -4,7 +4,7 @@
   "service": "app",
   "workspaceFolder": "/workspaces",
   "features": {
-    "ghcr.io/loft-sh/devcontainer-features/vcluster:1.0.1": {
+    "ghcr.io/devsy-org/devcontainer-features/vcluster:1.0.1": {
       "version": "v0.24.1"
     }
   }

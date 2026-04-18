@@ -7,7 +7,7 @@ import { QueryKeys } from "@/queryKeys"
 import { TContextOptionName } from "@/types"
 import { ClearableInput } from "./ClearableInput"
 
-const DEFAULT_DEVPOD_AGENT_URL = `${GITHUB_RELEASES_URL}/latest/download/`
+const DEFAULT_DEVSY_AGENT_URL = `${GITHUB_RELEASES_URL}/latest/download/`
 
 export function useContextOptions() {
   const queryClient = useQueryClient()
@@ -59,7 +59,7 @@ export function useAgentURLOption() {
     () => (
       <>
         Set the Agent URL. If you leave this empty, it will be pulled from{" "}
-        <Code>{DEFAULT_DEVPOD_AGENT_URL}</Code>
+        <Code>{DEFAULT_DEVSY_AGENT_URL}</Code>
       </>
     ),
     []
@@ -84,7 +84,7 @@ export function useTelemetryOption() {
   const helpText = useMemo(
     () => (
       <>
-        Telemetry plays an important role in improving DevPod for everyone.{" "}
+        Telemetry plays an important role in improving Devsy for everyone.{" "}
         <strong>We never collect any actual values, only anonymized metadata!</strong> For an
         in-depth explanation, please refer to the{" "}
         <Link onClick={() => client.openUrl(`${WEBSITE_DOCS_URL}/other-topics/telemetry`)}>

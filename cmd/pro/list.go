@@ -7,11 +7,11 @@ import (
 	"sort"
 	"time"
 
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/table"
-	"github.com/skevetter/devpod/pkg/workspace"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List available DevPod Pro instances",
+		Short:   "List available Devsy Pro instances",
 		Args:    cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
@@ -48,12 +48,12 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *ListCmd) Run(ctx context.Context) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	proInstances, err := workspace.ListProInstances(devPodConfig, log.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig, log.Default)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 				time.Since(proInstance.CreationTimestamp.Time).Round(1 * time.Second).String(),
 			}
 			if cmd.Login {
-				err = checkLogin(ctx, devPodConfig, proInstance)
+				err = checkLogin(ctx, devsyConfig, proInstance)
 				entry = append(entry, fmt.Sprintf("%t", err == nil))
 			}
 
@@ -93,11 +93,11 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		for _, proInstance := range proInstances {
 			entry := &proTableEntry{
 				ProInstance:  proInstance,
-				Context:      devPodConfig.DefaultContext,
-				Capabilities: getCapabilities(devPodConfig, proInstance, log.Discard),
+				Context:      devsyConfig.DefaultContext,
+				Capabilities: getCapabilities(devsyConfig, proInstance, log.Discard),
 			}
 			if cmd.Login {
-				err = checkLogin(ctx, devPodConfig, proInstance)
+				err = checkLogin(ctx, devsyConfig, proInstance)
 				isAuthenticated := err == nil
 				entry.Authenticated = &isAuthenticated
 			}
@@ -141,13 +141,13 @@ var (
 
 func checkLogin(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	proInstance *provider.ProInstance,
 ) error {
 	// for every pro instance, check auth status by calling login
 	if err := login(
 		ctx,
-		devPodConfig,
+		devsyConfig,
 		proInstance.Host,
 		proInstance.Provider,
 		"",
@@ -162,12 +162,12 @@ func checkLogin(
 }
 
 func getCapabilities(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	proInstance *provider.ProInstance,
 	log log.Logger,
 ) []Capability {
 	capabilities := []Capability{}
-	provider, err := workspace.FindProvider(devPodConfig, proInstance.Provider, log)
+	provider, err := workspace.FindProvider(devsyConfig, proInstance.Provider, log)
 	if err != nil {
 		return capabilities
 	}

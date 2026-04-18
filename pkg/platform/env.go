@@ -9,20 +9,20 @@ const (
 	WorkspacePictureEnv  = "WORKSPACE_PICTURE"
 	WorkspaceSourceEnv   = "WORKSPACE_SOURCE"
 
-	ConfigEnv  = "LOFT_CONFIG"
-	ProjectEnv = "LOFT_PROJECT"
-	ClusterEnv = "LOFT_CLUSTER"
-	RunnerEnv  = "LOFT_RUNNER"
+	ConfigEnv  = "DEVSY_CONFIG"
+	ProjectEnv = "DEVSY_PROJECT"
+	ClusterEnv = "DEVSY_CLUSTER"
+	RunnerEnv  = "DEVSY_RUNNER"
 
-	TemplateOptionEnv        = "LOFT_TEMPLATE"
-	TemplateVersionOptionEnv = "LOFT_TEMPLATE_VERSION"
+	TemplateOptionEnv        = "DEVSY_TEMPLATE"
+	TemplateVersionOptionEnv = "DEVSY_TEMPLATE_VERSION"
 
-	TimeoutEnv        = "LOFT_TIMEOUT"
+	TimeoutEnv        = "DEVSY_TIMEOUT"
 	ProviderBinaryEnv = "PRO_PROVIDER"
 
-	SpaceInstanceNameEnv          = "LOFT_SPACE_INSTANCE_NAME"
-	VirtualClusterInstanceNameEnv = "LOFT_VIRTUAL_CLUSTER_INSTANCE_NAME"
-	InstanceNamespaceEnv          = "LOFT_INSTANCE_NAMESPACE"
+	SpaceInstanceNameEnv          = "DEVSY_SPACE_INSTANCE_NAME"
+	VirtualClusterInstanceNameEnv = "DEVSY_VIRTUAL_CLUSTER_INSTANCE_NAME"
+	InstanceNamespaceEnv          = "DEVSY_INSTANCE_NAMESPACE"
 
 	DaemonFolderEnv = "DAEMON_FOLDER"
 )

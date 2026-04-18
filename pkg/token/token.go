@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/ssh"
 )
 
 type Token struct {
@@ -13,15 +13,15 @@ type Token struct {
 	AuthorizedKeys string `json:"authorizedKeys,omitempty"`
 }
 
-func GetDevPodToken() (string, error) {
+func GetDevsyToken() (string, error) {
 	// get host key
-	hostKey, err := ssh.GetDevPodHostKey()
+	hostKey, err := ssh.GetDevsyHostKey()
 	if err != nil {
 		return "", fmt.Errorf("generate host key: %w", err)
 	}
 
 	// get public key
-	publicKey, err := ssh.GetDevPodPublicKey()
+	publicKey, err := ssh.GetDevsyPublicKey()
 	if err != nil {
 		return "", fmt.Errorf("generate key pair: %w", err)
 	}

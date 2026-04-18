@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/creativeprojects/go-selfupdate"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/version"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/skevetter/log"
 )
 
-// Upgrade downloads the latest release from github and replaces devpod if a new version is found.
+// Upgrade downloads the latest release from github and replaces devsy if a new version is found.
 // If dryRun is true, it only shows what would be downloaded without actually upgrading.
 func Upgrade(ctx context.Context, targetVersion string, dryRun bool, logger log.Logger) error {
 	release, updater, err := detectRelease(ctx, targetVersion)
@@ -23,7 +23,7 @@ func Upgrade(ctx context.Context, targetVersion string, dryRun bool, logger log.
 	if release.Version() == strings.TrimLeft(version.GetVersion(), "v") {
 		if _, err := fmt.Fprintf(
 			os.Stdout,
-			"devpod version %s is already up-to-date\n",
+			"devsy version %s is already up-to-date\n",
 			release.Version(),
 		); err != nil {
 			return fmt.Errorf("write output: %w", err)
@@ -57,7 +57,7 @@ func Upgrade(ctx context.Context, targetVersion string, dryRun bool, logger log.
 		return fmt.Errorf("update to version %s: %w", release.Version(), err)
 	}
 
-	logger.Donef("updated devpod to version %s", release.Version())
+	logger.Donef("updated devsy to version %s", release.Version())
 	return nil
 }
 

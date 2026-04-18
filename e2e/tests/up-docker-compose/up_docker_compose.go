@@ -17,14 +17,14 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/compose"
-	docker "github.com/skevetter/devpod/pkg/docker"
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/compose"
+	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/skevetter/log"
 )
 
 var _ = ginkgo.Describe(
-	"devpod up docker compose test suite",
+	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose", "suite"),
 	func() {
 		var tc *testContext
@@ -120,7 +120,7 @@ var _ = ginkgo.Describe(
 			go func() {
 				cmd := exec.CommandContext(
 					sshContext,
-					filepath.Join(tc.f.DevpodBinDir, tc.f.DevpodBinName),
+					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),
 					"ssh",
 					workspace.ID,
 					"--command",
@@ -191,7 +191,7 @@ var _ = ginkgo.Describe(
 				const (
 					sourceImage = "mcr.microsoft.com/devcontainers/base" +
 						"@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae"
-					sharedImage = "devpod-e2e-compose-shared-base:latest"
+					sharedImage = "devsy-e2e-compose-shared-base:latest"
 				)
 				const (
 					projectAPath = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-a"
@@ -303,7 +303,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = tc.f.DevPodUp(ctx, tempDir)
+			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
@@ -357,7 +357,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = tc.f.DevPodUp(ctx, tempDir)
+			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)

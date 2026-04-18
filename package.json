@@ -1,5 +1,5 @@
 {
-  "name": "devpod",
+  "name": "devsy",
   "private": true,
   "devDependencies": {
     "@biomejs/biome": "2.4.12"

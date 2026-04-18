@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/docker/docker-credential-helpers/credentials"
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 const (

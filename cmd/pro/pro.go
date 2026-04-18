@@ -6,15 +6,15 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/pro/add"
-	"github.com/skevetter/devpod/cmd/pro/daemon"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/cmd/pro/provider"
-	"github.com/skevetter/devpod/cmd/pro/reset"
-	"github.com/skevetter/devpod/pkg/config"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/pro/add"
+	"github.com/devsy-org/devsy/cmd/pro/daemon"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/provider"
+	"github.com/devsy-org/devsy/cmd/pro/reset"
+	"github.com/devsy-org/devsy/pkg/config"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ func NewProCmd(flags *flags.GlobalFlags, streamLogger *log.StreamLogger) *cobra.
 	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
 	proCmd := &cobra.Command{
 		Use:           "pro",
-		Short:         "DevPod Pro commands",
+		Short:         "Devsy Pro commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
@@ -80,15 +80,15 @@ func findProProvider(
 	context, provider, host string,
 	log log.Logger,
 ) (*config.Config, *providerpkg.ProviderConfig, error) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pCfg, err := workspace.ProviderFromHost(ctx, devPodConfig, host, log)
+	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host, log)
 	if err != nil {
-		return devPodConfig, nil, fmt.Errorf("load provider: %w", err)
+		return devsyConfig, nil, fmt.Errorf("load provider: %w", err)
 	}
 
-	return devPodConfig, pCfg, nil
+	return devsyConfig, pCfg, nil
 }

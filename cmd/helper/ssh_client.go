@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	command2 "github.com/skevetter/devpod/pkg/command"
+	command2 "github.com/devsy-org/devsy/pkg/command"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )

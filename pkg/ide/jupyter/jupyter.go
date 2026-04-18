@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/skevetter/log"
 )
 
@@ -24,7 +24,7 @@ var Options = ide.Options{
 	},
 	OpenOption: {
 		Name:        OpenOption,
-		Description: "If DevPod should automatically open the browser",
+		Description: "If Devsy should automatically open the browser",
 		Default:     "true",
 		Enum: []string{
 			"true",
