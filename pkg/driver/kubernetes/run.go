@@ -29,8 +29,8 @@ const (
 	DevsyWorkspaceLabel    = pkgconfig.BinaryName + ".sh/workspace"
 	DevsyWorkspaceUIDLabel = pkgconfig.BinaryName + ".sh/workspace-uid"
 
-	DevsyInfoAnnotation                   = pkgconfig.BinaryName + ".sh/info"
-	DevsyLastAppliedAnnotation            = pkgconfig.BinaryName + ".sh/last-applied-configuration"
+	DevsyInfoAnnotation                    = pkgconfig.BinaryName + ".sh/info"
+	DevsyLastAppliedAnnotation             = pkgconfig.BinaryName + ".sh/last-applied-configuration"
 	ClusterAutoscalerSaveToEvictAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict"
 )
 

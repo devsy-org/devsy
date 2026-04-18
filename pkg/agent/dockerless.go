@@ -12,13 +12,13 @@ import (
 	"runtime"
 	"strings"
 
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/log"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/sirupsen/logrus"
 )
 
 const (

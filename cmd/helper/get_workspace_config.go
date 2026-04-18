@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 

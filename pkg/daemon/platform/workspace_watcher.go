@@ -32,7 +32,7 @@ type ProWorkspaceInstance struct {
 	metav1.ObjectMeta `json:"metadata"`
 
 	Spec   managementv1.DevsyWorkspaceInstanceSpec `json:"spec"`
-	Status ProWorkspaceInstanceStatus               `json:"status"`
+	Status ProWorkspaceInstanceStatus              `json:"status"`
 }
 
 type ProWorkspaceInstanceStatus struct {
@@ -230,8 +230,8 @@ func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 		Spec:       instance.Spec,
 		Status: ProWorkspaceInstanceStatus{
 			DevsyWorkspaceInstanceStatus: instance.Status,
-			Source:                        source,
-			IDE:                           ideConfig,
+			Source:                       source,
+			IDE:                          ideConfig,
 		},
 	}
 

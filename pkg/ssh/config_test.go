@@ -17,33 +17,33 @@ func TestSSHConfigSuite(t *testing.T) {
 
 func (s *SSHConfigTestSuite) TestAddHostSection() {
 	tests := []struct {
-		name       string
-		config     string
-		execPath   string
-		host       string
-		user       string
-		context    string
-		workspace  string
-		workdir    string
-		command    string
-		gpgagent   bool
+		name      string
+		config    string
+		execPath  string
+		host      string
+		user      string
+		context   string
+		workspace string
+		workdir   string
+		command   string
+		gpgagent  bool
 		devsyHome string
-		provider   string
-		expected   string
+		provider  string
+		expected  string
 	}{
 		{
-			name:       "Basic host addition",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			name:      "Basic host addition",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -56,18 +56,18 @@ Host testhost
 # Devsy End testhost`,
 		},
 		{
-			name:       "AWS provider with ConnectTimeout",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			name:      "AWS provider with ConnectTimeout",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "aws",
+			provider:  "aws",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -81,18 +81,18 @@ Host testhost
 # Devsy End testhost`,
 		},
 		{
-			name:       "Basic host addition with DEVSY_HOME",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			name:      "Basic host addition with DEVSY_HOME",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "C:\\\\White Space\\devsy\\test",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -105,18 +105,18 @@ Host testhost
 # Devsy End testhost`,
 		},
 		{
-			name:       "Host addition with workdir",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "/path/to/workdir",
-			command:    "",
-			gpgagent:   false,
+			name:      "Host addition with workdir",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "/path/to/workdir",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -129,18 +129,18 @@ Host testhost
 # Devsy End testhost`,
 		},
 		{
-			name:       "Host addition with gpg agent",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   true,
+			name:      "Host addition with gpg agent",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  true,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -153,18 +153,18 @@ Host testhost
 # Devsy End testhost`,
 		},
 		{
-			name:       "Host addition with custom command",
-			config:     "",
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "ssh -W %h:%p bastion",
-			gpgagent:   false,
+			name:      "Host addition with custom command",
+			config:    "",
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "ssh -W %h:%p bastion",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -180,16 +180,16 @@ Host testhost
 			name: "Host addition to existing config",
 			config: `Host existinghost
   User existinguser`,
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -218,16 +218,16 @@ Host existingtesthost
 
 Host existinghost
   User existinguser`,
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -261,16 +261,16 @@ Include ~/config2
 
 
 Include ~/config3`,
-			execPath:   "/path/to/exec",
-			host:       "testhost",
-			user:       "testuser",
-			context:    "testcontext",
-			workspace:  "testworkspace",
-			workdir:    "",
-			command:    "",
-			gpgagent:   false,
+			execPath:  "/path/to/exec",
+			host:      "testhost",
+			user:      "testuser",
+			context:   "testcontext",
+			workspace: "testworkspace",
+			workdir:   "",
+			command:   "",
+			gpgagent:  false,
 			devsyHome: "",
-			provider:   "",
+			provider:  "",
 			expected: `Include ~/config1
 
 Include ~/config2
@@ -294,16 +294,16 @@ Host testhost
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
 			result, err := addHostSection(tt.config, tt.execPath, addHostParams{
-				path:       "",
-				host:       tt.host,
-				user:       tt.user,
-				context:    tt.context,
-				workspace:  tt.workspace,
-				workdir:    tt.workdir,
-				command:    tt.command,
-				gpgagent:   tt.gpgagent,
+				path:      "",
+				host:      tt.host,
+				user:      tt.user,
+				context:   tt.context,
+				workspace: tt.workspace,
+				workdir:   tt.workdir,
+				command:   tt.command,
+				gpgagent:  tt.gpgagent,
 				devsyHome: tt.devsyHome,
-				provider:   tt.provider,
+				provider:  tt.provider,
 			})
 
 			assert.NoError(s.T(), err)

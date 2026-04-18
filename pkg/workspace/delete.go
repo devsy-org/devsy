@@ -13,7 +13,7 @@ import (
 
 // DeleteOptions holds the parameters for deleting a workspace.
 type DeleteOptions struct {
-	DevsyConfig   *config.Config
+	DevsyConfig    *config.Config
 	Args           []string
 	IgnoreNotFound bool
 	Force          bool
@@ -27,9 +27,9 @@ type DeleteOptions struct {
 func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	client, err := Get(ctx, GetOptions{
 		DevsyConfig: opts.DevsyConfig,
-		Args:         opts.Args,
-		Owner:        opts.Owner,
-		Log:          opts.Log,
+		Args:        opts.Args,
+		Owner:       opts.Owner,
+		Log:         opts.Log,
 	})
 	if err != nil {
 		return handleDeleteLoadError(ctx, opts, err)

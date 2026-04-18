@@ -10,7 +10,6 @@ import (
 	"os/exec"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/flags"
 	devagent "github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -20,6 +19,7 @@ import (
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"

@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 )

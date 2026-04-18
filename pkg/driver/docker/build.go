@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/devcontainer/buildkit"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -16,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/sirupsen/logrus"
 )
 
 func (d *dockerDriver) BuildDevContainer(

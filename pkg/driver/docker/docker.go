@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/compose"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -20,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 func makeEnvironment(env map[string]string, log log.Logger) []string {

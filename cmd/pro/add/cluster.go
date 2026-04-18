@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
@@ -19,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/survey"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

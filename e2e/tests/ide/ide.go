@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/onsi/ginkgo/v2"
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/onsi/ginkgo/v2"
 )
 
 var _ = ginkgo.Describe("devsy ide test suite", ginkgo.Label("ide"), ginkgo.Ordered, func() {

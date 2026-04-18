@@ -60,7 +60,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		CLIVersion            string
 		Config                *config.Config
 		Providers             map[string]provider.ProviderWithDefault
-		DevsyProInstances    []DevsyProInstance
+		DevsyProInstances     []DevsyProInstance
 		Workspace             *pkgprovider.Workspace
 		WorkspaceStatus       client.Status
 		WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
@@ -112,9 +112,9 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 
 	workspaceClient, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: info.Config,
-		Args:         args,
-		Owner:        cmd.Owner,
-		Log:          logger,
+		Args:        args,
+		Owner:       cmd.Owner,
+		Log:         logger,
 	})
 	if err == nil {
 		info.Workspace = workspaceClient.WorkspaceConfig()

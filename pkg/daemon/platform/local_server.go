@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/handlers"
-	"github.com/sirupsen/logrus"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
@@ -20,6 +18,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/log"
+	"github.com/gorilla/handlers"
+	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"tailscale.com/client/local"
@@ -29,7 +29,7 @@ import (
 )
 
 type localServer struct {
-	devsyContext  string
+	devsyContext   string
 	httpServer     *http.Server
 	lc             *local.Client
 	listener       *memnet.Listener
@@ -96,7 +96,7 @@ func newLocalServer(
 		lc:             lc,
 		pc:             pc,
 		log:            log,
-		devsyContext:  devsyContext,
+		devsyContext:   devsyContext,
 		listener:       memnet.Listen("localclient.devsy:80"),
 		platformStatus: &platformStatus{authenticated: true},
 		stopChan:       make(chan struct{}, 1),

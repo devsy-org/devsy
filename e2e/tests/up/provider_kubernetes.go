@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 func waitForPodCount(

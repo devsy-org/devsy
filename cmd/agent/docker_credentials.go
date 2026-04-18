@@ -4,10 +4,10 @@ import (
 	"context"
 	"os"
 
-	"github.com/docker/docker-credential-helpers/credentials"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/log"
+	"github.com/docker/docker-credential-helpers/credentials"
 	"github.com/spf13/cobra"
 )
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -19,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/scanner"
+	"github.com/sirupsen/logrus"
 )
 
 func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) driver.Driver {

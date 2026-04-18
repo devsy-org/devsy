@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -15,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -61,9 +61,9 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 
 	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: devsyConfig,
-		Args:         args,
-		Owner:        cmd.Owner,
-		Log:          log.Default,
+		Args:        args,
+		Owner:       cmd.Owner,
+		Log:         log.Default,
 	})
 	if err != nil {
 		return err

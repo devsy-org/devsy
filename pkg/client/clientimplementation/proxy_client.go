@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/gofrs/flock"
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -25,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -40,9 +40,9 @@ func NewProxyClient(
 ) (client.ProxyClient, error) {
 	pc := &proxyClient{
 		devsyConfig: devsyConfig,
-		config:       prov,
-		workspace:    workspace,
-		log:          log,
+		config:      prov,
+		workspace:   workspace,
+		log:         log,
 	}
 	pc.executor = &proxyExecutor{client: pc}
 	return pc, nil
@@ -55,10 +55,10 @@ type proxyClient struct {
 	workspaceLock     *flock.Flock
 
 	devsyConfig *config.Config
-	config       *provider.ProviderConfig
-	workspace    *provider.Workspace
-	log          log.Logger
-	executor     *proxyExecutor
+	config      *provider.ProviderConfig
+	workspace   *provider.Workspace
+	log         log.Logger
+	executor    *proxyExecutor
 }
 
 // proxyExecutor handles proxy command execution with common patterns.

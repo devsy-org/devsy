@@ -6,13 +6,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 // SetupParams holds all parameters needed for dotfiles setup.
@@ -22,7 +22,7 @@ type SetupParams struct {
 	EnvFiles     []string
 	EnvKeyValues []string
 	Client       client2.BaseWorkspaceClient
-	DevsyConfig *config.Config
+	DevsyConfig  *config.Config
 	Log          log.Logger
 }
 
@@ -47,7 +47,7 @@ func Setup(p SetupParams) error {
 	p.Log.Debug("Cloning dotfiles into the devcontainer...")
 
 	dotCmd, err := buildDotCmd(buildDotCmdParams{
-		devsyConfig:     p.DevsyConfig,
+		devsyConfig:      p.DevsyConfig,
 		dotfilesRepo:     dotfilesRepo,
 		dotfilesScript:   dotfilesScript,
 		envFiles:         p.EnvFiles,
@@ -107,7 +107,7 @@ func buildDotCmdAgentArguments(
 }
 
 type buildDotCmdParams struct {
-	devsyConfig     *config.Config
+	devsyConfig      *config.Config
 	dotfilesRepo     string
 	dotfilesScript   string
 	envFiles         []string

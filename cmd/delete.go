@@ -137,7 +137,7 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	args []string,
 ) (string, error) {
 	return workspace.Delete(ctx, workspace.DeleteOptions{
-		DevsyConfig:   devsyConfig,
+		DevsyConfig:    devsyConfig,
 		Args:           args,
 		IgnoreNotFound: cmd.IgnoreNotFound,
 		Force:          cmd.Force,

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
@@ -18,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/language"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 type Runner interface {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
 

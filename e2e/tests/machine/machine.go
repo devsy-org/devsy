@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/google/uuid"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo.Ordered, func() {

@@ -7,18 +7,18 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/sirupsen/logrus"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
 type BrowserTunnelParams struct {
 	Ctx              context.Context
-	DevsyConfig     *config.Config
+	DevsyConfig      *config.Config
 	Client           client2.BaseWorkspaceClient
 	User             string
 	TargetURL        string
@@ -92,7 +92,7 @@ func runBrowserTunnelServices(
 	err := RunServices(
 		ctx,
 		RunServicesOptions{
-			DevsyConfig:    p.DevsyConfig,
+			DevsyConfig:     p.DevsyConfig,
 			ContainerClient: containerClient,
 			User:            p.User,
 			ForwardPorts:    p.ForwardPorts,

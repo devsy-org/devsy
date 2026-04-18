@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/devsy-org/devsy/pkg/machineid"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/log"
+	"github.com/google/uuid"
 )
 
 const (

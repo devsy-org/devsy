@@ -32,7 +32,7 @@ type Params struct {
 	GPGAgentForwarding bool
 	SSHAuthSockID      string
 	GitSSHSigningKey   string
-	DevsyConfig       *config.Config
+	DevsyConfig        *config.Config
 	Client             client2.BaseWorkspaceClient
 	User               string
 	Result             *config2.Result
@@ -234,7 +234,7 @@ func makeDaemonStartFunc(
 		err = clientimplementation.StartServicesDaemon(
 			ctx,
 			clientimplementation.StartServicesDaemonOptions{
-				DevsyConfig:     params.DevsyConfig,
+				DevsyConfig:      params.DevsyConfig,
 				Client:           daemonClient,
 				SSHClient:        toolClient,
 				User:             params.User,
@@ -290,7 +290,7 @@ func openJupyterBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevsyConfig:     params.DevsyConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,
@@ -338,7 +338,7 @@ func openRStudioBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevsyConfig:     params.DevsyConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,
@@ -392,7 +392,7 @@ func openVSCodeBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevsyConfig:     params.DevsyConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,

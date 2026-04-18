@@ -52,7 +52,7 @@ func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	client, err := workspace2.Get(ctx, workspace2.GetOptions{
-		DevsyConfig:   devsyConfig,
+		DevsyConfig:    devsyConfig,
 		Args:           args,
 		ChangeLastUsed: true,
 		Owner:          cmd.Owner,

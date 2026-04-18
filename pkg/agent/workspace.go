@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -23,6 +22,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/log"
+	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/compress"
@@ -23,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 const (

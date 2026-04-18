@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/term"
 	devsyclient "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/telemetry/analytics"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/log"
+	"github.com/moby/term"
 	"github.com/spf13/cobra"
 )
 

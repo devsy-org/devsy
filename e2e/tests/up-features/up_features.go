@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite"), func() {

@@ -7,13 +7,13 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/language"
 	"github.com/devsy-org/log"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), func() {

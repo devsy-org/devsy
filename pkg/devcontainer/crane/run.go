@@ -21,9 +21,9 @@ const (
 
 	EnvironmentCrane = "environment"
 
-	defaultBinName     = config.BinaryName + "-crane"
+	defaultBinName    = config.BinaryName + "-crane"
 	envDevsyCraneName = config.EnvCraneName
-	tmpDirTemplate     = config.BinaryName + "-crane-*"
+	tmpDirTemplate    = config.BinaryName + "-crane-*"
 )
 
 type Content struct {

@@ -256,7 +256,7 @@ func (cmd *LoginCmd) addLoftProvider(
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {
 		log.Debugf("Add development provider")
 		_, err = workspace.AddProviderRaw(workspace.ProviderParams{
-			DevsyConfig: devsyConfig,
+			DevsyConfig:  devsyConfig,
 			ProviderName: cmd.Provider,
 			Source:       &provider.ProviderSource{},
 			Raw:          []byte(fallbackProvider),

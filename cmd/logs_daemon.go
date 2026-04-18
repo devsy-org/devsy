@@ -44,9 +44,9 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 
 	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: devsyConfig,
-		Args:         args,
-		Owner:        cmd.Owner,
-		Log:          log.Default,
+		Args:        args,
+		Owner:       cmd.Owner,
+		Log:         log.Default,
 	})
 	if err != nil {
 		return err

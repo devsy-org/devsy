@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/moby/patternmatcher"
-	"github.com/moby/patternmatcher/ignorefile"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	util "github.com/devsy-org/devsy/pkg/util/hash"
 	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/hash"
+	"github.com/moby/patternmatcher"
+	"github.com/moby/patternmatcher/ignorefile"
 )
 
 // PrebuildHashParams contains all parameters needed to calculate a prebuild hash.

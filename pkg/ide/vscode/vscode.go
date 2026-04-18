@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 const (

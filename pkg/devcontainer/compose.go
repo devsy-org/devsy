@@ -12,14 +12,14 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/joho/godotenv"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 

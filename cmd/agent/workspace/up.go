@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -29,6 +28,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 

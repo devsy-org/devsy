@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/log"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 var _ = ginkgo.Describe(

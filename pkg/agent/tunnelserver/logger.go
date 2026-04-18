@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/scanner"
 	"github.com/devsy-org/log/survey"
+	"github.com/go-logr/logr"
+	"github.com/sirupsen/logrus"
 )
 
 func NewTunnelLogger(ctx context.Context, client tunnel.TunnelClient, debug bool) log.Logger {

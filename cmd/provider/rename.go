@@ -174,7 +174,7 @@ func setDefaultProvider(devsyConfig *config.Config, oldName, newName string) (bo
 // renameState tracks the mutations performed during a rename so they can be
 // undone if a later step fails.
 type renameState struct {
-	devsyConfig       *config.Config
+	devsyConfig        *config.Config
 	switchedWorkspaces []*provider.Workspace
 	switchedMachines   []*provider.Machine
 	defaultChanged     bool

@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/log"
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 var (

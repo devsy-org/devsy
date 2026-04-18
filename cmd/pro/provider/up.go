@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
@@ -16,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 )

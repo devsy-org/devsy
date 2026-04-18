@@ -33,7 +33,7 @@ type SSHConfigParams struct {
 	Workdir              string
 	Command              string
 	GPGAgent             bool
-	DevsyHome           string
+	DevsyHome            string
 	Provider             string
 	Log                  log.Logger
 }
@@ -48,16 +48,16 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	}
 
 	newFile, err := addHost(addHostParams{
-		path:       targetPath,
-		host:       params.Workspace + config.SSHHostSuffix,
-		user:       params.User,
-		context:    params.Context,
-		workspace:  params.Workspace,
-		workdir:    params.Workdir,
-		command:    params.Command,
-		gpgagent:   params.GPGAgent,
+		path:      targetPath,
+		host:      params.Workspace + config.SSHHostSuffix,
+		user:      params.User,
+		context:   params.Context,
+		workspace: params.Workspace,
+		workdir:   params.Workdir,
+		command:   params.Command,
+		gpgagent:  params.GPGAgent,
 		devsyHome: params.DevsyHome,
-		provider:   params.Provider,
+		provider:  params.Provider,
 	})
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -73,16 +73,16 @@ type DevsySSHEntry struct {
 }
 
 type addHostParams struct {
-	path       string
-	host       string
-	user       string
-	context    string
-	workspace  string
-	workdir    string
-	command    string
-	gpgagent   bool
+	path      string
+	host      string
+	user      string
+	context   string
+	workspace string
+	workdir   string
+	command   string
+	gpgagent  bool
 	devsyHome string
-	provider   string
+	provider  string
 }
 
 func addHost(params addHostParams) (string, error) {

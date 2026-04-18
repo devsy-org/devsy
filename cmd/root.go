@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/context"
@@ -21,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	log2 "github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"

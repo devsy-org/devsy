@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20

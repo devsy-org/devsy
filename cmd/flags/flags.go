@@ -7,12 +7,12 @@ import (
 )
 
 type GlobalFlags struct {
-	Context    string
-	Provider   string
-	AgentDir   string
+	Context   string
+	Provider  string
+	AgentDir  string
 	DevsyHome string
-	UID        string
-	Owner      platform.OwnerFilter
+	UID       string
+	Owner     platform.OwnerFilter
 
 	LogOutput string
 	Debug     bool

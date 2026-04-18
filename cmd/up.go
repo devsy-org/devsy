@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
@@ -30,6 +29,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/util"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -356,7 +356,7 @@ func (cmd *UpCmd) configureWorkspace(
 			user:                 wctx.user,
 			workdir:              wctx.workdir,
 			gpgagent:             setupGPGAgentForwarding,
-			devsyHome:           devsyHome,
+			devsyHome:            devsyHome,
 		}); err != nil {
 			return err
 		}
@@ -370,7 +370,7 @@ func (cmd *UpCmd) configureWorkspace(
 		EnvFiles:     cmd.DotfilesScriptEnvFile,
 		EnvKeyValues: cmd.DotfilesScriptEnv,
 		Client:       client,
-		DevsyConfig: devsyConfig,
+		DevsyConfig:  devsyConfig,
 		Log:          log,
 	}); err != nil {
 		return err
@@ -396,7 +396,7 @@ func (cmd *UpCmd) openIDE(
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
 		SSHAuthSockID:      cmd.SSHAuthSockID,
 		GitSSHSigningKey:   cmd.GitSSHSigningKey,
-		DevsyConfig:       devsyConfig,
+		DevsyConfig:        devsyConfig,
 		Client:             client,
 		User:               wctx.user,
 		Result:             wctx.result,
@@ -665,7 +665,7 @@ type configureSSHParams struct {
 	user                 string
 	workdir              string
 	gpgagent             bool
-	devsyHome           string
+	devsyHome            string
 }
 
 func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams) error {
@@ -692,7 +692,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		User:                 params.user,
 		Workdir:              params.workdir,
 		GPGAgent:             params.gpgagent,
-		DevsyHome:           params.devsyHome,
+		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
 		Log:                  log.Default,
 	})

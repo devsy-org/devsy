@@ -157,7 +157,7 @@ func getWorkspaceClient(
 
 // GetOptions holds the parameters for retrieving an existing workspace.
 type GetOptions struct {
-	DevsyConfig   *config.Config
+	DevsyConfig    *config.Config
 	Args           []string
 	ChangeLastUsed bool
 	Owner          platform.OwnerFilter
@@ -473,7 +473,7 @@ func createWorkspace(
 
 		err := resolveProInstance(proInstanceParams{
 			ctx:          ctx,
-			devsyConfig: devsyConfig,
+			devsyConfig:  devsyConfig,
 			providerName: provider.Config.Name,
 			workspace:    workspace,
 			stdin:        os.Stdin,
@@ -848,7 +848,7 @@ func loadExistingWorkspace(
 
 type proInstanceParams struct {
 	ctx          context.Context
-	devsyConfig *config.Config
+	devsyConfig  *config.Config
 	providerName string
 	workspace    *providerpkg.Workspace
 	stdin        io.Reader

@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
@@ -18,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 const (

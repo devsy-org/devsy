@@ -43,9 +43,9 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
 				DevsyConfig: devsyConfig,
-				Args:         args,
-				Owner:        cmd.Owner,
-				Log:          log.Default,
+				Args:        args,
+				Owner:       cmd.Owner,
+				Log:         log.Default,
 			})
 			if err != nil {
 				return err

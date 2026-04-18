@@ -20,7 +20,7 @@ import (
 var dockerlessImage = "ghcr.io/devsy-org/dockerless:0.2.0"
 
 const (
-	DevsyExtraEnvVar           = "DEVSY"
+	DevsyExtraEnvVar            = "DEVSY"
 	RemoteContainersExtraEnvVar = "REMOTE_CONTAINERS"
 
 	DefaultEntrypoint = `

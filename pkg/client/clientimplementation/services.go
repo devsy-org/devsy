@@ -13,7 +13,7 @@ import (
 )
 
 type StartServicesDaemonOptions struct {
-	DevsyConfig     *config.Config
+	DevsyConfig      *config.Config
 	Client           client.DaemonClient
 	SSHClient        *ssh.Client
 	User             string
@@ -45,7 +45,7 @@ func StartServicesDaemon(ctx context.Context, opts StartServicesDaemonOptions) e
 	return tunnel.RunServices(
 		ctx,
 		tunnel.RunServicesOptions{
-			DevsyConfig:                   opts.DevsyConfig,
+			DevsyConfig:                    opts.DevsyConfig,
 			ContainerClient:                opts.SSHClient,
 			User:                           opts.User,
 			ForwardPorts:                   opts.ForwardPorts,

@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
@@ -22,6 +20,8 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/up"
 	_ "github.com/devsy-org/devsy/e2e/tests/up-features"
 	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 // TestRunE2ETests checks configuration parameters (specified through flags) and then runs

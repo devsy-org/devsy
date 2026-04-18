@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 var _ = ginkgo.Describe("testing upgrade command", ginkgo.Label("upgrade"), ginkgo.Ordered, func() {

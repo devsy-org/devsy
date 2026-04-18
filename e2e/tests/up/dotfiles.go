@@ -4,10 +4,10 @@ import (
 	"context"
 	"os"
 
-	"github.com/onsi/ginkgo/v2"
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/log"
+	"github.com/onsi/ginkgo/v2"
 )
 
 var _ = ginkgo.Describe(

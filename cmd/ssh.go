@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/machine"
@@ -28,6 +27,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -84,7 +84,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 
 			ctx := cobraCmd.Context()
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevsyConfig:   devsyConfig,
+				DevsyConfig:    devsyConfig,
 				Args:           args,
 				ChangeLastUsed: true,
 				Owner:          cmd.Owner,
@@ -255,7 +255,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			err = clientimplementation.StartServicesDaemon(
 				ctx,
 				clientimplementation.StartServicesDaemonOptions{
-					DevsyConfig: devsyConfig,
+					DevsyConfig:  devsyConfig,
 					Client:       client,
 					SSHClient:    toolSSHClient,
 					User:         cmd.User,
@@ -664,7 +664,7 @@ func (cmd *SSHCmd) startServices(
 		err := tunnel.RunServices(
 			ctx,
 			tunnel.RunServicesOptions{
-				DevsyConfig:                   devsyConfig,
+				DevsyConfig:                    devsyConfig,
 				ContainerClient:                containerClient,
 				User:                           cmd.User,
 				ForwardPorts:                   false,

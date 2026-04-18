@@ -5,8 +5,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/gorilla/websocket"
 	"github.com/devsy-org/log"
+	"github.com/gorilla/websocket"
 )
 
 func ExecuteConn(

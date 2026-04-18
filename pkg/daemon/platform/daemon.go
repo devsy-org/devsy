@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/config"
 	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 	"tailscale.com/types/netmap"
@@ -222,7 +222,7 @@ func dialLocal(l *localServer) dialFunc {
 type clientType string
 
 var (
-	devsyClientType    clientType = clientType(config.BinaryName)
+	devsyClientType     clientType = clientType(config.BinaryName)
 	tailscaleClientType clientType = "tailscale"
 )
 

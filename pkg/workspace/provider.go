@@ -29,7 +29,7 @@ type ProviderWithOptions struct {
 }
 
 type ProviderParams struct {
-	DevsyConfig *config.Config
+	DevsyConfig  *config.Config
 	ProviderName string
 	Raw          []byte
 	Source       *provider.ProviderSource
@@ -124,7 +124,7 @@ func AddProvider(
 	}
 
 	return AddProviderRaw(ProviderParams{
-		DevsyConfig: devsyConfig,
+		DevsyConfig:  devsyConfig,
 		ProviderName: providerName,
 		Source:       providerSource,
 		Raw:          providerRaw,
@@ -177,7 +177,7 @@ func UpdateProvider(
 	}
 
 	return updateProvider(ProviderParams{
-		DevsyConfig: devsyConfig,
+		DevsyConfig:  devsyConfig,
 		ProviderName: providerName,
 		Raw:          providerRaw,
 		Source:       providerSource,
@@ -197,7 +197,7 @@ func CloneProvider(
 
 	providerConfig, err := installProvider(
 		ProviderParams{
-			DevsyConfig: devsyConfig,
+			DevsyConfig:  devsyConfig,
 			ProviderName: providerName,
 			Source:       &sourceProvider.Config.Source,
 			Log:          log,
@@ -416,7 +416,7 @@ func installRawProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 		return nil, err
 	}
 	return installProvider(ProviderParams{
-		DevsyConfig: p.DevsyConfig,
+		DevsyConfig:  p.DevsyConfig,
 		ProviderName: p.ProviderName,
 		Source:       p.Source,
 		Log:          p.Log,
@@ -666,9 +666,9 @@ func SwitchProvider(
 
 	client, err := Get(ctx, GetOptions{
 		DevsyConfig: devsyConfig,
-		Args:         []string{workspace.ID},
-		Owner:        platform.AllOwnerFilter,
-		Log:          log.Default,
+		Args:        []string{workspace.ID},
+		Owner:       platform.AllOwnerFilter,
+		Log:         log.Default,
 	})
 	if err != nil {
 		revert()

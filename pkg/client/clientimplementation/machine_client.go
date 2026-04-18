@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 )
 
 func NewMachineClient(
@@ -34,9 +34,9 @@ func NewMachineClient(
 
 	mc := &machineClient{
 		devsyConfig: devsyConfig,
-		config:       provider,
-		machine:      machine,
-		log:          log,
+		config:      provider,
+		machine:     machine,
+		log:         log,
 	}
 	mc.executor = &machineExecutor{client: mc}
 
@@ -45,10 +45,10 @@ func NewMachineClient(
 
 type machineClient struct {
 	devsyConfig *config.Config
-	config       *provider.ProviderConfig
-	machine      *provider.Machine
-	log          log.Logger
-	executor     *machineExecutor
+	config      *provider.ProviderConfig
+	machine     *provider.Machine
+	log         log.Logger
+	executor    *machineExecutor
 }
 
 // machineExecutor handles command execution with common patterns.

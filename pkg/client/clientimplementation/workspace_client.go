@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofrs/flock"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -27,6 +25,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/log"
+	"github.com/gofrs/flock"
+	"github.com/sirupsen/logrus"
 )
 
 func NewWorkspaceClient(
@@ -44,10 +44,10 @@ func NewWorkspaceClient(
 
 	return &workspaceClient{
 		devsyConfig: devsyConfig,
-		config:       prov,
-		workspace:    workspace,
-		machine:      machine,
-		log:          log,
+		config:      prov,
+		workspace:   workspace,
+		machine:     machine,
+		log:         log,
 	}, nil
 }
 
@@ -60,10 +60,10 @@ type workspaceClient struct {
 	machineLock       *flock.Flock
 
 	devsyConfig *config.Config
-	config       *provider.ProviderConfig
-	workspace    *provider.Workspace
-	machine      *provider.Machine
-	log          log.Logger
+	config      *provider.ProviderConfig
+	workspace   *provider.Workspace
+	machine     *provider.Machine
+	log         log.Logger
 }
 
 func (s *workspaceClient) Provider() string {

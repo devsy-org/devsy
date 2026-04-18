@@ -43,11 +43,11 @@ func New(
 
 	return &client{
 		devsyConfig: devsyConfig,
-		config:       prov,
-		workspace:    workspace,
-		log:          log,
-		tsClient:     tsClient,
-		localClient:  daemon.NewLocalClient(prov.Name),
+		config:      prov,
+		workspace:   workspace,
+		log:         log,
+		tsClient:    tsClient,
+		localClient: daemon.NewLocalClient(prov.Name),
 	}, nil
 }
 
@@ -55,11 +55,11 @@ type client struct {
 	m sync.Mutex
 
 	devsyConfig *config.Config
-	config       *provider.ProviderConfig
-	workspace    *provider.Workspace
-	log          log.Logger
-	tsClient     *local.Client
-	localClient  *daemon.LocalClient
+	config      *provider.ProviderConfig
+	workspace   *provider.Workspace
+	log         log.Logger
+	tsClient    *local.Client
+	localClient *daemon.LocalClient
 }
 
 func (c *client) Lock(ctx context.Context) error {

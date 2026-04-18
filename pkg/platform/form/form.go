@@ -101,7 +101,7 @@ func CreateInstance(
 			Labels: map[string]string{
 				storagev1.DevsyWorkspaceIDLabel:  id,
 				storagev1.DevsyWorkspaceUIDLabel: uid,
-				labels.ProjectLabel:               selectedProject.GetName(),
+				labels.ProjectLabel:              selectedProject.GetName(),
 			},
 			Annotations: map[string]string{
 				storagev1.DevsyWorkspacePictureAnnotation: picture,

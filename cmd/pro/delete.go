@@ -159,10 +159,10 @@ func cleanupLocalWorkspaces(
 				defer wg.Done()
 				client, err := workspace.Get(ctx, workspace.GetOptions{
 					DevsyConfig: devsyConfig,
-					Args:         []string{w.ID},
-					Owner:        owner,
-					LocalOnly:    true,
-					Log:          log,
+					Args:        []string{w.ID},
+					Owner:       owner,
+					LocalOnly:   true,
+					Log:         log,
 				})
 				if err != nil {
 					log.Errorf("failed to get workspace: workspaceId=%s, err=%v", w.ID, err)

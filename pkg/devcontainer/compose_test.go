@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	logLib "github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 )
 

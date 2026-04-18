@@ -231,10 +231,10 @@ github.com/devsy-org/admin-apis v1.2.0 h1:zfOltpdDxoO0FAe15NFb1NRNkmcdfn3QUY3hQ/
 github.com/devsy-org/admin-apis v1.2.0/go.mod h1:N2PrbYDtigY4By1yE1c6gfsWE5bIb6zwY9rUGK/9RWI=
 github.com/devsy-org/agentapi v1.0.1 h1:qdSs162AWvtGwsXrYcM0hJqQ79M0t/HTrZ+/KFeTxCs=
 github.com/devsy-org/agentapi v1.0.1/go.mod h1:VmUPw3OdIJ27ONFInfUrHliTyokhQtGmoiGWtmBzDrU=
-github.com/devsy-org/api v1.0.0 h1:xktBNMrh3v1V+LuO26C7zFbZkh5mTJXx1QKkacY18BQ=
-github.com/devsy-org/api v1.0.0/go.mod h1:3Ty/owx4MgvknS03qiTVoAdZnw5W6HlZWIBIF/ONEUQ=
-github.com/devsy-org/apiserver v1.2.0 h1:orLQQG+6s7noI4DfBYTC7bSstqIh8QZaYF8OyX02L8M=
-github.com/devsy-org/apiserver v1.2.0/go.mod h1:2jKuqy8XdH/g4bIjmkj3efQgshN/NjMzm17SkvvSR88=
+github.com/devsy-org/api v1.1.0 h1:l7T9k7RVwatwN4lxeDTF3iN6EYmfGZgR3ZTJMDGha1M=
+github.com/devsy-org/api v1.1.0/go.mod h1:mAZklKdnywJYiXDReBLte/H+3m69z6G7RHB3n1lI53Q=
+github.com/devsy-org/apiserver v1.5.0 h1:tAr2tH9QwtNEu8BTbBgHkJD6ae43S5LDdHGphLsELB8=
+github.com/devsy-org/apiserver v1.5.0/go.mod h1:2jKuqy8XdH/g4bIjmkj3efQgshN/NjMzm17SkvvSR88=
 github.com/devsy-org/log v1.1.0 h1:LktC2pLnGwaduspO+euTzzj3Fbt4G1S1bDcb4f3xTSE=
 github.com/devsy-org/log v1.1.0/go.mod h1:B/D8SOjJ34lQS5O1BupXwXvWsJRK+ul3JvYYahTkCE8=
 github.com/devsy-org/ssh v1.1.0 h1:LKwUPuyijX+x8L4zzEsObBptRjr8OTKugVCl3UPMTOs=

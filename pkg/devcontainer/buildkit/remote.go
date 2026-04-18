@@ -13,6 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/docker/cli/cli/config/types"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -23,13 +30,6 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/sirupsen/logrus"
-	"github.com/devsy-org/api/pkg/devsy"
-	"github.com/devsy-org/devsy/pkg/devcontainer/build"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
-	"github.com/devsy-org/devsy/pkg/image"
-	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/tonistiigi/fsutil"
 )
 

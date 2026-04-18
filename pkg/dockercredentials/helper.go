@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker-credential-helpers/credentials"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/docker/docker-credential-helpers/credentials"
 )
 
 const (

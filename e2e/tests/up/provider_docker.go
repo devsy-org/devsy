@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/log"
+	"github.com/docker/docker/api/types/container"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 var _ = ginkgo.Describe(

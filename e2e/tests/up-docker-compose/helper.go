@@ -12,13 +12,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/docker/docker/api/types/container"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 type baseTestContext struct {

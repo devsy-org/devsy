@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/docker/go-connections/nat"
-	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
@@ -25,6 +23,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/log"
+	"github.com/docker/go-connections/nat"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -41,7 +41,7 @@ const (
 
 // RunServicesOptions contains all options for running services.
 type RunServicesOptions struct {
-	DevsyConfig                   *config.Config
+	DevsyConfig                    *config.Config
 	ContainerClient                *ssh.Client
 	User                           string
 	ForwardPorts                   bool
