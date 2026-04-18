@@ -9,7 +9,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	"github.com/skevetter/log/scanner"
+	"github.com/devsy-org/log/scanner"
 )
 
 var syntaxDirectiveRegex = regexp.MustCompile(`(?m)^[\s\t]*#[\s\t]*syntax=.*$`)

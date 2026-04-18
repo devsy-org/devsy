@@ -20,7 +20,7 @@ import (
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

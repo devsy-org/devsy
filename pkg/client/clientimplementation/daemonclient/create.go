@@ -7,7 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/log/terminal"
 )
 
 func (c *client) Create(

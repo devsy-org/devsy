@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

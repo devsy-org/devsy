@@ -8,7 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func printUnusedUserValues(

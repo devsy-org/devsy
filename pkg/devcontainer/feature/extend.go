@@ -14,7 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 var (

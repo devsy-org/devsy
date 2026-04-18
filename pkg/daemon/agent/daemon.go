@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skevetter/api/pkg/devsy"
+	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type SshConfig struct {

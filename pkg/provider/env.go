@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	log2 "github.com/skevetter/log"
+	log2 "github.com/devsy-org/log"
 )
 
 func combineOptions(

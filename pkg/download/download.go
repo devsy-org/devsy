@@ -10,7 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // HTTPStatusError wraps HTTP status code errors for better error handling.

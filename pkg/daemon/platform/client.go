@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/pkg/platform"
 )
 

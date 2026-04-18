@@ -20,7 +20,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
 	docker "github.com/devsy-org/devsy/pkg/docker"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 var _ = ginkgo.Describe(

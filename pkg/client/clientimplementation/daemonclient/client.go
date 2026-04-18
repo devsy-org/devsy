@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
@@ -24,7 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 	"tailscale.com/client/local"
 	"tailscale.com/tailcfg"

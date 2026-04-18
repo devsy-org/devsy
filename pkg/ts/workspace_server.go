@@ -17,7 +17,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/store/mem"

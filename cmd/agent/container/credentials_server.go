@@ -18,7 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

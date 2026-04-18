@@ -16,7 +16,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

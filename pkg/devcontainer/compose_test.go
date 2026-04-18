@@ -9,7 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
-	logLib "github.com/skevetter/log"
+	logLib "github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 

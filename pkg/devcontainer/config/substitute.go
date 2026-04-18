@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/skevetter/log/hash"
+	"github.com/devsy-org/log/hash"
 )
 
 type ReplaceFunction func(match, variable string, args []string) string

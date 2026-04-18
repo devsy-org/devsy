@@ -9,7 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // CheckProviderUpdate currently only ensures the local provider is in sync with the remote for Devsy Pro instances.

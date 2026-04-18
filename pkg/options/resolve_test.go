@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"gotest.tools/assert"
 )
 

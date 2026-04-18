@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
 )
 
 func PipeJSONStream(logger log.Logger) (io.WriteCloser, chan struct{}) {

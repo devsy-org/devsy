@@ -13,7 +13,7 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func Build(

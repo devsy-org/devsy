@@ -21,7 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

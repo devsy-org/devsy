@@ -3,12 +3,12 @@ package clientimplementation
 import (
 	"context"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/tunnel"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 

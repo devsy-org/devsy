@@ -24,7 +24,7 @@ import (
 	open2 "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/tunnel"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // Params holds the parameters needed to open an IDE.

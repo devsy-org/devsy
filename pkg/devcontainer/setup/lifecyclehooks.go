@@ -18,7 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.

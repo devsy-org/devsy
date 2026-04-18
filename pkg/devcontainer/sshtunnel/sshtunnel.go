@@ -17,7 +17,7 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 )

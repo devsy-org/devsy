@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/gorilla/websocket"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func ExecuteConn(

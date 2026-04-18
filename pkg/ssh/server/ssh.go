@@ -8,8 +8,8 @@ import (
 	"os/user"
 
 	"github.com/devsy-org/devsy/pkg/shell"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 const (

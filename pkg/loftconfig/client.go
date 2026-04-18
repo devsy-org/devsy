@@ -7,7 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/credentials"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func GetDevsyConfig(context, provider string, port int, logger log.Logger) (*client.Config, error) {

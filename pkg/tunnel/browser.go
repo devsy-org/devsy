@@ -11,7 +11,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 

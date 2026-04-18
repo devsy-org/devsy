@@ -17,8 +17,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
 )
 
 func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) driver.Driver {

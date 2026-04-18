@@ -6,7 +6,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func AuthDevsyCliToPlatform(config *client.Config, logger log.Logger) error {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/platform"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

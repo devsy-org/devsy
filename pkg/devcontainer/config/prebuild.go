@@ -11,8 +11,8 @@ import (
 	"github.com/moby/patternmatcher/ignorefile"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	util "github.com/devsy-org/devsy/pkg/util/hash"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/hash"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/hash"
 )
 
 // PrebuildHashParams contains all parameters needed to calculate a prebuild hash.

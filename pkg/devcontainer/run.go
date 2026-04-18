@@ -17,7 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/language"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type Runner interface {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

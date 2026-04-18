@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // SetupParams holds all parameters needed for dotfiles setup.

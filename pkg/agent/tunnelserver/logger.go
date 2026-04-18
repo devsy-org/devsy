@@ -12,9 +12,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
-	"github.com/skevetter/log/survey"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
+	"github.com/devsy-org/log/survey"
 )
 
 func NewTunnelLogger(ctx context.Context, client tunnel.TunnelClient, debug bool) log.Logger {

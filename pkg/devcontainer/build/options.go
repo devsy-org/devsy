@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/id"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/skevetter/log/hash"
+	"github.com/devsy-org/log/hash"
 )
 
 // BuildOptions contains all configuration for building a dev container image.

@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const DefaultPort = "12049"

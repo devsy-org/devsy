@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 

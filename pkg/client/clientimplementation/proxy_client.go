@@ -14,7 +14,7 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/gofrs/flock"
-	"github.com/skevetter/api/pkg/devsy"
+	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	devsylog "github.com/devsy-org/devsy/pkg/log"
@@ -23,8 +23,8 @@ import (
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/terminal"
 )
 
 const (

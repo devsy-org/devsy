@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/shell"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type UserEnvProbe string

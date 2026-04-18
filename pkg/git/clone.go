@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/pflag"
 )
 

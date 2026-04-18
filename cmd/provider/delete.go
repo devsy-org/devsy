@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	logpkg "github.com/skevetter/log"
+	logpkg "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

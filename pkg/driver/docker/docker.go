@@ -19,7 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func makeEnvironment(env map[string]string, log log.Logger) []string {

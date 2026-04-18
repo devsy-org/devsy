@@ -15,7 +15,7 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 var _ = ginkgo.Describe(

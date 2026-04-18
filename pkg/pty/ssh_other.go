@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/ssh"
 	"github.com/u-root/u-root/pkg/termios"
 	gossh "golang.org/x/crypto/ssh"
 )

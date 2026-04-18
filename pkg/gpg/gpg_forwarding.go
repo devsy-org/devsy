@@ -12,7 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 

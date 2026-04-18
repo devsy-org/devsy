@@ -10,7 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/image"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type GetWorkspaceConfigResult struct {

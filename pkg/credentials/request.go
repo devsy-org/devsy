@@ -10,7 +10,7 @@ import (
 	"time"
 
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )

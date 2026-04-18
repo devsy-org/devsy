@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

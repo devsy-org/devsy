@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const containersExtension = "ms-vscode-remote.remote-containers"

@@ -18,7 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/providers"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 var ErrNoWorkspaceFound = errors.New("no workspace found")

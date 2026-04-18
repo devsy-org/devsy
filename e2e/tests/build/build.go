@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

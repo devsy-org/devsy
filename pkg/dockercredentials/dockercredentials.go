@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/random"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

@@ -17,7 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

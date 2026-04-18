@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/devsy-org/devsy/pkg/machineid"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

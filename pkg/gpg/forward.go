@@ -6,7 +6,7 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // ForwardAgent starts a background SSH connection that forwards the local GPG agent.

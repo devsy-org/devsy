@@ -8,7 +8,7 @@ import (
 	"time"
 
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/skratchdot/open-golang/open"
 )
 

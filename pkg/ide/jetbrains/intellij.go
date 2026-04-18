@@ -3,7 +3,7 @@ package jetbrains
 import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const (

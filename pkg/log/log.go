@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
-	logLib "github.com/skevetter/log"
-	"github.com/skevetter/log/survey"
+	logLib "github.com/devsy-org/log"
+	"github.com/devsy-org/log/survey"
 )
 
 // CombinedLogger implements the Logger interface and delegates logging to multiple loggers.

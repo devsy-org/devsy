@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type ProgrammingLanguage string

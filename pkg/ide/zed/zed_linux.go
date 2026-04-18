@@ -8,7 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // Open first finds the zed binary for the local platform and then opens the zed editor with the given workspace folder.

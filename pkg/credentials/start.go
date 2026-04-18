@@ -11,7 +11,7 @@ import (
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/random"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func StartCredentialsServer(

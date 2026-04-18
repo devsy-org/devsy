@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // DeleteOptions holds the parameters for deleting a workspace.

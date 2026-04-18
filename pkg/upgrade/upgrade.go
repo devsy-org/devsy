@@ -9,7 +9,7 @@ import (
 	"github.com/creativeprojects/go-selfupdate"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // Upgrade downloads the latest release from github and replaces devsy if a new version is found.

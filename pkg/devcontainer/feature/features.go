@@ -19,8 +19,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/hash"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/hash"
 )
 
 const DEVCONTAINER_MANIFEST_MEDIATYPE = "application/vnd.devcontainers"

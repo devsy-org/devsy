@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 //go:embed inject.sh

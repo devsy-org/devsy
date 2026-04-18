@@ -13,9 +13,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/file"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/survey"
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/survey"
+	"github.com/devsy-org/log/terminal"
 )
 
 // ListMachines returns all machines configured in the given Devsy context.

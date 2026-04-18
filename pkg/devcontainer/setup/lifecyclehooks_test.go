@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )

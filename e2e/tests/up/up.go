@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/language"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), func() {

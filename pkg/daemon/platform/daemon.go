@@ -17,7 +17,7 @@ import (
 	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 	"tailscale.com/types/netmap"

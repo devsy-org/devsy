@@ -19,7 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20

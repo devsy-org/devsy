@@ -9,17 +9,17 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/skevetter/api/pkg/apis/management/install" // Install the management group to ensure the option types are registered
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/apiserver/pkg/builders"
+	_ "github.com/devsy-org/api/pkg/apis/management/install" // Install the management group to ensure the option types are registered
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/apiserver/pkg/builders"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	devsyconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

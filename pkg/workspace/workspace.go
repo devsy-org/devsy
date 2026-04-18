@@ -22,8 +22,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/terminal"
 )
 
 var errProvideWorkspaceArg = errors.New(

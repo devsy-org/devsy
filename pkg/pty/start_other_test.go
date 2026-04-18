@@ -12,7 +12,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/devsy-org/devsy/pkg/pty/ptytest"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/ssh"
 	"github.com/stretchr/testify/suite"
 )
 

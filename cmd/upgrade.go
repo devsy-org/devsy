@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/upgrade"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

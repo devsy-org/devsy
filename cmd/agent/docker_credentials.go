@@ -7,7 +7,7 @@ import (
 	"github.com/docker/docker-credential-helpers/credentials"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

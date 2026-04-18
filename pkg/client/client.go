@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/skevetter/api/pkg/devsy"
+	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"golang.org/x/crypto/ssh"

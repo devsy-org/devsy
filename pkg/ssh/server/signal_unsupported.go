@@ -6,8 +6,8 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 func cmdSysProcAttr() *syscall.SysProcAttr {

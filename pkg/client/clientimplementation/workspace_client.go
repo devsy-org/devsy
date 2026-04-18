@@ -26,7 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 func NewWorkspaceClient(

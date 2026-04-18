@@ -16,6 +16,11 @@ require (
 	github.com/containers/image/v5 v5.36.2
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.5.2
+	github.com/devsy-org/agentapi v1.0.1
+	github.com/devsy-org/api v1.0.0
+	github.com/devsy-org/apiserver v1.2.0
+	github.com/devsy-org/log v1.1.0
+	github.com/devsy-org/ssh v1.1.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.4.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
@@ -39,11 +44,6 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/pkg/sftp v1.13.10
 	github.com/sirupsen/logrus v1.9.4
-	github.com/skevetter/agentapi v1.0.0
-	github.com/skevetter/api v1.0.1
-	github.com/skevetter/apiserver v1.0.2
-	github.com/skevetter/log v0.0.0-20260106023547-bfd26ab1367c
-	github.com/skevetter/ssh v0.1.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -94,7 +94,6 @@ require (
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/akutz/memconn v0.1.0 // indirect
 	github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa // indirect
-	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.4 // indirect
@@ -147,8 +146,6 @@ require (
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
 	github.com/devsy-org/admin-apis v1.2.0 // indirect
-	github.com/devsy-org/agentapi v1.0.1 // indirect
-	github.com/devsy-org/apiserver v1.2.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
@@ -246,7 +243,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
-	github.com/skevetter/admin-apis v1.0.0 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20231202035212-d3fa0460f47e // indirect
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect
@@ -314,12 +310,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
 )
 
-replace (
-	github.com/skevetter/admin-apis => github.com/devsy-org/admin-apis v1.0.0
-	github.com/skevetter/agentapi => github.com/devsy-org/agentapi v1.0.0
-	github.com/skevetter/api => github.com/devsy-org/api v1.0.1
-	github.com/skevetter/apiserver => github.com/devsy-org/apiserver v1.0.2
-	github.com/skevetter/log => github.com/devsy-org/log v0.0.0-20260106023547-bfd26ab1367c
-	github.com/skevetter/ssh => github.com/devsy-org/ssh v0.1.0
-	tailscale.com => github.com/skevetter/tailscale v1.92.2
-)
+replace tailscale.com => github.com/devsy-org/tailscale v1.92.2

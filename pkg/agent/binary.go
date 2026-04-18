@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 type BinarySource interface {

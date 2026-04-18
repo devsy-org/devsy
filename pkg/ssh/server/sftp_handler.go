@@ -7,8 +7,8 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/sirupsen/logrus"
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 func sftpHandler(sess ssh.Session, currentUser string, log log.Logger) {

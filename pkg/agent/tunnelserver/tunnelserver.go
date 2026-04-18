@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/moby/patternmatcher/ignorefile"
-	"github.com/skevetter/api/pkg/devsy"
+	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -26,7 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/stdio"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
