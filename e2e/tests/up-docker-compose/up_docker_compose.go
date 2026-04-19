@@ -498,7 +498,7 @@ var _ = ginkgo.Describe(
 			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
-				To(gomega.Equal("mcr.microsoft.com/devcontainers/go:dev-1.24"))
+				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
 		ginkgo.It("multi-stage dockerfile with args", func(ctx context.Context) {
@@ -522,7 +522,7 @@ var _ = ginkgo.Describe(
 			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
-				To(gomega.Equal("mcr.microsoft.com/devcontainers/go:dev-1.24"))
+				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 	},
 )

@@ -2,7 +2,7 @@ version: '3'
 
 services:
   app:
-    image: mcr.microsoft.com/devcontainers/go:${TAG}
+    image: ghcr.io/devsy-org/test-images/go:${TAG}
     command: sleep infinity
     volumes:
       - .:/workspaces:cached
