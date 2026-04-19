@@ -1,3 +1,3 @@
-FROM docker.io/library/ubuntu:latest
+FROM ghcr.io/devsy-org/test-images/ubuntu:latest
 
 USER ${USERNAME:-ubuntu}
