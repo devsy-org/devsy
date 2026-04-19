@@ -11,8 +11,8 @@
       "installOhMyZsh": false,
       "installOhMyZshConfig": false,
       "username": "example",
-      "userUid": 1000,
-      "userGid": 1000
+      "userUid": "automatic",
+      "userGid": "automatic"
     }
   },
   "containerEnv": {
