@@ -19,7 +19,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@gen/*": ["node_modules/@devsy/client/gen/*"]
     }
   },
   "include": ["src", "./eslint.config.js", "update-window"],
