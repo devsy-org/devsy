@@ -29,6 +29,12 @@ var _ = ginkgo.Describe(
 				ginkgo.Skip("GH_USERNAME and GH_ACCESS_TOKEN must be set")
 			}
 
+			// GitHub App tokens require "x-access-token" as the credential username
+			credUser := os.Getenv("GH_CREDENTIAL_USERNAME")
+			if credUser == "" {
+				credUser = username
+			}
+
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
@@ -41,7 +47,7 @@ var _ = ginkgo.Describe(
 				Run()
 			framework.ExpectNoError(err)
 
-			gitCredentialString := []byte("https://" + username + ":" + token + "@github.com")
+			gitCredentialString := []byte("https://" + credUser + ":" + token + "@github.com")
 			err = os.WriteFile(credentialPath, gitCredentialString, 0o600)
 			framework.ExpectNoError(err)
 
