@@ -1,4 +1,4 @@
-FROM ghcr.io/devsy-org/test-images/base:ubuntu
+FROM ghcr.io/devsy-org/test-images/ubuntu:latest
 
 ARG USERNAME=ubuntu
 RUN useradd -m ${USERNAME}
