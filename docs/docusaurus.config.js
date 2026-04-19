@@ -24,17 +24,6 @@ module.exports = {
       },
       items: [
         {
-          href: "https://devsy.sh/",
-          label: "Website",
-          position: "left",
-          target: "_self",
-        },
-        {
-          to: "/docs/",
-          label: "Docs",
-          position: "left",
-        },
-        {
           href: "https://github.com/devsy-org/devsy",
           className: "github-link",
           "aria-label": "GitHub",
