@@ -9,6 +9,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
