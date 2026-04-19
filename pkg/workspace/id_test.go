@@ -63,7 +63,7 @@ func TestToID(t *testing.T) {
 		{
 			name:  "Truncation beyond 48 characters",
 			input: "github.com/devsy-org/devsyreallylongreponame_that_exceeds_48_characters_total_length",
-			want:  "devsyreallylongreponamethatexceeds48characterst",
+			want:  "devsyreallylongreponamethatexceeds48charactersto",
 		},
 	}
 

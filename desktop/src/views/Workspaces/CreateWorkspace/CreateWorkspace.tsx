@@ -359,9 +359,8 @@ export function CreateWorkspace() {
                   <FormErrorMessage>{idError.message ?? "Error"}</FormErrorMessage>
                 ) : (
                   <FormHelperText>
-                    This is the workspace name Devsy will use. This is an optional field and
-                    usually only needed if you have an already existing workspace with the same
-                    name.
+                    This is the workspace name Devsy will use. This is an optional field and usually
+                    only needed if you have an already existing workspace with the same name.
                   </FormHelperText>
                 )}
               </FormControl>

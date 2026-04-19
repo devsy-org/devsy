@@ -1,3 +1,6 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/go:latest"
+  "image": "mcr.microsoft.com/devcontainers/go:latest",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/pre-commit:2": {}
+  }
 }

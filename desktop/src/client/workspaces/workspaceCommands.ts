@@ -108,10 +108,7 @@ export class WorkspaceCommands {
   }
 
   static async GetWorkspaceUID() {
-    const result = await new Command([
-      DEVSY_COMMAND_HELPER,
-      DEVSY_COMMAND_GET_WORKSPACE_UID,
-    ]).run()
+    const result = await new Command([DEVSY_COMMAND_HELPER, DEVSY_COMMAND_GET_WORKSPACE_UID]).run()
     if (result.err) {
       return result
     }

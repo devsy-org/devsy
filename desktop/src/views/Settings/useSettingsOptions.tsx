@@ -58,8 +58,8 @@ export function useExtraEnvVarsOption() {
   const helpText = useMemo(
     () => (
       <>
-        Set additional environment variables Devsy passes to all commands. Accepts a comma
-        separated list, e.g. FOO=bar,BAZ=false
+        Set additional environment variables Devsy passes to all commands. Accepts a comma separated
+        list, e.g. FOO=bar,BAZ=false
       </>
     ),
     []
@@ -156,8 +156,8 @@ export function useProxyOptions() {
   const helpText = useMemo(
     () => (
       <>
-        Set HTTP(S) proxy configuration. These settings will only be used by Devsy itself and not
-        be available within your workspace.
+        Set HTTP(S) proxy configuration. These settings will only be used by Devsy itself and not be
+        available within your workspace.
       </>
     ),
     []

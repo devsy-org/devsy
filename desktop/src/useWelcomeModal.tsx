@@ -114,8 +114,8 @@ export function useWelcomeModal() {
                   </HStack>
 
                   <Text>
-                    Devsy ships with a powerful CLI that allows you to create, manage and connect
-                    to your workspaces and providers. You can either{" "}
+                    Devsy ships with a powerful CLI that allows you to create, manage and connect to
+                    your workspaces and providers. You can either{" "}
                     <Link onClick={() => client.openUrl(GITHUB_RELEASES_URL)}>
                       download the standalone binary
                     </Link>{" "}
