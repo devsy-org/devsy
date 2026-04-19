@@ -365,6 +365,7 @@ jobs:
         with:
           app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: run test
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'

@@ -1,3 +1,3 @@
-FROM ghcr.io/devsy-org/test-images/base:ubuntu
+FROM ghcr.io/devsy-org/test-images/ubuntu:latest
 
 USER ${USERNAME:-ubuntu}
