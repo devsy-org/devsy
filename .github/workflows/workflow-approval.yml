@@ -16,7 +16,7 @@ jobs:
           app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
 
-      - uses: devsy-org/automatic-approve-action@v2
+      - uses: skevetter/automatic-approve-action@v2
         with:
           token: ${{ steps.app-token.outputs.token }}
           workflows: "commit.yml,lint.yml,pr-ci.yml,pre-commit.yml"
