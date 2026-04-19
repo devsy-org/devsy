@@ -48,9 +48,11 @@ jobs:
         env:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
         run: |
           GH_USERNAME="${GH_USERNAME}" \
             GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+            GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
             KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
             PATH="${PATH}" \
             GOROOT="${GOROOT}" \
