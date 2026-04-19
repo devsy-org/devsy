@@ -1,6 +1,6 @@
-# Contributing to DevPod
+# Contributing to Devsy
 
-Thank you for your interest in contributing to DevPod! This guide will help you get started with development.
+Thank you for your interest in contributing to Devsy! This guide will help you get started with development.
 
 ## Development Setup
 
@@ -32,14 +32,14 @@ sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev \
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/skevetter/devpod.git
-   cd devpod
+   git clone https://github.com/devsy-org/devsy.git
+   cd devsy
    ```
 
-2. If you want to change DevPod agent code:
+2. If you want to change Devsy agent code:
    - Exchange the URL in [DefaultAgentDownloadURL](./pkg/agent/agent.go) with a custom public repository release
-   - Build devpod via: `task cli:build:dev`
-   - Upload `dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64` and ARM64 variant to your public repository release assets
+   - Build devsy via: `task cli:build:dev`
+   - Upload `dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64` and ARM64 variant to your public repository release assets
 
 ## Building from Source
 
@@ -61,10 +61,10 @@ task cli:build:dev:pro
 **Using Go directly:**
 
 ```bash
-CGO_ENABLED=0 go build -ldflags "-s -w" -o devpod
+CGO_ENABLED=0 go build -ldflags "-s -w" -o devsy
 ```
 
-The binary will be output as `devpod` in the current directory.
+The binary will be output as `devsy` in the current directory.
 
 ### Desktop Application
 
@@ -173,24 +173,24 @@ This requires:
 
 ### Quick Start
 
-1. Build DevPod:
+1. Build Devsy:
    ```bash
    task cli:build:dev
    ```
 
 2. Add a provider:
    ```bash
-   ./dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 provider add docker
+   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 provider add docker
    ```
 
 3. Configure the provider:
    ```bash
-   ./dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 provider use docker
+   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 provider use docker
    ```
 
 4. Start a workspace:
    ```bash
-   ./dist/devpod-dev_linux_amd64_v1/devpod-linux-amd64 up examples/simple
+   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 up examples/simple
    ```
 
 ### Using Act for Local CI Testing
@@ -211,7 +211,7 @@ task cli:test:e2e:act:focus -- "test-pattern"
 
 ## Developing Providers
 
-Read [the docs](https://devpod.sh/docs/developing-providers/quickstart) for an introduction to developing your own providers.
+Read [the docs](https://devsy.sh/docs/developing-providers/quickstart) for an introduction to developing your own providers.
 
 ### Publishing Your Provider
 
@@ -224,20 +224,20 @@ This will feature your provider in both the documentation and the UI.
 
 ## Desktop Deep Links
 
-DevPod Desktop can handle deep links to perform various actions.
+Devsy Desktop can handle deep links to perform various actions.
 
 **URL Scheme:**
 
 ```
-devpod://command?param1=value1&param2=value2
+devsy://command?param1=value1&param2=value2
 ```
 
 ### Open Workspace
 
-Open a workspace based on a source (similar to `devpod up`, but shareable):
+Open a workspace based on a source (similar to `devsy up`, but shareable):
 
 ```
-devpod://open?source=<url-encoded-source>&workspace=<name>&provider=<provider>&ide=<ide>
+devsy://open?source=<url-encoded-source>&workspace=<name>&provider=<provider>&ide=<ide>
 ```
 
 **Parameters:**
@@ -250,21 +250,21 @@ devpod://open?source=<url-encoded-source>&workspace=<name>&provider=<provider>&i
 **Example:**
 
 ```
-devpod://open?source=https%3A%2F%2Fgithub.com%2Fuser%2Frepo&workspace=my-workspace&provider=docker&ide=vscode
+devsy://open?source=https%3A%2F%2Fgithub.com%2Fuser%2Frepo&workspace=my-workspace&provider=docker&ide=vscode
 ```
 
 ### Import Workspace
 
-Import a remote DevPod.Pro workspace into your local client:
+Import a remote Devsy.Pro workspace into your local client:
 
 ```
-devpod://import?workspace_id=<id>&workspace_uid=<uid>&devpod_pro_host=<host>&options=<options>
+devsy://import?workspace_id=<id>&workspace_uid=<uid>&devsy_pro_host=<host>&options=<options>
 ```
 
 **Parameters:**
 - `workspace_id` (required): Workspace ID
 - `workspace_uid` (required): Workspace UID
-- `devpod_pro_host` (required): DevPod Pro host URL
+- `devsy_pro_host` (required): Devsy Pro host URL
 - `options` (optional): Additional options
 
 ## Useful Task Commands
@@ -304,9 +304,9 @@ task cli:test:e2e:focus     # Run focused tests
 
 ## Getting Help
 
-- [Documentation](https://devpod.sh/docs)
-- [GitHub Issues](https://github.com/skevetter/devpod/issues)
-- [GitHub Discussions](https://github.com/skevetter/devpod/discussions)
+- [Documentation](https://devsy.sh/docs)
+- [GitHub Issues](https://github.com/devsy-org/devsy/issues)
+- [GitHub Discussions](https://github.com/devsy-org/devsy/discussions)
 
 ## Code of Conduct
 

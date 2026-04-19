@@ -3,7 +3,7 @@ package throttledlogger
 import (
 	"time"
 
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 // ThrottledLogger is a logger that throttles the output,

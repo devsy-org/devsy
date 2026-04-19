@@ -7,13 +7,13 @@ import (
 	"io"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	docker "github.com/devsy-org/devsy/pkg/docker"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	docker "github.com/skevetter/devpod/pkg/docker"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
 )
 
 type baseTestContext struct {
@@ -34,7 +34,7 @@ func (btc *baseTestContext) execSSHCapture(
 }
 
 func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevPodSSH(ctx, tempDir, command)
+	return btc.f.DevsySSH(ctx, tempDir, command)
 }
 
 type dockerTestContext struct {
@@ -96,7 +96,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		return "", err
 	}
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 	return tempDir, nil
 }
 
@@ -114,5 +114,5 @@ func setupWorkspaceAndUp(
 	if err != nil {
 		return "", err
 	}
-	return tempDir, f.DevPodUp(ctx, append([]string{tempDir}, args...)...)
+	return tempDir, f.DevsyUp(ctx, append([]string{tempDir}, args...)...)
 }

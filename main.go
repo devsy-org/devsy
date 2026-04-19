@@ -1,6 +1,6 @@
 package main
 
-import "github.com/skevetter/devpod/cmd"
+import "github.com/devsy-org/devsy/cmd"
 
 func main() {
 	cmd.Execute()

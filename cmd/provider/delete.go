@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
-	logpkg "github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	logpkg "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -57,12 +57,12 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	provider := devPodConfig.Current().DefaultProvider
+	provider := devsyConfig.Current().DefaultProvider
 	if len(args) > 0 {
 		provider = args[0]
 	} else if provider == "" {
@@ -70,7 +70,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// delete the provider
-	err = DeleteProvider(ctx, devPodConfig, provider, cmd.IgnoreNotFound, cmd.Force, logpkg.Default)
+	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force, logpkg.Default)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 
 func DeleteProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider string,
 	ignoreNotFound, force bool,
 	log logpkg.Logger,
@@ -89,7 +89,7 @@ func DeleteProvider(
 	// if force is not set, check if the provider is associated with a pro instance or workspace
 	if !force {
 		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devPodConfig, logpkg.Default)
+		proInstances, err := workspace.ListProInstances(devsyConfig, logpkg.Default)
 		if err != nil {
 			return fmt.Errorf("list pro instances: %w", err)
 		}
@@ -105,7 +105,7 @@ func DeleteProvider(
 		}
 
 		// check if there are workspaces that still use this provider
-		workspaces, err := workspace.List(ctx, devPodConfig, true, platform.AllOwnerFilter, log)
+		workspaces, err := workspace.List(ctx, devsyConfig, true, platform.AllOwnerFilter, log)
 		if err != nil {
 			return err
 		}
@@ -124,20 +124,20 @@ func DeleteProvider(
 		}
 	}
 
-	return DeleteProviderConfig(devPodConfig, provider, ignoreNotFound)
+	return DeleteProviderConfig(devsyConfig, provider, ignoreNotFound)
 }
 
-func DeleteProviderConfig(devPodConfig *config.Config, provider string, ignoreNotFound bool) error {
-	if devPodConfig.Current().DefaultProvider == provider {
-		devPodConfig.Current().DefaultProvider = ""
+func DeleteProviderConfig(devsyConfig *config.Config, provider string, ignoreNotFound bool) error {
+	if devsyConfig.Current().DefaultProvider == provider {
+		devsyConfig.Current().DefaultProvider = ""
 	}
-	delete(devPodConfig.Current().Providers, provider)
-	err := config.SaveConfig(devPodConfig)
+	delete(devsyConfig.Current().Providers, provider)
+	err := config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	providerDir, err := provider2.GetProviderDir(devPodConfig.DefaultContext, provider)
+	providerDir, err := provider2.GetProviderDir(devsyConfig.DefaultContext, provider)
 	if err != nil {
 		return err
 	}

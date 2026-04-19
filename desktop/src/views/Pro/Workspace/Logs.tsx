@@ -1,7 +1,7 @@
 import { TerminalSearchBar, useStreamingTerminal } from "@/components"
 import { TSearchOptions } from "@/components/Terminal/useTerminalSearch"
 import { useAction } from "@/contexts"
-import { useWorkspaceActions } from "@/contexts/DevPodContext/workspaces/useWorkspace"
+import { useWorkspaceActions } from "@/contexts/DevsyContext/workspaces/useWorkspace"
 import { CheckCircle, ExclamationCircle, ExclamationTriangle } from "@/icons"
 import EmptyImage from "@/images/empty_default.svg"
 import EmptyDarkImage from "@/images/empty_default_dark.svg"

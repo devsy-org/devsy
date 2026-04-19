@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,16 +37,16 @@ func NewLogsDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
 	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
-		DevPodConfig: devPodConfig,
-		Args:         args,
-		Owner:        cmd.Owner,
-		Log:          log.Default,
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+		Log:         log.Default,
 	})
 	if err != nil {
 		return err

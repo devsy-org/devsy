@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/log/terminal"
 )
 
 func (c *client) updateInstance(ctx context.Context) error {

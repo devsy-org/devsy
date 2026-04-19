@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	devsyclient "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/telemetry/analytics"
+	"github.com/devsy-org/devsy/pkg/version"
+	"github.com/devsy-org/log"
 	"github.com/moby/term"
-	devpodclient "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/telemetry/analytics"
-	"github.com/skevetter/devpod/pkg/version"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
@@ -45,15 +45,15 @@ var CollectorCLI CLICollector = &noopCollector{}
 
 type CLICollector interface {
 	RecordCLI(err error)
-	SetClient(client devpodclient.BaseWorkspaceClient)
+	SetClient(client devsyclient.BaseWorkspaceClient)
 
 	// Flush makes sure all events are sent to the backend
 	Flush()
 }
 
 // StartCLI starts collecting events and sending them to the backend from the CLI.
-func StartCLI(devPodConfig *config.Config, cmd *cobra.Command) {
-	telemetryOpt := devPodConfig.ContextOption(config.ContextOptionTelemetry)
+func StartCLI(devsyConfig *config.Config, cmd *cobra.Command) {
+	telemetryOpt := devsyConfig.ContextOption(config.ContextOptionTelemetry)
 	if telemetryOpt == config.BoolFalse || version.GetVersion() == version.DevVersion ||
 		os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
 		return
@@ -82,12 +82,12 @@ func newCLICollector(cmd *cobra.Command) (*cliCollector, error) {
 type cliCollector struct {
 	analyticsClient analytics.Client
 	cmd             *cobra.Command
-	client          devpodclient.BaseWorkspaceClient
+	client          devsyclient.BaseWorkspaceClient
 
 	log log.Logger
 }
 
-func (d *cliCollector) SetClient(client devpodclient.BaseWorkspaceClient) {
+func (d *cliCollector) SetClient(client devsyclient.BaseWorkspaceClient) {
 	d.client = client
 }
 
@@ -102,7 +102,7 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 	cmd := d.cmd.CommandPath()
 	isUI := os.Getenv(config.EnvUI) == config.BoolTrue
-	// Ignore certain commands triggered by DevPod Desktop
+	// Ignore certain commands triggered by Devsy Desktop
 	if isUI {
 		if slices.Contains(UIEventsExceptions, cmd) {
 			return
@@ -148,7 +148,7 @@ func (d *cliCollector) RecordCLI(err error) {
 	isPro := false
 	wd, wdErr := os.Getwd()
 	if wdErr == nil {
-		if strings.HasPrefix(wd, "/var/lib/loft/devpod") {
+		if strings.HasPrefix(wd, "/var/lib/loft/devsy") {
 			isPro = true
 		}
 	}

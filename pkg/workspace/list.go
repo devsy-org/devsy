@@ -11,29 +11,29 @@ import (
 	"strings"
 	"sync"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/platform"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	"github.com/skevetter/devpod/pkg/platform"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log"
 )
 
-const ProjectLabel = "loft.sh/project"
+const ProjectLabel = "devsy.sh/project"
 
 func List(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	skipPro bool,
 	owner platform.OwnerFilter,
 	log log.Logger,
 ) ([]*providerpkg.Workspace, error) {
 	// list local workspaces
-	localWorkspaces, err := ListLocalWorkspaces(devPodConfig.DefaultContext, skipPro, log)
+	localWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, skipPro, log)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func List(
 	proWorkspaces := []*providerpkg.Workspace{}
 	if !skipPro {
 		// list remote workspaces
-		proWorkspaceResults, err := listProWorkspaces(ctx, devPodConfig, owner, log)
+		proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner, log)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func List(
 				if shouldDeleteLocalWorkspace(ctx, localWorkspace, proWorkspaceResults) {
 					err = clientimplementation.DeleteWorkspaceFolder(
 						clientimplementation.DeleteWorkspaceFolderParams{
-							Context:              devPodConfig.DefaultContext,
+							Context:              devsyConfig.DefaultContext,
 							WorkspaceID:          localWorkspace.ID,
 							SSHConfigPath:        localWorkspace.SSHConfigPath,
 							SSHConfigIncludePath: localWorkspace.SSHConfigIncludePath,
@@ -155,7 +155,7 @@ type listProWorkspacesResult struct {
 
 func listProWorkspaces(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	owner platform.OwnerFilter,
 	log log.Logger,
 ) (map[string]listProWorkspacesResult, error) {
@@ -165,12 +165,12 @@ func listProWorkspaces(
 	var mu sync.Mutex
 	wg := sync.WaitGroup{}
 
-	for provider, providerContextConfig := range devPodConfig.Current().Providers {
+	for provider, providerContextConfig := range devsyConfig.Current().Providers {
 		if !providerContextConfig.Initialized {
 			continue
 		}
 
-		providerConfig, err := providerpkg.LoadProviderConfig(devPodConfig.DefaultContext, provider)
+		providerConfig, err := providerpkg.LoadProviderConfig(devsyConfig.DefaultContext, provider)
 		if err != nil {
 			log.Warnf("load provider config for provider: provider=%s, error=%v", provider, err)
 			continue
@@ -184,7 +184,7 @@ func listProWorkspaces(
 		wg.Go(func() {
 			workspaces, err := listProWorkspacesForProvider(
 				ctx,
-				devPodConfig,
+				devsyConfig,
 				provider,
 				providerConfig,
 				owner,
@@ -205,20 +205,20 @@ func listProWorkspaces(
 
 func listProWorkspacesForProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider string,
 	providerConfig *providerpkg.ProviderConfig,
 	owner platform.OwnerFilter,
 	log log.Logger,
 ) ([]*providerpkg.Workspace, error) {
 	var (
-		instances []managementv1.DevPodWorkspaceInstance
+		instances []managementv1.DevsyWorkspaceInstance
 		err       error
 	)
 	if providerConfig.IsProxyProvider() {
 		instances, err = listInstancesProxyProvider(
 			ctx,
-			devPodConfig,
+			devsyConfig,
 			provider,
 			providerConfig,
 			log,
@@ -243,14 +243,14 @@ func listProWorkspacesForProvider(
 		}
 
 		// id
-		id := instance.GetLabels()[storagev1.DevPodWorkspaceIDLabel]
+		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
 		if id == "" {
 			log.Debugf("no ID label for pro workspace \"%s\" found, skipping", instance.GetName())
 			continue
 		}
 
 		// uid
-		uid := instance.GetLabels()[storagev1.DevPodWorkspaceUIDLabel]
+		uid := instance.GetLabels()[storagev1.DevsyWorkspaceUIDLabel]
 		if uid == "" {
 			log.Debugf("no UID label for pro workspace \"%s\" found, skipping", instance.GetName())
 			continue
@@ -262,9 +262,9 @@ func listProWorkspacesForProvider(
 		// source
 		source := providerpkg.WorkspaceSource{}
 		if instance.Annotations != nil &&
-			instance.Annotations[storagev1.DevPodWorkspaceSourceAnnotation] != "" {
+			instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
 			// source to workspace config source
-			rawSource := instance.Annotations[storagev1.DevPodWorkspaceSourceAnnotation]
+			rawSource := instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation]
 			s := providerpkg.ParseWorkspaceSource(rawSource)
 			if s == nil {
 				log.Warnf("unable to parse workspace source: source=%s", rawSource)
@@ -281,11 +281,11 @@ func listProWorkspacesForProvider(
 		} else {
 			var ts int64
 			if instance.Annotations != nil {
-				if val, ok := instance.Annotations["sleepmode.loft.sh/last-activity"]; ok {
+				if val, ok := instance.Annotations["sleepmode.devsy.sh/last-activity"]; ok {
 					var err error
 					if ts, err = strconv.ParseInt(val, 10, 64); err != nil {
 						log.Warn(
-							"received invalid sleepmode.loft.sh/last-activity from ",
+							"received invalid sleepmode.devsy.sh/last-activity from ",
 							instance.GetName(),
 						)
 					}
@@ -303,7 +303,7 @@ func listProWorkspacesForProvider(
 		workspace := providerpkg.Workspace{
 			ID:      id,
 			UID:     uid,
-			Context: devPodConfig.DefaultContext,
+			Context: devsyConfig.DefaultContext,
 			Source:  source,
 			Provider: providerpkg.WorkspaceProviderConfig{
 				Name: provider,
@@ -354,12 +354,12 @@ func shouldDeleteLocalWorkspace(
 
 func listInstancesProxyProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider string,
 	providerConfig *providerpkg.ProviderConfig,
 	log log.Logger,
-) ([]managementv1.DevPodWorkspaceInstance, error) {
-	opts := devPodConfig.ProviderOptions(provider)
+) ([]managementv1.DevsyWorkspaceInstance, error) {
+	opts := devsyConfig.ProviderOptions(provider)
 	opts[config.EnvLoftFilterByOwner] = config.OptionValue{Value: "true"}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -368,7 +368,7 @@ func listInstancesProxyProvider(
 		Ctx:     ctx,
 		Name:    "listWorkspaces",
 		Command: providerConfig.Exec.Proxy.List.Workspaces,
-		Context: devPodConfig.DefaultContext,
+		Context: devsyConfig.DefaultContext,
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  &stdout,
@@ -381,7 +381,7 @@ func listInstancesProxyProvider(
 		return nil, nil
 	}
 
-	instances := []managementv1.DevPodWorkspaceInstance{}
+	instances := []managementv1.DevsyWorkspaceInstance{}
 	if err := json.Unmarshal(stdout.Bytes(), &instances); err != nil {
 		return nil, err
 	}
@@ -393,7 +393,7 @@ func listInstancesDaemonProvider(
 	ctx context.Context,
 	provider string,
 	owner platform.OwnerFilter,
-) ([]managementv1.DevPodWorkspaceInstance, error) {
+) ([]managementv1.DevsyWorkspaceInstance, error) {
 	return daemon.NewLocalClient(provider).ListWorkspaces(ctx, owner)
 }
 

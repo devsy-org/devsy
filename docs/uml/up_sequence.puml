@@ -5,77 +5,77 @@ skinparam BackgroundColor lightgray
 
 alt using machine provider
 alt machine doesn't exist
-DevPod -> Provider: devpod machine create
-Provider --> DevPod: machine id
+Devsy -> Provider: devsy machine create
+Provider --> Devsy: machine id
 end
-DevPod -> Provider: devpod machine start
-Provider --> DevPod: machine id
+Devsy -> Provider: devsy machine start
+Provider --> Devsy: machine id
 end
 
-DevPod -> Repo: git pull
-Repo --> DevPod: source code
+Devsy -> Repo: git pull
+Repo --> Devsy: source code
 
 alt image not already available
-DevPod -> Agent: devpod workspace build
+Devsy -> Agent: devsy workspace build
 activate Agent
 Agent --> ContainerRuntime: build
 ContainerRuntime --> Agent: image
-Agent --> DevPod:
+Agent --> Devsy:
 deactivate Agent
 end
 
-DevPod -> Agent: devpod helper ssh-server --stdio
+Devsy -> Agent: devsy helper ssh-server --stdio
 activate Agent
-DevPod -> Agent: devpod agent daemon
-DevPod -> Agent: devpod agent workspace up --workspace-info
+Devsy -> Agent: devsy agent daemon
+Devsy -> Agent: devsy agent workspace up --workspace-info
 
 Agent -> ContainerRuntime: run
 ContainerRuntime --> Agent: container id
 
-Agent -> ContainerAgent: devpod helper ssh-server --stdio
+Agent -> ContainerAgent: devsy helper ssh-server --stdio
 activate ContainerAgent
 
-Agent -> ContainerAgent: devpod agent container setup
-Agent -> ContainerAgent: devpod agent container credentials-server
+Agent -> ContainerAgent: devsy agent container setup
+Agent -> ContainerAgent: devsy agent container credentials-server
 alt if EXIT_AFTER_TIMEOUT
-Agent -> ContainerAgent: devpod agent container daemon
+Agent -> ContainerAgent: devsy agent container daemon
 end
 
 alt if pro user
-Agent -> ContainerAgent: devpod agent container setup-loft-platform-access
+Agent -> ContainerAgent: devsy agent container setup-loft-platform-access
 ContainerAgent -> Platform: Setup pro
 Platform --> ContainerAgent: platform creds
 end
 
 alt if GIT_SSH_SIGNATURE_FORWARDING
-Agent -> DevPod: devpod agent git-credentials
-DevPod --> Agent: git creds
+Agent -> Devsy: devsy agent git-credentials
+Devsy --> Agent: git creds
 end
 alt if SSH_INJECT_DOCKER_CREDENTIALS
-Agent -> DevPod: devpod agent docker-credentials
-DevPod --> Agent: docker creds
+Agent -> Devsy: devsy agent docker-credentials
+Devsy --> Agent: docker creds
 end
 
 Agent -> ContainerAgent: Run life cycle hooks
 
 ContainerAgent --> Agent:
 deactivate ContainerAgent
-Agent --> DevPod:
+Agent --> Devsy:
 deactivate Agent
 
 alt if using browser based IDE (openvscode, jupyter)
-DevPod -> ContainerAgent: devpod ssh --reuse-ssh-auth-sock
+Devsy -> ContainerAgent: devsy ssh --reuse-ssh-auth-sock
 end
 
-DevPod -> IDE: Start
+Devsy -> IDE: Start
 
 alt if using normal IDE (vscode, intilliJ)
-IDE -> ContainerAgent: devpod ssh
+IDE -> ContainerAgent: devsy ssh
 ContainerAgent --> IDE: ssh close
 end
 
 alt if using browser based IDE (openvscode, jupyter)
-ContainerAgent -> DevPod: ssh close
+ContainerAgent -> Devsy: ssh close
 end
 
 

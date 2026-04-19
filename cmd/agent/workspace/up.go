@@ -10,25 +10,25 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/dockerinstall"
+	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	"github.com/skevetter/devpod/pkg/agent/tunnelserver"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/credentials"
-	agentdaemon "github.com/skevetter/devpod/pkg/daemon/agent"
-	"github.com/skevetter/devpod/pkg/devcontainer"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/crane"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
-	"github.com/skevetter/devpod/pkg/dockerinstall"
-	"github.com/skevetter/devpod/pkg/extract"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
@@ -152,7 +152,7 @@ func (cmd *UpCmd) up(
 	tunnelClient tunnel.TunnelClient,
 	logger log.Logger,
 ) error {
-	result, err := cmd.devPodUp(ctx, workspaceInfo, logger)
+	result, err := cmd.devsyUp(ctx, workspaceInfo, logger)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,7 @@ func (cmd *UpCmd) sendResult(
 	return nil
 }
 
-func (cmd *UpCmd) devPodUp(
+func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	log log.Logger,
@@ -199,7 +199,7 @@ func CreateRunner(
 	log log.Logger,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
-		agent.ContainerDevPodHelperLocation,
+		agent.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
 		log,
@@ -341,7 +341,7 @@ func (w *workspaceInitializer) initialize() error {
 func (w *workspaceInitializer) setupDaemonIfNeeded() {
 	if w.shouldInstallDaemon {
 		if err := installDaemon(w.workspaceInfo, w.logger); err != nil {
-			w.logger.Errorf("install DevPod daemon: %v", err)
+			w.logger.Errorf("install Devsy daemon: %v", err)
 		}
 	}
 }
@@ -695,7 +695,7 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) e
 		return nil
 	}
 
-	log.Debugf("installing DevPod daemon into server")
+	log.Debugf("installing Devsy daemon into server")
 	return agentdaemon.InstallDaemon(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.CLIOptions.DaemonInterval,

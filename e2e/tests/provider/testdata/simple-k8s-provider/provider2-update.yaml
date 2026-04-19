@@ -1,7 +1,7 @@
 name: provider2
 version: 0.0.1
 description: |-
-  DevPod on Kubernetes
+  Devsy on Kubernetes
 options:
   NAMESPACE:
     required: true
@@ -13,34 +13,34 @@ options:
       fi
       echo $NAMESPACE
 agent:
-  path: /tmp/devpod
+  path: /tmp/devsy
 exec:
   command: |-
-    kubectl exec -n "${NAMESPACE}" -c devpod-container -i devpod-${MACHINE_ID} -- sh -c "${COMMAND}"
+    kubectl exec -n "${NAMESPACE}" -c devsy-container -i devsy-${MACHINE_ID} -- sh -c "${COMMAND}"
   create: |-
     kubectl create -n "${NAMESPACE}" -f - << EOF
     apiVersion: v1
     kind: Pod
     metadata:
-      name: devpod-${MACHINE_ID}
+      name: devsy-${MACHINE_ID}
       labels:
-        app: devpod
+        app: devsy
     spec:
       volumes:
-        - name: devpod-storage
+        - name: devsy-storage
           emptyDir: {}
       containers:
-        - name: devpod-container
+        - name: devsy-container
           image: docker:dind
           volumeMounts:
           - mountPath: /var/lib/docker
-            name: devpod-storage
+            name: devsy-storage
             subPath: var/lib/docker
           - mountPath: /root
-            name: devpod-storage
+            name: devsy-storage
             subPath: root
           securityContext:
             privileged: true
     EOF
   delete: |-
-    kubectl delete pod devpod-${MACHINE_ID} -n "${NAMESPACE}" || true
+    kubectl delete pod devsy-${MACHINE_ID} -n "${NAMESPACE}" || true

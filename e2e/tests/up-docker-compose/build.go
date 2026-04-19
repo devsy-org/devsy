@@ -10,16 +10,16 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/compose"
+	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/compose"
-	docker "github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/log"
 )
 
 var _ = ginkgo.Describe(
-	"devpod up docker compose test suite",
+	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose", "build"),
 	func() {
 		var f *framework.Framework
@@ -48,8 +48,8 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			// Wait for devpod workspace to come online (deadline: 30s)
-			err = f.DevPodUp(ctx, tempDir, "--debug")
+			// Wait for devsy workspace to come online (deadline: 30s)
+			err = f.DevsyUp(ctx, tempDir, "--debug")
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()*3))
 
@@ -61,8 +61,8 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ginkgo.By("Starting DevPod")
-			err = f.DevPodUp(ctx, tempDir)
+			ginkgo.By("Starting Devsy")
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			workspace, err := f.FindWorkspace(ctx, tempDir)
@@ -109,8 +109,8 @@ var _ = ginkgo.Describe(
 			_, err = io.Copy(newConfig, failingConfig)
 			framework.ExpectNoError(err)
 
-			ginkgo.By("Starting DevPod again with --recreate")
-			err = f.DevPodUp(ctx, tempDir, "--debug", "--recreate")
+			ginkgo.By("Starting Devsy again with --recreate")
+			err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
 			framework.ExpectError(err)
 
 			ginkgo.By("Should leave original container running")
@@ -134,8 +134,8 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ginkgo.By("Starting DevPod")
-			err = f.DevPodUp(ctx, tempDir)
+			ginkgo.By("Starting Devsy")
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			workspace, err := f.FindWorkspace(ctx, tempDir)
@@ -161,8 +161,8 @@ var _ = ginkgo.Describe(
 				WithPolling(1*time.Second).
 				Should(gomega.Equal(1), "1 compose container to be created")
 
-			ginkgo.By("Starting DevPod again with --recreate")
-			err = f.DevPodUp(ctx, tempDir, "--debug", "--recreate")
+			ginkgo.By("Starting Devsy again with --recreate")
+			err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
 			framework.ExpectNoError(err)
 
 			ginkgo.By("Should start a new docker-compose container on rebuild")

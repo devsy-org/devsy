@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"os/user"
 
-	"github.com/skevetter/devpod/pkg/shell"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/devsy/pkg/shell"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 const (

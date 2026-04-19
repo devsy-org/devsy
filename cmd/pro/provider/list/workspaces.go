@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"os"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/labels"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/log"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/labels"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -62,17 +62,17 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("list projects: %w", err)
 	} else if len(projectList.Items) == 0 {
 		return fmt.Errorf(
-			"you don't have access to any projects within DevPod Pro, please make sure you have at least access to 1 project",
+			"you don't have access to any projects within Devsy Pro, please make sure you have at least access to 1 project",
 		)
 	}
 
 	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
-	workspaces := []*managementv1.DevPodWorkspaceInstance{}
+	workspaces := []*managementv1.DevsyWorkspaceInstance{}
 	for _, p := range projectList.Items {
 		ns := project.ProjectNamespace(p.GetName())
 		workspaceList, err := managementClient.Loft().
 			ManagementV1().
-			DevPodWorkspaceInstances(ns).
+			DevsyWorkspaceInstances(ns).
 			List(ctx, metav1.ListOptions{})
 		if err != nil {
 			cmd.log.Info("list workspaces in project \"%s\": %w", p.GetName(), err)

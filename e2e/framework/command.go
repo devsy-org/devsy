@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/client"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/client"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 )
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
-	list, err := f.DevPodListParsed(ctx)
+	list, err := f.DevsyListParsed(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -29,8 +29,8 @@ func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Wo
 	return nil, fmt.Errorf("couldn't find workspace %s", workspaceID)
 }
 
-func (f *Framework) DevPodListParsed(ctx context.Context) ([]*provider2.Workspace, error) {
-	raw, err := f.DevPodList(ctx)
+func (f *Framework) DevsyListParsed(ctx context.Context) ([]*provider2.Workspace, error) {
+	raw, err := f.DevsyList(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,18 +44,18 @@ func (f *Framework) DevPodListParsed(ctx context.Context) ([]*provider2.Workspac
 	return retList, nil
 }
 
-// DevPodList executes the `devpod list` command in the test framework.
-func (f *Framework) DevPodList(ctx context.Context) (string, error) {
+// DevsyList executes the `devsy list` command in the test framework.
+func (f *Framework) DevsyList(ctx context.Context) (string, error) {
 	listArgs := []string{"list", "--output", "json"}
 
 	out, _, err := f.ExecCommandCapture(ctx, listArgs)
 	if err != nil {
-		return "", fmt.Errorf("devpod list failed: %s", err.Error())
+		return "", fmt.Errorf("devsy list failed: %s", err.Error())
 	}
 	return out, nil
 }
 
-func (f *Framework) DevPodUpStreams(
+func (f *Framework) DevsyUpStreams(
 	ctx context.Context,
 	workspace string,
 	additionalArgs ...string,
@@ -70,14 +70,14 @@ func (f *Framework) DevPodUpStreams(
 		},
 	)
 	if err != nil {
-		return stdout, stderr, fmt.Errorf("devpod up failed: %s", err.Error())
+		return stdout, stderr, fmt.Errorf("devsy up failed: %s", err.Error())
 	}
 
 	return stdout, stderr, nil
 }
 
-// DevPodUp executes the `devpod up` command in the test framework.
-func (f *Framework) DevPodUpWithIDE(ctx context.Context, additionalArgs ...string) error {
+// DevsyUp executes the `devsy up` command in the test framework.
+func (f *Framework) DevsyUpWithIDE(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"up", "--debug"}
 	upArgs = append(upArgs, additionalArgs...)
 
@@ -85,23 +85,23 @@ func (f *Framework) DevPodUpWithIDE(ctx context.Context, additionalArgs ...strin
 		return f.ExecCommandCapture(ctx, upArgs)
 	})
 	if err != nil {
-		return fmt.Errorf("devpod up failed: %s", err.Error())
+		return fmt.Errorf("devsy up failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodBuild(ctx context.Context, additionalArgs ...string) error {
+func (f *Framework) DevsyBuild(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"build", "--debug"}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := f.ExecCommandCapture(ctx, upArgs)
 	if err != nil {
-		return fmt.Errorf("devpod build failed: %s", err.Error())
+		return fmt.Errorf("devsy build failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodUp(ctx context.Context, additionalArgs ...string) error {
+func (f *Framework) DevsyUp(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"up", "--debug", "--ide", "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
@@ -109,12 +109,12 @@ func (f *Framework) DevPodUp(ctx context.Context, additionalArgs ...string) erro
 		return f.ExecCommandCapture(ctx, upArgs)
 	})
 	if err != nil {
-		return fmt.Errorf("devpod up failed: %s", err.Error())
+		return fmt.Errorf("devsy up failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodUpRecreate(ctx context.Context, additionalArgs ...string) error {
+func (f *Framework) DevsyUpRecreate(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"up", "--recreate", "--debug", "--ide", "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
@@ -122,12 +122,12 @@ func (f *Framework) DevPodUpRecreate(ctx context.Context, additionalArgs ...stri
 		return f.ExecCommandCapture(ctx, upArgs)
 	})
 	if err != nil {
-		return fmt.Errorf("devpod up --recreate failed: %s", err.Error())
+		return fmt.Errorf("devsy up --recreate failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodUpReset(ctx context.Context, additionalArgs ...string) error {
+func (f *Framework) DevsyUpReset(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"up", "--reset", "--debug", "--ide", "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
@@ -135,24 +135,24 @@ func (f *Framework) DevPodUpReset(ctx context.Context, additionalArgs ...string)
 		return f.ExecCommandCapture(ctx, upArgs)
 	})
 	if err != nil {
-		return fmt.Errorf("devpod up --reset failed: %s", err.Error())
+		return fmt.Errorf("devsy up --reset failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodSSH(
+func (f *Framework) DevsySSH(
 	ctx context.Context,
 	workspace string,
 	command string,
 ) (string, error) {
 	out, err := f.ExecCommandOutput(ctx, []string{"ssh", workspace, "--command", command})
 	if err != nil {
-		return "", fmt.Errorf("devpod ssh failed: %s", err.Error())
+		return "", fmt.Errorf("devsy ssh failed: %s", err.Error())
 	}
 	return out, nil
 }
 
-func (f *Framework) DevPodSSHEchoTestString(ctx context.Context, workspace string) error {
+func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string) error {
 	err := f.ExecCommand(
 		ctx,
 		true,
@@ -161,19 +161,19 @@ func (f *Framework) DevPodSSHEchoTestString(ctx context.Context, workspace strin
 		[]string{"ssh", "--command", "echo 'bVl0RXNUc1RySW5H' | base64 -d", workspace},
 	)
 	if err != nil {
-		return fmt.Errorf("devpod ssh failed: %s", err.Error())
+		return fmt.Errorf("devsy ssh failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodProviderOptionsCheckNamespaceDescription(
+func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 	ctx context.Context,
 	provider, searchStr string,
 ) error {
 	err := f.ExecCommand(ctx, true, true, searchStr, []string{"provider", "options", provider})
 	if err != nil {
 		return fmt.Errorf(
-			"did not found value %s in devpod provider options output. error: %s",
+			"did not found value %s in devsy provider options output. error: %s",
 			searchStr,
 			err.Error(),
 		)
@@ -181,16 +181,16 @@ func (f *Framework) DevPodProviderOptionsCheckNamespaceDescription(
 	return nil
 }
 
-func (f *Framework) DevPodProviderList(ctx context.Context, extraArgs ...string) error {
+func (f *Framework) DevsyProviderList(ctx context.Context, extraArgs ...string) error {
 	baseArgs := []string{"provider", "list"}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod provider list failed: %s", err.Error())
+		return fmt.Errorf("devsy provider list failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodProviderUse(
+func (f *Framework) DevsyProviderUse(
 	ctx context.Context,
 	provider string,
 	extraArgs ...string,
@@ -198,12 +198,12 @@ func (f *Framework) DevPodProviderUse(
 	baseArgs := []string{"provider", "use", provider}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod provider use failed: %s", err.Error())
+		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodStatus(
+func (f *Framework) DevsyStatus(
 	ctx context.Context,
 	extraArgs ...string,
 ) (client.WorkspaceStatus, error) {
@@ -211,7 +211,7 @@ func (f *Framework) DevPodStatus(
 	baseArgs = append(baseArgs, extraArgs...)
 	stdout, err := f.ExecCommandOutput(ctx, baseArgs)
 	if err != nil {
-		return client.WorkspaceStatus{}, fmt.Errorf("devpod status failed: %s", err.Error())
+		return client.WorkspaceStatus{}, fmt.Errorf("devsy status failed: %s", err.Error())
 	}
 
 	status := &client.WorkspaceStatus{}
@@ -223,17 +223,17 @@ func (f *Framework) DevPodStatus(
 	return *status, nil
 }
 
-func (f *Framework) DevPodStop(ctx context.Context, workspace string) error {
+func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 	baseArgs := []string{"stop"}
 	baseArgs = append(baseArgs, workspace)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devpod stop failed: %s", err.Error())
+		return fmt.Errorf("devsy stop failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodProviderAdd(ctx context.Context, args ...string) error {
+func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error {
 	baseArgs := []string{"provider", "add"}
 	baseArgs = append(baseArgs, args...)
 	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
@@ -243,13 +243,13 @@ func (f *Framework) DevPodProviderAdd(ctx context.Context, args ...string) error
 		// is called to delete the workspace. The workspace is linked to the
 		// provider and the provider cannot be deleted until the workspace is deleted.
 		if !strings.Contains(stderr, "already exists") {
-			return fmt.Errorf("devpod provider add failed: %s", stderr)
+			return fmt.Errorf("devsy provider add failed: %s", stderr)
 		}
 	}
 	return nil
 }
 
-func (f *Framework) DevPodProviderDelete(ctx context.Context, args ...string) error {
+func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
 	baseArgs := []string{"provider", "delete"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
@@ -260,8 +260,8 @@ func (f *Framework) DevPodProviderDelete(ctx context.Context, args ...string) er
 	return nil
 }
 
-// DevPodProviderRename executes the `devpod provider rename` command in the test framework.
-func (f *Framework) DevPodProviderRename(
+// DevsyProviderRename executes the `devsy provider rename` command in the test framework.
+func (f *Framework) DevsyProviderRename(
 	ctx context.Context,
 	oldName, newName string,
 	args ...string,
@@ -270,62 +270,62 @@ func (f *Framework) DevPodProviderRename(
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devpod provider rename failed: %s", err.Error())
+		return fmt.Errorf("devsy provider rename failed: %s", err.Error())
 	}
 
 	return nil
 }
 
-// DevPodProviderOptionsJSON executes `devpod provider options --output json` and returns the raw JSON.
-func (f *Framework) DevPodProviderOptionsJSON(
+// DevsyProviderOptionsJSON executes `devsy provider options --output json` and returns the raw JSON.
+func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
 	providerName string,
 ) (string, error) {
 	args := []string{"provider", "options", providerName, "--output", "json"}
 	stdout, _, err := f.ExecCommandCapture(ctx, args)
 	if err != nil {
-		return "", fmt.Errorf("devpod provider options failed: %s", err.Error())
+		return "", fmt.Errorf("devsy provider options failed: %s", err.Error())
 	}
 	return stdout, nil
 }
 
-func (f *Framework) DevPodProviderUpdate(ctx context.Context, args ...string) error {
+func (f *Framework) DevsyProviderUpdate(ctx context.Context, args ...string) error {
 	baseArgs := []string{"provider", "update"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devpod provider update failed: %s", err.Error())
+		return fmt.Errorf("devsy provider update failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodMachineCreate(ctx context.Context, args []string) error {
+func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", "create"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devpod machine create failed: %s", err.Error())
+		return fmt.Errorf("devsy machine create failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodMachineDelete(ctx context.Context, args []string) error {
+func (f *Framework) DevsyMachineDelete(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", "delete"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devpod machine delete failed: %s", err.Error())
+		return fmt.Errorf("devsy machine delete failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodWorkspaceStop(ctx context.Context, extraArgs ...string) error {
+func (f *Framework) DevsyWorkspaceStop(ctx context.Context, extraArgs ...string) error {
 	baseArgs := []string{"stop"}
 	baseArgs = append(baseArgs, extraArgs...)
 	return f.ExecCommandStdout(ctx, baseArgs)
 }
 
-func (f *Framework) DevPodWorkspaceDelete(
+func (f *Framework) DevsyWorkspaceDelete(
 	ctx context.Context,
 	workspace string,
 	extraArgs ...string,
@@ -368,7 +368,7 @@ func (f *Framework) SetupGPG(tmpDir string) error {
 	return exec.Command("gpg", "-k").Run()
 }
 
-func (f *Framework) DevPodSSHGpgTestKey(ctx context.Context, workspace string) error {
+func (f *Framework) DevsySSHGpgTestKey(ctx context.Context, workspace string) error {
 	pubKeyB, err := exec.Command("sh", "-c", "gpg -k --with-colons 2>/dev/null | grep sec | base64 -w0").
 		Output()
 	if err != nil {
@@ -389,7 +389,7 @@ func (f *Framework) DevPodSSHGpgTestKey(ctx context.Context, workspace string) e
 
 	if stdout != string(pubKeyB) {
 		return fmt.Errorf(
-			"devpod gpg public key forwarding failed, expected %s, got %s",
+			"devsy gpg public key forwarding failed, expected %s, got %s",
 			string(pubKeyB),
 			stdout,
 		)
@@ -398,7 +398,7 @@ func (f *Framework) DevPodSSHGpgTestKey(ctx context.Context, workspace string) e
 	return nil
 }
 
-func (f *Framework) DevpodPortTest(ctx context.Context, port string, workspace string) error {
+func (f *Framework) DevsyPortTest(ctx context.Context, port string, workspace string) error {
 	// First run to trigger the first forwarding
 	_, _, err := f.ExecCommandCapture(ctx, []string{
 		"ssh",
@@ -407,7 +407,7 @@ func (f *Framework) DevpodPortTest(ctx context.Context, port string, workspace s
 	return err
 }
 
-func (f *Framework) DevPodProviderFindOption(
+func (f *Framework) DevsyProviderFindOption(
 	ctx context.Context,
 	provider string,
 	searchStr string,
@@ -416,12 +416,12 @@ func (f *Framework) DevPodProviderFindOption(
 	baseArgs := []string{"provider", "options", provider}
 	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod provider use failed: %s", err.Error())
+		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodContextCreate(
+func (f *Framework) DevsyContextCreate(
 	ctx context.Context,
 	name string,
 	extraArgs ...string,
@@ -429,21 +429,21 @@ func (f *Framework) DevPodContextCreate(
 	baseArgs := []string{"context", "create", name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod context create failed: %s", err.Error())
+		return fmt.Errorf("devsy context create failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodContextUse(ctx context.Context, name string, extraArgs ...string) error {
+func (f *Framework) DevsyContextUse(ctx context.Context, name string, extraArgs ...string) error {
 	baseArgs := []string{"context", "use", name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod context use failed: %s", err.Error())
+		return fmt.Errorf("devsy context use failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodContextDelete(
+func (f *Framework) DevsyContextDelete(
 	ctx context.Context,
 	name string,
 	extraArgs ...string,
@@ -451,21 +451,21 @@ func (f *Framework) DevPodContextDelete(
 	baseArgs := []string{"context", "delete", name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod context delete failed: %s", err.Error())
+		return fmt.Errorf("devsy context delete failed: %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodIDEUse(ctx context.Context, ide string, extraArgs ...string) error {
+func (f *Framework) DevsyIDEUse(ctx context.Context, ide string, extraArgs ...string) error {
 	baseArgs := []string{"ide", "use", ide}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devpod ide use failed %s", err.Error())
+		return fmt.Errorf("devsy ide use failed %s", err.Error())
 	}
 	return nil
 }
 
-func (f *Framework) DevPodIDEList(ctx context.Context, extraArgs ...string) (string, error) {
+func (f *Framework) DevsyIDEList(ctx context.Context, extraArgs ...string) (string, error) {
 	baseArgs := []string{"ide", "list"}
 	return f.ExecCommandOutput(ctx, append(baseArgs, extraArgs...))
 }
@@ -474,8 +474,8 @@ func (f *Framework) DevPodIDEList(ctx context.Context, extraArgs ...string) (str
 // adds a fresh one with the given docker path, and sets it as the active provider.
 func SetupDockerProvider(binDir, dockerPath string) (*Framework, error) {
 	f := NewDefaultFramework(binDir)
-	_ = f.DevPodProviderDelete(context.Background(), "docker")
-	if err := f.DevPodProviderAdd(
+	_ = f.DevsyProviderDelete(context.Background(), "docker")
+	if err := f.DevsyProviderAdd(
 		context.Background(),
 		"docker",
 		"-o",
@@ -483,5 +483,5 @@ func SetupDockerProvider(binDir, dockerPath string) (*Framework, error) {
 	); err != nil {
 		return nil, fmt.Errorf("failed to add docker provider: %w", err)
 	}
-	return f, f.DevPodProviderUse(context.Background(), "docker")
+	return f, f.DevsyProviderUse(context.Background(), "docker")
 }

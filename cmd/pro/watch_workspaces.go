@@ -7,12 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Watch workspaces",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -48,7 +48,7 @@ func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 	}
 
@@ -64,10 +64,10 @@ func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *WatchWorkspacesCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerConfig *provider.ProviderConfig,
 ) error {
-	opts := devPodConfig.ProviderOptions(providerConfig.Name)
+	opts := devsyConfig.ProviderOptions(providerConfig.Name)
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -91,7 +91,7 @@ func (cmd *WatchWorkspacesCmd) Run(
 		Ctx:     cancelCtx,
 		Name:    "watchWorkspaces",
 		Command: providerConfig.Exec.Proxy.Watch.Workspaces,
-		Context: devPodConfig.DefaultContext,
+		Context: devsyConfig.DefaultContext,
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  os.Stdout,

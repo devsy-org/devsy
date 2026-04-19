@@ -3,7 +3,7 @@ package feature
 import (
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/stretchr/testify/suite"
 )
 

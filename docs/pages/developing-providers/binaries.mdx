@@ -3,15 +3,15 @@ title: Provider Binaries
 sidebar_label: Provider Binaries
 ---
 
-The `binaries` section can be used to specify helper binaries DevPod should download that help the provider to accomplish its tasks.
+The `binaries` section can be used to specify helper binaries Devsy should download that help the provider to accomplish its tasks.
 
 An example of this type of provider are:
 
-- [devpod-provider-aws](https://github.com/skevetter/devpod-provider-aws/releases)
-- [devpod-provider-azure](https://github.com/skevetter/devpod-provider-azure/releases)
-- [devpod-provider-civo](https://github.com/skevetter/devpod-provider-civo/releases)
-- [devpod-provider-digitalocean](https://github.com/skevetter/devpod-provider-digitalocean/releases)
-- [devpod-provider-gcloud](https://github.com/skevetter/devpod-provider-gcloud/releases)
+- [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws/releases)
+- [devsy-provider-azure](https://github.com/devsy-org/devsy-provider-azure/releases)
+- [devsy-provider-civo](https://github.com/devsy-org/devsy-provider-civo/releases)
+- [devsy-provider-digitalocean](https://github.com/devsy-org/devsy-provider-digitalocean/releases)
+- [devsy-provider-gcloud](https://github.com/devsy-org/devsy-provider-gcloud/releases)
 
 Each binary that is required is declared through:
 
@@ -25,7 +25,7 @@ binaries:
       archivePath: # If its an archive, the relative path to the binary. Supported archives are .tgz, .tar, .tar.gz, .zip
 ```
 
-When [Adding a provider](../managing-providers/add-provider.mdx), DevPod will
+When [Adding a provider](../managing-providers/add-provider.mdx), Devsy will
 match the binary for your OS and Arch and download the specific one for it.
 
 Example of the binary section in a `provider.yaml`:
@@ -35,23 +35,23 @@ binaries:
   AWS_PROVIDER:
     - os: linux
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-aws/releases/download/v0.0.1-alpha.15/devpod-provider-aws-linux-amd64
+      path: https://github.com/devsy-org/devsy-provider-aws/releases/download/v0.0.1-alpha.15/devsy-provider-aws-linux-amd64
       checksum: d1e774419d90c3ed399963d9322d57bfdcee189767eabb076a2c2e926bfd9b8b
     - os: linux
       arch: arm64
-      path: https://github.com/skevetter/devpod-provider-aws/releases/download/v0.0.1-alpha.15/devpod-provider-aws-linux-arm64
+      path: https://github.com/devsy-org/devsy-provider-aws/releases/download/v0.0.1-alpha.15/devsy-provider-aws-linux-arm64
       checksum: fa15c13e3f0619170d002f9dae3ef41c9949a4595a71c5efe364d89ada604cec
     - os: darwin
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-aws/releases/download/v0.0.1-alpha.15/devpod-provider-aws-darwin-amd64
+      path: https://github.com/devsy-org/devsy-provider-aws/releases/download/v0.0.1-alpha.15/devsy-provider-aws-darwin-amd64
       checksum: fb89d41f6ce3e01e953f3ffd18f85bd5a42dd633abafd5d586dc9d9b1322166c
     - os: darwin
       arch: arm64
-      path: https://github.com/skevetter/devpod-provider-aws/releases/download/v0.0.1-alpha.15/devpod-provider-aws-darwin-arm64
+      path: https://github.com/devsy-org/devsy-provider-aws/releases/download/v0.0.1-alpha.15/devsy-provider-aws-darwin-arm64
       checksum: 82b6713069fa061ea59941600ed32a15f73806a9af3074d67a20ed367d18b2aa
     - os: windows
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-aws/releases/download/v0.0.1-alpha.15/devpod-provider-aws-windows-amd64.exe
+      path: https://github.com/devsy-org/devsy-provider-aws/releases/download/v0.0.1-alpha.15/devsy-provider-aws-windows-amd64.exe
       checksum: 49bd899d439f38d4e8647102db1c18b7a0d5242b3c09c89071b20a5444e20a81
 ```
 
@@ -63,7 +63,7 @@ the machine.
 
 ## Use binaries in commands
 
-DevPod will make the binary path available through an environment variable within the exec section. For example:
+Devsy will make the binary path available through an environment variable within the exec section. For example:
 
 ```yaml
 binaries:
@@ -91,7 +91,7 @@ You can also use binaries within the option `command` attribute. For example:
 
 ## Use binaries on the agent side
 
-You can also define binaries DevPod should install on the agent side through `agent.binaries`. These binaries can then be used within the `agent.exec` section to automatically stop a virtual machine if inactive.
+You can also define binaries Devsy should install on the agent side through `agent.binaries`. These binaries can then be used within the `agent.exec` section to automatically stop a virtual machine if inactive.
 For example:
 
 ```yaml
@@ -101,11 +101,11 @@ agent:
     GCLOUD_PROVIDER:
       - os: linux
         arch: amd64
-        path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-linux-amd64
+        path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-amd64
         checksum: 38f92457507563ee56ea40a2ec40196d12ac2bbd50a924d76f55827e96e5f831
       - os: linux
         arch: arm64
-        path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-linux-arm64
+        path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-arm64
         checksum: 48e8dfa20962f1c3eb1e3da17d57842a0e26155df2b94377bcdf5b8070d7b17e
   exec:
     shutdown: |-

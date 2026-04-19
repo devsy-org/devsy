@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 

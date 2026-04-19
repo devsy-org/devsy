@@ -1,7 +1,7 @@
 package machine
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewMachineCmd(flags *flags.GlobalFlags) *cobra.Command {
 	machineCmd := &cobra.Command{
 		Use:   "machine",
-		Short: "DevPod Machine commands",
+		Short: "Devsy Machine commands",
 	}
 
 	machineCmd.AddCommand(NewListCmd(flags))

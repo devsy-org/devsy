@@ -1,25 +1,25 @@
 ---
-title: Install DevPod
-sidebar_label: Install DevPod
+title: Install Devsy
+sidebar_label: Install Devsy
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 
-To get started with DevPod, choose either the [DevPod Desktop](#install-devpod) application or the [DevPod CLI](#install-devpod-cli).
+To get started with Devsy, choose either the [Devsy Desktop](#install-devsy) application or the [Devsy CLI](#install-devsy-cli).
 
-## Install DevPod
+## Install Devsy
 
-Download DevPod Desktop:
-- [MacOS Silicon/ARM](https://github.com/skevetter/devpod/releases/latest/download/DevPod_macos_aarch64.dmg)
-- [MacOS Intel/AMD](https://github.com/skevetter/devpod/releases/latest/download/DevPod_macos_x64.dmg)
-- [Windows](https://github.com/skevetter/devpod/releases/latest/download/DevPod_windows_x64_en-US.msi)
-- [Linux AppImage](https://github.com/skevetter/devpod/releases/latest/download/DevPod_linux_amd64.AppImage)
-- [Linux Targz](https://github.com/skevetter/devpod/releases/latest/download/DevPod_linux_x86_64.tar.gz)
+Download Devsy Desktop:
+- [MacOS Silicon/ARM](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_macos_aarch64.dmg)
+- [MacOS Intel/AMD](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_macos_x64.dmg)
+- [Windows](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_windows_x64_en-US.msi)
+- [Linux AppImage](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.AppImage)
+- [Linux Targz](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.tar.gz)
 
 :::info Previous Releases
-For earlier versions, visit the [GitHub releases page](https://github.com/skevetter/devpod/releases)
+For earlier versions, visit the [GitHub releases page](https://github.com/devsy-org/devsy/releases)
 :::
 
 :::info Linux Packages
@@ -40,7 +40,7 @@ Make sure you have the following dependencies installed for the Appimage to work
     - `sudo dnf install fuse fuse-libs libglvnd-egl libglvnd-opengl libglvnd-glx harfbuzz fontconfig fribidi libthai`
     - `sudo zypper in fuse libfuse2 libharfbuzz0 libfribidi0 libthai0`
 
-These are generally needed for AppImage to work; they are not specific to DevPod.
+These are generally needed for AppImage to work; they are not specific to Devsy.
 :::
 
 :::info Windows Packages
@@ -73,9 +73,9 @@ correct functioning of the program:
 On Fedora: `sudo dnf install libappindicator-gtk3`
 :::
 
-## Install DevPod CLI
+## Install Devsy CLI
 
-Alternatively, you can also use the CLI instead of the desktop application. The DevPod CLI is useful for managing DevPod directly from a terminal. Choose an installation method below, or install it later from the Desktop App."
+Alternatively, you can also use the CLI instead of the desktop application. The Devsy CLI is useful for managing Devsy directly from a terminal. Choose an installation method below, or install it later from the Desktop App."
 
 <Tabs values={[
           {label: 'MacOS Silicon/ARM', value: 'macarm64'},
@@ -87,23 +87,23 @@ Alternatively, you can also use the CLI instead of the desktop application. The 
 <TabItem value="macarm64">
 
 ```bash
-curl -L -o devpod "https://github.com/skevetter/devpod/releases/latest/download/devpod-darwin-arm64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/devsy-darwin-arm64" && sudo install -c -m 0755 devsy /usr/local/bin && rm -f devsy
 ```
 
 </TabItem>
 <TabItem value="macamd64">
 
 ```bash
-curl -L -o devpod "https://github.com/skevetter/devpod/releases/latest/download/devpod-darwin-amd64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/devsy-darwin-amd64" && sudo install -c -m 0755 devsy /usr/local/bin && rm -f devsy
 ```
 
 </TabItem>
 <TabItem value="windows">
 
 ```text
-md -Force "$Env:APPDATA\devpod"; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls,Tls11,Tls12';
-Invoke-WebRequest -URI "https://github.com/skevetter/devpod/releases/latest/download/devpod-windows-amd64.exe" -OutFile $Env:APPDATA\devpod\devpod.exe;
-$env:Path += ";" + $Env:APPDATA + "\devpod";
+md -Force "$Env:APPDATA\devsy"; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls,Tls11,Tls12';
+Invoke-WebRequest -URI "https://github.com/devsy-org/devsy/releases/latest/download/devsy-windows-amd64.exe" -OutFile $Env:APPDATA\devsy\devsy.exe;
+$env:Path += ";" + $Env:APPDATA + "\devsy";
 [Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User);
 ```
 
@@ -111,14 +111,14 @@ $env:Path += ";" + $Env:APPDATA + "\devpod";
 <TabItem value="linuxamd">
 
 ```bash
-curl -L -o devpod "https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-amd64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64" && sudo install -c -m 0755 devsy /usr/local/bin && rm -f devsy
 ```
 
 </TabItem>
 <TabItem value="linuxarm">
 
 ```bash
-curl -L -o devpod "https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-arm64" && sudo install -c -m 0755 devpod /usr/local/bin && rm -f devpod
+curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-arm64" && sudo install -c -m 0755 devsy /usr/local/bin && rm -f devsy
 ```
 
 </TabItem>

@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
+	config2 "github.com/devsy-org/devsy/pkg/config"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent"
-	config2 "github.com/skevetter/devpod/pkg/config"
-	agentd "github.com/skevetter/devpod/pkg/daemon/agent"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -42,7 +42,7 @@ func NewDaemonCmd() *cobra.Command {
 	}
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Starts the DevPod network daemon, SSH server and monitors container activity if timeout is set",
+		Short: "Starts the Devsy network daemon, SSH server and monitors container activity if timeout is set",
 		Args:  cobra.NoArgs,
 		RunE:  cmd.Run,
 	}

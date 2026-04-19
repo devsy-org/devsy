@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	providercmd "github.com/skevetter/devpod/cmd/provider"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	providercmd "github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -49,19 +49,19 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	newVersion := args[0]
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devPodConfig, cmd.Host, cmd.Log)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
 	if err != nil {
 		return fmt.Errorf("load provider: %w", err)
 	}
 	if provider.Source.Internal {
 		return nil
 	}
-	providerSource, err := workspace.ResolveProviderSource(devPodConfig, provider.Name, cmd.Log)
+	providerSource, err := workspace.ResolveProviderSource(devsyConfig, provider.Name, cmd.Log)
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", provider.Name, err)
 	}
@@ -71,14 +71,14 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = workspace.UpdateProvider(devPodConfig, provider.Name, providerSource, cmd.Log)
+	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource, cmd.Log)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", provider.Name, err)
 	}
 
 	err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
 		Provider:       provider,
-		Context:        devPodConfig.DefaultContext,
+		Context:        devsyConfig.DefaultContext,
 		UserOptions:    []string{},
 		Reconfigure:    true,
 		SkipRequired:   true,
@@ -89,7 +89,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf(
-			"configure provider, please retry with 'devpod provider use %s --reconfigure': %w",
+			"configure provider, please retry with 'devsy provider use %s --reconfigure': %w",
 			provider.Name, err,
 		)
 	}

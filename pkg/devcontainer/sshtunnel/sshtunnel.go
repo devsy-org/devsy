@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	devsshagent "github.com/skevetter/devpod/pkg/ssh/agent"
-	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -357,7 +357,7 @@ func establishSSHSession(
 //     local, and remote port forwardings" — agent forwarding is excluded.
 //
 // Stale SSH_AUTH_SOCK is common in practice (tmux, screen, reconnected
-// terminals), so a fatal error here would break devpod up for many users.
+// terminals), so a fatal error here would break devsy up for many users.
 func setupSSHAgentForwarding(
 	ts *sshSessionTunnel,
 	sshClient *ssh.Client,

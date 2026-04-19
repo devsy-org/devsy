@@ -18,28 +18,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	"github.com/skevetter/devpod/pkg/agent/tunnelserver"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/compress"
-	config2 "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/credentials"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/setup"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
-	"github.com/skevetter/devpod/pkg/extract"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/devpod/pkg/ide/fleet"
-	"github.com/skevetter/devpod/pkg/ide/jetbrains"
-	"github.com/skevetter/devpod/pkg/ide/jupyter"
-	"github.com/skevetter/devpod/pkg/ide/openvscode"
-	"github.com/skevetter/devpod/pkg/ide/rstudio"
-	"github.com/skevetter/devpod/pkg/ide/vscode"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/compress"
+	config2 "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/ide/fleet"
+	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
+	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/openvscode"
+	"github.com/devsy-org/devsy/pkg/ide/rstudio"
+	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -73,10 +73,10 @@ func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	setupContainerCmd.Flags().
 		BoolVar(&cmd.StreamMounts, "stream-mounts", false, "If true, will try to stream the bind mounts from the host")
 	setupContainerCmd.Flags().
-		BoolVar(&cmd.ChownWorkspace, "chown-workspace", false, "If DevPod should chown the workspace to the remote user")
+		BoolVar(&cmd.ChownWorkspace, "chown-workspace", false, "If Devsy should chown the workspace to the remote user")
 	setupContainerCmd.Flags().
 		BoolVar(&cmd.InjectGitCredentials, "inject-git-credentials", false,
-			"If DevPod should inject git credentials during setup")
+			"If Devsy should inject git credentials during setup")
 	setupContainerCmd.Flags().
 		StringVar(&cmd.ContainerWorkspaceInfo, "container-workspace-info", "", "The container workspace info")
 	setupContainerCmd.Flags().
@@ -384,7 +384,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 		return nil
 	}
 
-	return command.StartBackgroundOnce("devpod.post-attach", func() (*exec.Cmd, error) {
+	return command.StartBackgroundOnce("devsy.post-attach", func() (*exec.Cmd, error) {
 		sctx.logger.Debugf("starting postAttachCommand as background process")
 		binaryPath, err := os.Executable()
 		if err != nil {
@@ -708,7 +708,7 @@ func streamMount(
 		// build the url
 		logger.Infof("Download %s into DevContainer %s", m.Source, m.Target)
 		url := fmt.Sprintf(
-			"https://%s/kubernetes/management/apis/management.loft.sh/v1/namespaces/%s/devpodworkspaceinstances/%s/download?path=%s",
+			"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s",
 			ts.RemoveProtocol(workspaceInfo.CLIOptions.Platform.PlatformHost),
 			workspaceInfo.CLIOptions.Platform.InstanceNamespace,
 			workspaceInfo.CLIOptions.Platform.InstanceName,

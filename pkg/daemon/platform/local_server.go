@@ -9,17 +9,17 @@ import (
 	"sync"
 	"time"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/platform"
+	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/devsy/pkg/platform/labels"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/log"
 	"github.com/gorilla/handlers"
 	"github.com/sirupsen/logrus"
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	"github.com/skevetter/devpod/pkg/platform"
-	platformclient "github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/kube"
-	"github.com/skevetter/devpod/pkg/platform/labels"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"tailscale.com/client/local"
@@ -29,7 +29,7 @@ import (
 )
 
 type localServer struct {
-	devPodContext  string
+	devsyContext   string
 	httpServer     *http.Server
 	lc             *local.Client
 	listener       *memnet.Listener
@@ -89,15 +89,15 @@ var (
 func newLocalServer(
 	lc *local.Client,
 	pc platformclient.Client,
-	devPodContext string,
+	devsyContext string,
 	log log.Logger,
 ) (*localServer, error) {
 	l := &localServer{
 		lc:             lc,
 		pc:             pc,
 		log:            log,
-		devPodContext:  devPodContext,
-		listener:       memnet.Listen("localclient.devpod:80"),
+		devsyContext:   devsyContext,
+		listener:       memnet.Listen("localclient.devsy:80"),
 		platformStatus: &platformStatus{authenticated: true},
 		stopChan:       make(chan struct{}, 1),
 	}
@@ -399,7 +399,7 @@ func (l *localServer) projectTemplates(
 	if err != nil {
 		http.Error(w, fmt.Errorf("list templates: %w", err).Error(), http.StatusInternalServerError)
 		return
-	} else if len(templateList.DevPodWorkspaceTemplates) == 0 {
+	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		err := fmt.Errorf(
 			"seems like there is no template allowed in project %s, "+
 				"please make sure to at least have a single template available",
@@ -452,17 +452,17 @@ func collectProjectWorkspaces(
 	managementClient kube.Interface,
 	p managementv1.Project,
 	ownerFilter workspaceOwnerFilter,
-) ([]managementv1.DevPodWorkspaceInstance, error) {
+) ([]managementv1.DevsyWorkspaceInstance, error) {
 	ns := project.ProjectNamespace(p.GetName())
 	workspaceList, err := managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(ns).
+		DevsyWorkspaceInstances(ns).
 		List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces in project %s: %w", p.GetName(), err)
 	}
 
-	var instances []managementv1.DevPodWorkspaceInstance
+	var instances []managementv1.DevsyWorkspaceInstance
 	for _, instance := range workspaceList.Items {
 		if ownerFilter.filter == platform.SelfOwnerFilter &&
 			!platform.IsOwner(ownerFilter.self, instance.GetOwner()) {
@@ -510,7 +510,7 @@ func (l *localServer) listWorkspace(
 		return
 	}
 
-	instances := []managementv1.DevPodWorkspaceInstance{}
+	instances := []managementv1.DevsyWorkspaceInstance{}
 	for _, p := range projectList.Items {
 		projectInstances, err := collectProjectWorkspaces(
 			r.Context(), managementClient, p, ownerFilter,
@@ -582,7 +582,7 @@ func (l *localServer) watchWorkspaces(
 	enc := json.NewEncoder(w)
 	err := startWorkspaceWatcher(r.Context(), watchConfig{
 		Project:        project,
-		Context:        l.devPodContext,
+		Context:        l.devsyContext,
 		OwnerFilter:    ownerFilter,
 		PlatformClient: l.pc,
 		TsClient:       l.lc,
@@ -668,7 +668,7 @@ func (l *localServer) createWorkspace(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	instance := &managementv1.DevPodWorkspaceInstance{}
+	instance := &managementv1.DevsyWorkspaceInstance{}
 	err := json.NewDecoder(r.Body).Decode(instance)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -689,7 +689,7 @@ func (l *localServer) updateWorkspace(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	newInstance := &managementv1.DevPodWorkspaceInstance{}
+	newInstance := &managementv1.DevsyWorkspaceInstance{}
 	err := json.NewDecoder(r.Body).Decode(newInstance)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -786,16 +786,16 @@ func tryJSON(w http.ResponseWriter, obj any) {
 func createInstance(
 	ctx context.Context,
 	client platformclient.Client,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
 		return nil, err
 	}
 
 	updatedInstance, err := managementClient.Loft().ManagementV1().
-		DevPodWorkspaceInstances(instance.GetNamespace()).
+		DevsyWorkspaceInstances(instance.GetNamespace()).
 		Create(ctx, instance, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("create workspace instance: %w", err)
@@ -807,10 +807,10 @@ func createInstance(
 func updateInstance(
 	ctx context.Context,
 	client platformclient.Client,
-	oldInstance *managementv1.DevPodWorkspaceInstance,
-	newInstance *managementv1.DevPodWorkspaceInstance,
+	oldInstance *managementv1.DevsyWorkspaceInstance,
+	newInstance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	// This ensures the template is kept up to date with configuration changes
 	if newInstance.Spec.TemplateRef != nil {
 		newInstance.Spec.TemplateRef.SyncOnce = true

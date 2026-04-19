@@ -11,7 +11,7 @@ body:
       options:
         - label: I have searched existing issues to confirm this is not a duplicate
           required: true
-        - label: I am running the latest version of DevPod
+        - label: I am running the latest version of Devsy
           required: false
 
   - type: textarea
@@ -35,7 +35,7 @@ body:
       label: Steps to reproduce
       description: Minimal steps to reproduce. The more precise, the faster the issue can be investigated.
       placeholder: |
-        1. Run `devpod up ...`
+        1. Run `devsy up ...`
         2. Click on ...
         3. See error ...
     validations:
@@ -54,7 +54,7 @@ body:
     id: logs
     attributes:
       label: Error output / logs
-      description: Paste relevant error messages, CLI output, or logs. Use `devpod provider logs` for provider logs.
+      description: Paste relevant error messages, CLI output, or logs. Use `devsy provider logs` for provider logs.
       render: shell
     validations:
       required: false
@@ -114,8 +114,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: DevPod version
-      description: Output of `devpod version`
+      label: Devsy version
+      description: Output of `devsy version`
       placeholder: v0.6.0
     validations:
       required: true
@@ -123,7 +123,7 @@ body:
   - type: dropdown
     id: provider
     attributes:
-      label: DevPod provider
+      label: Devsy provider
       options:
         - Docker
         - SSH
@@ -140,7 +140,7 @@ body:
     id: provider-version
     attributes:
       label: Provider version
-      description: Output of `devpod provider list` for the relevant provider
+      description: Output of `devsy provider list` for the relevant provider
       placeholder: v0.1.0
     validations:
       required: false

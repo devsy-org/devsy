@@ -5,13 +5,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
+	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
+	"github.com/devsy-org/devsy/pkg/ssh/server/port"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/config"
-	helperssh "github.com/skevetter/devpod/pkg/ssh/server"
-	"github.com/skevetter/devpod/pkg/ssh/server/port"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 

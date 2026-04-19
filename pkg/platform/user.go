@@ -1,7 +1,7 @@
 package platform
 
 import (
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 )
 
 func GetUserName(self *managementv1.Self) string {

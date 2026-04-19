@@ -15,10 +15,10 @@ import (
 	"sync"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log"
 )
 
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.

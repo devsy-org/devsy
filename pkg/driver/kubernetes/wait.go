@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/driver/kubernetes/throttledlogger"
+	"github.com/devsy-org/devsy/pkg/driver/kubernetes/throttledlogger"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

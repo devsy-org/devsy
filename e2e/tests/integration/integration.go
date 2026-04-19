@@ -6,12 +6,12 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
-	"devpod provider ssh test suite",
+	"devsy provider ssh test suite",
 	ginkgo.Label("integration"),
 	func() {
 		var initialDir string
@@ -74,23 +74,23 @@ var _ = ginkgo.Describe(
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				// ensure we don't have the ssh provider present
-				_ = f.DevPodProviderDelete(ctx, "ssh")
+				_ = f.DevsyProviderDelete(ctx, "ssh")
 
-				err = f.DevPodProviderAdd(ctx, "ssh", "-o", "HOST=localhost")
+				err = f.DevsyProviderAdd(ctx, "ssh", "-o", "HOST=localhost")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err = f.DevPodProviderDelete(cleanupCtx, "ssh")
+					err = f.DevsyProviderDelete(cleanupCtx, "ssh")
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevPodUp(ctx, "tests/integration/testdata/")
+				err = f.DevsyUp(ctx, "tests/integration/testdata/")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err = f.DevPodWorkspaceDelete(cleanupCtx, "testdata")
+					err = f.DevsyWorkspaceDelete(cleanupCtx, "testdata")
 					framework.ExpectNoError(err)
 				})
 
-				out, err := f.DevPodSSH(ctx, "testdata", "echo test")
+				out, err := f.DevsySSH(ctx, "testdata", "echo test")
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(out, "test\n")
 			},

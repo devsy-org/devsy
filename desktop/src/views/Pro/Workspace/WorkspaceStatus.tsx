@@ -1,7 +1,7 @@
 import { ProWorkspaceInstance } from "@/contexts"
 import { CheckCircle, CircleDuotone, Clock, ExclamationTriangle, NotFound, Sleep } from "@/icons"
 import { BoxProps, HStack, Text } from "@chakra-ui/react"
-import { V1ObjectMeta } from "@loft-enterprise/client/gen/models/V1ObjectMeta"
+import { V1ObjectMeta } from "@devsy/client/gen/models/V1ObjectMeta"
 import React from "react"
 import { TWorkspaceDisplayStatus, WorkspaceDisplayStatus, determineDisplayStatus } from "./status"
 

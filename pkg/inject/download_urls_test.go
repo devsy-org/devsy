@@ -12,40 +12,40 @@ type DownloadURLsTestSuite struct {
 }
 
 func (s *DownloadURLsTestSuite) TestNewDownloadURLs_WithoutTrailingSlash() {
-	urls := NewDownloadURLs("https://github.com/skevetter/devpod/releases/latest/download")
+	urls := NewDownloadURLs("https://github.com/devsy-org/devsy/releases/latest/download")
 	s.Equal(
-		"https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64",
 		urls.Amd,
 	)
 	s.Equal(
-		"https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-arm64",
+		"https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-arm64",
 		urls.Arm,
 	)
 }
 
 func (s *DownloadURLsTestSuite) TestNewDownloadURLs_WithTrailingSlash() {
-	urls := NewDownloadURLs("https://github.com/skevetter/devpod/releases/latest/download/")
+	urls := NewDownloadURLs("https://github.com/devsy-org/devsy/releases/latest/download/")
 	s.Equal(
-		"https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64",
 		urls.Amd,
 	)
 	s.Equal(
-		"https://github.com/skevetter/devpod/releases/latest/download/devpod-linux-arm64",
+		"https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-arm64",
 		urls.Arm,
 	)
 }
 
 func (s *DownloadURLsTestSuite) TestNewDownloadURLs_WithPlaceholder() {
 	urls := NewDownloadURLs("https://example.com/releases/${BIN_NAME}")
-	s.Equal("https://example.com/releases/devpod-linux-amd64", urls.Amd)
-	s.Equal("https://example.com/releases/devpod-linux-arm64", urls.Arm)
+	s.Equal("https://example.com/releases/devsy-linux-amd64", urls.Amd)
+	s.Equal("https://example.com/releases/devsy-linux-arm64", urls.Arm)
 }
 
 func (s *DownloadURLsTestSuite) TestNoDoubleSlashes() {
 	baseURLs := []string{
-		"https://github.com/skevetter/devpod/releases/latest/download",
-		"https://github.com/skevetter/devpod/releases/latest/download/",
-		"https://github.com/skevetter/devpod/releases/latest/download//",
+		"https://github.com/devsy-org/devsy/releases/latest/download",
+		"https://github.com/devsy-org/devsy/releases/latest/download/",
+		"https://github.com/devsy-org/devsy/releases/latest/download//",
 	}
 
 	for _, baseURL := range baseURLs {

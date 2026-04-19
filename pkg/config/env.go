@@ -10,80 +10,80 @@ const (
 // Environment variable constants used throughout the application.
 // All constants follow the EnvXxx naming convention.
 const (
-	// EnvBinaryPath is set to the path of the DevPod binary.
-	EnvBinaryPath = "DEVPOD"
+	// EnvBinaryPath is set to the path of the Devsy binary.
+	EnvBinaryPath = "DEVSY"
 
-	// EnvHome overrides the default DevPod home directory.
-	EnvHome = "DEVPOD_HOME"
+	// EnvHome overrides the default Devsy home directory.
+	EnvHome = "DEVSY_HOME"
 
 	// EnvConfig overrides the default config file path.
-	EnvConfig = "DEVPOD_CONFIG"
+	EnvConfig = "DEVSY_CONFIG"
 
 	// EnvUI indicates the desktop UI is active.
-	EnvUI = "DEVPOD_UI"
+	EnvUI = "DEVSY_UI"
 
 	// EnvDebug enables debug logging.
-	EnvDebug = "DEVPOD_DEBUG"
+	EnvDebug = "DEVSY_DEBUG"
 
 	// EnvDisableTelemetry disables telemetry collection.
-	EnvDisableTelemetry = "DEVPOD_DISABLE_TELEMETRY"
+	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
 	// EnvAgentURL overrides the agent download URL.
-	EnvAgentURL = "DEVPOD_AGENT_URL"
+	EnvAgentURL = "DEVSY_AGENT_URL"
 
 	// EnvAgentPreferDownload forces agent binary download even if a local copy exists.
-	EnvAgentPreferDownload = "DEVPOD_AGENT_PREFER_DOWNLOAD"
+	EnvAgentPreferDownload = "DEVSY_AGENT_PREFER_DOWNLOAD"
 
 	// EnvOS is set to the host operating system (runtime.GOOS).
-	EnvOS = "DEVPOD_OS"
+	EnvOS = "DEVSY_OS"
 
 	// EnvArch is set to the host architecture (runtime.GOARCH).
-	EnvArch = "DEVPOD_ARCH"
+	EnvArch = "DEVSY_ARCH"
 
 	// EnvLogLevel is set to the current log level.
-	EnvLogLevel = "DEVPOD_LOG_LEVEL"
+	EnvLogLevel = "DEVSY_LOG_LEVEL"
 
 	// EnvWorkspaceID is the current workspace identifier.
-	EnvWorkspaceID = "DEVPOD_WORKSPACE_ID"
+	EnvWorkspaceID = "DEVSY_WORKSPACE_ID"
 
 	// EnvWorkspaceUID is the current workspace unique identifier.
-	EnvWorkspaceUID = "DEVPOD_WORKSPACE_UID"
+	EnvWorkspaceUID = "DEVSY_WORKSPACE_UID"
 
 	// EnvWorkspaceDaemonConfig holds the workspace daemon configuration.
-	EnvWorkspaceDaemonConfig = "DEVPOD_WORKSPACE_DAEMON_CONFIG"
+	EnvWorkspaceDaemonConfig = "DEVSY_WORKSPACE_DAEMON_CONFIG"
 
 	// EnvWorkspaceCredentialsPort is the workspace credentials server port.
-	EnvWorkspaceCredentialsPort = "DEVPOD_WORKSPACE_CREDENTIALS_PORT" // #nosec G101
+	EnvWorkspaceCredentialsPort = "DEVSY_WORKSPACE_CREDENTIALS_PORT" // #nosec G101
 
 	// EnvCredentialsServerPort is the credentials server port on the host side.
-	EnvCredentialsServerPort = "DEVPOD_CREDENTIALS_SERVER_PORT" // #nosec G101
+	EnvCredentialsServerPort = "DEVSY_CREDENTIALS_SERVER_PORT" // #nosec G101
 
 	// EnvGitHelperPort is the git credential helper forwarding port.
-	EnvGitHelperPort = "DEVPOD_GIT_HELPER_PORT"
+	EnvGitHelperPort = "DEVSY_GIT_HELPER_PORT"
 
 	// EnvCraneName overrides the crane binary name.
-	EnvCraneName = "DEVPOD_CRANE_NAME"
+	EnvCraneName = "DEVSY_CRANE_NAME"
 
 	// EnvPlatformOptions holds serialized platform options.
-	EnvPlatformOptions = "DEVPOD_PLATFORM_OPTIONS"
+	EnvPlatformOptions = "DEVSY_PLATFORM_OPTIONS"
 
 	// EnvFlagsUp holds extra flags for the up command.
-	EnvFlagsUp = "DEVPOD_FLAGS_UP"
+	EnvFlagsUp = "DEVSY_FLAGS_UP"
 
 	// EnvFlagsSSH holds extra flags for the ssh command.
-	EnvFlagsSSH = "DEVPOD_FLAGS_SSH"
+	EnvFlagsSSH = "DEVSY_FLAGS_SSH"
 
 	// EnvFlagsDelete holds extra flags for the delete command.
-	EnvFlagsDelete = "DEVPOD_FLAGS_DELETE"
+	EnvFlagsDelete = "DEVSY_FLAGS_DELETE"
 
 	// EnvFlagsStatus holds extra flags for the status command.
-	EnvFlagsStatus = "DEVPOD_FLAGS_STATUS"
+	EnvFlagsStatus = "DEVSY_FLAGS_STATUS"
 
-	// EnvSubdomain is the subdomain configuration for DevPod Pro.
-	EnvSubdomain = "DEVPOD_SUBDOMAIN"
+	// EnvSubdomain is the subdomain configuration for Devsy Pro.
+	EnvSubdomain = "DEVSY_SUBDOMAIN"
 
-	// EnvPrefix is the base prefix for all DevPod environment variables.
-	EnvPrefix = "DEVPOD_"
+	// EnvPrefix is the base prefix for all Devsy environment variables.
+	EnvPrefix = "DEVSY_"
 
 	// EnvIDEPrefix is the prefix for IDE-specific option env vars (append IDE name + "_").
 	EnvIDEPrefix = EnvPrefix + "IDE_"
@@ -138,11 +138,11 @@ const (
 	// EnvProviderFolder is the provider folder path passed to providers.
 	EnvProviderFolder = "PROVIDER_FOLDER"
 
-	// EnvLoftProject is the Loft project name for pro features.
-	EnvLoftProject = "LOFT_PROJECT"
+	// EnvLoftProject is the Devsy project name for pro features.
+	EnvLoftProject = "DEVSY_PROJECT"
 
-	// EnvLoftFilterByOwner enables filtering by owner in Loft.
-	EnvLoftFilterByOwner = "LOFT_FILTER_BY_OWNER"
+	// EnvLoftFilterByOwner enables filtering by owner in Devsy.
+	EnvLoftFilterByOwner = "DEVSY_FILTER_BY_OWNER"
 
 	// EnvDevcontainerID is the devcontainer identifier.
 	EnvDevcontainerID = "DEVCONTAINER_ID"

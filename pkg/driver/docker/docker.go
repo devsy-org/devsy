@@ -11,15 +11,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/compose"
+	config2 "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/compose"
-	config2 "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/ide/jetbrains"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
 )
 
 func makeEnvironment(env map[string]string, log log.Logger) []string {

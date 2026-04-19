@@ -1,5 +1,5 @@
 import { STATUS_BAR_HEIGHT } from "@/constants"
-import { ProviderProvider } from "@/contexts/DevPodContext/DevPodProvider"
+import { ProviderProvider } from "@/contexts/DevsyContext/DevsyProvider"
 import { BellDuotone, CogDuotone, LockDuotone } from "@/icons"
 import { TConnectionStatus, useConnectionStatus } from "@/lib"
 import { QueryKeys } from "@/queryKeys"
@@ -26,7 +26,7 @@ import {
   useColorModeValue,
   useDisclosure,
 } from "@chakra-ui/react"
-import { ManagementV1Self } from "@loft-enterprise/client/gen/models/managementV1Self"
+import { ManagementV1Self } from "@devsy/client/gen/models/managementV1Self"
 import { useQuery } from "@tanstack/react-query"
 import { ReactElement, ReactNode, cloneElement, useMemo } from "react"
 import { Outlet, Link as RouterLink, To } from "react-router-dom"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/encoding"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/spf13/cobra"
 )
 

@@ -12,13 +12,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/compose"
+	docker "github.com/devsy-org/devsy/pkg/docker"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/compose"
-	docker "github.com/skevetter/devpod/pkg/docker"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
 )
 
 type baseTestContext struct {
@@ -28,7 +28,7 @@ type baseTestContext struct {
 }
 
 func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevPodSSH(ctx, tempDir, command)
+	return btc.f.DevsySSH(ctx, tempDir, command)
 }
 
 func (btc *baseTestContext) inspectContainer(
@@ -93,7 +93,7 @@ func (tc *testContext) setupAndStartWorkspace(
 	if err != nil {
 		return "", nil, err
 	}
-	workspace, err := devPodUpAndFindWorkspace(ctx, tc.f, tempDir, upArgs...)
+	workspace, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir, upArgs...)
 	return tempDir, workspace, err
 }
 
@@ -135,7 +135,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		return "", err
 	}
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 	return tempDir, nil
 }
 
@@ -155,13 +155,13 @@ func findComposeContainer(
 	})
 }
 
-func devPodUpAndFindWorkspace(
+func devsyUpAndFindWorkspace(
 	ctx context.Context,
 	f *framework.Framework,
 	tempDir string,
 	args ...string,
 ) (*provider2.Workspace, error) {
-	if err := f.DevPodUp(ctx, append([]string{tempDir}, args...)...); err != nil {
+	if err := f.DevsyUp(ctx, append([]string{tempDir}, args...)...); err != nil {
 		return nil, err
 	}
 	return f.FindWorkspace(ctx, tempDir)
@@ -172,7 +172,7 @@ func getContainerUID(
 	f *framework.Framework,
 	workspaceDir, username string,
 ) int {
-	out, err := f.DevPodSSH(ctx, workspaceDir, fmt.Sprintf("id -u %s", username))
+	out, err := f.DevsySSH(ctx, workspaceDir, fmt.Sprintf("id -u %s", username))
 	framework.ExpectNoError(err)
 	uid, err := strconv.Atoi(strings.TrimSpace(out))
 	framework.ExpectNoError(err)
@@ -184,7 +184,7 @@ func getContainerGID(
 	f *framework.Framework,
 	workspaceDir, username string,
 ) int {
-	out, err := f.DevPodSSH(ctx, workspaceDir, fmt.Sprintf("id -g %s", username))
+	out, err := f.DevsySSH(ctx, workspaceDir, fmt.Sprintf("id -g %s", username))
 	framework.ExpectNoError(err)
 	gid, err := strconv.Atoi(strings.TrimSpace(out))
 	framework.ExpectNoError(err)
@@ -196,7 +196,7 @@ func verifyContainerUser(
 	f *framework.Framework,
 	workspaceDir, expectedUser string,
 ) {
-	out, err := f.DevPodSSH(ctx, workspaceDir, "whoami")
+	out, err := f.DevsySSH(ctx, workspaceDir, "whoami")
 	framework.ExpectNoError(err)
 	ginkgo.By(fmt.Sprintf("container user %s", strings.TrimSpace(out)))
 	gomega.Expect(strings.TrimSpace(out)).

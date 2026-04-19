@@ -9,10 +9,10 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +58,7 @@ func (cmd *HealthCmd) Run(
 	if err != nil {
 		return err
 	}
-	res, err := devpodhttp.GetHTTPClient().Get(u.String())
+	res, err := devsyhttp.GetHTTPClient().Get(u.String())
 	if err != nil {
 		return err
 	}

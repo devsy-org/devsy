@@ -1,7 +1,7 @@
 package add
 
 import (
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	addCmd := &cobra.Command{
 		Use:   "add",
-		Short: "Adds a given resource to DevPod Pro",
+		Short: "Adds a given resource to Devsy Pro",
 		Args:  cobra.NoArgs,
 	}
 

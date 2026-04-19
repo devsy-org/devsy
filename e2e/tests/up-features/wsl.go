@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega/ghttp"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
-	"devpod up docker features test suite",
+	"devsy up docker features test suite",
 	ginkgo.Label("up-features", "wsl"),
 	func() {
 		var initialDir string
@@ -71,16 +71,16 @@ var _ = ginkgo.Describe(
 				),
 			)
 
-			_ = f.DevPodProviderDelete(ctx, "docker")
-			err = f.DevPodProviderAdd(ctx, "docker")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
-			err = f.DevPodProviderUse(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
-			// Wait for devpod workspace to come online (deadline: 30s)
-			err = f.DevPodUp(ctx, tempDir)
+			// Wait for devsy workspace to come online (deadline: 30s)
+			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
@@ -97,10 +97,10 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				workspaceName := filepath.Base(tempDir)
-				ginkgo.DeferCleanup(f.DevPodWorkspaceDelete, workspaceName)
+				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, workspaceName)
 
-				// Wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, tempDir, "--debug")
+				// Wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, tempDir, "--debug")
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.GetTimeout()),

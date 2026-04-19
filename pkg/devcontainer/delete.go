@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
 func (r *runner) Delete(ctx context.Context) error {

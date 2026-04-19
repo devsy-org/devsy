@@ -6,11 +6,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/compress"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/setup"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/compress"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

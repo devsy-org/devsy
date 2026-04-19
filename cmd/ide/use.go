@@ -6,11 +6,11 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/ide/ideparse"
-	options2 "github.com/skevetter/devpod/pkg/options"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/ideparse"
+	options2 "github.com/devsy-org/devsy/pkg/options"
 	"github.com/spf13/cobra"
 )
 
@@ -28,14 +28,14 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	useCmd := &cobra.Command{
 		Use:   "use",
-		Short: "Configure the default IDE to use (list available IDEs with 'devpod ide list')",
+		Short: "Configure the default IDE to use (list available IDEs with 'devsy ide list')",
 		Long: `Configure the default IDE to use
 
-Available IDEs can be listed with 'devpod ide list'`,
+Available IDEs can be listed with 'devsy ide list'`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf(
-					"please specify the ide to use, list available IDEs with 'devpod ide list'",
+					"please specify the ide to use, list available IDEs with 'devsy ide list'",
 				)
 			}
 
@@ -50,7 +50,7 @@ Available IDEs can be listed with 'devpod ide list'`,
 
 // Run runs the command logic.
 func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
@@ -63,14 +63,14 @@ func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
 
 	// check if there are user options set
 	if len(cmd.Options) > 0 {
-		err = setOptions(devPodConfig, ide, cmd.Options, ideOptions)
+		err = setOptions(devsyConfig, ide, cmd.Options, ideOptions)
 		if err != nil {
 			return err
 		}
 	}
 
-	devPodConfig.Current().DefaultIDE = ide
-	err = config.SaveConfig(devPodConfig)
+	devsyConfig.Current().DefaultIDE = ide
+	err = config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -79,7 +79,7 @@ func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
 }
 
 func setOptions(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	ide string,
 	userOptions []string,
 	ideOptions ide.Options,
@@ -95,17 +95,17 @@ func setOptions(
 		return err
 	}
 
-	if devPodConfig.Current().IDEs == nil {
-		devPodConfig.Current().IDEs = map[string]*config.IDEConfig{}
+	if devsyConfig.Current().IDEs == nil {
+		devsyConfig.Current().IDEs = map[string]*config.IDEConfig{}
 	}
 
 	newValues := map[string]config.OptionValue{}
-	if devPodConfig.Current().IDEs[ide] != nil {
-		maps.Copy(newValues, devPodConfig.Current().IDEs[ide].Options)
+	if devsyConfig.Current().IDEs[ide] != nil {
+		maps.Copy(newValues, devsyConfig.Current().IDEs[ide].Options)
 	}
 	maps.Copy(newValues, optionValues)
 
-	devPodConfig.Current().IDEs[ide] = &config.IDEConfig{
+	devsyConfig.Current().IDEs[ide] = &config.IDEConfig{
 		Options: newValues,
 	}
 	return nil

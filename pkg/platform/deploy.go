@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/log"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -43,7 +43,7 @@ func WaitForPodReady(
 		true,
 		func(ctx context.Context) (bool, error) {
 			pods, err := kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "app=loft",
+				LabelSelector: "app=devsy",
 			})
 			if err != nil {
 				log.Warnf("Error trying to retrieve %s pod: %v", pkgconfig.ProductNamePro, err)
@@ -90,7 +90,7 @@ func WaitForPodReady(
 						Raw()
 					if err != nil {
 						return false, fmt.Errorf(
-							"there seems to be an issue with %s starting up: %s (%s). Please reach out to our support at https://loft.sh/",
+							"there seems to be an issue with %s starting up: %s (%s). Please reach out to our support at https://devsy.sh/",
 							pkgconfig.ProductNamePro,
 							message,
 							reason,
@@ -98,12 +98,12 @@ func WaitForPodReady(
 					}
 					if strings.Contains(
 						string(out),
-						"register instance: Post \"https://license.loft.sh/register\": dial tcp",
+						"register instance: Post \"https://license.devsy.sh/register\": dial tcp",
 					) {
 						return false, fmt.Errorf(
 							"%[1]s logs: \n%[2]v \nThere seems to be an issue with %[1]s starting up. "+
 								"Looks like you try to install %[1]s into an air-gapped environment, "+
-								"please reach out to our support at https://loft.sh/ for an offline license",
+								"please reach out to our support at https://devsy.sh/ for an offline license",
 							pkgconfig.ProductNamePro,
 							string(out),
 						)
@@ -111,7 +111,7 @@ func WaitForPodReady(
 
 					return false, fmt.Errorf(
 						"%[1]s logs: \n%v \nThere seems to be an issue with %[1]s starting up: %[2]s (%[3]s). "+
-							"Please reach out to our support at https://loft.sh/",
+							"Please reach out to our support at https://devsy.sh/",
 						pkgconfig.ProductNamePro,
 						string(out),
 						message,

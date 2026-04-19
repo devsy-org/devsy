@@ -181,7 +181,7 @@ export function useLoginProModal() {
         <ModalOverlay />
         <ModalContent overflow="hidden">
           {login.status !== "loading" && <ModalCloseButton />}
-          <ModalHeader>Connect to DevPod Pro</ModalHeader>
+          <ModalHeader>Connect to Devsy Pro</ModalHeader>
           <ModalBody overflowX="hidden" overflowY="auto" paddingBottom="0" ref={containerRef}>
             <VStack align="start" spacing="8" paddingX="4" paddingTop="4">
               <Form onSubmit={handleSubmit(onSubmit)} justifyContent="center">
@@ -225,7 +225,7 @@ export function useLoginProModal() {
                       <FormErrorMessage>{proURLError.message}</FormErrorMessage>
                     ) : (
                       <FormHelperText>
-                        Enter a URL to the DevPod Pro instance you intend to connect to. If
+                        Enter a URL to the Devsy Pro instance you intend to connect to. If
                         you&apos;re unsure about it, ask your company administrator or create a new
                         Pro instance on your local machine.
                       </FormHelperText>
@@ -334,7 +334,7 @@ export function useReLoginProModal() {
         <ModalOverlay />
         <ModalContent overflow="hidden">
           {login.status !== "loading" && <ModalCloseButton />}
-          <ModalHeader>Login to DevPod Pro</ModalHeader>
+          <ModalHeader>Login to Devsy Pro</ModalHeader>
           <ModalBody overflowX="hidden" overflowY="auto" paddingBottom="0" ref={containerRef}>
             <VStack align="start" spacing="8" paddingX="4" paddingTop="4" paddingBottom="6">
               {login.status !== "idle" && (

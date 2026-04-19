@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/command"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/command"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 )
 
 type SshConfig struct {
@@ -165,7 +165,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	// install ourselves with devpod agent daemon
+	// install ourselves with devsy agent daemon
 	args := []string{executable, "agent", "daemon"}
 	if agentDir != "" {
 		args = append(args, "--agent-dir", agentDir)
@@ -226,7 +226,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
 			return startFallbackDaemon(executable, args, log)
 		}
-		log.Infof("restarted DevPod daemon with updated config")
+		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
 		//nolint:gosec // BinaryName is a compile-time constant, not tainted input
 		if out, err := exec.Command(
@@ -235,7 +235,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
 			return startFallbackDaemon(executable, args, log)
 		}
-		log.Infof("installed DevPod daemon into server")
+		log.Infof("installed Devsy daemon into server")
 	}
 
 	return nil
@@ -251,7 +251,7 @@ func startFallbackDaemon(executable string, args []string, log log.Logger) error
 	if err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
-	log.Infof("started DevPod daemon into server")
+	log.Infof("started Devsy daemon into server")
 	return nil
 }
 
@@ -343,7 +343,7 @@ func stopFallbackDaemon() error {
 	return nil
 }
 
-// isDaemonProcess checks whether the process with the given PID is a DevPod
+// isDaemonProcess checks whether the process with the given PID is a Devsy
 // daemon by reading /proc/{pid}/exe and verifying it matches our binary name.
 func isDaemonProcess(pid string) bool {
 	exePath, err := os.Readlink("/proc/" + pid + "/exe")

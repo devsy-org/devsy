@@ -5,7 +5,7 @@
     "#{server_url}/devcontainer-feature-hello.tgz": {}
   },
   "customizations": {
-    "devpod": {
+    "devsy": {
       "featureDownloadHTTPHeaders": {
         "Foo-Header": "Foo"
       }

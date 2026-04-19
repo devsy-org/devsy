@@ -12,13 +12,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 )
 

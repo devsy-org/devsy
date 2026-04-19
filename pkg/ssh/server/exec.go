@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/skevetter/devpod/pkg/pty"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/devsy/pkg/pty"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 // execNonPTY executes a command without a PTY, wiring stdout/stderr directly

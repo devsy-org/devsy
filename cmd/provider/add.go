@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +33,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	addCmd := &cobra.Command{
 		Use:   "add [name, GitHub link, URL or path]",
-		Short: "Adds a new provider to DevPod",
+		Short: "Adds a new provider to Devsy",
 		Args:  cobra.MaximumNArgs(1),
 		PreRunE: func(cobraCommand *cobra.Command, args []string) error {
 			if cmd.FromExisting != "" {
@@ -44,11 +44,11 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
-			return cmd.Run(ctx, devPodConfig, args)
+			return cmd.Run(ctx, devsyConfig, args)
 		},
 	}
 
@@ -68,7 +68,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 	return addCmd
 }
 
-func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []string) error {
+func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	providerName := cmd.Name
 
 	if providerName != "" {
@@ -85,12 +85,12 @@ func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []
 	var providerConfig *provider.ProviderConfig
 	var options []string
 	if cmd.FromExisting != "" {
-		if devPodConfig.Current() == nil ||
-			devPodConfig.Current().Providers[cmd.FromExisting] == nil {
+		if devsyConfig.Current() == nil ||
+			devsyConfig.Current().Providers[cmd.FromExisting] == nil {
 			return fmt.Errorf("provider %s does not exist", cmd.FromExisting)
 		}
 		providerWithOptions, err := workspace.CloneProvider(
-			devPodConfig,
+			devsyConfig,
 			providerName,
 			cmd.FromExisting,
 			log.Default,
@@ -108,9 +108,9 @@ func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []
 	} else {
 		if len(args) != 1 {
 			return fmt.Errorf("please specify either a URL or path, " +
-				"e.g. devpod provider add https://path/to/my/provider.yaml")
+				"e.g. devsy provider add https://path/to/my/provider.yaml")
 		}
-		c, err := workspace.AddProvider(devPodConfig, providerName, args[0], log.Default)
+		c, err := workspace.AddProvider(devsyConfig, providerName, args[0], log.Default)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []
 	if cmd.Use {
 		configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
 			Provider:       providerConfig,
-			Context:        devPodConfig.DefaultContext,
+			Context:        devsyConfig.DefaultContext,
 			UserOptions:    options,
 			Reconfigure:    true,
 			SkipRequired:   false,
@@ -132,12 +132,12 @@ func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []
 			Log:            log.Default,
 		})
 		if configureErr != nil {
-			devPodConfig, err := config.LoadConfig(cmd.Context, "")
+			devsyConfig, err := config.LoadConfig(cmd.Context, "")
 			if err != nil {
 				return err
 			}
 
-			err = DeleteProvider(ctx, devPodConfig, providerConfig.Name, true, true, log.Default)
+			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true, log.Default)
 			if err != nil {
 				return fmt.Errorf("delete provider: %w", err)
 			}
@@ -149,7 +149,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devPodConfig *config.Config, args []
 	}
 
 	log.Default.Infof("To use the provider, please run the following command:")
-	log.Default.Infof("devpod provider use %s", providerConfig.Name)
+	log.Default.Infof("devsy provider use %s", providerConfig.Name)
 	return nil
 }
 

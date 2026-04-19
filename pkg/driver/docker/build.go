@@ -8,14 +8,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/buildkit"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/devcontainer/buildkit"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/feature"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/provider"
 )
 
 func (d *dockerDriver) BuildDevContainer(

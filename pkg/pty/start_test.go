@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/stretchr/testify/suite"
 )
 

@@ -7,13 +7,13 @@ import (
 	"io"
 	"os"
 
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/remotecommand"
-	"github.com/skevetter/log"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 

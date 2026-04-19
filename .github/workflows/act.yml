@@ -37,10 +37,17 @@ jobs:
       - name: build test binary
         run: task cli:test:e2e:build
 
+      - name: generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
+
       - name: run tests
         env:
           GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ secrets.GH_PRIVATE_REPO_TOKEN_TEST || github.token }}
+          GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
         run: |
           GH_USERNAME="${GH_USERNAME}" \
             GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
@@ -103,7 +110,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: build --id devpod-linux --snapshot
+          args: build --id devsy-linux --snapshot
 
       - name: setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -120,13 +127,13 @@ jobs:
         working-directory: ./desktop/src-tauri
         run: |
           mkdir -p ./bin/
-          find "../../dist" -type f -name "devpod-*" -exec mv {} ./bin \;
-          find ./bin -type f -name "devpod-*" -exec chmod +x {} \;
+          find "../../dist" -type f -name "devsy-*" -exec mv {} ./bin \;
+          find ./bin -type f -name "devsy-*" -exec chmod +x {} \;
 
       - name: rename binaries for desktop build
         shell: bash
         working-directory: ./desktop/src-tauri
-        run: find ./bin -type f -name "devpod-linux-amd64" -exec mv {} ./bin/devpod-x86_64-unknown-linux-gnu \;
+        run: find ./bin -type f -name "devsy-linux-amd64" -exec mv {} ./bin/devsy-x86_64-unknown-linux-gnu \;
 
       - name: install linux dependencies
         run: |
@@ -162,8 +169,8 @@ jobs:
       - name: upload desktop linux artifact for flatpak
         uses: actions/upload-artifact@v4 # pin to v4 for act support, see https://nektosact.com/usage/index.html?highlight=artif#action-artifacts
         with:
-          name: devpod-flatpak
-          path: ./desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/DevPod_*_amd64.deb
+          name: devsy-flatpak
+          path: ./desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/Devsy_*_amd64.deb
 
   build-flatpak:
     name: Build Flatpak
@@ -181,31 +188,31 @@ jobs:
       - name: download desktop linux artifact
         uses: actions/download-artifact@v4 # pin to v4 for act support, see https://nektosact.com/usage/index.html?highlight=artif#action-artifacts
         with:
-          name: devpod-flatpak
-          path: /tmp/devpod/
+          name: devsy-flatpak
+          path: /tmp/devsy/
 
       # Use GITHUB_WORKSPACE in containers because the path differs from github.workspace
       # for more details, see https://github.com/actions/checkout/issues/785
       - name: prepare flatpak manifest for PR build
         shell: bash
         run: |
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod_linux_amd64.deb|path: /tmp/devpod/DevPod_0.0.0_amd64.deb|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod.desktop|path: $GITHUB_WORKSPACE/desktop/flatpak/DevPod.desktop|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "s|url: https://github.com/skevetter/devpod/releases/download/\${VERSION}/DevPod.metainfo.xml|path: $GITHUB_WORKSPACE/desktop/flatpak/DevPod.metainfo.xml|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${DESKTOP_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
-          sed -i "/sha256: \${META_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.loft.devpod.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy_linux_amd64.deb|path: /tmp/devsy/Devsy_0.0.0_amd64.deb|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.desktop|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.desktop|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.metainfo.xml|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${DESKTOP_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
+          sed -i "/sha256: \${META_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
 
       - name: update flatpak metadata version and date
         run: |
           DATE=$(date +%Y-%m-%d)
           VERSION="v0.0.0"
 
-          sed -i "s/__VERSION__/${VERSION}/g" "$GITHUB_WORKSPACE/desktop/flatpak/DevPod.metainfo.xml"
-          sed -i "s/__DATE__/${DATE}/g" "$GITHUB_WORKSPACE/desktop/flatpak/DevPod.metainfo.xml"
+          sed -i "s/__VERSION__/${VERSION}/g" "$GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml"
+          sed -i "s/__DATE__/${DATE}/g" "$GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml"
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: DevPod.flatpak
-          manifest-path: desktop/flatpak/sh.loft.devpod.yml
+          bundle: Devsy.flatpak
+          manifest-path: desktop/flatpak/sh.devsy.devsy.yml
           upload-artifact: false

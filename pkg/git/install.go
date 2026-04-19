@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/log"
 )
 
 func InstallBinary(log log.Logger) error {

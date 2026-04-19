@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/pro/completion"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	platformdaemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/pro/completion"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
-// StatusCmd holds the DevPod daemon flags.
+// StatusCmd holds the Devsy daemon flags.
 type StatusCmd struct {
 	*proflags.GlobalFlags
 
@@ -33,7 +33,7 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "status",
 		Short: "Get the status of the daemon",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -44,7 +44,7 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			root := cmd.Root()
@@ -81,7 +81,7 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *StatusCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *providerpkg.ProviderConfig,
 ) error {
 	status, err := platformdaemon.NewLocalClient(provider.Name).Status(ctx, cmd.Debug)

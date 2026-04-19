@@ -1,6 +1,6 @@
 import { client } from "@/client/client"
 import { BINARY_NAME } from "@/client/repo"
-import { TActionObj } from "@/contexts/DevPodContext/action"
+import { TActionObj } from "@/contexts/DevsyContext/action"
 import { TWorkspace } from "@/types"
 import { useToast } from "@chakra-ui/react"
 import { useMutation } from "@tanstack/react-query"

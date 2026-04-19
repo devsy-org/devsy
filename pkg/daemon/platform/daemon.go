@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/config"
-	devpodlog "github.com/skevetter/devpod/pkg/log"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 	"tailscale.com/types/netmap"
@@ -139,7 +139,7 @@ func (d *Daemon) Listen(ln net.Listener) error {
 			continue
 		}
 		switch clientType {
-		case devPodClientType:
+		case devsyClientType:
 			go d.handler(bConn, dialLocal(d.localServer))
 		case tailscaleClientType:
 			go d.handler(bConn, dialTS(lc))
@@ -195,7 +195,7 @@ func initLogging(rootDir string, debug bool) log.Logger {
 	logPath := filepath.Join(rootDir, "daemon.log")
 	logger := log.NewFileLogger(logPath, logLevel)
 	if os.Getenv(config.EnvUI) != config.BoolTrue {
-		logger = devpodlog.NewCombinedLogger(
+		logger = devsylog.NewCombinedLogger(
 			logLevel,
 			logger,
 			log.NewStreamLogger(os.Stdout, os.Stderr, logLevel),
@@ -222,7 +222,7 @@ func dialLocal(l *localServer) dialFunc {
 type clientType string
 
 var (
-	devPodClientType    clientType = clientType(config.BinaryName)
+	devsyClientType     clientType = clientType(config.BinaryName)
 	tailscaleClientType clientType = "tailscale"
 )
 
@@ -232,8 +232,8 @@ func getClientType(bConn *bufferedConn) (clientType, error) {
 		return "", err
 	}
 	switch b {
-	case devPodClientPrefix:
-		return devPodClientType, nil
+	case devsyClientPrefix:
+		return devsyClientType, nil
 	default:
 		return tailscaleClientType, bConn.UnreadByte()
 	}

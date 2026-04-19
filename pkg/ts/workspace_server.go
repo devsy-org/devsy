@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/platform/client"
-	sshServer "github.com/skevetter/devpod/pkg/ssh/server"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
+	"github.com/devsy-org/log"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/store/mem"
@@ -163,7 +163,7 @@ func (s *WorkspaceServer) validateConfig() error {
 // setupControlURL constructs the control URL and verifies DERP connection.
 func (s *WorkspaceServer) setupControlURL(ctx context.Context) (*url.URL, error) {
 	baseURL := &url.URL{
-		Scheme: GetEnvOrDefault("LOFT_TSNET_SCHEME", "https"),
+		Scheme: GetEnvOrDefault("DEVSY_TSNET_SCHEME", "https"),
 		Host:   s.config.PlatformHost,
 	}
 	if err := CheckDerpConnection(ctx, baseURL); err != nil {
@@ -319,7 +319,7 @@ func (s *WorkspaceServer) gitCredentialsHandler(
 
 	// build the runner URL
 	runnerURL := fmt.Sprintf(
-		"http://%s.ts.loft/devpod/%s/%s/workspace-git-credentials",
+		"http://%s.ts.loft/devsy/%s/%s/workspace-git-credentials",
 		discoveredRunner,
 		projectName,
 		workspaceName,
@@ -361,7 +361,7 @@ func (s *WorkspaceServer) dockerCredentialsHandler(
 
 	// build the runner URL
 	runnerURL := fmt.Sprintf(
-		"http://%s.ts.loft/devpod/%s/%s/workspace-docker-credentials",
+		"http://%s.ts.loft/devsy/%s/%s/workspace-docker-credentials",
 		discoveredRunner,
 		projectName,
 		workspaceName,
@@ -528,7 +528,7 @@ func (s *WorkspaceServer) sendHeartbeat(
 	}
 
 	heartbeatURL := fmt.Sprintf(
-		"http://%s.ts.loft/devpod/%s/%s/heartbeat",
+		"http://%s.ts.loft/devsy/%s/%s/heartbeat",
 		discoveredRunner,
 		projectName,
 		workspaceName,

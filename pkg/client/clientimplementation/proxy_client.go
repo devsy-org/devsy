@@ -13,18 +13,18 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/options"
+	"github.com/devsy-org/devsy/pkg/options/resolver"
+	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/terminal"
 	"github.com/gofrs/flock"
-	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	devpodlog "github.com/skevetter/devpod/pkg/log"
-	"github.com/skevetter/devpod/pkg/options"
-	"github.com/skevetter/devpod/pkg/options/resolver"
-	platformclient "github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/terminal"
 )
 
 const (
@@ -33,16 +33,16 @@ const (
 )
 
 func NewProxyClient(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	prov *provider.ProviderConfig,
 	workspace *provider.Workspace,
 	log log.Logger,
 ) (client.ProxyClient, error) {
 	pc := &proxyClient{
-		devPodConfig: devPodConfig,
-		config:       prov,
-		workspace:    workspace,
-		log:          log,
+		devsyConfig: devsyConfig,
+		config:      prov,
+		workspace:   workspace,
+		log:         log,
 	}
 	pc.executor = &proxyExecutor{client: pc}
 	return pc, nil
@@ -54,11 +54,11 @@ type proxyClient struct {
 	workspaceLockOnce sync.Once
 	workspaceLock     *flock.Flock
 
-	devPodConfig *config.Config
-	config       *provider.ProviderConfig
-	workspace    *provider.Workspace
-	log          log.Logger
-	executor     *proxyExecutor
+	devsyConfig *config.Config
+	config      *provider.ProviderConfig
+	workspace   *provider.Workspace
+	log         log.Logger
+	executor    *proxyExecutor
 }
 
 // proxyExecutor handles proxy command execution with common patterns.
@@ -84,7 +84,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 		Command:   params.command,
 		Context:   e.client.workspace.Context,
 		Workspace: e.client.workspace,
-		Options:   e.client.devPodConfig.ProviderOptions(e.client.config.Name),
+		Options:   e.client.devsyConfig.ProviderOptions(e.client.config.Name),
 		Config:    e.client.config,
 		ExtraEnv:  params.extraEnv,
 		Stdin:     params.stdin,
@@ -96,7 +96,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 
 // executeWithJSONLog runs a command with JSON log streaming.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
-	writer, _ := devpodlog.PipeJSONStream(e.client.log.ErrorStreamOnly())
+	writer, _ := devsylog.PipeJSONStream(e.client.log.ErrorStreamOnly())
 	defer func() { _ = writer.Close() }()
 
 	params.stderr = writer
@@ -220,7 +220,7 @@ func (s *proxyClient) RefreshOptions(
 
 	workspace, err := options.ResolveAndSaveOptionsWorkspace(
 		ctx,
-		s.devPodConfig,
+		s.devsyConfig,
 		s.config,
 		s.workspace,
 		userOptions,
@@ -288,7 +288,7 @@ func (s *proxyClient) Up(ctx context.Context, opt client.UpOptions) error {
 		opts["DEBUG"] = "true"
 	}
 
-	providerOptions := s.devPodConfig.ProviderOptions(s.config.Name)
+	providerOptions := s.devsyConfig.ProviderOptions(s.config.Name)
 	if err := s.checkPlatformVersion(ctx, providerOptions); err != nil {
 		return err
 	}
@@ -307,7 +307,7 @@ func (s *proxyClient) checkPlatformVersion(
 	ctx context.Context,
 	providerOptions map[string]config.OptionValue,
 ) error {
-	loftConfig := providerOptions["LOFT_CONFIG"].Value
+	loftConfig := providerOptions["DEVSY_CONFIG"].Value
 	if loftConfig == "" {
 		return nil
 	}
@@ -322,7 +322,7 @@ func (s *proxyClient) checkPlatformVersion(
 		return fmt.Errorf("error retrieving platform version: %w", err)
 	}
 
-	parsedVersion, err := semver.Parse(strings.TrimPrefix(version.DevPodVersion, "v"))
+	parsedVersion, err := semver.Parse(strings.TrimPrefix(version.DevsyVersion, "v"))
 	if err != nil {
 		return fmt.Errorf("error parsing platform version: %w", err)
 	}
@@ -386,7 +386,7 @@ func (s *proxyClient) Status(
 		Context:   s.workspace.Context,
 		Workspace: s.workspace,
 		Machine:   nil,
-		Options:   s.devPodConfig.ProviderOptions(s.config.Name),
+		Options:   s.devsyConfig.ProviderOptions(s.config.Name),
 		Config:    s.config,
 		ExtraEnv:  EncodeOptions(options, config.EnvFlagsStatus),
 		Stdin:     nil,
@@ -402,7 +402,7 @@ func (s *proxyClient) Status(
 		)
 	}
 
-	devpodlog.ReadJSONStream(bytes.NewReader(buf.Bytes()), s.log.ErrorStreamOnly())
+	devsylog.ReadJSONStream(bytes.NewReader(buf.Bytes()), s.log.ErrorStreamOnly())
 	status := &client.WorkspaceStatus{}
 	err = json.Unmarshal(stdout.Bytes(), status)
 	if err != nil {

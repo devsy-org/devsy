@@ -29,18 +29,18 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "bin/devpod",
+          "name": "bin/devsy",
           "sidecar": true,
           "args": true
         },
         {
-          "name": "bin/devpod",
-          "cmd": "/app/bin/devpod",
+          "name": "bin/devsy",
+          "cmd": "/app/bin/devsy",
           "args": true
         },
         {
-          "name": "run-path-devpod",
-          "cmd": "devpod",
+          "name": "run-path-devsy",
+          "cmd": "devsy",
           "args": [
             "version"
           ]
@@ -51,7 +51,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "bin/devpod",
+          "name": "bin/devsy",
           "sidecar": true,
           "args": true
         }
@@ -61,7 +61,7 @@
       "identifier": "shell:allow-kill",
       "allow": [
         {
-          "name": "bin/devpod",
+          "name": "bin/devsy",
           "sidecar": true,
           "args": true
         }

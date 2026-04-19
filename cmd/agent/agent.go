@@ -3,23 +3,23 @@ package agent
 import (
 	"os"
 
+	"github.com/devsy-org/devsy/cmd/agent/container"
+	"github.com/devsy-org/devsy/cmd/agent/workspace"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envfile"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/agent/container"
-	"github.com/skevetter/devpod/cmd/agent/workspace"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/envfile"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
-var AgentExecutedAnnotation = "loft.sh/agent-executed"
+var AgentExecutedAnnotation = "devsy.sh/agent-executed"
 
 // NewAgentCmd returns a new root command.
 func NewAgentCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	agentCmd := &cobra.Command{
 		Use:   "agent",
-		Short: "DevPod Agent",
+		Short: "Devsy Agent",
 		PersistentPreRunE: func(cobraCmd *cobra.Command, args []string) error {
 			return AgentPersistentPreRunE(cobraCmd, args, globalFlags)
 		},
@@ -66,8 +66,8 @@ func AgentPersistentPreRunE(
 		log.Default.SetLevel(logrus.DebugLevel)
 	}
 
-	if globalFlags.DevPodHome != "" {
-		_ = os.Setenv(config.EnvHome, globalFlags.DevPodHome)
+	if globalFlags.DevsyHome != "" {
+		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
 	}
 
 	// apply environment

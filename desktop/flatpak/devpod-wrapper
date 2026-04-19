@@ -1,7 +1,7 @@
 #!/bin/sh
 
-APP_ID="sh.loft.devpod"
-APP_BIN="/app/bin/devpod-bin"
+APP_ID="sh.devsy.devsy"
+APP_BIN="/app/bin/devsy-bin"
 
 remove_leftover_wrapper() {
     script_path="$1"
@@ -14,14 +14,14 @@ remove_leftover_wrapper() {
 }
 
 run_from_host() {
-    flatpak run --command=devpod "$APP_ID" "$@"
+    flatpak run --command=devsy "$APP_ID" "$@"
     result="$?"
 
     if [ "$result" -gt 0 ]; then
         if ! command -v flatpak >/dev/null 2>&1; then
-            echo "flatpak is not available; cannot verify DevPod installation"
+            echo "flatpak is not available; cannot verify Devsy installation"
         elif ! flatpak info "$APP_ID" >/dev/null 2>&1; then
-            echo "Devpod flatpak is not installed anymore"
+            echo "Devsy flatpak is not installed anymore"
             remove_leftover_wrapper "$0"
         fi
     fi
@@ -31,7 +31,7 @@ run_from_host() {
 
 sync_host_binary() {
     data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-    target="${data_home}/devpod"
+    target="${data_home}/devsy"
 
     /usr/bin/mkdir -p "$data_home"
 
@@ -50,8 +50,8 @@ main() {
     data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 
     # Start with env flags, then --host, binary, then the original CLI args.
-    set -- "--host" "${data_home}/devpod" "$@"
-    value="${DEVPOD_ADDITIONAL_ENV_VARS:-}"
+    set -- "--host" "${data_home}/devsy" "$@"
+    value="${DEVSY_ADDITIONAL_ENV_VARS:-}"
     if [ -n "$value" ]; then
         old_ifs="$IFS"
         IFS=','

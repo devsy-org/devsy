@@ -3,7 +3,7 @@ package server
 import (
 	"os"
 
-	"github.com/skevetter/devpod/pkg/command"
+	"github.com/devsy-org/devsy/pkg/command"
 )
 
 func findWorkdir(workdir string, userName string) string {

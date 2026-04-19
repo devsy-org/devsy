@@ -11,11 +11,11 @@ import (
 	"strings"
 )
 
-// ExecCommand executes the command string with the devpod test binary.
+// ExecCommand executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
 	var execOut bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevpodBinDir, f.DevpodBinName), args...)
+	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -26,9 +26,9 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 	return execOut.String(), nil
 }
 
-// ExecCommandStdout executes the command string with the devpod test binary.
+// ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevpodBinDir, f.DevpodBinName), args...)
+	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -38,7 +38,7 @@ func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error 
 	return nil
 }
 
-// ExecCommand executes the command string with the devpod test binary.
+// ExecCommand executes the command string with the devsy test binary.
 func (f *Framework) ExecCommand(
 	ctx context.Context,
 	captureStdOut, searchForString bool,
@@ -47,7 +47,7 @@ func (f *Framework) ExecCommand(
 ) error {
 	var execOut bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevpodBinDir, f.DevpodBinName), args...)
+	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -66,12 +66,12 @@ func (f *Framework) ExecCommand(
 	return nil
 }
 
-// ExecCommandCapture executes the command string with the devpod test binary, and returns stdout, stderr, and any error that occurred.
+// ExecCommandCapture executes the command string with the devsy test binary, and returns stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
 
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevpodBinDir, f.DevpodBinName), args...)
+	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &execErr)
 

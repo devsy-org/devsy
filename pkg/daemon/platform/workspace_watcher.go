@@ -8,17 +8,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	loftclient "github.com/skevetter/api/pkg/clientset/versioned"
-	typedmanagementv1 "github.com/skevetter/api/pkg/clientset/versioned/typed/management/v1"
-	informers "github.com/skevetter/api/pkg/informers/externalversions"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	typedmanagementv1 "github.com/devsy-org/api/pkg/clientset/versioned/typed/management/v1"
+	informers "github.com/devsy-org/api/pkg/informers/externalversions"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -31,12 +31,12 @@ type ProWorkspaceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   managementv1.DevPodWorkspaceInstanceSpec `json:"spec"`
-	Status ProWorkspaceInstanceStatus               `json:"status"`
+	Spec   managementv1.DevsyWorkspaceInstanceSpec `json:"spec"`
+	Status ProWorkspaceInstanceStatus              `json:"status"`
 }
 
 type ProWorkspaceInstanceStatus struct {
-	managementv1.DevPodWorkspaceInstanceStatus `json:",inline"`
+	managementv1.DevsyWorkspaceInstanceStatus `json:",inline"`
 
 	Source  *provider.WorkspaceSource       `json:"source,omitempty"`
 	IDE     *provider.WorkspaceIDEConfig    `json:"ide,omitempty"`
@@ -70,11 +70,11 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 	factory := informers.NewSharedInformerFactoryWithOptions(clientset, time.Second*10,
 		informers.WithNamespace(project.ProjectNamespace(config.Project)),
 	)
-	workspaceInformer := factory.Management().V1().DevPodWorkspaceInstances()
+	workspaceInformer := factory.Management().V1().DevsyWorkspaceInstances()
 	instanceStore := newStore(self, config.Context, config.OwnerFilter, config.TsClient, config.Log)
 	_, err = workspaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
-			instance, ok := obj.(*managementv1.DevPodWorkspaceInstance)
+			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
 			if !ok {
 				return
 			}
@@ -84,11 +84,11 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 			}
 		},
 		UpdateFunc: func(oldObj any, newObj any) {
-			oldInstance, ok := oldObj.(*managementv1.DevPodWorkspaceInstance)
+			oldInstance, ok := oldObj.(*managementv1.DevsyWorkspaceInstance)
 			if !ok {
 				return
 			}
-			newInstance, ok := newObj.(*managementv1.DevPodWorkspaceInstance)
+			newInstance, ok := newObj.(*managementv1.DevsyWorkspaceInstance)
 			if !ok {
 				return
 			}
@@ -98,14 +98,14 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 			}
 		},
 		DeleteFunc: func(obj any) {
-			instance, ok := obj.(*managementv1.DevPodWorkspaceInstance)
+			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
 			if !ok {
 				// check for DeletedFinalStateUnknown. Can happen if the informer misses the delete event
 				u, ok := obj.(cache.DeletedFinalStateUnknown)
 				if !ok {
 					return
 				}
-				instance, ok = u.Obj.(*managementv1.DevPodWorkspaceInstance)
+				instance, ok = u.Obj.(*managementv1.DevsyWorkspaceInstance)
 				if !ok {
 					return
 				}
@@ -203,21 +203,21 @@ func (s *instanceStore) key(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
 }
 
-func (s *instanceStore) Add(instance *managementv1.DevPodWorkspaceInstance) {
+func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 	if s.ownerFilter == platform.SelfOwnerFilter && !platform.IsOwner(s.self, instance.GetOwner()) {
 		return
 	}
 	var source *provider.WorkspaceSource
 	if instance.GetAnnotations() != nil &&
-		instance.GetAnnotations()[storagev1.DevPodWorkspaceSourceAnnotation] != "" {
+		instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
 		source = provider.ParseWorkspaceSource(
-			instance.GetAnnotations()[storagev1.DevPodWorkspaceSourceAnnotation],
+			instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation],
 		)
 	}
 
 	var ideConfig *provider.WorkspaceIDEConfig
-	if instance.GetLabels() != nil && instance.GetLabels()[storagev1.DevPodWorkspaceIDLabel] != "" {
-		id := instance.GetLabels()[storagev1.DevPodWorkspaceIDLabel]
+	if instance.GetLabels() != nil && instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel] != "" {
+		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
 		workspaceConfig, err := provider.LoadWorkspaceConfig(s.context, id)
 		if err == nil {
 			ideConfig = &workspaceConfig.IDE
@@ -229,9 +229,9 @@ func (s *instanceStore) Add(instance *managementv1.DevPodWorkspaceInstance) {
 		ObjectMeta: instance.ObjectMeta,
 		Spec:       instance.Spec,
 		Status: ProWorkspaceInstanceStatus{
-			DevPodWorkspaceInstanceStatus: instance.Status,
-			Source:                        source,
-			IDE:                           ideConfig,
+			DevsyWorkspaceInstanceStatus: instance.Status,
+			Source:                       source,
+			IDE:                          ideConfig,
 		},
 	}
 
@@ -242,8 +242,8 @@ func (s *instanceStore) Add(instance *managementv1.DevPodWorkspaceInstance) {
 }
 
 func (s *instanceStore) Update(
-	oldInstance *managementv1.DevPodWorkspaceInstance,
-	newInstance *managementv1.DevPodWorkspaceInstance,
+	oldInstance *managementv1.DevsyWorkspaceInstance,
+	newInstance *managementv1.DevsyWorkspaceInstance,
 ) {
 	if s.ownerFilter == platform.SelfOwnerFilter &&
 		!platform.IsOwner(s.self, newInstance.GetOwner()) {
@@ -252,7 +252,7 @@ func (s *instanceStore) Update(
 	s.Add(newInstance)
 }
 
-func (s *instanceStore) Delete(instance *managementv1.DevPodWorkspaceInstance) {
+func (s *instanceStore) Delete(instance *managementv1.DevsyWorkspaceInstance) {
 	if s.ownerFilter == platform.SelfOwnerFilter && !platform.IsOwner(s.self, instance.GetOwner()) {
 		return
 	}

@@ -9,14 +9,14 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	dockerconfig "github.com/containers/image/v5/pkg/docker/config"
+	"github.com/devsy-org/devsy/pkg/command"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/random"
+	"github.com/devsy-org/log"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/types"
-	"github.com/skevetter/devpod/pkg/command"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/devpod/pkg/file"
-	"github.com/skevetter/devpod/pkg/random"
-	"github.com/skevetter/log"
 )
 
 const (

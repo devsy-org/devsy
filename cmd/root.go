@@ -6,21 +6,21 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/context"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/helper"
+	"github.com/devsy-org/devsy/cmd/ide"
+	"github.com/devsy-org/devsy/cmd/machine"
+	"github.com/devsy-org/devsy/cmd/pro"
+	"github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/cmd/use"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/telemetry"
+	log2 "github.com/devsy-org/log"
+	"github.com/devsy-org/log/terminal"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/context"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/helper"
-	"github.com/skevetter/devpod/cmd/ide"
-	"github.com/skevetter/devpod/cmd/machine"
-	"github.com/skevetter/devpod/cmd/pro"
-	"github.com/skevetter/devpod/cmd/provider"
-	"github.com/skevetter/devpod/cmd/use"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/telemetry"
-	log2 "github.com/skevetter/log"
-	"github.com/skevetter/log/terminal"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
@@ -32,7 +32,7 @@ var globalFlags *flags.GlobalFlags
 func NewRootCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:           config.BinaryName,
-		Short:         "DevPod",
+		Short:         "Devsy",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -55,19 +55,19 @@ func NewRootCmd() *cobra.Command {
 				log2.Default.SetLevel(logrus.DebugLevel)
 			}
 
-			if globalFlags.DevPodHome != "" {
-				_ = os.Setenv(config.EnvHome, globalFlags.DevPodHome)
+			if globalFlags.DevsyHome != "" {
+				_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
 			}
 
-			devPodConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+			devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 			if err == nil {
-				telemetry.StartCLI(devPodConfig, cobraCmd)
+				telemetry.StartCLI(devsyConfig, cobraCmd)
 			}
 
 			return nil
 		},
 		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-			if globalFlags.DevPodHome != "" {
+			if globalFlags.DevsyHome != "" {
 				_ = os.Unsetenv(config.EnvHome)
 			}
 
@@ -167,7 +167,7 @@ func inheritFlagsFromEnvironment(flags *flag.FlagSet) {
 		suffix := strings.ToUpper(strings.ReplaceAll(flag.Name, "-", "_"))
 
 		// do not prepend the env prefix if the flag name already starts with it
-		// (applies to one flag - "devpod-home").
+		// (applies to one flag - "devsy-home").
 		var environmentVariable string
 		if strings.HasPrefix(suffix, config.EnvPrefix) {
 			environmentVariable = suffix

@@ -112,7 +112,7 @@ function GeneralSettings() {
         title="Debug mode"
         description={
           <>
-            Run all DevPod commands with the <Code>--debug</Code> flag, making it easier to
+            Run all Devsy commands with the <Code>--debug</Code> flag, making it easier to
             troubleshoot
           </>
         }>
@@ -122,7 +122,7 @@ function GeneralSettings() {
         />
       </SettingSection>
 
-      <SettingSection title="Logs" description={"Open the logs for DevPod Desktop"}>
+      <SettingSection title="Logs" description={"Open the logs for Devsy Desktop"}>
         <Button variant="outline" onClick={() => client.openDir("AppLog")}>
           Open Logs
         </Button>
@@ -143,7 +143,7 @@ function GeneralSettings() {
       <SettingSection
         showDivider={false}
         title="Show Intro"
-        description="Show the introduction to DevPod again">
+        description="Show the introduction to Devsy again">
         <Button variant="outline" onClick={() => showWelcomeModal({ cancellable: true })}>
           Open
         </Button>
@@ -154,7 +154,7 @@ function GeneralSettings() {
           Danger Zone
         </Heading>
         <Button variant="outline" colorScheme="red" onClick={() => client.quit()}>
-          Quit DevPod
+          Quit Devsy
         </Button>
       </VStack>
 
@@ -359,7 +359,7 @@ function UpdateSettings() {
       </SettingSection>
       <SettingSection
         title="Versions"
-        description="Manage and explore DevPod versions"
+        description="Manage and explore Devsy versions"
         showDivider={false}>
         <>
           <VStack align="start" width="full" marginBottom="4">
@@ -425,7 +425,7 @@ function ExperimentalSettings() {
 
       <SettingSection
         title="Experimental IDEs"
-        description=" Enable experimental IDEs. These IDEs are not officially supported by DevPod and might be unstable. We are working on making them generally available">
+        description=" Enable experimental IDEs. These IDEs are not officially supported by Devsy and might be unstable. We are working on making them generally available">
         <HStack>
           <Switch
             isChecked={settings.experimental_fleet}

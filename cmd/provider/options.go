@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/table"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -66,12 +66,12 @@ type optionWithValue struct {
 
 // Run runs the command logic.
 func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	providerName := devPodConfig.Current().DefaultProvider
+	providerName := devsyConfig.Current().DefaultProvider
 	if len(args) > 0 {
 		providerName = args[0]
 	} else if providerName == "" {
@@ -87,7 +87,7 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	providerWithOptions, err := workspace.FindProvider(
-		devPodConfig,
+		devsyConfig,
 		providerName,
 		log.Default.ErrorStreamOnly(),
 	)
@@ -95,17 +95,17 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	return printOptions(devPodConfig, providerWithOptions, cmd.Output, cmd.Hidden)
+	return printOptions(devsyConfig, providerWithOptions, cmd.Output, cmd.Hidden)
 }
 
 func printOptions(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *workspace.ProviderWithOptions,
 	format string,
 	showHidden bool,
 ) error {
-	entryOptions := devPodConfig.ProviderOptions(provider.Config.Name)
-	dynamicOptions := devPodConfig.DynamicProviderOptionDefinitions(provider.Config.Name)
+	entryOptions := devsyConfig.ProviderOptions(provider.Config.Name)
+	dynamicOptions := devsyConfig.DynamicProviderOptionDefinitions(provider.Config.Name)
 	srcOptions := MergeDynamicOptions(provider.Config.Options, dynamicOptions)
 	if format == "plain" {
 		tableEntries := [][]string{}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/pty/ptytest"
+	"github.com/devsy-org/devsy/pkg/pty/ptytest"
 	"github.com/stretchr/testify/suite"
 )
 

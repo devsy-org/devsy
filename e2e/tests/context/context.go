@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 const ideIntelliJ = "intellij"
 
 var _ = ginkgo.Describe(
-	"devpod context test suite",
+	"devsy context test suite",
 	ginkgo.Label("context"),
 	ginkgo.Ordered,
 	func() {
@@ -32,15 +32,15 @@ var _ = ginkgo.Describe(
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				var err error
-				err = f.DevPodContextCreate(ctx, "test-context")
+				err = f.DevsyContextCreate(ctx, "test-context")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					cleanupErr := f.DevPodContextDelete(cleanupCtx, "test-context")
+					cleanupErr := f.DevsyContextDelete(cleanupCtx, "test-context")
 					framework.ExpectNoError(cleanupErr)
 				})
 
-				err = f.DevPodContextUse(ctx, "test-context")
+				err = f.DevsyContextUse(ctx, "test-context")
 				framework.ExpectNoError(err)
 			},
 		)
@@ -55,26 +55,26 @@ var _ = ginkgo.Describe(
 				contextB := "test-ctx-b-ide"
 
 				var err error
-				err = f.DevPodContextCreate(ctx, contextA)
+				err = f.DevsyContextCreate(ctx, contextA)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					_ = f.DevPodContextDelete(cleanupCtx, contextA)
+					_ = f.DevsyContextDelete(cleanupCtx, contextA)
 				})
 
-				err = f.DevPodContextCreate(ctx, contextB)
+				err = f.DevsyContextCreate(ctx, contextB)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err = f.DevPodContextDelete(cleanupCtx, contextB)
+					err = f.DevsyContextDelete(cleanupCtx, contextB)
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevPodContextUse(ctx, contextA)
+				err = f.DevsyContextUse(ctx, contextA)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodIDEUse(ctx, ideIntelliJ, "--context", contextB)
+				err = f.DevsyIDEUse(ctx, ideIntelliJ, "--context", contextB)
 				framework.ExpectNoError(err)
 
-				output, err := f.DevPodIDEList(ctx, "--output", "json")
+				output, err := f.DevsyIDEList(ctx, "--output", "json")
 				framework.ExpectNoError(err)
 
 				var ides []map[string]any
@@ -90,7 +90,7 @@ var _ = ginkgo.Describe(
 					}
 				}
 
-				output, err = f.DevPodIDEList(ctx, "--context", contextB, "--output", "json")
+				output, err = f.DevsyIDEList(ctx, "--context", contextB, "--output", "json")
 				framework.ExpectNoError(err)
 
 				err = json.Unmarshal([]byte(output), &ides)
@@ -111,16 +111,16 @@ var _ = ginkgo.Describe(
 					gomega.BeTrue(), "IDE should be set as default in context-b",
 				)
 
-				ginkgo.GinkgoT().Setenv("DEVPOD_CONTEXT", contextB)
+				ginkgo.GinkgoT().Setenv("DEVSY_CONTEXT", contextB)
 
-				output, err = f.DevPodIDEList(ctx, "--output", "json")
+				output, err = f.DevsyIDEList(ctx, "--output", "json")
 				framework.ExpectNoError(err)
 
 				err = json.Unmarshal([]byte(output), &ides)
 				framework.ExpectNoError(err)
 				gomega.Expect(ides).NotTo(
 					gomega.BeEmpty(),
-					"IDE list via DEVPOD_CONTEXT should not be empty",
+					"IDE list via DEVSY_CONTEXT should not be empty",
 				)
 
 				intellijFound = false
@@ -134,7 +134,7 @@ var _ = ginkgo.Describe(
 				}
 				gomega.Expect(intellijFound).To(
 					gomega.BeTrue(),
-					"DEVPOD_CONTEXT env var should select context-b with intellij as default IDE",
+					"DEVSY_CONTEXT env var should select context-b with intellij as default IDE",
 				)
 			},
 		)

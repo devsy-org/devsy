@@ -8,9 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/skevetter/devpod/pkg/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 )
 
 var craneSigningKey string
@@ -21,9 +21,9 @@ const (
 
 	EnvironmentCrane = "environment"
 
-	defaultBinName     = config.BinaryName + "-crane"
-	envDevPodCraneName = config.EnvCraneName
-	tmpDirTemplate     = config.BinaryName + "-crane-*"
+	defaultBinName    = config.BinaryName + "-crane"
+	envDevsyCraneName = config.EnvCraneName
+	tmpDirTemplate    = config.BinaryName + "-crane-*"
 )
 
 type Content struct {
@@ -69,7 +69,7 @@ func ShouldUse(cliOptions *provider2.CLIOptions) bool {
 	return IsAvailable() && cliOptions.Platform.EnvironmentTemplate != ""
 }
 
-// IsAvailable checks if devpod crane is installed in host system.
+// IsAvailable checks if devsy crane is installed in host system.
 func IsAvailable() bool {
 	_, err := exec.LookPath(getBinName())
 	return err == nil
@@ -159,7 +159,7 @@ func storeFilesInDirectory(content *Content, path string) (string, error) {
 }
 
 func getBinName() string {
-	if name := os.Getenv(envDevPodCraneName); name != "" {
+	if name := os.Getenv(envDevsyCraneName); name != "" {
 		return name
 	}
 	return defaultBinName

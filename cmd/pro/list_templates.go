@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ func NewListTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "List templates",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -46,7 +46,7 @@ func NewListTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 	}
 
@@ -60,10 +60,10 @@ func NewListTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *ListTemplatesCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	opts := devPodConfig.ProviderOptions(provider.Name)
+	opts := devsyConfig.ProviderOptions(provider.Name)
 	opts[platform.ProjectEnv] = config.OptionValue{Value: cmd.Project}
 
 	// ignore --debug because we tunnel json through stdio
@@ -73,7 +73,7 @@ func (cmd *ListTemplatesCmd) Run(
 		Ctx:     ctx,
 		Name:    "listTemplates",
 		Command: provider.Exec.Proxy.List.Templates,
-		Context: devPodConfig.DefaultContext,
+		Context: devsyConfig.DefaultContext,
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,

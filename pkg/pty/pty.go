@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/ssh"
 )
 
 // ErrClosed is returned when a PTY is used after it has been closed.

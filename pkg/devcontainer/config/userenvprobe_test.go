@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/skevetter/log"
+	"github.com/devsy-org/log"
 )
 
 //nolint:funlen,lll // It's just test input vectors.

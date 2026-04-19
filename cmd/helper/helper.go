@@ -1,11 +1,11 @@
 package helper
 
 import (
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/helper/http"
-	"github.com/skevetter/devpod/cmd/helper/json"
-	"github.com/skevetter/devpod/cmd/helper/strings"
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/helper/http"
+	"github.com/devsy-org/devsy/cmd/helper/json"
+	"github.com/devsy-org/devsy/cmd/helper/strings"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +13,7 @@ import (
 func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	helperCmd := &cobra.Command{
 		Use:   "helper",
-		Short: "DevPod Utility Commands",
+		Short: "Devsy Utility Commands",
 		PersistentPreRunE: func(cobraCmd *cobra.Command, args []string) error {
 			return agent.AgentPersistentPreRunE(cobraCmd, args, globalFlags)
 		},

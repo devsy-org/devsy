@@ -15,7 +15,7 @@ use thiserror::Error;
 use url::Url;
 
 // Should match the one from "tauri.config.json" and "Info.plist"
-const APP_IDENTIFIER: &str = "sh.loft.devpod";
+const APP_IDENTIFIER: &str = "sh.devsy.devsy";
 
 pub struct CustomProtocol;
 
@@ -330,7 +330,7 @@ mod tests {
 
         #[test]
         fn should_parse() {
-            let url_str = "devpod://open?workspace=workspace";
+            let url_str = "devsy://open?workspace=workspace";
             let request = UrlParser::parse(&url_str).unwrap();
 
             assert_eq!(request.host, "open".to_string());
@@ -339,7 +339,7 @@ mod tests {
 
         #[test]
         fn should_parse_with_empty_query() {
-            let url_str = "devpod://import";
+            let url_str = "devsy://import";
             let request = UrlParser::parse(&url_str).unwrap();
 
             assert_eq!(request.host, "import".to_string());
@@ -349,7 +349,7 @@ mod tests {
         #[test]
         #[should_panic]
         fn should_fail_on_invalid_method() {
-            let url_str = "devpod://something";
+            let url_str = "devsy://something";
             let _ = UrlParser::parse(&url_str).unwrap();
         }
 
@@ -369,7 +369,7 @@ mod tests {
         #[test]
         fn should_parse_full() {
             let url_str =
-                "devpod://open?workspace=workspace&provider=provider&source=https://github.com/test123&ide=vscode";
+                "devsy://open?workspace=workspace&provider=provider&source=https://github.com/test123&ide=vscode";
             let request = UrlParser::parse(&url_str).unwrap();
             let got: OpenWorkspaceMsg = CustomProtocol::parse(&request).unwrap();
 
@@ -381,7 +381,7 @@ mod tests {
 
         #[test]
         fn should_parse_workspace() {
-            let url_str = "devpod://open?workspace=some-workspace";
+            let url_str = "devsy://open?workspace=some-workspace";
             let request = UrlParser::parse(&url_str).unwrap();
             let got: OpenWorkspaceMsg = CustomProtocol::parse(&request).unwrap();
 
@@ -393,7 +393,7 @@ mod tests {
 
         #[test]
         fn should_parse() {
-            let url_str = "devpod://open?source=some-source";
+            let url_str = "devsy://open?source=some-source";
             let request = UrlParser::parse(&url_str).unwrap();
             let got: OpenWorkspaceMsg = CustomProtocol::parse(&request).unwrap();
 
@@ -412,7 +412,7 @@ mod tests {
         #[test]
         fn should_parse_full() {
             let url_str =
-                "devpod://import?workspace-id=workspace&workspace-uid=uid&devpod-pro-host=devpod.pro&other=other&project=foo";
+                "devsy://import?workspace-id=workspace&workspace-uid=uid&devsy-pro-host=devsy.pro&other=other&project=foo";
             let request = UrlParser::parse(&url_str).unwrap();
 
             let got: ImportWorkspaceMsg = CustomProtocol::parse(&request).unwrap();
@@ -420,7 +420,7 @@ mod tests {
             assert_eq!(got.workspace_id, "workspace".to_string());
             assert_eq!(got.workspace_uid, "uid".to_string());
             assert_eq!(got.project, "foo".to_string());
-            assert_eq!(got.devpod_pro_host, "devpod.pro".to_string());
+            assert_eq!(got.devsy_pro_host, "devsy.pro".to_string());
             assert_eq!(got.options.get("other"), Some(&"other".to_string()));
         }
 
@@ -428,7 +428,7 @@ mod tests {
         #[should_panic]
         fn should_fail_on_missing_workspace_id() {
             let url_str =
-                "devpod://import?workspace-uid=uid&devpod-pro-host=devpod.pro&other=other";
+                "devsy://import?workspace-uid=uid&devsy-pro-host=devsy.pro&other=other";
             let request = UrlParser::parse(&url_str).unwrap();
 
             let got: Result<ImportWorkspaceMsg, ParseError> = CustomProtocol::parse(&request);
@@ -443,7 +443,7 @@ mod tests {
 
         #[test]
         fn should_parse_full() {
-            let url_str = "devpod://pro/setup?host=foo&access_key=bar";
+            let url_str = "devsy://pro/setup?host=foo&access_key=bar";
             let request = UrlParser::parse(&url_str).unwrap();
 
             let got: SetupProMsg = CustomProtocol::parse(&request).unwrap();
@@ -454,7 +454,7 @@ mod tests {
 
         #[test]
         fn should_parse_host() {
-            let url_str = "devpod://pro/setup?host=localhost%3A8080";
+            let url_str = "devsy://pro/setup?host=localhost%3A8080";
             let request = UrlParser::parse(&url_str).unwrap();
 
             let got: SetupProMsg = CustomProtocol::parse(&request).unwrap();
@@ -466,7 +466,7 @@ mod tests {
         #[should_panic]
         fn should_fail_on_missing_workspace_id() {
             let url_str =
-                "devpod://import?workspace-uid=uid&devpod-pro-host=devpod.pro&other=other";
+                "devsy://import?workspace-uid=uid&devsy-pro-host=devsy.pro&other=other";
             let request = UrlParser::parse(&url_str).unwrap();
 
             let got: Result<ImportWorkspaceMsg, ParseError> = CustomProtocol::parse(&request);

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/build"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/image"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
@@ -30,7 +30,7 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 	// remove build information
 	defer func() {
 		contextPath := config.GetContextPath(substitutedConfig.Config)
-		_ = os.RemoveAll(filepath.Join(contextPath, config.DevPodContextFeatureFolder))
+		_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
 	}()
 
 	// check if we need to build container
@@ -125,8 +125,8 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 }
 
 func getPrebuildRepository(substitutedConfig *config.SubstitutedConfig) string {
-	if len(config.GetDevPodCustomizations(substitutedConfig.Config).PrebuildRepository) > 0 {
-		return config.GetDevPodCustomizations(substitutedConfig.Config).PrebuildRepository[0]
+	if len(config.GetDevsyCustomizations(substitutedConfig.Config).PrebuildRepository) > 0 {
+		return config.GetDevsyCustomizations(substitutedConfig.Config).PrebuildRepository[0]
 	}
 
 	return ""

@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 var _ = ginkgo.Describe("testing upgrade command", ginkgo.Label("upgrade"), ginkgo.Ordered, func() {
@@ -39,7 +39,7 @@ var _ = ginkgo.Describe("testing upgrade command", ginkgo.Label("upgrade"), gink
 			expectedArch := runtime.GOARCH
 			framework.ExpectEqual(values["arch"], expectedArch, "Arch should match runtime")
 
-			expectedAssetPattern := "devpod-" + expectedOS + "-" + expectedArch
+			expectedAssetPattern := "devsy-" + expectedOS + "-" + expectedArch
 			gomega.Expect(values["asset_name"]).
 				To(gomega.ContainSubstring(expectedAssetPattern), "Asset name should contain OS and Arch")
 		},

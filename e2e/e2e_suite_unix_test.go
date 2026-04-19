@@ -3,5 +3,5 @@
 package e2e
 
 import (
-	_ "github.com/skevetter/devpod/e2e/tests/up-docker-compose"
+	_ "github.com/devsy-org/devsy/e2e/tests/up-docker-compose"
 )

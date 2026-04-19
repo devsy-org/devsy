@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/command"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/file"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/command"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/log"
 )
 
 const (
 	HelperScript = `#!/bin/bash
 
-devpod agent git-ssh-signature "$@"
+devsy agent git-ssh-signature "$@"
 `
 )
 
@@ -110,7 +110,7 @@ func updateGitConfig(gitConfigPath, userName, gitSigningKey string) error {
 		return err
 	}
 
-	// Always remove any existing devpod-managed signing config and rewrite
+	// Always remove any existing devsy-managed signing config and rewrite
 	// with the current key. The previous guard (checking whether the program
 	// line already existed) would silently skip key updates after unclean
 	// shutdowns or key rotations.
@@ -180,8 +180,8 @@ func removeSignatureHelper(content string) string {
 			// entries — these are the ones appended by GitConfigTemplate.
 			// Sections with other entries (name, email, etc.) are user-owned
 			// and must be preserved intact to avoid data loss.
-			if isDevpodOnlyUserSection(buf) {
-				// Drop the entire section — it was appended by devpod.
+			if isDevsyOnlyUserSection(buf) {
+				// Drop the entire section — it was appended by devsy.
 			} else {
 				out = append(out, buf...)
 			}
@@ -232,11 +232,11 @@ func isSectionHeader(trimmed string) bool {
 	return len(trimmed) > 0 && trimmed[0] == '['
 }
 
-// isDevpodOnlyUserSection returns true when a buffered [user] section contains
+// isDevsyOnlyUserSection returns true when a buffered [user] section contains
 // nothing but signingkey entries. Such sections are appended by GitConfigTemplate
 // and are safe to remove. Sections with other entries (name, email, etc.) belong
 // to the user and must be preserved.
-func isDevpodOnlyUserSection(lines []string) bool {
+func isDevsyOnlyUserSection(lines []string) bool {
 	for _, line := range lines[1:] {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {

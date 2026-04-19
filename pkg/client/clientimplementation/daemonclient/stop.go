@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/platform"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/platform"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -35,9 +35,9 @@ func (c *client) Stop(ctx context.Context, opt clientpkg.StopOptions) error {
 	rawOptions, _ := json.Marshal(opt)
 	retStop, err := managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(workspace.Namespace).
-		Stop(ctx, workspace.Name, &managementv1.DevPodWorkspaceInstanceStop{
-			Spec: managementv1.DevPodWorkspaceInstanceStopSpec{
+		DevsyWorkspaceInstances(workspace.Namespace).
+		Stop(ctx, workspace.Name, &managementv1.DevsyWorkspaceInstanceStop{
+			Spec: managementv1.DevsyWorkspaceInstanceStopSpec{
 				Options: string(rawOptions),
 			},
 		}, metav1.CreateOptions{})

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/shell"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/shell"
+	"github.com/devsy-org/log"
 )
 
 type UserEnvProbe string

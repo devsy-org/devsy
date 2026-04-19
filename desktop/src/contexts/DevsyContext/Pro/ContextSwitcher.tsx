@@ -1,4 +1,4 @@
-import { Close, Connect, DevpodWordmark, Ellipsis, Folder } from "@/icons"
+import { Close, Connect, DevsyWordmark, Ellipsis, Folder } from "@/icons"
 import { Result, getDisplayName, useLoginProModal } from "@/lib"
 import { Routes } from "@/routes.constants"
 import { TProInstance } from "@/types"
@@ -28,7 +28,7 @@ import {
   VStack,
   useColorModeValue,
 } from "@chakra-ui/react"
-import { ManagementV1Project } from "@loft-enterprise/client/gen/models/managementV1Project"
+import { ManagementV1Project } from "@devsy/client/gen/models/managementV1Project"
 import { ReactNode, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { useProInstances } from "../proInstances"
@@ -72,7 +72,7 @@ export function ContextSwitcher({
 
     p.push({
       host: HOST_OSS,
-      image: <DevpodWordmark w="20" h="6" />,
+      image: <DevsyWordmark w="20" h="6" />,
       authenticated: undefined,
       provider: undefined,
       creationTimestamp: undefined,

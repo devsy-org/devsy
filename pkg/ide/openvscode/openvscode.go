@@ -8,16 +8,16 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	copy2 "github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/extract"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	copy2 "github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/extract"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/ide/vscode"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/log"
 )
 
 const (
@@ -37,7 +37,7 @@ const (
 var Options = ide.Options{
 	ForwardPortsOption: {
 		Name:        ForwardPortsOption,
-		Description: "If DevPod should automatically do port-forwarding",
+		Description: "If Devsy should automatically do port-forwarding",
 		Default:     "true",
 		Enum: []string{
 			"true",
@@ -56,7 +56,7 @@ var Options = ide.Options{
 	},
 	OpenOption: {
 		Name:        OpenOption,
-		Description: "If DevPod should automatically open the browser",
+		Description: "If Devsy should automatically open the browser",
 		Default:     "true",
 		Enum: []string{
 			"true",
@@ -132,7 +132,7 @@ func (o *OpenVSCodeServer) Install() error {
 	vscode.InstallAPKRequirements(o.log)
 
 	// download tar
-	resp, err := devpodhttp.GetHTTPClient().Get(url)
+	resp, err := devsyhttp.GetHTTPClient().Get(url)
 	if err != nil {
 		return err
 	}

@@ -5,33 +5,33 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 )
 
 func InitClientFromHost(
 	ctx context.Context,
-	devPodConfig *config.Config,
-	devPodProHost string,
+	devsyConfig *config.Config,
+	devsyProHost string,
 	log log.Logger,
 ) (client.Client, error) {
-	provider, err := ProviderFromHost(ctx, devPodConfig, devPodProHost, log)
+	provider, err := ProviderFromHost(ctx, devsyConfig, devsyProHost, log)
 	if err != nil {
 		return nil, fmt.Errorf("provider from pro instance: %w", err)
 	}
 
-	return InitClientFromProvider(ctx, devPodConfig, provider, log)
+	return InitClientFromProvider(ctx, devsyConfig, provider, log)
 }
 
 func InitClientFromProvider(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	providerName string,
 	log log.Logger,
 ) (client.Client, error) {
-	configPath, err := LoftConfigPath(devPodConfig.DefaultContext, providerName)
+	configPath, err := DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return nil, fmt.Errorf("loft config path: %w", err)
 	}
@@ -41,28 +41,28 @@ func InitClientFromProvider(
 
 func ProviderFromHost(
 	ctx context.Context,
-	devPodConfig *config.Config,
-	devPodProHost string,
+	devsyConfig *config.Config,
+	devsyProHost string,
 	log log.Logger,
 ) (string, error) {
 	proInstanceConfig, err := provider.LoadProInstanceConfig(
-		devPodConfig.DefaultContext,
-		devPodProHost,
+		devsyConfig.DefaultContext,
+		devsyProHost,
 	)
 	if err != nil {
-		return "", fmt.Errorf("load pro instance %s: %w", devPodProHost, err)
+		return "", fmt.Errorf("load pro instance %s: %w", devsyProHost, err)
 	}
 
 	return proInstanceConfig.Provider, nil
 }
 
-func LoftConfigPath(context string, providerName string) (string, error) {
+func DevsyConfigPath(context string, providerName string) (string, error) {
 	providerDir, err := provider.GetProviderDir(context, providerName)
 	if err != nil {
 		return "", err
 	}
 
-	configPath := filepath.Join(providerDir, "loft-config.json")
+	configPath := filepath.Join(providerDir, "devsy-config.json")
 
 	return configPath, nil
 }

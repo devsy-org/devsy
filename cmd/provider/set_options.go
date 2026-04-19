@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	setOptionsCmd := &cobra.Command{
 		Use:   "set-options [provider]",
-		Short: "Sets options for the given provider. Similar to 'devpod provider use', but does not switch the default provider.",
+		Short: "Sets options for the given provider. Similar to 'devsy provider use', but does not switch the default provider.",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			logger := log.Logger(log.Default)
 			if cmd.Dry {
@@ -66,12 +66,12 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger) error {
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	providerName := devPodConfig.Current().DefaultProvider
+	providerName := devsyConfig.Current().DefaultProvider
 	if len(args) > 0 {
 		providerName = args[0]
 	} else if providerName == "" {
@@ -84,14 +84,14 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger
 	}
 	log.Debugf("Options=%+v", cmd.Options)
 
-	providerWithOptions, err := workspace.FindProvider(devPodConfig, providerName, log)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, log)
 	if err != nil {
 		return err
 	}
 
-	devPodConfig, err = configureProviderOptions(ctx, ProviderOptionsConfig{
+	devsyConfig, err = configureProviderOptions(ctx, ProviderOptionsConfig{
 		Provider:       providerWithOptions.Config,
-		Context:        devPodConfig.DefaultContext,
+		Context:        devsyConfig.DefaultContext,
 		UserOptions:    cmd.Options,
 		Reconfigure:    cmd.Reconfigure,
 		SkipRequired:   cmd.Dry,
@@ -106,13 +106,13 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger
 
 	// save provider config
 	if !cmd.Dry {
-		err = config.SaveConfig(devPodConfig)
+		err = config.SaveConfig(devsyConfig)
 		if err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 	} else {
 		// print options to stdout
-		err = printOptions(devPodConfig, providerWithOptions, "json", true)
+		err = printOptions(devsyConfig, providerWithOptions, "json", true)
 		if err != nil {
 			return fmt.Errorf("print options: %w", err)
 		}

@@ -7,18 +7,18 @@ import (
 	"os"
 	"os/exec"
 
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 )
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
 type BrowserTunnelParams struct {
 	Ctx              context.Context
-	DevPodConfig     *config.Config
+	DevsyConfig      *config.Config
 	Client           client2.BaseWorkspaceClient
 	User             string
 	TargetURL        string
@@ -92,19 +92,19 @@ func runBrowserTunnelServices(
 	err := RunServices(
 		ctx,
 		RunServicesOptions{
-			DevPodConfig:    p.DevPodConfig,
+			DevsyConfig:     p.DevsyConfig,
 			ContainerClient: containerClient,
 			User:            p.User,
 			ForwardPorts:    p.ForwardPorts,
 			ExtraPorts:      p.ExtraPorts,
 			Workspace:       p.Client.WorkspaceConfig(),
-			ConfigureDockerCredentials: p.DevPodConfig.ContextOption(
+			ConfigureDockerCredentials: p.DevsyConfig.ContextOption(
 				config.ContextOptionSSHInjectDockerCredentials,
 			) == config.BoolTrue,
-			ConfigureGitCredentials: p.DevPodConfig.ContextOption(
+			ConfigureGitCredentials: p.DevsyConfig.ContextOption(
 				config.ContextOptionSSHInjectGitCredentials,
 			) == config.BoolTrue,
-			ConfigureGitSSHSignatureHelper: p.DevPodConfig.ContextOption(
+			ConfigureGitSSHSignatureHelper: p.DevsyConfig.ContextOption(
 				config.ContextOptionGitSSHSignatureForwarding,
 			) == config.BoolTrue,
 			GitSSHSigningKey: p.GitSSHSigningKey,
@@ -179,7 +179,7 @@ func SetupBackhaul(
 	return nil
 }
 
-// CreateSSHCommand builds an exec.Cmd that runs `devpod ssh` with the given arguments.
+// CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
@@ -202,7 +202,7 @@ func CreateSSHCommand(
 	return exec.CommandContext(ctx, execPath, args...), nil
 }
 
-// buildSSHCommandArgs constructs the argument list for `devpod ssh`.
+// buildSSHCommandArgs constructs the argument list for `devsy ssh`.
 func buildSSHCommandArgs(clientContext, workspace string, debug bool, extraArgs []string) []string {
 	args := []string{
 		"ssh",

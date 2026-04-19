@@ -6,13 +6,13 @@ import (
 	"strconv"
 	"time"
 
-	clusterv1 "github.com/skevetter/agentapi/pkg/apis/devsy/cluster/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/log"
+	clusterv1 "github.com/devsy-org/agentapi/pkg/apis/devsy/cluster/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -58,12 +58,12 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 	}
 	targetWorkspace := args[0]
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, "")
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devPodConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 
 	_, err = managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
+		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
 	if err != nil {
 		return err
@@ -125,7 +125,7 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 		func(ctx context.Context) (done bool, err error) {
 			workspaceInstance, err := managementClient.Loft().
 				ManagementV1().
-				DevPodWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
+				DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 				Get(ctx, workspaceInstance.Name, metav1.GetOptions{})
 			if err != nil {
 				return false, err

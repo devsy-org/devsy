@@ -14,28 +14,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/log"
 	"github.com/moby/patternmatcher/ignorefile"
-	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
 var extraSearchLocations = []string{
-	"/home/devpod/" + config.ConfigDirName + "/agent",
-	"/opt/devpod/agent",
-	"/var/lib/devpod/agent",
+	"/home/devsy/" + config.ConfigDirName + "/agent",
+	"/opt/devsy/agent",
+	"/var/lib/devsy/agent",
 	ContainerDataDir + "/agent",
 }
 
-var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devpod home directory")
+var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
 func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
 	return FindAgentHomeFolder(agentFolder)
@@ -100,7 +100,7 @@ func findDir(agentFolder string, validate func(path string) bool) string {
 }
 
 func FindAgentHomeFolder(agentFolder string) (string, error) {
-	homeDir := findDir(agentFolder, isDevPodHome)
+	homeDir := findDir(agentFolder, isDevsyHome)
 	if homeDir != "" {
 		return homeDir, nil
 	}
@@ -108,7 +108,7 @@ func FindAgentHomeFolder(agentFolder string) (string, error) {
 	return "", ErrFindAgentHomeFolder
 }
 
-func isDevPodHome(dir string) bool {
+func isDevsyHome(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, "contexts"))
 	return err == nil
 }
@@ -156,7 +156,7 @@ func isDirExecutable(dir string) (bool, error) {
 	testFile := filepath.Join(dir, config.BinaryName+"_test.sh")
 	// #nosec G306,G703 -- TODO Consider using a more secure permission setting and ownership if needed.
 	if err := os.WriteFile(testFile, []byte(`#!/bin/sh
-echo DevPod
+echo Devsy
 `), 0o755); err != nil {
 		return false, err
 	}
@@ -169,8 +169,8 @@ echo DevPod
 	out, err := exec.Command(testFile).Output()
 	if err != nil {
 		return false, err
-	} else if strings.TrimSpace(string(out)) != "DevPod" {
-		return false, fmt.Errorf("received %s, expected DevPod", strings.TrimSpace(string(out)))
+	} else if strings.TrimSpace(string(out)) != "Devsy" {
+		return false, fmt.Errorf("received %s, expected Devsy", strings.TrimSpace(string(out)))
 	}
 
 	return true, nil
@@ -425,7 +425,7 @@ func CloneRepositoryForWorkspace(
 
 	log.Done("cloned repository")
 
-	// Get .devpodignore files to exclude
+	// Get .devsyignore files to exclude
 	f, err := os.Open(
 		filepath.Join(workspaceDir, config.IgnoreFileName),
 	) // #nosec G304 -- path is controlled by the application, not user input

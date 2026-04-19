@@ -58,7 +58,7 @@ export const COMMUNITY_WORKSPACE_EXAMPLES = [
   {
     image: RubySvg,
     imageDark: RubySvg,
-    source: "https://github.com/skevetter/devpod-quickstart-ruby",
+    source: "https://github.com/devsy-org/devsy-quickstart-ruby",
     name: "Try Ruby",
   },
   {

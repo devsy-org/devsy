@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/devsy-org/log"
 	"github.com/gorilla/websocket"
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/kube"
-	"github.com/skevetter/devpod/pkg/platform/project"
-	"github.com/skevetter/log"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,7 +59,7 @@ func GetWorkspaceInfoFromEnv() (*WorkspaceInfo, error) {
 	return workspaceInfo, nil
 }
 
-// FindInstanceOptions configures how to find a DevPodWorkspaceInstance.
+// FindInstanceOptions configures how to find a DevsyWorkspaceInstance.
 type FindInstanceOptions struct {
 	// UID searches for an instance by its UID label. Takes precedence over Name.
 	UID string
@@ -90,12 +90,12 @@ func findInstanceByUID(
 	managementClient kube.Interface,
 	uid string,
 	namespace string,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	listOpts := metav1.ListOptions{
-		LabelSelector: storagev1.DevPodWorkspaceUIDLabel + "=" + uid,
+		LabelSelector: storagev1.DevsyWorkspaceUIDLabel + "=" + uid,
 	}
 	workspaceList, err := managementClient.Loft().ManagementV1().
-		DevPodWorkspaceInstances(namespace).List(ctx, listOpts)
+		DevsyWorkspaceInstances(namespace).List(ctx, listOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +111,9 @@ func findInstanceByName(
 	managementClient kube.Interface,
 	name string,
 	namespace string,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	workspace, err := managementClient.Loft().ManagementV1().
-		DevPodWorkspaceInstances(namespace).Get(ctx, name, metav1.GetOptions{})
+		DevsyWorkspaceInstances(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, nil
@@ -123,13 +123,13 @@ func findInstanceByName(
 	return workspace, nil
 }
 
-// FindInstance finds a DevPodWorkspaceInstance using the provided options.
+// FindInstance finds a DevsyWorkspaceInstance using the provided options.
 // Either UID or Name must be specified. If neither is provided, returns an error.
 func FindInstance(
 	ctx context.Context,
 	baseClient client.Client,
 	opts FindInstanceOptions,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := baseClient.Management()
 	if err != nil {
 		return nil, fmt.Errorf("create management client: %w", err)
@@ -177,7 +177,7 @@ func URLOptions(options any) url.Values {
 
 func DialInstance(
 	baseClient client.Client,
-	workspace *managementv1.DevPodWorkspaceInstance,
+	workspace *managementv1.DevsyWorkspaceInstance,
 	subResource string,
 	values url.Values,
 	log log.Logger,
@@ -194,7 +194,7 @@ func DialInstance(
 	}
 	log.Debugf("Connect to workspace using host: %s", host)
 
-	loftURL := "wss://" + host + "/kubernetes/management/apis/management.loft.sh/v1/namespaces/" + workspace.Namespace + "/devpodworkspaceinstances/" + workspace.Name + "/" + subResource
+	loftURL := "wss://" + host + "/kubernetes/management/apis/management.devsy.sh/v1/namespaces/" + workspace.Namespace + "/devsyworkspaceinstances/" + workspace.Name + "/" + subResource
 	if len(values) > 0 {
 		loftURL += "?" + values.Encode()
 	}
@@ -224,15 +224,15 @@ func DialInstance(
 	return conn, nil
 }
 
-// UpdateInstance diffs two versions of a DevPodWorkspaceInstance, applies changes via a patch to reduce conflicts.
+// UpdateInstance diffs two versions of a DevsyWorkspaceInstance, applies changes via a patch to reduce conflicts.
 // Afterwards it waits until the instance is ready to be used.
 func UpdateInstance(
 	ctx context.Context,
 	client client.Client,
-	oldInstance *managementv1.DevPodWorkspaceInstance,
-	newInstance *managementv1.DevPodWorkspaceInstance,
+	oldInstance *managementv1.DevsyWorkspaceInstance,
+	newInstance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
 		return nil, err
@@ -254,7 +254,7 @@ func UpdateInstance(
 	}
 
 	res, err := managementClient.Loft().ManagementV1().
-		DevPodWorkspaceInstances(oldInstance.GetNamespace()).
+		DevsyWorkspaceInstances(oldInstance.GetNamespace()).
 		Patch(ctx, oldInstance.GetName(), patch.Type(), data, metav1.PatchOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("patch workspace instance: %w (patch: %s)", err, string(data))
@@ -266,15 +266,15 @@ func UpdateInstance(
 func WaitForInstance(
 	ctx context.Context,
 	client client.Client,
-	instance *managementv1.DevPodWorkspaceInstance,
+	instance *managementv1.DevsyWorkspaceInstance,
 	log log.Logger,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
 		return nil, err
 	}
 
-	var updatedInstance *managementv1.DevPodWorkspaceInstance
+	var updatedInstance *managementv1.DevsyWorkspaceInstance
 	// we need to wait until instance is scheduled
 	err = wait.PollUntilContextTimeout(
 		ctx,
@@ -283,7 +283,7 @@ func WaitForInstance(
 		true,
 		func(ctx context.Context) (done bool, err error) {
 			updatedInstance, err = managementClient.Loft().ManagementV1().
-				DevPodWorkspaceInstances(instance.GetNamespace()).
+				DevsyWorkspaceInstances(instance.GetNamespace()).
 				Get(ctx, instance.GetName(), metav1.GetOptions{})
 			if err != nil {
 				return false, err
@@ -349,7 +349,7 @@ func WaitForInstance(
 	return updatedInstance, nil
 }
 
-func isReady(workspace *managementv1.DevPodWorkspaceInstance) bool {
+func isReady(workspace *managementv1.DevsyWorkspaceInstance) bool {
 	// Sleeping is considered ready in this context. The workspace will be woken up as soon as we connect to it
 	if workspace.Status.Phase == storagev1.InstanceSleeping {
 		return true
@@ -358,7 +358,7 @@ func isReady(workspace *managementv1.DevPodWorkspaceInstance) bool {
 	return workspace.Status.Phase == storagev1.InstanceReady
 }
 
-func isTemplateSynced(workspace *managementv1.DevPodWorkspaceInstance) bool {
+func isTemplateSynced(workspace *managementv1.DevsyWorkspaceInstance) bool {
 	// We're still waiting for the sync to happen
 	// The controller will remove this field once it's done syncing
 	if workspace.Spec.TemplateRef != nil && workspace.Spec.TemplateRef.SyncOnce {

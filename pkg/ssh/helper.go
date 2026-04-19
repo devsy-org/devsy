@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/skevetter/devpod/pkg/stdio"
+	"github.com/devsy-org/devsy/pkg/stdio"
 	"golang.org/x/crypto/ssh"
 )
 

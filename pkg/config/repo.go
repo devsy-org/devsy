@@ -1,15 +1,15 @@
 package config
 
 const (
-	RepoOwner         = "skevetter"
-	RepoName          = "devpod"
+	RepoOwner         = "devsy-org"
+	RepoName          = "devsy"
 	RepoSlug          = RepoOwner + "/" + RepoName
 	GitHubRepoURL     = "https://github.com/" + RepoSlug
 	GitHubReleasesURL = GitHubRepoURL + "/releases"
 	GitHubAPIUserURL  = "https://api.github.com/users/" + RepoOwner
 	ProviderPrefix    = RepoName + "-provider-"
 
-	// ProReleaseName is the Helm release / product name for DevPod Pro.
+	// ProReleaseName is the Helm release / product name for Devsy Pro.
 	ProReleaseName = RepoName + "-pro"
 
 	// BinaryName is the CLI binary base name used in downloads and SSH host suffixes.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/log"
 	dockerclient "github.com/docker/docker/client"
-	"github.com/skevetter/log"
 )
 
 // Client is a client for docker.

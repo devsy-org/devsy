@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	agentdaemon "github.com/skevetter/devpod/pkg/daemon/agent"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,9 +37,9 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 	deleteCmd.Flags().
-		BoolVar(&cmd.Container, "container", true, "If enabled, cleans up the DevPod container")
+		BoolVar(&cmd.Container, "container", true, "If enabled, cleans up the Devsy container")
 	deleteCmd.Flags().
-		BoolVar(&cmd.Daemon, "daemon", false, "If enabled, cleans up the DevPod daemon")
+		BoolVar(&cmd.Daemon, "daemon", false, "If enabled, cleans up the Devsy daemon")
 
 	deleteCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
 	_ = deleteCmd.MarkFlagRequired("workspace-info")
@@ -84,20 +84,20 @@ func removeContainer(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 	log log.Logger,
 ) error {
-	log.Debugf("removing DevPod container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
+	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
 	runner, err := CreateRunner(workspaceInfo, log)
 	if err != nil {
 		return err
 	}
 
 	if workspaceInfo.Workspace.Source.Container != "" {
-		log.Info("skipping container deletion, since it was not created by DevPod")
+		log.Info("skipping container deletion, since it was not created by Devsy")
 	} else {
 		err = runner.Delete(ctx)
 		if err != nil {
 			return err
 		}
-		log.Debug("removed DevPod container from server")
+		log.Debug("removed Devsy container from server")
 	}
 
 	return nil
@@ -108,12 +108,12 @@ func removeDaemon(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) e
 		return nil
 	}
 
-	log.Debug("removing DevPod daemon from server")
+	log.Debug("removing Devsy daemon from server")
 	err := agentdaemon.RemoveDaemon()
 	if err != nil {
 		return fmt.Errorf("remove daemon: %w", err)
 	}
-	log.Debug("removed DevPod daemon from server")
+	log.Debug("removed Devsy daemon from server")
 
 	return nil
 }

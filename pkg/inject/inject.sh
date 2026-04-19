@@ -29,9 +29,9 @@ check_noexec() {
 
 handshake() {
     echo "ping"
-    read -r DEVPOD_PING
-    if [ "$DEVPOD_PING" != "pong" ]; then
-        >&2 echo "Error: Handshake failed - received '$DEVPOD_PING' instead of 'pong'"
+    read -r DEVSY_PING
+    if [ "$DEVSY_PING" != "pong" ]; then
+        >&2 echo "Error: Handshake failed - received '$DEVSY_PING' instead of 'pong'"
         exit 1
     fi
 }
@@ -93,7 +93,7 @@ download_binary() {
     done
 
     if [ "$iteration" -gt "$max_iteration" ]; then
-        >&2 echo "Error: Failed to download devpod after $max_iteration attempts"
+        >&2 echo "Error: Failed to download devsy after $max_iteration attempts"
         return 1
     fi
 
@@ -158,7 +158,7 @@ install_agent() {
 
 execute_command() {
     echo "done"
-    export DEVPOD_AGENT_URL="{{ .DownloadBase }}"
+    export DEVSY_AGENT_URL="{{ .DownloadBase }}"
     {{ .Command }}
 }
 

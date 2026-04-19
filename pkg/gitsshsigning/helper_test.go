@@ -22,7 +22,7 @@ func TestHelperSuite(t *testing.T) {
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUnrelatedGpgConfig() {
 	input := strings.Join([]string{
 		"[user]", "\tname = Test User", "\temail = test@example.com",
-		`[gpg "ssh"]`, "\tprogram = devpod-ssh-signature",
+		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
 		"[gpg]", "\tformat = ssh", "\tprogram = /usr/bin/gpg2",
 		"[commit]", "\tgpgsign = true",
 		"[user]", "\tsigningkey = /path/to/key",
@@ -30,24 +30,24 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUnrelatedGpgConfig(
 
 	result := removeSignatureHelper(input)
 
-	assert.NotContains(s.T(), result, "devpod-ssh-signature")
+	assert.NotContains(s.T(), result, "devsy-ssh-signature")
 	assert.Contains(s.T(), result, "[user]")
 	assert.Contains(s.T(), result, "[commit]")
 	assert.Contains(s.T(), result, "program = /usr/bin/gpg2")
 	assert.NotContains(s.T(), result, "format = ssh")
 }
 
-func (s *HelperTestSuite) TestRemoveSignatureHelper_RemovesDevpodSections() {
+func (s *HelperTestSuite) TestRemoveSignatureHelper_RemovesDevsySections() {
 	input := strings.Join([]string{
 		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devpod-ssh-signature",
+		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
 		"[gpg]", "\tformat = ssh",
 		"[user]", "\tsigningkey = /path/to/key",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
-	assert.NotContains(s.T(), result, "devpod-ssh-signature")
+	assert.NotContains(s.T(), result, "devsy-ssh-signature")
 	assert.NotContains(s.T(), result, "format = ssh")
 	assert.Contains(s.T(), result, "Test User")
 }
@@ -63,14 +63,14 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_NoGpgSections() {
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedGpgSSHKeys() {
 	input := strings.Join([]string{
 		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devpod-ssh-signature",
+		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
 		"\tallowedSignersFile = ~/.ssh/allowed_signers",
 		"[commit]", "\tgpgsign = true",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
-	assert.NotContains(s.T(), result, "devpod-ssh-signature")
+	assert.NotContains(s.T(), result, "devsy-ssh-signature")
 	assert.Contains(s.T(), result, `[gpg "ssh"]`,
 		"section header should be preserved when user keys remain")
 	assert.Contains(s.T(), result, "allowedSignersFile",
@@ -80,20 +80,20 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedGpgSSHKeys
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedSigningKey() {
 	// A [user] section with name + signingkey is user-owned; only the
-	// devpod-appended [user] section (signingkey-only) should be dropped.
+	// devsy-appended [user] section (signingkey-only) should be dropped.
 	input := strings.Join([]string{
 		"[user]", "\tname = Test User", "\tsigningkey = /my/gpg-key",
-		`[gpg "ssh"]`, "\tprogram = devpod-ssh-signature",
+		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
 		"[gpg]", "\tformat = ssh",
-		"[user]", "\tsigningkey = /devpod/injected-key",
+		"[user]", "\tsigningkey = /devsy/injected-key",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
 	assert.Contains(s.T(), result, "signingkey = /my/gpg-key",
 		"user-owned signingkey must be preserved")
-	assert.NotContains(s.T(), result, "/devpod/injected-key",
-		"devpod-only [user] section should be removed")
+	assert.NotContains(s.T(), result, "/devsy/injected-key",
+		"devsy-only [user] section should be removed")
 	assert.Contains(s.T(), result, "Test User")
 }
 
@@ -107,7 +107,7 @@ func TestUpdateGitConfig_Idempotent(t *testing.T) {
 
 	content1, err := os.ReadFile(gitConfigPath) // #nosec G304 -- test path from t.TempDir
 	require.NoError(t, err)
-	assert.Contains(t, string(content1), "program = devpod-ssh-signature")
+	assert.Contains(t, string(content1), "program = devsy-ssh-signature")
 	assert.Contains(t, string(content1), "signingkey = /path/to/key.pub")
 
 	// Second call with same config: should be a no-op
@@ -133,7 +133,7 @@ func TestUpdateGitConfig_DifferentKey(t *testing.T) {
 
 	content, err := os.ReadFile(gitConfigPath) // #nosec G304 -- test path from t.TempDir
 	require.NoError(t, err)
-	assert.Contains(t, string(content), "program = devpod-ssh-signature")
+	assert.Contains(t, string(content), "program = devsy-ssh-signature")
 	assert.Contains(t, string(content), "signingkey = /path/to/keyB.pub",
 		"key should be updated to the new value")
 	assert.NotContains(t, string(content), "keyA",
@@ -143,13 +143,13 @@ func TestUpdateGitConfig_DifferentKey(t *testing.T) {
 func (s *HelperTestSuite) TestRemoveSignatureHelper_DropsEmptyGpgSSHSection() {
 	input := strings.Join([]string{
 		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devpod-ssh-signature",
+		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
 		"[commit]", "\tgpgsign = true",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
-	assert.NotContains(s.T(), result, "devpod-ssh-signature")
+	assert.NotContains(s.T(), result, "devsy-ssh-signature")
 	assert.NotContains(s.T(), result, `[gpg "ssh"]`,
 		"empty section should be dropped entirely")
 	assert.Contains(s.T(), result, "[commit]")

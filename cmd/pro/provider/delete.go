@@ -6,10 +6,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -70,7 +70,7 @@ func (cmd *DeleteCmd) Run(
 
 	err = managementClient.Loft().
 		ManagementV1().
-		DevPodWorkspaceInstances(workspace.Namespace).
+		DevsyWorkspaceInstances(workspace.Namespace).
 		Delete(ctx, workspace.Name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete workspace: %w", err)

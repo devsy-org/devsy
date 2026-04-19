@@ -1,7 +1,7 @@
 package context
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewContextCmd(flags *flags.GlobalFlags) *cobra.Command {
 	contextCmd := &cobra.Command{
 		Use:   "context",
-		Short: "DevPod Context commands",
+		Short: "Devsy Context commands",
 	}
 
 	contextCmd.AddCommand(NewCreateCmd(flags))

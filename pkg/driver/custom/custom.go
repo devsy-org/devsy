@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
 )
 
 func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) driver.Driver {

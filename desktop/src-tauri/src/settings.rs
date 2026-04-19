@@ -50,8 +50,8 @@ pub struct Settings {
     experimental_windsurf: bool,
     #[serde(rename = "experimental_antigravity")]
     experimental_antigravity: bool,
-    #[serde(rename = "experimental_devPodPro")]
-    experimental_devpod_pro: bool,
+    #[serde(rename = "experimental_devsyPro")]
+    experimental_devsy_pro: bool,
     #[serde(rename = "experimental_colorMode")]
     experimental_color_mode: ColorMode,
 }

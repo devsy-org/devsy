@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/template"
+	"github.com/devsy-org/devsy/pkg/template"
 )
 
 func GenerateScript(script string, params *Params) (string, error) {

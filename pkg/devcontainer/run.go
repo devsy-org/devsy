@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
+	"github.com/devsy-org/devsy/pkg/encoding"
+	"github.com/devsy-org/devsy/pkg/language"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/driver/drivercreate"
-	"github.com/skevetter/devpod/pkg/encoding"
-	"github.com/skevetter/devpod/pkg/language"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
 )
 
 type Runner interface {

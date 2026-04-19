@@ -12,19 +12,19 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/pkg/ide/openvscode"
+	"github.com/devsy-org/devsy/pkg/netstat"
+	"github.com/devsy-org/devsy/pkg/provider"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/log"
 	"github.com/docker/go-connections/nat"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/agent/tunnelserver"
-	"github.com/skevetter/devpod/pkg/config"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/gitsshsigning"
-	"github.com/skevetter/devpod/pkg/ide/openvscode"
-	"github.com/skevetter/devpod/pkg/netstat"
-	"github.com/skevetter/devpod/pkg/provider"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/log"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -41,7 +41,7 @@ const (
 
 // RunServicesOptions contains all options for running services.
 type RunServicesOptions struct {
-	DevPodConfig                   *config.Config
+	DevsyConfig                    *config.Config
 	ContainerClient                *ssh.Client
 	User                           string
 	ForwardPorts                   bool
@@ -56,8 +56,8 @@ type RunServicesOptions struct {
 }
 
 // getExitAfterTimeout calculates the timeout value based on configuration.
-func getExitAfterTimeout(devPodConfig *config.Config) time.Duration {
-	if devPodConfig.ContextOption(config.ContextOptionExitAfterTimeout) != config.BoolTrue {
+func getExitAfterTimeout(devsyConfig *config.Config) time.Duration {
+	if devsyConfig.ContextOption(config.ContextOptionExitAfterTimeout) != config.BoolTrue {
 		return 0
 	}
 	return defaultExitTimeout
@@ -130,7 +130,7 @@ func addGitSSHSigningKey(command string, explicitKey string, log log.Logger) str
 func buildCredentialsCommand(opts RunServicesOptions) string {
 	command := fmt.Sprintf(
 		"%s agent container credentials-server --user %s",
-		shellescape.Quote(agent.ContainerDevPodHelperLocation),
+		shellescape.Quote(agent.ContainerDevsyHelperLocation),
 		shellescape.Quote(opts.User),
 	)
 	if opts.ConfigureGitCredentials {
@@ -211,7 +211,7 @@ func runServicesIteration(
 // to run the credentials server remotely and the services server locally to
 // communicate with the container.
 func RunServices(ctx context.Context, opts RunServicesOptions) error {
-	exitAfterTimeout := getExitAfterTimeout(opts.DevPodConfig)
+	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig)
 
 	forwardedPorts, err := forwardDevContainerPorts(ctx, portForwardParams{
 		containerClient:  opts.ContainerClient,

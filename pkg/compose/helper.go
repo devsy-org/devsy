@@ -14,9 +14,9 @@ import (
 	"github.com/blang/semver/v4"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/docker"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/log"
 )
 
 const (

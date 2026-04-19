@@ -8,22 +8,22 @@ sidebar_label: Stop a Workspace
 Stopping a workspace means to temporarily pause a container so that it doesn't consume any more computing resources such as CPU or memory.
 Depending on the provider used, this either means to stop a container (see [docker stop](https://docs.docker.com/engine/reference/commandline/stop/) for more information)
 or shutdown the underlying VM where the container is running.
-DevPod will automatically determine what specific action to take when a workspace is stopped.
+Devsy will automatically determine what specific action to take when a workspace is stopped.
 
-### Via DevPod Desktop Application
+### Via Devsy Desktop Application
 
 In the 'Workspaces' view, click on the 'More Options' button and then on 'Stop'. This will stop the workspace. Afterwards, you can resume the workspace by pressing the 'Open' button.
 
-### Via DevPod CLI
+### Via Devsy CLI
 
 Run the following command to stop a workspace:
 ```
-devpod stop my-workspace
+devsy stop my-workspace
 ```
 
 Afterwards, you can start the workspace via:
 ```
-devpod up my-workspace
+devsy up my-workspace
 ```
 
 ## Automatic stopping via a Provider

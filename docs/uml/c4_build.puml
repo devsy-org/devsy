@@ -9,9 +9,9 @@ scale 1920x1080
 LAYOUT_TOP_DOWN()
 HIDE_STEREOTYPE()
 
-title Component Diagram for DevPod Build Process
+title Component Diagram for Devsy Build Process
 
-Person(user, "DevPod", "CLI or UI")
+Person(user, "Devsy", "CLI or UI")
 Component(reg, "Registry", "Remote cache")
 Component(ctx, "Context", "Build options, driver, registry cache etc.")
 Component(cdf, "Compiled Dockerfile", "")

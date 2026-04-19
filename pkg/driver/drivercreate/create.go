@@ -3,12 +3,12 @@ package drivercreate
 import (
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/driver/custom"
-	"github.com/skevetter/devpod/pkg/driver/docker"
-	"github.com/skevetter/devpod/pkg/driver/kubernetes"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/driver/custom"
+	"github.com/devsy-org/devsy/pkg/driver/docker"
+	"github.com/devsy-org/devsy/pkg/driver/kubernetes"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 )
 
 func NewDriver(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) (driver.Driver, error) {

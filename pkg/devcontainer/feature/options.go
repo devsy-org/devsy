@@ -5,7 +5,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
 func getFeatureEnvVariables(feature *config.FeatureConfig, featureOptions any) []string {

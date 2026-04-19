@@ -7,11 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	copypkg "github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	shellpkg "github.com/skevetter/devpod/pkg/shell"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	copypkg "github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	shellpkg "github.com/devsy-org/devsy/pkg/shell"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 func NewContainerServer(addr string, workdir string, log log.Logger) (Server, error) {

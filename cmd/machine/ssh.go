@@ -10,16 +10,16 @@ import (
 	"os/exec"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/cmd/flags"
+	devagent "github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/pty"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	devagent "github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/pty"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	devsshagent "github.com/skevetter/devpod/pkg/ssh/agent"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -115,12 +115,12 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		)
 	}
 
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devPodConfig, args, log.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args, log.Default)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 	defer func() { _ = writer.Close() }()
 
 	// Get the timeout from the context options
-	timeout := config.ParseTimeOption(devPodConfig, config.ContextOptionAgentInjectTimeout)
+	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
 
 	// start the ssh session
 	return StartSSHSession(ctx, StartSSHSessionOptions{

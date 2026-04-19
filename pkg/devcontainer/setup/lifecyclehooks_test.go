@@ -7,8 +7,8 @@ import (
 	"os/user"
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -67,7 +67,7 @@ func (s *LifecycleHookTestSuite) TestSymlinkWithQuotes() {
 		s.T().Skip("Requires root")
 	}
 
-	testLink := "/tmp/devpod_test_link"
+	testLink := "/tmp/devsy_test_link"
 	_ = os.Remove(testLink)
 	defer func() { _ = os.Remove(testLink) }()
 

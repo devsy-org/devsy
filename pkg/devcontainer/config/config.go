@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 type MergedDevContainerConfig struct {
@@ -343,7 +343,7 @@ type PortAttribute struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
-type DevPodCustomizations struct {
+type DevsyCustomizations struct {
 	PrebuildRepository         types.StrArray    `json:"prebuildRepository,omitempty"`
 	FeatureDownloadHTTPHeaders map[string]string `json:"featureDownloadHTTPHeaders,omitempty"`
 }

@@ -2,8 +2,8 @@ use tauri::AppHandle;
 use tauri_plugin_shell::process::Command;
 
 use super::{
-    config::{CommandConfig, DevpodCommandConfig, DevpodCommandError},
-    constants::{DEVPOD_BINARY_NAME, DEVPOD_COMMAND_PRO, DEVPOD_COMMAND_DAEMON, DEVPOD_COMMAND_START, FLAG_DEBUG, FLAG_HOST},
+    config::{CommandConfig, DevsyCommandConfig, DevsyCommandError},
+    constants::{DEVSY_BINARY_NAME, DEVSY_COMMAND_PRO, DEVSY_COMMAND_DAEMON, DEVSY_COMMAND_START, FLAG_DEBUG, FLAG_HOST},
 };
 
 pub struct StartDaemonCommand {
@@ -24,23 +24,23 @@ impl StartDaemonCommand {
     }
 }
 
-impl DevpodCommandConfig<()> for StartDaemonCommand {
-    fn exec_blocking(self, app_handle: &AppHandle) -> Result<(), DevpodCommandError> {
+impl DevsyCommandConfig<()> for StartDaemonCommand {
+    fn exec_blocking(self, app_handle: &AppHandle) -> Result<(), DevsyCommandError> {
         let cmd = self.new_command(app_handle)?;
 
         tauri::async_runtime::block_on(async move { cmd.output().await })
-            .map_err(|_| DevpodCommandError::Output)?;
+            .map_err(|_| DevsyCommandError::Output)?;
 
         return Ok(());
     }
 
     fn config(&self) -> CommandConfig<'_> {
         return CommandConfig {
-            binary_name: DEVPOD_BINARY_NAME,
+            binary_name: DEVSY_BINARY_NAME,
             args: vec![
-                DEVPOD_COMMAND_PRO,
-                DEVPOD_COMMAND_DAEMON,
-                DEVPOD_COMMAND_START,
+                DEVSY_COMMAND_PRO,
+                DEVSY_COMMAND_DAEMON,
+                DEVSY_COMMAND_START,
                 &self.host_flag,
                 &self.debug_flag,
             ],
@@ -49,7 +49,7 @@ impl DevpodCommandConfig<()> for StartDaemonCommand {
 }
 
 impl StartDaemonCommand {
-    pub fn command(self, app_handle: &AppHandle) -> Result<Command, DevpodCommandError> {
+    pub fn command(self, app_handle: &AppHandle) -> Result<Command, DevsyCommandError> {
         return self.new_command(app_handle);
     }
 }

@@ -1,14 +1,14 @@
 ---
-title: How DevPod Builds Workspaces
+title: How Devsy Builds Workspaces
 sidebar_label: Building workspaces
 ---
 
-DevPod provides the ability to build workspaces by taking a devcontainer.json and a Git repository to compile an OCI-compliant image with everything you need to develop
+Devsy provides the ability to build workspaces by taking a devcontainer.json and a Git repository to compile an OCI-compliant image with everything you need to develop
 against using local tools.
 
 <figure>
-  <img src="/docs/media/c4_build.png" alt="DevPod Architecture" />
-  <figcaption>DevPod - Container Diagram</figcaption>
+  <img src="/docs/media/c4_build.png" alt="Devsy Architecture" />
+  <figcaption>Devsy - Container Diagram</figcaption>
 </figure>
 
 It does this by parsing the devcontainer.json, extracting the "features" and appending them as build stages to the base Dockerfile. The container is then built, depending on the driver

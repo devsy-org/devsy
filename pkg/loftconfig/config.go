@@ -1,15 +1,15 @@
-package loftconfig
+package devsyconfig
 
 import (
 	"fmt"
 	"os/exec"
 
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/log"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/log"
 )
 
-func AuthDevpodCliToPlatform(config *client.Config, logger log.Logger) error {
+func AuthDevsyCliToPlatform(config *client.Config, logger log.Logger) error {
 	cmd := exec.Command( // #nosec G204 -- binary name is a compile-time constant
 		pkgconfig.BinaryName,
 		"pro",

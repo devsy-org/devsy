@@ -6,21 +6,21 @@ import (
 	"io"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 type VersionObject struct {
 	// Version is the server version
 	Version string `json:"version,omitempty"`
 
-	// Version is the remote devpod version
-	DevPodVersion string `json:"devPodVersion,omitempty"`
+	// Version is the remote devsy version
+	DevsyVersion string `json:"devsyVersion,omitempty"`
 }
 
-func GetProInstanceDevPodVersion(proInstance *provider.ProInstance) (string, error) {
+func GetProInstanceDevsyVersion(proInstance *provider.ProInstance) (string, error) {
 	url := "https://" + proInstance.Host
-	return GetDevPodVersion(url)
+	return GetDevsyVersion(url)
 }
 
 func GetPlatformVersion(url string) (*VersionObject, error) {
@@ -46,22 +46,22 @@ func GetPlatformVersion(url string) (*VersionObject, error) {
 	return version, nil
 }
 
-func GetDevPodVersion(url string) (string, error) {
+func GetDevsyVersion(url string) (string, error) {
 	version, err := GetPlatformVersion(url)
 	if err != nil {
 		return "", err
 	}
-	if version.DevPodVersion == "" {
+	if version.DevsyVersion == "" {
 		return "", fmt.Errorf(
 			"unexpected version '%s', please use --version to define a provider version",
-			version.DevPodVersion,
+			version.DevsyVersion,
 		)
 	}
 
 	// make sure it starts with a v
-	if !strings.HasPrefix(version.DevPodVersion, "v") {
-		version.DevPodVersion = "v" + version.DevPodVersion
+	if !strings.HasPrefix(version.DevsyVersion, "v") {
+		version.DevsyVersion = "v" + version.DevsyVersion
 	}
 
-	return version.DevPodVersion, nil
+	return version.DevsyVersion, nil
 }

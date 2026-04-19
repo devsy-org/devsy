@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/log"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/graph"
-	"github.com/skevetter/devpod/pkg/devcontainer/metadata"
-	"github.com/skevetter/log"
 )
 
 var (
@@ -27,7 +27,7 @@ FROM $_DEV_CONTAINERS_BASE_IMAGE AS dev_containers_target_stage
 
 USER root
 
-COPY ./` + config.DevPodContextFeatureFolder + `/ /tmp/build-features/
+COPY ./` + config.DevsyContextFeatureFolder + `/ /tmp/build-features/
 RUN chmod -R 0755 /tmp/build-features && ls /tmp/build-features
 
 #{featureLayer}
@@ -123,7 +123,7 @@ func getFeatureBuildOptions(
 	)
 
 	// copy features
-	featureFolder := filepath.Join(contextPath, config.DevPodContextFeatureFolder)
+	featureFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
 	err := copyFeaturesToDestination(features, featureFolder)
 	if err != nil {
 		return nil, err

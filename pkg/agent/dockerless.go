@@ -12,13 +12,13 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/envfile"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/envfile"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
 )
 
 const (
@@ -129,10 +129,10 @@ func shouldBuild(opts DockerlessBuildOptions) bool {
 
 func prepareBuildDirectory(buildContext string) error {
 	fallbackDir := filepath.Join(
-		config.DevPodDockerlessBuildInfoFolder,
-		config.DevPodContextFeatureFolder,
+		config.DevsyDockerlessBuildInfoFolder,
+		config.DevsyContextFeatureFolder,
 	)
-	buildInfoDir := filepath.Join(buildContext, config.DevPodContextFeatureFolder)
+	buildInfoDir := filepath.Join(buildContext, config.DevsyContextFeatureFolder)
 
 	if _, err := os.Stat(buildInfoDir); os.IsNotExist(err) {
 		if err := copy.RenameDirectory(fallbackDir, buildInfoDir); err != nil {
@@ -190,10 +190,10 @@ func setupDockerCredentials(opts DockerlessBuildOptions) func() {
 
 func cleanupBuildDirectory(buildContext string, log log.Logger) {
 	fallbackDir := filepath.Join(
-		config.DevPodDockerlessBuildInfoFolder,
-		config.DevPodContextFeatureFolder,
+		config.DevsyDockerlessBuildInfoFolder,
+		config.DevsyContextFeatureFolder,
 	)
-	buildInfoDir := filepath.Join(buildContext, config.DevPodContextFeatureFolder)
+	buildInfoDir := filepath.Join(buildContext, config.DevsyContextFeatureFolder)
 
 	_ = os.RemoveAll(fallbackDir)
 	if err := copy.RenameDirectory(buildInfoDir, fallbackDir); err != nil {

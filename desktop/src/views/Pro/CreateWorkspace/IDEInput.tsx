@@ -49,7 +49,7 @@ function IDECard({ name, isSelected, icon, onClick }: TIDECardProps) {
           SSH
         </Text>
         <Tooltip
-          label={`Selecting SSH only adds an entry in the form of \`$workspace${SSH_HOST_SUFFIX}\` to your SSH configuration. You can connect to it using your terminal or IDEs that aren't supported by DevPod but support SSH connections.`}>
+          label={`Selecting SSH only adds an entry in the form of \`$workspace${SSH_HOST_SUFFIX}\` to your SSH configuration. You can connect to it using your terminal or IDEs that aren't supported by Devsy but support SSH connections.`}>
           <InfoIcon ml="-0.5" color={iconColor} />
         </Tooltip>
       </HStack>

@@ -3,14 +3,14 @@ title: Provider Agent
 sidebar_label: Provider Agent
 ---
 
-When DevPod connects through a Provider to an environment, it will inject itself into the environment to handle the following tasks:
+When Devsy connects through a Provider to an environment, it will inject itself into the environment to handle the following tasks:
 - deploying the container
 - forward credentials
 - ssh server
 - auto-shutdown after a period of inactivity
 
-This counterpart is called the DevPod agent, which is available in the same DevPod binary under `devpod agent`.
-Within the `provider.yaml` you can configure certain parts of how local DevPod should interact with its agent counterpart.
+This counterpart is called the Devsy agent, which is available in the same Devsy binary under `devsy agent`.
+Within the `provider.yaml` you can configure certain parts of how local Devsy should interact with its agent counterpart.
 
 :::info
 Agent's **Driver** specifies how the whole container workloads is deployed inside
@@ -26,7 +26,7 @@ The following options are available in the `agent` section
 
 ```yaml
 agent: # You can also use options within this section (see injectGitCredentials as an example)
-  path: $\{DEVPOD\}
+  path: $\{DEVSY\}
   driver: docker # Optional, default: docker
   inactivityTimeout: 10m
   containerInactivityTimeout: 10m
@@ -45,13 +45,13 @@ agent: # You can also use options within this section (see injectGitCredentials 
 
 Breaking down the options:
 
-- **path**: where to place the agent on the remote machine. Use $\{DEVPOD\} here if you want to use the local machine instead.
+- **path**: where to place the agent on the remote machine. Use $\{DEVSY\} here if you want to use the local machine instead.
 - **driver**: which driver to use to run container, [check the Drivers section for more information](./driver.mdx)
 - **inactivityTimeout**: after how much time to shut down the machine. Use for machine providers
 - **containerInactivityTimeout**: after how much time to shut down the container. Use for non-machine providers
 - **injectGitCredentials**: whether to inject git credentials into the machine.
 - **injectDockerCredentials**: whether to inject docker credentials into the machine.
-- **exec.shutdown**: command to execute when shutting down the machine after DevPod has determined the `inactivityTimeout`. Option values will be available here as well. For example, you can reuse an option that stores a cloud api key within this command to terminate the machine.
+- **exec.shutdown**: command to execute when shutting down the machine after Devsy has determined the `inactivityTimeout`. Option values will be available here as well. For example, you can reuse an option that stores a cloud api key within this command to terminate the machine.
 - **binaries**: this section can be used to declare additional binaries to download on the machine to use in `exec.shutdown`
 
 :::info
@@ -65,24 +65,24 @@ The `binaries` section follows the same syntax and structure of the [binaries se
 
 ## Auto-Inactivity Stop
 
-One of the most important features of DevPod is to make sure that developer environments use as little resources as possible when they are not used.
+One of the most important features of Devsy is to make sure that developer environments use as little resources as possible when they are not used.
 
 ### Non-Machine Providers
 
-For non-machine providers, DevPod can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, kubernetes or ssh, where you don't want the container to be running if its not needed. The timeout can be configured through `agent.containerInactivityTimeout`. DevPod will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, DevPod will start the container again.
+For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, kubernetes or ssh, where you don't want the container to be running if its not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
 
 ### Machine Providers
 
 For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused.
-Hence DevPod provides a way to configure automatically shutting down or deleting an unused machine on the cloud provider side if a developer is currently not working anymore.
-DevPod will then restart or recreate it again, when the development should continue.
+Hence Devsy provides a way to configure automatically shutting down or deleting an unused machine on the cloud provider side if a developer is currently not working anymore.
+Devsy will then restart or recreate it again, when the development should continue.
 
-DevPod tries to make this as easy as possible for you, as it will automatically keep track of when a user is connected to a workspace or not and only needs the command to run when the machine should be stopped from the provider.
+Devsy tries to make this as easy as possible for you, as it will automatically keep track of when a user is connected to a workspace or not and only needs the command to run when the machine should be stopped from the provider.
 This command can be defined through `agent.exec.shutdown`.
 All configured options are available in this command and helper binaries needed can be defined through `agent.exec.binaries`
 
 Official providers that use this method of automatically stopping an inactive machine are:
-- [devpod-provider-azure](https://github.com/skevetter/devpod-provider-azure): Just uses `shutdown -t now` as `agent.exec.shutdown` to shutdown an unused machine.
-- [devpod-provider-aws](https://github.com/skevetter/devpod-provider-aws): Uses the local `aws` cli tool to generate a temporary token, which is then saved in a DevPod option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an AWS api call.
-- [devpod-provider-gcloud](https://github.com/skevetter/devpod-provider-gcloud): Uses the local `gcloud` cli tool to generate a temporary token, which is then saved in a DevPod option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an Google Cloud api call.
-- [devpod-provider-digitalocean](https://github.com/skevetter/devpod-provider-digitalocean): Deletes the whole machine on inactivity as stopped machines are still billed by DigitalOcean. The local digital ocean token is reused on the agent side to make an API call to delete the whole machine and preserve the state in an extra volume.
+- [devsy-provider-azure](https://github.com/devsy-org/devsy-provider-azure): Just uses `shutdown -t now` as `agent.exec.shutdown` to shutdown an unused machine.
+- [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws): Uses the local `aws` cli tool to generate a temporary token, which is then saved in a Devsy option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an AWS api call.
+- [devsy-provider-gcloud](https://github.com/devsy-org/devsy-provider-gcloud): Uses the local `gcloud` cli tool to generate a temporary token, which is then saved in a Devsy option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an Google Cloud api call.
+- [devsy-provider-digitalocean](https://github.com/devsy-org/devsy-provider-digitalocean): Deletes the whole machine on inactivity as stopped machines are still billed by DigitalOcean. The local digital ocean token is reused on the agent side to make an API call to delete the whole machine and preserve the state in an extra volume.

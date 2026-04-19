@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/platform/kube"
-	"github.com/skevetter/log"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -87,7 +87,7 @@ func Templates(
 		ListTemplates(ctx, projectName, metav1.GetOptions{})
 	if err != nil {
 		return templateList, fmt.Errorf("list templates: %w", err)
-	} else if len(templateList.DevPodWorkspaceTemplates) == 0 {
+	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		return templateList, fmt.Errorf(
 			"seems like there is no template allowed in project %s, "+
 				"please make sure to at least have a single template available",
@@ -102,24 +102,24 @@ func FindTemplate(
 	ctx context.Context,
 	managementClient kube.Interface,
 	projectName, templateName string,
-) (*managementv1.DevPodWorkspaceTemplate, error) {
+) (*managementv1.DevsyWorkspaceTemplate, error) {
 	templateList, err := managementClient.Loft().
 		ManagementV1().
 		Projects().
 		ListTemplates(ctx, projectName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list templates: %w", err)
-	} else if len(templateList.DevPodWorkspaceTemplates) == 0 {
+	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		return nil, fmt.Errorf(
-			"seems like there is no DevPod template allowed in project %s, "+
+			"seems like there is no Devsy template allowed in project %s, "+
 				"please make sure to at least have a single template available",
 			projectName,
 		)
 	}
 
 	// find template
-	var template *managementv1.DevPodWorkspaceTemplate
-	for _, workspaceTemplate := range templateList.DevPodWorkspaceTemplates {
+	var template *managementv1.DevsyWorkspaceTemplate
+	for _, workspaceTemplate := range templateList.DevsyWorkspaceTemplates {
 		if workspaceTemplate.Name == templateName {
 			t := workspaceTemplate
 			template = &t
@@ -134,7 +134,7 @@ func FindTemplate(
 }
 
 func GetTemplateParameters(
-	template *managementv1.DevPodWorkspaceTemplate,
+	template *managementv1.DevsyWorkspaceTemplate,
 	templateVersion string,
 ) ([]storagev1.AppParameter, error) {
 	if templateVersion == "latest" {
@@ -147,7 +147,7 @@ func GetTemplateParameters(
 			return nil, fmt.Errorf("couldn't find any version in template")
 		}
 
-		return latestVersion.(*storagev1.DevPodWorkspaceTemplateVersion).Parameters, nil
+		return latestVersion.(*storagev1.DevsyWorkspaceTemplateVersion).Parameters, nil
 	}
 
 	_, latestMatched, err := GetLatestMatchedVersion(template, templateVersion)
@@ -157,7 +157,7 @@ func GetTemplateParameters(
 		return nil, fmt.Errorf("couldn't find any matching version to %s", templateVersion)
 	}
 
-	return latestMatched.(*storagev1.DevPodWorkspaceTemplateVersion).Parameters, nil
+	return latestMatched.(*storagev1.DevsyWorkspaceTemplateVersion).Parameters, nil
 }
 
 type matchedVersion struct {

@@ -11,17 +11,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/scanner"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/scanner"
 )
 
 var configLock sync.Mutex
 
 var (
-	MarkerStartPrefix = "# DevPod Start "
-	MarkerEndPrefix   = "# DevPod End "
+	MarkerStartPrefix = "# Devsy Start "
+	MarkerEndPrefix   = "# Devsy End "
 )
 
 type SSHConfigParams struct {
@@ -33,7 +33,7 @@ type SSHConfigParams struct {
 	Workdir              string
 	Command              string
 	GPGAgent             bool
-	DevPodHome           string
+	DevsyHome            string
 	Provider             string
 	Log                  log.Logger
 }
@@ -48,16 +48,16 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	}
 
 	newFile, err := addHost(addHostParams{
-		path:       targetPath,
-		host:       params.Workspace + config.SSHHostSuffix,
-		user:       params.User,
-		context:    params.Context,
-		workspace:  params.Workspace,
-		workdir:    params.Workdir,
-		command:    params.Command,
-		gpgagent:   params.GPGAgent,
-		devPodHome: params.DevPodHome,
-		provider:   params.Provider,
+		path:      targetPath,
+		host:      params.Workspace + config.SSHHostSuffix,
+		user:      params.User,
+		context:   params.Context,
+		workspace: params.Workspace,
+		workdir:   params.Workdir,
+		command:   params.Command,
+		gpgagent:  params.GPGAgent,
+		devsyHome: params.DevsyHome,
+		provider:  params.Provider,
 	})
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -66,23 +66,23 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	return writeSSHConfig(targetPath, newFile, params.Log)
 }
 
-type DevPodSSHEntry struct {
+type DevsySSHEntry struct {
 	Host      string
 	User      string
 	Workspace string
 }
 
 type addHostParams struct {
-	path       string
-	host       string
-	user       string
-	context    string
-	workspace  string
-	workdir    string
-	command    string
-	gpgagent   bool
-	devPodHome string
-	provider   string
+	path      string
+	host      string
+	user      string
+	context   string
+	workspace string
+	workdir   string
+	command   string
+	gpgagent  bool
+	devsyHome string
+	provider  string
 }
 
 func addHost(params addHostParams) (string, error) {
@@ -118,9 +118,9 @@ func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCom
 	}
 }
 
-func (b *proxyCommandBuilder) withDevPodHome(home string) *proxyCommandBuilder {
+func (b *proxyCommandBuilder) withDevsyHome(home string) *proxyCommandBuilder {
 	if home != "" {
-		b.options = append(b.options, fmt.Sprintf("--devpod-home \"%s\"", home))
+		b.options = append(b.options, fmt.Sprintf("--devsy-home \"%s\"", home))
 	}
 	return b
 }
@@ -204,7 +204,7 @@ func buildProxyCommand(execPath string, params addHostParams) string {
 	}
 
 	return newProxyCommandBuilder(execPath, params.context, params.user, params.workspace).
-		withDevPodHome(params.devPodHome).
+		withDevsyHome(params.devsyHome).
 		withWorkdir(params.workdir).
 		withGPGAgent(params.gpgagent).
 		build()

@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	createCmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a new DevPod context",
+		Short: "Create a new Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("please specify the context to create")
@@ -44,10 +44,10 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
-	devPodConfig, err := config.LoadConfig("", cmd.Provider)
+	devsyConfig, err := config.LoadConfig("", cmd.Provider)
 	if err != nil {
 		return err
-	} else if devPodConfig.Contexts[context] != nil {
+	} else if devsyConfig.Contexts[context] != nil {
 		return fmt.Errorf("context '%s' already exists", context)
 	}
 
@@ -57,18 +57,18 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 	} else if len(context) > 48 {
 		return fmt.Errorf("context name cannot be longer than 48 characters")
 	}
-	devPodConfig.Contexts[context] = &config.ContextConfig{}
+	devsyConfig.Contexts[context] = &config.ContextConfig{}
 
 	// check if there are create options set
 	if len(cmd.Options) > 0 {
-		err = setOptions(devPodConfig, context, cmd.Options)
+		err = setOptions(devsyConfig, context, cmd.Options)
 		if err != nil {
 			return err
 		}
 	}
 
-	devPodConfig.DefaultContext = context
-	err = config.SaveConfig(devPodConfig)
+	devsyConfig.DefaultContext = context
+	err = config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -76,21 +76,21 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 	return nil
 }
 
-func setOptions(devPodConfig *config.Config, context string, options []string) error {
+func setOptions(devsyConfig *config.Config, context string, options []string) error {
 	optionValues, err := parseOptions(options)
 	if err != nil {
 		return err
-	} else if devPodConfig.Contexts[context] == nil {
+	} else if devsyConfig.Contexts[context] == nil {
 		return fmt.Errorf("context '%s' doesn't exist", context)
 	}
 
 	newValues := map[string]config.OptionValue{}
-	if devPodConfig.Contexts[context].Options != nil {
-		maps.Copy(newValues, devPodConfig.Contexts[context].Options)
+	if devsyConfig.Contexts[context].Options != nil {
+		maps.Copy(newValues, devsyConfig.Contexts[context].Options)
 	}
 	maps.Copy(newValues, optionValues)
 
-	devPodConfig.Contexts[context].Options = newValues
+	devsyConfig.Contexts[context].Options = newValues
 	return nil
 }
 

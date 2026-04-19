@@ -8,7 +8,7 @@ import {
 } from "@/contexts"
 import { Failed, Result, Return } from "@/lib"
 import { Routes } from "@/routes.constants"
-import { ManagementV1DevPodWorkspaceTemplate } from "@loft-enterprise/client/gen/models/managementV1DevPodWorkspaceTemplate"
+import { ManagementV1DevsyWorkspaceTemplate } from "@devsy/client/gen/models/managementV1DevsyWorkspaceTemplate"
 import jsyaml from "js-yaml"
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router"
@@ -18,7 +18,7 @@ import { Box } from "@chakra-ui/react"
 
 type TUpdateWorkspaceProps = Readonly<{
   instance: ProWorkspaceInstance
-  template: ManagementV1DevPodWorkspaceTemplate | undefined
+  template: ManagementV1DevsyWorkspaceTemplate | undefined
 }>
 export function UpdateWorkspace({ instance, template }: TUpdateWorkspaceProps) {
   const navigate = useNavigate()

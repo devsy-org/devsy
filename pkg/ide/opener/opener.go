@@ -8,23 +8,23 @@ import (
 	"strconv"
 	"strings"
 
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/gpg"
-	"github.com/skevetter/devpod/pkg/ide/fleet"
-	"github.com/skevetter/devpod/pkg/ide/jetbrains"
-	"github.com/skevetter/devpod/pkg/ide/jupyter"
-	"github.com/skevetter/devpod/pkg/ide/openvscode"
-	"github.com/skevetter/devpod/pkg/ide/rstudio"
-	"github.com/skevetter/devpod/pkg/ide/vscode"
-	"github.com/skevetter/devpod/pkg/ide/zed"
-	open2 "github.com/skevetter/devpod/pkg/open"
-	"github.com/skevetter/devpod/pkg/port"
-	"github.com/skevetter/devpod/pkg/tunnel"
-	"github.com/skevetter/log"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/gpg"
+	"github.com/devsy-org/devsy/pkg/ide/fleet"
+	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
+	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/openvscode"
+	"github.com/devsy-org/devsy/pkg/ide/rstudio"
+	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/ide/zed"
+	open2 "github.com/devsy-org/devsy/pkg/open"
+	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/tunnel"
+	"github.com/devsy-org/log"
 )
 
 // Params holds the parameters needed to open an IDE.
@@ -32,7 +32,7 @@ type Params struct {
 	GPGAgentForwarding bool
 	SSHAuthSockID      string
 	GitSSHSigningKey   string
-	DevPodConfig       *config.Config
+	DevsyConfig        *config.Config
 	Client             client2.BaseWorkspaceClient
 	User               string
 	Result             *config2.Result
@@ -234,7 +234,7 @@ func makeDaemonStartFunc(
 		err = clientimplementation.StartServicesDaemon(
 			ctx,
 			clientimplementation.StartServicesDaemonOptions{
-				DevPodConfig:     params.DevPodConfig,
+				DevsyConfig:      params.DevsyConfig,
 				Client:           daemonClient,
 				SSHClient:        toolClient,
 				User:             params.User,
@@ -290,7 +290,7 @@ func openJupyterBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevPodConfig:     params.DevPodConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,
@@ -338,7 +338,7 @@ func openRStudioBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevPodConfig:     params.DevPodConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,
@@ -392,7 +392,7 @@ func openVSCodeBrowser(
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
-		DevPodConfig:     params.DevPodConfig,
+		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,

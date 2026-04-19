@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -39,11 +39,11 @@ func NewCheckProviderUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "check-provider-update",
 		Short: "Check if a provider update is available",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
-			return cmd.Run(cobraCmd.Context(), devPodConfig, args)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, args)
 		},
 	}
 
@@ -52,7 +52,7 @@ func NewCheckProviderUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *CheckProviderUpdateCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) error {
 	if len(args) != 1 {
@@ -60,13 +60,13 @@ func (cmd *CheckProviderUpdateCmd) Run(
 	}
 	providerName := args[0]
 
-	providerSourceRaw, err := workspace.ResolveProviderSource(devPodConfig, providerName, cmd.log)
+	providerSourceRaw, err := workspace.ResolveProviderSource(devsyConfig, providerName, cmd.log)
 	if err != nil {
 		return fmt.Errorf("provider %s doesn't exist", providerName)
 	}
 
 	// retrieve current config for provider
-	allProviders, err := workspace.LoadAllProviders(devPodConfig, cmd.log)
+	allProviders, err := workspace.LoadAllProviders(devsyConfig, cmd.log)
 	if err != nil {
 		return err
 	}

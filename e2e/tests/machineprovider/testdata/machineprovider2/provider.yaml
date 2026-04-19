@@ -1,30 +1,30 @@
 name: docker123
 version: 0.0.1
 description: |-
-  DevPod on Kubernetes
+  Devsy on Kubernetes
 options:
   NAMESPACE:
     description: The namespace to use
-    default: devpod-e2e
+    default: devsy-e2e
   INACTIVITY_TIMEOUT:
     description: The timeout until the pod will be stopped
     default: 5s
 agent:
-  path: /usr/local/bin/devpod
+  path: /usr/local/bin/devsy
   inactivityTimeout: ${INACTIVITY_TIMEOUT}
   exec:
     shutdown: |-
       kill 1
 exec:
   command: |-
-    docker exec -i devpod-${MACHINE_ID} sh -c "${COMMAND}"
+    docker exec -i devsy-${MACHINE_ID} sh -c "${COMMAND}"
   stop: |-
-    docker stop devpod-${MACHINE_ID}
+    docker stop devsy-${MACHINE_ID}
   start: |-
-    docker start devpod-${MACHINE_ID}
+    docker start devsy-${MACHINE_ID}
     sleep 5
   status: |-
-    STATUS=$(docker inspect devpod-${MACHINE_ID} 2>/dev/null | ${DEVPOD} helper json get "[0].State.Status" || true)
+    STATUS=$(docker inspect devsy-${MACHINE_ID} 2>/dev/null | ${DEVSY} helper json get "[0].State.Status" || true)
     if [ -z $STATUS ]; then
       echo "NOTFOUND"
     else
@@ -37,8 +37,8 @@ exec:
       fi
     fi
   create: |-
-    docker run -d --privileged --name devpod-${MACHINE_ID} docker
-    docker exec devpod-${MACHINE_ID} mkdir /etc/init.d
+    docker run -d --privileged --name devsy-${MACHINE_ID} docker
+    docker exec devsy-${MACHINE_ID} mkdir /etc/init.d
     sleep 5
   delete: |-
-    docker stop devpod-${MACHINE_ID} && docker rm devpod-${MACHINE_ID}
+    docker stop devsy-${MACHINE_ID} && docker rm devsy-${MACHINE_ID}

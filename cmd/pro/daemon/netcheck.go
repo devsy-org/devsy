@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/skevetter/devpod/cmd/agent"
-	"github.com/skevetter/devpod/cmd/pro/completion"
-	proflags "github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	providerpkg "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/pro/completion"
+	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
 )
 
-// NetcheckCmd holds the DevPod daemon flags.
+// NetcheckCmd holds the Devsy daemon flags.
 type NetcheckCmd struct {
 	*proflags.GlobalFlags
 
@@ -34,7 +34,7 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "netcheck",
 		Short: "Get the status of the current network",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := findProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -45,7 +45,7 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devPodConfig, provider)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			root := cmd.Root()
@@ -82,7 +82,7 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *NetcheckCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	provider *providerpkg.ProviderConfig,
 ) error {
 	tsClient := &local.Client{

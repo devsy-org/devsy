@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
@@ -23,21 +23,21 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It(
-			"make sure devpod output is correct and log-output works correctly",
+			"make sure devsy output is correct and log-output works correctly",
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				tempDir, err := framework.CopyToTempDir("tests/up/testdata/docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-				err = f.DevPodProviderAdd(ctx, "docker", "--name", "test-docker")
+				err = f.DevsyProviderAdd(ctx, "docker", "--name", "test-docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					err := f.DevPodProviderDelete(cleanupCtx, "test-docker")
+					err := f.DevsyProviderDelete(cleanupCtx, "test-docker")
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevPodProviderUse(
+				err = f.DevsyProviderUse(
 					ctx,
 					"test-docker",
 					"-o",
@@ -46,9 +46,9 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				// Wait for devpod workspace to come online
-				stdout, stderr, err := f.DevPodUpStreams(ctx, tempDir, "--log-output=json")
-				deleteErr := f.DevPodWorkspaceDelete(ctx, tempDir, "--force")
+				// Wait for devsy workspace to come online
+				stdout, stderr, err := f.DevsyUpStreams(ctx, tempDir, "--log-output=json")
+				deleteErr := f.DevsyWorkspaceDelete(ctx, tempDir, "--force")
 				framework.ExpectNoError(deleteErr)
 				framework.ExpectError(err, "expected error")
 				framework.ExpectNoError(verifyLogStream(strings.NewReader(stdout)))
@@ -69,16 +69,16 @@ var _ = ginkgo.Describe(
 				f, err := setupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					_ = f.DevPodProviderDelete(cleanupCtx, "docker")
+					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
 				})
 
-				initialList, err := f.DevPodList(ctx)
+				initialList, err := f.DevsyList(ctx)
 				framework.ExpectNoError(err)
-				// Wait for devpod workspace to come online (deadline: 30s)
-				err = f.DevPodUp(ctx, "github.com/i/do-not-exist.git")
+				// Wait for devsy workspace to come online (deadline: 30s)
+				err = f.DevsyUp(ctx, "github.com/i/do-not-exist.git")
 				framework.ExpectError(err)
 
-				out, err := f.DevPodList(ctx)
+				out, err := f.DevsyList(ctx)
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(out, initialList)
 			},
@@ -91,7 +91,7 @@ var _ = ginkgo.Describe(
 				f, err := setupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					_ = f.DevPodProviderDelete(cleanupCtx, "docker")
+					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
 				})
 
 				tempDir, err := framework.CopyToTempDir(
@@ -100,10 +100,10 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-				err = f.DevPodUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--debug")
 
 				gomega.Expect(err).To(gomega.HaveOccurred())
-				gomega.Expect(err.Error()).To(gomega.ContainSubstring("devpod up failed"))
+				gomega.Expect(err.Error()).To(gomega.ContainSubstring("devsy up failed"))
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring("exit status 1"))
 			},
 			ginkgo.SpecTimeout(framework.GetTimeout()),
@@ -113,13 +113,13 @@ var _ = ginkgo.Describe(
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			initialList, err := f.DevPodList(ctx)
+			initialList, err := f.DevsyList(ctx)
 			framework.ExpectNoError(err)
-			// Wait for devpod workspace to come online (deadline: 30s)
-			err = f.DevPodUp(ctx, "notfound.loft.sh")
+			// Wait for devsy workspace to come online (deadline: 30s)
+			err = f.DevsyUp(ctx, "notfound.devsy.sh")
 			framework.ExpectError(err)
 
-			out, err := f.DevPodList(ctx)
+			out, err := f.DevsyList(ctx)
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, initialList)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))

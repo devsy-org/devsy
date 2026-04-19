@@ -1,7 +1,7 @@
 package config
 
 const (
-	// IgnoreFileName is the name of the devpod ignore file.
+	// IgnoreFileName is the name of the devsy ignore file.
 	IgnoreFileName = "." + BinaryName + "ignore"
 
 	// SSHSignatureHelperPath is the path to the SSH signature helper script.

@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
 var _ = ginkgo.Describe(
@@ -36,7 +36,7 @@ var _ = ginkgo.Describe(
 					tempDir, err := setupWorkspace("tests/up/testdata/docker", initialDir, f)
 					framework.ExpectNoError(err)
 
-					err = f.DevPodUp(ctx, tempDir)
+					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 				},
 				ginkgo.SpecTimeout(framework.GetTimeout()),
@@ -80,7 +80,7 @@ var _ = ginkgo.Describe(
 					tempDir, err := setupWorkspace("tests/up/testdata/docker", initialDir, f)
 					framework.ExpectNoError(err)
 
-					err = f.DevPodUp(ctx, tempDir)
+					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 				},
 				ginkgo.SpecTimeout(framework.GetTimeout()),

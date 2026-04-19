@@ -9,9 +9,9 @@ import {
   useWorkspaceStore,
   useWorkspaces,
 } from "@/contexts"
-import { IWorkspaceStore } from "@/contexts/DevPodContext/workspaceStore"
-import { removeWorkspaceAction, stopWorkspaceAction } from "@/contexts/DevPodContext/workspaces"
-import { DevPodIcon } from "@/icons"
+import { IWorkspaceStore } from "@/contexts/DevsyContext/workspaceStore"
+import { removeWorkspaceAction, stopWorkspaceAction } from "@/contexts/DevsyContext/workspaces"
+import { DevsyIcon } from "@/icons"
 import EmptyImage from "@/images/empty_default.svg"
 import EmptyDarkImage from "@/images/empty_default.svg"
 import EmptyWorkspacesImage from "@/images/empty_workspaces.svg"
@@ -37,7 +37,7 @@ import {
   useColorMode,
   useDisclosure,
 } from "@chakra-ui/react"
-import { ManagementV1Self } from "@loft-enterprise/client/gen/models/managementV1Self"
+import { ManagementV1Self } from "@devsy/client/gen/models/managementV1Self"
 import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import { WorkspaceInstanceCard } from "./Workspace"
@@ -158,7 +158,7 @@ export function ListWorkspaces() {
           <Button
             variant="outline"
             colorScheme="primary"
-            leftIcon={<DevPodIcon boxSize={5} />}
+            leftIcon={<DevsyIcon boxSize={5} />}
             onClick={handleCreateClicked}>
             Create Workspace
           </Button>
@@ -225,7 +225,7 @@ export function ListWorkspaces() {
 
               <Button
                 variant="primary"
-                leftIcon={<DevPodIcon boxSize={5} />}
+                leftIcon={<DevsyIcon boxSize={5} />}
                 onClick={handleCreateClicked}>
                 Create Workspace
               </Button>

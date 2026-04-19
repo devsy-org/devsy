@@ -77,7 +77,7 @@ impl WindowHelper {
                     "update_ready".to_string(),
                     WebviewUrl::App("update-window/index.html".into()),
                 )
-                .title("DevPod Update")
+                .title("Devsy Update")
                 .fullscreen(false)
                 .resizable(false)
                 .transparent(false)

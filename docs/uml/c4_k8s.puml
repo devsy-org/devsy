@@ -9,17 +9,17 @@ scale 1920x1080
 HIDE_STEREOTYPE()
 LAYOUT_TOP_DOWN()
 
-title Component diagram for DevPod with kubernetes
+title Component diagram for Devsy with kubernetes
 
-Person(user, "DevPod", "CLI or UI")
-System(prov, "Kubernetes Provider", "Devpod Provider")
+Person(user, "Devsy", "CLI or UI")
+System(prov, "Kubernetes Provider", "Devsy Provider")
 Component(ide, "IDE", "Local IDE")
 Component(ctx, "Context", "Config, working dir etc.")
 Component(env, "Local Env", "Shell variables, git credentials etc.")
 
 System_Boundary(cluster, "Kubernetes Cluster") {
   System(controlPlane, "kube API server", "Manages the cluster")
-  System_Boundary(ns, "devpod namespace") {
+  System_Boundary(ns, "devsy namespace") {
     Container_Boundary(ws, "Workspace") {
       Component(runner, "Dev Container", "kaniko:executor")
       Component(agent, "Agent", "")
@@ -29,7 +29,7 @@ System_Boundary(cluster, "Kubernetes Cluster") {
   }
 }
 
-BiRel_Right(user, prov, "devpod up ...")
+BiRel_Right(user, prov, "devsy up ...")
 BiRel(prov, controlPlane, " kubectl ...")
 BiRel(controlPlane, agent, " ")
 BiRel_Left(agent, ssh, "Tunnelled STDIO")

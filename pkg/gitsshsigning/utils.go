@@ -12,7 +12,7 @@ const (
 )
 
 // ExtractGitConfiguration is used for extracting values from users local .gitconfig
-// that are needed to setup devpod-ssh-signature helper inside the workspace.
+// that are needed to setup devsy-ssh-signature helper inside the workspace.
 func ExtractGitConfiguration() (string, string, error) {
 	format, err := readGitConfigValue(GPGFormatConfigKey)
 	if err != nil {

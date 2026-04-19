@@ -1,4 +1,4 @@
-## Load Testing DevPod
+## Load Testing Devsy
 
 ### Create the workspaces
 
@@ -21,9 +21,9 @@ Update NUM_WORKSPACES or NUM_COMMANDS_PER_WORKSPACE to adjust load signature
 ### Get core dump from loft
 
 ```
-kubectl -n devpod-pro set env deployment/loft LOFTDEBUG=true
+kubectl -n devsy-pro set env deployment/devsy DEVSYDEBUG=true
 
-kubectl -n devpod-pro port-forward loft-55df4d875f-j9vnd 8080:8080 &
+kubectl -n devsy-pro port-forward loft-55df4d875f-j9vnd 8080:8080 &
 
 curl -s -v http://localhost:8080/debug/pprof/heap > $(date '+%Y-%m-%d-%H:%M:%S').out
 ```

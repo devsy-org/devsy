@@ -3,11 +3,11 @@ package completion
 import (
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/platform"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -57,12 +57,12 @@ func GetWorkspaceSuggestions(
 	owner platform.OwnerFilter,
 	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	workspaces, err := workspace.List(rootCmd.Context(), devPodConfig, false, owner, logger)
+	workspaces, err := workspace.List(rootCmd.Context(), devsyConfig, false, owner, logger)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -84,12 +84,12 @@ func GetProviderSuggestions(
 	owner platform.OwnerFilter,
 	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	providers, err := workspace.LoadAllProviders(devPodConfig, log.Default.ErrorStreamOnly())
+	providers, err := workspace.LoadAllProviders(devsyConfig, log.Default.ErrorStreamOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -111,13 +111,13 @@ func GetContextSuggestions(
 	owner platform.OwnerFilter,
 	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
-	devPodConfig, err := config.LoadConfig(context, provider)
+	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
 	var suggestions []string
-	for contextName := range devPodConfig.Contexts {
+	for contextName := range devsyConfig.Contexts {
 		if strings.HasPrefix(contextName, toComplete) {
 			suggestions = append(suggestions, contextName)
 		}

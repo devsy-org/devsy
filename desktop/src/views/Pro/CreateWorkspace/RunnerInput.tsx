@@ -1,7 +1,7 @@
 import { useFormContext } from "react-hook-form"
 import { FieldName, TFormValues } from "@/views/Pro/CreateWorkspace/types"
 import { Select } from "@chakra-ui/react"
-import { TProjectCluster } from "@/contexts/DevPodContext/Pro/useProjectClusters"
+import { TProjectCluster } from "@/contexts/DevsyContext/Pro/useProjectClusters"
 
 export function TargetInput({ projectClusters }: { projectClusters: TProjectCluster | undefined }) {
   const { register } = useFormContext<TFormValues>()

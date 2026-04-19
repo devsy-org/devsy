@@ -344,7 +344,7 @@ function getRunnerName(workspace: TWorkspace, provider: TProvider | undefined): 
     workspace.provider?.options ?? {},
     provider?.config?.options ?? {}
   )
-  const maybeRunnerOption = options["LOFT_RUNNER"]
+  const maybeRunnerOption = options["DEVSY_RUNNER"]
   if (!maybeRunnerOption) {
     return undefined
   }
@@ -358,7 +358,7 @@ function getTemplate(workspace: TWorkspace, provider: TProvider | undefined): st
     workspace.provider?.options ?? {},
     provider?.config?.options ?? {}
   )
-  const maybeTemplateOption = options["LOFT_TEMPLATE"]
+  const maybeTemplateOption = options["DEVSY_TEMPLATE"]
   if (!maybeTemplateOption) {
     return undefined
   }
@@ -379,6 +379,6 @@ function getTemplateOptions(
 
   // shouldn't have groups here as we passed in empty array earlier
   return [...displayOptions.required, ...displayOptions.other].filter(
-    (opt) => opt.id !== "LOFT_TEMPLATE"
+    (opt) => opt.id !== "DEVSY_TEMPLATE"
   )
 }

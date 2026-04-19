@@ -47,7 +47,7 @@ func NewConfig() *Config {
 	return &Config{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Config",
-			APIVersion: "storage.loft.sh/v1",
+			APIVersion: "storage.devsy.sh/v1",
 		},
 	}
 }

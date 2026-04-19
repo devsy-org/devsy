@@ -30,9 +30,9 @@ func TestInheritFromEnvironment(t *testing.T) {
 			Assignments: []string{
 				"HOST=box",
 			},
-			EnvironmentVariablePrefix: "DEVPOD_PROVIDER_SSH_",
+			EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
 			NotInEnvironment: []string{
-				"DEVPOD_PROVIDER_SSH_HOST",
+				"DEVSY_PROVIDER_SSH_HOST",
 			},
 			Environment: map[string]string{},
 			ExpectedAssignments: []string{
@@ -45,9 +45,9 @@ func TestInheritFromEnvironment(t *testing.T) {
 				"HOST",
 			},
 			Assignments:               []string{},
-			EnvironmentVariablePrefix: "DEVPOD_PROVIDER_SSH_",
+			EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
 			NotInEnvironment: []string{
-				"DEVPOD_PROVIDER_SSH_HOST",
+				"DEVSY_PROVIDER_SSH_HOST",
 			},
 			Environment:         map[string]string{},
 			ExpectedAssignments: []string{},
@@ -60,10 +60,10 @@ func TestInheritFromEnvironment(t *testing.T) {
 			Assignments: []string{
 				"HOST=box",
 			},
-			EnvironmentVariablePrefix: "DEVPOD_PROVIDER_SSH_",
+			EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
 			NotInEnvironment:          []string{},
 			Environment: map[string]string{
-				"DEVPOD_PROVIDER_SSH_HOST": "another-box",
+				"DEVSY_PROVIDER_SSH_HOST": "another-box",
 			},
 			ExpectedAssignments: []string{
 				"HOST=box",
@@ -75,10 +75,10 @@ func TestInheritFromEnvironment(t *testing.T) {
 				"HOST",
 			},
 			Assignments:               []string{},
-			EnvironmentVariablePrefix: "DEVPOD_PROVIDER_SSH_",
+			EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
 			NotInEnvironment:          []string{},
 			Environment: map[string]string{
-				"DEVPOD_PROVIDER_SSH_HOST": "another-box",
+				"DEVSY_PROVIDER_SSH_HOST": "another-box",
 			},
 			ExpectedAssignments: []string{
 				"HOST=another-box",

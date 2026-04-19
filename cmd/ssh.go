@@ -13,21 +13,21 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/machine"
+	"github.com/devsy-org/devsy/pkg/agent"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/gpg"
+	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/provider"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/tunnel"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/cmd/machine"
-	"github.com/skevetter/devpod/pkg/agent"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/gpg"
-	"github.com/skevetter/devpod/pkg/port"
-	"github.com/skevetter/devpod/pkg/provider"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/devpod/pkg/tunnel"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -75,7 +75,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		Use:   "ssh [flags] [workspace-folder|workspace-name]",
 		Short: "Starts a new ssh session to a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
@@ -84,7 +84,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 
 			ctx := cobraCmd.Context()
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevPodConfig:   devPodConfig,
+				DevsyConfig:    devsyConfig,
 				Args:           args,
 				ChangeLastUsed: true,
 				Owner:          cmd.Owner,
@@ -95,7 +95,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(ctx, devPodConfig, client, log.Default.ErrorStreamOnly())
+			return cmd.Run(ctx, devsyConfig, client, log.Default.ErrorStreamOnly())
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -170,15 +170,15 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 // Run runs the command logic.
 func (cmd *SSHCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	log log.Logger,
 ) error {
 	// add ssh keys to agent
-	if devPodConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
-		devPodConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
+	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
+		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
 		log.Debug(
-			"adding ssh keys to agent, disable via 'devpod context set-options -o SSH_ADD_PRIVATE_KEYS=false'",
+			"adding ssh keys to agent, disable via 'devsy context set-options -o SSH_ADD_PRIVATE_KEYS=false'",
 		)
 		err := devssh.AddPrivateKeysToAgent(ctx, log)
 		if err != nil {
@@ -201,20 +201,20 @@ func (cmd *SSHCmd) Run(
 
 	// set default context if needed
 	if cmd.Context == "" {
-		cmd.Context = devPodConfig.DefaultContext
+		cmd.Context = devsyConfig.DefaultContext
 	}
 
 	workspaceClient, ok := client.(client2.WorkspaceClient)
 	if ok {
-		return cmd.jumpContainer(ctx, devPodConfig, workspaceClient, log)
+		return cmd.jumpContainer(ctx, devsyConfig, workspaceClient, log)
 	}
 	proxyClient, ok := client.(client2.ProxyClient)
 	if ok {
-		return cmd.startProxyTunnel(ctx, devPodConfig, proxyClient, log)
+		return cmd.startProxyTunnel(ctx, devsyConfig, proxyClient, log)
 	}
 	daemonClient, ok := client.(client2.DaemonClient)
 	if ok {
-		return cmd.jumpContainerTailscale(ctx, devPodConfig, daemonClient, log)
+		return cmd.jumpContainerTailscale(ctx, devsyConfig, daemonClient, log)
 	}
 
 	return nil
@@ -222,7 +222,7 @@ func (cmd *SSHCmd) Run(
 
 func (cmd *SSHCmd) jumpContainerTailscale(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.DaemonClient,
 	log log.Logger,
 ) error {
@@ -255,7 +255,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			err = clientimplementation.StartServicesDaemon(
 				ctx,
 				clientimplementation.StartServicesDaemonOptions{
-					DevPodConfig: devPodConfig,
+					DevsyConfig:  devsyConfig,
 					Client:       client,
 					SSHClient:    toolSSHClient,
 					User:         cmd.User,
@@ -272,7 +272,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 
 	// Handle GPG agent forwarding
 	if cmd.GPGAgentForwarding ||
-		devPodConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient, log) {
 			log.Debugf("[GPG] exporting already running, skipping")
 		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient, log); err != nil {
@@ -307,7 +307,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 
 func (cmd *SSHCmd) startProxyTunnel(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.ProxyClient,
 	log log.Logger,
 ) error {
@@ -322,7 +322,7 @@ func (cmd *SSHCmd) startProxyTunnel(
 			})
 		},
 		func(ctx context.Context, containerClient *ssh.Client) error {
-			return cmd.startTunnel(ctx, devPodConfig, containerClient, client, log)
+			return cmd.startTunnel(ctx, devsyConfig, containerClient, client, log)
 		},
 	)
 }
@@ -348,7 +348,7 @@ func (cmd *SSHCmd) retrieveEnVars() (map[string]string, error) {
 
 func (cmd *SSHCmd) jumpContainer(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
 	log log.Logger,
 ) error {
@@ -377,8 +377,8 @@ func (cmd *SSHCmd) jumpContainer(
 			client.Unlock()
 
 			// start ssh tunnel
-			return cmd.startTunnel(ctx, devPodConfig, containerClient, client, log)
-		}, devPodConfig, envVars)
+			return cmd.startTunnel(ctx, devsyConfig, containerClient, client, log)
+		}, devsyConfig, envVars)
 }
 
 func (cmd *SSHCmd) forwardTimeout(log log.Logger) (time.Duration, error) {
@@ -487,7 +487,7 @@ func (cmd *SSHCmd) forwardPorts(
 
 func (cmd *SSHCmd) startTunnel(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspaceClient client2.BaseWorkspaceClient,
 	log log.Logger,
@@ -503,19 +503,19 @@ func (cmd *SSHCmd) startTunnel(
 	}
 
 	if cmd.StartServices {
-		configureDockerCredentials := devPodConfig.ContextOption(
+		configureDockerCredentials := devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectDockerCredentials,
 		) == config.BoolTrue
-		configureGitCredentials := devPodConfig.ContextOption(
+		configureGitCredentials := devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectGitCredentials,
 		) == config.BoolTrue
-		configureGitSSHSignatureHelper := devPodConfig.ContextOption(
+		configureGitSSHSignatureHelper := devsyConfig.ContextOption(
 			config.ContextOptionGitSSHSignatureForwarding,
 		) == config.BoolTrue
 
 		go cmd.startServices(
 			ctx,
-			devPodConfig,
+			devsyConfig,
 			containerClient,
 			workspaceClient.WorkspaceConfig(),
 			configureDockerCredentials,
@@ -531,7 +531,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	// check if we should do gpg agent forwarding
 	if cmd.GPGAgentForwarding ||
-		devPodConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
 		// Check if a forwarding is already enabled and running, in that case
 		// we skip the forwarding and keep using the original one
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient, log) {
@@ -548,7 +548,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	log.Debugf("Run outer container tunnel")
 	commandArgs := []string{
-		agent.ContainerDevPodHelperLocation,
+		agent.ContainerDevsyHelperLocation,
 		"helper",
 		"ssh-server",
 		"--track-activity",
@@ -589,7 +589,7 @@ func (cmd *SSHCmd) startTunnel(
 		User:    cmd.User,
 		Command: cmd.Command,
 		AgentForwarding: cmd.AgentForwarding &&
-			devPodConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue,
+			devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue,
 		SessionOptions: machine.SSHSessionOptions{
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
@@ -653,7 +653,7 @@ func resolveMergedWorkspaceFolder(
 
 func (cmd *SSHCmd) startServices(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspace *provider.Workspace,
 	configureDockerCredentials, configureGitCredentials, configureGitSSHSignatureHelper bool,
@@ -664,7 +664,7 @@ func (cmd *SSHCmd) startServices(
 		err := tunnel.RunServices(
 			ctx,
 			tunnel.RunServicesOptions{
-				DevPodConfig:                   devPodConfig,
+				DevsyConfig:                    devsyConfig,
 				ContainerClient:                containerClient,
 				User:                           cmd.User,
 				ForwardPorts:                   false,
@@ -716,7 +716,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 
 	// Now we forward the agent socket to the remote, and setup remote gpg to use it
 	forwardAgent := []string{
-		agent.ContainerDevPodHelperLocation,
+		agent.ContainerDevsyHelperLocation,
 		"agent",
 		"workspace",
 		"setup-gpg",

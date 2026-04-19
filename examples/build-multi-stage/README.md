@@ -4,5 +4,5 @@ This folder holds a simple devcontainer configuration that builds a local multi 
 
 You can start this project via:
 ```
-devpod up ./examples/build-multi-stage
+devsy up ./examples/build-multi-stage
 ```

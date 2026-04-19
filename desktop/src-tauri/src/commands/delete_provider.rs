@@ -1,8 +1,8 @@
 use tauri::AppHandle;
 
 use super::{
-    config::{CommandConfig, DevpodCommandConfig, DevpodCommandError},
-    constants::{DEVPOD_BINARY_NAME, DEVPOD_COMMAND_DELETE, DEVPOD_COMMAND_PROVIDER},
+    config::{CommandConfig, DevsyCommandConfig, DevsyCommandError},
+    constants::{DEVSY_BINARY_NAME, DEVSY_COMMAND_DELETE, DEVSY_COMMAND_PROVIDER},
 };
 
 pub struct DeleteProviderCommand {
@@ -13,25 +13,25 @@ impl DeleteProviderCommand {
         DeleteProviderCommand { provider_id }
     }
 }
-impl DevpodCommandConfig<()> for DeleteProviderCommand {
+impl DevsyCommandConfig<()> for DeleteProviderCommand {
     fn config(&self) -> CommandConfig<'_> {
         CommandConfig {
-            binary_name: DEVPOD_BINARY_NAME,
+            binary_name: DEVSY_BINARY_NAME,
             args: vec![
-                DEVPOD_COMMAND_PROVIDER,
-                DEVPOD_COMMAND_DELETE,
+                DEVSY_COMMAND_PROVIDER,
+                DEVSY_COMMAND_DELETE,
                 &self.provider_id,
             ],
         }
     }
 
-    fn exec_blocking(self, app_handle: &AppHandle) -> Result<(), DevpodCommandError> {
+    fn exec_blocking(self, app_handle: &AppHandle) -> Result<(), DevsyCommandError> {
         let cmd = self.new_command(app_handle)?;
 
         tauri::async_runtime::block_on(async move { cmd.status().await })
-            .map_err(DevpodCommandError::Failed)?
+            .map_err(DevsyCommandError::Failed)?
             .success()
             .then_some(())
-            .ok_or_else(|| DevpodCommandError::Exit)
+            .ok_or_else(|| DevsyCommandError::Exit)
     }
 }

@@ -1,12 +1,12 @@
 package provider
 
-import "github.com/skevetter/devpod/pkg/types"
+import "github.com/devsy-org/devsy/pkg/types"
 
 type ProInstance struct {
 	// Provider is the provider name this pro instance belongs to
 	Provider string `json:"provider,omitempty"`
 
-	// Host is the Loft DevPod Pro host to use
+	// Host is Devsy Pro host to use
 	Host string `json:"host,omitempty"`
 
 	// CreationTimestamp is the timestamp when this pro instance was created

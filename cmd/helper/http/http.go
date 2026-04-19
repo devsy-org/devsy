@@ -1,7 +1,7 @@
 package http
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewHTTPCmd(flags *flags.GlobalFlags) *cobra.Command {
 	httpCmd := &cobra.Command{
 		Use:    "http",
-		Short:  "DevPod HTTP Utility Commands",
+		Short:  "Devsy HTTP Utility Commands",
 		Hidden: true,
 	}
 

@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +67,7 @@ func fetchProviderRepos(ctx context.Context) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := devpodhttp.GetHTTPClient().Do(req)
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}

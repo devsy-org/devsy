@@ -11,25 +11,25 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
+	"github.com/devsy-org/devsy/pkg/dotfiles"
+	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
+	options2 "github.com/devsy-org/devsy/pkg/options"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/util"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/agent/tunnelserver"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/sshtunnel"
-	"github.com/skevetter/devpod/pkg/dotfiles"
-	"github.com/skevetter/devpod/pkg/ide"
-	"github.com/skevetter/devpod/pkg/ide/opener"
-	options2 "github.com/skevetter/devpod/pkg/options"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	devssh "github.com/skevetter/devpod/pkg/ssh"
-	"github.com/skevetter/devpod/pkg/telemetry"
-	"github.com/skevetter/devpod/pkg/util"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 
@@ -71,18 +71,18 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
-	if devPodConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
+	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
 		cmd.StrictHostKeyChecking = true
 	}
 
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()
 
-	client, logger, err := cmd.prepareClient(ctx, devPodConfig, args)
+	client, logger, err := cmd.prepareClient(ctx, devsyConfig, args)
 	if err != nil {
 		return fmt.Errorf("prepare workspace client: %w", err)
 	}
@@ -91,7 +91,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	telemetry.CollectorCLI.SetClient(client)
-	return cmd.Run(ctx, devPodConfig, client, args, logger)
+	return cmd.Run(ctx, devsyConfig, client, args, logger)
 }
 
 func (cmd *UpCmd) validate() error {
@@ -122,10 +122,10 @@ func (cmd *UpCmd) registerFlags(upCmd *cobra.Command) {
 func (cmd *UpCmd) registerSSHFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(&cmd.ConfigureSSH, "configure-ssh", true,
-			"If true will configure the ssh config to include the DevPod workspace")
+			"If true will configure the ssh config to include the Devsy workspace")
 	upCmd.Flags().
 		BoolVar(&cmd.GPGAgentForwarding, "gpg-agent-forwarding", false,
-			"If true forward the local gpg-agent to the DevPod workspace")
+			"If true forward the local gpg-agent to the Devsy workspace")
 	upCmd.Flags().
 		StringVar(&cmd.SSHConfigPath, "ssh-config", "",
 			"The path to the ssh config to modify, if empty will use ~/.ssh/config")
@@ -173,20 +173,20 @@ func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
 		StringArrayVar(&cmd.IDEOptions, "ide-option", []string{}, "IDE option in the form KEY=VALUE")
 	upCmd.Flags().
 		BoolVar(&cmd.OpenIDE, "open-ide", true,
-			"If this is false and an IDE is configured, DevPod will only install the IDE server backend, but not open it")
+			"If this is false and an IDE is configured, Devsy will only install the IDE server backend, but not open it")
 }
 
 func (cmd *UpCmd) registerGitFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
-			"The git clone strategy DevPod uses to checkout git based workspaces. "+
+			"The git clone strategy Devsy uses to checkout git based workspaces. "+
 				"Can be full (default), blobless, treeless or shallow")
 	upCmd.Flags().
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
 			"If true will clone git submodule repositories recursively")
 	upCmd.Flags().
 		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "",
-			"The ssh key to use when signing git commits. Used to explicitly setup DevPod's ssh signature "+
+			"The ssh key to use when signing git commits. Used to explicitly setup Devsy's ssh signature "+
 				"forwarding with given key. Should be same format as value of `git config user.signingkey`")
 }
 
@@ -216,7 +216,7 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringArrayVar(&cmd.ProviderOptions, "provider-option", []string{}, "Provider option in the form KEY=VALUE")
 	upCmd.Flags().
 		BoolVar(&cmd.Reconfigure, "reconfigure", false,
-			"Reconfigure the options for this workspace. Only supported in DevPod Pro right now.")
+			"Reconfigure the options for this workspace. Only supported in Devsy Pro right now.")
 	upCmd.Flags().
 		BoolVar(&cmd.Recreate, "recreate", false, "If true will remove any existing containers and recreate them")
 	upCmd.Flags().
@@ -224,7 +224,7 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 			"If true will remove any existing containers including sources, and recreate them")
 	upCmd.Flags().
 		StringSliceVar(&cmd.PrebuildRepositories, "prebuild-repository", []string{},
-			"Docker repository that hosts devpod prebuilds for this workspace")
+			"Docker repository that hosts devsy prebuilds for this workspace")
 	upCmd.Flags().
 		StringArrayVar(&cmd.WorkspaceEnv, "workspace-env", []string{},
 			"Extra env variables to put into the workspace, e.g. MY_ENV_VAR=MY_VALUE")
@@ -250,14 +250,14 @@ func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
 // Run runs the command logic.
 func (cmd *UpCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	args []string,
 	log log.Logger,
 ) error {
 	cmd.prepareWorkspace(client, log)
 
-	wctx, err := cmd.executeDevPodUp(ctx, devPodConfig, client, log)
+	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client, log)
 	if err != nil {
 		return err
 	}
@@ -265,11 +265,11 @@ func (cmd *UpCmd) Run(
 		return nil // Platform mode
 	}
 
-	if err := cmd.configureWorkspace(devPodConfig, client, wctx, log); err != nil {
+	if err := cmd.configureWorkspace(devsyConfig, client, wctx, log); err != nil {
 		return err
 	}
 
-	return cmd.openIDE(ctx, devPodConfig, client, wctx, log)
+	return cmd.openIDE(ctx, devsyConfig, client, wctx, log)
 }
 
 // workspaceContext holds the result of workspace preparation.
@@ -300,14 +300,14 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient, log log.L
 	}
 }
 
-// executeDevPodUp runs the agent and returns workspace context.
-func (cmd *UpCmd) executeDevPodUp(
+// executeDevsyUp runs the agent and returns workspace context.
+func (cmd *UpCmd) executeDevsyUp(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	log log.Logger,
 ) (*workspaceContext, error) {
-	result, err := cmd.devPodUp(ctx, devPodConfig, client, log)
+	result, err := cmd.devsyUp(ctx, devsyConfig, client, log)
 	if err != nil {
 		return nil, err
 	}
@@ -336,19 +336,19 @@ func (cmd *UpCmd) executeDevPodUp(
 
 // configureWorkspace sets up SSH, Git, and dotfiles.
 func (cmd *UpCmd) configureWorkspace(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
 	log log.Logger,
 ) error {
 	if cmd.ConfigureSSH {
-		devPodHome := ""
-		if envDevPodHome, ok := os.LookupEnv(config.EnvHome); ok {
-			devPodHome = envDevPodHome
+		devsyHome := ""
+		if envDevsyHome, ok := os.LookupEnv(config.EnvHome); ok {
+			devsyHome = envDevsyHome
 		}
 		setupGPGAgentForwarding := cmd.GPGAgentForwarding ||
-			devPodConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue
-		sshConfigIncludePath := devPodConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+			devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue
+		sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
 
 		if err := configureSSH(client, configureSSHParams{
 			sshConfigPath:        cmd.SSHConfigPath,
@@ -356,7 +356,7 @@ func (cmd *UpCmd) configureWorkspace(
 			user:                 wctx.user,
 			workdir:              wctx.workdir,
 			gpgagent:             setupGPGAgentForwarding,
-			devPodHome:           devPodHome,
+			devsyHome:            devsyHome,
 		}); err != nil {
 			return err
 		}
@@ -370,7 +370,7 @@ func (cmd *UpCmd) configureWorkspace(
 		EnvFiles:     cmd.DotfilesScriptEnvFile,
 		EnvKeyValues: cmd.DotfilesScriptEnv,
 		Client:       client,
-		DevPodConfig: devPodConfig,
+		DevsyConfig:  devsyConfig,
 		Log:          log,
 	}); err != nil {
 		return err
@@ -382,7 +382,7 @@ func (cmd *UpCmd) configureWorkspace(
 // openIDE opens the configured IDE.
 func (cmd *UpCmd) openIDE(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
 	log log.Logger,
@@ -396,7 +396,7 @@ func (cmd *UpCmd) openIDE(
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
 		SSHAuthSockID:      cmd.SSHAuthSockID,
 		GitSSHSigningKey:   cmd.GitSSHSigningKey,
-		DevPodConfig:       devPodConfig,
+		DevsyConfig:        devsyConfig,
 		Client:             client,
 		User:               wctx.user,
 		Result:             wctx.result,
@@ -404,9 +404,9 @@ func (cmd *UpCmd) openIDE(
 	})
 }
 
-func (cmd *UpCmd) devPodUp(
+func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	log log.Logger,
 ) (*config2.Result, error) {
@@ -426,17 +426,17 @@ func (cmd *UpCmd) devPodUp(
 
 	switch client := client.(type) {
 	case client2.WorkspaceClient:
-		result, err = cmd.devPodUpMachine(ctx, devPodConfig, client, log)
+		result, err = cmd.devsyUpMachine(ctx, devsyConfig, client, log)
 		if err != nil {
 			return nil, err
 		}
 	case client2.ProxyClient:
-		result, err = cmd.devPodUpProxy(ctx, client, log)
+		result, err = cmd.devsyUpProxy(ctx, client, log)
 		if err != nil {
 			return nil, err
 		}
 	case client2.DaemonClient:
-		result, err = cmd.devPodUpDaemon(ctx, client)
+		result, err = cmd.devsyUpDaemon(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -453,7 +453,7 @@ func (cmd *UpCmd) devPodUp(
 	return result, nil
 }
 
-func (cmd *UpCmd) devPodUpProxy(
+func (cmd *UpCmd) devsyUpProxy(
 	ctx context.Context,
 	client client2.ProxyClient,
 	log log.Logger,
@@ -480,7 +480,7 @@ func (cmd *UpCmd) devPodUpProxy(
 		defer log.Debug("done executing up command")
 		defer cancel()
 
-		// build devpod up options
+		// build devsy up options
 		workspace := client.WorkspaceConfig()
 		baseOptions := cmd.CLIOptions
 		baseOptions.ID = workspace.ID
@@ -496,7 +496,7 @@ func (cmd *UpCmd) devPodUpProxy(
 			)
 		}
 
-		// run devpod up elsewhere
+		// run devsy up elsewhere
 		err = client.Up(ctx, client2.UpOptions{
 			CLIOptions: baseOptions,
 			Debug:      cmd.Debug,
@@ -529,11 +529,11 @@ func (cmd *UpCmd) devPodUpProxy(
 	return result, <-errChan
 }
 
-func (cmd *UpCmd) devPodUpDaemon(
+func (cmd *UpCmd) devsyUpDaemon(
 	ctx context.Context,
 	client client2.DaemonClient,
 ) (*config2.Result, error) {
-	// build devpod up options
+	// build devsy up options
 	workspace := client.WorkspaceConfig()
 	baseOptions := cmd.CLIOptions
 	baseOptions.ID = workspace.ID
@@ -549,16 +549,16 @@ func (cmd *UpCmd) devPodUpDaemon(
 		)
 	}
 
-	// run devpod up elsewhere
+	// run devsy up elsewhere
 	return client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
 		Debug:      cmd.Debug,
 	})
 }
 
-func (cmd *UpCmd) devPodUpMachine(
+func (cmd *UpCmd) devsyUpMachine(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
 	log log.Logger,
 ) (*config2.Result, error) {
@@ -638,7 +638,7 @@ func (cmd *UpCmd) devPodUpMachine(
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
 		Client: client,
-		AddPrivateKeys: devPodConfig.ContextOption(
+		AddPrivateKeys: devsyConfig.ContextOption(
 			config.ContextOptionSSHAddPrivateKeys,
 		) == config.BoolTrue,
 		AgentInject: agentInjectFunc,
@@ -665,7 +665,7 @@ type configureSSHParams struct {
 	user                 string
 	workdir              string
 	gpgagent             bool
-	devPodHome           string
+	devsyHome            string
 }
 
 func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams) error {
@@ -692,7 +692,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		User:                 params.user,
 		Workdir:              params.workdir,
 		GPGAgent:             params.gpgagent,
-		DevPodHome:           params.devPodHome,
+		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
 		Log:                  log.Default,
 	})
@@ -703,7 +703,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 	return nil
 }
 
-func mergeDevPodUpOptions(baseOptions *provider2.CLIOptions) error {
+func mergeDevsyUpOptions(baseOptions *provider2.CLIOptions) error {
 	oldOptions := *baseOptions
 	found, err := clientimplementation.DecodeOptionsFromEnv(
 		config.EnvFlagsUp,
@@ -753,11 +753,11 @@ var inheritedEnvironmentVariables = []string{
 
 func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, log.Logger, error) {
 	// try to parse flags from env
-	if err := mergeDevPodUpOptions(&cmd.CLIOptions); err != nil {
+	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return nil, nil, err
 	}
 
@@ -768,7 +768,7 @@ func (cmd *UpCmd) prepareClient(
 		logger.Debug("Using error output stream")
 
 		// merge context options from env
-		config.MergeContextOptions(devPodConfig.Current(), os.Environ())
+		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
 
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
@@ -793,13 +793,13 @@ func (cmd *UpCmd) prepareClient(
 	}
 
 	if cmd.SSHConfigPath == "" {
-		cmd.SSHConfigPath = devPodConfig.ContextOption(config.ContextOptionSSHConfigPath)
+		cmd.SSHConfigPath = devsyConfig.ContextOption(config.ContextOptionSSHConfigPath)
 	}
-	sshConfigIncludePath := devPodConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+	sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
 
 	client, err := workspace2.Resolve(
 		ctx,
-		devPodConfig,
+		devsyConfig,
 		workspace2.ResolveParams{
 			IDE:                  cmd.IDE,
 			IDEOptions:           cmd.IDEOptions,
@@ -824,8 +824,8 @@ func (cmd *UpCmd) prepareClient(
 	}
 
 	if !cmd.Platform.Enabled {
-		proInstance := workspace2.GetProInstance(devPodConfig, client.Provider(), logger)
-		err = workspace2.CheckProviderUpdate(devPodConfig, proInstance, logger)
+		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider(), logger)
+		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance, logger)
 		if err != nil {
 			return nil, logger, err
 		}

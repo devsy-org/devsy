@@ -3,16 +3,16 @@ package workspace
 import (
 	"os"
 
-	"github.com/skevetter/devpod/pkg/config"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/log"
 )
 
 func ListProInstances(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	log log.Logger,
 ) ([]*provider2.ProInstance, error) {
-	proInstanceDir, err := provider2.GetProInstancesDir(devPodConfig.DefaultContext)
+	proInstanceDir, err := provider2.GetProInstancesDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func ListProInstances(
 	retProInstances := []*provider2.ProInstance{}
 	for _, entry := range entries {
 		proInstanceConfig, err := provider2.LoadProInstanceConfig(
-			devPodConfig.DefaultContext,
+			devsyConfig.DefaultContext,
 			entry.Name(),
 		)
 		if err != nil {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/driver"
-	"github.com/skevetter/devpod/pkg/image"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/image"
 )
 
 func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.ImageDetails, error) {

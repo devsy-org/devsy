@@ -3,18 +3,18 @@ id: rename-provider
 title: Rename a Provider
 ---
 
-You can rename a provider using the `devpod provider rename` command. All workspaces and machines using the provider continue to work under the new name. Provider configuration, options, and state are fully preserved.
+You can rename a provider using the `devsy provider rename` command. All workspaces and machines using the provider continue to work under the new name. Provider configuration, options, and state are fully preserved.
 
 ## CLI
 
 ```bash
-devpod provider rename <current-name> <new-name>
+devsy provider rename <current-name> <new-name>
 ```
 
 ### Example
 
 ```bash
-devpod provider rename my-docker local-docker
+devsy provider rename my-docker local-docker
 ```
 
 ## Constraints
@@ -38,4 +38,4 @@ devpod provider rename my-docker local-docker
 3. In the provider's configuration page, edit the **Provider Name** field.
 4. Click **Update Options** to save.
 
-DevPod will update the provider and all associated workspaces automatically.
+Devsy will update the provider and all associated workspaces automatically.

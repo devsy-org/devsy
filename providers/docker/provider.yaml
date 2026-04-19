@@ -1,9 +1,9 @@
 name: docker
 version: v0.0.1
-icon: https://devpod.sh/assets/docker.svg
-home: https://github.com/skevetter/devpod
+icon: https://devsy.sh/assets/docker.svg
+home: https://github.com/devsy-org/devsy
 description: |-
-  DevPod on Docker
+  Devsy on Docker
 optionGroups:
   - options:
       - DOCKER_PATH
@@ -34,4 +34,4 @@ agent:
       DOCKER_HOST: ${DOCKER_HOST}
 exec:
   command: |-
-    "${DEVPOD}" helper sh -c "${COMMAND}"
+    "${DEVSY}" helper sh -c "${COMMAND}"

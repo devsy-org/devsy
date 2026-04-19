@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	"github.com/skevetter/devpod/cmd/pro/flags"
-	"github.com/skevetter/devpod/pkg/platform/kube"
-	"github.com/skevetter/devpod/pkg/random"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/survey"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/devsy/pkg/random"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/survey"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,8 +41,8 @@ func NewPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 Resets the password of a user.
 
 Example:
-devpod pro reset password
-devpod pro reset password --user admin
+devsy pro reset password
+devsy pro reset password --user admin
 #######################################################
 	`
 	c := &cobra.Command{

@@ -102,12 +102,12 @@ function GitHubStar() {
   const iconColor = useStatusBarIconColor()
 
   return (
-    <Tooltip label="Loving DevPod? Give us a star on GitHub">
+    <Tooltip label="Loving Devsy? Give us a star on GitHub">
       <IconButton
         variant="ghost"
         rounded="full"
         icon={<StarIcon color={iconColor} />}
-        aria-label="Loving DevPod? Give us a star on GitHub"
+        aria-label="Loving Devsy? Give us a star on GitHub"
         onClick={() => client.openUrl(GITHUB_REPO_URL)}
       />
     </Tooltip>
@@ -118,12 +118,12 @@ function OSSDocs() {
   const iconColor = useStatusBarIconColor()
 
   return (
-    <Tooltip label="How to DevPod - Docs">
+    <Tooltip label="How to Devsy - Docs">
       <IconButton
         variant="ghost"
         rounded="full"
         icon={<Icon as={HiDocumentMagnifyingGlass} color={iconColor} />}
-        aria-label="How to DevPod - Docs"
+        aria-label="How to Devsy - Docs"
         onClick={() => client.openUrl(WEBSITE_DOCS_URL)}
       />
     </Tooltip>
@@ -184,7 +184,7 @@ function DebugMenu() {
       type: "ImportWorkspace",
       workspace_uid: workspaceUID,
       workspace_id: workspaceID,
-      devpod_pro_host: host,
+      devsy_pro_host: host,
       project,
       options: {},
     })

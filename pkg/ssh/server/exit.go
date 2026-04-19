@@ -5,8 +5,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 )
 
 func exitWithError(sess ssh.Session, err error, log log.Logger) {

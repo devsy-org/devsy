@@ -9,10 +9,10 @@ scale 1920x1080
 HIDE_STEREOTYPE()
 LAYOUT_TOP_DOWN()
 
-title Component diagram for DevPod
+title Component diagram for Devsy
 
-Person(user, "DevPod", "CLI or UI")
-System(prov, "Provider", "Devpod Provider")
+Person(user, "Devsy", "CLI or UI")
+System(prov, "Provider", "Devsy Provider")
 Component(ide, "IDE", "Local IDE")
 Component(ctx, "Context", "Config, working dir etc.")
 Component(env, "Local Env", "Shell variables, git credentials etc.")
@@ -28,7 +28,7 @@ System_Boundary(cluster, "Machine / Cluster") {
   }
 }
 
-BiRel(user, prov, "devpod up ...")
+BiRel(user, prov, "devsy up ...")
 BiRel(prov, controlPlane, "")
 BiRel(controlPlane, agent, " gRPC")
 BiRel_Left(agent, ssh, "Tunnelled STDIO")

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/command"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/file"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/log/scanner"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/log/scanner"
 )
 
 type GitCredentials struct {

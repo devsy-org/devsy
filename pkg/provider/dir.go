@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/config"
-	config2 "github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/id"
+	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/id"
 )
 
 const (

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/suite"
 )
 

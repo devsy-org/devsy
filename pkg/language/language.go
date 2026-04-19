@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/log"
 )
 
 type ProgrammingLanguage string

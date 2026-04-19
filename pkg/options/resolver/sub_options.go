@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/shell"
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/shell"
+	"github.com/devsy-org/devsy/pkg/types"
 	"sigs.k8s.io/yaml"
 )
 

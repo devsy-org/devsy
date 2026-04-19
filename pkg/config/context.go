@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 const (
@@ -28,59 +28,59 @@ const (
 var ContextOptions = []ContextOption{
 	{
 		Name:        ContextOptionSSHAddPrivateKeys,
-		Description: "Specifies if DevPod should automatically add ssh-keys to the ssh-agent",
+		Description: "Specifies if Devsy should automatically add ssh-keys to the ssh-agent",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionExitAfterTimeout,
-		Description: "Specifies if DevPod should exit the process after the browser has been idle for a minute",
+		Description: "Specifies if Devsy should exit the process after the browser has been idle for a minute",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionGPGAgentForwarding,
-		Description: "Specifies if DevPod should do gpg-agent forwarding by default for ssh",
+		Description: "Specifies if Devsy should do gpg-agent forwarding by default for ssh",
 		Default:     "false",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionGitSSHSignatureForwarding,
-		Description: "Specifies if DevPod should automatically detect ssh signature git setting and inject ssh signature helper",
+		Description: "Specifies if Devsy should automatically detect ssh signature git setting and inject ssh signature helper",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionSSHInjectDockerCredentials,
-		Description: "Specifies if DevPod should inject docker credentials into the workspace",
+		Description: "Specifies if Devsy should inject docker credentials into the workspace",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionSSHInjectGitCredentials,
-		Description: "Specifies if DevPod should inject git credentials into the workspace",
+		Description: "Specifies if Devsy should inject git credentials into the workspace",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionSSHAgentForwarding,
-		Description: "Specifies if DevPod should do agent forwarding by default into the workspace",
+		Description: "Specifies if Devsy should do agent forwarding by default into the workspace",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionTelemetry,
-		Description: "Specifies if DevPod should send telemetry information",
+		Description: "Specifies if Devsy should send telemetry information",
 		Default:     "true",
 		Enum:        []string{"true", "false"},
 	},
 	{
 		Name:        ContextOptionAgentURL,
-		Description: "Specifies the agent url to use for DevPod",
+		Description: "Specifies the agent url to use for Devsy",
 	},
 	{
 		Name:        ContextOptionDotfilesURL,
-		Description: "Specifies the dotfiles repo url to use for DevPod",
+		Description: "Specifies the dotfiles repo url to use for Devsy",
 	},
 	{
 		Name:        ContextOptionDotfilesScript,
@@ -92,7 +92,7 @@ var ContextOptions = []ContextOption{
 	},
 	{
 		Name:        ContextOptionSSHConfigIncludePath,
-		Description: "Specifies an alternate path where DevPod host entries should be written. Use this when your main SSH config is read-only (e.g., managed by Nix). Your main SSH config should have an Include directive pointing to this file.",
+		Description: "Specifies an alternate path where Devsy host entries should be written. Use this when your main SSH config is read-only (e.g., managed by Nix). Your main SSH config should have an Include directive pointing to this file.",
 	},
 	{
 		Name:        ContextOptionAgentInjectTimeout,

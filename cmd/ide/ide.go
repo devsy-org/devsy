@@ -1,7 +1,7 @@
 package ide
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewIDECmd(flags *flags.GlobalFlags) *cobra.Command {
 	ideCmd := &cobra.Command{
 		Use:   "ide",
-		Short: "DevPod IDE commands",
+		Short: "Devsy IDE commands",
 	}
 
 	ideCmd.AddCommand(NewUseCmd(flags))

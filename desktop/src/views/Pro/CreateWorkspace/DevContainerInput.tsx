@@ -9,13 +9,13 @@ import {
   useColorModeValue,
   useToken,
 } from "@chakra-ui/react"
-import { ManagementV1DevPodEnvironmentTemplate } from "@loft-enterprise/client/gen/models/managementV1DevPodEnvironmentTemplate"
+import { ManagementV1DevsyEnvironmentTemplate } from "@devsy/client/gen/models/managementV1DevsyEnvironmentTemplate"
 import { useEffect, useMemo, useState } from "react"
 import { useFormContext } from "react-hook-form"
 import { FieldName } from "./types"
 
 type TDevContainerInputProps = Readonly<{
-  environmentTemplates: readonly ManagementV1DevPodEnvironmentTemplate[]
+  environmentTemplates: readonly ManagementV1DevsyEnvironmentTemplate[]
   resetPreset?: VoidFunction
 }>
 export function DevContainerInput({
@@ -149,10 +149,10 @@ export function DevContainerInput({
 }
 
 function determineEnvironmentTemplate(
-  templates: readonly ManagementV1DevPodEnvironmentTemplate[],
+  templates: readonly ManagementV1DevsyEnvironmentTemplate[],
   envTemplateValue: string | undefined,
   devContainerType: "path" | "external" | undefined
-): ManagementV1DevPodEnvironmentTemplate | undefined {
+): ManagementV1DevsyEnvironmentTemplate | undefined {
   if (devContainerType === "path" || !envTemplateValue) {
     return undefined
   }

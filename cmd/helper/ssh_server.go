@@ -6,14 +6,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/agent"
-	helperssh "github.com/skevetter/devpod/pkg/ssh/server"
-	"github.com/skevetter/devpod/pkg/ssh/server/port"
-	"github.com/skevetter/devpod/pkg/stdio"
-	"github.com/skevetter/devpod/pkg/token"
-	"github.com/skevetter/log"
-	"github.com/skevetter/ssh"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
+	"github.com/devsy-org/devsy/pkg/ssh/server/port"
+	"github.com/devsy-org/devsy/pkg/stdio"
+	"github.com/devsy-org/devsy/pkg/token"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/ssh"
 	"github.com/spf13/cobra"
 )
 

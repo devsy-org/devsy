@@ -11,17 +11,17 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/command"
-	config2 "github.com/skevetter/devpod/pkg/config"
-	copy2 "github.com/skevetter/devpod/pkg/copy"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/extract"
-	devpodhttp "github.com/skevetter/devpod/pkg/http"
-	"github.com/skevetter/devpod/pkg/ide"
-	devpodopen "github.com/skevetter/devpod/pkg/open"
-	"github.com/skevetter/devpod/pkg/util"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/command"
+	config2 "github.com/devsy-org/devsy/pkg/config"
+	copy2 "github.com/devsy-org/devsy/pkg/copy"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/extract"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/ide"
+	devsyopen "github.com/devsy-org/devsy/pkg/open"
+	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/log"
 )
 
 const (
@@ -88,7 +88,7 @@ type GenericJetBrainsServer struct {
 
 func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string) error {
 	o.log.Infof("Starting %s through JetBrains Gateway...", o.options.DisplayName)
-	err := devpodopen.Run(
+	err := devsyopen.Run(
 		`jetbrains-gateway://connect#idePath=` + url.QueryEscape(
 			o.getDirectory(path.Join("/", "home", o.userName)),
 		) + `&projectPath=` + url.QueryEscape(
@@ -109,7 +109,7 @@ func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string
 }
 
 func (o *GenericJetBrainsServer) GetVolume() string {
-	return fmt.Sprintf("type=volume,src=devpod-%s,dst=%s", o.options.ID, o.getDownloadFolder())
+	return fmt.Sprintf("type=volume,src=devsy-%s,dst=%s", o.options.ID, o.getDownloadFolder())
 }
 
 func (o *GenericJetBrainsServer) getDownloadFolder() string {
@@ -248,7 +248,7 @@ func (o *GenericJetBrainsServer) download(targetFolder string, log log.Logger) (
 		o.options.DisplayName,
 		o.options.ID,
 	)
-	resp, err := devpodhttp.GetHTTPClient().Get(downloadURL)
+	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)
 	}

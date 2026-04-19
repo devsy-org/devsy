@@ -1,7 +1,7 @@
 package json
 
 import (
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +9,7 @@ import (
 func NewJSONCmd(flags *flags.GlobalFlags) *cobra.Command {
 	jsonCmd := &cobra.Command{
 		Use:    "json",
-		Short:  "DevPod JSON Utility Commands",
+		Short:  "Devsy JSON Utility Commands",
 		Hidden: true,
 	}
 

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -26,15 +26,15 @@ func NewUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	updateCmd := &cobra.Command{
 		Use:   "update [name] [name, GitHub link, URL or path]",
-		Short: "Updates a provider in DevPod",
+		Short: "Updates a provider in Devsy",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
 
-			return cmd.Run(ctx, devPodConfig, args)
+			return cmd.Run(ctx, devsyConfig, args)
 		},
 	}
 
@@ -45,10 +45,10 @@ func NewUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return updateCmd
 }
 
-func (cmd *UpdateCmd) Run(ctx context.Context, devPodConfig *config.Config, args []string) error {
+func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	if len(args) != 1 && len(args) != 2 {
 		return fmt.Errorf("please specify either a local file, URL or Git repository. " +
-			"E.g. devpod provider update my-provider " + config.ProviderPrefix + "gcloud")
+			"E.g. devsy provider update my-provider " + config.ProviderPrefix + "gcloud")
 	}
 
 	providerSource := ""
@@ -57,7 +57,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devPodConfig *config.Config, args
 	}
 
 	providerConfig, err := workspace.UpdateProvider(
-		devPodConfig,
+		devsyConfig,
 		args[0],
 		providerSource,
 		log.Default,
@@ -70,7 +70,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devPodConfig *config.Config, args
 	if cmd.Use {
 		err = ConfigureProvider(ctx, ProviderOptionsConfig{
 			Provider:       providerConfig,
-			Context:        devPodConfig.DefaultContext,
+			Context:        devsyConfig.DefaultContext,
 			UserOptions:    cmd.Options,
 			Reconfigure:    false,
 			SkipRequired:   false,
@@ -81,7 +81,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devPodConfig *config.Config, args
 		})
 		if err != nil {
 			log.Default.Errorf(
-				"Error configuring provider, please retry with 'devpod provider use %s --reconfigure'",
+				"Error configuring provider, please retry with 'devsy provider use %s --reconfigure'",
 				providerConfig.Name,
 			)
 			return fmt.Errorf("configure provider: %w", err)
@@ -91,6 +91,6 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devPodConfig *config.Config, args
 	}
 
 	log.Default.Infof("To use the provider, please run the following command:")
-	log.Default.Infof("devpod provider use %s", providerConfig.Name)
+	log.Default.Infof("devsy provider use %s", providerConfig.Name)
 	return nil
 }

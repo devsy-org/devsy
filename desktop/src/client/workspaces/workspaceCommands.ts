@@ -8,31 +8,31 @@ import {
 } from "@/types"
 import { Command, isOk, serializeRawOptions, toFlagArg } from "../command"
 import {
-  DEVPOD_COMMAND_DELETE,
-  DEVPOD_COMMAND_GET_WORKSPACE_CONFIG,
-  DEVPOD_COMMAND_GET_WORKSPACE_NAME,
-  DEVPOD_COMMAND_GET_WORKSPACE_UID,
-  DEVPOD_COMMAND_HELPER,
-  DEVPOD_COMMAND_LIST,
-  DEVPOD_COMMAND_STATUS,
-  DEVPOD_COMMAND_STOP,
-  DEVPOD_COMMAND_UP,
-  DEVPOD_COMMAND_TROUBLESHOOT,
-  DEVPOD_FLAG_DEBUG,
-  DEVPOD_FLAG_DEVCONTAINER_PATH,
-  DEVPOD_FLAG_FORCE,
-  DEVPOD_FLAG_ID,
-  DEVPOD_FLAG_IDE,
-  DEVPOD_FLAG_JSON_LOG_OUTPUT,
-  DEVPOD_FLAG_JSON_OUTPUT,
-  DEVPOD_FLAG_PREBUILD_REPOSITORY,
-  DEVPOD_FLAG_PROVIDER,
-  DEVPOD_FLAG_PROVIDER_OPTION,
-  DEVPOD_FLAG_RECREATE,
-  DEVPOD_FLAG_RESET,
-  DEVPOD_FLAG_SKIP_PRO,
-  DEVPOD_FLAG_SOURCE,
-  DEVPOD_FLAG_TIMEOUT,
+  DEVSY_COMMAND_DELETE,
+  DEVSY_COMMAND_GET_WORKSPACE_CONFIG,
+  DEVSY_COMMAND_GET_WORKSPACE_NAME,
+  DEVSY_COMMAND_GET_WORKSPACE_UID,
+  DEVSY_COMMAND_HELPER,
+  DEVSY_COMMAND_LIST,
+  DEVSY_COMMAND_STATUS,
+  DEVSY_COMMAND_STOP,
+  DEVSY_COMMAND_UP,
+  DEVSY_COMMAND_TROUBLESHOOT,
+  DEVSY_FLAG_DEBUG,
+  DEVSY_FLAG_DEVCONTAINER_PATH,
+  DEVSY_FLAG_FORCE,
+  DEVSY_FLAG_ID,
+  DEVSY_FLAG_IDE,
+  DEVSY_FLAG_JSON_LOG_OUTPUT,
+  DEVSY_FLAG_JSON_OUTPUT,
+  DEVSY_FLAG_PREBUILD_REPOSITORY,
+  DEVSY_FLAG_PROVIDER,
+  DEVSY_FLAG_PROVIDER_OPTION,
+  DEVSY_FLAG_RECREATE,
+  DEVSY_FLAG_RESET,
+  DEVSY_FLAG_SKIP_PRO,
+  DEVSY_FLAG_SOURCE,
+  DEVSY_FLAG_TIMEOUT,
   WORKSPACE_COMMAND_ADDITIONAL_FLAGS_KEY,
 } from "../constants"
 
@@ -46,18 +46,18 @@ export class WorkspaceCommands {
   private static newCommand(args: string[]): Command {
     const extraFlags = []
     if (WorkspaceCommands.DEBUG) {
-      extraFlags.push(DEVPOD_FLAG_DEBUG)
+      extraFlags.push(DEVSY_FLAG_DEBUG)
     }
 
     return new Command([...args, ...extraFlags])
   }
 
   static async ListWorkspaces(skipPro: boolean): Promise<Result<TWorkspaceWithoutStatus[]>> {
-    const maybeSkipProFlag = skipPro ? [DEVPOD_FLAG_SKIP_PRO] : []
+    const maybeSkipProFlag = skipPro ? [DEVSY_FLAG_SKIP_PRO] : []
 
     const result = await new Command([
-      DEVPOD_COMMAND_LIST,
-      DEVPOD_FLAG_JSON_OUTPUT,
+      DEVSY_COMMAND_LIST,
+      DEVSY_FLAG_JSON_OUTPUT,
       ...maybeSkipProFlag,
     ]).run()
     if (result.err) {
@@ -76,7 +76,7 @@ export class WorkspaceCommands {
   static async FetchWorkspaceStatus(
     id: string
   ): Promise<Result<Pick<TWorkspace, "id" | "status">>> {
-    const result = await new Command([DEVPOD_COMMAND_STATUS, id, DEVPOD_FLAG_JSON_OUTPUT]).run()
+    const result = await new Command([DEVSY_COMMAND_STATUS, id, DEVSY_FLAG_JSON_OUTPUT]).run()
     if (result.err) {
       return result
     }
@@ -92,8 +92,8 @@ export class WorkspaceCommands {
 
   static async GetWorkspaceID(source: string) {
     const result = await new Command([
-      DEVPOD_COMMAND_HELPER,
-      DEVPOD_COMMAND_GET_WORKSPACE_NAME,
+      DEVSY_COMMAND_HELPER,
+      DEVSY_COMMAND_GET_WORKSPACE_NAME,
       source,
     ]).run()
     if (result.err) {
@@ -108,10 +108,7 @@ export class WorkspaceCommands {
   }
 
   static async GetWorkspaceUID() {
-    const result = await new Command([
-      DEVPOD_COMMAND_HELPER,
-      DEVPOD_COMMAND_GET_WORKSPACE_UID,
-    ]).run()
+    const result = await new Command([DEVSY_COMMAND_HELPER, DEVSY_COMMAND_GET_WORKSPACE_UID]).run()
     if (result.err) {
       return result
     }
@@ -124,38 +121,38 @@ export class WorkspaceCommands {
   }
 
   static GetStatusLogs(id: string) {
-    return new Command([DEVPOD_COMMAND_STATUS, id, DEVPOD_FLAG_JSON_LOG_OUTPUT])
+    return new Command([DEVSY_COMMAND_STATUS, id, DEVSY_FLAG_JSON_LOG_OUTPUT])
   }
 
   static StartWorkspace(id: TWorkspaceID, config: TWorkspaceStartConfig) {
     const maybeSource = config.sourceConfig?.source
-    const maybeIDFlag = exists(maybeSource) ? [toFlagArg(DEVPOD_FLAG_ID, id)] : []
+    const maybeIDFlag = exists(maybeSource) ? [toFlagArg(DEVSY_FLAG_ID, id)] : []
 
     const maybeSourceType = config.sourceConfig?.type
     const maybeSourceFlag =
       exists(maybeSourceType) && exists(maybeSource)
-        ? [toFlagArg(DEVPOD_FLAG_SOURCE, `${maybeSourceType}:${maybeSource}`)]
+        ? [toFlagArg(DEVSY_FLAG_SOURCE, `${maybeSourceType}:${maybeSource}`)]
         : []
     const identifier = exists(maybeSource) && exists(maybeIDFlag) ? maybeSource : id
 
     const maybeIdeName = config.ideConfig?.name
-    const maybeIDEFlag = exists(maybeIdeName) ? [toFlagArg(DEVPOD_FLAG_IDE, maybeIdeName)] : []
+    const maybeIDEFlag = exists(maybeIdeName) ? [toFlagArg(DEVSY_FLAG_IDE, maybeIdeName)] : []
 
     const maybeProviderID = config.providerConfig?.providerID
     const maybeProviderFlag = exists(maybeProviderID)
-      ? [toFlagArg(DEVPOD_FLAG_PROVIDER, maybeProviderID)]
+      ? [toFlagArg(DEVSY_FLAG_PROVIDER, maybeProviderID)]
       : []
     const maybeProviderOptions = config.providerConfig?.options
     const maybeProviderOptionsFlag = exists(maybeProviderOptions)
-      ? serializeRawOptions(maybeProviderOptions, DEVPOD_FLAG_PROVIDER_OPTION)
+      ? serializeRawOptions(maybeProviderOptions, DEVSY_FLAG_PROVIDER_OPTION)
       : []
 
     const maybePrebuildRepositories = config.prebuildRepositories?.length
-      ? [toFlagArg(DEVPOD_FLAG_PREBUILD_REPOSITORY, config.prebuildRepositories.join(","))]
+      ? [toFlagArg(DEVSY_FLAG_PREBUILD_REPOSITORY, config.prebuildRepositories.join(","))]
       : []
 
     const maybeDevcontainerPath = config.devcontainerPath
-      ? [toFlagArg(DEVPOD_FLAG_DEVCONTAINER_PATH, config.devcontainerPath)]
+      ? [toFlagArg(DEVSY_FLAG_DEVCONTAINER_PATH, config.devcontainerPath)]
       : []
 
     const additionalFlags = []
@@ -171,7 +168,7 @@ export class WorkspaceCommands {
     }
 
     return WorkspaceCommands.newCommand([
-      DEVPOD_COMMAND_UP,
+      DEVSY_COMMAND_UP,
       identifier,
       ...maybeIDFlag,
       ...maybeSourceFlag,
@@ -181,40 +178,40 @@ export class WorkspaceCommands {
       ...maybeDevcontainerPath,
       ...additionalFlags,
       ...maybeProviderOptionsFlag,
-      DEVPOD_FLAG_JSON_LOG_OUTPUT,
+      DEVSY_FLAG_JSON_LOG_OUTPUT,
     ])
   }
 
   static StopWorkspace(id: TWorkspaceID) {
-    return WorkspaceCommands.newCommand([DEVPOD_COMMAND_STOP, id, DEVPOD_FLAG_JSON_LOG_OUTPUT])
+    return WorkspaceCommands.newCommand([DEVSY_COMMAND_STOP, id, DEVSY_FLAG_JSON_LOG_OUTPUT])
   }
 
   static RebuildWorkspace(id: TWorkspaceID) {
     return WorkspaceCommands.newCommand([
-      DEVPOD_COMMAND_UP,
+      DEVSY_COMMAND_UP,
       id,
-      DEVPOD_FLAG_JSON_LOG_OUTPUT,
-      DEVPOD_FLAG_RECREATE,
+      DEVSY_FLAG_JSON_LOG_OUTPUT,
+      DEVSY_FLAG_RECREATE,
     ])
   }
 
   static ResetWorkspace(id: TWorkspaceID) {
     return WorkspaceCommands.newCommand([
-      DEVPOD_COMMAND_UP,
+      DEVSY_COMMAND_UP,
       id,
-      DEVPOD_FLAG_JSON_LOG_OUTPUT,
-      DEVPOD_FLAG_RESET,
+      DEVSY_FLAG_JSON_LOG_OUTPUT,
+      DEVSY_FLAG_RESET,
     ])
   }
 
   static TroubleshootWorkspace(id: TWorkspaceID) {
-    return WorkspaceCommands.newCommand([DEVPOD_COMMAND_TROUBLESHOOT, id])
+    return WorkspaceCommands.newCommand([DEVSY_COMMAND_TROUBLESHOOT, id])
   }
 
   static RemoveWorkspace(id: TWorkspaceID, force?: boolean) {
-    const args = [DEVPOD_COMMAND_DELETE, id, DEVPOD_FLAG_JSON_LOG_OUTPUT]
+    const args = [DEVSY_COMMAND_DELETE, id, DEVSY_FLAG_JSON_LOG_OUTPUT]
     if (force) {
-      args.push(DEVPOD_FLAG_FORCE)
+      args.push(DEVSY_FLAG_FORCE)
     }
 
     return WorkspaceCommands.newCommand(args)
@@ -222,10 +219,10 @@ export class WorkspaceCommands {
 
   static GetDevcontainerConfig(rawSource: string) {
     return new Command([
-      DEVPOD_COMMAND_HELPER,
-      DEVPOD_COMMAND_GET_WORKSPACE_CONFIG,
+      DEVSY_COMMAND_HELPER,
+      DEVSY_COMMAND_GET_WORKSPACE_CONFIG,
       rawSource,
-      DEVPOD_FLAG_TIMEOUT,
+      DEVSY_FLAG_TIMEOUT,
       "10s",
     ])
   }

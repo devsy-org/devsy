@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	util "github.com/devsy-org/devsy/pkg/util/hash"
+	"github.com/devsy-org/log"
+	"github.com/devsy-org/log/hash"
 	"github.com/moby/patternmatcher"
 	"github.com/moby/patternmatcher/ignorefile"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	util "github.com/skevetter/devpod/pkg/util/hash"
-	"github.com/skevetter/log"
-	"github.com/skevetter/log/hash"
 )
 
 // PrebuildHashParams contains all parameters needed to calculate a prebuild hash.
@@ -29,7 +29,7 @@ type PrebuildHashParams struct {
 
 // CalculatePrebuildHash computes a deterministic hash for prebuild caching.
 // The hash includes: architecture, normalized config, dockerfile content, and context files.
-// The hash format is "devpod-" followed by 32 hex characters.
+// The hash format is "devsy-" followed by 32 hex characters.
 func CalculatePrebuildHash(params PrebuildHashParams) (string, error) {
 	arch := normalizeArchitecture(params.Platform, params.Architecture)
 
@@ -43,7 +43,7 @@ func CalculatePrebuildHash(params PrebuildHashParams) (string, error) {
 		params.Log.Debugf("failed to read .dockerignore: %v", err)
 		return "", fmt.Errorf("failed to read dockerignore: %w", err)
 	}
-	excludes = append(excludes, DevPodContextFeatureFolder+"/")
+	excludes = append(excludes, DevsyContextFeatureFolder+"/")
 
 	var includes []string
 	if params.BuildInfo != nil && params.BuildInfo.Dockerfile != nil {

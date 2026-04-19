@@ -7,10 +7,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log/survey"
-	"github.com/skevetter/log/terminal"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log/survey"
+	"github.com/devsy-org/log/terminal"
 )
 
 func (r *Resolver) resolveOptions(

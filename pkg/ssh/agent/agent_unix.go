@@ -5,7 +5,7 @@ package agent
 import (
 	"os"
 
-	"github.com/skevetter/devpod/pkg/util"
+	"github.com/devsy-org/devsy/pkg/util"
 	"golang.org/x/crypto/ssh"
 	gosshagent "golang.org/x/crypto/ssh/agent"
 )

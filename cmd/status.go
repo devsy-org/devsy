@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -43,17 +43,17 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			ctx := cobraCmd.Context()
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
 
 			logger := log.Default.ErrorStreamOnly()
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevPodConfig: devPodConfig,
-				Args:         args,
-				Owner:        cmd.Owner,
-				Log:          logger,
+				DevsyConfig: devsyConfig,
+				Args:        args,
+				Owner:       cmd.Owner,
+				Log:         logger,
 			})
 			if err != nil {
 				return err
@@ -111,7 +111,7 @@ func (cmd *StatusCmd) Run(
 		switch instanceStatus {
 		case client2.StatusStopped:
 			log.Infof(
-				"Workspace '%s' is '%s', you can start it via 'devpod up %s'",
+				"Workspace '%s' is '%s', you can start it via 'devsy up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
@@ -125,7 +125,7 @@ func (cmd *StatusCmd) Run(
 			)
 		case client2.StatusNotFound:
 			log.Infof(
-				"Workspace '%s' is '%s', you can create it via 'devpod up %s'",
+				"Workspace '%s' is '%s', you can create it via 'devsy up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),

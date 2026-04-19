@@ -3,17 +3,17 @@ package clientimplementation
 import (
 	"context"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	"github.com/skevetter/devpod/pkg/tunnel"
-	"github.com/skevetter/log"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/tunnel"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 
 type StartServicesDaemonOptions struct {
-	DevPodConfig     *config.Config
+	DevsyConfig      *config.Config
 	Client           client.DaemonClient
 	SSHClient        *ssh.Client
 	User             string
@@ -40,12 +40,12 @@ func StartServicesDaemon(ctx context.Context, opts StartServicesDaemonOptions) e
 		return err
 	}
 
-	credConfig := getCredentialConfig(opts.DevPodConfig, workspace)
+	credConfig := getCredentialConfig(opts.DevsyConfig, workspace)
 
 	return tunnel.RunServices(
 		ctx,
 		tunnel.RunServicesOptions{
-			DevPodConfig:                   opts.DevPodConfig,
+			DevsyConfig:                    opts.DevsyConfig,
 			ContainerClient:                opts.SSHClient,
 			User:                           opts.User,
 			ForwardPorts:                   opts.ForwardPorts,
@@ -64,22 +64,22 @@ func StartServicesDaemon(ctx context.Context, opts StartServicesDaemonOptions) e
 func getWorkspace(
 	ctx context.Context,
 	client client.DaemonClient,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	return daemon.NewLocalClient(client.Provider()).GetWorkspace(ctx, client.WorkspaceConfig().UID)
 }
 
 func getCredentialConfig(
-	devPodConfig *config.Config,
-	workspace *managementv1.DevPodWorkspaceInstance,
+	devsyConfig *config.Config,
+	workspace *managementv1.DevsyWorkspaceInstance,
 ) credentialConfig {
 	cfg := credentialConfig{
-		docker: devPodConfig.ContextOption(
+		docker: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectDockerCredentials,
 		) == config.BoolTrue,
-		git: devPodConfig.ContextOption(
+		git: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectGitCredentials,
 		) == config.BoolTrue,
-		gitSSHSignature: devPodConfig.ContextOption(
+		gitSSHSignature: devsyConfig.ContextOption(
 			config.ContextOptionGitSSHSignatureForwarding,
 		) == config.BoolTrue,
 	}

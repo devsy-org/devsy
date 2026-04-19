@@ -11,22 +11,22 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/pkg/gpg"
+	devsyconfig "github.com/devsy-org/devsy/pkg/loftconfig"
+	"github.com/devsy-org/devsy/pkg/netstat"
+	"github.com/devsy-org/devsy/pkg/platform"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/stdio"
+	"github.com/devsy-org/log"
 	"github.com/moby/patternmatcher/ignorefile"
-	"github.com/skevetter/api/pkg/devsy"
-	"github.com/skevetter/devpod/pkg/agent/tunnel"
-	pkgconfig "github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/devcontainer/config"
-	"github.com/skevetter/devpod/pkg/dockercredentials"
-	"github.com/skevetter/devpod/pkg/extract"
-	"github.com/skevetter/devpod/pkg/gitcredentials"
-	"github.com/skevetter/devpod/pkg/gitsshsigning"
-	"github.com/skevetter/devpod/pkg/gpg"
-	"github.com/skevetter/devpod/pkg/loftconfig"
-	"github.com/skevetter/devpod/pkg/netstat"
-	"github.com/skevetter/devpod/pkg/platform"
-	provider2 "github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/stdio"
-	"github.com/skevetter/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -334,24 +334,24 @@ func (t *tunnelServer) GitSSHSignature(
 	return &tunnel.Message{Message: string(out)}, nil
 }
 
-func (t *tunnelServer) LoftConfig(
+func (t *tunnelServer) DevsyConfig(
 	ctx context.Context,
 	message *tunnel.Message,
 ) (*tunnel.Message, error) {
-	loftConfigRequest := &loftconfig.LoftConfigRequest{}
+	loftConfigRequest := &devsyconfig.DevsyConfigRequest{}
 	err := json.Unmarshal([]byte(message.Message), loftConfigRequest)
 	if err != nil {
 		return nil, fmt.Errorf("loft platform config request: %w", err)
 	}
 
-	var response *loftconfig.LoftConfigResponse
+	var response *devsyconfig.DevsyConfigResponse
 	if t.workspace != nil {
-		response, err = loftconfig.ReadFromWorkspace(t.workspace)
+		response, err = devsyconfig.ReadFromWorkspace(t.workspace)
 		if err != nil {
 			return nil, fmt.Errorf("read loft config: %w", err)
 		}
 	} else {
-		response, err = loftconfig.Read(loftConfigRequest)
+		response, err = devsyconfig.Read(loftConfigRequest)
 		if err != nil {
 			return nil, fmt.Errorf("read loft config: %w", err)
 		}
@@ -445,7 +445,7 @@ func (t *tunnelServer) StreamWorkspace(
 		return fmt.Errorf("workspace is nil")
 	}
 
-	// Get .devpodignore files to exclude
+	// Get .devsyignore files to exclude
 	excludes := []string{}
 	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
 	if err == nil {
@@ -487,7 +487,7 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	// Get .devpodignore files to exclude
+	// Get .devsyignore files to exclude
 	excludes := []string{}
 	if t.workspace != nil {
 		f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))

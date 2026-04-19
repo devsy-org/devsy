@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skevetter/devpod/cmd/completion"
-	"github.com/skevetter/devpod/cmd/flags"
-	client2 "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/client/clientimplementation"
-	"github.com/skevetter/devpod/pkg/config"
-	workspace2 "github.com/skevetter/devpod/pkg/workspace"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short:   "Stops an existing workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			devPodConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
@@ -42,16 +42,16 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevPodConfig: devPodConfig,
-				Args:         args,
-				Owner:        cmd.Owner,
-				Log:          log.Default,
+				DevsyConfig: devsyConfig,
+				Args:        args,
+				Owner:       cmd.Owner,
+				Log:         log.Default,
 			})
 			if err != nil {
 				return err
 			}
 
-			return cmd.Run(ctx, devPodConfig, client)
+			return cmd.Run(ctx, devsyConfig, client)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -72,7 +72,7 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 // Run runs the command logic.
 func (cmd *StopCmd) Run(
 	ctx context.Context,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
 	// lock workspace
@@ -93,7 +93,7 @@ func (cmd *StopCmd) Run(
 	}
 
 	// stop if single machine provider
-	wasStopped, err := cmd.stopSingleMachine(ctx, client, devPodConfig)
+	wasStopped, err := cmd.stopSingleMachine(ctx, client, devsyConfig)
 	if err != nil {
 		return err
 	} else if wasStopped {
@@ -112,17 +112,17 @@ func (cmd *StopCmd) Run(
 func (cmd *StopCmd) stopSingleMachine(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 ) (bool, error) {
 	// check if single machine
-	singleMachineName := workspace2.SingleMachineName(devPodConfig, client.Provider(), log.Default)
-	if !devPodConfig.Current().IsSingleMachine(client.Provider()) ||
+	singleMachineName := workspace2.SingleMachineName(devsyConfig, client.Provider(), log.Default)
+	if !devsyConfig.Current().IsSingleMachine(client.Provider()) ||
 		client.WorkspaceConfig().Machine.ID != singleMachineName {
 		return false, nil
 	}
 
 	// try to find other workspace with same machine
-	workspaces, err := workspace2.List(ctx, devPodConfig, false, cmd.Owner, log.Default)
+	workspaces, err := workspace2.List(ctx, devsyConfig, false, cmd.Owner, log.Default)
 	if err != nil {
 		return false, fmt.Errorf("list workspaces: %w", err)
 	}
@@ -143,7 +143,7 @@ func (cmd *StopCmd) stopSingleMachine(
 
 	// if we haven't found another workspace on this machine, delete the whole machine
 	machineClient, err := workspace2.GetMachine(
-		devPodConfig,
+		devsyConfig,
 		[]string{singleMachineName},
 		log.Default,
 	)

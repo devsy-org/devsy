@@ -12,26 +12,26 @@ import (
 	"sync"
 	"time"
 
-	storagev1 "github.com/skevetter/api/pkg/apis/storage/v1"
-	clientpkg "github.com/skevetter/devpod/pkg/client"
-	"github.com/skevetter/devpod/pkg/config"
-	daemon "github.com/skevetter/devpod/pkg/daemon/platform"
-	devpodopen "github.com/skevetter/devpod/pkg/open"
-	"github.com/skevetter/devpod/pkg/options"
-	"github.com/skevetter/devpod/pkg/options/resolver"
-	"github.com/skevetter/devpod/pkg/platform"
-	platformclient "github.com/skevetter/devpod/pkg/platform/client"
-	"github.com/skevetter/devpod/pkg/provider"
-	sshServer "github.com/skevetter/devpod/pkg/ssh/server"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	clientpkg "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	devsyopen "github.com/devsy-org/devsy/pkg/open"
+	"github.com/devsy-org/devsy/pkg/options"
+	"github.com/devsy-org/devsy/pkg/options/resolver"
+	"github.com/devsy-org/devsy/pkg/platform"
+	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/provider"
+	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 	"tailscale.com/client/local"
 	"tailscale.com/tailcfg"
 )
 
 func New(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	prov *provider.ProviderConfig,
 	workspace *provider.Workspace,
 	log log.Logger,
@@ -42,24 +42,24 @@ func New(
 	}
 
 	return &client{
-		devPodConfig: devPodConfig,
-		config:       prov,
-		workspace:    workspace,
-		log:          log,
-		tsClient:     tsClient,
-		localClient:  daemon.NewLocalClient(prov.Name),
+		devsyConfig: devsyConfig,
+		config:      prov,
+		workspace:   workspace,
+		log:         log,
+		tsClient:    tsClient,
+		localClient: daemon.NewLocalClient(prov.Name),
 	}, nil
 }
 
 type client struct {
 	m sync.Mutex
 
-	devPodConfig *config.Config
-	config       *provider.ProviderConfig
-	workspace    *provider.Workspace
-	log          log.Logger
-	tsClient     *local.Client
-	localClient  *daemon.LocalClient
+	devsyConfig *config.Config
+	config      *provider.ProviderConfig
+	workspace   *provider.Workspace
+	log         log.Logger
+	tsClient    *local.Client
+	localClient *daemon.LocalClient
 }
 
 func (c *client) Lock(ctx context.Context) error {
@@ -108,7 +108,7 @@ func (c *client) RefreshOptions(
 
 	workspace, err := options.ResolveAndSaveOptionsWorkspace(
 		ctx,
-		c.devPodConfig,
+		c.devsyConfig,
 		c.config,
 		c.workspace,
 		userOptions,
@@ -141,13 +141,13 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		// if we can't reach the daemon try to start the desktop app
 		if daemon.IsDaemonNotAvailableError(getWorkspaceErr) {
 			deeplink := fmt.Sprintf(
-				"devpod://open?workspace=%s&provider=%s&source=%s&ide=%s",
+				"devsy://open?workspace=%s&provider=%s&source=%s&ide=%s",
 				c.workspace.ID,
 				c.config.Name,
 				c.workspace.Source.String(),
 				c.workspace.IDE.Name,
 			)
-			openErr := devpodopen.Run(deeplink)
+			openErr := devsyopen.Run(deeplink)
 			if openErr != nil {
 				return getWorkspaceErr // inform user about daemon state
 			}
@@ -167,13 +167,13 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 			return fmt.Errorf("couldn't get workspace: %w", getWorkspaceErr)
 		} else if instance.Status.Phase != storagev1.InstanceReady {
 			return fmt.Errorf(
-				"workspace is '%s', please run `devpod up %s` to start it again",
+				"workspace is '%s', please run `devsy up %s` to start it again",
 				instance.Status.Phase,
 				c.workspace.ID,
 			)
 		} else if instance.Status.LastWorkspaceStatus != storagev1.WorkspaceStatusRunning {
 			return fmt.Errorf(
-				"workspace is '%s', please run `devpod up %s` to start it again",
+				"workspace is '%s', please run `devsy up %s` to start it again",
 				instance.Status.LastWorkspaceStatus,
 				c.workspace.ID,
 			)
@@ -307,7 +307,7 @@ func (c *client) Ping(ctx context.Context, writer io.Writer) error {
 }
 
 func (c *client) initPlatformClient(ctx context.Context) (platformclient.Client, error) {
-	configPath, err := platform.LoftConfigPath(c.Context(), c.Provider())
+	configPath, err := platform.DevsyConfigPath(c.Context(), c.Provider())
 	if err != nil {
 		return nil, err
 	}

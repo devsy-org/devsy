@@ -3,7 +3,7 @@ title: Quickstart Guide
 sidebar_label: Quickstart
 ---
 
-On this page we will cover all the basics to develop a functional provider for DevPod.
+On this page we will cover all the basics to develop a functional provider for Devsy.
 
 :::info Recommended Reading
 Before starting, it's best if you have already taken a look at [What are providers](../managing-providers/what-are-providers.mdx)
@@ -11,15 +11,15 @@ and [How to manage them](../managing-providers/add-provider.mdx).
 :::
 
 :::info Provider Examples
-Another good starting point are the official DevPod providers specified at [Add Provider](../managing-providers/add-provider.mdx)
+Another good starting point are the official Devsy providers specified at [Add Provider](../managing-providers/add-provider.mdx)
 :::
 
 A very basic provider that reuses local Docker to spin up workspaces would look like this:
 ```yaml
 name: my-first-provider  # Required name of the provider
 version: v0.0.1          # Required version of the provider
-agent:                   # DevPod Agent options
-  path: ${DEVPOD}        # Path to the current DevPod binary
+agent:                   # Devsy Agent options
+  path: ${DEVSY}        # Path to the current Devsy binary
 exec:
   # Command specifies how to run a command in the environment.
   # In this case we want to reuse the local environment, so we just execute the command in a local shell.
@@ -29,28 +29,28 @@ exec:
 
 You can save this provider to a file called `provider.yaml` and then add it via:
 ```
-devpod provider add ./path/to/provider.yaml
+devsy provider add ./path/to/provider.yaml
 ```
 
 Then try to start a new workspace with:
 ```
-devpod up github.com/microsoft/vscode-remote-try-go
+devsy up github.com/microsoft/vscode-remote-try-go
 ```
 
-## Developing a DevPod provider
+## Developing a Devsy provider
 
-DevPod providers are small CLI programs defined through a `provider.yaml` that DevPod interacts with, in order to bring up the workspace.
+Devsy providers are small CLI programs defined through a `provider.yaml` that Devsy interacts with, in order to bring up the workspace.
 
-Providers are standalone programs that DevPod will call, parsing a **manifest**
-called `provider.yaml` that will instruct DevPod on how to interact with the program. The most important sections of a `provider.yaml` are:
-* [exec](#how-devpod-interacts-with-a-provider): Defines what commands DevPod should execute to interact with the environment
+Providers are standalone programs that Devsy will call, parsing a **manifest**
+called `provider.yaml` that will instruct Devsy on how to interact with the program. The most important sections of a `provider.yaml` are:
+* [exec](#how-devsy-interacts-with-a-provider): Defines what commands Devsy should execute to interact with the environment
 * [options](./options.mdx): Defines what Options the user can configure in the provider
 * [binaries](./binaries.mdx): Defines what additional helper binaries are required to run the provider
 * [agent](./agent.mdx): Defines configuration options for the provider such as drivers, auto-inactivity timeout and credentials injection
 
 ## Provider.yaml
 
-With the `provider.yaml`, DevPod will know how to call the provider's binary, in order
+With the `provider.yaml`, Devsy will know how to call the provider's binary, in order
 to perform all the required actions to bring up or down an environment for a workspace.
 
 Following is a minimal example manifest for a provider:
@@ -61,15 +61,15 @@ version: version-number
 description: quick description # Optional
 icon: https://url-to-icon.com  # Shown in the Desktop App
 options:
-  # Options for the provider, DevPod will pass these as
+  # Options for the provider, Devsy will pass these as
   # ENV Variables when calling the provider
   OPTION_NAME:
     description: "option description"
     default: "value"
     required: true # or false
   AGENT_PATH:
-    description: The path where to inject the DevPod agent to.
-    default: /opt/devpod/agent
+    description: The path where to inject the Devsy agent to.
+    default: /opt/devsy/agent
 agent:
   path: ${AGENT_PATH}
 exec:
@@ -80,35 +80,35 @@ exec:
   start:   # Optional: a command to start the machine
   stop:    # Optional: a command to stop the machine
   status:  # Optional: a command to get the machine's status
-binaries:  # Optional binaries DevPod should download for this provider
+binaries:  # Optional binaries Devsy should download for this provider
   MY_BINARY: # Will be available as MY_BINARY environment variable in the exec section
     ...
 ```
 
-### How DevPod interacts with a provider
+### How Devsy interacts with a provider
 
-DevPod uses the `exec` section within the `provider.yaml` to know what commands it needs to execute to interact with the provider environments.
+Devsy uses the `exec` section within the `provider.yaml` to know what commands it needs to execute to interact with the provider environments.
 These "commands" are regular POSIX shell scripts that call a helper program or directly interact with the underlying system of the user to manage the environment.
 
 In the `exec` section of the `provider.yaml`, the following commands are allowed:
 
-- **command**: The only command that is required for a provider to work, which defines how to run a command in the environment. DevPod will use this command to inject itself into the environment and route all communication through the commands standard output and input. An example for a local development provider would be: `sh -c "${COMMAND}"`.
+- **command**: The only command that is required for a provider to work, which defines how to run a command in the environment. Devsy will use this command to inject itself into the environment and route all communication through the commands standard output and input. An example for a local development provider would be: `sh -c "${COMMAND}"`.
 - **init**: Optional command to check if options are defined correctly and the provider is ready to create environments. For example for the Docker provider, this command checks if Docker is installed and reachable locally.
-- **create**: Optional command how to create a machine. If this command is defined, the provider will automatically be treated as a machine provider and DevPod will also expect **delete** to be defined.
+- **create**: Optional command how to create a machine. If this command is defined, the provider will automatically be treated as a machine provider and Devsy will also expect **delete** to be defined.
 - **delete**: Optional command how to delete a machine. Counter command to **create**.
 - **start**: Optional command how to start a stopped machine. Only usable for machine providers.
 - **stop**: Optional command how to stop a machine. Only usable for machine providers.
 - **status**: Optional command how to retrieve the status of a machine. Expects one of the following statuses on standard output:
   - Running: Machine is running and ready
-  - Busy: Machine is doing something and DevPod should wait (e.g. terminating, starting, stopping etc.)
+  - Busy: Machine is doing something and Devsy should wait (e.g. terminating, starting, stopping etc.)
   - Stopped: Machine is currently stopped
   - NotFound: Machine is not found
 
 :::info Windows Compatibility
-DevPod will execute these commands on Unix systems directly in a POSIX shell, while on Windows in an [emulated shell](https://github.com/mvdan/sh) to provide compatibility. However, not all commands, such as `grep`, `sed` etc. are available there and if needed, such functionality should be transferred to a small helper binary DevPod can download and install through the binaries section.
+Devsy will execute these commands on Unix systems directly in a POSIX shell, while on Windows in an [emulated shell](https://github.com/mvdan/sh) to provide compatibility. However, not all commands, such as `grep`, `sed` etc. are available there and if needed, such functionality should be transferred to a small helper binary Devsy can download and install through the binaries section.
 :::
 
-For example, taking the [SSH Provider](https://github.com/skevetter/devpod-provider-ssh):
+For example, taking the [SSH Provider](https://github.com/devsy-org/devsy-provider-ssh):
 
 ```yaml
 exec:
@@ -117,13 +117,13 @@ exec:
                  -p ${PORT} \
                  ${EXTRA_FLAGS} \
                  "${HOST}" \
-                 'sh -c "echo DevPodTest"')
+                 'sh -c "echo DevsyTest"')
 
-    if [ "$OUTPUT" != "DevPodTest" ]; then
+    if [ "$OUTPUT" != "DevsyTest" ]; then
       >&2 echo "Unexpected ssh output."
       >&2 echo "Please make sure you have configured the correct SSH host"
       >&2 echo "and the following command can be executed on your system:"
-      >&2 echo ssh -oStrictHostKeyChecking=no -p "${PORT}" "${HOST}" 'sh -c "echo DevPodTest"'
+      >&2 echo ssh -oStrictHostKeyChecking=no -p "${PORT}" "${HOST}" 'sh -c "echo DevsyTest"'
       exit 1
     fi
 
@@ -138,7 +138,7 @@ exec:
 The **init** is used to perform actions in order to verify and validate the options
 passed (in this case try a dummy command on the selected host)
 
-The **command** is used to access the remote environment. `${COMMAND}` will be supplied by DevPod and is a placeholder for the command DevPod will execute.
+The **command** is used to access the remote environment. `${COMMAND}` will be supplied by Devsy and is a placeholder for the command Devsy will execute.
 In case of [Machines providers](../managing-providers/what-are-providers.mdx) this will
 usually have to SSH on the VMs created.
 
@@ -154,15 +154,15 @@ For Machine Providers, you can use all of the commands in order to guarantee a f
 
 ### Options
 
-The Options section is a set of OPTION_NAME and values that DevPod will inject in
+The Options section is a set of OPTION_NAME and values that Devsy will inject in
 the environment when calling the provider's commands.
 
 Head over to the [Options Page](./options.mdx) to know more about how to set them up
 
 ### Agent
 
-One important part of the lifecycle management of the DevPod's provider's resources is the **Agent**.
-The agent is a helper that DevPod will inject into the workspace in order to perform utilities like:
+One important part of the lifecycle management of the Devsy's provider's resources is the **Agent**.
+The agent is a helper that Devsy will inject into the workspace in order to perform utilities like:
 
 - auto-shutdown the VM after inactivity
 - inject git credentials
@@ -172,30 +172,30 @@ Head over to the [Agent page](./agent.mdx) to know more about the agent setup.
 
 ### Binaries
 
-DevPod allows you to install additional binaries that help you to create cloud resources or access these. For example, the Google Cloud provider installs its own binary via:
+Devsy allows you to install additional binaries that help you to create cloud resources or access these. For example, the Google Cloud provider installs its own binary via:
 ```yaml
 ...
 binaries:
   GCLOUD_PROVIDER:
     - os: linux
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-linux-amd64
+      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-amd64
       checksum: 38f92457507563ee56ea40a2ec40196d12ac2bbd50a924d76f55827e96e5f831
     - os: linux
       arch: arm64
-      path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-linux-arm64
+      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-arm64
       checksum: 48e8dfa20962f1c3eb1e3da17d57842a0e26155df2b94377bcdf5b8070d7b17e
     - os: darwin
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-darwin-amd64
+      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-darwin-amd64
       checksum: 43ee6ecb7855d282a0512ccf6055cce029895f173beb95a8c442f77560d26678
     - os: darwin
       arch: arm64
-      path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-darwin-arm64
+      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-darwin-arm64
       checksum: c2c2d57c5d48f22814f2393f61fd6a78bdc2cde7eabc3faffd8f35eaceec4422
     - os: windows
       arch: amd64
-      path: https://github.com/skevetter/devpod-provider-gcloud/releases/download/v0.0.1-alpha.10/devpod-provider-gcloud-windows-amd64.exe
+      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-windows-amd64.exe
       checksum: 9b81ec48c849f222aaf30f0cb85057d4e6619d1c0f787b27925c8b8adb431a58
 exec:
   init: ${GCLOUD_PROVIDER} init

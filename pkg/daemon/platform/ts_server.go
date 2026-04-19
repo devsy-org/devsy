@@ -6,10 +6,10 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/ts"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/ts"
-	"github.com/skevetter/log"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/store"
@@ -25,7 +25,7 @@ func newTSServer(
 ) (*tsnet.Server, *local.Client, error) {
 	// Build the platform URL
 	baseUrl := url.URL{
-		Scheme: ts.GetEnvOrDefault("LOFT_TSNET_SCHEME", "https"),
+		Scheme: ts.GetEnvOrDefault("DEVSY_TSNET_SCHEME", "https"),
 		Host:   ts.RemoveProtocol(host),
 	}
 	if err := ts.CheckDerpConnection(ctx, &baseUrl); err != nil {

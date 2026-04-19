@@ -14,8 +14,8 @@ import { CommandCache, TCommandCacheInfo } from "../commandCache"
 import { TDebuggable, TStreamEvent } from "../types"
 import { WorkspaceCommands } from "./workspaceCommands"
 import {
-  DEVPOD_FLAG_DOTFILES,
-  DEVPOD_FLAG_GIT_SIGNING_KEY,
+  DEVSY_FLAG_DOTFILES,
+  DEVSY_FLAG_GIT_SIGNING_KEY,
   WORKSPACE_COMMAND_ADDITIONAL_FLAGS_KEY,
 } from "../constants"
 import { invoke } from "@tauri-apps/api/core"
@@ -100,7 +100,7 @@ export class WorkspacesClient implements TDebuggable {
     if (!dotfilesUrl) {
       return
     }
-    WorkspaceCommands.ADDITIONAL_FLAGS.set(DEVPOD_FLAG_DOTFILES, dotfilesUrl)
+    WorkspaceCommands.ADDITIONAL_FLAGS.set(DEVSY_FLAG_DOTFILES, dotfilesUrl)
   }
 
   public setAdditionalFlags(additionalFlags: string): void {
@@ -111,7 +111,7 @@ export class WorkspacesClient implements TDebuggable {
     if (!sshKeyPath) {
       return
     }
-    WorkspaceCommands.ADDITIONAL_FLAGS.set(DEVPOD_FLAG_GIT_SIGNING_KEY, sshKeyPath)
+    WorkspaceCommands.ADDITIONAL_FLAGS.set(DEVSY_FLAG_GIT_SIGNING_KEY, sshKeyPath)
   }
 
   public async listAll(

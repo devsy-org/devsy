@@ -8,12 +8,12 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/skevetter/devpod/pkg/agent"
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/options/resolver"
-	"github.com/skevetter/devpod/pkg/provider"
-	"github.com/skevetter/devpod/pkg/types"
-	"github.com/skevetter/log"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/options/resolver"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/log"
 )
 
 func ResolveAndSaveOptionsMachine(
@@ -229,7 +229,7 @@ func ResolveOptions(
 // Kubernetes settings, and credentials.
 //
 // Parameters:
-//   - devConfig: The DevPod configuration containing global settings
+//   - devConfig: The Devsy configuration containing global settings
 //   - providerConfig: The provider's configuration
 //   - workspace: The workspace configuration (can be nil for machine-only operations)
 //   - machine: The machine configuration (can be nil for workspace-only operations)
@@ -336,13 +336,13 @@ func resolveAgentPathAndURL(
 	agentConfig.Path = resolver.ResolveDefaultValue(agentConfig.Path, options)
 	if agentConfig.Path == "" && strings.EqualFold(string(agentConfig.Local), "true") {
 		// Try to use the current executable path for local agent
-		// Error is silently handled as we have a fallback to RemoteDevPodHelperLocation
+		// Error is silently handled as we have a fallback to RemoteDevsyHelperLocation
 		if execPath, err := os.Executable(); err == nil {
 			agentConfig.Path = execPath
 		}
 	}
 	if agentConfig.Path == "" {
-		agentConfig.Path = agent.RemoteDevPodHelperLocation
+		agentConfig.Path = agent.RemoteDevsyHelperLocation
 	}
 	agentConfig.DownloadURL = resolver.ResolveDefaultValue(agentConfig.DownloadURL, options)
 	if agentConfig.DownloadURL == "" {
@@ -380,9 +380,9 @@ func resolveAgentCredentials(
 
 // resolveAgentDownloadURL resolves the agent download URL (env -> context -> default).
 func resolveAgentDownloadURL(devConfig *config.Config) string {
-	devPodAgentURL := os.Getenv(config.EnvAgentURL)
-	if devPodAgentURL != "" {
-		return strings.TrimSuffix(devPodAgentURL, "/") + "/"
+	devsyAgentURL := os.Getenv(config.EnvAgentURL)
+	if devsyAgentURL != "" {
+		return strings.TrimSuffix(devsyAgentURL, "/") + "/"
 	}
 
 	contextAgentOption, ok := devConfig.Current().Options[config.ContextOptionAgentURL]

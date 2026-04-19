@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/skevetter/devpod/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/flags"
 )
 
 func TestDeleteCmd_RejectsMultipleArgs(t *testing.T) {

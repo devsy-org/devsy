@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/skevetter/devpod/pkg/config"
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 func GetSocketAddr(providerName string) string {

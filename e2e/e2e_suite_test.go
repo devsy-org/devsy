@@ -6,22 +6,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	// Register tests.
+	_ "github.com/devsy-org/devsy/e2e/tests/build"
+	_ "github.com/devsy-org/devsy/e2e/tests/context"
+	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
+	_ "github.com/devsy-org/devsy/e2e/tests/ide"
+	_ "github.com/devsy-org/devsy/e2e/tests/integration"
+	_ "github.com/devsy-org/devsy/e2e/tests/machine"
+	_ "github.com/devsy-org/devsy/e2e/tests/machineprovider"
+	_ "github.com/devsy-org/devsy/e2e/tests/provider"
+	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
+	_ "github.com/devsy-org/devsy/e2e/tests/up"
+	_ "github.com/devsy-org/devsy/e2e/tests/up-features"
+	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	// Register tests.
-	_ "github.com/skevetter/devpod/e2e/tests/build"
-	_ "github.com/skevetter/devpod/e2e/tests/context"
-	_ "github.com/skevetter/devpod/e2e/tests/dockerinstall"
-	_ "github.com/skevetter/devpod/e2e/tests/ide"
-	_ "github.com/skevetter/devpod/e2e/tests/integration"
-	_ "github.com/skevetter/devpod/e2e/tests/machine"
-	_ "github.com/skevetter/devpod/e2e/tests/machineprovider"
-	_ "github.com/skevetter/devpod/e2e/tests/provider"
-	_ "github.com/skevetter/devpod/e2e/tests/ssh"
-	_ "github.com/skevetter/devpod/e2e/tests/up"
-	_ "github.com/skevetter/devpod/e2e/tests/up-features"
-	_ "github.com/skevetter/devpod/e2e/tests/upgrade"
 )
 
 // TestRunE2ETests checks configuration parameters (specified through flags) and then runs
@@ -38,15 +38,15 @@ func TestRunE2ETests(t *testing.T) {
 		for {
 			select {
 			case <-deadline:
-				t.Fatal("timeout waiting for DEVPOD_AGENT_URL to be set after 30s")
+				t.Fatal("timeout waiting for DEVSY_AGENT_URL to be set after 30s")
 			default:
 			}
 			time.Sleep(time.Second)
-			if os.Getenv("DEVPOD_AGENT_URL") != "" {
+			if os.Getenv("DEVSY_AGENT_URL") != "" {
 				break
 			}
 		}
 	}
 	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "DevPod e2e suite")
+	ginkgo.RunSpecs(t, "Devsy e2e suite")
 }

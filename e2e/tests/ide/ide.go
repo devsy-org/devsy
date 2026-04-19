@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/skevetter/devpod/e2e/framework"
 )
 
-var _ = ginkgo.Describe("devpod ide test suite", ginkgo.Label("ide"), ginkgo.Ordered, func() {
+var _ = ginkgo.Describe("devsy ide test suite", ginkgo.Label("ide"), ginkgo.Ordered, func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {
@@ -23,31 +23,31 @@ var _ = ginkgo.Describe("devpod ide test suite", ginkgo.Label("ide"), ginkgo.Ord
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-		err = f.DevPodProviderAdd(ctx, "docker")
+		err = f.DevsyProviderAdd(ctx, "docker")
 		framework.ExpectNoError(err)
-		err = f.DevPodProviderUse(ctx, "docker")
+		err = f.DevsyProviderUse(ctx, "docker")
 		framework.ExpectNoError(err)
 
 		ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-			err = f.DevPodWorkspaceDelete(cleanupCtx, tempDir)
+			err = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 			framework.ExpectNoError(err)
 		})
 
-		err = f.DevPodUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=vscode")
+		err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=vscode")
 		framework.ExpectNoError(err)
 
-		err = f.DevPodUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=openvscode")
+		err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=openvscode")
 		framework.ExpectNoError(err)
 
-		err = f.DevPodUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=jupyternotebook")
+		err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=jupyternotebook")
 		framework.ExpectNoError(err)
 
 		// TODO: Fix broken IDE
-		// err = f.DevPodUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=fleet")
+		// err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=fleet")
 		// framework.ExpectNoError(err)
 
 		// check if ssh works
-		err = f.DevPodSSHEchoTestString(ctx, tempDir)
+		err = f.DevsySSHEchoTestString(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// TODO: test jetbrains ides

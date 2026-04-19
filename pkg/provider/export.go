@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/skevetter/devpod/pkg/config"
-	"github.com/skevetter/devpod/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/extract"
 )
 
 var excludedPaths = []string{
@@ -120,7 +120,7 @@ func ExportMachine(context, machineID string) (*ExportMachineConfig, error) {
 }
 
 func ExportProvider(
-	devPodConfig *config.Config,
+	devsyConfig *config.Config,
 	context, providerID string,
 ) (*ExportProviderConfig, error) {
 	providerDir, err := GetProviderDir(context, providerID)
@@ -140,10 +140,10 @@ func ExportProvider(
 	}
 
 	var providerConfig *config.ProviderConfig
-	if devPodConfig != nil && devPodConfig.Contexts[context] != nil &&
-		devPodConfig.Contexts[context].Providers != nil &&
-		devPodConfig.Contexts[context].Providers[providerID] != nil {
-		providerConfig = devPodConfig.Contexts[context].Providers[providerID]
+	if devsyConfig != nil && devsyConfig.Contexts[context] != nil &&
+		devsyConfig.Contexts[context].Providers != nil &&
+		devsyConfig.Contexts[context].Providers[providerID] != nil {
+		providerConfig = devsyConfig.Contexts[context].Providers[providerID]
 	}
 
 	return &ExportProviderConfig{

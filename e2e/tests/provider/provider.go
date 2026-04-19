@@ -7,22 +7,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/skevetter/devpod/e2e/framework"
-	"github.com/skevetter/devpod/pkg/workspace"
 )
 
 func addDockerProvider(ctx context.Context, f *framework.Framework, name string) error {
 	dockerHost := os.Getenv("DOCKER_HOST")
 	if dockerHost != "" && strings.Contains(dockerHost, "podman") {
-		return f.DevPodProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
+		return f.DevsyProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
 	}
-	return f.DevPodProviderAdd(ctx, "docker", "--name", name)
+	return f.DevsyProviderAdd(ctx, "docker", "--name", name)
 }
 
 var _ = ginkgo.Describe(
-	"devpod provider test suite",
+	"devsy provider test suite",
 	ginkgo.Label("provider"),
 	ginkgo.Ordered,
 	func() {
@@ -45,21 +45,21 @@ var _ = ginkgo.Describe(
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevPodProviderDelete(ctx, "provider1", "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderAdd(ctx, tempDir+"/provider1.yaml")
+				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider1")
+				err = f.DevsyProviderUse(ctx, "provider1")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderUse(ctx, "providerX")
+				err = f.DevsyProviderUse(ctx, "providerX")
 				framework.ExpectError(err)
 
-				err = f.DevPodProviderDelete(ctx, "provider1")
+				err = f.DevsyProviderDelete(ctx, "provider1")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider1")
+				err = f.DevsyProviderUse(ctx, "provider1")
 				framework.ExpectError(err)
 			})
 
@@ -74,19 +74,19 @@ var _ = ginkgo.Describe(
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevPodProviderDelete(ctx, "provider2", "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, "provider2", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderAdd(ctx, tempDir+"/provider2.yaml")
+				err = f.DevsyProviderAdd(ctx, tempDir+"/provider2.yaml")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderUse(ctx, "provider2")
+				err = f.DevsyProviderUse(ctx, "provider2")
 				framework.ExpectNoError(err)
 
 				checkCtx, cancel := context.WithDeadline(
 					ctx,
 					time.Now().Add(30*time.Second),
 				)
-				err = f.DevPodProviderOptionsCheckNamespaceDescription(
+				err = f.DevsyProviderOptionsCheckNamespaceDescription(
 					checkCtx,
 					"provider2",
 					"The namespace to use",
@@ -94,7 +94,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				cancel()
 
-				err = f.DevPodProviderUpdate(
+				err = f.DevsyProviderUpdate(
 					ctx,
 					"provider2",
 					tempDir+"/provider2-update.yaml",
@@ -105,7 +105,7 @@ var _ = ginkgo.Describe(
 					ctx,
 					time.Now().Add(30*time.Second),
 				)
-				err = f.DevPodProviderOptionsCheckNamespaceDescription(
+				err = f.DevsyProviderOptionsCheckNamespaceDescription(
 					checkCtx,
 					"provider2",
 					"Updated namespace parameter",
@@ -113,10 +113,10 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				cancel()
 
-				err = f.DevPodProviderDelete(ctx, "provider2")
+				err = f.DevsyProviderDelete(ctx, "provider2")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider2")
+				err = f.DevsyProviderUse(ctx, "provider2")
 				framework.ExpectError(err)
 			})
 
@@ -131,25 +131,25 @@ var _ = ginkgo.Describe(
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevPodProviderDelete(ctx, "provider1", "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderAdd(ctx, tempDir+"/provider1.yaml")
+				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider1")
+				err = f.DevsyProviderUse(ctx, "provider1")
 				framework.ExpectNoError(err)
 
 				err = os.WriteFile(tempDir+"/.DS_Store", []byte("test"), 0o644) // #nosec G306
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderList(ctx)
+				err = f.DevsyProviderList(ctx)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderDelete(ctx, "provider1")
+				err = f.DevsyProviderDelete(ctx, "provider1")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider1")
+				err = f.DevsyProviderUse(ctx, "provider1")
 				framework.ExpectError(err)
 			})
 
@@ -164,7 +164,7 @@ var _ = ginkgo.Describe(
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevPodProviderDelete(ctx, "provider3", "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, "provider3", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				podManifest := `
@@ -174,25 +174,25 @@ metadata:
 	name: test
 spec:
 	containers:
-	- name: devpod
+	- name: devsy
 `
-				err = f.DevPodProviderAdd(
+				err = f.DevsyProviderAdd(
 					ctx,
 					tempDir+"/provider3.yaml",
 					"--option=TEMPLATE="+podManifest,
 				)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider3")
+				err = f.DevsyProviderUse(ctx, "provider3")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderFindOption(ctx, "provider3", podManifest)
+				err = f.DevsyProviderFindOption(ctx, "provider3", podManifest)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderDelete(ctx, "provider3")
+				err = f.DevsyProviderDelete(ctx, "provider3")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, "provider3")
+				err = f.DevsyProviderUse(ctx, "provider3")
 				framework.ExpectError(err)
 			})
 
@@ -212,27 +212,27 @@ spec:
 				renamedProviderName := "provider-renamed"
 
 				// Ensure that provider is deleted.
-				err = f.DevPodProviderDelete(ctx, providerName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				// Add provider.
-				err = f.DevPodProviderAdd(ctx, tempDir+"/provider1.yaml", "--name", providerName)
+				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml", "--name", providerName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderRename(ctx, providerName, renamedProviderName)
+				err = f.DevsyProviderRename(ctx, providerName, renamedProviderName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectError(err)
-				err = f.DevPodProviderUse(ctx, renamedProviderName)
+				err = f.DevsyProviderUse(ctx, renamedProviderName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderDelete(ctx, renamedProviderName)
+				err = f.DevsyProviderDelete(ctx, renamedProviderName)
 				framework.ExpectNoError(err)
 			})
 
@@ -252,19 +252,19 @@ spec:
 				providerToRename := "provider-to-rename2"
 				existingProvider := "existing-provider2"
 
-				err = f.DevPodProviderDelete(ctx, providerToRename, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, providerToRename, "--ignore-not-found")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderDelete(ctx, existingProvider, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, existingProvider, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderAdd(
+				err = f.DevsyProviderAdd(
 					ctx,
 					tempDir+"/provider1.yaml",
 					"--name",
 					providerToRename,
 				)
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderAdd(
+				err = f.DevsyProviderAdd(
 					ctx,
 					tempDir+"/provider2.yaml",
 					"--name",
@@ -272,21 +272,21 @@ spec:
 				)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderRename(
+				err = f.DevsyProviderRename(
 					ctx,
 					providerToRename,
 					existingProvider,
 				)
 				framework.ExpectError(err)
 
-				err = f.DevPodProviderUse(ctx, providerToRename)
+				err = f.DevsyProviderUse(ctx, providerToRename)
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderUse(ctx, existingProvider)
+				err = f.DevsyProviderUse(ctx, existingProvider)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderDelete(ctx, providerToRename)
+				err = f.DevsyProviderDelete(ctx, providerToRename)
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderDelete(ctx, existingProvider)
+				err = f.DevsyProviderDelete(ctx, existingProvider)
 				framework.ExpectNoError(err)
 			},
 		)
@@ -299,11 +299,11 @@ spec:
 				nonExistentProvider := "non-existent-provider3"
 				newName := "new-name3"
 
-				err := f.DevPodProviderDelete(ctx, nonExistentProvider, "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, nonExistentProvider, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				// Attempt to rename non-existent provider.
-				err = f.DevPodProviderRename(ctx, nonExistentProvider, newName)
+				err = f.DevsyProviderRename(ctx, nonExistentProvider, newName)
 				framework.ExpectError(err)
 			})
 
@@ -316,20 +316,20 @@ spec:
 				providerName := "provider-with-workspace4"
 				renamedProviderName := "renamed-provider-with-workspace4"
 
-				workspaceList, err := f.DevPodListParsed(ctx)
+				workspaceList, err := f.DevsyListParsed(ctx)
 				framework.ExpectNoError(err)
 				for _, ws := range workspaceList {
 					if ws.Provider.Name == providerName {
-						err = f.DevPodStop(ctx, ws.ID)
+						err = f.DevsyStop(ctx, ws.ID)
 						framework.ExpectNoError(err)
-						err = f.DevPodWorkspaceDelete(ctx, ws.ID)
+						err = f.DevsyWorkspaceDelete(ctx, ws.ID)
 						framework.ExpectNoError(err)
 					}
 				}
 
-				err = f.DevPodProviderDelete(ctx, providerName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
@@ -338,25 +338,25 @@ spec:
 
 				err = addDockerProvider(ctx, f, providerName)
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodUp(ctx, tempDir)
+				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderRename(ctx, providerName, renamedProviderName)
+				err = f.DevsyProviderRename(ctx, providerName, renamedProviderName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectError(err)
-				err = f.DevPodProviderUse(ctx, renamedProviderName)
+				err = f.DevsyProviderUse(ctx, renamedProviderName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodUp(ctx, tempDir)
+				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				gomega.Eventually(func() string {
-					status, err := f.DevPodStatus(ctx, tempDir)
+					status, err := f.DevsyStatus(ctx, tempDir)
 					if err != nil {
 						return "error"
 					}
@@ -365,12 +365,12 @@ spec:
 					WithPolling(1 * time.Second).
 					Should(gomega.Equal("Running"))
 
-				_, err = f.DevPodSSH(ctx, tempDir, "echo 'hello'")
+				_, err = f.DevsySSH(ctx, tempDir, "echo 'hello'")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodStop(ctx, tempDir)
+				err = f.DevsyStop(ctx, tempDir)
 				framework.ExpectNoError(err)
-				err = f.DevPodWorkspaceDelete(ctx, tempDir)
+				err = f.DevsyWorkspaceDelete(ctx, tempDir)
 				framework.ExpectNoError(err)
 
 				workspaceID := workspace.ToID(tempDir)
@@ -381,7 +381,7 @@ spec:
 					WithPolling(1 * time.Second).
 					Should(gomega.HaveOccurred())
 
-				err = f.DevPodProviderDelete(ctx, renamedProviderName)
+				err = f.DevsyProviderDelete(ctx, renamedProviderName)
 				framework.ExpectNoError(err)
 			},
 		)
@@ -399,19 +399,19 @@ spec:
 
 				providerName := "provider-to-rename-invalid6"
 
-				err = f.DevPodProviderDelete(ctx, providerName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderAdd(ctx, tempDir+"/provider1.yaml", "--name", providerName)
+				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml", "--name", providerName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderRename(ctx, providerName, "invalid/name6")
+				err = f.DevsyProviderRename(ctx, providerName, "invalid/name6")
 				framework.ExpectError(err)
 
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderDelete(ctx, providerName)
+				err = f.DevsyProviderDelete(ctx, providerName)
 				framework.ExpectNoError(err)
 			})
 
@@ -423,27 +423,27 @@ spec:
 				providerName := "provider-opts-rename7"
 				renamedName := "renamed-opts-rename7"
 
-				err := f.DevPodProviderDelete(ctx, providerName, "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderDelete(ctx, renamedName, "--ignore-not-found")
+				err = f.DevsyProviderDelete(ctx, renamedName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				err = addDockerProvider(ctx, f, providerName)
 				framework.ExpectNoError(err)
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
 
-				beforeJSON, err := f.DevPodProviderOptionsJSON(ctx, providerName)
+				beforeJSON, err := f.DevsyProviderOptionsJSON(ctx, providerName)
 				framework.ExpectNoError(err)
 
 				var beforeOpts map[string]any
 				err = json.Unmarshal([]byte(beforeJSON), &beforeOpts)
 				framework.ExpectNoError(err)
 
-				err = f.DevPodProviderRename(ctx, providerName, renamedName)
+				err = f.DevsyProviderRename(ctx, providerName, renamedName)
 				framework.ExpectNoError(err)
 
-				afterJSON, err := f.DevPodProviderOptionsJSON(ctx, renamedName)
+				afterJSON, err := f.DevsyProviderOptionsJSON(ctx, renamedName)
 				framework.ExpectNoError(err)
 
 				var afterOpts map[string]any
@@ -468,10 +468,10 @@ spec:
 					}
 				}
 
-				err = f.DevPodProviderUse(ctx, providerName)
+				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectError(err)
 
-				err = f.DevPodProviderDelete(ctx, renamedName)
+				err = f.DevsyProviderDelete(ctx, renamedName)
 				framework.ExpectNoError(err)
 			})
 	})

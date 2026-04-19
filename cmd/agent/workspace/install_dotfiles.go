@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
-	"github.com/skevetter/devpod/cmd/flags"
-	"github.com/skevetter/devpod/pkg/git"
-	"github.com/skevetter/log"
 	"github.com/spf13/cobra"
 )
 

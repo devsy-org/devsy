@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	managementv1 "github.com/skevetter/api/pkg/apis/management/v1"
-	"github.com/skevetter/devpod/pkg/platform"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/pkg/platform"
 )
 
-const devPodClientPrefix = 0x01
+const devsyClientPrefix = 0x01
 
 type LocalClient struct {
 	httpClient *http.Client
@@ -29,7 +29,7 @@ func NewLocalClient(provider string) *LocalClient {
 		if err != nil {
 			return nil, err
 		}
-		_, err = conn.Write([]byte{devPodClientPrefix})
+		_, err = conn.Write([]byte{devsyClientPrefix})
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +63,7 @@ func (c *LocalClient) Status(ctx context.Context, debug bool) (Status, error) {
 func (c *LocalClient) GetWorkspace(
 	ctx context.Context,
 	uid string,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	b, err := c.doRequest(ctx, http.MethodGet, routeGetWorkspace+fmt.Sprintf("?uid=%s", uid), nil)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (c *LocalClient) GetWorkspace(
 	if len(b) == 0 {
 		return nil, nil
 	}
-	instance := &managementv1.DevPodWorkspaceInstance{}
+	instance := &managementv1.DevsyWorkspaceInstance{}
 	err = json.Unmarshal(b, instance)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func (c *LocalClient) GetWorkspace(
 func (c *LocalClient) ListWorkspaces(
 	ctx context.Context,
 	ownerFilter platform.OwnerFilter,
-) ([]managementv1.DevPodWorkspaceInstance, error) {
+) ([]managementv1.DevsyWorkspaceInstance, error) {
 	b, err := c.doRequest(
 		ctx,
 		http.MethodGet,
@@ -95,7 +95,7 @@ func (c *LocalClient) ListWorkspaces(
 		return nil, err
 	}
 
-	instances := []managementv1.DevPodWorkspaceInstance{}
+	instances := []managementv1.DevsyWorkspaceInstance{}
 	err = json.Unmarshal(b, &instances)
 	if err != nil {
 		return nil, err
@@ -106,8 +106,8 @@ func (c *LocalClient) ListWorkspaces(
 
 func (c *LocalClient) CreateWorkspace(
 	ctx context.Context,
-	workspace *managementv1.DevPodWorkspaceInstance,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+	workspace *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	body, err := json.Marshal(workspace)
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (c *LocalClient) CreateWorkspace(
 	if err != nil {
 		return nil, err
 	}
-	newInstance := &managementv1.DevPodWorkspaceInstance{}
+	newInstance := &managementv1.DevsyWorkspaceInstance{}
 	err = json.Unmarshal(b, newInstance)
 	if err != nil {
 		return nil, err
@@ -127,8 +127,8 @@ func (c *LocalClient) CreateWorkspace(
 
 func (c *LocalClient) UpdateWorkspace(
 	ctx context.Context,
-	workspace *managementv1.DevPodWorkspaceInstance,
-) (*managementv1.DevPodWorkspaceInstance, error) {
+	workspace *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceInstance, error) {
 	body, err := json.Marshal(workspace)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (c *LocalClient) UpdateWorkspace(
 	if err != nil {
 		return nil, err
 	}
-	newInstance := &managementv1.DevPodWorkspaceInstance{}
+	newInstance := &managementv1.DevsyWorkspaceInstance{}
 	err = json.Unmarshal(b, newInstance)
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func (c *LocalClient) doRequest(
 	req, err := http.NewRequestWithContext(
 		timeoutCtx,
 		method,
-		fmt.Sprintf("http://localclient.devpod%s", path),
+		fmt.Sprintf("http://localclient.devsy%s", path),
 		body,
 	)
 	if err != nil {

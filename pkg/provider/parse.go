@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/skevetter/devpod/pkg/types"
+	"github.com/devsy-org/devsy/pkg/types"
 	"sigs.k8s.io/yaml"
 )
 
