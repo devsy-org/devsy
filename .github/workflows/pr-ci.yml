@@ -16,7 +16,7 @@ jobs:
       - name: Check secret
         id: check-secret
         run: |
-          if [ -z "${{ secrets.TEST_ACCESS_TOKEN }}" ]; then
+          if [ -z "${{ secrets.DEVSY_GITHUB_APP_ID }}" ]; then
             echo "secret-set=false" >> "$GITHUB_OUTPUT"
           else
             echo "secret-set=true" >> "$GITHUB_OUTPUT"
@@ -358,6 +358,14 @@ jobs:
           sudo apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
           sudo rm -rf /var/lib/docker /var/lib/containerd /usr/bin/docker /usr/bin/dockerd
 
+      - name: generate GitHub App token
+        if: matrix.requires-secret == true && needs.can-read-secret.outputs.secret-set == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
+
       - name: run test
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         shell: bash
@@ -365,7 +373,7 @@ jobs:
         env:
           # NOTE: GitHub credentials are required for tests using private repos
           GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ matrix.requires-secret == true && secrets.GH_PRIVATE_REPO_TOKEN_TEST || github.token }}
+          GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
             sudo \
