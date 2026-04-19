@@ -8,7 +8,7 @@
 
 ### **[Website](https://www.devsy.sh)** • **[Quickstart](https://www.devsy.sh/docs/getting-started/install)** • **[Documentation](https://www.devsy.sh/docs/what-is-devsy)** • **[GitHub](https://github.com/devsy-org/devsy)**
 
-[![Open in Devsy!](https://devsy.sh/assets/open-in-devsy.svg)](https://devsy.sh/open#https://github.com/devsy-org/devsy)
+[![Open in Devsy!](https://img.shields.io/badge/Open_in-Devsy-blue?style=flat-square)](https://devsy.sh/open#https://github.com/devsy-org/devsy)
 
 Devsy is a client-only tool to create reproducible developer environments based on a [devcontainer.json](https://containers.dev/) on any backend. Each developer environment runs in a container and is specified through a [devcontainer.json](https://containers.dev/). Through Devsy providers, these environments can be created on any backend, such as the local computer, a Kubernetes cluster, any reachable remote machine, or in a VM in the cloud.
 
