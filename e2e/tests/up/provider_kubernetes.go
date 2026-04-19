@@ -79,7 +79,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectEqual(len(list.Items[0].Spec.Containers), 1, "Expect 1 container")
 			framework.ExpectEqual(
 				list.Items[0].Spec.Containers[0].Image,
-				"mcr.microsoft.com/devcontainers/go:1",
+				"ghcr.io/devsy-org/test-images/go:1",
 				"Expect container image",
 			)
 

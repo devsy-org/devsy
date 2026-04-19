@@ -1,6 +1,6 @@
 {
   "name": "Go DevContainer",
-  "image": "mcr.microsoft.com/devcontainers/go:1",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
   "remoteEnv": {
     "DEVCONTAINER_TYPE": "go"
   }

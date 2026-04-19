@@ -1,6 +1,6 @@
 {
   "name": "Python",
-  "image": "mcr.microsoft.com/devcontainers/python:latest",
+  "image": "ghcr.io/devsy-org/test-images/python:latest",
 
   "customizations": {
     "vscode": {

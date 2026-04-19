@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1 AS base
+FROM ghcr.io/devsy-org/test-images/go:1 AS base
 
 RUN apt-get update && apt-get install -y vim
 

@@ -1,5 +1,5 @@
-ARG BASE_IMAGE=mcr.microsoft.com/devcontainers/go
-ARG BASE_VERSION=dev-1.24
+ARG BASE_IMAGE=ghcr.io/devsy-org/test-images/go
+ARG BASE_VERSION=1
 
 FROM ${BASE_IMAGE}:${BASE_VERSION} AS builder
 

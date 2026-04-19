@@ -1,5 +1,5 @@
 {
   "name": "Test Bind Mount Validation",
-  "image": "mcr.microsoft.com/devcontainers/base:alpine",
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
   "mounts": ["source=/nonexistent/path,target=/mnt/test,type=bind"]
 }
