@@ -42,7 +42,7 @@ Agent -> ContainerAgent: devsy agent container daemon
 end
 
 alt if pro user
-Agent -> ContainerAgent: devsy agent container setup-loft-platform-access
+Agent -> ContainerAgent: devsy agent container setup-platform-access
 ContainerAgent -> Platform: Setup pro
 Platform --> ContainerAgent: platform creds
 end

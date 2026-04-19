@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type SetupLoftPlatformAccessCmd struct {
+type SetupPlatformAccessCmd struct {
 	*flags.GlobalFlags
 
 	Context  string
@@ -18,37 +18,38 @@ type SetupLoftPlatformAccessCmd struct {
 	Port     int
 }
 
-// NewSetupLoftPlatformAccessCmd creates a new setup-loft-platform-access command
-// This agent command can be used to inject loft platform configuration from local machine to workspace.
-func NewSetupLoftPlatformAccessCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &SetupLoftPlatformAccessCmd{
+// NewSetupPlatformAccessCmd creates a new setup-platform-access command.
+// This agent command injects platform configuration from the local machine to the workspace.
+func NewSetupPlatformAccessCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &SetupPlatformAccessCmd{
 		GlobalFlags: flags,
 	}
 
-	setupLoftPlatformAccessCmd := &cobra.Command{
-		Use:   "setup-loft-platform-access",
+	setupPlatformAccessCmd := &cobra.Command{
+		Use:   "setup-platform-access",
 		Short: "used to setup Devsy Platform access",
 		RunE:  cmd.Run,
+		Aliases: []string{"setup-loft-platform-access"},
 	}
 
-	setupLoftPlatformAccessCmd.Flags().StringVar(&cmd.Context, "context", "", "context to use")
-	_ = setupLoftPlatformAccessCmd.Flags().
+	setupPlatformAccessCmd.Flags().StringVar(&cmd.Context, "context", "", "context to use")
+	_ = setupPlatformAccessCmd.Flags().
 		MarkDeprecated("context", "Information should be provided by services server, don't use this flag anymore")
 
-	setupLoftPlatformAccessCmd.Flags().StringVar(&cmd.Provider, "provider", "", "provider to use")
-	_ = setupLoftPlatformAccessCmd.Flags().
+	setupPlatformAccessCmd.Flags().StringVar(&cmd.Provider, "provider", "", "provider to use")
+	_ = setupPlatformAccessCmd.Flags().
 		MarkDeprecated("provider", "Information should be provided by services server, don't use this flag anymore")
 
-	setupLoftPlatformAccessCmd.Flags().
+	setupPlatformAccessCmd.Flags().
 		IntVar(&cmd.Port, "port", 0, "If specified, will use the given port")
-	_ = setupLoftPlatformAccessCmd.Flags().MarkDeprecated("port", "")
+	_ = setupPlatformAccessCmd.Flags().MarkDeprecated("port", "")
 
-	return setupLoftPlatformAccessCmd
+	return setupPlatformAccessCmd
 }
 
 // Run executes main command logic.
 // It fetches Devsy Platform credentials from credentials server and sets it up inside the workspace.
-func (c *SetupLoftPlatformAccessCmd) Run(_ *cobra.Command, args []string) error {
+func (c *SetupPlatformAccessCmd) Run(_ *cobra.Command, args []string) error {
 	logger := log.Default.ErrorStreamOnly()
 
 	port, err := credentials.GetPort()
