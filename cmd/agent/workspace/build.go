@@ -7,8 +7,9 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -42,10 +43,10 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	// write workspace info
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfoAndDeleteOld(
 		cmd.WorkspaceInfo,
-		func(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) error {
-			return deleteWorkspace(ctx, workspaceInfo, log)
+		func(workspaceInfo *provider2.AgentWorkspaceInfo, l oldlog.Logger) error {
+			return deleteWorkspace(ctx, workspaceInfo, l)
 		},
-		log.Default.ErrorStreamOnly(),
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err
@@ -96,14 +97,14 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 			ExportCache:   true,
 		})
 		if err != nil {
-			logger.Errorf("Error building image: %v", err)
+			log.Errorf("Error building image: %v", err)
 			return fmt.Errorf("build: %w", err)
 		}
 
 		if workspaceInfo.CLIOptions.SkipPush {
-			logger.Donef("done building image %s", imageName)
+			log.Infof("done building image %s", imageName)
 		} else {
-			logger.Donef("done building and pushing image %s", imageName)
+			log.Infof("done building and pushing image %s", imageName)
 		}
 	}
 
@@ -113,9 +114,9 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 func deleteWorkspace(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
-	err := removeContainer(ctx, workspaceInfo, log)
+	err := removeContainer(ctx, workspaceInfo, logger)
 	if err != nil {
 		log.Errorf("Removing container: %v", err)
 	}

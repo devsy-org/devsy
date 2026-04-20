@@ -5,7 +5,7 @@ import (
 	"maps"
 	"os"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 var location = "/etc/envfile.json"
@@ -15,7 +15,7 @@ type EnvFile struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
-func Apply(log log.Logger) {
+func Apply() {
 	out, err := os.ReadFile(location)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -37,7 +37,8 @@ func Apply(log log.Logger) {
 	}
 }
 
-func MergeAndApply(env map[string]string, log log.Logger) {
+//nolint:cyclop // pre-existing complexity
+func MergeAndApply(env map[string]string) {
 	if len(env) == 0 {
 		return
 	}

@@ -8,8 +8,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -47,10 +48,12 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(ctx context.Context) error {
+	logger := oldlog.Default.ErrorStreamOnly()
+
 	// get workspace
 	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(
 		cmd.WorkspaceInfo,
-		log.Default.ErrorStreamOnly(),
+		logger,
 	)
 	if err != nil {
 		return fmt.Errorf("error parsing workspace info: %w", err)
@@ -60,7 +63,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 
 	// remove daemon
 	if cmd.Daemon {
-		err = removeDaemon(workspaceInfo, log.Default)
+		err = removeDaemon(workspaceInfo)
 		if err != nil {
 			return fmt.Errorf("remove daemon: %w", err)
 		}
@@ -68,7 +71,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 
 	// cleanup docker container
 	if cmd.Container {
-		err = removeContainer(ctx, workspaceInfo, log.Default)
+		err = removeContainer(ctx, workspaceInfo, logger)
 		if err != nil {
 			return fmt.Errorf("remove container: %w", err)
 		}
@@ -82,10 +85,10 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 func removeContainer(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
-	runner, err := CreateRunner(workspaceInfo, log)
+	runner, err := CreateRunner(workspaceInfo, logger)
 	if err != nil {
 		return err
 	}
@@ -103,7 +106,7 @@ func removeContainer(
 	return nil
 }
 
-func removeDaemon(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) error {
+func removeDaemon(workspaceInfo *provider2.AgentWorkspaceInfo) error {
 	if len(workspaceInfo.Agent.Exec.Shutdown) == 0 {
 		return nil
 	}

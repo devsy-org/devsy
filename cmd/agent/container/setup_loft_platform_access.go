@@ -6,7 +6,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/credentials"
 	devsyconfig "github.com/devsy-org/devsy/pkg/loftconfig"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +50,7 @@ func NewSetupLoftPlatformAccessCmd(flags *flags.GlobalFlags) *cobra.Command {
 // Run executes main command logic.
 // It fetches Devsy Platform credentials from credentials server and sets it up inside the workspace.
 func (c *SetupLoftPlatformAccessCmd) Run(_ *cobra.Command, args []string) error {
-	logger := log.Default.ErrorStreamOnly()
+	logger := oldlog.Default.ErrorStreamOnly()
 
 	port, err := credentials.GetPort()
 	if err != nil {
@@ -66,20 +67,20 @@ func (c *SetupLoftPlatformAccessCmd) Run(_ *cobra.Command, args []string) error 
 	}
 
 	if loftConfig == nil {
-		logger.Debug("Got empty devsy config response, Devsy Platform access won't be set up.")
+		log.Debug("Got empty devsy config response, Devsy Platform access won't be set up.")
 		return nil
 	}
 
 	err = devsyconfig.AuthDevsyCliToPlatform(loftConfig, logger)
 	if err != nil {
 		// log error but don't return to allow other CLIs to install as well
-		logger.Warnf("unable to authenticate devsy cli: %w", err)
+		log.Warnf("unable to authenticate devsy cli: %v", err)
 	}
 
 	err = devsyconfig.AuthVClusterCliToPlatform(loftConfig, logger)
 	if err != nil {
 		// log error but don't return to allow other CLIs to install as well
-		logger.Warnf("unable to authenticate vcluster cli: %w", err)
+		log.Warnf("unable to authenticate vcluster cli: %v", err)
 	}
 
 	return nil

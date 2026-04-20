@@ -294,6 +294,6 @@ func applyContainerEnv(imageConfigPath string, log log.Logger) error {
 		return fmt.Errorf("parse container config: %w", err)
 	}
 
-	envfile.MergeAndApply(config.ListToObject(configFile.Config.Env), log)
+	envfile.MergeAndApply(config.ListToObject(configFile.Config.Env))
 	return nil
 }

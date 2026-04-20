@@ -25,10 +25,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/dockerinstall"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -95,10 +95,10 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 func (cmd *UpCmd) loadWorkspaceInfo(ctx context.Context) (*provider.AgentWorkspaceInfo, error) {
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfoAndDeleteOld(
 		cmd.WorkspaceInfo,
-		func(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) error {
-			return deleteWorkspace(ctx, workspaceInfo, log)
+		func(workspaceInfo *provider.AgentWorkspaceInfo, l oldlog.Logger) error {
+			return deleteWorkspace(ctx, workspaceInfo, l)
 		},
-		log.Default.ErrorStreamOnly(),
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing workspace info: %w", err)
@@ -120,10 +120,10 @@ func (cmd *UpCmd) shouldInstallDaemon(workspaceInfo *provider.AgentWorkspaceInfo
 func (cmd *UpCmd) handleInitError(
 	err error,
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) error {
 	if logger == nil {
-		logger = log.Discard
+		logger = oldlog.Discard
 	}
 	deleteErr := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
@@ -150,7 +150,7 @@ func (cmd *UpCmd) up(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) error {
 	result, err := cmd.devsyUp(ctx, workspaceInfo, logger)
 	if err != nil {
@@ -181,9 +181,9 @@ func (cmd *UpCmd) sendResult(
 func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	log log.Logger,
+	logger oldlog.Logger,
 ) (*config2.Result, error) {
-	runner, err := CreateRunner(workspaceInfo, log)
+	runner, err := CreateRunner(workspaceInfo, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -196,18 +196,21 @@ func (cmd *UpCmd) devsyUp(
 
 func CreateRunner(
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	log log.Logger,
+	logger oldlog.Logger,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
 		agent.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
-		log,
+		logger,
 	)
 }
 
-func InitContentFolder(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) (bool, error) {
-	exists, err := contentFolderExists(workspaceInfo.ContentFolder, log)
+func InitContentFolder(
+	workspaceInfo *provider.AgentWorkspaceInfo,
+	logger oldlog.Logger,
+) (bool, error) {
+	exists, err := contentFolderExists(workspaceInfo.ContentFolder)
 	if err != nil {
 		return false, err
 	}
@@ -215,11 +218,11 @@ func InitContentFolder(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logge
 		return true, nil
 	}
 
-	if err := createContentFolder(workspaceInfo.ContentFolder, log); err != nil {
+	if err := createContentFolder(workspaceInfo.ContentFolder); err != nil {
 		return false, err
 	}
 
-	if err := downloadWorkspaceBinaries(workspaceInfo, log); err != nil {
+	if err := downloadWorkspaceBinaries(workspaceInfo, logger); err != nil {
 		_ = os.RemoveAll(workspaceInfo.ContentFolder)
 		return false, err
 	}
@@ -234,7 +237,7 @@ func InitContentFolder(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logge
 	return false, nil
 }
 
-func contentFolderExists(path string, log log.Logger) (bool, error) {
+func contentFolderExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		log.Debugf("workspace folder already exists: path=%s", path)
@@ -246,7 +249,7 @@ func contentFolderExists(path string, log log.Logger) (bool, error) {
 	return false, err
 }
 
-func createContentFolder(path string, log log.Logger) error {
+func createContentFolder(path string) error {
 	log.Debugf("create content folder: path=%s", path)
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return fmt.Errorf("make workspace folder: %w", err)
@@ -254,7 +257,10 @@ func createContentFolder(path string, log log.Logger) error {
 	return nil
 }
 
-func downloadWorkspaceBinaries(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) error {
+func downloadWorkspaceBinaries(
+	workspaceInfo *provider.AgentWorkspaceInfo,
+	logger oldlog.Logger,
+) error {
 	binariesDir, err := agent.GetAgentBinariesDir(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.Workspace.Context,
@@ -268,7 +274,7 @@ func downloadWorkspaceBinaries(workspaceInfo *provider.AgentWorkspaceInfo, log l
 		)
 	}
 
-	_, err = provider.DownloadBinaries(workspaceInfo.Agent.Binaries, binariesDir, log)
+	_, err = provider.DownloadBinaries(workspaceInfo.Agent.Binaries, binariesDir, logger)
 	if err != nil {
 		return fmt.Errorf(
 			"error downloading workspace %s binaries: %w",
@@ -286,7 +292,7 @@ type workspaceInitializer struct {
 	debug                bool
 	shouldInstallDaemon  bool
 	tunnelClient         tunnel.TunnelClient
-	logger               log.Logger
+	logger               oldlog.Logger
 	dockerCredentialsDir string
 	gitCredentialsHelper string
 }
@@ -298,7 +304,8 @@ type initWorkspaceParams struct {
 	shouldInstallDaemon bool
 }
 
-func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, log.Logger, string, error) {
+//nolint:revive // pre-existing 4 return values
+func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, oldlog.Logger, string, error) {
 	init := &workspaceInitializer{
 		ctx:                 params.ctx,
 		workspaceInfo:       params.workspaceInfo,
@@ -319,7 +326,7 @@ func (w *workspaceInitializer) initialize() error {
 	}
 
 	if err := w.setupCredentials(); err != nil {
-		w.logger.Warnf("failed to set up docker/git credentials (continuing without them): %v", err)
+		log.Warnf("failed to set up docker/git credentials (continuing without them): %v", err)
 	}
 
 	dockerErrChan := w.installDockerAsync()
@@ -341,18 +348,18 @@ func (w *workspaceInitializer) initialize() error {
 func (w *workspaceInitializer) setupDaemonIfNeeded() {
 	if w.shouldInstallDaemon {
 		if err := installDaemon(w.workspaceInfo, w.logger); err != nil {
-			w.logger.Errorf("install Devsy daemon: %v", err)
+			log.Errorf("install Devsy daemon: %v", err)
 		}
 	}
 }
 
 func (w *workspaceInitializer) tryConfigureDockerDaemon() {
 	if !w.shouldConfigureDockerDaemon() {
-		w.logger.Debug("skipping configuring docker daemon")
+		log.Debug("skipping configuring docker daemon")
 		return
 	}
-	if err := configureDockerDaemon(w.ctx, w.logger); err != nil {
-		w.logger.Warn(
+	if err := configureDockerDaemon(w.ctx); err != nil {
+		log.Warn(
 			"could not find docker daemon config file, if using the registry cache, " +
 				"please ensure the daemon is configured with containerd-snapshotter=true, " +
 				"more info at https://docs.docker.com/engine/storage/containerd/",
@@ -367,7 +374,7 @@ func (w *workspaceInitializer) initializeTunnel() error {
 	}
 	w.tunnelClient = client
 	w.logger = tunnelserver.NewTunnelLogger(w.ctx, w.tunnelClient, w.debug)
-	w.logger.Debugf("created logger")
+	log.Debugf("created logger")
 
 	if _, err := w.tunnelClient.Ping(w.ctx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
@@ -398,7 +405,7 @@ func (w *workspaceInitializer) installDockerAsync() <-chan dockerInstallResult {
 
 	go func() {
 		if !w.workspaceInfo.Agent.IsDockerDriver() {
-			w.logger.Debug("not a docker driver, skipping docker installation")
+			log.Debug("not a docker driver, skipping docker installation")
 			resultChan <- dockerInstallResult{}
 			return
 		}
@@ -414,7 +421,7 @@ func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
 	dockerCmd := w.getDockerCommand()
 
 	if command.Exists(dockerCmd) {
-		w.logger.Debug("docker command exists, skipping installation")
+		log.Debug("docker command exists, skipping installation")
 		return "", nil
 	}
 
@@ -427,20 +434,20 @@ func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
 	}
 
 	if w.isDockerInstallDisabled() {
-		w.logger.Debug(
+		log.Debug(
 			"docker not found but installation was disabled, installing anyway as it is required",
 		)
 	}
 
-	w.logger.Debug("attempting to install docker")
-	dockerPath, err := installDocker(w.logger)
-	w.logger.Debugf("docker installation path=%q, err=%v", dockerPath, err)
+	log.Debug("attempting to install docker")
+	dockerPath, err := installDocker()
+	log.Debugf("docker installation path=%q, err=%v", dockerPath, err)
 	return dockerPath, err
 }
 
 func (w *workspaceInitializer) getDockerCommand() string {
 	if w.workspaceInfo.Agent.Docker.Path != "" {
-		w.logger.Debugf("using custom docker path %s", w.workspaceInfo.Agent.Docker.Path)
+		log.Debugf("using custom docker path %s", w.workspaceInfo.Agent.Docker.Path)
 		return w.workspaceInfo.Agent.Docker.Path
 	}
 	return "docker"
@@ -468,7 +475,7 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 
 	if result.path != "" && w.workspaceInfo.Agent.Docker.Path == "" {
 		w.workspaceInfo.Agent.Docker.Path = result.path
-		w.logger.Debugf("set docker path to %s", result.path)
+		log.Debugf("set docker path to %s", result.path)
 	}
 
 	if result.err != nil {
@@ -485,7 +492,7 @@ func (w *workspaceInitializer) shouldConfigureDockerDaemon() bool {
 
 	local, err := w.workspaceInfo.Agent.Local.Bool()
 	if err != nil {
-		w.logger.Debugf("failed to parse Local option: %v", err)
+		log.Debugf("failed to parse Local option: %v", err)
 		return false
 	}
 	return !local
@@ -496,7 +503,7 @@ type prepareWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
 	gitHelper     string
-	log           log.Logger
+	log           oldlog.Logger
 }
 
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
@@ -553,7 +560,7 @@ type prepareGitWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	gitHelper     string
 	exists        bool
-	log           log.Logger
+	log           oldlog.Logger
 }
 
 func prepareGitWorkspace(params prepareGitWorkspaceParams) error {
@@ -596,7 +603,7 @@ func prepareLocalWorkspace(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	client tunnel.TunnelClient,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	if workspaceInfo.ContentFolder == workspaceInfo.Workspace.Source.LocalFolder {
 		log.Debugf(
@@ -607,7 +614,7 @@ func prepareLocalWorkspace(
 	}
 
 	log.Debugf("download local folder %s", workspaceInfo.ContentFolder)
-	return downloadLocalFolder(ctx, workspaceInfo.ContentFolder, client, log)
+	return downloadLocalFolder(ctx, workspaceInfo.ContentFolder, client, logger)
 }
 
 func ensureLastDevContainerJson(workspaceInfo *provider.AgentWorkspaceInfo) error {
@@ -642,7 +649,7 @@ type credentialsConfig struct {
 	ctx           context.Context
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
-	log           log.Logger
+	log           oldlog.Logger
 }
 
 func configureCredentials(cfg credentialsConfig) (string, string, error) {
@@ -690,7 +697,7 @@ func configureCredentials(cfg credentialsConfig) (string, string, error) {
 	return dockerCredentials, gitCredentials, nil
 }
 
-func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) error {
+func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, logger oldlog.Logger) error {
 	if len(workspaceInfo.Agent.Exec.Shutdown) == 0 {
 		return nil
 	}
@@ -699,7 +706,7 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) e
 	return agentdaemon.InstallDaemon(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.CLIOptions.DaemonInterval,
-		log,
+		logger,
 	)
 }
 
@@ -707,7 +714,7 @@ func downloadLocalFolder(
 	ctx context.Context,
 	workspaceDir string,
 	client tunnel.TunnelClient,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	log.Infof("Upload folder to server")
 	stream, err := client.StreamWorkspace(ctx, &tunnel.Empty{})
@@ -715,7 +722,7 @@ func downloadLocalFolder(
 		return fmt.Errorf("read workspace: %w", err)
 	}
 
-	return extract.Extract(tunnelserver.NewStreamReader(stream, log), workspaceDir)
+	return extract.Extract(tunnelserver.NewStreamReader(stream, logger), workspaceDir)
 }
 
 func prepareImage(workspaceDir, image string) error {
@@ -731,14 +738,14 @@ func prepareImage(workspaceDir, image string) error {
 
 // installDocker installs Docker and returns the path to the docker binary.
 // This function assumes docker does not already exist - the caller should check first.
-func installDocker(log log.Logger) (dockerPath string, err error) {
-	writer := log.Writer(logrus.InfoLevel, false)
+func installDocker() (dockerPath string, err error) {
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	log.Debug("installing Docker")
 	return dockerinstall.Install(writer, writer)
 }
 
-func configureDockerDaemon(ctx context.Context, log log.Logger) error {
+func configureDockerDaemon(ctx context.Context) error {
 	log.Info("configuring docker daemon")
 
 	if err := mergeDockerDaemonConfig(); err != nil {
