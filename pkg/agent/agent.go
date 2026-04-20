@@ -493,7 +493,6 @@ func Tunnel(
 		RemoteAgentPath:             ContainerDevsyHelperLocation,
 		DownloadURL:                 DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: Bool(false),
-		Log:                         log,
 		Timeout:                     timeout,
 	})
 	if err != nil {

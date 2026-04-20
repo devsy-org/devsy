@@ -14,9 +14,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/inject"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -39,9 +40,6 @@ type InjectOptions struct {
 	Ctx context.Context
 	// Exec is the function used to execute commands on the remote machine. Required.
 	Exec inject.ExecFunc
-	// Log is the logger for capturing injection output.
-	// Required.
-	Log log.Logger
 
 	// IsLocal indicates if the injection target is the local machine.
 	IsLocal bool
@@ -91,9 +89,6 @@ func (o *InjectOptions) Validate() error {
 	if o.Exec == nil {
 		return fmt.Errorf("exec function is required")
 	}
-	if o.Log == nil {
-		return fmt.Errorf("logger is required")
-	}
 	return nil
 }
 
@@ -125,7 +120,7 @@ func (o *InjectOptions) applyURLDefaults() {
 			"/releases/download/",
 			1,
 		)
-		o.Log.Warnf(
+		log.Warnf(
 			"download URL %s is a tag URL, normalizing to download URL %s",
 			o.DownloadURL,
 			normalizedDownloadUrl,
@@ -160,7 +155,7 @@ func (o *InjectOptions) applyPreferDownloadDefaults() {
 func (o *InjectOptions) applyEnvPreference(preferDownloadEnv string) {
 	pref, err := strconv.ParseBool(preferDownloadEnv)
 	if err != nil {
-		o.Log.Warnf("failed to parse %s, using default", config.EnvAgentPreferDownload)
+		log.Warnf("failed to parse %s, using default", config.EnvAgentPreferDownload)
 		pref = true
 	}
 	o.PreferDownloadFromRemoteUrl = Bool(pref)
@@ -178,7 +173,7 @@ func InjectAgent(opts *InjectOptions) error {
 	}
 
 	vc := newVersionChecker(opts)
-	bm := NewBinaryManager(opts.Log, opts.DownloadURL)
+	bm := NewBinaryManager(opts.DownloadURL)
 
 	backoff := wait.Backoff{
 		Steps:    30,
@@ -188,16 +183,16 @@ func InjectAgent(opts *InjectOptions) error {
 		Cap:      60 * time.Second,
 	}
 
-	opts.Log.Debug("starting agent injection")
+	log.Debug("starting agent injection")
 	return retry.OnError(backoff, func(err error) bool {
 		if opts.Ctx.Err() != nil {
 			return false
 		}
 		if errors.Is(err, docker.ErrContainerTerminal) {
-			opts.Log.Errorf("container entered a terminal state, not retrying: %v", err)
+			log.Errorf("container entered a terminal state, not retrying: %v", err)
 			return false
 		}
-		opts.Log.Debugf("retrying injection: %v", err)
+		log.Debugf("retrying injection: %v", err)
 		return true
 	}, func() error {
 		return injectAgent(&injectContext{
@@ -212,7 +207,7 @@ func injectLocally(opts *InjectOptions) error {
 	if opts.Command == "" {
 		return nil
 	}
-	opts.Log.Debug("execute command locally")
+	log.Debug("execute command locally")
 	return shell.RunEmulatedShell(opts.Ctx, opts.Command, opts.Stdin, opts.Stdout, opts.Stderr, nil)
 }
 
@@ -239,7 +234,7 @@ func injectAgent(ctx *injectContext) error {
 		Stdout:       opts.Stdout,
 		Stderr:       stderr,
 		Timeout:      opts.Timeout,
-		Log:          opts.Log,
+		Log:          oldlog.Default.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return handleInjectError(err, wasExecuted, buf)
@@ -294,7 +289,6 @@ func performVersionCheck(ctx *injectContext) error {
 		opts.Ctx,
 		opts.Exec,
 		opts.RemoteAgentPath,
-		opts.Log,
 	)
 
 	if !opts.SkipVersionCheck {
@@ -304,7 +298,7 @@ func performVersionCheck(ctx *injectContext) error {
 	}
 
 	if detectedVersion != "" && !opts.SkipVersionCheck {
-		opts.Log.Debugf("detected remote agent version: %s", detectedVersion)
+		log.Debugf("detected remote agent version: %s", detectedVersion)
 	}
 
 	return nil
@@ -360,7 +354,6 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 	ctx context.Context,
 	exec inject.ExecFunc,
 	agentPath string,
-	log log.Logger,
 ) (string, error) {
 	buf := &bytes.Buffer{}
 	versionCmd := fmt.Sprintf("%s version", agentPath)

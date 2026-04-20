@@ -102,7 +102,6 @@ func (c *ContainerTunnel) Run(
 			Stdin:           stdinReader,
 			Stdout:          stdoutWriter,
 			Stderr:          writer,
-			Log:             c.log.ErrorStreamOnly(),
 			Timeout:         timeout,
 		})
 	}()

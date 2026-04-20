@@ -1069,7 +1069,6 @@ func runAgentInjection(opts agentInjectionOptions) chan error {
 			Stdin:           opts.stdin,
 			Stdout:          opts.stdout,
 			Stderr:          writer,
-			Log:             opts.log.ErrorStreamOnly(),
 			Timeout:         opts.timeout,
 		})
 	}()

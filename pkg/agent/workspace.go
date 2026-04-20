@@ -19,9 +19,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -253,7 +254,6 @@ func CloneRepositoryForWorkspace(
 	workspaceDir, helper string,
 	options provider2.CLIOptions,
 	overwriteContent bool,
-	log log.Logger,
 ) error {
 	log.Info("Clone repository")
 	log.Infof("URL: %s\n", source.GitRepository)
@@ -289,7 +289,7 @@ func CloneRepositoryForWorkspace(
 				"seems like git isn't installed on your system. Please make sure to install git and make it available in the PATH",
 			)
 		}
-		if err := git.InstallBinary(log); err != nil {
+		if err := git.InstallBinary(oldlog.Default.ErrorStreamOnly()); err != nil {
 			return err
 		}
 	}
@@ -412,7 +412,7 @@ func CloneRepositoryForWorkspace(
 			workspaceDir,
 			helper,
 			options.StrictHostKeyChecking,
-			log,
+			oldlog.Default.ErrorStreamOnly(),
 			getGitOptions(options)...)
 		if err != nil {
 			// cleanup workspace dir if clone failed, otherwise we won't try to clone again when rebuilding this workspace
@@ -423,7 +423,7 @@ func CloneRepositoryForWorkspace(
 		}
 	}
 
-	log.Done("cloned repository")
+	log.Info("cloned repository")
 
 	// Get .devsyignore files to exclude
 	f, err := os.Open(

@@ -161,7 +161,6 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 				Stdin:           stdin,
 				Stdout:          stdout,
 				Stderr:          stderr,
-				Log:             oldlog.Default.ErrorStreamOnly(),
 				Timeout:         timeout,
 			})
 		},
