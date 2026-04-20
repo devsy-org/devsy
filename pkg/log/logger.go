@@ -12,9 +12,9 @@ import (
 var sugar *zap.SugaredLogger
 
 func init() {
-	// Default logger before Init() is called — error level, text to stderr.
-	logger, _ := zap.NewProduction()
-	sugar = logger.Sugar()
+	// Default: silent until Init() is called. This avoids double-logging
+	// during the migration period when the old logger is still active.
+	sugar = zap.NewNop().Sugar()
 }
 
 // Config holds logger configuration parsed from CLI flags.
@@ -52,7 +52,7 @@ func resolveEncoder(format string) zapcore.Encoder {
 		return newLogfmtEncoder()
 	default:
 		// "text" — use console encoder, with color if stderr is a terminal
-		if term.IsTerminal(int(os.Stderr.Fd())) {
+		if term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // fd fits in int
 			return zapcore.NewConsoleEncoder(colorEncoderConfig())
 		}
 		return zapcore.NewConsoleEncoder(plainEncoderConfig())
@@ -104,7 +104,7 @@ func Warn(args ...any)  { sugar.Warn(args...) }
 func Error(args ...any) { sugar.Error(args...) }
 func Fatal(args ...any) { sugar.Fatal(args...) }
 
-// Structured logging
+// Structured logging.
 func Debugw(msg string, keysAndValues ...any) { sugar.Debugw(msg, keysAndValues...) }
 func Infow(msg string, keysAndValues ...any)  { sugar.Infow(msg, keysAndValues...) }
 func Warnw(msg string, keysAndValues ...any)  { sugar.Warnw(msg, keysAndValues...) }
