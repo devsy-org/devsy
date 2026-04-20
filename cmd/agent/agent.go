@@ -58,7 +58,7 @@ func AgentPersistentPreRunE(
 		log.Default.MakeRaw()
 	}
 
-	if globalFlags.Silent {
+	if globalFlags.Quiet {
 		log.Default.SetLevel(logrus.FatalLevel)
 	} else if globalFlags.Debug {
 		log.Default.SetLevel(logrus.DebugLevel)
