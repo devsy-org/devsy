@@ -99,13 +99,13 @@ func Execute() {
 		}
 
 		if globalFlags.Debug {
-			log.Fatalf("%+v", err)
+			log2.Default.Fatalf("%+v", err)
 		} else {
 			if rootCmd.Annotations == nil ||
 				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
-				log.Error("Try using -v or --debug flag to see more verbose output")
+				log2.Default.Error("Try using -v or --debug flag to see more verbose output")
 			}
-			log.Fatal(err)
+			log2.Default.Fatal(err)
 		}
 	}
 }
@@ -174,7 +174,7 @@ func inheritFlagsFromEnvironment(flags *flag.FlagSet) {
 			// set the variable holding the flag's value to the default supplied by the environment
 			err := flag.Value.Set(value)
 			if err != nil {
-				log.Fatalf(
+				log2.Default.Fatalf(
 					"failed to set flag %s from the environment variable %s with value %s: %+v",
 					flag.Name,
 					environmentVariable,
