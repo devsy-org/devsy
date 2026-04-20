@@ -2,6 +2,8 @@ package log
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,16 +50,24 @@ func (e *logfmtEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field)
 	}
 
 	// fields from With() + fields from this entry
-	allFields := append(e.fields, fields...)
+	allFields := make([]zapcore.Field, 0, len(e.fields)+len(fields))
+	allFields = append(allFields, e.fields...)
+	allFields = append(allFields, fields...)
 	enc := zapcore.NewMapObjectEncoder()
 	for _, f := range allFields {
 		f.AddTo(enc)
 	}
-	for k, v := range enc.Fields {
+	// Sort keys for deterministic output
+	keys := make([]string, 0, len(enc.Fields))
+	for k := range enc.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		buf.AppendString(" ")
 		buf.AppendString(k)
 		buf.AppendString("=")
-		buf.AppendString(quoteLogfmt(fmt.Sprint(v)))
+		buf.AppendString(quoteLogfmt(fmt.Sprint(enc.Fields[k])))
 	}
 
 	buf.AppendString("\n")
@@ -85,7 +95,7 @@ func (e *logfmtEncoder) AddDuration(key string, val time.Duration) {
 	e.fields = append(e.fields, zapcore.Field{Key: key, Type: zapcore.StringType, String: val.String()})
 }
 func (e *logfmtEncoder) AddFloat64(key string, val float64) {
-	e.fields = append(e.fields, zapcore.Field{Key: key, Type: zapcore.Float64Type})
+	e.fields = append(e.fields, zapcore.Field{Key: key, Type: zapcore.Float64Type, Integer: int64(math.Float64bits(val))})
 }
 func (e *logfmtEncoder) AddFloat32(key string, val float32) {}
 func (e *logfmtEncoder) AddInt(key string, val int)         { e.AddInt64(key, int64(val)) }
@@ -101,8 +111,8 @@ func (e *logfmtEncoder) AddString(key, val string) {
 func (e *logfmtEncoder) AddTime(key string, val time.Time) {
 	e.AddString(key, val.Format(time.RFC3339))
 }
-func (e *logfmtEncoder) AddUint(key string, val uint)     { e.AddInt64(key, int64(val)) }
-func (e *logfmtEncoder) AddUint64(key string, val uint64) { e.AddInt64(key, int64(val)) }
+func (e *logfmtEncoder) AddUint(key string, val uint)   { e.AddString(key, fmt.Sprintf("%d", val)) }
+func (e *logfmtEncoder) AddUint64(key string, val uint64) { e.AddString(key, fmt.Sprintf("%d", val)) }
 func (e *logfmtEncoder) AddUint32(key string, val uint32) { e.AddInt64(key, int64(val)) }
 func (e *logfmtEncoder) AddUint16(key string, val uint16) { e.AddInt64(key, int64(val)) }
 func (e *logfmtEncoder) AddUint8(key string, val uint8)   { e.AddInt64(key, int64(val)) }

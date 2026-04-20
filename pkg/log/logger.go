@@ -85,6 +85,11 @@ func Underlying() *zap.Logger {
 	return sugar.Desugar()
 }
 
+// Sync flushes any buffered log entries. Call before process exit.
+func Sync() error {
+	return sugar.Desugar().Sync()
+}
+
 // --- Package-level logging functions ---
 
 func Debugf(format string, args ...any) { sugar.Debugf(format, args...) }
