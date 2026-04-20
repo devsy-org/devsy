@@ -16,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -24,15 +23,12 @@ import (
 // TemplatesCmd holds the cmd flags.
 type TemplatesCmd struct {
 	*flags.GlobalFlags
-
-	log log.Logger
 }
 
 // NewTemplatesCmd creates a new command.
 func NewTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &TemplatesCmd{
 		GlobalFlags: globalFlags,
-		log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "templates",

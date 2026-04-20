@@ -28,7 +28,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -253,7 +253,7 @@ func (cmd *UpCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	args []string,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	cmd.prepareWorkspace(client, log)
 
@@ -280,7 +280,7 @@ type workspaceContext struct {
 }
 
 // prepareWorkspace handles initial setup and validation.
-func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient, log log.Logger) {
+func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient, log oldlog.Logger) {
 	if cmd.Reset {
 		cmd.Recreate = true
 	}
@@ -305,7 +305,7 @@ func (cmd *UpCmd) executeDevsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) (*workspaceContext, error) {
 	result, err := cmd.devsyUp(ctx, devsyConfig, client, log)
 	if err != nil {
@@ -339,7 +339,7 @@ func (cmd *UpCmd) configureWorkspace(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	if cmd.ConfigureSSH {
 		devsyHome := ""
@@ -385,7 +385,7 @@ func (cmd *UpCmd) openIDE(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	if !cmd.OpenIDE {
 		return nil
@@ -408,7 +408,7 @@ func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) (*config2.Result, error) {
 	var err error
 
@@ -456,7 +456,7 @@ func (cmd *UpCmd) devsyUp(
 func (cmd *UpCmd) devsyUpProxy(
 	ctx context.Context,
 	client client2.ProxyClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) (*config2.Result, error) {
 	// create pipes
 	stdoutReader, stdoutWriter, err := os.Pipe()
@@ -560,7 +560,7 @@ func (cmd *UpCmd) devsyUpMachine(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) (*config2.Result, error) {
 	err := clientimplementation.StartWait(ctx, client, true, log)
 	if err != nil {
@@ -694,7 +694,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		GPGAgent:             params.gpgagent,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
-		Log:                  log.Default,
+		Log:                  oldlog.Default,
 	})
 	if err != nil {
 		return err
@@ -755,13 +755,13 @@ func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
-) (client2.BaseWorkspaceClient, log.Logger, error) {
+) (client2.BaseWorkspaceClient, oldlog.Logger, error) {
 	// try to parse flags from env
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return nil, nil, err
 	}
 
-	var logger log.Logger = log.Default
+	var logger oldlog.Logger = oldlog.Default
 	if cmd.Platform.Enabled {
 		logger = logger.ErrorStreamOnly()
 		logger.Debug("Running in platform mode")

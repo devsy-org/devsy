@@ -9,8 +9,9 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +46,7 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 				DevsyConfig: devsyConfig,
 				Args:        args,
 				Owner:       cmd.Owner,
-				Log:         log.Default,
+				Log:         oldlog.Default,
 			})
 			if err != nil {
 				return err
@@ -61,7 +62,6 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -115,14 +115,18 @@ func (cmd *StopCmd) stopSingleMachine(
 	devsyConfig *config.Config,
 ) (bool, error) {
 	// check if single machine
-	singleMachineName := workspace2.SingleMachineName(devsyConfig, client.Provider(), log.Default)
+	singleMachineName := workspace2.SingleMachineName(
+		devsyConfig,
+		client.Provider(),
+		oldlog.Default,
+	)
 	if !devsyConfig.Current().IsSingleMachine(client.Provider()) ||
 		client.WorkspaceConfig().Machine.ID != singleMachineName {
 		return false, nil
 	}
 
 	// try to find other workspace with same machine
-	workspaces, err := workspace2.List(ctx, devsyConfig, false, cmd.Owner, log.Default)
+	workspaces, err := workspace2.List(ctx, devsyConfig, false, cmd.Owner, oldlog.Default)
 	if err != nil {
 		return false, fmt.Errorf("list workspaces: %w", err)
 	}
@@ -145,7 +149,7 @@ func (cmd *StopCmd) stopSingleMachine(
 	machineClient, err := workspace2.GetMachine(
 		devsyConfig,
 		[]string{singleMachineName},
-		log.Default,
+		oldlog.Default,
 	)
 	if err != nil {
 		return false, fmt.Errorf("get machine: %w", err)
@@ -157,6 +161,6 @@ func (cmd *StopCmd) stopSingleMachine(
 		return false, fmt.Errorf("delete machine: %w", err)
 	}
 
-	log.Default.Donef("stopped workspace: workspace=%s", client.Workspace())
+	log.Infof("stopped workspace: workspace=%s", client.Workspace())
 	return true, nil
 }

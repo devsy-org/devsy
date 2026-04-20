@@ -15,7 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,15 +24,12 @@ import (
 // WorkspaceCmd holds the cmd flags.
 type WorkspaceCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewWorkspaceCmd creates a new command.
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WorkspaceCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance().ErrorStreamOnly(),
 	}
 	c := &cobra.Command{
 		Use:    "workspace",
@@ -67,7 +64,7 @@ func (cmd *WorkspaceCmd) Run(
 			return fmt.Errorf("unmarshal workpace instance %s: %w", instanceEnv, err)
 		}
 
-		updatedInstance, err := createInstance(ctx, baseClient, instance, cmd.Log)
+		updatedInstance, err := createInstance(ctx, baseClient, instance)
 		if err != nil {
 			return err
 		}
@@ -119,13 +116,13 @@ func (cmd *WorkspaceCmd) Run(
 		workspaceUID,
 		workspaceSource,
 		workspacePicture,
-		cmd.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err
 	}
 
-	_, err = createInstance(ctx, baseClient, instance, cmd.Log)
+	_, err = createInstance(ctx, baseClient, instance)
 	if err != nil {
 		return err
 	}
@@ -154,7 +151,6 @@ func createInstance(
 	ctx context.Context,
 	client client.Client,
 	instance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
@@ -168,5 +164,5 @@ func createInstance(
 		return nil, fmt.Errorf("create workspace instance: %w", err)
 	}
 
-	return platform.WaitForInstance(ctx, client, updatedInstance, log)
+	return platform.WaitForInstance(ctx, client, updatedInstance, oldlog.Default)
 }

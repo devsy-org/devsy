@@ -14,9 +14,9 @@ import (
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -25,14 +25,12 @@ type StartCmd struct {
 	*proflags.GlobalFlags
 
 	Host string
-	Log  log.Logger
 }
 
 // NewStartCmd creates a new command.
 func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: flags,
-		Log:         log.Default,
 	}
 	c := &cobra.Command{
 		Use:   "start",
@@ -43,7 +41,6 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -65,7 +62,6 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				cmd.Log,
 			)
 		},
 	)
@@ -100,7 +96,7 @@ func (cmd *StartCmd) Run(
 	}
 
 	// Create a context with signal handling
-	ctx, cancel := withGracefulShutdown(ctx, cmd.Log)
+	ctx, cancel := withGracefulShutdown(ctx)
 	defer cancel()
 
 	d, err := daemon.Init(ctx, daemon.InitConfig{
@@ -124,7 +120,7 @@ func (cmd *StartCmd) Run(
 
 // withGracefulShutdown returns a context that is canceled when termination signals are received.
 // It implements a two-phase shutdown where a second signal forces immediate termination.
-func withGracefulShutdown(ctx context.Context, log log.Logger) (context.Context, func()) {
+func withGracefulShutdown(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	sigChan := make(chan os.Signal, 2)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
@@ -134,6 +130,7 @@ func withGracefulShutdown(ctx context.Context, log log.Logger) (context.Context,
 			select {
 			case sig := <-sigChan:
 				log.Infof("Received signal %s, starting graceful shutdown...", sig)
+
 				cancel()
 			case <-ctx.Done():
 				return

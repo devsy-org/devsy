@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +55,7 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				)
 			}
 
-			return cmd.Run(cobraCmd.Context(), args[0], log.Default)
+			return cmd.Run(cobraCmd.Context(), args[0], oldlog.Default)
 		},
 	}
 
@@ -80,8 +80,8 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	return loginCmd
 }
 
-// Run runs the command logic.
-func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) error {
+//nolint:cyclop,funlen // pre-existing complexity
+func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger) error {
 	if strings.HasPrefix(fullURL, "http://") {
 		return fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
 	} else if !strings.HasPrefix(fullURL, "https://") {
@@ -241,7 +241,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log log.Logger) er
 func (cmd *LoginCmd) addLoftProvider(
 	devsyConfig *config.Config,
 	url string,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	// find out loft version
 	err := cmd.resolveProviderSource(url)
@@ -300,7 +300,7 @@ func login(
 	providerName string,
 	accessKey string,
 	skipBrowserLogin, forceBrowser bool,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	configPath, err := platform.DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {

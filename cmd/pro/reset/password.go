@@ -8,9 +8,10 @@ import (
 
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/random"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/survey"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -27,15 +28,12 @@ type PasswordCmd struct {
 	Password string
 	Create   bool
 	Force    bool
-
-	Log log.Logger
 }
 
 // NewPasswordCmd creates a new command.
 func NewPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &PasswordCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	description := `
 Resets the password of a user.
@@ -74,7 +72,7 @@ func (cmd *PasswordCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	cmd.Log.Infof("Resetting password of user %s", cmd.User)
+	log.Infof("Resetting password of user %s", cmd.User)
 	user, err := cmd.resolveUser(ctx, managementClient)
 	if err != nil {
 		return err
@@ -102,7 +100,7 @@ func (cmd *PasswordCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	cmd.Log.Done("reset user password")
+	log.Info("reset user password")
 	return nil
 }
 
@@ -225,7 +223,7 @@ func (cmd *PasswordCmd) resolvePassword() (string, error) {
 	}
 
 	for {
-		password, err := cmd.Log.Question(&survey.QuestionOptions{
+		password, err := oldlog.Default.Question(&survey.QuestionOptions{
 			Question:   "Please enter a new password",
 			IsPassword: true,
 		})
@@ -238,7 +236,7 @@ func (cmd *PasswordCmd) resolvePassword() (string, error) {
 			return password, nil
 		}
 
-		cmd.Log.Error("Please enter a password")
+		log.Error("Please enter a password")
 	}
 }
 

@@ -4,27 +4,26 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/upgrade"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // UpgradeCmd is a struct that defines a command call for "upgrade".
 type UpgradeCmd struct {
-	log     log.Logger
 	Version string
 	DryRun  bool
 }
 
 // NewUpgradeCmd creates a new upgrade command.
 func NewUpgradeCmd() *cobra.Command {
-	cmd := &UpgradeCmd{log: log.GetInstance()}
+	cmd := &UpgradeCmd{}
 	upgradeCmd := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Upgrade the Devsy CLI to the newest version",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			if err := upgrade.Upgrade(ctx, cmd.Version, cmd.DryRun, cmd.log); err != nil {
+			if err := upgrade.Upgrade(ctx, cmd.Version, cmd.DryRun, oldlog.Default); err != nil {
 				return fmt.Errorf("unable to upgrade: %w", err)
 			}
 			return nil

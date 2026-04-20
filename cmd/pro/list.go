@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, log.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			entry := &proTableEntry{
 				ProInstance:  proInstance,
 				Context:      devsyConfig.DefaultContext,
-				Capabilities: getCapabilities(devsyConfig, proInstance, log.Discard),
+				Capabilities: getCapabilities(devsyConfig, proInstance, oldlog.Discard),
 			}
 			if cmd.Login {
 				err = checkLogin(ctx, devsyConfig, proInstance)
@@ -153,7 +153,7 @@ func checkLogin(
 		"",
 		true,
 		false,
-		log.Default,
+		oldlog.Default,
 	); err != nil {
 		return fmt.Errorf("not logged into %s", proInstance.Host)
 	}
@@ -164,7 +164,7 @@ func checkLogin(
 func getCapabilities(
 	devsyConfig *config.Config,
 	proInstance *provider.ProInstance,
-	log log.Logger,
+	log oldlog.Logger,
 ) []Capability {
 	capabilities := []Capability{}
 	provider, err := workspace.FindProvider(devsyConfig, proInstance.Provider, log)

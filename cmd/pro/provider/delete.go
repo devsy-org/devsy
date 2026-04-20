@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -17,15 +16,12 @@ import (
 // DeleteCmd holds the cmd flags.
 type DeleteCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewDeleteCmd creates a new command.
 func NewDeleteCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &DeleteCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Hidden: true,

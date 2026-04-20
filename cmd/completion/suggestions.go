@@ -7,7 +7,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,6 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 				args,
 				toComplete,
 				globalFlags.Owner,
-				log.Default,
 			)
 		},
 	); err != nil {
@@ -39,7 +38,6 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 				args,
 				toComplete,
 				globalFlags.Owner,
-				log.Default,
 			)
 		},
 	); err != nil {
@@ -55,14 +53,13 @@ func GetWorkspaceSuggestions(
 	args []string,
 	toComplete string,
 	owner platform.OwnerFilter,
-	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	workspaces, err := workspace.List(rootCmd.Context(), devsyConfig, false, owner, logger)
+	workspaces, err := workspace.List(rootCmd.Context(), devsyConfig, false, owner, oldlog.Default)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -82,14 +79,13 @@ func GetProviderSuggestions(
 	args []string,
 	toComplete string,
 	owner platform.OwnerFilter,
-	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	providers, err := workspace.LoadAllProviders(devsyConfig, log.Default.ErrorStreamOnly())
+	providers, err := workspace.LoadAllProviders(devsyConfig, oldlog.Default.ErrorStreamOnly())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -109,7 +105,6 @@ func GetContextSuggestions(
 	args []string,
 	toComplete string,
 	owner platform.OwnerFilter,
-	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {

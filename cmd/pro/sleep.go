@@ -10,9 +10,10 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -22,7 +23,6 @@ import (
 // SleepCmd holds the cmd flags.
 type SleepCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Project       string
 	Host          string
@@ -33,14 +33,11 @@ type SleepCmd struct {
 func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SleepCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "sleep",
 		Short: "Put a workspace to sleep",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			log.Default.SetFormat(log.TextFormat)
-
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
@@ -69,7 +66,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -117,7 +114,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// wait for sleeping
-	cmd.Log.Info("Wait until workspace is sleeping...")
+	log.Info("Wait until workspace is sleeping...")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -139,6 +136,6 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error waiting for workspace to start sleeping: %w", err)
 	}
 
-	cmd.Log.Donef("workspace is now sleeping: workspace=%s", workspaceInstance.Name)
+	log.Infof("workspace is now sleeping: workspace=%s", workspaceInstance.Name)
 	return nil
 }

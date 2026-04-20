@@ -24,12 +24,13 @@ import (
 	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machineid"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/hash"
 	"github.com/devsy-org/log/scanner"
 	"github.com/devsy-org/log/survey"
@@ -63,7 +64,6 @@ type StartCmd struct {
 	proflags.GlobalFlags
 
 	KubeClient       kubernetes.Interface
-	Log              log.Logger
 	RestConfig       *rest.Config
 	Context          string
 	Values           string
@@ -95,7 +95,6 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		GlobalFlags: *flags,
 		Product:     config.ProReleaseName,
 		ChartName:   config.ProReleaseName,
-		Log:         log.Default,
 	}
 	startCmd := &cobra.Command{
 		Use:   "start",
@@ -157,11 +156,16 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cmd.Log.WriteString(logrus.InfoLevel, "\n")
-
 	// Uninstall already existing instance
 	if cmd.Reset {
-		err = uninstall(ctx, cmd.KubeClient, cmd.RestConfig, cmd.Context, cmd.Namespace, cmd.Log)
+		err = uninstall(
+			ctx,
+			cmd.KubeClient,
+			cmd.RestConfig,
+			cmd.Context,
+			cmd.Namespace,
+			oldlog.Default,
+		)
 		if err != nil {
 			return err
 		}
@@ -189,8 +193,8 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	cmd.Log.Info("Welcome to Devsy Pro!")
-	cmd.Log.Info("This installer will help you to get started.")
+	log.Info("Welcome to Devsy Pro!")
+	log.Info("This installer will help you to get started.")
 
 	// make sure we are ready for installing
 	err = cmd.prepareInstall(ctx)
@@ -292,7 +296,7 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 	chartName, chartRepo string,
 	extraArgs []string,
 ) error {
-	cmd.Log.Info("Trying to delete objects blocking current installation")
+	log.Info("Trying to delete objects blocking current installation")
 
 	manifests, err := getReleaseManifests(
 		ctx,
@@ -301,7 +305,6 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 		cmd.Context,
 		cmd.Namespace,
 		extraArgs,
-		cmd.Log,
 	)
 	if err != nil {
 		return err
@@ -317,7 +320,7 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 		cmd.Context,
 		cmd.Namespace,
 		extraArgs,
-		cmd.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return errors.New(
@@ -348,7 +351,15 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 		chartRepo = cmd.ChartRepo
 	}
 
-	err = upgradeRelease(ctx, chartName, chartRepo, cmd.Context, cmd.Namespace, extraArgs, cmd.Log)
+	err = upgradeRelease(
+		ctx,
+		chartName,
+		chartRepo,
+		cmd.Context,
+		cmd.Namespace,
+		extraArgs,
+		oldlog.Default,
+	)
 	if err != nil {
 		if !cmd.Reset {
 			return errors.New(
@@ -398,8 +409,8 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 		if !cmd.NoTunnel {
 			loftRouterDomain, err := cmd.pingLoftRouter(ctx, loftPod)
 			if err != nil {
-				cmd.Log.Errorf("Error retrieving loft router domain: %v", err)
-				cmd.Log.Info("Fallback to use port-forwarding")
+				log.Errorf("Error retrieving loft router domain: %v", err)
+				log.Info("Fallback to use port-forwarding")
 			} else if loftRouterDomain != "" {
 				return cmd.successLoftRouter(loftRouterDomain)
 			}
@@ -409,7 +420,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// get login link
-	cmd.Log.Info("Checking Devsy status...")
+	log.Info("Checking Devsy status...")
 	host, err := getIngressHost(ctx, cmd.KubeClient, cmd.Namespace)
 	if err != nil {
 		return err
@@ -423,7 +434,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 			NoOption  = "No, please re-run the DNS check"
 		)
 
-		answer, err := cmd.Log.Question(&survey.QuestionOptions{
+		answer, err := oldlog.Default.Question(&survey.QuestionOptions{
 			Question:     "Unable to reach Devsy at https://" + host + ". Do you want to start port-forwarding instead?",
 			DefaultValue: YesOption,
 			Options: []string{
@@ -452,8 +463,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 			password = passwordChangedHint
 		}
 
-		cmd.Log.WriteString(logrus.InfoLevel, fmt.Sprintf(`
-
+		oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
 
 ##########################   LOGIN   ############################
 
@@ -487,7 +497,7 @@ Thanks for using Devsy Pro!
 	}
 
 	// Print DNS Configuration
-	cmd.Log.WriteString(logrus.InfoLevel, `
+	oldlog.Default.WriteString(logrus.InfoLevel, `
 
 ###################################     DNS CONFIGURATION REQUIRED     ##################################
 
@@ -508,7 +518,7 @@ The command will wait until Devsy Pro is reachable under the host.
 
 `)
 
-	cmd.Log.Info(
+	log.Info(
 		"Waiting for you to configure DNS, so Devsy Pro can be reached on https://" + host,
 	)
 	err = wait.PollUntilContextTimeout(
@@ -524,7 +534,7 @@ The command will wait until Devsy Pro is reachable under the host.
 		return err
 	}
 
-	cmd.Log.Done("Devsy Pro is reachable at https://" + host)
+	log.Info("Devsy Pro is reachable at https://" + host)
 
 	printSuccess()
 	return nil
@@ -545,7 +555,7 @@ func (cmd *StartCmd) successLocal() error {
 		password = passwordChangedHint
 	}
 
-	cmd.Log.WriteString(logrus.InfoLevel, fmt.Sprintf(`
+	oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
 
 ##########################   LOGIN   ############################
 
@@ -569,7 +579,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
-	cmd.Log.Infof("Starting Devsy Pro in Docker...")
+	log.Infof("Starting Devsy Pro in Docker...")
 	name := config.ProReleaseName
 
 	// prepare installation
@@ -586,7 +596,7 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 
 	// check if container is there
 	if containerID != "" && (cmd.Reset || cmd.Upgrade) {
-		cmd.Log.Info("Existing instance found.")
+		log.Info("Existing instance found.")
 		err = cmd.uninstallDocker(ctx, containerID)
 		if err != nil {
 			return err
@@ -597,18 +607,18 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 
 	// Use default password if none is set
 	if cmd.Password == "" {
-		cmd.Password = getMachineUID(cmd.Log)
+		cmd.Password = getMachineUID(oldlog.Default)
 	}
 
 	// check if is installed
 	if containerID != "" {
-		cmd.Log.Info("Existing instance found. Run with --upgrade to apply new configuration")
+		log.Info("Existing instance found. Run with --upgrade to apply new configuration")
 		return cmd.successDocker(ctx, containerID)
 	}
 
 	// Install Devsy
-	cmd.Log.Info("Welcome to Devsy Pro!")
-	cmd.Log.Info("This installer will help you get started.")
+	log.Info("Welcome to Devsy Pro!")
+	log.Info("This installer will help you get started.")
 
 	// make sure we are ready for installing
 	containerID, err = cmd.runInDocker(ctx, name)
@@ -637,7 +647,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait for domain to become reachable
-	cmd.Log.Infof("Wait for Devsy Pro to become available at %s...", host)
+	log.Infof("Wait for Devsy Pro to become available at %s...", host)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -665,14 +675,13 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// print success message
-	PrintSuccessMessageDockerInstall(host, cmd.Password, cmd.Log)
+	PrintSuccessMessageDockerInstall(host, cmd.Password, oldlog.Default)
 	return nil
 }
 
-func PrintSuccessMessageDockerInstall(host, password string, log log.Logger) {
+func PrintSuccessMessageDockerInstall(host, password string, log oldlog.Logger) {
 	url := "https://" + host
 	log.WriteString(logrus.InfoLevel, fmt.Sprintf(`
-
 
 ##########################   LOGIN   ############################
 
@@ -695,7 +704,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
-	cmd.Log.Info("Wait for Devsy Pro to become available...")
+	log.Info("Wait for Devsy Pro to become available...")
 
 	// check for local port
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
@@ -765,7 +774,7 @@ func (cmd *StartCmd) prepareDocker() error {
 }
 
 func (cmd *StartCmd) uninstallDocker(ctx context.Context, id string) error {
-	cmd.Log.Infof("Uninstalling...")
+	log.Infof("Uninstalling...")
 
 	// stop container
 	out, err := cmd.buildDockerCmd(ctx, "stop", id).Output()
@@ -814,7 +823,7 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 		args = append(args, "ghcr.io/devsy-org/devsy-pro:latest")
 	}
 
-	cmd.Log.Infof("Start Devsy Pro via 'docker %s'", strings.Join(args, " "))
+	log.Infof("Start Devsy Pro via 'docker %s'", strings.Join(args, " "))
 	runCmd := cmd.buildDockerCmd(ctx, args...)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
@@ -910,7 +919,14 @@ func (cmd *StartCmd) buildDockerCmd(ctx context.Context, args ...string) *exec.C
 
 func (cmd *StartCmd) prepareInstall(ctx context.Context) error {
 	// delete admin user & secret
-	return uninstall(ctx, cmd.KubeClient, cmd.RestConfig, cmd.Context, cmd.Namespace, log.Discard)
+	return uninstall(
+		ctx,
+		cmd.KubeClient,
+		cmd.RestConfig,
+		cmd.Context,
+		cmd.Namespace,
+		oldlog.Discard,
+	)
 }
 
 func (cmd *StartCmd) prepare(ctx context.Context) error {
@@ -982,7 +998,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 	if cmd.Context != "" {
 		contextToLoad = cmd.Context
 	} else if loftConfig.LastInstallContext != "" && loftConfig.LastInstallContext != contextToLoad {
-		contextToLoad, err = cmd.Log.Question(&survey.QuestionOptions{
+		contextToLoad, err = oldlog.Default.Question(&survey.QuestionOptions{
 			Question:     "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. Please choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, loftConfig.LastInstallContext},
@@ -1049,7 +1065,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 
 	// Only ask if ingress should be enabled if --upgrade flag is not provided
 	if !cmd.Upgrade && term.IsTerminal(os.Stdin) {
-		cmd.Log.Info("Existing instance found.")
+		log.Info("Existing instance found.")
 
 		// Check if Devsy is installed in a local cluster
 		isLocal := isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace)
@@ -1067,7 +1083,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 					NoOption  = "No, my cluster is running not locally (GKE, EKS, Bare Metal, etc.)"
 				)
 
-				answer, err := cmd.Log.Question(&survey.QuestionOptions{
+				answer, err := oldlog.Default.Question(&survey.QuestionOptions{
 					Question:     "Seems like your cluster is running locally (docker desktop, minikube, kind etc.). Is that correct?",
 					DefaultValue: YesOption,
 					Options: []string{
@@ -1089,7 +1105,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 					NoOption  = "No"
 				)
 
-				answer, err := cmd.Log.Question(&survey.QuestionOptions{
+				answer, err := oldlog.Default.Question(&survey.QuestionOptions{
 					Question:     "Enabling ingress is usually only useful for remote clusters. Do you still want to deploy the ingress to your local cluster?",
 					DefaultValue: NoOption,
 					Options: []string{
@@ -1109,18 +1125,18 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 		if enableIngress {
 			// Ask for hostname if --host flag is not provided
 			if cmd.Host == "" {
-				host, err := enterHostNameQuestion(cmd.Log)
+				host, err := enterHostNameQuestion(oldlog.Default)
 				if err != nil {
 					return err
 				}
 
 				cmd.Host = host
 			} else {
-				cmd.Log.Info("Will enable an ingress with hostname: " + cmd.Host)
+				log.Info("Will enable an ingress with hostname: " + cmd.Host)
 			}
 
 			if term.IsTerminal(os.Stdin) {
-				err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context, cmd.Log)
+				err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context, oldlog.Default)
 				if err != nil {
 					return fmt.Errorf("install ingress controller: %w", err)
 				}
@@ -1141,9 +1157,9 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
 	// wait for loft pod to start
-	cmd.Log.Info("waiting for Devsy Pro pod to be running")
-	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace, cmd.Log)
-	cmd.Log.Donef("release Pod started")
+	log.Info("waiting for Devsy Pro pod to be running")
+	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace, oldlog.Default)
+	log.Infof("release Pod started")
 	if err != nil {
 		return nil, err
 	}
@@ -1154,7 +1170,6 @@ func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error)
 		cmd.KubeClient,
 		cmd.RestConfig,
 		cmd.Password,
-		cmd.Log,
 	)
 	if err != nil {
 		return nil, err
@@ -1193,7 +1208,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 			},
 		},
 	}
-	cmd.Log.Infof("Waiting until Devsy Pro is reachable at https://%s", loftRouterDomain)
+	log.Infof("Waiting until Devsy Pro is reachable at https://%s", loftRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second*3,
@@ -1240,8 +1255,7 @@ func (cmd *StartCmd) successLoftRouter(url string) error {
 		password = passwordChangedHint
 	}
 
-	cmd.Log.WriteString(logrus.InfoLevel, fmt.Sprintf(`
-
+	oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
 
 ##########################   LOGIN   ############################
 
@@ -1341,8 +1355,7 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		return err
 	}
 
-	cmd.Log.WriteString(logrus.InfoLevel, "\n")
-	cmd.Log.Donef("logged in via CLI: url=%s", url)
+	log.Infof("logged in via CLI: url=%s", url)
 
 	return nil
 }
@@ -1360,7 +1373,7 @@ func (cmd *StartCmd) loginUI(url string) error {
 		return fmt.Errorf("couldn't open the login page in a browser: %w", err)
 	}
 
-	cmd.Log.Infof("If the browser does not open automatically, please navigate to %s", loginURL)
+	log.Infof("If the browser does not open automatically, please navigate to %s", loginURL)
 
 	return nil
 }
@@ -1384,7 +1397,7 @@ func uninstall(
 	kubeClient kubernetes.Interface,
 	restConfig *rest.Config,
 	kubeContext, namespace string,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	releaseName := config.ProReleaseName
 	deploy, err := kubeClient.AppsV1().
@@ -1549,7 +1562,7 @@ func isInstalledLocally(
 	return kerrors.IsNotFound(err)
 }
 
-func enterHostNameQuestion(log log.Logger) (string, error) {
+func enterHostNameQuestion(log oldlog.Logger) (string, error) {
 	return log.Question(&survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
@@ -1572,7 +1585,7 @@ func ensureIngressController(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	kubeContext string,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	// first create an ingress controller
 	const (
@@ -1697,7 +1710,6 @@ func ensureAdminPassword(
 	kubeClient kubernetes.Interface,
 	restConfig *rest.Config,
 	password string,
-	log log.Logger,
 ) (bool, error) {
 	loftClient, err := loftclientset.NewForConfig(restConfig)
 	if err != nil {
@@ -1865,7 +1877,7 @@ func upgradeRelease(
 	ctx context.Context,
 	chartName, chartRepo, kubeContext, namespace string,
 	extraArgs []string,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	// now we install loft
 	args := []string{
@@ -1913,7 +1925,6 @@ func getReleaseManifests(
 	ctx context.Context,
 	chartName, chartRepo, kubeContext, namespace string,
 	extraArgs []string,
-	_ log.Logger,
 ) (string, error) {
 	args := []string{
 		"template",
@@ -2036,7 +2047,7 @@ func (e *Error) Error() string {
 	return message + e.err.Error()
 }
 
-func getMachineUID(log log.Logger) string {
+func getMachineUID(log oldlog.Logger) string {
 	id, err := machineid.ID()
 	if err != nil {
 		id = "error"

@@ -8,8 +8,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devsyConfig, args, log.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -59,23 +60,23 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 	case "plain":
 		switch machineStatus {
 		case client.StatusStopped:
-			log.Default.Infof(
+			log.Infof(
 				"Machine '%s' is '%s', you can start it via 'devsy machine start %s'",
 				machineClient.Machine(),
 				machineStatus,
 				machineClient.Machine(),
 			)
 		case client.StatusBusy:
-			log.Default.Infof(
+			log.Infof(
 				"Machine '%s' is '%s', which means its currently unaccessible. "+
 					"This is usually resolved by waiting a couple of minutes",
 				machineClient.Machine(),
 				machineStatus,
 			)
 		case client.StatusNotFound:
-			log.Default.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
+			log.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
 		default:
-			log.Default.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
+			log.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
 		}
 	case "json":
 		out, err := json.Marshal(struct {

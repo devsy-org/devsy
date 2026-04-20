@@ -8,8 +8,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -33,12 +34,7 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		Use:   "set-options [provider]",
 		Short: "Sets options for the given provider. Similar to 'devsy provider use', but does not switch the default provider.",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			logger := log.Logger(log.Default)
-			if cmd.Dry {
-				logger = log.Default.ErrorStreamOnly()
-			}
-
-			return cmd.Run(cobraCmd.Context(), args, logger)
+			return cmd.Run(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetProviderSuggestions(
@@ -48,7 +44,6 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -64,8 +59,8 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 	return setOptionsCmd
 }
 
-// Run runs the command logic.
-func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger) error {
+//nolint:cyclop // pre-existing complexity
+func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
@@ -84,7 +79,12 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger
 	}
 	log.Debugf("Options=%+v", cmd.Options)
 
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, log)
+	var logger oldlog.Logger = oldlog.Default
+	if cmd.Dry {
+		logger = oldlog.Default.ErrorStreamOnly()
+	}
+
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, logger)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger
 		SkipInit:       cmd.Dry,
 		SkipSubOptions: false,
 		SingleMachine:  &cmd.SingleMachine,
-		Log:            log,
+		Log:            logger,
 	})
 	if err != nil {
 		return err
@@ -119,6 +119,6 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string, log log.Logger
 	}
 
 	// print success message
-	log.Donef("set options for provider: providerName=%s", providerWithOptions.Config.Name)
+	log.Infof("set options for provider: providerName=%s", providerWithOptions.Config.Name)
 	return nil
 }

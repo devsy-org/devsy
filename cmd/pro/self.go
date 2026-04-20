@@ -9,15 +9,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // SelfCmd holds the cmd flags.
 type SelfCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host string
 }
@@ -26,7 +24,6 @@ type SelfCmd struct {
 func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SelfCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "self",
@@ -38,7 +35,6 @@ func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -60,8 +56,6 @@ func (cmd *SelfCmd) Run(
 	provider *provider.ProviderConfig,
 ) error {
 	var buf bytes.Buffer
-	// ignore --debug because we tunnel json through stdio
-	cmd.Log.SetLevel(logrus.InfoLevel)
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
@@ -71,7 +65,7 @@ func (cmd *SelfCmd) Run(
 		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
 		Stdout:  &buf,
-		Log:     cmd.Log,
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("get self: %w", err)

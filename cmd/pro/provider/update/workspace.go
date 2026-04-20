@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,15 +22,12 @@ import (
 // WorkspaceCmd holds the cmd flags.
 type WorkspaceCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewWorkspaceCmd creates a new command.
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WorkspaceCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance().ErrorStreamOnly(),
 	}
 	c := &cobra.Command{
 		Use:    "workspace",
@@ -80,7 +77,7 @@ func (cmd *WorkspaceCmd) Run(
 			)
 		}
 
-		updatedInstance, err := updateInstance(ctx, baseClient, oldInstance, newInstance, cmd.Log)
+		updatedInstance, err := updateInstance(ctx, baseClient, oldInstance, newInstance)
 		if err != nil {
 			return err
 		}
@@ -123,12 +120,12 @@ func (cmd *WorkspaceCmd) Run(
 		)
 	}
 
-	newInstance, err := form.UpdateInstance(ctx, baseClient, oldInstance, cmd.Log)
+	newInstance, err := form.UpdateInstance(ctx, baseClient, oldInstance, oldlog.Default)
 	if err != nil {
 		return err
 	}
 
-	_, err = updateInstance(ctx, baseClient, oldInstance, newInstance, cmd.Log)
+	_, err = updateInstance(ctx, baseClient, oldInstance, newInstance)
 	if err != nil {
 		return err
 	}
@@ -141,12 +138,11 @@ func updateInstance(
 	client client.Client,
 	oldInstance *managementv1.DevsyWorkspaceInstance,
 	newInstance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	// This ensures the template is kept up to date with configuration changes
 	if newInstance.Spec.TemplateRef != nil {
 		newInstance.Spec.TemplateRef.SyncOnce = true
 	}
 
-	return platform.UpdateInstance(ctx, client, oldInstance, newInstance, log)
+	return platform.UpdateInstance(ctx, client, oldInstance, newInstance, oldlog.Default)
 }

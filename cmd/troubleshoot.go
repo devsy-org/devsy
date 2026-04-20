@@ -17,7 +17,7 @@ import (
 	pkgprovider "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -44,7 +44,6 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 		Hidden: true,
@@ -96,7 +95,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		return
 	}
 
-	logger := log.Default.ErrorStreamOnly()
+	logger := oldlog.Default.ErrorStreamOnly()
 	info.Providers, err = collectProviders(info.Config, logger)
 	if err != nil {
 		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("collect providers: %w", err)})
@@ -114,7 +113,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		DevsyConfig: info.Config,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         logger,
+		Log:         oldlog.Default,
 	})
 	if err == nil {
 		info.Workspace = workspaceClient.WorkspaceConfig()
@@ -180,7 +179,7 @@ func collectProWorkspaceInfo(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	host string,
-	logger log.Logger,
+	logger oldlog.Logger,
 	workspaceUID string,
 	project string,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
@@ -218,7 +217,7 @@ func collectProWorkspaceInfo(
 // It returns a map of providers with their default settings and an error if any occurs.
 func collectProviders(
 	devsyConfig *config.Config,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) (map[string]provider.ProviderWithDefault, error) {
 	providers, err := workspace.LoadAllProviders(devsyConfig, logger)
 	if err != nil {
@@ -262,7 +261,7 @@ type DevsyProInstance struct {
 // This means that even when an error value is returned, the pro instance slice will contain valid values.
 func collectPlatformInfo(
 	devsyConfig *config.Config,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) ([]DevsyProInstance, error) {
 	proInstanceList, err := workspace.ListProInstances(devsyConfig, logger)
 	if err != nil {

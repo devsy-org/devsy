@@ -8,22 +8,18 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // WorkspaceCmd holds the cmd flags.
 type WorkspaceCmd struct {
 	*flags.GlobalFlags
-
-	log log.Logger
 }
 
 // NewWorkspaceCmd creates a new command.
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WorkspaceCmd{
 		GlobalFlags: globalFlags,
-		log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "workspace",

@@ -13,22 +13,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // StatusCmd holds the cmd flags.
 type StatusCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewStatusCmd creates a new command.
 func NewStatusCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Hidden: true,
@@ -82,13 +79,20 @@ func (cmd *StatusCmd) Run(
 		workspace,
 		"getstatus",
 		platform.OptionsFromEnv(config.EnvFlagsStatus),
-		cmd.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err
 	}
 
-	_, err = remotecommand.ExecuteConn(ctx, conn, stdin, stdout, stderr, cmd.Log.ErrorStreamOnly())
+	_, err = remotecommand.ExecuteConn(
+		ctx,
+		conn,
+		stdin,
+		stdout,
+		stderr,
+		oldlog.Default.ErrorStreamOnly(),
+	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
 	}

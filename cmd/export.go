@@ -10,7 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,6 @@ func NewExportCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -58,12 +57,11 @@ func NewExportCmd(flags *flags.GlobalFlags) *cobra.Command {
 // Run runs the command logic.
 func (cmd *ExportCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	// try to load workspace
-	logger := log.Default.ErrorStreamOnly()
 	client, err := workspace2.Get(ctx, workspace2.GetOptions{
 		DevsyConfig: devsyConfig,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         logger,
+		Log:         oldlog.Default,
 	})
 	if err != nil {
 		return err

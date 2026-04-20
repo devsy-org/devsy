@@ -11,14 +11,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // RebuildCmd holds the cmd flags.
 type RebuildCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Project string
 	Host    string
@@ -28,14 +27,11 @@ type RebuildCmd struct {
 func NewRebuildCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &RebuildCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "rebuild",
 		Short: "Rebuild a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			log.Default.SetFormat(log.TextFormat)
-
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
@@ -59,7 +55,7 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("resolve host \"%s\": %w", cmd.Host, err)
 	}
@@ -81,7 +77,7 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	values := url.Values{"options": []string{string(rawOpts)}, "cliMode": []string{"true"}}
-	conn, err := platform.DialInstance(baseClient, workspace, "up", values, cmd.Log)
+	conn, err := platform.DialInstance(baseClient, workspace, "up", values, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -92,7 +88,7 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		cmd.Log.ErrorStreamOnly(),
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

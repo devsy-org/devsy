@@ -11,10 +11,11 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +46,6 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -80,8 +80,8 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 
 	if providerName != "" && cmd.Provider != "" {
 		if providerName != cmd.Provider {
-			log.Default.Infof("providerName=%+v", providerName)
-			log.Default.Infof("GlobalFlags.Provider=%+v", cmd.Provider)
+			log.Infof("providerName=%+v", providerName)
+			log.Infof("GlobalFlags.Provider=%+v", cmd.Provider)
 			return fmt.Errorf("ambiguous provider configuration detected")
 		}
 	}
@@ -89,7 +89,7 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 	providerWithOptions, err := workspace.FindProvider(
 		devsyConfig,
 		providerName,
-		log.Default.ErrorStreamOnly(),
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err

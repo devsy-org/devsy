@@ -9,8 +9,9 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +44,6 @@ If the workspace is not found, you can use the --ignore-not-found flag to treat 
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -98,7 +98,7 @@ func (cmd *DeleteCmd) deleteSingle(
 		return err
 	}
 
-	log.Default.Donef("deleted workspace %s", name)
+	log.Infof("deleted workspace %s", name)
 
 	return nil
 }
@@ -117,7 +117,7 @@ func (cmd *DeleteCmd) deleteMultiple(
 			continue
 		}
 
-		log.Default.Donef("deleted workspace %s", name)
+		log.Infof("deleted workspace %s", name)
 	}
 
 	if len(errs) > 0 {
@@ -143,6 +143,6 @@ func (cmd *DeleteCmd) deleteWorkspace(
 		Force:          cmd.Force,
 		ClientDelete:   cmd.DeleteOptions,
 		Owner:          cmd.Owner,
-		Log:            log.Default,
+		Log:            oldlog.Default,
 	})
 }

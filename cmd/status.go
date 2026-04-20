@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -48,12 +48,12 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			logger := log.Default.ErrorStreamOnly()
+			logger := oldlog.Default.ErrorStreamOnly()
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
 				DevsyConfig: devsyConfig,
 				Args:        args,
 				Owner:       cmd.Owner,
-				Log:         logger,
+				Log:         oldlog.Default,
 			})
 			if err != nil {
 				return err
@@ -69,7 +69,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -86,7 +85,7 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 func (cmd *StatusCmd) Run(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	// parse timeout
 	if cmd.Timeout != "" {

@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
 )
@@ -21,14 +20,12 @@ type NetcheckCmd struct {
 	*proflags.GlobalFlags
 
 	Host string
-	Log  log.Logger
 }
 
 // NewNetcheckCmd creates a new command.
 func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &NetcheckCmd{
 		GlobalFlags: flags,
-		Log:         log.Default,
 	}
 	c := &cobra.Command{
 		Use:   "netcheck",
@@ -39,7 +36,6 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -72,7 +68,6 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				cmd.Log,
 			)
 		},
 	)

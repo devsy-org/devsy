@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(cobraCmd.Context(), devsyConfig, log.Default)
+			return cmd.Run(cobraCmd.Context(), devsyConfig, oldlog.Default)
 		},
 	}
 
@@ -64,8 +64,12 @@ func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return importCmd
 }
 
-// Run runs the command logic.
-func (cmd *ImportCmd) Run(ctx context.Context, devsyConfig *config.Config, log log.Logger) error {
+//nolint:cyclop // pre-existing complexity
+func (cmd *ImportCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	log oldlog.Logger,
+) error {
 	exportConfig := &provider.ExportConfig{}
 	err := json.Unmarshal([]byte(cmd.Data), exportConfig)
 	if err != nil {
@@ -117,7 +121,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, devsyConfig *config.Config, log l
 func (cmd *ImportCmd) importWorkspace(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, cmd.WorkspaceID)
 	if err != nil {
@@ -166,7 +170,7 @@ func (cmd *ImportCmd) importWorkspace(
 func (cmd *ImportCmd) importMachine(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	if exportConfig.Machine == nil {
 		return nil
@@ -221,7 +225,7 @@ func (cmd *ImportCmd) importMachine(
 func (cmd *ImportCmd) importProvider(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	// if provider already exists we skip
 	if cmd.ProviderReuse && provider.ProviderExists(devsyConfig.DefaultContext, cmd.ProviderID) {
@@ -284,7 +288,7 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 	ctx context.Context,
 	exportConfig *provider.ExportConfig,
 	devsyConfig *config.Config,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	workspaces, err := workspace.List(ctx, devsyConfig, false, cmd.Owner, log)
 	if err != nil {

@@ -12,10 +12,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -83,10 +84,10 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		workspaces, err := workspace.ListLocalWorkspaces(
 			devsyConfig.DefaultContext,
 			false,
-			log.Default,
+			oldlog.Default,
 		)
 		if err != nil {
-			log.Default.Warnf("Failed to list workspaces: %v", err)
+			log.Warnf("Failed to list workspaces: %v", err)
 		} else {
 			cleanupLocalWorkspaces(
 				ctx,
@@ -94,19 +95,19 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 				workspaces,
 				providerConfig.Name,
 				cmd.Owner,
-				log.Default,
+				oldlog.Default,
 			)
 		}
 
 		daemonClient := daemon.NewLocalClient(proInstanceConfig.Provider)
 		err = daemonClient.Shutdown(ctx)
 		if err != nil {
-			log.Default.Warnf("Failed to shut down daemon: %v", err)
+			log.Warnf("Failed to shut down daemon: %v", err)
 		}
-		log.Default.Debug("Waiting for daemon to shut down")
+		log.Debug("Waiting for daemon to shut down")
 		err = waitDaemonStopped(ctx, providerConfig.Name)
 		if err != nil {
-			log.Default.Warnf("Failed to wait for daemon to be stopped: %v", err)
+			log.Warnf("Failed to wait for daemon to be stopped: %v", err)
 		}
 	}
 
@@ -130,7 +131,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("delete pro instance dir: %w", err)
 	}
 
-	log.Default.Donef("deleted pro instance: proInstanceName=%s", proInstanceName)
+	log.Infof("deleted pro instance: proInstanceName=%s", proInstanceName)
 	return nil
 }
 
@@ -140,7 +141,7 @@ func cleanupLocalWorkspaces(
 	workspaces []*provider.Workspace,
 	providerName string,
 	owner platform.OwnerFilter,
-	log log.Logger,
+	log oldlog.Logger,
 ) {
 	usedWorkspaces := []*provider.Workspace{}
 

@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,6 @@ import (
 // WatchWorkspacesCmd holds the cmd flags.
 type WatchWorkspacesCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host          string
 	Project       string
@@ -30,7 +29,6 @@ type WatchWorkspacesCmd struct {
 func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WatchWorkspacesCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "watch-workspaces",
@@ -42,7 +40,6 @@ func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -84,9 +81,6 @@ func (cmd *WatchWorkspacesCmd) Run(
 		cancel()
 	}()
 
-	// ignore --debug because we tunnel json through stdio
-	cmd.Log.SetLevel(logrus.InfoLevel)
-
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     cancelCtx,
 		Name:    "watchWorkspaces",
@@ -95,8 +89,8 @@ func (cmd *WatchWorkspacesCmd) Run(
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  os.Stdout,
-		Stderr:  log.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, false),
-		Log:     cmd.Log,
+		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, false),
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", providerConfig.Name, err)

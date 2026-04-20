@@ -6,7 +6,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -16,14 +16,13 @@ func GetPlatformHostSuggestions(
 	args []string,
 	toComplete string,
 	owner platform.OwnerFilter,
-	logger log.Logger,
 ) ([]string, cobra.ShellCompDirective) {
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, logger)
+	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

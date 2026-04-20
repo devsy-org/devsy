@@ -21,7 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -30,15 +30,12 @@ import (
 // WorkspacesCmd holds the cmd flags.
 type WorkspacesCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewWorkspacesCmd creates a new command.
 func NewWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WorkspacesCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.Default.ErrorStreamOnly(),
 	}
 	c := &cobra.Command{
 		Use:    "workspaces",
@@ -105,7 +102,7 @@ func (cmd *WorkspacesCmd) Run(
 
 	self := baseClient.Self()
 	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
-	instanceStore := newStore(workspaceInformer, self, cmd.Context, filterByOwner, cmd.Log)
+	instanceStore := newStore(workspaceInformer, self, cmd.Context, filterByOwner)
 
 	_, err = workspaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
@@ -172,8 +169,6 @@ type instanceStore struct {
 
 	m         sync.Mutex
 	instances map[string]*ProWorkspaceInstance
-
-	log log.Logger
 }
 
 func newStore(
@@ -181,7 +176,6 @@ func newStore(
 	self *managementv1.Self,
 	context string,
 	filterByOwner bool,
-	log log.Logger,
 ) *instanceStore {
 	return &instanceStore{
 		informer:      informer,
@@ -189,7 +183,6 @@ func newStore(
 		context:       context,
 		filterByOwner: filterByOwner,
 		instances:     map[string]*ProWorkspaceInstance{},
-		log:           log,
 	}
 }
 
@@ -257,7 +250,11 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	instanceList := []*ProWorkspaceInstance{}
 	// Check local imported workspaces
 	// Eventually this should be implemented by filtering based on ownership and access on the CRD, for now we're stuck with this approach...
-	localWorkspaces, err := workspace.ListLocalWorkspaces(s.context, false, s.log)
+	localWorkspaces, err := workspace.ListLocalWorkspaces(
+		s.context,
+		false,
+		oldlog.Default.ErrorStreamOnly(),
+	)
 	if err == nil {
 		for _, workspace := range localWorkspaces {
 			if workspace.Imported && workspace.Pro != nil {

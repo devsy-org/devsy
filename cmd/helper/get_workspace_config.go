@@ -10,7 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -43,7 +44,7 @@ func NewGetWorkspaceConfigCommand(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			if cmd.maxDepth < 0 {
-				log.Default.Debugf("--max-depth was %d, setting to 0", cmd.maxDepth)
+				log.Debugf("--max-depth was %d, setting to 0", cmd.maxDepth)
 				cmd.maxDepth = 0
 			}
 
@@ -69,13 +70,13 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 	}
 	rawSource := args[0]
 
-	level := log.Default.GetLevel()
+	level := oldlog.Default.GetLevel()
 	if cmd.Debug {
 		level = logrus.DebugLevel
 	}
-	var logger log.Logger = log.NewStdoutLogger(os.Stdin, os.Stdout, os.Stderr, level)
+	var logger oldlog.Logger = oldlog.NewStdoutLogger(os.Stdin, os.Stdout, os.Stderr, level)
 	if os.Getenv(config.EnvUI) == config.BoolTrue {
-		logger = log.Discard
+		logger = oldlog.Discard
 	}
 	logger.Debugf("Resolving devcontainer config for source: %s", rawSource)
 

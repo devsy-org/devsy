@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +21,6 @@ var errProviderNotFound = errors.New("provider not found")
 
 type CheckProviderUpdateCmd struct {
 	*flags.GlobalFlags
-	log log.Logger
 }
 
 type providerVersionCheck struct {
@@ -33,7 +32,6 @@ type providerVersionCheck struct {
 func NewCheckProviderUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CheckProviderUpdateCmd{
 		GlobalFlags: flags,
-		log:         log.Default,
 	}
 	shellCmd := &cobra.Command{
 		Use:   "check-provider-update",
@@ -60,13 +58,17 @@ func (cmd *CheckProviderUpdateCmd) Run(
 	}
 	providerName := args[0]
 
-	providerSourceRaw, err := workspace.ResolveProviderSource(devsyConfig, providerName, cmd.log)
+	providerSourceRaw, err := workspace.ResolveProviderSource(
+		devsyConfig,
+		providerName,
+		oldlog.Default,
+	)
 	if err != nil {
 		return fmt.Errorf("provider %s doesn't exist", providerName)
 	}
 
 	// retrieve current config for provider
-	allProviders, err := workspace.LoadAllProviders(devsyConfig, cmd.log)
+	allProviders, err := workspace.LoadAllProviders(devsyConfig, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -75,7 +77,7 @@ func (cmd *CheckProviderUpdateCmd) Run(
 		return errProviderNotFound
 	}
 
-	latestProviderConfig, err := loadLatestProvider(providerSourceRaw, cmd.log)
+	latestProviderConfig, err := loadLatestProvider(providerSourceRaw)
 	if err != nil {
 		return err
 	}
@@ -109,9 +111,8 @@ func (cmd *CheckProviderUpdateCmd) Run(
 
 func loadLatestProvider(
 	providerSourceRaw string,
-	log log.Logger,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, _, err := workspace.ResolveProvider(providerSourceRaw, log)
+	providerRaw, _, err := workspace.ResolveProvider(providerSourceRaw, oldlog.Default)
 	if err != nil {
 		return nil, fmt.Errorf("resolve provider: %w", err)
 	}

@@ -10,6 +10,7 @@ import (
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
@@ -18,7 +19,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
@@ -31,15 +32,12 @@ type ImportCmd struct {
 	WorkspaceProject string
 
 	Own bool
-	log log.Logger
 }
 
 // NewImportCmd creates a new command.
 func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
-	logger := log.GetInstance()
 	cmd := &ImportCmd{
 		GlobalFlags: globalFlags,
-		log:         logger,
 	}
 
 	importCmd := &cobra.Command{
@@ -86,7 +84,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("load workspace: %w", err)
 		} else if workspaceConfig.UID == cmd.WorkspaceUid {
-			cmd.log.Infof("Workspace %s already imported", cmd.WorkspaceId)
+			log.Infof("Workspace %s already imported", cmd.WorkspaceId)
 			return nil
 		}
 
@@ -95,7 +93,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("workspace %s already exists", cmd.WorkspaceId)
 		}
 
-		cmd.log.Infof(
+		log.Infof(
 			"workspace ID conflict, will import workspace with new ID: "+
 				"existingWorkspaceId=%s, existingWorkspaceUid=%s, newWorkspaceId=%s",
 			cmd.WorkspaceId,
@@ -105,12 +103,17 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		cmd.WorkspaceId = newWorkspaceId
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost, cmd.log)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("resolve provider: %w", err)
 	}
 
-	baseClient, err := platform.InitClientFromProvider(ctx, devsyConfig, provider.Name, cmd.log)
+	baseClient, err := platform.InitClientFromProvider(
+		ctx,
+		devsyConfig,
+		provider.Name,
+		oldlog.Default,
+	)
 	if err != nil {
 		return fmt.Errorf("base client: %w", err)
 	}
@@ -134,7 +137,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("prepare workspace to import definition: %w", err)
 		}
-		cmd.log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceId)
+		log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceId)
 		return nil
 	}
 
@@ -144,7 +147,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("prepare workspace to import definition: %w", err)
 	}
 
-	cmd.log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceId)
+	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceId)
 
 	return nil
 }
@@ -200,7 +203,7 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 		false,
 		false,
 		nil,
-		cmd.log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return fmt.Errorf("resolve options: %w", err)

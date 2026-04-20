@@ -18,7 +18,7 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -120,12 +120,12 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devsyConfig, args, log.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args, oldlog.Default)
 	if err != nil {
 		return err
 	}
 
-	writer := log.Default.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
+	writer := oldlog.Default.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
 	defer func() { _ = writer.Close() }()
 
 	// Get the timeout from the context options
@@ -161,7 +161,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 				Stdin:           stdin,
 				Stdout:          stdout,
 				Stderr:          stderr,
-				Log:             log.Default.ErrorStreamOnly(),
+				Log:             oldlog.Default.ErrorStreamOnly(),
 				Timeout:         timeout,
 			})
 		},

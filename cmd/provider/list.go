@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +56,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	providers, err := workspace.LoadAllProviders(devsyConfig, log.Default.ErrorStreamOnly())
+	providers, err := workspace.LoadAllProviders(devsyConfig, oldlog.Default.ErrorStreamOnly())
 	if err != nil {
 		return err
 	}

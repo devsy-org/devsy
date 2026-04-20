@@ -10,7 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +18,6 @@ import (
 // CreateWorkspaceCmd holds the cmd flags.
 type CreateWorkspaceCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host     string
 	Instance string
@@ -28,7 +27,6 @@ type CreateWorkspaceCmd struct {
 func NewCreateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CreateWorkspaceCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "create-workspace",
@@ -40,7 +38,6 @@ func NewCreateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -67,8 +64,6 @@ func (cmd *CreateWorkspaceCmd) Run(
 	opts[platform.WorkspaceInstanceEnv] = config.OptionValue{Value: cmd.Instance}
 
 	var buf bytes.Buffer
-	// ignore --debug because we tunnel json through stdio
-	cmd.Log.SetLevel(logrus.InfoLevel)
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
@@ -78,8 +73,8 @@ func (cmd *CreateWorkspaceCmd) Run(
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,
-		Stderr:  cmd.Log.ErrorStreamOnly().Writer(logrus.ErrorLevel, true),
-		Log:     cmd.Log,
+		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, true),
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("create workspace: %w", err)

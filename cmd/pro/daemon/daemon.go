@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -31,14 +31,13 @@ func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 func findProProvider(
 	ctx context.Context,
 	context, provider, host string,
-	log log.Logger,
 ) (*config.Config, *providerpkg.ProviderConfig, error) {
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host, log)
+	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host, oldlog.Default)
 	if err != nil {
 		return devsyConfig, nil, fmt.Errorf("load provider: %w", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/credentials"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -42,5 +42,5 @@ func (c *DockerCredentialsHelperCmd) Run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get port: %w", err)
 	}
 
-	return dockercredentials.ConfigureCredentialsContainer(u.Name, port, log.Default)
+	return dockercredentials.ConfigureCredentialsContainer(u.Name, port, oldlog.Default)
 }

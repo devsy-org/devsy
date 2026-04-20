@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -20,14 +19,12 @@ type StatusCmd struct {
 	*proflags.GlobalFlags
 
 	Host string
-	Log  log.Logger
 }
 
 // NewStatusCmd creates a new command.
 func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
 		GlobalFlags: flags,
-		Log:         log.Default,
 	}
 	c := &cobra.Command{
 		Use:   "status",
@@ -38,7 +35,6 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -71,7 +67,6 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				cmd.Log,
 			)
 		},
 	)

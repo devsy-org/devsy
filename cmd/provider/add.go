@@ -7,10 +7,11 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -93,7 +94,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			devsyConfig,
 			providerName,
 			cmd.FromExisting,
-			log.Default,
+			oldlog.Default,
 		)
 		if err != nil {
 			return err
@@ -110,7 +111,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			return fmt.Errorf("please specify either a URL or path, " +
 				"e.g. devsy provider add https://path/to/my/provider.yaml")
 		}
-		c, err := workspace.AddProvider(devsyConfig, providerName, args[0], log.Default)
+		c, err := workspace.AddProvider(devsyConfig, providerName, args[0], oldlog.Default)
 		if err != nil {
 			return err
 		}
@@ -118,7 +119,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		options = cmd.Options
 	}
 
-	log.Default.Donef("installed provider: providerName=%s", providerConfig.Name)
+	log.Infof("installed provider: providerName=%s", providerConfig.Name)
 	if cmd.Use {
 		configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
 			Provider:       providerConfig,
@@ -129,7 +130,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  &cmd.SingleMachine,
-			Log:            log.Default,
+			Log:            oldlog.Default,
 		})
 		if configureErr != nil {
 			devsyConfig, err := config.LoadConfig(cmd.Context, "")
@@ -137,7 +138,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 				return err
 			}
 
-			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true, log.Default)
+			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true, oldlog.Default)
 			if err != nil {
 				return fmt.Errorf("delete provider: %w", err)
 			}
@@ -148,8 +149,8 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return nil
 	}
 
-	log.Default.Infof("To use the provider, please run the following command:")
-	log.Default.Infof("devsy provider use %s", providerConfig.Name)
+	log.Infof("To use the provider, please run the following command:")
+	log.Infof("devsy provider use %s", providerConfig.Name)
 	return nil
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +18,6 @@ import (
 // CheckHealthCmd holds the cmd flags.
 type CheckHealthCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host string
 }
@@ -27,7 +26,6 @@ type CheckHealthCmd struct {
 func NewCheckHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CheckHealthCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "check-health",
@@ -39,7 +37,6 @@ func NewCheckHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -72,8 +69,6 @@ func (cmd *CheckHealthCmd) Run(
 	provider *provider.ProviderConfig,
 ) error {
 	var buf bytes.Buffer
-	// ignore --debug because we tunnel json through stdio
-	cmd.Log.SetLevel(logrus.InfoLevel)
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
@@ -83,8 +78,8 @@ func (cmd *CheckHealthCmd) Run(
 		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
 		Stdout:  &buf,
-		Stderr:  cmd.Log.Writer(logrus.ErrorLevel, true),
-		Log:     cmd.Log,
+		Stderr:  oldlog.Default.Writer(logrus.ErrorLevel, true),
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("check health with provider \"%s\": %w", provider.Name, err)
