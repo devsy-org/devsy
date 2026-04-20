@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Print the status of a remote container",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
-			return cmd.Run(cobraCmd.Context(), log.Default.ErrorStreamOnly())
+			return cmd.Run(cobraCmd.Context())
 		},
 	}
 	statusCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
@@ -37,9 +37,11 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return statusCmd
 }
 
-func (cmd *StatusCmd) Run(ctx context.Context, log log.Logger) error {
+func (cmd *StatusCmd) Run(ctx context.Context) error {
+	logger := oldlog.Default.ErrorStreamOnly()
+
 	// get workspace
-	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(cmd.WorkspaceInfo, log)
+	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(cmd.WorkspaceInfo, logger)
 	if err != nil {
 		return err
 	} else if shouldExit {
@@ -47,7 +49,7 @@ func (cmd *StatusCmd) Run(ctx context.Context, log log.Logger) error {
 	}
 
 	// create runner
-	runner, err := CreateRunner(workspaceInfo, log)
+	runner, err := CreateRunner(workspaceInfo, logger)
 	if err != nil {
 		return err
 	}

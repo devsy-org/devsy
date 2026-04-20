@@ -16,9 +16,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -31,14 +32,12 @@ const (
 
 type DaemonCmd struct {
 	Config *agentd.DaemonConfig
-	Log    log.Logger
 }
 
 // NewDaemonCmd creates the merged daemon command.
 func NewDaemonCmd() *cobra.Command {
 	cmd := &DaemonCmd{
 		Config: &agentd.DaemonConfig{},
-		Log:    log.NewStreamLogger(os.Stdout, os.Stderr, logrus.InfoLevel),
 	}
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
@@ -125,7 +124,7 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 
 	err := g.Wait()
 	if err != nil {
-		cmd.Log.Errorf("daemon error: %v", err)
+		log.Errorf("daemon error: %v", err)
 		os.Exit(1)
 	}
 	os.Exit(0)
@@ -266,6 +265,6 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 }
 
 // initLogging initializes logging and returns a combined logger.
-func initLogging() log.Logger {
-	return log.NewStdoutLogger(nil, os.Stdout, os.Stderr, logrus.InfoLevel)
+func initLogging() oldlog.Logger {
+	return oldlog.NewStdoutLogger(nil, os.Stdout, os.Stderr, logrus.InfoLevel)
 }

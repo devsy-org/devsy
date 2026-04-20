@@ -15,8 +15,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,7 @@ func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Starts a new container ssh tunnel",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
-			return cmd.Run(cobraCmd.Context(), log.Default.ErrorStreamOnly())
+			return cmd.Run(cobraCmd.Context())
 		},
 	}
 
@@ -51,9 +52,11 @@ func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *ContainerTunnelCmd) Run(ctx context.Context, log log.Logger) error {
+func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
+	logger := oldlog.Default.ErrorStreamOnly()
+
 	// write workspace info
-	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo, log)
+	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo, logger)
 	if err != nil {
 		return err
 	} else if shouldExit {
@@ -61,19 +64,19 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context, log log.Logger) error {
 	}
 
 	// make sure content folder exists
-	_, err = workspace.InitContentFolder(workspaceInfo, log)
+	_, err = workspace.InitContentFolder(workspaceInfo, logger)
 	if err != nil {
 		return err
 	}
 
 	// create runner
-	runner, err := workspace.CreateRunner(workspaceInfo, log)
+	runner, err := workspace.CreateRunner(workspaceInfo, logger)
 	if err != nil {
 		return err
 	}
 
 	// wait until devcontainer is started
-	err = startDevContainer(ctx, workspaceInfo, runner, log)
+	err = startDevContainer(ctx, workspaceInfo, runner, logger)
 	if err != nil {
 		return err
 	}
@@ -96,7 +99,7 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context, log log.Logger) error {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		log,
+		logger,
 		workspaceInfo.InjectTimeout,
 	)
 	if err != nil {
@@ -110,7 +113,7 @@ func startDevContainer(
 	ctx context.Context,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 	runner devcontainer.Runner,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	containerDetails, err := runner.Find(ctx)
 	if err != nil {
@@ -120,7 +123,7 @@ func startDevContainer(
 	// start container if necessary
 	if containerDetails == nil || containerDetails.State.Status != "running" {
 		// start container
-		_, err = StartContainer(ctx, runner, log, workspaceConfig)
+		_, err = StartContainer(ctx, runner, logger, workspaceConfig)
 		if err != nil {
 			return err
 		}
@@ -130,7 +133,7 @@ func startDevContainer(
 		err = runner.Command(ctx, "root", "cat "+pkgconfig.DevContainerResultPath, nil, buf, buf)
 		if err != nil {
 			// start container
-			_, err = StartContainer(ctx, runner, log, workspaceConfig)
+			_, err = StartContainer(ctx, runner, logger, workspaceConfig)
 			if err != nil {
 				return err
 			}
@@ -143,7 +146,7 @@ func startDevContainer(
 func StartContainer(
 	ctx context.Context,
 	runner devcontainer.Runner,
-	log log.Logger,
+	logger oldlog.Logger,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 ) (*config.Result, error) {
 	log.Debugf("starting Devsy container")

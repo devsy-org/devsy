@@ -8,9 +8,10 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -62,19 +63,19 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("address %s already in use: %w", cmd.Address, err)
 		}
 
-		log.Default.ErrorStreamOnly().Info("address %s already in use", cmd.Address)
+		log.Infof("address %s already in use", cmd.Address)
 		return nil
 	}
 
 	return server.ListenAndServe()
 }
 
-func getFileLogger(remoteUser string, debug bool) log.Logger {
+func getFileLogger(remoteUser string, debug bool) oldlog.Logger {
 	logLevel := logrus.InfoLevel
 	if debug {
 		logLevel = logrus.DebugLevel
 	}
-	fallback := log.NewDiscardLogger(logLevel)
+	fallback := oldlog.NewDiscardLogger(logLevel)
 
 	targetFolder := filepath.Join(os.TempDir(), config.ConfigDirName)
 	if remoteUser != "" {
@@ -85,5 +86,5 @@ func getFileLogger(remoteUser string, debug bool) log.Logger {
 		return fallback
 	}
 
-	return log.NewFileLogger(filepath.Join(targetFolder, "ssh.log"), logLevel)
+	return oldlog.NewFileLogger(filepath.Join(targetFolder, "ssh.log"), logLevel)
 }

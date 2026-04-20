@@ -7,7 +7,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +35,7 @@ func NewOpenVSCodeAsyncCmd() *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
-	log.Default.Debugf("Start setting up container...")
+	log.Debugf("Start setting up container...")
 	decompressed, err := compress.Decompress(cmd.SetupInfo)
 	if err != nil {
 		return err
@@ -47,7 +48,7 @@ func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 	}
 
 	// install IDE
-	err = setupOpenVSCodeExtensions(setupInfo, log.Default)
+	err = setupOpenVSCodeExtensions(setupInfo, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -55,9 +56,9 @@ func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func setupOpenVSCodeExtensions(setupInfo *config.Result, log log.Logger) error {
+func setupOpenVSCodeExtensions(setupInfo *config.Result, logger oldlog.Logger) error {
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
 	user := config.GetRemoteUser(setupInfo)
-	return openvscode.NewOpenVSCodeServer(vsCodeConfiguration.Extensions, "", user, "", "", nil, log).
+	return openvscode.NewOpenVSCodeServer(vsCodeConfiguration.Extensions, "", user, "", "", nil, logger).
 		InstallExtensions()
 }

@@ -8,7 +8,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -30,14 +31,12 @@ func NewGitSSHSignatureCmd(flags *flags.GlobalFlags) *cobra.Command {
 		// mode) that cobra cannot distinguish from flags that take a value.
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
-			logger := log.GetInstance()
-
 			parsed := parseSSHKeygenArgs(args)
 
 			// For non-sign operations (verify, find-principals, check-novalidate),
 			// delegate command to system ssh-keygen since op does not require the tunnel.
 			if parsed.command != "sign" {
-				return delegateToSSHKeygen(args, logger)
+				return delegateToSSHKeygen(args)
 			}
 
 			if parsed.certPath == "" {
@@ -51,7 +50,7 @@ func NewGitSSHSignatureCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			return gitsshsigning.HandleGitSSHProgramCall(
-				parsed.certPath, parsed.namespace, parsed.bufferFile, logger)
+				parsed.certPath, parsed.namespace, parsed.bufferFile, oldlog.Default)
 		},
 	}
 }
@@ -123,13 +122,13 @@ func consumeFlag(result *sshKeygenArgs, args []string, i int) int {
 }
 
 // delegateToSSHKeygen forwards args to the system ssh-keygen binary.
-func delegateToSSHKeygen(args []string, logger log.Logger) error {
+func delegateToSSHKeygen(args []string) error {
 	sshKeygen, err := exec.LookPath("ssh-keygen")
 	if err != nil {
 		return fmt.Errorf("find ssh-keygen: %w", err)
 	}
 
-	logger.Debugf("delegating to ssh-keygen: %s %v", sshKeygen, args)
+	log.Debugf("delegating to ssh-keygen: %s %v", sshKeygen, args)
 
 	c := exec.Command(sshKeygen, args...) // #nosec G204,G304,G702
 	c.Stdin = os.Stdin

@@ -11,8 +11,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/git"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -50,12 +50,12 @@ func NewInstallDotfilesCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
-	logger := log.Default.ErrorStreamOnly()
+	logger := oldlog.Default.ErrorStreamOnly()
 	targetDir := filepath.Join(os.Getenv("HOME"), "dotfiles")
 
 	_, err := os.Stat(targetDir)
 	if err != nil {
-		logger.Infof("Cloning dotfiles %s", cmd.Repository)
+		log.Infof("Cloning dotfiles %s", cmd.Repository)
 
 		gitInfo := git.NormalizeRepositoryGitInfo(cmd.Repository)
 		if err := git.CloneRepository(
@@ -69,10 +69,10 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 			return err
 		}
 	} else {
-		logger.Info("dotfiles already set up, skipping cloning")
+		log.Info("dotfiles already set up, skipping cloning")
 	}
 
-	logger.Debugf("Entering dotfiles directory")
+	log.Debugf("Entering dotfiles directory")
 
 	err = os.Chdir(targetDir)
 	if err != nil {
@@ -80,7 +80,7 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 	}
 
 	if cmd.InstallScript != "" {
-		logger.Infof("Executing install script %s", cmd.InstallScript)
+		log.Infof("Executing install script %s", cmd.InstallScript)
 		command := "./" + strings.TrimPrefix(cmd.InstallScript, "./")
 
 		err := ensureExecutable(ctx, command)
@@ -92,16 +92,16 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 			ctx,
 			command,
 		) // #nosec G204 -- user-provided dotfile install script
-		writer := logger.Writer(logrus.InfoLevel, false)
+		writer := log.Writer(log.LevelInfo)
 		scriptCmd.Stdout = writer
 		scriptCmd.Stderr = writer
 
 		return scriptCmd.Run()
 	}
 
-	logger.Debugf("Install script not specified, trying known locations")
+	log.Debugf("Install script not specified, trying known locations")
 
-	return setupDotfiles(ctx, logger)
+	return setupDotfiles(ctx)
 }
 
 var installScriptPaths = []string{
@@ -115,7 +115,7 @@ var installScriptPaths = []string{
 	"./setup/setup",
 }
 
-func setupDotfiles(ctx context.Context, logger log.Logger) error {
+func setupDotfiles(ctx context.Context) error {
 	scripts := slices.Clone(installScriptPaths)
 	scripts = slices.DeleteFunc(scripts, func(path string) bool {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -126,10 +126,10 @@ func setupDotfiles(ctx context.Context, logger log.Logger) error {
 	})
 
 	for _, installScriptPath := range scripts {
-		writer := logger.Writer(logrus.InfoLevel, false)
+		writer := log.Writer(log.LevelInfo)
 		err := ensureExecutable(ctx, installScriptPath)
 		if err != nil {
-			logger.Debugf(
+			log.Debugf(
 				"install script not found: scriptPath=%s, error=%v",
 				installScriptPath,
 				err,
@@ -140,7 +140,7 @@ func setupDotfiles(ctx context.Context, logger log.Logger) error {
 			continue
 		}
 
-		logger.Debugf("executing dotfile install script: scriptPath=%s", installScriptPath)
+		log.Debugf("executing dotfile install script: scriptPath=%s", installScriptPath)
 		scriptCmd := exec.CommandContext(
 			ctx,
 			installScriptPath,
@@ -148,7 +148,7 @@ func setupDotfiles(ctx context.Context, logger log.Logger) error {
 		scriptCmd.Stdout = writer
 		scriptCmd.Stderr = writer
 		if err := scriptCmd.Run(); err != nil {
-			logger.Debugf("script execution failed: error=%v", err)
+			log.Debugf("script execution failed: error=%v", err)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -156,16 +156,16 @@ func setupDotfiles(ctx context.Context, logger log.Logger) error {
 		}
 
 		// exit after first successful script
-		logger.Debug("install script executed")
+		log.Debug("install script executed")
 		return nil
 	}
 
-	logger.Info("Finished script locations, trying to link the files")
+	log.Info("Finished script locations, trying to link the files")
 
-	return linkDotfiles(ctx, logger)
+	return linkDotfiles(ctx)
 }
 
-func linkDotfiles(ctx context.Context, logger log.Logger) error {
+func linkDotfiles(ctx context.Context) error {
 	files, err := os.ReadDir(".")
 	if err != nil {
 		return err
@@ -185,7 +185,6 @@ func linkDotfiles(ctx context.Context, logger log.Logger) error {
 			continue
 		}
 		if err := linkDotfile(
-			logger,
 			filepath.Join(pwd, file.Name()),
 			filepath.Join(home, file.Name()),
 		); err != nil {
@@ -196,11 +195,11 @@ func linkDotfiles(ctx context.Context, logger log.Logger) error {
 	return nil
 }
 
-func linkDotfile(logger log.Logger, src, dest string) error {
-	logger.Debugf("linking %s in home", filepath.Base(dest))
+func linkDotfile(src, dest string) error {
+	log.Debugf("linking %s in home", filepath.Base(dest))
 	if _, err := os.Lstat(dest); err == nil { // #nosec G703
 		if removeErr := os.Remove(dest); removeErr != nil { // #nosec G703
-			logger.Debugf("failed to remove %s: %v", dest, removeErr)
+			log.Debugf("failed to remove %s: %v", dest, removeErr)
 		}
 	}
 	return os.Symlink(src, dest)

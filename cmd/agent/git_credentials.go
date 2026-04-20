@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,14 +36,14 @@ func NewGitCredentialsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "git-credentials",
 		Short: "Retrieves git-credentials from the local machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			return cmd.Run(cobraCmd.Context(), args, log.Default.ErrorStreamOnly())
+			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
 	gitCredentialsCmd.Flags().IntVar(&cmd.Port, "port", 0, "If specified, will use the given port")
 	return gitCredentialsCmd
 }
 
-func (cmd *GitCredentialsCmd) Run(ctx context.Context, args []string, log log.Logger) error {
+func (cmd *GitCredentialsCmd) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return nil
 	} else if args[0] != "get" {

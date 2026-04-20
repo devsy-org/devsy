@@ -37,9 +37,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -94,7 +95,7 @@ type setupContext struct {
 	workspaceInfo *provider2.ContainerWorkspaceInfo
 	setupInfo     *config.Result
 	tunnelClient  tunnel.TunnelClient
-	logger        log.Logger
+	logger        oldlog.Logger
 }
 
 // Run runs the command logic.
@@ -104,7 +105,7 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo(logger)
+	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
 	if err != nil {
 		return err
 	}
@@ -199,7 +200,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		return err
 	}
 
-	if err := cmd.startContainerDaemon(sctx.workspaceInfo, sctx.logger); err != nil {
+	if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
 		return err
 	}
 
@@ -208,7 +209,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 	// tunnel which kills this process, so postAttach must already be running
 	// independently.
 	if err := cmd.startPostAttachHooks(sctx); err != nil {
-		sctx.logger.Errorf("failed to start postAttachCommand: %v", err)
+		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
 
 	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)
@@ -216,14 +217,14 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(
 	ctx context.Context,
-) (tunnel.TunnelClient, log.Logger, error) {
+) (tunnel.TunnelClient, oldlog.Logger, error) {
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("initializing tunnel client: %w", err)
 	}
 
 	logger := tunnelserver.NewTunnelLogger(ctx, tunnelClient, cmd.Debug)
-	logger.Debugf("created logger")
+	log.Debugf("created logger")
 
 	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
 		return nil, nil, fmt.Errorf("ping client: %w", err)
@@ -232,10 +233,8 @@ func (cmd *SetupContainerCmd) initializeTunnelClient(
 	return tunnelClient, logger, nil
 }
 
-func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo(
-	logger log.Logger,
-) (*provider2.ContainerWorkspaceInfo, *config.Result, error) {
-	logger.Debugf("begin setting up container")
+func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.ContainerWorkspaceInfo, *config.Result, error) {
+	log.Debugf("begin setting up container")
 	workspaceInfo, _, err := agent.DecodeContainerWorkspaceInfo(cmd.ContainerWorkspaceInfo)
 	if err != nil {
 		return nil, nil, err
@@ -260,12 +259,12 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	}
 
 	mounts := config.GetMounts(sctx.setupInfo)
-	sctx.logger.Debugf("syncing mounts: %v", mounts)
+	log.Debugf("syncing mounts: %v", mounts)
 	for _, m := range mounts {
 		if !sctx.workspaceInfo.CLIOptions.Reset {
 			files, err := os.ReadDir(m.Target)
 			if err == nil && len(files) > 0 {
-				sctx.logger.Debugf("skip stream mount %s because it is not empty", m.Target)
+				log.Debugf("skip stream mount %s because it is not empty", m.Target)
 				continue
 			}
 		}
@@ -287,14 +286,14 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 func (cmd *SetupContainerCmd) setupGitCredentials(
 	ctx context.Context,
 	tunnelClient tunnel.TunnelClient,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) func() {
 	if !cmd.InjectGitCredentials {
 		return nil
 	}
 
 	if !command.Exists("git") {
-		logger.Debugf("git not found, skipping git credentials configuration")
+		log.Debugf("git not found, skipping git credentials configuration")
 		return nil
 	}
 
@@ -302,7 +301,7 @@ func (cmd *SetupContainerCmd) setupGitCredentials(
 	cleanupFunc, err := configureSystemGitCredentials(cancelCtx, tunnelClient, logger)
 	if err != nil {
 		cancel()
-		logger.Errorf("error configuring git credentials: %v", err)
+		log.Errorf("error configuring git credentials: %v", err)
 		return nil
 	}
 
@@ -316,7 +315,7 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 	ctx context.Context,
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	setupInfo *config.Result,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) error {
 	b, err := workspaceInfo.PullFromInsideContainer.Bool()
 	if err != nil {
@@ -328,7 +327,7 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 
 	gitPath := filepath.Join(setupInfo.SubstitutionContext.ContainerWorkspaceFolder, ".git")
 	if _, err := os.Stat(gitPath); err == nil && !workspaceInfo.CLIOptions.Recreate {
-		logger.Debugf(
+		log.Debugf(
 			"workspace repository already checked out %s, skipping clone",
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
 		)
@@ -348,7 +347,6 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 
 func (cmd *SetupContainerCmd) startContainerDaemon(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
-	logger log.Logger,
 ) error {
 	if workspaceInfo.CLIOptions.Platform.Enabled ||
 		workspaceInfo.CLIOptions.DisableDaemon ||
@@ -357,7 +355,7 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	}
 
 	return command.StartBackgroundOnce(config2.BinaryName+".daemon", func() (*exec.Cmd, error) {
-		logger.Debugf(
+		log.Debugf(
 			"start %s container daemon with inactivity timeout %s",
 			config2.BinaryName,
 			workspaceInfo.ContainerTimeout,
@@ -385,7 +383,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 	}
 
 	return command.StartBackgroundOnce("devsy.post-attach", func() (*exec.Cmd, error) {
-		sctx.logger.Debugf("starting postAttachCommand as background process")
+		log.Debugf("starting postAttachCommand as background process")
 		binaryPath, err := os.Executable()
 		if err != nil {
 			return nil, err
@@ -447,71 +445,71 @@ func fillContainerEnv(setupInfo *config.Result) error {
 func (cmd *SetupContainerCmd) installIDE(
 	setupInfo *config.Result,
 	ide *provider2.WorkspaceIDEConfig,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	switch ide.Name {
 	case string(config2.IDENone):
 		return nil
 	case string(config2.IDEVSCode):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorStable, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorStable, logger)
 	case string(config2.IDEVSCodeInsiders):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorInsiders, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorInsiders, logger)
 	case string(config2.IDECursor):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCursor, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCursor, logger)
 	case string(config2.IDEPositron):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorPositron, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorPositron, logger)
 	case string(config2.IDECodium):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCodium, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCodium, logger)
 	case string(config2.IDEWindsurf):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorWindsurf, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorWindsurf, logger)
 	case string(config2.IDEAntigravity):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity, logger)
 	case string(config2.IDEBob):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob, log)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob, logger)
 	case string(config2.IDEOpenVSCode):
-		return cmd.setupOpenVSCode(setupInfo, ide.Options, log)
+		return cmd.setupOpenVSCode(setupInfo, ide.Options, logger)
 	case string(config2.IDEGoland):
-		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDERustRover):
-		return jetbrains.NewRustRoverServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewRustRoverServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEPyCharm):
-		return jetbrains.NewPyCharmServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewPyCharmServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEPhpStorm):
-		return jetbrains.NewPhpStorm(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewPhpStorm(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEIntellij):
-		return jetbrains.NewIntellij(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewIntellij(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDECLion):
-		return jetbrains.NewCLionServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewCLionServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDERider):
-		return jetbrains.NewRiderServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewRiderServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDERubyMine):
-		return jetbrains.NewRubyMineServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewRubyMineServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEWebStorm):
-		return jetbrains.NewWebStormServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewWebStormServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEDataSpell):
-		return jetbrains.NewDataSpellServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return jetbrains.NewDataSpellServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo)
 	case string(config2.IDEFleet):
-		return fleet.NewFleetServer(config.GetRemoteUser(setupInfo), ide.Options, log).
+		return fleet.NewFleetServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install(setupInfo.SubstitutionContext.ContainerWorkspaceFolder)
 	case string(config2.IDEJupyterNotebook):
 		return jupyter.NewJupyterNotebookServer(
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options, log).
+			config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install()
 	case string(config2.IDERStudio):
 		return rstudio.NewRStudioServer(
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options, log).
+			config.GetRemoteUser(setupInfo), ide.Options, logger).
 			Install()
 	}
 
@@ -522,7 +520,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
 	flavor vscode.Flavor,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	log.Debugf("setup %s", flavor.DisplayName())
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
@@ -544,7 +542,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 		UserName:   user,
 		Values:     ideOptions,
 		Flavor:     flavor,
-		Log:        log,
+		Log:        logger,
 	}).Install()
 	if err != nil {
 		return err
@@ -585,7 +583,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 func (cmd *SetupContainerCmd) setupOpenVSCode(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
-	log log.Logger,
+	logger oldlog.Logger,
 ) error {
 	log.Debugf("setup openvscode")
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
@@ -607,7 +605,7 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 		"0.0.0.0",
 		strconv.Itoa(openvscode.DefaultVSCodePort),
 		ideOptions,
-		log,
+		logger,
 	)
 
 	// install open vscode
@@ -649,13 +647,13 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 func configureSystemGitCredentials(
 	ctx context.Context,
 	client tunnel.TunnelClient,
-	log log.Logger,
+	logger oldlog.Logger,
 ) (func(), error) {
 	if !command.Exists("git") {
 		return nil, errors.New("git not found")
 	}
 
-	serverPort, err := credentials.StartCredentialsServer(ctx, client, log)
+	serverPort, err := credentials.StartCredentialsServer(ctx, client, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -692,7 +690,7 @@ func streamMount(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	m *config.Mount,
 	tunnelClient tunnel.TunnelClient,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) error {
 	// if we have a platform workspace socket we connect directly to it
 	if workspaceInfo.CLIOptions.Platform.Enabled {
@@ -706,7 +704,7 @@ func streamMount(
 		}
 
 		// build the url
-		logger.Infof("Download %s into DevContainer %s", m.Source, m.Target)
+		log.Infof("Download %s into DevContainer %s", m.Source, m.Target)
 		url := fmt.Sprintf(
 			"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s",
 			ts.RemoveProtocol(workspaceInfo.CLIOptions.Platform.PlatformHost),
@@ -743,7 +741,6 @@ func streamMount(
 		// create progress reader
 		progressReader := &progressReader{
 			Reader: resp.Body,
-			Log:    logger,
 		}
 
 		// target folder
@@ -756,7 +753,7 @@ func streamMount(
 	}
 
 	// stream mount
-	logger.Infof("Copy %s into DevContainer %s", m.Source, m.Target)
+	log.Infof("Copy %s into DevContainer %s", m.Source, m.Target)
 	stream, err := tunnelClient.StreamMount(ctx, &tunnel.StreamMountRequest{Mount: m.String()})
 	if err != nil {
 		return fmt.Errorf("init stream mount %s: %w", m.String(), err)
@@ -773,7 +770,6 @@ func streamMount(
 
 type progressReader struct {
 	Reader io.Reader
-	Log    log.Logger
 
 	lastMessage time.Time
 	bytesRead   int64
@@ -783,7 +779,7 @@ func (p *progressReader) Read(b []byte) (n int, err error) {
 	n, err = p.Reader.Read(b)
 	p.bytesRead += int64(n)
 	if time.Since(p.lastMessage) > time.Second*4 {
-		p.Log.Infof("downloaded %.2f MB", float64(p.bytesRead)/1024/1024)
+		log.Infof("downloaded %.2f MB", float64(p.bytesRead)/1024/1024)
 		p.lastMessage = time.Now()
 	}
 

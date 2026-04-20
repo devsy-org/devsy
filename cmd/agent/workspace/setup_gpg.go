@@ -9,7 +9,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/credentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +33,7 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "setups gpg-agent forwarding in the container",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
-			return cmd.Run(cobraCmd.Context(), log.Default.ErrorStreamOnly())
+			return cmd.Run(cobraCmd.Context())
 		},
 	}
 	setupGPGCmd.Flags().
@@ -53,11 +54,13 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 // - ensuring the gpg-agent is stopped in the container
 // - starting a reverse-tunnel of the local unix socket to remote
 // - ensuring paths and permissions are correctly set in the remote.
-func (cmd *SetupGPGCmd) Run(ctx context.Context, log log.Logger) error {
+//
+//nolint:cyclop,funlen // pre-existing complexity
+func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	log.Debugf("Initializing gpg-agent forwarding")
 
 	log.Debugf("Fetching public key")
-	rawPublicKeys, err := getPublicKeys(log)
+	rawPublicKeys, err := getPublicKeys()
 	if err != nil {
 		log.Errorf("Fetch public key: %v", err)
 		return err
@@ -143,13 +146,13 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context, log log.Logger) error {
 	return nil
 }
 
-func getPublicKeys(log log.Logger) (string, error) {
+func getPublicKeys() (string, error) {
 	port, err := credentials.GetPort()
 	if err != nil {
 		return "", fmt.Errorf("get port: %w", err)
 	}
 
-	out, err := credentials.PostWithRetry(port, "gpg-public-keys", nil, log)
+	out, err := credentials.PostWithRetry(port, "gpg-public-keys", nil, oldlog.Default)
 	if err != nil {
 		return "", fmt.Errorf("get public gpg keys: %w", err)
 	}

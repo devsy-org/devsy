@@ -270,7 +270,7 @@ func patchEtcEnvironmentFlags(workspaceEnv []string, log log.Logger) error {
 	}
 
 	// update env
-	envfile.MergeAndApply(config.ListToObject(workspaceEnv), log)
+	envfile.MergeAndApply(config.ListToObject(workspaceEnv))
 	return nil
 }
 
@@ -295,7 +295,7 @@ func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig, log log.
 	}
 
 	// update env
-	envfile.MergeAndApply(mergedConfig.RemoteEnv, log)
+	envfile.MergeAndApply(mergedConfig.RemoteEnv)
 	return nil
 }
 

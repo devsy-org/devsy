@@ -12,9 +12,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -49,18 +49,17 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	logger := log.NewFileLogger(filepath.Join(logFolder, "agent-daemon.log"), logrus.InfoLevel)
-	logger.Infof("starting Devsy daemon patrol at %s", logFolder)
+	log.Infof("starting Devsy daemon patrol at %s", logFolder)
 
 	// start patrolling
-	cmd.patrol(ctx, logger)
+	cmd.patrol(ctx)
 
 	return nil
 }
 
-func (cmd *DaemonCmd) patrol(ctx context.Context, log log.Logger) {
+func (cmd *DaemonCmd) patrol(ctx context.Context) {
 	// make sure we don't immediately resleep on startup
-	cmd.initialTouch(log)
+	cmd.initialTouch()
 
 	// parse the daemon interval
 	interval := time.Second * 60
@@ -79,12 +78,12 @@ func (cmd *DaemonCmd) patrol(ctx context.Context, log log.Logger) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			cmd.doOnce(ctx, log)
+			cmd.doOnce(ctx)
 		}
 	}
 }
 
-func (cmd *DaemonCmd) doOnce(ctx context.Context, log log.Logger) {
+func (cmd *DaemonCmd) doOnce(ctx context.Context) {
 	var latestActivity *time.Time
 	var workspace *provider2.AgentWorkspaceInfo
 
@@ -103,7 +102,7 @@ func (cmd *DaemonCmd) doOnce(ctx context.Context, log log.Logger) {
 	}
 
 	// check when the last touch was
-	latestActivity, workspace = findLatestActivity(matches, log)
+	latestActivity, workspace = findLatestActivity(matches)
 
 	// should we run shutdown command?
 	if latestActivity == nil {
@@ -120,14 +119,13 @@ func (cmd *DaemonCmd) doOnce(ctx context.Context, log log.Logger) {
 		return
 	}
 
-	cmd.checkAndShutdown(ctx, latestActivity, workspace, log)
+	cmd.checkAndShutdown(ctx, latestActivity, workspace)
 }
 
 func (cmd *DaemonCmd) checkAndShutdown(
 	ctx context.Context,
 	latestActivity *time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
-	log log.Logger,
 ) {
 	// check timeout
 	timeout := agent.DefaultInactivityTimeout
@@ -150,16 +148,15 @@ func (cmd *DaemonCmd) checkAndShutdown(
 	}
 
 	// run shutdown command
-	cmd.runShutdownCommand(ctx, workspace, log)
+	cmd.runShutdownCommand(ctx, workspace)
 }
 
 func (cmd *DaemonCmd) runShutdownCommand(
 	ctx context.Context,
 	workspace *provider2.AgentWorkspaceInfo,
-	log log.Logger,
 ) {
 	// get environ
-	environ, err := custom.ToEnvironWithBinaries(workspace, log)
+	environ, err := custom.ToEnvironWithBinaries(workspace, oldlog.Default)
 	if err != nil {
 		log.Errorf("%v", err)
 		return
@@ -192,7 +189,7 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	log.Infof("ran command: %s", buf.String())
 }
 
-func (cmd *DaemonCmd) initialTouch(log log.Logger) {
+func (cmd *DaemonCmd) initialTouch() {
 	// get base folder
 	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
 	if err != nil {
@@ -219,12 +216,11 @@ func (cmd *DaemonCmd) initialTouch(log log.Logger) {
 
 func findLatestActivity(
 	matches []string,
-	log log.Logger,
 ) (*time.Time, *provider2.AgentWorkspaceInfo) {
 	var latestActivity *time.Time
 	var workspace *provider2.AgentWorkspaceInfo
 	for _, match := range matches {
-		activity, activityWorkspace, err := getActivity(match, log)
+		activity, activityWorkspace, err := getActivity(match)
 		if err != nil {
 			log.Errorf("error checking for inactivity: %v", err)
 			continue
@@ -242,7 +238,6 @@ func findLatestActivity(
 
 func getActivity(
 	workspaceConfig string,
-	log log.Logger,
 ) (*time.Time, *provider2.AgentWorkspaceInfo, error) {
 	workspace, err := agent.ParseAgentWorkspaceInfo(workspaceConfig)
 	if err != nil {

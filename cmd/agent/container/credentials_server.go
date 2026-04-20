@@ -16,9 +16,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -84,13 +85,13 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 
 	// create debug logger
-	log := tunnelserver.NewTunnelLogger(ctx, tunnelClient, cmd.Debug)
+	logger := tunnelserver.NewTunnelLogger(ctx, tunnelClient, cmd.Debug)
 
 	// forward ports
 	if cmd.ForwardPorts {
 		go func() {
 			log.Debugf("Start watching & forwarding open ports")
-			err = forwardPorts(ctx, tunnelClient, log)
+			err = forwardPorts(ctx, tunnelClient, logger)
 			if err != nil {
 				log.Errorf("error forwarding ports: %v", err)
 			}
@@ -105,7 +106,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 
 	// configure docker credential helper
 	if cmd.ConfigureDockerHelper {
-		err = dockercredentials.ConfigureCredentialsContainer(cmd.User, port, log)
+		err = dockercredentials.ConfigureCredentialsContainer(cmd.User, port, logger)
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		}(cmd.User)
 	}
 
-	// configure git ssh signature helper — non-fatal so that a signing
+	// configure git ssh signature helper -- non-fatal so that a signing
 	// setup failure does not take down the entire credentials server
 	// (git/docker credential forwarding, port forwarding, etc.)
 	if cmd.GitUserSigningKey != "" {
@@ -143,7 +144,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		if err != nil {
 			log.Errorf("Failed to decode git SSH signing key, signing will be unavailable: %v", err)
 		} else {
-			err = gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey), log)
+			err = gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey), logger)
 			if err != nil {
 				log.Errorf(
 					"Failed to configure git SSH signature helper, signing will be unavailable: %v",
@@ -157,7 +158,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		}
 	}
 
-	return credentials.RunCredentialsServer(ctx, port, tunnelClient, log)
+	return credentials.RunCredentialsServer(ctx, port, tunnelClient, logger)
 }
 
 func configureGitUserLocally(
@@ -203,8 +204,8 @@ func configureGitUserLocally(
 	return nil
 }
 
-func forwardPorts(ctx context.Context, client tunnel.TunnelClient, log log.Logger) error {
-	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}, log).Run(ctx)
+func forwardPorts(ctx context.Context, client tunnel.TunnelClient, logger oldlog.Logger) error {
+	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}, logger).Run(ctx)
 }
 
 type forwarder struct {

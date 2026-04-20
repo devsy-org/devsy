@@ -72,6 +72,6 @@ func AgentPersistentPreRunE(
 	}
 
 	// apply environment
-	envfile.Apply(log.Default.ErrorStreamOnly())
+	envfile.Apply()
 	return nil
 }
