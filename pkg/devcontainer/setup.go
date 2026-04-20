@@ -83,7 +83,6 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 		RemoteAgentPath:             agent.ContainerDevsyHelperLocation,
 		DownloadURL:                 agent.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: agent.Bool(false),
-		Log:                         r.Log,
 		Timeout:                     timeout,
 	})
 	if err != nil {

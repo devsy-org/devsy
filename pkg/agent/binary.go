@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 type BinarySource interface {
@@ -23,10 +23,9 @@ type BinarySource interface {
 
 type BinaryManager struct {
 	sources []BinarySource
-	logger  log.Logger
 }
 
-func NewBinaryManager(logger log.Logger, downloadURL string) *BinaryManager {
+func NewBinaryManager(downloadURL string) *BinaryManager {
 	cachePath := filepath.Join(os.TempDir(), config.BinaryName+"-cache")
 	cache := &BinaryCache{BaseDir: cachePath}
 
@@ -36,7 +35,6 @@ func NewBinaryManager(logger log.Logger, downloadURL string) *BinaryManager {
 			&FileCacheSource{Cache: cache},
 			&HTTPDownloadSource{BaseURL: downloadURL, Cache: cache},
 		},
-		logger: logger,
 	}
 }
 
@@ -44,10 +42,10 @@ func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.Read
 	for _, source := range m.sources {
 		binary, err := source.GetBinary(ctx, arch)
 		if err == nil {
-			m.logger.Debugf("acquired binary from %s", source.SourceName())
+			log.Debugf("acquired binary from %s", source.SourceName())
 			return binary, nil
 		}
-		m.logger.Debugf("source %s failed: %v", source.SourceName(), err)
+		log.Debugf("source %s failed: %v", source.SourceName(), err)
 	}
 	return nil, ErrBinaryNotFound
 }

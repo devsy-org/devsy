@@ -5,14 +5,12 @@ import (
 	"io"
 	"testing"
 
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 
 type InjectTestSuite struct {
 	suite.Suite
-	ctx    context.Context
-	logger log.Logger
+	ctx context.Context
 }
 
 func TestInjectTestSuite(t *testing.T) {
@@ -21,14 +19,12 @@ func TestInjectTestSuite(t *testing.T) {
 
 func (s *InjectTestSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.logger = log.Discard
 }
 
 func (s *InjectTestSuite) TestLocalInjection() {
 	opts := &InjectOptions{
 		Ctx:     s.ctx,
 		Exec:    (&MockExecFunc{}).Exec,
-		Log:     s.logger,
 		IsLocal: true,
 		Command: "echo hello",
 	}
@@ -55,7 +51,7 @@ func (s *InjectTestSuite) TestVersionChecker() {
 		}
 		mockExec := &MockExecFunc{Output: "v1.0.0\n"}
 
-		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path", s.logger)
+		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path")
 		s.NoError(err)
 		s.Equal("v1.0.0", detected)
 	})
@@ -67,7 +63,7 @@ func (s *InjectTestSuite) TestVersionChecker() {
 		}
 		mockExec := &MockExecFunc{Output: "v0.9.0\n"}
 
-		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path", s.logger)
+		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path")
 		s.NoError(err)
 		s.Equal("v0.9.0", detected)
 	})

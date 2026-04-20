@@ -631,7 +631,6 @@ func (cmd *UpCmd) devsyUpMachine(
 			Stdin:           sshTunnelStdinReader,
 			Stdout:          sshTunnelStdoutWriter,
 			Stderr:          writer,
-			Log:             log.ErrorStreamOnly(),
 			Timeout:         wInfo.InjectTimeout,
 		})
 	}

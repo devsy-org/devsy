@@ -136,7 +136,6 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 		DockerlessOptions: &sctx.workspaceInfo.Dockerless,
 		ImageConfigOutput: agent.DefaultImageConfigPath,
 		Debug:             cmd.Debug,
-		Log:               sctx.logger,
 		ConfigureCredentialsFunc: func(ctx context.Context) (string, error) {
 			serverPort, err := credentials.StartCredentialsServer(
 				ctx,
@@ -171,7 +170,6 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 		sctx.ctx,
 		sctx.workspaceInfo,
 		sctx.setupInfo,
-		sctx.logger,
 	)
 
 	// Clean up git credentials after cloning
@@ -315,7 +313,6 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 	ctx context.Context,
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	setupInfo *config.Result,
-	logger oldlog.Logger,
 ) error {
 	b, err := workspaceInfo.PullFromInsideContainer.Bool()
 	if err != nil {
@@ -341,7 +338,6 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 		"",
 		workspaceInfo.CLIOptions,
 		true,
-		logger,
 	)
 }
 

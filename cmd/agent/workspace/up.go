@@ -595,7 +595,6 @@ func prepareGitWorkspace(params prepareGitWorkspaceParams) error {
 		params.gitHelper,
 		params.workspaceInfo.CLIOptions,
 		false,
-		params.log,
 	)
 }
 

@@ -15,10 +15,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -37,7 +36,6 @@ type DockerlessBuildOptions struct {
 	DockerlessOptions        *provider2.ProviderDockerlessOptions
 	ImageConfigOutput        string
 	Debug                    bool
-	Log                      log.Logger
 	ConfigureCredentialsFunc ConfigureCredentialsFunc
 }
 
@@ -71,7 +69,7 @@ func executeBuild(opts DockerlessBuildOptions) error {
 	if err := prepareBuildDirectory(buildContext); err != nil {
 		return err
 	}
-	defer cleanupBuildDirectory(buildContext, opts.Log)
+	defer cleanupBuildDirectory(buildContext)
 
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -85,11 +83,11 @@ func executeBuild(opts DockerlessBuildOptions) error {
 
 	args := buildDockerlessArgs(binaryPath, opts)
 
-	if err := runDockerlessBuild(opts.Context, args, opts.Debug, opts.Log); err != nil {
+	if err := runDockerlessBuild(opts.Context, args, opts.Debug); err != nil {
 		return err
 	}
 
-	return applyContainerEnv(opts.ImageConfigOutput, opts.Log)
+	return applyContainerEnv(opts.ImageConfigOutput)
 }
 
 func validateBuildOptions(opts DockerlessBuildOptions) error {
@@ -98,9 +96,6 @@ func validateBuildOptions(opts DockerlessBuildOptions) error {
 	}
 	if opts.DockerlessOptions == nil {
 		return fmt.Errorf("dockerless options are required for dockerless build")
-	}
-	if opts.Log == nil {
-		return fmt.Errorf("log is required for dockerless build")
 	}
 	if opts.Context == nil {
 		return fmt.Errorf("context is required for dockerless build")
@@ -114,13 +109,13 @@ func shouldBuild(opts DockerlessBuildOptions) bool {
 	}
 
 	if ImageConfigExists(opts.ImageConfigOutput) {
-		opts.Log.Debugf("skip dockerless build, because container was built already")
+		log.Debugf("skip dockerless build, because container was built already")
 		return false
 	}
 
 	buildContext := GetDockerlessBuildContext()
 	if buildContext == "" {
-		opts.Log.Debugf("build context is missing for dockerless build")
+		log.Debugf("build context is missing for dockerless build")
 		return false
 	}
 
@@ -149,7 +144,7 @@ func prepareBuildDirectory(buildContext string) error {
 
 func setupDockerCredentials(opts DockerlessBuildOptions) func() {
 	if opts.DockerlessOptions.DisableDockerCredentials == trueValue {
-		opts.Log.Debugf("docker credentials disabled via DisableDockerCredentials option")
+		log.Debugf("docker credentials disabled via DisableDockerCredentials option")
 		return nil
 	}
 
@@ -169,7 +164,7 @@ func setupDockerCredentials(opts DockerlessBuildOptions) func() {
 		} else {
 			_ = os.Unsetenv("DOCKER_CONFIG")
 		}
-		opts.Log.Warnf(
+		log.Warnf(
 			"failed to configure docker credentials, private registries may not work: %v",
 			err,
 		)
@@ -188,7 +183,7 @@ func setupDockerCredentials(opts DockerlessBuildOptions) func() {
 	}
 }
 
-func cleanupBuildDirectory(buildContext string, log log.Logger) {
+func cleanupBuildDirectory(buildContext string) {
 	fallbackDir := filepath.Join(
 		config.DevsyDockerlessBuildInfoFolder,
 		config.DevsyContextFeatureFolder,
@@ -208,7 +203,7 @@ func buildDockerlessArgs(binaryPath string, opts DockerlessBuildOptions) []strin
 	args = append(args, "--build-arg", "TARGETARCH="+runtime.GOARCH)
 
 	if opts.DockerlessOptions.RegistryCache != "" {
-		opts.Log.Debugf(
+		log.Debugf(
 			"appending registry cache to dockerless build arguments: %v",
 			opts.DockerlessOptions.RegistryCache,
 		)
@@ -250,8 +245,8 @@ func parseIgnorePaths(ignorePaths string) []string {
 	return retPaths
 }
 
-func runDockerlessBuild(ctx context.Context, args []string, debug bool, log log.Logger) error {
-	errWriter := log.Writer(logrus.InfoLevel, false)
+func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
+	errWriter := log.Writer(log.LevelInfo)
 	defer func() { _ = errWriter.Close() }()
 
 	var stderrBuf bytes.Buffer
@@ -259,7 +254,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool, log log.
 
 	cmd := exec.CommandContext(ctx, "/.dockerless/dockerless", args...)
 	if debug {
-		debugWriter := log.Writer(logrus.DebugLevel, false)
+		debugWriter := log.Writer(log.LevelDebug)
 		defer func() { _ = debugWriter.Close() }()
 		cmd.Stdout = debugWriter
 	}
@@ -282,7 +277,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool, log log.
 	return nil
 }
 
-func applyContainerEnv(imageConfigPath string, log log.Logger) error {
+func applyContainerEnv(imageConfigPath string) error {
 	// #nosec G304 -- imageConfigPath is controlled by the application, not user input
 	rawConfig, err := os.ReadFile(imageConfigPath)
 	if err != nil {

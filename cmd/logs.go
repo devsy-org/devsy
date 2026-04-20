@@ -117,7 +117,6 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 			Stdin:           stdinReader,
 			Stdout:          stdoutWriter,
 			Stderr:          stderr,
-			Log:             log.ErrorStreamOnly(),
 			Timeout:         timeout,
 		})
 	}()
