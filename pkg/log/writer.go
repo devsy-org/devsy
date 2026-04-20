@@ -11,7 +11,7 @@ import (
 // Level uses the package constants: LevelInfo, LevelDebug, etc.
 func Writer(level int) io.WriteCloser {
 	zapLevel := verbosityConstToZapLevel(level)
-	w, closer := zap.Open("stderr")
+	w, closer, _ := zap.Open("stderr")
 	_ = closer // stderr doesn't need closing
 	return &levelWriter{
 		sink:  w,
@@ -24,7 +24,7 @@ func verbosityConstToZapLevel(level int) zapcore.Level {
 	switch level {
 	case LevelDebug:
 		return zapcore.DebugLevel
-	case LevelInfo, LevelWarn:
+	case LevelInfo: // LevelWarn has the same value
 		return zapcore.InfoLevel
 	case LevelError:
 		return zapcore.ErrorLevel
