@@ -18,6 +18,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	log2 "github.com/devsy-org/log"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
@@ -39,6 +41,20 @@ func NewRootCmd() *cobra.Command {
 				Debug:     globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue,
 				Format:    globalFlags.LogOutput,
 			})
+
+			// Configure the old logger too, until the migration is complete.
+			if globalFlags.LogOutput == "json" {
+				log2.Default.SetFormat(log2.JSONFormat)
+			} else if globalFlags.LogOutput == "raw" {
+				log2.Default.SetFormat(log2.RawFormat)
+			}
+
+			switch {
+			case globalFlags.Quiet:
+				log2.Default.SetLevel(logrus.FatalLevel)
+			case globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue:
+				log2.Default.SetLevel(logrus.DebugLevel)
+			}
 
 			if globalFlags.DevsyHome != "" {
 				_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
