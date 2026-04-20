@@ -28,6 +28,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/zapr v1.3.0
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
@@ -53,6 +54,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20251211185533-a2aa163d723f
 	github.com/u-root/u-root v0.16.0
 	go.uber.org/atomic v1.11.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.35.0
 	golang.org/x/sync v0.20.0
@@ -276,7 +278,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
