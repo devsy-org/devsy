@@ -12,15 +12,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // VersionCmd holds the cmd flags.
 type VersionCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 type VersionInfo struct {
@@ -38,7 +35,6 @@ type VersionInfo struct {
 func NewVersionCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &VersionCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "version",

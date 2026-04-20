@@ -9,10 +9,11 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -52,7 +53,6 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -81,7 +81,7 @@ func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
 		return err
 	}
 
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, log.Default)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -100,10 +100,10 @@ func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
 			SkipInit:       cmd.SkipInit,
 			SkipSubOptions: false,
 			SingleMachine:  &cmd.SingleMachine,
-			Log:            log.Default,
+			Log:            oldlog.Default,
 		})
 	} else {
-		log.Default.Infof(
+		log.Infof(
 			"To reconfigure provider %s, run with '--reconfigure' to reconfigure the provider",
 			providerWithOptions.Config.Name,
 		)
@@ -120,7 +120,7 @@ func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
 	}
 
 	// print success message
-	log.Default.Donef("switched default provider: providerName=%s", providerWithOptions.Config.Name)
+	log.Infof("switched default provider: providerName=%s", providerWithOptions.Config.Name)
 	return nil
 }
 
@@ -133,7 +133,7 @@ type ProviderOptionsConfig struct {
 	SkipInit       bool
 	SkipSubOptions bool
 	SingleMachine  *bool
-	Log            log.Logger
+	Log            oldlog.Logger
 }
 
 func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
@@ -152,7 +152,7 @@ func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	cfg.Log.Donef("configured provider %s", cfg.Provider.Name)
+	log.Infof("configured provider %s", cfg.Provider.Name)
 	return nil
 }
 
@@ -234,7 +234,7 @@ func initProvider(
 		Config:  provider,
 		Stdout:  stdout,
 		Stderr:  stderr,
-		Log:     log.Default,
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("init: %w", err)

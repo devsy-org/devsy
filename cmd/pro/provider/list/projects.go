@@ -8,7 +8,6 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -16,15 +15,12 @@ import (
 // ProjectsCmd holds the cmd flags.
 type ProjectsCmd struct {
 	*flags.GlobalFlags
-
-	log log.Logger
 }
 
 // NewProjectsCmd creates a new command.
 func NewProjectsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ProjectsCmd{
 		GlobalFlags: globalFlags,
-		log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "projects",

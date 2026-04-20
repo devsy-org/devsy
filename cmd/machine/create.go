@@ -6,7 +6,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, args []string) error {
 		devsyConfig,
 		args,
 		cmd.ProviderOptions,
-		log.Default,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err

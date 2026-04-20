@@ -11,22 +11,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // SshCmd holds the cmd flags.
 type SshCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewSshCmd creates a new command.
 func NewSshCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SshCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Hidden: true,
@@ -69,13 +66,20 @@ func (cmd *SshCmd) Run(
 		workspace,
 		"ssh",
 		platform.OptionsFromEnv(config.EnvFlagsSSH),
-		cmd.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err
 	}
 
-	_, err = remotecommand.ExecuteConn(ctx, conn, stdin, stdout, stderr, cmd.Log.ErrorStreamOnly())
+	_, err = remotecommand.ExecuteConn(
+		ctx,
+		conn,
+		stdin,
+		stdout,
+		stderr,
+		oldlog.Default.ErrorStreamOnly(),
+	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
 	}

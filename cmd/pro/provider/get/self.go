@@ -9,22 +9,18 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // SelfCmd holds the cmd flags.
 type SelfCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewSelfCmd creates a new command.
 func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SelfCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "self",

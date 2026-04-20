@@ -10,7 +10,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +36,6 @@ func NewPingCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 		Hidden: true,
@@ -56,7 +55,7 @@ func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
 		Args:           args,
 		ChangeLastUsed: true,
 		Owner:          cmd.Owner,
-		Log:            log.Default.ErrorStreamOnly(),
+		Log:            oldlog.Default.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return err

@@ -8,9 +8,10 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -88,7 +89,7 @@ func getWorkspacesForProvider(
 	workspaces, err := workspace.ListLocalWorkspaces(
 		devsyConfig.DefaultContext,
 		false,
-		log.Default,
+		oldlog.Default,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing workspaces: %w", err)
@@ -108,7 +109,7 @@ func getMachinesForProvider(
 	devsyConfig *config.Config,
 	providerName string,
 ) ([]*provider.Machine, error) {
-	machines, err := workspace.ListMachines(devsyConfig, log.Default)
+	machines, err := workspace.ListMachines(devsyConfig, oldlog.Default)
 	if err != nil {
 		return nil, fmt.Errorf("listing machines: %w", err)
 	}
@@ -184,7 +185,7 @@ type renameState struct {
 // restoreProviderState reverts all recorded mutations in reverse order: default provider,
 // workspaces, machines, and finally the provider directory move.
 func (r *renameState) restoreProviderState(ctx context.Context) error {
-	log.Default.Info("rolling back changes")
+	log.Info("rolling back changes")
 	var errs error
 
 	if r.defaultChanged {
@@ -210,7 +211,7 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 // validateProviderRename verifies that the provider exists, is not a pro
 // provider, is not backing a pro instance, and has configuration state.
 func validateProviderRename(devsyConfig *config.Config, oldName string) error {
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName, log.Default)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("provider %s not found", oldName)
 	}
@@ -220,7 +221,7 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, log.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("listing pro instances: %w", err)
 	}
@@ -280,6 +281,6 @@ func renameProvider(
 		return errors.Join(err, rb.restoreProviderState(ctx))
 	}
 
-	log.Default.Donef("renamed provider %s to %s", oldName, newName)
+	log.Infof("renamed provider %s to %s", oldName, newName)
 	return nil
 }

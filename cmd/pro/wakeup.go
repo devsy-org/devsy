@@ -10,9 +10,10 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -22,7 +23,6 @@ import (
 // WakeupCmd holds the cmd flags.
 type WakeupCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Project string
 	Host    string
@@ -32,14 +32,11 @@ type WakeupCmd struct {
 func NewWakeupCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WakeupCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "wakeup",
 		Short: "Wake a workspace up",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			log.Default.SetFormat(log.TextFormat)
-
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
@@ -63,7 +60,7 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -75,7 +72,7 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	if workspaceInstance.Status.Phase != storagev1.InstanceSleeping {
-		cmd.Log.Infof("Workspace %s is not sleeping", workspaceInstance.Name)
+		log.Infof("Workspace %s is not sleeping", workspaceInstance.Name)
 		return nil
 	}
 
@@ -116,7 +113,7 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// wait for sleeping
-	cmd.Log.Info("Wait until workspace wakes up...")
+	log.Info("Wait until workspace wakes up...")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -138,6 +135,6 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error waiting for workspace to wake up: %w", err)
 	}
 
-	cmd.Log.Donef("woke up workspace: workspaceName=%s", workspaceInstance.Name)
+	log.Infof("woke up workspace: workspaceName=%s", workspaceInstance.Name)
 	return nil
 }

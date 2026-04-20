@@ -9,14 +9,13 @@ import (
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // UpdateProviderCmd holds the cmd flags.
 type UpdateProviderCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host     string
 	Instance string
@@ -26,7 +25,6 @@ type UpdateProviderCmd struct {
 func NewUpdateProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpdateProviderCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "update-provider [new-version]",
@@ -54,14 +52,18 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("load provider: %w", err)
 	}
 	if provider.Source.Internal {
 		return nil
 	}
-	providerSource, err := workspace.ResolveProviderSource(devsyConfig, provider.Name, cmd.Log)
+	providerSource, err := workspace.ResolveProviderSource(
+		devsyConfig,
+		provider.Name,
+		oldlog.Default,
+	)
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", provider.Name, err)
 	}
@@ -71,7 +73,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource, cmd.Log)
+	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", provider.Name, err)
 	}
@@ -85,7 +87,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		SkipInit:       true,
 		SkipSubOptions: false,
 		SingleMachine:  nil,
-		Log:            log.Discard,
+		Log:            oldlog.Discard,
 	})
 	if err != nil {
 		return fmt.Errorf(

@@ -11,11 +11,11 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -24,7 +24,6 @@ import (
 type UpCmd struct {
 	*flags.GlobalFlags
 
-	Log     log.Logger
 	streams streams
 }
 
@@ -36,15 +35,8 @@ type streams struct {
 
 // NewUpCmd creates a new command.
 func NewUpCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	logLevel := logrus.InfoLevel
-	if os.Getenv(config.EnvDebug) == config.BoolTrue || globalFlags.Debug {
-		logLevel = logrus.DebugLevel
-	}
-
 	cmd := &UpCmd{
 		GlobalFlags: globalFlags,
-		Log: log.NewStreamLoggerWithFormat( /* we don't use stdout */ nil,
-			os.Stderr, logLevel, log.JSONFormat).ErrorStreamOnly(),
 		streams: streams{
 			Stdin:  os.Stdin,
 			Stdout: os.Stdout,
@@ -89,18 +81,24 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 
 	// Log current workspace information. This is both useful to the user to understand the workspace configuration
 	// and to us when we receive troubleshooting logs
-	printInstanceInfo(instance, cmd.Log)
+	printInstanceInfo(instance)
 
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
-		cmd.Log.Info("Template update required")
+		log.Info("Template update required")
 		oldInstance := instance.DeepCopy()
 		instance.Spec.TemplateRef.SyncOnce = true
 
-		instance, err = platform.UpdateInstance(ctx, baseClient, oldInstance, instance, cmd.Log)
+		instance, err = platform.UpdateInstance(
+			ctx,
+			baseClient,
+			oldInstance,
+			instance,
+			oldlog.Default,
+		)
 		if err != nil {
 			return fmt.Errorf("update instance: %w", err)
 		}
-		cmd.Log.Info("updated template")
+		log.Info("updated template")
 	}
 
 	return cmd.up(ctx, instance, baseClient)
@@ -116,7 +114,7 @@ func (cmd *UpCmd) up(
 		options.Add("debug", config.BoolTrue)
 	}
 
-	conn, err := platform.DialInstance(client, workspace, "up", options, cmd.Log)
+	conn, err := platform.DialInstance(client, workspace, "up", options, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -127,7 +125,7 @@ func (cmd *UpCmd) up(
 		cmd.streams.Stdin,
 		cmd.streams.Stdout,
 		cmd.streams.Stderr,
-		cmd.Log,
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
@@ -154,7 +152,7 @@ func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool 
 	return !templateResolved || templateChangesAvailable
 }
 
-func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log log.Logger) {
+func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 	workspaceConfig, _ := json.Marshal(struct {
 		// Cluster    storagev1.WorkspaceTargetNamespace
 		Template   *storagev1.TemplateRef
@@ -165,5 +163,5 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log log.Lo
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debug("Starting pro workspace with configuration", string(workspaceConfig))
+	log.Debugf("Starting pro workspace with configuration %s", string(workspaceConfig))
 }

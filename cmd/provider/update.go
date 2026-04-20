@@ -6,8 +6,9 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -60,13 +61,13 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		devsyConfig,
 		args[0],
 		providerSource,
-		log.Default,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err
 	}
 
-	log.Default.Donef("updated provider: providerName=%s", providerConfig.Name)
+	log.Infof("updated provider: providerName=%s", providerConfig.Name)
 	if cmd.Use {
 		err = ConfigureProvider(ctx, ProviderOptionsConfig{
 			Provider:       providerConfig,
@@ -77,10 +78,10 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  nil,
-			Log:            log.Default,
+			Log:            oldlog.Default,
 		})
 		if err != nil {
-			log.Default.Errorf(
+			log.Errorf(
 				"Error configuring provider, please retry with 'devsy provider use %s --reconfigure'",
 				providerConfig.Name,
 			)
@@ -90,7 +91,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		return nil
 	}
 
-	log.Default.Infof("To use the provider, please run the following command:")
-	log.Default.Infof("devsy provider use %s", providerConfig.Name)
+	log.Infof("To use the provider, please run the following command:")
+	log.Infof("devsy provider use %s", providerConfig.Name)
 	return nil
 }

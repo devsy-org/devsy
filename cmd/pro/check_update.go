@@ -11,14 +11,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // CheckUpdateCmd holds the cmd flags.
 type CheckUpdateCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host string
 }
@@ -27,7 +25,6 @@ type CheckUpdateCmd struct {
 func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CheckUpdateCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "check-update",
@@ -39,7 +36,6 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err

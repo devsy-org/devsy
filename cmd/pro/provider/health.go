@@ -12,22 +12,18 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // HealthCmd holds the cmd flags.
 type HealthCmd struct {
 	*flags.GlobalFlags
-
-	Log log.Logger
 }
 
 // NewHealthCmd creates a new command.
 func NewHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &HealthCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "health",

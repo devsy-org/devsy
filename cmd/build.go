@@ -10,9 +10,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +79,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			// create a temporary workspace
-			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner, log.Default)
+			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner, oldlog.Default)
 			sshConfigFile, err := os.CreateTemp("", config.BinaryName+"ssh.config")
 			if err != nil {
 				return err
@@ -107,7 +108,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 					ChangeLastUsed:       false,
 					Owner:                cmd.Owner,
 				},
-				log.Default,
+				oldlog.Default,
 			)
 			if err != nil {
 				return err
@@ -118,7 +119,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 				defer func() {
 					err = baseWorkspaceClient.Delete(ctx, client.DeleteOptions{Force: true})
 					if err != nil {
-						log.Default.Errorf("Error deleting workspace: %v", err)
+						log.Errorf("Error deleting workspace: %v", err)
 					}
 				}()
 			}
@@ -179,13 +180,13 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *BuildCmd) Run(ctx context.Context, client client.WorkspaceClient) error {
-	return cmd.build(ctx, client, log.Default)
+	return cmd.build(ctx, client, oldlog.Default)
 }
 
 func (cmd *BuildCmd) build(
 	ctx context.Context,
 	workspaceClient client.WorkspaceClient,
-	log log.Logger,
+	log oldlog.Logger,
 ) error {
 	err := workspaceClient.Lock(ctx)
 	if err != nil {

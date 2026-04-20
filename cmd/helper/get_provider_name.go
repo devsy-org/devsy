@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ func (cmd *GetProviderNameCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("provider is missing")
 	}
 
-	providerRaw, _, err := workspace.ResolveProvider(args[0], log.Default.ErrorStreamOnly())
+	providerRaw, _, err := workspace.ResolveProvider(args[0], oldlog.Default.ErrorStreamOnly())
 	if err != nil {
 		return fmt.Errorf("resolve provider: %w", err)
 	}

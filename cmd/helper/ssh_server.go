@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"github.com/devsy-org/devsy/pkg/token"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/ssh"
 	"github.com/spf13/cobra"
 )
@@ -104,7 +104,7 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		keys,
 		cmd.Workdir,
 		cmd.ReuseSSHAuthSock,
-		log.Default.ErrorStreamOnly(),
+		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err
@@ -152,7 +152,7 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("address %s already in use: %w", cmd.Address, err)
 		}
 
-		log.Default.ErrorStreamOnly().Infof("address %s already in use", cmd.Address)
+		oldlog.Default.ErrorStreamOnly().Infof("address %s already in use", cmd.Address)
 		return nil
 	}
 

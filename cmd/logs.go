@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +44,6 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				log.Default,
 			)
 		},
 	}
@@ -63,7 +62,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		DevsyConfig: devsyConfig,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         log.Default,
+		Log:         oldlog.Default,
 	})
 	if err != nil {
 		return err
@@ -73,7 +72,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	if !ok {
 		return fmt.Errorf("this command is not supported for proxy providers")
 	}
-	log := log.Default
+	log := oldlog.Default
 
 	// create readers
 	stdoutReader, stdoutWriter, err := os.Pipe()
@@ -98,7 +97,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	// start ssh server in background
 	errChan := make(chan error, 1)
 	go func() {
-		stderr := log.ErrorStreamOnly().Writer(logrus.DebugLevel, false)
+		stderr := log.Writer(logrus.DebugLevel, false)
 		defer func() { _ = stderr.Close() }()
 
 		errChan <- agent.InjectAgent(&agent.InjectOptions{

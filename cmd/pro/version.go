@@ -9,15 +9,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
 // VersionCmd holds the cmd flags.
 type VersionCmd struct {
 	*flags.GlobalFlags
-	Log log.Logger
 
 	Host string
 }
@@ -26,7 +24,6 @@ type VersionCmd struct {
 func NewVersionCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &VersionCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:    "version",
@@ -38,7 +35,6 @@ func NewVersionCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				cmd.Context,
 				cmd.Provider,
 				cmd.Host,
-				cmd.Log,
 			)
 			if err != nil {
 				return err
@@ -64,8 +60,6 @@ func (cmd *VersionCmd) Run(
 	opts[config.EnvProviderContext] = config.OptionValue{Value: cmd.Context}
 
 	var buf bytes.Buffer
-	// ignore --debug because we tunnel json through stdio
-	cmd.Log.SetLevel(logrus.InfoLevel)
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
@@ -75,7 +69,7 @@ func (cmd *VersionCmd) Run(
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  &buf,
-		Log:     cmd.Log,
+		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("get version: %w", err)

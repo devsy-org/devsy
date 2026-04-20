@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -18,15 +17,12 @@ import (
 // ClustersCmd holds the cmd flags.
 type ClustersCmd struct {
 	*flags.GlobalFlags
-
-	log log.Logger
 }
 
 // NewClustersCmd creates a new command.
 func NewClustersCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ClustersCmd{
 		GlobalFlags: globalFlags,
-		log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "clusters",

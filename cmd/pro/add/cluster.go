@@ -13,10 +13,11 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/survey"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -28,7 +29,6 @@ import (
 )
 
 type ClusterCmd struct {
-	Log log.Logger
 	*proflags.GlobalFlags
 
 	Namespace        string
@@ -48,7 +48,6 @@ type ClusterCmd struct {
 func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &ClusterCmd{
 		GlobalFlags: globalFlags,
-		Log:         log.GetInstance(),
 	}
 
 	c := &cobra.Command{
@@ -91,7 +90,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	cmd.Host, err = ensureHost(devsyConfig, cmd.Host, cmd.Log)
+	cmd.Host, err = ensureHost(devsyConfig, cmd.Host)
 	if err != nil {
 		return err
 	}
@@ -99,7 +98,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	// Get clusterName from command argument
 	clusterName := args[0]
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, cmd.Log)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
 	if err != nil {
 		return err
 	}
@@ -267,12 +266,12 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	go func() {
 		helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
 
-		helmCmd.Stdout = cmd.Log.Writer(logrus.DebugLevel, true)
-		helmCmd.Stderr = cmd.Log.Writer(logrus.DebugLevel, true)
+		helmCmd.Stdout = oldlog.Default.Writer(logrus.DebugLevel, true)
+		helmCmd.Stderr = oldlog.Default.Writer(logrus.DebugLevel, true)
 		helmCmd.Stdin = os.Stdin
 
-		cmd.Log.Info("Installing agent...")
-		cmd.Log.Debugf("Running helm command: %v", helmCmd.Args)
+		log.Info("Installing agent...")
+		log.Debugf("Running helm command: %v", helmCmd.Args)
 
 		err = helmCmd.Run()
 		if err != nil {
@@ -282,13 +281,13 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		close(errChan)
 	}()
 
-	_, err = platform.WaitForPodReady(ctx, clientset, namespace, cmd.Log)
+	_, err = platform.WaitForPodReady(ctx, clientset, namespace, oldlog.Default)
 	if err = errors.Join(err, <-errChan); err != nil {
 		return fmt.Errorf("wait for pod: %w", err)
 	}
 
 	if cmd.Wait {
-		cmd.Log.Info("Waiting for the cluster to be initialized...")
+		log.Info("Waiting for the cluster to be initialized...")
 		waitErr := wait.PollUntilContextTimeout(
 			ctx,
 			time.Second,
@@ -312,17 +311,17 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	cmd.Log.Donef("added cluster: cluster=%s", clusterName)
+	log.Infof("added cluster: cluster=%s", clusterName)
 
 	return nil
 }
 
-func ensureHost(devsyConfig *config.Config, host string, log log.Logger) (string, error) {
+func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 	if host != "" {
 		return host, nil
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, log)
+	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
 	if err != nil {
 		return "", fmt.Errorf("list pro instances: %w", err)
 	}
@@ -330,7 +329,7 @@ func ensureHost(devsyConfig *config.Config, host string, log log.Logger) (string
 	for _, pro := range proInstances {
 		options = append(options, pro.Host)
 	}
-	h, err := log.Question(&survey.QuestionOptions{
+	h, err := oldlog.Default.Question(&survey.QuestionOptions{
 		Question:     "Select Pro instance to connect your cluster to",
 		Options:      options,
 		DefaultValue: options[0],

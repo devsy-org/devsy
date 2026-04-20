@@ -8,10 +8,11 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	logpkg "github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +44,6 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 				args,
 				toComplete,
 				cmd.Owner,
-				logpkg.Default,
 			)
 		},
 	}
@@ -70,12 +70,12 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// delete the provider
-	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force, logpkg.Default)
+	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force, oldlog.Default)
 	if err != nil {
 		return err
 	}
 
-	logpkg.Default.Donef("deleted provider: provider=%s", provider)
+	log.Infof("deleted provider: provider=%s", provider)
 	return nil
 }
 
@@ -84,12 +84,12 @@ func DeleteProvider(
 	devsyConfig *config.Config,
 	provider string,
 	ignoreNotFound, force bool,
-	log logpkg.Logger,
+	log oldlog.Logger,
 ) error {
 	// if force is not set, check if the provider is associated with a pro instance or workspace
 	if !force {
 		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devsyConfig, logpkg.Default)
+		proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
 		if err != nil {
 			return fmt.Errorf("list pro instances: %w", err)
 		}

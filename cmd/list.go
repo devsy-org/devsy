@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +51,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPro, cmd.Owner, log.Default)
+	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPro, cmd.Owner, oldlog.Default)
 	if err != nil {
 		return err
 	}

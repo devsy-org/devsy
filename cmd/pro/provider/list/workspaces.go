@@ -9,11 +9,11 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -21,15 +21,12 @@ import (
 // WorkspacesCmd holds the cmd flags.
 type WorkspacesCmd struct {
 	*flags.GlobalFlags
-
-	log log.Logger
 }
 
 // NewWorkspacesCmd creates a new command.
 func NewWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WorkspacesCmd{
 		GlobalFlags: globalFlags,
-		log:         log.GetInstance(),
 	}
 	c := &cobra.Command{
 		Use:   "workspaces",
@@ -75,7 +72,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 			DevsyWorkspaceInstances(ns).
 			List(ctx, metav1.ListOptions{})
 		if err != nil {
-			cmd.log.Info("list workspaces in project \"%s\": %w", p.GetName(), err)
+			log.Infof("list workspaces in project %q: %v", p.GetName(), err)
 			continue
 		}
 
