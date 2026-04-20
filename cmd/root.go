@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -17,9 +16,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/cmd/use"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	log2 "github.com/devsy-org/log"
-	"github.com/devsy-org/log/terminal"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
@@ -36,22 +35,24 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cobraCmd *cobra.Command, args []string) error {
+			log.Init(log.Config{
+				Verbosity: globalFlags.Verbosity,
+				Quiet:     globalFlags.Quiet,
+				Debug:     globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue,
+				Format:    globalFlags.LogOutput,
+			})
+
+			// Configure the old logger too, until the migration is complete.
 			if globalFlags.LogOutput == "json" {
 				log2.Default.SetFormat(log2.JSONFormat)
 			} else if globalFlags.LogOutput == "raw" {
 				log2.Default.SetFormat(log2.RawFormat)
-			} else if globalFlags.LogOutput != "plain" {
-				return fmt.Errorf(
-					"unrecognized log format %s, needs to be either plain, raw or json",
-					globalFlags.LogOutput,
-				)
 			}
 
-			if globalFlags.Silent {
+			switch {
+			case globalFlags.Quiet:
 				log2.Default.SetLevel(logrus.FatalLevel)
-			} else if globalFlags.Debug {
-				log2.Default.SetLevel(logrus.DebugLevel)
-			} else if os.Getenv(config.EnvDebug) == config.BoolTrue {
+			case globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue:
 				log2.Default.SetLevel(logrus.DebugLevel)
 			}
 
@@ -102,13 +103,7 @@ func Execute() {
 		} else {
 			if rootCmd.Annotations == nil ||
 				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
-				if terminal.IsTerminalIn {
-					log2.Default.Error("Try using the --debug flag to see a more verbose output")
-				} else if os.Getenv(config.EnvUI) == config.BoolTrue {
-					log2.Default.Error(
-						"Try enabling Debug mode under Settings to see a more verbose output",
-					)
-				}
+				log2.Default.Error("Try using -v or --debug flag to see more verbose output")
 			}
 			log2.Default.Fatal(err)
 		}
@@ -129,7 +124,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(ide.NewIDECmd(globalFlags))
 	rootCmd.AddCommand(machine.NewMachineCmd(globalFlags))
 	rootCmd.AddCommand(context.NewContextCmd(globalFlags))
-	rootCmd.AddCommand(pro.NewProCmd(globalFlags, log2.Default))
+	rootCmd.AddCommand(pro.NewProCmd(globalFlags))
 	rootCmd.AddCommand(NewUpCmd(globalFlags))
 	rootCmd.AddCommand(NewDeleteCmd(globalFlags))
 	rootCmd.AddCommand(NewSSHCmd(globalFlags))

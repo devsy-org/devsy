@@ -58,11 +58,12 @@ func AgentPersistentPreRunE(
 		log.Default.MakeRaw()
 	}
 
-	if globalFlags.Silent {
+	switch {
+	case globalFlags.Quiet:
 		log.Default.SetLevel(logrus.FatalLevel)
-	} else if globalFlags.Debug {
+	case globalFlags.Debug:
 		log.Default.SetLevel(logrus.DebugLevel)
-	} else if os.Getenv(config.EnvDebug) == config.BoolTrue {
+	case os.Getenv(config.EnvDebug) == config.BoolTrue:
 		log.Default.SetLevel(logrus.DebugLevel)
 	}
 

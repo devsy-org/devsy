@@ -3,7 +3,6 @@ package pro
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/pro/add"
@@ -15,12 +14,11 @@ import (
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 // NewProCmd returns a new command.
-func NewProCmd(flags *flags.GlobalFlags, streamLogger *log.StreamLogger) *cobra.Command {
+func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
 	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
 	proCmd := &cobra.Command{
 		Use:           "pro",
@@ -30,20 +28,6 @@ func NewProCmd(flags *flags.GlobalFlags, streamLogger *log.StreamLogger) *cobra.
 		Args:          cobra.NoArgs,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			globalFlags = proflags.SetGlobalFlags(c.PersistentFlags())
-			if flags.Silent {
-				streamLogger.SetLevel(logrus.FatalLevel)
-			}
-			if flags.Debug {
-				streamLogger.SetLevel(logrus.DebugLevel)
-			}
-
-			if os.Getenv(config.EnvDebug) == config.BoolTrue {
-				log.Default.SetLevel(logrus.DebugLevel)
-			}
-			if flags.LogOutput == "json" {
-				log.Default.SetFormat(log.JSONFormat)
-			}
-
 			return nil
 		},
 	}
