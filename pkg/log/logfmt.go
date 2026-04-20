@@ -142,9 +142,9 @@ func (e *logfmtEncoder) AddUint64(key string, val uint64) {
 	e.AddString(key, fmt.Sprintf("%d", val))
 }
 
-func (e *logfmtEncoder) AddUint32(key string, val uint32) { e.AddInt64(key, int64(val)) }
-func (e *logfmtEncoder) AddUint16(key string, val uint16) { e.AddInt64(key, int64(val)) }
-func (e *logfmtEncoder) AddUint8(key string, val uint8)   { e.AddInt64(key, int64(val)) }
+func (e *logfmtEncoder) AddUint32(key string, val uint32)   { e.AddInt64(key, int64(val)) }
+func (e *logfmtEncoder) AddUint16(key string, val uint16)   { e.AddInt64(key, int64(val)) }
+func (e *logfmtEncoder) AddUint8(key string, val uint8)     { e.AddInt64(key, int64(val)) }
 func (e *logfmtEncoder) AddUintptr(key string, val uintptr) {}
 
 func (e *logfmtEncoder) AddReflected(key string, val any) error {
