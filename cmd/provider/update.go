@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +76,6 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  nil,
-			Log:            oldlog.Default,
 		})
 		if err != nil {
 			log.Errorf(

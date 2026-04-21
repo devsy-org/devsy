@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -79,11 +78,6 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 	}
 	log.Debugf("Options=%+v", cmd.Options)
 
-	var logger oldlog.Logger = oldlog.Default
-	if cmd.Dry {
-		logger = oldlog.Default.ErrorStreamOnly()
-	}
-
 	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
 	if err != nil {
 		return err
@@ -98,7 +92,6 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 		SkipInit:       cmd.Dry,
 		SkipSubOptions: false,
 		SingleMachine:  &cmd.SingleMachine,
-		Log:            logger,
 	})
 	if err != nil {
 		return err

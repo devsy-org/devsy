@@ -13,8 +13,6 @@ import (
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -100,7 +98,6 @@ func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
 			SkipInit:       cmd.SkipInit,
 			SkipSubOptions: false,
 			SingleMachine:  &cmd.SingleMachine,
-			Log:            oldlog.Default,
 		})
 	} else {
 		log.Infof(
@@ -133,7 +130,6 @@ type ProviderOptionsConfig struct {
 	SkipInit       bool
 	SkipSubOptions bool
 	SingleMachine  *bool
-	Log            oldlog.Logger
 }
 
 func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
@@ -204,10 +200,10 @@ func configureProviderOptions(
 
 	// run init command
 	if !cfg.SkipInit {
-		stdout := cfg.Log.Writer(logrus.InfoLevel, false)
+		stdout := log.Writer(log.LevelInfo)
 		defer func() { _ = stdout.Close() }()
 
-		stderr := cfg.Log.Writer(logrus.ErrorLevel, false)
+		stderr := log.Writer(log.LevelError)
 		defer func() { _ = stderr.Close() }()
 
 		err = initProvider(ctx, devsyConfig, cfg.Provider, stdout, stderr)
