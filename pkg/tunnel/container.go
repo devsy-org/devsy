@@ -23,6 +23,7 @@ import (
 
 // NewContainerTunnel constructs a ContainerTunnel using the workspace client, if proxy is True then
 // the workspace's agent config is not periodically updated.
+//
 //nolint:funcorder
 func NewContainerTunnel(client client.WorkspaceClient) *ContainerTunnel {
 	updateConfigInterval := time.Second * 30
