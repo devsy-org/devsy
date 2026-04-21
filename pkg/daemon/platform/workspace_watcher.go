@@ -13,12 +13,12 @@ import (
 	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	typedmanagementv1 "github.com/devsy-org/api/pkg/clientset/versioned/typed/management/v1"
 	informers "github.com/devsy-org/api/pkg/informers/externalversions"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -49,7 +49,6 @@ type watchConfig struct {
 	PlatformClient client.Client
 	TsClient       *local.Client
 	OwnerFilter    platform.OwnerFilter
-	Log            log.Logger
 }
 
 type changeFn func(instanceList []*ProWorkspaceInstance)
@@ -71,7 +70,7 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 		informers.WithNamespace(project.ProjectNamespace(config.Project)),
 	)
 	workspaceInformer := factory.Management().V1().DevsyWorkspaceInstances()
-	instanceStore := newStore(self, config.Context, config.OwnerFilter, config.TsClient, config.Log)
+	instanceStore := newStore(self, config.Context, config.OwnerFilter, config.TsClient)
 	_, err = workspaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
 			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
@@ -123,11 +122,11 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				config.Log.Errorf("panic in workspace watcher: %v\n%s", err, debug.Stack())
+				log.Errorf("panic in workspace watcher: %v\n%s", err, debug.Stack())
 			}
 		}()
 
-		config.Log.Info("starting workspace watcher")
+		log.Info("starting workspace watcher")
 		factory.Start(ctx.Done())
 		factory.WaitForCacheSync(ctx.Done())
 		started.Store(true)
@@ -140,7 +139,7 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 	}()
 
 	<-ctx.Done()
-	config.Log.Debug("workspace watcher done")
+	log.Debug("workspace watcher done")
 	return nil
 }
 
@@ -156,8 +155,6 @@ type instanceStore struct {
 	metricsMu        sync.RWMutex
 	metrics          map[string][]WorkspaceNetworkMetrics
 	maxMetricSamples int
-
-	log log.Logger
 }
 
 type ConnectionType string
@@ -185,7 +182,6 @@ func newStore(
 	context string,
 	ownerFilter platform.OwnerFilter,
 	tsClient *local.Client,
-	log log.Logger,
 ) *instanceStore {
 	return &instanceStore{
 		self:             self,
@@ -195,7 +191,6 @@ func newStore(
 		tsClient:         tsClient,
 		metrics:          map[string][]WorkspaceNetworkMetrics{},
 		maxMetricSamples: 6,
-		log:              log,
 	}
 }
 
@@ -329,7 +324,7 @@ func (s *instanceStore) collectWorkspaceMetrics(ctx context.Context, onChange ch
 func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 	status, err := s.tsClient.Status(ctx)
 	if err != nil {
-		s.log.Errorf("Failed to get tailscale status: %v", err)
+		log.Errorf("Failed to get tailscale status: %v", err)
 		return
 	}
 
@@ -340,7 +335,7 @@ func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 		}
 		instanceName, projectName, err := ts.ParseWorkspaceHostname(peer.HostName)
 		if err != nil {
-			s.log.Debugf("failed to parse hostname for peer %s: %v", peer.HostName, err)
+			log.Debugf("failed to parse hostname for peer %s: %v", peer.HostName, err)
 			continue
 		}
 		key := fmt.Sprintf("%s/%s", project.ProjectNamespace(projectName), instanceName)
@@ -358,10 +353,10 @@ func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			s.log.Debugf("pinging workspace %s/%s", instance.GetNamespace(), instance.GetName())
+			log.Debugf("pinging workspace %s/%s", instance.GetNamespace(), instance.GetName())
 			pingResult, err := s.tsClient.Ping(timeoutCtx, peer.TailscaleIPs[0], tailcfg.PingDisco)
 			if err != nil {
-				s.log.Debugf(
+				log.Debugf(
 					"Failed to ping workspace %s/%s: %v",
 					instance.GetNamespace(),
 					instance.GetName(),
@@ -370,7 +365,7 @@ func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 				return
 			}
 			if pingResult.Err != "" {
-				s.log.Debugf(
+				log.Debugf(
 					"Failed to ping workspace %s/%s: %v",
 					instance.GetNamespace(),
 					instance.GetName(),
