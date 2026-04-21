@@ -22,9 +22,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
 	oldlog "github.com/devsy-org/log"
-	"github.com/devsy-org/log/terminal"
 )
 
 var errProvideWorkspaceArg = errors.New(

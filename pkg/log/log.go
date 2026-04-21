@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	logLib "github.com/devsy-org/log"
-	"github.com/devsy-org/log/survey"
+	oldsurvey "github.com/devsy-org/log/survey"
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
 )
@@ -155,7 +155,7 @@ func (c *CombinedLogger) WriteLevel(level logrus.Level, message []byte) (int, er
 	return len(message), nil
 }
 
-func (c *CombinedLogger) Question(params *survey.QuestionOptions) (string, error) {
+func (c *CombinedLogger) Question(params *oldsurvey.QuestionOptions) (string, error) {
 	return "", errors.New("questions in combined logger not supported")
 }
 

@@ -16,9 +16,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	oldlog "github.com/devsy-org/log"
-	"github.com/devsy-org/log/survey"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -329,7 +329,7 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 	for _, pro := range proInstances {
 		options = append(options, pro.Host)
 	}
-	h, err := oldlog.Default.Question(&survey.QuestionOptions{
+	h, err := log.QuestionDefault(&survey.QuestionOptions{
 		Question:     "Select Pro instance to connect your cluster to",
 		Options:      options,
 		DefaultValue: options[0],

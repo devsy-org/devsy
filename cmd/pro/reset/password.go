@@ -11,8 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/random"
-	oldlog "github.com/devsy-org/log"
-	"github.com/devsy-org/log/survey"
+	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -223,7 +222,7 @@ func (cmd *PasswordCmd) resolvePassword() (string, error) {
 	}
 
 	for {
-		password, err := oldlog.Default.Question(&survey.QuestionOptions{
+		password, err := log.QuestionDefault(&survey.QuestionOptions{
 			Question:   "Please enter a new password",
 			IsPassword: true,
 		})
