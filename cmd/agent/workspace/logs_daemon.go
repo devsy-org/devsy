@@ -9,7 +9,6 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +43,6 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
 		cmd.AgentDir,
 		cmd.Context,
 		cmd.ID,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err

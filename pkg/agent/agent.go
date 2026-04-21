@@ -16,10 +16,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20
@@ -115,7 +114,6 @@ func ParseAgentWorkspaceInfo(workspaceConfigFile string) (*provider2.AgentWorksp
 
 func ReadAgentWorkspaceInfo(
 	agentFolder, context, id string,
-	log log.Logger,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
 	log.Debugf(
 		"starting to read agent workspace info: agentFolder=%s, context=%s, workspaceId=%s",
@@ -156,7 +154,7 @@ func ReadAgentWorkspaceInfo(
 
 	// check if we need to become root
 	log.Debug("checking if root privileges are required")
-	shouldExit, err := rerunAsRoot(workspaceInfo, log)
+	shouldExit, err := rerunAsRoot(workspaceInfo)
 	if err != nil {
 		log.Errorf("failed to rerun as root: error=%v", err)
 		return false, nil, fmt.Errorf("rerun as root: %w", err)
@@ -178,31 +176,27 @@ func ReadAgentWorkspaceInfo(
 
 func WorkspaceInfo(
 	workspaceInfoEncoded string,
-	log log.Logger,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
-	return decodeWorkspaceInfoAndWrite(workspaceInfoEncoded, false, nil, log)
+	return decodeWorkspaceInfoAndWrite(workspaceInfoEncoded, false, nil)
 }
 
 func WriteWorkspaceInfo(
 	workspaceInfoEncoded string,
-	log log.Logger,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
-	return WriteWorkspaceInfoAndDeleteOld(workspaceInfoEncoded, nil, log)
+	return WriteWorkspaceInfoAndDeleteOld(workspaceInfoEncoded, nil)
 }
 
 func WriteWorkspaceInfoAndDeleteOld(
 	workspaceInfoEncoded string,
-	deleteWorkspace func(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) error,
-	log log.Logger,
+	deleteWorkspace func(workspaceInfo *provider2.AgentWorkspaceInfo) error,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
-	return decodeWorkspaceInfoAndWrite(workspaceInfoEncoded, true, deleteWorkspace, log)
+	return decodeWorkspaceInfoAndWrite(workspaceInfoEncoded, true, deleteWorkspace)
 }
 
 func decodeWorkspaceInfoAndWrite(
 	workspaceInfoEncoded string,
 	writeInfo bool,
-	deleteWorkspace func(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) error,
-	log log.Logger,
+	deleteWorkspace func(workspaceInfo *provider2.AgentWorkspaceInfo) error,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
 	log.Debugf(
 		"starting to decode and write workspace info: workspaceEncodedLength=%v, writeInfo=%v",
@@ -229,7 +223,7 @@ func decodeWorkspaceInfoAndWrite(
 
 	// check if we need to become root
 	log.Debug("checking if root privileges are required")
-	shouldExit, err := rerunAsRoot(workspaceInfo, log)
+	shouldExit, err := rerunAsRoot(workspaceInfo)
 	if err != nil {
 		log.Errorf("failed to rerun as root: error=%v", err)
 		return false, nil, fmt.Errorf("rerun as root: %w", err)
@@ -279,7 +273,7 @@ func decodeWorkspaceInfoAndWrite(
 				workspaceInfo.Workspace.UID,
 			)
 
-			err = deleteWorkspace(oldWorkspaceInfo, log)
+			err = deleteWorkspace(oldWorkspaceInfo)
 			if err != nil {
 				log.Errorf(
 					"failed to delete old workspace: error=%v, workspaceId=%s",
@@ -416,7 +410,8 @@ func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo
 	return nil
 }
 
-func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) (bool, error) {
+//nolint:cyclop // pre-existing complexity
+func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	// check if root is required
 	if runtime.GOOS != "linux" || os.Getuid() == 0 ||
 		(workspaceInfo != nil && workspaceInfo.Agent.Local == config.BoolTrue) {
@@ -481,7 +476,6 @@ func Tunnel(
 	stdin io.Reader,
 	stdout io.Writer,
 	stderr io.Writer,
-	log log.Logger,
 	timeout time.Duration,
 ) error {
 	err := InjectAgent(&InjectOptions{
@@ -501,7 +495,7 @@ func Tunnel(
 
 	// build command
 	command := fmt.Sprintf("'%s' helper ssh-server --stdio", ContainerDevsyHelperLocation)
-	if log.GetLevel() == logrus.DebugLevel {
+	if log.DebugEnabled() {
 		command += " --debug"
 	}
 	if user == "" {

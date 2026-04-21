@@ -275,17 +275,17 @@ func openJupyterBrowser(
 	if jupyter.Options.GetValue(ideOptions, jupyter.OpenOption) == config.BoolTrue {
 		go func() {
 			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				params.Log.Errorf("error opening jupyter notebook: error=%v", openErr)
+				pkglog.Errorf("error opening jupyter notebook: error=%v", openErr)
 			}
 
-			params.Log.Info(
+			pkglog.Info(
 				"started jupyter notebook in browser mode. " +
 					"Please keep this terminal open as long as you use Jupyter Notebook",
 			)
 		}()
 	}
 
-	params.Log.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
+	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
@@ -323,16 +323,16 @@ func openRStudioBrowser(
 	if rstudio.Options.GetValue(ideOptions, rstudio.OpenOption) == config.BoolTrue {
 		go func() {
 			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				params.Log.Errorf("error opening rstudio: %v", openErr)
+				pkglog.Errorf("error opening rstudio: %v", openErr)
 			}
 
-			params.Log.Infof(
+			pkglog.Infof(
 				"started RStudio Server in browser mode. Please keep this terminal open as long as you use it",
 			)
 		}()
 	}
 
-	params.Log.Infof("Starting RStudio server in browser mode at %s", targetURL)
+	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
 	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
 		Ctx:              ctx,
@@ -371,17 +371,17 @@ func openVSCodeBrowser(
 	if openvscode.Options.GetValue(ideOptions, openvscode.OpenOption) == config.BoolTrue {
 		go func() {
 			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				params.Log.Errorf("error opening vscode: %v", openErr)
+				pkglog.Errorf("error opening vscode: %v", openErr)
 			}
 
-			params.Log.Infof(
+			pkglog.Infof(
 				"started vscode in browser mode. " +
 					"Please keep this terminal open as long as you use VSCode browser version",
 			)
 		}()
 	}
 
-	params.Log.Infof("Starting vscode in browser mode at %s", targetURL)
+	pkglog.Infof("Starting vscode in browser mode at %s", targetURL)
 	forwardPorts := openvscode.Options.GetValue(
 		ideOptions,
 		openvscode.ForwardPortsOption,

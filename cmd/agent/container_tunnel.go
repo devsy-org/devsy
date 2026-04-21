@@ -56,7 +56,7 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	logger := oldlog.Default.ErrorStreamOnly()
 
 	// write workspace info
-	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo, logger)
+	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo)
 	if err != nil {
 		return err
 	} else if shouldExit {
@@ -99,7 +99,6 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		logger,
 		workspaceInfo.InjectTimeout,
 	)
 	if err != nil {
