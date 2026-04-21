@@ -35,7 +35,6 @@ func NewWorkspaceClient(
 	prov *provider.ProviderConfig,
 	workspace *provider.Workspace,
 	machine *provider.Machine,
-	log log.Logger,
 ) (client.WorkspaceClient, error) {
 	if workspace.Machine.ID != "" && machine == nil {
 		return nil, fmt.Errorf("workspace machine is not found")
@@ -48,7 +47,6 @@ func NewWorkspaceClient(
 		config:      prov,
 		workspace:   workspace,
 		machine:     machine,
-		log:         log,
 	}, nil
 }
 
@@ -64,7 +62,6 @@ type workspaceClient struct {
 	config      *provider.ProviderConfig
 	workspace   *provider.Workspace
 	machine     *provider.Machine
-	log         log.Logger
 }
 
 func (s *workspaceClient) Provider() string {
@@ -156,15 +153,15 @@ func (s *workspaceClient) RefreshOptions(
 		userOptions,
 	)
 	if err != nil {
-		s.log.Errorf("failed to resolve and save options workspace: error=%v", err)
+		devsylog.Errorf("failed to resolve and save options workspace: error=%v", err)
 		return err
 	}
 
 	if workspace != nil {
 		s.workspace = workspace
-		s.log.Debugf("refreshed workspace options: workspaceId=%s", s.workspace.ID)
+		devsylog.Debugf("refreshed workspace options: workspaceId=%s", s.workspace.ID)
 	} else {
-		s.log.Debug("workspace is nil; not updating workspace options")
+		devsylog.Debug("workspace is nil; not updating workspace options")
 	}
 	return nil
 }
@@ -218,7 +215,7 @@ func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.Ag
 	if s.workspace != nil {
 		result, err := provider.LoadWorkspaceResult(s.workspace.Context, s.workspace.ID)
 		if err != nil {
-			s.log.Debugf("error loading workspace result: error=%v", err)
+			devsylog.Debugf("error loading workspace result: error=%v", err)
 		} else if result != nil {
 			lastDevContainerConfig = result.DevContainerConfigWithPath
 		}
@@ -280,21 +277,21 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 	}
 
 	// try to lock workspace
-	s.log.Debug("acquire workspace lock")
+	devsylog.Debug("acquire workspace lock")
 	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
-	s.log.Debug("acquired workspace lock")
+	devsylog.Debug("acquired workspace lock")
 
 	// try to lock machine
 	if s.machineLock != nil {
-		s.log.Debug("acquire machine lock")
+		devsylog.Debug("acquire machine lock")
 		err := tryLock(ctx, s.machineLock, "machine")
 		if err != nil {
 			return fmt.Errorf("error locking machine: %w", err)
 		}
-		s.log.Debug("acquired machine lock")
+		devsylog.Debug("acquired machine lock")
 	}
 
 	return nil
@@ -302,19 +299,19 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 
 func (s *workspaceClient) Unlock() {
 	if err := s.initLock(); err != nil {
-		s.log.Warnf("initializing lock: %v", err)
+		devsylog.Warnf("initializing lock: %v", err)
 		return
 	}
 
 	if s.machineLock != nil {
 		if err := s.machineLock.Unlock(); err != nil {
-			s.log.Warnf("error unlocking machine: %v", err)
+			devsylog.Warnf("error unlocking machine: %v", err)
 		}
 	}
 
 	if s.workspaceLock != nil {
 		if err := s.workspaceLock.Unlock(); err != nil {
-			s.log.Warnf("error unlocking workspace: %v", err)
+			devsylog.Warnf("error unlocking workspace: %v", err)
 		}
 	}
 }
@@ -379,10 +376,10 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				return err
 			}
 		} else if isRunning {
-			writer := s.log.Writer(logrus.InfoLevel, false)
+			writer := devsylog.Writer(devsylog.LevelInfo)
 			defer func() { _ = writer.Close() }()
 
-			s.log.Info("deleting workspace container")
+			devsylog.Info("deleting workspace container")
 			compressed, info, err := s.compressedAgentInfo(provider.CLIOptions{})
 			if err != nil {
 				return fmt.Errorf("agent info")
@@ -414,7 +411,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				}
 
 				if !errors.Is(err, context.DeadlineExceeded) {
-					s.log.Errorf("error deleting container: error=%v", err)
+					devsylog.Errorf("error deleting container: error=%v", err)
 				}
 			}
 		}
@@ -484,10 +481,10 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 	defer s.m.Unlock()
 
 	if !s.isMachineProvider() || !s.workspace.Machine.AutoDelete {
-		writer := s.log.Writer(logrus.InfoLevel, false)
+		writer := devsylog.Writer(devsylog.LevelInfo)
 		defer func() { _ = writer.Close() }()
 
-		s.log.Info("stopping container")
+		devsylog.Info("stopping container")
 		compressed, info, err := s.compressedAgentInfo(provider.CLIOptions{})
 		if err != nil {
 			return fmt.Errorf("agent info")
@@ -516,7 +513,7 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 		if err != nil {
 			return err
 		}
-		s.log.Info("stopped container")
+		devsylog.Info("stopped container")
 
 		return nil
 	}
@@ -698,7 +695,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 		)
 	}
 
-	s.log.Debugf(
+	devsylog.Debugf(
 		"container status command output: stdout=%s, stderr=%s, parsed=%v",
 		stdout.String(),
 		buf.String(),
@@ -876,7 +873,6 @@ func StartWait(
 	ctx context.Context,
 	workspaceClient client.WorkspaceClient,
 	create bool,
-	log log.Logger,
 ) error {
 	startWaiting := time.Now()
 	for {
@@ -887,7 +883,7 @@ func StartWait(
 
 		switch instanceStatus {
 		case client.StatusBusy:
-			if handleBusyStatus(&startWaiting, log) {
+			if handleBusyStatus(&startWaiting) {
 				time.Sleep(pollInterval)
 				continue
 			}
@@ -905,9 +901,9 @@ func StartWait(
 	}
 }
 
-func handleBusyStatus(startWaiting *time.Time, log log.Logger) bool {
+func handleBusyStatus(startWaiting *time.Time) bool {
 	if time.Since(*startWaiting) > logThreshold {
-		log.Info("workspace is busy, waiting for workspace to become ready")
+		devsylog.Info("workspace is busy, waiting for workspace to become ready")
 		*startWaiting = time.Now()
 	}
 	return true

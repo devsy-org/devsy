@@ -357,7 +357,7 @@ func (cmd *SSHCmd) jumpContainer(
 	defer client.Unlock()
 
 	// start the workspace
-	err = clientimplementation.StartWait(ctx, client, false, log)
+	err = clientimplementation.StartWait(ctx, client, false)
 	if err != nil {
 		return err
 	}

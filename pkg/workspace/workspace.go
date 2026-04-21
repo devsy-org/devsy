@@ -24,7 +24,6 @@ import (
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
-	oldlog "github.com/devsy-org/log"
 )
 
 var errProvideWorkspaceArg = errors.New(
@@ -149,7 +148,6 @@ func getWorkspaceClient(
 			provider,
 			workspace,
 			machine,
-			oldlog.Default,
 		)
 	}
 }
