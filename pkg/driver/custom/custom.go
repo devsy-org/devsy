@@ -16,8 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log/scanner"
 	"go.uber.org/zap/zapcore"
 )
 

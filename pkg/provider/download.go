@@ -16,8 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/download"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/log/hash"
 	"k8s.io/client-go/util/retry"
 )
 

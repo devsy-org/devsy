@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
 	util "github.com/devsy-org/devsy/pkg/util/hash"
-	"github.com/devsy-org/log/hash"
 	"github.com/moby/patternmatcher"
 	"github.com/moby/patternmatcher/ignorefile"
 )

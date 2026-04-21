@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/log"
-	"github.com/devsy-org/log/scanner"
 	"github.com/sirupsen/logrus"
 )
 

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/log"
-	"github.com/devsy-org/log/scanner"
 	"github.com/devsy-org/log/survey"
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
