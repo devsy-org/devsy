@@ -12,9 +12,14 @@ import (
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/scanner"
-	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 )
+
+// logLine represents a single JSON log line from devsy output.
+// Only the fields we need for test assertions are included.
+type logLine struct {
+	Message string `json:"message,omitempty"`
+}
 
 type baseTestContext struct {
 	f            *framework.Framework
@@ -64,7 +69,7 @@ func findMessage(reader io.Reader, message string) error {
 	scan := scanner.NewScanner(reader)
 	for scan.Scan() {
 		if line := scan.Bytes(); len(line) > 0 {
-			lineObject := &log.Line{}
+			lineObject := &logLine{}
 			if err := json.Unmarshal(
 				line,
 				lineObject,
@@ -81,7 +86,7 @@ func verifyLogStream(reader io.Reader) error {
 	scan := scanner.NewScanner(reader)
 	for scan.Scan() {
 		if line := scan.Bytes(); len(line) > 0 {
-			lineObject := &log.Line{}
+			lineObject := &logLine{}
 			if err := json.Unmarshal(line, lineObject); err != nil {
 				return fmt.Errorf("error reading line %s: %w", string(line), err)
 			}
