@@ -74,7 +74,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	tunnelClient, logger, credentialsDir, err := initWorkspace(initWorkspaceParams{
+	tunnelClient, _, credentialsDir, err := initWorkspace(initWorkspaceParams{
 		ctx:                 cancelCtx,
 		workspaceInfo:       workspaceInfo,
 		debug:               cmd.Debug,
@@ -82,7 +82,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	})
 	defer cmd.cleanupCredentials(credentialsDir)
 	if err != nil {
-		return cmd.handleInitError(err, workspaceInfo, logger)
+		return cmd.handleInitError(err, workspaceInfo)
 	}
 
 	if err := cmd.up(ctx, workspaceInfo, tunnelClient); err != nil {
@@ -119,11 +119,7 @@ func (cmd *UpCmd) shouldInstallDaemon(workspaceInfo *provider.AgentWorkspaceInfo
 func (cmd *UpCmd) handleInitError(
 	err error,
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) error {
-	if logger == nil {
-		logger = oldlog.Discard
-	}
 	deleteErr := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
 			Context:              workspaceInfo.Workspace.Context,
@@ -380,7 +376,6 @@ func (w *workspaceInitializer) setupCredentials() error {
 		ctx:           w.ctx,
 		workspaceInfo: w.workspaceInfo,
 		client:        w.tunnelClient,
-		log:           w.logger,
 	})
 	w.dockerCredentialsDir = dockerCredentialsDir
 	w.gitCredentialsHelper = gitCredentialsHelper
@@ -528,7 +523,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 	}
 
 	if params.workspaceInfo.Workspace.Source.LocalFolder != "" {
-		return prepareLocalWorkspace(params.ctx, params.workspaceInfo, params.client, params.log)
+		return prepareLocalWorkspace(params.ctx, params.workspaceInfo, params.client)
 	}
 
 	if params.workspaceInfo.Workspace.Source.Image != "" {
@@ -594,7 +589,6 @@ func prepareLocalWorkspace(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	client tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) error {
 	if workspaceInfo.ContentFolder == workspaceInfo.Workspace.Source.LocalFolder {
 		log.Debugf(
@@ -605,7 +599,7 @@ func prepareLocalWorkspace(
 	}
 
 	log.Debugf("download local folder %s", workspaceInfo.ContentFolder)
-	return downloadLocalFolder(ctx, workspaceInfo.ContentFolder, client, logger)
+	return downloadLocalFolder(ctx, workspaceInfo.ContentFolder, client)
 }
 
 func ensureLastDevContainerJson(workspaceInfo *provider.AgentWorkspaceInfo) error {
@@ -640,7 +634,6 @@ type credentialsConfig struct {
 	ctx           context.Context
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
-	log           oldlog.Logger
 }
 
 func configureCredentials(cfg credentialsConfig) (string, string, error) {
@@ -703,7 +696,6 @@ func downloadLocalFolder(
 	ctx context.Context,
 	workspaceDir string,
 	client tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) error {
 	log.Infof("Upload folder to server")
 	stream, err := client.StreamWorkspace(ctx, &tunnel.Empty{})
