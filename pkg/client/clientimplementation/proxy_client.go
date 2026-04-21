@@ -90,7 +90,6 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 		Stdin:     params.stdin,
 		Stdout:    params.stdout,
 		Stderr:    params.stderr,
-		Log:       e.client.log.ErrorStreamOnly(),
 	})
 }
 
@@ -390,7 +389,6 @@ func (s *proxyClient) Status(
 		Stdin:     nil,
 		Stdout:    io.MultiWriter(stdout, buf),
 		Stderr:    buf,
-		Log:       s.log.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return client.StatusNotFound, fmt.Errorf(

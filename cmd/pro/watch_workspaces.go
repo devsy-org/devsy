@@ -90,7 +90,6 @@ func (cmd *WatchWorkspacesCmd) Run(
 		Config:  providerConfig,
 		Stdout:  os.Stdout,
 		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, false),
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", providerConfig.Name, err)

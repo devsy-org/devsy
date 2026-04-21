@@ -234,7 +234,6 @@ func initProvider(
 		Config:  provider,
 		Stdout:  stdout,
 		Stderr:  stderr,
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("init: %w", err)

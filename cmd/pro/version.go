@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +68,6 @@ func (cmd *VersionCmd) Run(
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  &buf,
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("get version: %w", err)

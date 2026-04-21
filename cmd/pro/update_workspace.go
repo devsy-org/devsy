@@ -74,7 +74,6 @@ func (cmd *UpdateWorkspaceCmd) Run(
 		Config:  provider,
 		Stdout:  &buf,
 		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, true),
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("update workspace with provider \"%s\": %w", provider.Name, err)

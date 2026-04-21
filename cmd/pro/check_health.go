@@ -79,7 +79,6 @@ func (cmd *CheckHealthCmd) Run(
 		Config:  provider,
 		Stdout:  &buf,
 		Stderr:  oldlog.Default.Writer(logrus.ErrorLevel, true),
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("check health with provider \"%s\": %w", provider.Name, err)

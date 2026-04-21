@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -71,7 +70,6 @@ func (cmd *ListClustersCmd) Run(
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("list clusters with provider \"%s\": %w", provider.Name, err)
