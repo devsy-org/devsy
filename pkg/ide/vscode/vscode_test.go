@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -22,7 +21,6 @@ func TestDiscoverySuite(t *testing.T) {
 func (s *DiscoverySuite) SetupTest() {
 	s.server = NewVSCodeServer(ServerOptions{
 		Flavor: FlavorStable,
-		Log:    log.Discard,
 	})
 }
 

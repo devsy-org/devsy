@@ -7,7 +7,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +48,7 @@ func (cmd *VSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	err = setupVSCodeExtensions(setupInfo, vscode.Flavor(cmd.Flavor), oldlog.Default)
+	err = setupVSCodeExtensions(setupInfo, vscode.Flavor(cmd.Flavor))
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,6 @@ func (cmd *VSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 func setupVSCodeExtensions(
 	setupInfo *config.Result,
 	flavor vscode.Flavor,
-	logger oldlog.Logger,
 ) error {
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
 	user := config.GetRemoteUser(setupInfo)
@@ -68,6 +66,5 @@ func setupVSCodeExtensions(
 		Extensions: vsCodeConfiguration.Extensions,
 		UserName:   user,
 		Flavor:     flavor,
-		Log:        logger,
 	}).InstallExtensions()
 }

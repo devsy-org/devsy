@@ -194,7 +194,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		return err
 	}
 
-	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE, sctx.logger); err != nil {
+	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
 		return err
 	}
 
@@ -441,71 +441,70 @@ func fillContainerEnv(setupInfo *config.Result) error {
 func (cmd *SetupContainerCmd) installIDE(
 	setupInfo *config.Result,
 	ide *provider2.WorkspaceIDEConfig,
-	logger oldlog.Logger,
 ) error {
 	switch ide.Name {
 	case string(config2.IDENone):
 		return nil
 	case string(config2.IDEVSCode):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorStable, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorStable)
 	case string(config2.IDEVSCodeInsiders):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorInsiders, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorInsiders)
 	case string(config2.IDECursor):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCursor, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCursor)
 	case string(config2.IDEPositron):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorPositron, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorPositron)
 	case string(config2.IDECodium):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCodium, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCodium)
 	case string(config2.IDEWindsurf):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorWindsurf, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorWindsurf)
 	case string(config2.IDEAntigravity):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity)
 	case string(config2.IDEBob):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob, logger)
+		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob)
 	case string(config2.IDEOpenVSCode):
-		return cmd.setupOpenVSCode(setupInfo, ide.Options, logger)
+		return cmd.setupOpenVSCode(setupInfo, ide.Options)
 	case string(config2.IDEGoland):
-		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDERustRover):
-		return jetbrains.NewRustRoverServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewRustRoverServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEPyCharm):
-		return jetbrains.NewPyCharmServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewPyCharmServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEPhpStorm):
-		return jetbrains.NewPhpStorm(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewPhpStorm(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEIntellij):
-		return jetbrains.NewIntellij(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewIntellij(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDECLion):
-		return jetbrains.NewCLionServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewCLionServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDERider):
-		return jetbrains.NewRiderServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewRiderServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDERubyMine):
-		return jetbrains.NewRubyMineServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewRubyMineServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEWebStorm):
-		return jetbrains.NewWebStormServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewWebStormServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEDataSpell):
-		return jetbrains.NewDataSpellServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return jetbrains.NewDataSpellServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
 	case string(config2.IDEFleet):
-		return fleet.NewFleetServer(config.GetRemoteUser(setupInfo), ide.Options, logger).
+		return fleet.NewFleetServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo.SubstitutionContext.ContainerWorkspaceFolder)
 	case string(config2.IDEJupyterNotebook):
 		return jupyter.NewJupyterNotebookServer(
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options, logger).
+			config.GetRemoteUser(setupInfo), ide.Options).
 			Install()
 	case string(config2.IDERStudio):
 		return rstudio.NewRStudioServer(
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options, logger).
+			config.GetRemoteUser(setupInfo), ide.Options).
 			Install()
 	}
 
@@ -516,7 +515,6 @@ func (cmd *SetupContainerCmd) setupVSCode(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
 	flavor vscode.Flavor,
-	logger oldlog.Logger,
 ) error {
 	log.Debugf("setup %s", flavor.DisplayName())
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
@@ -538,7 +536,6 @@ func (cmd *SetupContainerCmd) setupVSCode(
 		UserName:   user,
 		Values:     ideOptions,
 		Flavor:     flavor,
-		Log:        logger,
 	}).Install()
 	if err != nil {
 		return err
@@ -579,7 +576,6 @@ func (cmd *SetupContainerCmd) setupVSCode(
 func (cmd *SetupContainerCmd) setupOpenVSCode(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
-	logger oldlog.Logger,
 ) error {
 	log.Debugf("setup openvscode")
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
@@ -601,7 +597,6 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 		"0.0.0.0",
 		strconv.Itoa(openvscode.DefaultVSCodePort),
 		ideOptions,
-		logger,
 	)
 
 	// install open vscode

@@ -3,7 +3,6 @@ package jetbrains
 import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/devsy-org/log"
 )
 
 const (
@@ -31,7 +30,6 @@ var CLionOptions = ide.Options{
 func NewCLionServer(
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *GenericJetBrainsServer {
 	amd64Download, arm64Download := getDownloadURLs(
 		CLionOptions,
@@ -45,5 +43,5 @@ func NewCLionServer(
 		DisplayName:   "CLion",
 		DownloadAmd64: amd64Download,
 		DownloadArm64: arm64Download,
-	}, log)
+	})
 }

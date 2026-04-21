@@ -15,9 +15,8 @@ import (
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -81,7 +80,6 @@ func NewOpenVSCodeServer(
 	userName string,
 	host, port string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *OpenVSCodeServer {
 	return &OpenVSCodeServer{
 		values:     values,
@@ -90,7 +88,6 @@ func NewOpenVSCodeServer(
 		userName:   userName,
 		host:       host,
 		port:       port,
-		log:        log,
 	}
 }
 
@@ -101,7 +98,6 @@ type OpenVSCodeServer struct {
 	userName   string
 	host       string
 	port       string
-	log        log.Logger
 }
 
 func (o *OpenVSCodeServer) InstallExtensions() error {
@@ -129,7 +125,7 @@ func (o *OpenVSCodeServer) Install() error {
 	// check what release we need to download
 	url := o.getReleaseUrl()
 
-	vscode.InstallAPKRequirements(o.log)
+	vscode.InstallAPKRequirements()
 
 	// download tar
 	resp, err := devsyhttp.GetHTTPClient().Get(url)
@@ -189,12 +185,12 @@ func (o *OpenVSCodeServer) installExtensions() error {
 		return err
 	}
 
-	out := o.log.Writer(logrus.InfoLevel, false)
+	out := log.Writer(log.LevelInfo)
 	defer func() { _ = out.Close() }()
 
 	binaryPath := filepath.Join(location, "bin", "openvscode-server")
 	for _, extension := range o.extensions {
-		o.log.Info("Install extension " + extension + "...")
+		log.Info("Install extension " + extension + "...")
 		runCommand := fmt.Sprintf("%s --install-extension '%s'", binaryPath, extension)
 		args := []string{}
 		if o.userName != "" {
@@ -207,9 +203,9 @@ func (o *OpenVSCodeServer) installExtensions() error {
 		cmd.Stderr = out
 		err = cmd.Run()
 		if err != nil {
-			o.log.Errorf("failed installing extension: extension=%s, error=%v", extension, err)
+			log.Errorf("failed installing extension: extension=%s, error=%v", extension, err)
 		} else {
-			o.log.Infof("installed extension: extension=%s", extension)
+			log.Infof("installed extension: extension=%s", extension)
 		}
 	}
 
@@ -266,7 +262,7 @@ func (o *OpenVSCodeServer) Start() error {
 	}
 
 	return command.StartBackgroundOnce("openvscode", func() (*exec.Cmd, error) {
-		o.log.Infof("Starting openvscode in background...")
+		log.Infof("Starting openvscode in background...")
 		runCommand := fmt.Sprintf(
 			"%s server-local --without-connection-token --host '%s' --port '%s'",
 			binaryPath,

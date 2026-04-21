@@ -3,7 +3,6 @@ package jetbrains
 import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/devsy-org/log"
 )
 
 const (
@@ -31,7 +30,6 @@ var GolandOptions = ide.Options{
 func NewGolandServer(
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *GenericJetBrainsServer {
 	amd64Download, arm64Download := getDownloadURLs(
 		GolandOptions,
@@ -45,5 +43,5 @@ func NewGolandServer(
 		DisplayName:   "Goland",
 		DownloadAmd64: amd64Download,
 		DownloadArm64: arm64Download,
-	}, log)
+	})
 }

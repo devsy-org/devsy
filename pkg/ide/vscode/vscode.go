@@ -16,9 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -82,7 +81,6 @@ type ServerOptions struct {
 	UserName   string
 	Values     map[string]config.OptionValue
 	Flavor     Flavor
-	Log        log.Logger
 }
 
 type VsCodeServer struct {
@@ -91,7 +89,6 @@ type VsCodeServer struct {
 	settings   string
 	userName   string
 	flavor     Flavor
-	log        log.Logger
 }
 
 var Options = ide.Options{
@@ -116,7 +113,6 @@ func NewVSCodeServer(opts ServerOptions) *VsCodeServer {
 		extensions: opts.Extensions,
 		settings:   opts.Settings,
 		userName:   opts.UserName,
-		log:        opts.Log,
 		flavor:     opts.Flavor,
 	}
 }
@@ -132,16 +128,16 @@ func (o *VsCodeServer) InstallExtensions() error {
 		return fmt.Errorf("unable to locate server binary")
 	}
 
-	writer := o.log.Writer(logrus.InfoLevel, false)
-	errWriter := o.log.Writer(logrus.ErrorLevel, false)
+	writer := log.Writer(log.LevelInfo)
+	errWriter := log.Writer(log.LevelError)
 	defer func() { _ = writer.Close() }()
 	defer func() { _ = errWriter.Close() }()
 
 	for _, ext := range o.extensions {
 		if err := o.installExtension(binPath, ext, writer, errWriter); err != nil {
-			o.log.Warnf("failed installing extension: extension=%s, error=%v", ext, err)
+			log.Warnf("failed installing extension: extension=%s, error=%v", ext, err)
 		} else {
-			o.log.Infof("installed extension: extension=%s", ext)
+			log.Infof("installed extension: extension=%s", ext)
 		}
 	}
 
@@ -181,7 +177,7 @@ func (o *VsCodeServer) setupSettings(settingsFile string) error {
 		return err
 	}
 
-	InstallAPKRequirements(o.log)
+	InstallAPKRequirements()
 
 	settings := o.settings
 	if settings == "" {
@@ -199,7 +195,7 @@ func (o *VsCodeServer) changeOwnership(location string) error {
 }
 
 func (o *VsCodeServer) installExtension(binPath, extension string, stdout, stderr io.Writer) error {
-	o.log.Infof("installing extension: extension=%s", extension)
+	log.Infof("installing extension: extension=%s", extension)
 
 	cmd := o.buildExtensionCommand(binPath, extension)
 	cmd.Stdout = stdout
@@ -234,7 +230,7 @@ func (o *VsCodeServer) findServerBinaryPath(location string) string {
 
 	for _, s := range searches {
 		if path := s.fn(); path != "" && o.validateBinary(path) {
-			o.log.Infof(
+			log.Infof(
 				"found server binary: server=%s, path=%s, location=%s",
 				cfg.serverDir,
 				path,
@@ -258,7 +254,7 @@ func (o *VsCodeServer) waitForServerBinary(location string) string {
 		}
 
 		if attempts == 0 || attempts%10 == 0 {
-			o.log.Debugf("waiting for server installation: attempts=%d", attempts)
+			log.Debugf("waiting for server installation: attempts=%d", attempts)
 		}
 
 		time.Sleep(backoff)
@@ -266,7 +262,7 @@ func (o *VsCodeServer) waitForServerBinary(location string) string {
 		attempts++
 	}
 
-	o.log.Warnf("timed out waiting for server: attempts=%d", attempts)
+	log.Warnf("timed out waiting for server: attempts=%d", attempts)
 	return ""
 }
 
@@ -284,7 +280,7 @@ func (o *VsCodeServer) findInSystemPath(binName string) string {
 func (o *VsCodeServer) findRunningServer(binName string) string {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		o.log.Debugf("cannot read /proc, skipping process discovery: %v", err)
+		log.Debugf("cannot read /proc, skipping process discovery: %v", err)
 		return ""
 	}
 
@@ -300,7 +296,7 @@ func (o *VsCodeServer) findRunningServer(binName string) string {
 
 		path := matchServerProcess(cmdline, binName)
 		if path != "" {
-			o.log.Debugf("found running server process (pid=%s, path=%s)", entry.Name(), path)
+			log.Debugf("found running server process (pid=%s, path=%s)", entry.Name(), path)
 			return path
 		}
 	}
@@ -401,7 +397,7 @@ func (o *VsCodeServer) findInDir(root, binName string) string {
 	}
 
 	if len(candidates) > 1 {
-		o.log.Debugf(
+		log.Debugf(
 			"multiple server binaries found (count=%d), chose newest: %s",
 			len(candidates),
 			best.path,
@@ -413,7 +409,7 @@ func (o *VsCodeServer) findInDir(root, binName string) string {
 
 func (o *VsCodeServer) validateBinary(binPath string) bool {
 	if !o.isSafeBinary(binPath) {
-		o.log.Warnf("binary failed safety checks: path=%s", binPath)
+		log.Warnf("binary failed safety checks: path=%s", binPath)
 		return false
 	}
 

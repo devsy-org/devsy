@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 type IDE interface {
@@ -61,7 +61,6 @@ func ReusesAuthSock(ide string) bool {
 type ProgressReader struct {
 	Reader    io.Reader
 	TotalSize int64
-	Log       log.Logger
 
 	lastMessage time.Time
 	bytesRead   int64
@@ -71,7 +70,7 @@ func (p *ProgressReader) Read(b []byte) (n int, err error) {
 	n, err = p.Reader.Read(b)
 	p.bytesRead += int64(n)
 	if time.Since(p.lastMessage) > time.Second*1 {
-		p.Log.Infof(
+		log.Infof(
 			"Downloaded %.2f / %.2f MB",
 			float64(p.bytesRead)/1024/1024,
 			float64(p.TotalSize/1024/1024),

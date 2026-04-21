@@ -693,44 +693,44 @@ func (d *dockerDriver) addIDEMountArgs(
 ) []string {
 	switch ide {
 	case string(config2.IDEGoland):
-		args = append(args, "--mount", jetbrains.NewGolandServer("", ideOptions, d.Log).GetVolume())
+		args = append(args, "--mount", jetbrains.NewGolandServer("", ideOptions).GetVolume())
 	case string(config2.IDERustRover):
 		args = append(
 			args,
 			"--mount",
-			jetbrains.NewRustRoverServer("", ideOptions, d.Log).GetVolume(),
+			jetbrains.NewRustRoverServer("", ideOptions).GetVolume(),
 		)
 	case string(config2.IDEPyCharm):
 		args = append(
 			args,
 			"--mount",
-			jetbrains.NewPyCharmServer("", ideOptions, d.Log).GetVolume(),
+			jetbrains.NewPyCharmServer("", ideOptions).GetVolume(),
 		)
 	case string(config2.IDEPhpStorm):
-		args = append(args, "--mount", jetbrains.NewPhpStorm("", ideOptions, d.Log).GetVolume())
+		args = append(args, "--mount", jetbrains.NewPhpStorm("", ideOptions).GetVolume())
 	case string(config2.IDEIntellij):
-		args = append(args, "--mount", jetbrains.NewIntellij("", ideOptions, d.Log).GetVolume())
+		args = append(args, "--mount", jetbrains.NewIntellij("", ideOptions).GetVolume())
 	case string(config2.IDECLion):
-		args = append(args, "--mount", jetbrains.NewCLionServer("", ideOptions, d.Log).GetVolume())
+		args = append(args, "--mount", jetbrains.NewCLionServer("", ideOptions).GetVolume())
 	case string(config2.IDERider):
-		args = append(args, "--mount", jetbrains.NewRiderServer("", ideOptions, d.Log).GetVolume())
+		args = append(args, "--mount", jetbrains.NewRiderServer("", ideOptions).GetVolume())
 	case string(config2.IDERubyMine):
 		args = append(
 			args,
 			"--mount",
-			jetbrains.NewRubyMineServer("", ideOptions, d.Log).GetVolume(),
+			jetbrains.NewRubyMineServer("", ideOptions).GetVolume(),
 		)
 	case string(config2.IDEWebStorm):
 		args = append(
 			args,
 			"--mount",
-			jetbrains.NewWebStormServer("", ideOptions, d.Log).GetVolume(),
+			jetbrains.NewWebStormServer("", ideOptions).GetVolume(),
 		)
 	case string(config2.IDEDataSpell):
 		args = append(
 			args,
 			"--mount",
-			jetbrains.NewDataSpellServer("", ideOptions, d.Log).GetVolume(),
+			jetbrains.NewDataSpellServer("", ideOptions).GetVolume(),
 		)
 	}
 	return args
