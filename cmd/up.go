@@ -583,7 +583,6 @@ func (cmd *UpCmd) devsyUpMachine(
 				WorkspaceClient: client,
 				CLIOptions:      cmd.CLIOptions,
 				AgentCommand:    "up",
-				Log:             log,
 				TunnelOptions: []tunnelserver.Option{
 					tunnelserver.WithPlatformOptions(&cmd.Platform),
 				},

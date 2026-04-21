@@ -25,9 +25,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 	"github.com/gofrs/flock"
-	"github.com/sirupsen/logrus"
 )
 
 func NewWorkspaceClient(
@@ -944,7 +942,6 @@ type BuildAgentClientOptions struct {
 	WorkspaceClient client.WorkspaceClient
 	CLIOptions      provider.CLIOptions
 	AgentCommand    string
-	Log             log.Logger
 	TunnelOptions   []tunnelserver.Option
 }
 
@@ -955,7 +952,7 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 		return nil, err
 	}
 
-	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo, opts.Log)
+	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo)
 	stdoutReader, stdoutWriter, stdinReader, stdinWriter, err := createPipes()
 	if err != nil {
 		return nil, err
@@ -975,7 +972,6 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 		stdin:           stdinReader,
 		stdout:          stdoutWriter,
 		timeout:         wInfo.InjectTimeout,
-		log:             opts.Log,
 		cancel:          cancel,
 	})
 	result, err := runTunnelServer(cancelCtx, opts, stdoutReader, stdinWriter)
@@ -989,7 +985,6 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 func buildAgentCommand(
 	workspaceClient client.WorkspaceClient,
 	agentCommand, workspaceInfo string,
-	log log.Logger,
 ) string {
 	command := fmt.Sprintf(
 		"'%s' agent workspace %s --workspace-info '%s'",
@@ -997,7 +992,7 @@ func buildAgentCommand(
 		agentCommand,
 		workspaceInfo,
 	)
-	if log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		command += " --debug"
 	}
 	return command
@@ -1024,17 +1019,16 @@ type agentInjectionOptions struct {
 	stdin           *os.File
 	stdout          *os.File
 	timeout         time.Duration
-	log             log.Logger
 	cancel          context.CancelFunc
 }
 
 func runAgentInjection(opts agentInjectionOptions) chan error {
 	errChan := make(chan error, 1)
 	go func() {
-		defer opts.log.Debugf("up command completed")
+		defer devsylog.Debugf("up command completed")
 		defer opts.cancel()
 
-		writer := opts.log.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
+		writer := devsylog.Writer(devsylog.LevelInfo)
 		defer func() { _ = writer.Close() }()
 
 		errChan <- agent.InjectAgent(&agent.InjectOptions{
