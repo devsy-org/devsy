@@ -1072,7 +1072,6 @@ func runTunnelServer(
 		opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.WorkspaceConfig(),
-		opts.Log,
 		opts.TunnelOptions...,
 	)
 	if err != nil {

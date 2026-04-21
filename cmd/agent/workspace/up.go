@@ -711,7 +711,7 @@ func downloadLocalFolder(
 		return fmt.Errorf("read workspace: %w", err)
 	}
 
-	return extract.Extract(tunnelserver.NewStreamReader(stream, logger), workspaceDir)
+	return extract.Extract(tunnelserver.NewStreamReader(stream), workspaceDir)
 }
 
 func prepareImage(workspaceDir, image string) error {

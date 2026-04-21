@@ -22,7 +22,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 )
 
 const (
@@ -244,7 +243,6 @@ func (r *runner) executeSetup(
 			r.WorkspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.WorkspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			config.GetMounts(result),
-			oldlog.Default.ErrorStreamOnly(),
 			tunnelserver.WithPlatformOptions(&r.WorkspaceConfig.CLIOptions.Platform),
 		)
 	}

@@ -24,8 +24,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/netstat"
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/stdio"
-	"github.com/devsy-org/log"
 	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -38,7 +38,6 @@ func RunServicesServer(
 	allowGitCredentials, allowDockerCredentials bool,
 	forwarder netstat.Forwarder,
 	workspace *provider2.Workspace,
-	log log.Logger,
 	options ...Option,
 ) error {
 	opts := append(options, []Option{
@@ -47,7 +46,7 @@ func RunServicesServer(
 		WithAllowDockerCredentials(allowDockerCredentials),
 		WithWorkspace(workspace),
 	}...)
-	tunnelServ := New(log, opts...)
+	tunnelServ := New(opts...)
 
 	return tunnelServ.Run(ctx, reader, writer)
 }
@@ -58,7 +57,6 @@ func RunUpServer(
 	writer io.WriteCloser,
 	allowGitCredentials, allowDockerCredentials bool,
 	workspace *provider2.Workspace,
-	log log.Logger,
 	options ...Option,
 ) (*config.Result, error) {
 	opts := append(options, []Option{
@@ -66,7 +64,7 @@ func RunUpServer(
 		WithAllowGitCredentials(allowGitCredentials),
 		WithAllowDockerCredentials(allowDockerCredentials),
 	}...)
-	tunnelServ := New(log, opts...)
+	tunnelServ := New(opts...)
 
 	return tunnelServ.RunWithResult(ctx, reader, writer)
 }
@@ -77,7 +75,6 @@ func RunSetupServer(
 	writer io.WriteCloser,
 	allowGitCredentials, allowDockerCredentials bool,
 	mounts []*config.Mount,
-	log log.Logger,
 	options ...Option,
 ) (*config.Result, error) {
 	opts := append(options, []Option{
@@ -86,16 +83,14 @@ func RunSetupServer(
 		WithAllowDockerCredentials(allowDockerCredentials),
 		WithAllowKubeConfig(true),
 	}...)
-	tunnelServ := New(log, opts...)
+	tunnelServ := New(opts...)
 	tunnelServ.allowPlatformOptions = true
 
 	return tunnelServ.RunWithResult(ctx, reader, writer)
 }
 
-func New(log log.Logger, options ...Option) *tunnelServer {
-	s := &tunnelServer{
-		log: log,
-	}
+func New(options ...Option) *tunnelServer {
+	s := &tunnelServer{}
 	for _, o := range options {
 		s = o(s)
 	}
@@ -116,7 +111,6 @@ type tunnelServer struct {
 	allowPlatformOptions   bool
 	result                 *config.Result
 	workspace              *provider2.Workspace
-	log                    log.Logger
 
 	platformOptions *devsy.PlatformOptions
 }
@@ -243,7 +237,7 @@ func (t *tunnelServer) GitCredentials(
 	ctx context.Context,
 	message *tunnel.Message,
 ) (*tunnel.Message, error) {
-	t.log.Debugf(
+	devsylog.Debugf(
 		"getting git credentials: allowGitCredentials=%v, workspaceIsNil=%v",
 		t.allowGitCredentials,
 		t.workspace == nil,
@@ -293,7 +287,7 @@ func (t *tunnelServer) GitCredentials(
 			// This allows downstream credential helpers to figure out which passwords needs to be fetched
 			credentials.Path = path
 		} else {
-			t.log.Warn("workspace is not available for git credentials")
+			devsylog.Warn("workspace is not available for git credentials")
 		}
 
 		response, err := gitcredentials.GetCredentials(credentials)
@@ -410,22 +404,22 @@ func (t *tunnelServer) SendResult(
 }
 
 func (t *tunnelServer) Ping(context.Context, *tunnel.Empty) (*tunnel.Empty, error) {
-	t.log.Debug("received ping from agent")
+	devsylog.Debug("received ping from agent")
 	return &tunnel.Empty{}, nil
 }
 
 func (t *tunnelServer) Log(ctx context.Context, message *tunnel.LogMessage) (*tunnel.Empty, error) {
 	switch message.LogLevel {
 	case tunnel.LogLevel_DEBUG:
-		t.log.Debug(strings.TrimSpace(message.Message))
+		devsylog.Debug(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_INFO:
-		t.log.Info(strings.TrimSpace(message.Message))
+		devsylog.Info(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_WARNING:
-		t.log.Warn(strings.TrimSpace(message.Message))
+		devsylog.Warn(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_ERROR:
-		t.log.Error(strings.TrimSpace(message.Message))
+		devsylog.Error(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_DONE:
-		t.log.Done(strings.TrimSpace(message.Message))
+		devsylog.Info(strings.TrimSpace(message.Message))
 	}
 
 	return &tunnel.Empty{}, nil
@@ -451,11 +445,11 @@ func (t *tunnelServer) StreamWorkspace(
 	if err == nil {
 		excludes, err = ignorefile.ReadAll(f)
 		if err != nil {
-			t.log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
+			devsylog.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
 		}
 	}
 
-	buf := bufio.NewWriterSize(NewStreamWriter(stream, t.log), 10*1024)
+	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err = extract.WriteTarExclude(buf, t.workspace.Source.LocalFolder, false, excludes)
 	if err != nil {
 		return err
@@ -494,12 +488,12 @@ func (t *tunnelServer) StreamMount(
 		if err == nil {
 			excludes, err = ignorefile.ReadAll(f)
 			if err != nil {
-				t.log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
+				devsylog.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
 			}
 		}
 	}
 
-	buf := bufio.NewWriterSize(NewStreamWriter(stream, t.log), 10*1024)
+	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)
 	if err != nil {
 		return err

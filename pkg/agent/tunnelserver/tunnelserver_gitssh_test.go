@@ -7,7 +7,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +20,7 @@ func TestGitSSHSignature_DeserializesPublicKey(t *testing.T) {
 	reqJSON, err := json.Marshal(req)
 	require.NoError(t, err)
 
-	ts := New(log.Discard)
+	ts := New()
 
 	_, err = ts.GitSSHSignature(context.Background(), &tunnel.Message{
 		Message: string(reqJSON),

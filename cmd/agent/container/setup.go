@@ -745,7 +745,7 @@ func streamMount(
 	}
 
 	// target folder
-	err = extract.Extract(tunnelserver.NewStreamReader(stream, logger), m.Target)
+	err = extract.Extract(tunnelserver.NewStreamReader(stream), m.Target)
 	if err != nil {
 		return fmt.Errorf("stream mount %s: %w", m.String(), err)
 	}
