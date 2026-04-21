@@ -16,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -94,7 +93,6 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 				workspaces,
 				providerConfig.Name,
 				cmd.Owner,
-				oldlog.Default,
 			)
 		}
 
@@ -140,7 +138,6 @@ func cleanupLocalWorkspaces(
 	workspaces []*provider.Workspace,
 	providerName string,
 	owner platform.OwnerFilter,
-	log oldlog.Logger,
 ) {
 	usedWorkspaces := []*provider.Workspace{}
 
@@ -180,7 +177,7 @@ func cleanupLocalWorkspaces(
 					log.Errorf("failed to remove workspace: workspaceId=%s, err=%v", w.ID, err)
 					return
 				}
-				log.Donef("removed workspace: workspaceId=%s", w.ID)
+				log.Infof("removed workspace: workspaceId=%s", w.ID)
 			}(*w)
 		}
 

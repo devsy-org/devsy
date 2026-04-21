@@ -10,9 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +88,7 @@ func (cmd *WatchWorkspacesCmd) Run(
 		Options: opts,
 		Config:  providerConfig,
 		Stdout:  os.Stdout,
-		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, false),
+		Stderr:  devsylog.Writer(devsylog.LevelError),
 	})
 	if err != nil {
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", providerConfig.Name, err)

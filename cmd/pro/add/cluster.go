@@ -18,8 +18,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -266,8 +264,8 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	go func() {
 		helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
 
-		helmCmd.Stdout = oldlog.Default.Writer(logrus.DebugLevel, true)
-		helmCmd.Stderr = oldlog.Default.Writer(logrus.DebugLevel, true)
+		helmCmd.Stdout = log.Writer(log.LevelDebug)
+		helmCmd.Stderr = log.Writer(log.LevelDebug)
 		helmCmd.Stdin = os.Stdin
 
 		log.Info("Installing agent...")
