@@ -33,9 +33,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/util"
-	oldlog "github.com/devsy-org/log"
 	jsonpatch "github.com/evanphx/json-patch/v5"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -164,7 +162,6 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 			cmd.RestConfig,
 			cmd.Context,
 			cmd.Namespace,
-			oldlog.Default,
 		)
 		if err != nil {
 			return err
@@ -320,7 +317,6 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 		cmd.Context,
 		cmd.Namespace,
 		extraArgs,
-		oldlog.Default,
 	)
 	if err != nil {
 		return errors.New(
@@ -358,7 +354,6 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 		cmd.Context,
 		cmd.Namespace,
 		extraArgs,
-		oldlog.Default,
 	)
 	if err != nil {
 		if !cmd.Reset {
@@ -463,7 +458,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 			password = passwordChangedHint
 		}
 
-		oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
+		fmt.Fprintf(os.Stderr, `
 
 ##########################   LOGIN   ############################
 
@@ -486,7 +481,7 @@ Thanks for using Devsy Pro!
 			greenBold(url),
 			greenBold("devsy pro login "+url),
 			"https://devsy.sh/docs/administration/ssl",
-			url))
+			url)
 	}
 	ready, err := isHostReachable(ctx, host)
 	if err != nil {
@@ -497,7 +492,7 @@ Thanks for using Devsy Pro!
 	}
 
 	// Print DNS Configuration
-	oldlog.Default.WriteString(logrus.InfoLevel, `
+	fmt.Fprint(os.Stderr, `
 
 ###################################     DNS CONFIGURATION REQUIRED     ##################################
 
@@ -555,7 +550,7 @@ func (cmd *StartCmd) successLocal() error {
 		password = passwordChangedHint
 	}
 
-	oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
+	fmt.Fprintf(os.Stderr, `
 
 ##########################   LOGIN   ############################
 
@@ -572,7 +567,7 @@ Login via CLI: %s
 Devsy Pro was successfully installed.
 
 Thanks for using Devsy Pro!
-`, greenBold(url), greenBold("devsy pro login"+" --insecure "+url)))
+`, greenBold(url), greenBold("devsy pro login"+" --insecure "+url))
 	blockChan := make(chan bool)
 	<-blockChan
 	return nil
@@ -607,7 +602,7 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 
 	// Use default password if none is set
 	if cmd.Password == "" {
-		cmd.Password = getMachineUID(oldlog.Default)
+		cmd.Password = getMachineUID()
 	}
 
 	// check if is installed
@@ -675,13 +670,13 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// print success message
-	PrintSuccessMessageDockerInstall(host, cmd.Password, oldlog.Default)
+	PrintSuccessMessageDockerInstall(host, cmd.Password)
 	return nil
 }
 
-func PrintSuccessMessageDockerInstall(host, password string, log oldlog.Logger) {
+func PrintSuccessMessageDockerInstall(host, password string) {
 	url := "https://" + host
-	log.WriteString(logrus.InfoLevel, fmt.Sprintf(`
+	fmt.Fprintf(os.Stderr, `
 
 ##########################   LOGIN   ############################
 
@@ -700,7 +695,7 @@ Thanks for using Devsy Pro!
 		greenBold(url),
 		greenBold("devsy pro login"+" "+url),
 		url,
-	))
+	)
 }
 
 func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
@@ -925,7 +920,6 @@ func (cmd *StartCmd) prepareInstall(ctx context.Context) error {
 		cmd.RestConfig,
 		cmd.Context,
 		cmd.Namespace,
-		oldlog.Discard,
 	)
 }
 
@@ -1125,7 +1119,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 		if enableIngress {
 			// Ask for hostname if --host flag is not provided
 			if cmd.Host == "" {
-				host, err := enterHostNameQuestion(oldlog.Default)
+				host, err := enterHostNameQuestion()
 				if err != nil {
 					return err
 				}
@@ -1136,7 +1130,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 			}
 
 			if term.IsTerminal(os.Stdin) {
-				err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context, oldlog.Default)
+				err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context)
 				if err != nil {
 					return fmt.Errorf("install ingress controller: %w", err)
 				}
@@ -1255,7 +1249,7 @@ func (cmd *StartCmd) successLoftRouter(url string) error {
 		password = passwordChangedHint
 	}
 
-	oldlog.Default.WriteString(logrus.InfoLevel, fmt.Sprintf(`
+	fmt.Fprintf(os.Stderr, `
 
 ##########################   LOGIN   ############################
 
@@ -1274,7 +1268,7 @@ Thanks for using Devsy Pro!
 		greenBold(url),
 		greenBold("devsy pro login"+" "+url),
 		url,
-	))
+	)
 	return nil
 }
 
@@ -1397,7 +1391,6 @@ func uninstall(
 	kubeClient kubernetes.Interface,
 	restConfig *rest.Config,
 	kubeContext, namespace string,
-	log oldlog.Logger,
 ) error {
 	releaseName := config.ProReleaseName
 	deploy, err := kubeClient.AppsV1().
@@ -1492,9 +1485,9 @@ func uninstall(
 		return err
 	}
 
-	log.WriteString(logrus.InfoLevel, "\n")
-	log.Done("uninstalled Devsy Pro")
-	log.WriteString(logrus.InfoLevel, "\n")
+	fmt.Fprint(os.Stderr, "\n")
+	log.Info("uninstalled Devsy Pro")
+	fmt.Fprint(os.Stderr, "\n")
 
 	return nil
 }
@@ -1562,8 +1555,8 @@ func isInstalledLocally(
 	return kerrors.IsNotFound(err)
 }
 
-func enterHostNameQuestion(logger oldlog.Logger) (string, error) {
-	return log.QuestionWith(logger, &survey.QuestionOptions{
+func enterHostNameQuestion() (string, error) {
+	return log.QuestionDefault(&survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
 			config.ProductNamePro,
@@ -1585,7 +1578,6 @@ func ensureIngressController(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	kubeContext string,
-	logger oldlog.Logger,
 ) error {
 	// first create an ingress controller
 	const (
@@ -1593,7 +1585,7 @@ func ensureIngressController(
 		NoOption  = "No, I already have an ingress controller installed."
 	)
 
-	answer, err := log.QuestionWith(logger, &survey.QuestionOptions{
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
 		Question:     "Ingress controller required. Should the nginx-ingress controller be installed?",
 		DefaultValue: YesOption,
 		Options: []string{
@@ -1622,9 +1614,9 @@ func ensureIngressController(
 			"controller.config.hsts=false",
 			"--wait",
 		}
-		logger.WriteString(logrus.InfoLevel, "\n")
-		logger.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-		logger.Info("Waiting for ingress controller deployment, this can take several minutes...")
+		fmt.Fprint(os.Stderr, "\n")
+		log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
+		log.Info("Waiting for ingress controller deployment, this can take several minutes...")
 		helmCmd := exec.CommandContext(
 			ctx,
 			"helm",
@@ -1670,7 +1662,7 @@ func ensureIngressController(
 			}
 		}
 
-		logger.Done("installed ingress-nginx to your kubernetes cluster!")
+		log.Info("installed ingress-nginx to your kubernetes cluster!")
 	}
 
 	return nil
@@ -1877,7 +1869,6 @@ func upgradeRelease(
 	ctx context.Context,
 	chartName, chartRepo, kubeContext, namespace string,
 	extraArgs []string,
-	log oldlog.Logger,
 ) error {
 	// now we install loft
 	args := []string{
@@ -1897,7 +1888,7 @@ func upgradeRelease(
 	}
 	args = append(args, extraArgs...)
 
-	log.WriteString(logrus.InfoLevel, "\n")
+	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
 	log.Info("Waiting for helm command, this can take up to several minutes...")
 	helmCmd := exec.CommandContext(
@@ -1917,7 +1908,7 @@ func upgradeRelease(
 		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
 	}
 
-	log.Donef("Devsy Pro has been deployed to your cluster!")
+	log.Infof("Devsy Pro has been deployed to your cluster!")
 	return nil
 }
 
@@ -2047,22 +2038,18 @@ func (e *Error) Error() string {
 	return message + e.err.Error()
 }
 
-func getMachineUID(log oldlog.Logger) string {
+func getMachineUID() string {
 	id, err := machineid.ID()
 	if err != nil {
 		id = "error"
-		if log != nil {
-			log.Debugf("Error retrieving machine uid: %v", err)
-		}
+		log.Debugf("Error retrieving machine uid: %v", err)
 	}
 	// get $HOME to distinguish two users on the same machine
 	// will be hashed later together with the ID
 	home, err := util.UserHomeDir()
 	if err != nil {
 		home = "error"
-		if log != nil {
-			log.Debugf("Error retrieving machine home: %v", err)
-		}
+		log.Debugf("Error retrieving machine home: %v", err)
 	}
 	mac := hmac.New(sha256.New, []byte(id))
 	mac.Write([]byte(home))
