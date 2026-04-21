@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +60,6 @@ func (cmd *ExportCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		DevsyConfig: devsyConfig,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         oldlog.Default,
 	})
 	if err != nil {
 		return err

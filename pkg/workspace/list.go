@@ -16,10 +16,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,10 +31,9 @@ func List(
 	devsyConfig *config.Config,
 	skipPro bool,
 	owner platform.OwnerFilter,
-	log log.Logger,
 ) ([]*providerpkg.Workspace, error) {
 	// list local workspaces
-	localWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, skipPro, log)
+	localWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, skipPro)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func List(
 	proWorkspaces := []*providerpkg.Workspace{}
 	if !skipPro {
 		// list remote workspaces
-		proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner, log)
+		proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner)
 		if err != nil {
 			return nil, err
 		}
@@ -66,7 +66,7 @@ func List(
 							SSHConfigPath:        localWorkspace.SSHConfigPath,
 							SSHConfigIncludePath: localWorkspace.SSHConfigIncludePath,
 						},
-						log,
+						oldlog.Default,
 					)
 					if err != nil {
 						log.Debugf(
@@ -114,7 +114,6 @@ func List(
 func ListLocalWorkspaces(
 	contextName string,
 	skipPro bool,
-	log log.Logger,
 ) ([]*providerpkg.Workspace, error) {
 	workspaceDir, err := providerpkg.GetWorkspacesDir(contextName)
 	if err != nil {
@@ -157,7 +156,6 @@ func listProWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	owner platform.OwnerFilter,
-	log log.Logger,
 ) (map[string]listProWorkspacesResult, error) {
 	results := map[string]listProWorkspacesResult{}
 
@@ -188,7 +186,6 @@ func listProWorkspaces(
 				provider,
 				providerConfig,
 				owner,
-				log,
 			)
 			mu.Lock()
 			defer mu.Unlock()
@@ -209,7 +206,6 @@ func listProWorkspacesForProvider(
 	provider string,
 	providerConfig *providerpkg.ProviderConfig,
 	owner platform.OwnerFilter,
-	log log.Logger,
 ) ([]*providerpkg.Workspace, error) {
 	var (
 		instances []managementv1.DevsyWorkspaceInstance
@@ -221,7 +217,6 @@ func listProWorkspacesForProvider(
 			devsyConfig,
 			provider,
 			providerConfig,
-			log,
 		)
 	} else if providerConfig.IsDaemonProvider() {
 		instances, err = listInstancesDaemonProvider(ctx, provider, owner)
@@ -229,7 +224,7 @@ func listProWorkspacesForProvider(
 		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", provider)
 	}
 	if err != nil {
-		if log.GetLevel() >= logrus.DebugLevel {
+		if oldlog.Default.GetLevel() >= logrus.DebugLevel {
 			log.Warnf("Failed to list pro workspaces for provider %s: %v", provider, err)
 		}
 		return nil, err
@@ -357,7 +352,6 @@ func listInstancesProxyProvider(
 	devsyConfig *config.Config,
 	provider string,
 	providerConfig *providerpkg.ProviderConfig,
-	log log.Logger,
 ) ([]managementv1.DevsyWorkspaceInstance, error) {
 	opts := devsyConfig.ProviderOptions(provider)
 	opts[config.EnvLoftFilterByOwner] = config.OptionValue{Value: "true"}
@@ -373,7 +367,7 @@ func listInstancesProxyProvider(
 		Config:  providerConfig,
 		Stdout:  &stdout,
 		Stderr:  &stderr,
-		Log:     log,
+		Log:     oldlog.Default,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to list pro workspaces: %s: %w", stderr.String(), err)
 	}

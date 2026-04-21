@@ -61,7 +61,6 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		devsyConfig,
 		args[0],
 		providerSource,
-		oldlog.Default,
 	)
 	if err != nil {
 		return err

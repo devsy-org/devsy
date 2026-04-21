@@ -84,7 +84,6 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		workspaces, err := workspace.ListLocalWorkspaces(
 			devsyConfig.DefaultContext,
 			false,
-			oldlog.Default,
 		)
 		if err != nil {
 			log.Warnf("Failed to list workspaces: %v", err)
@@ -163,7 +162,6 @@ func cleanupLocalWorkspaces(
 					Args:        []string{w.ID},
 					Owner:       owner,
 					LocalOnly:   true,
-					Log:         log,
 				})
 				if err != nil {
 					log.Errorf("failed to get workspace: workspaceId=%s, err=%v", w.ID, err)

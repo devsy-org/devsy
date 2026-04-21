@@ -62,7 +62,6 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		DevsyConfig: devsyConfig,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         oldlog.Default,
 	})
 	if err != nil {
 		return err

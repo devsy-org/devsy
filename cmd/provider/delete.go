@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +69,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// delete the provider
-	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force, oldlog.Default)
+	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force)
 	if err != nil {
 		return err
 	}
@@ -84,12 +83,11 @@ func DeleteProvider(
 	devsyConfig *config.Config,
 	provider string,
 	ignoreNotFound, force bool,
-	log oldlog.Logger,
 ) error {
 	// if force is not set, check if the provider is associated with a pro instance or workspace
 	if !force {
 		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
+		proInstances, err := workspace.ListProInstances(devsyConfig)
 		if err != nil {
 			return fmt.Errorf("list pro instances: %w", err)
 		}
@@ -105,7 +103,7 @@ func DeleteProvider(
 		}
 
 		// check if there are workspaces that still use this provider
-		workspaces, err := workspace.List(ctx, devsyConfig, true, platform.AllOwnerFilter, log)
+		workspaces, err := workspace.List(ctx, devsyConfig, true, platform.AllOwnerFilter)
 		if err != nil {
 			return err
 		}

@@ -113,7 +113,6 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		DevsyConfig: info.Config,
 		Args:        args,
 		Owner:       cmd.Owner,
-		Log:         oldlog.Default,
 	})
 	if err == nil {
 		info.Workspace = workspaceClient.WorkspaceConfig()
@@ -219,7 +218,7 @@ func collectProviders(
 	devsyConfig *config.Config,
 	logger oldlog.Logger,
 ) (map[string]provider.ProviderWithDefault, error) {
-	providers, err := workspace.LoadAllProviders(devsyConfig, logger)
+	providers, err := workspace.LoadAllProviders(devsyConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +262,7 @@ func collectPlatformInfo(
 	devsyConfig *config.Config,
 	logger oldlog.Logger,
 ) ([]DevsyProInstance, error) {
-	proInstanceList, err := workspace.ListProInstances(devsyConfig, logger)
+	proInstanceList, err := workspace.ListProInstances(devsyConfig)
 	if err != nil {
 		return nil, fmt.Errorf("list pro instances: %w", err)
 	}

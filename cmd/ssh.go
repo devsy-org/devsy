@@ -89,7 +89,6 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 				ChangeLastUsed: true,
 				Owner:          cmd.Owner,
 				LocalOnly:      localOnly,
-				Log:            oldlog.Default.ErrorStreamOnly(),
 			})
 			if err != nil {
 				return err

@@ -14,11 +14,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/download"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/providers"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 )
 
 var ErrNoWorkspaceFound = errors.New("no workspace found")
@@ -33,16 +34,14 @@ type ProviderParams struct {
 	ProviderName string
 	Raw          []byte
 	Source       *provider.ProviderSource
-	Log          log.Logger
 }
 
 // LoadProviders loads all known providers for the given context.
 func LoadProviders(
 	devsyConfig *config.Config,
-	log log.Logger,
 ) (*ProviderWithOptions, map[string]*ProviderWithOptions, error) {
 	defaultContext := devsyConfig.Current()
-	retProviders, err := LoadAllProviders(devsyConfig, log)
+	retProviders, err := LoadAllProviders(devsyConfig)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -62,11 +61,10 @@ func LoadProviders(
 
 func LoadAllProviders(
 	devsyConfig *config.Config,
-	log log.Logger,
 ) (map[string]*ProviderWithOptions, error) {
 	retProviders := map[string]*ProviderWithOptions{}
 
-	loadConfiguredProviders(devsyConfig, retProviders, log)
+	loadConfiguredProviders(devsyConfig, retProviders)
 
 	if err := loadUnconfiguredProviders(devsyConfig, retProviders); err != nil {
 		return nil, err
@@ -78,9 +76,8 @@ func LoadAllProviders(
 func FindProvider(
 	devsyConfig *config.Config,
 	name string,
-	log log.Logger,
 ) (*ProviderWithOptions, error) {
-	retProviders, err := LoadAllProviders(devsyConfig, log)
+	retProviders, err := LoadAllProviders(devsyConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -95,14 +92,13 @@ func ProviderFromHost(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	proHost string,
-	log log.Logger,
 ) (*provider.ProviderConfig, error) {
 	proInstanceConfig, err := provider.LoadProInstanceConfig(devsyConfig.DefaultContext, proHost)
 	if err != nil {
 		return nil, fmt.Errorf("load pro instance %s: %w", proHost, err)
 	}
 
-	foundProvider, err := FindProvider(devsyConfig, proInstanceConfig.Provider, log)
+	foundProvider, err := FindProvider(devsyConfig, proInstanceConfig.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("find provider: %w", err)
 	}
@@ -116,9 +112,8 @@ func ProviderFromHost(
 func AddProvider(
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
-	log log.Logger,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw, log)
+	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +123,6 @@ func AddProvider(
 		ProviderName: providerName,
 		Source:       providerSource,
 		Raw:          providerRaw,
-		Log:          log,
 	})
 }
 
@@ -157,21 +151,20 @@ func AddProviderRaw(p ProviderParams) (*provider.ProviderConfig, error) {
 func UpdateProvider(
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
-	log log.Logger,
 ) (*provider.ProviderConfig, error) {
 	if devsyConfig.Current().Providers[providerName] == nil {
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	if providerSourceRaw == "" {
-		s, err := ResolveProviderSource(devsyConfig, providerName, log)
+		s, err := ResolveProviderSource(devsyConfig, providerName)
 		if err != nil {
 			return nil, err
 		}
 		providerSourceRaw = s
 	}
 
-	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw, log)
+	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -181,16 +174,14 @@ func UpdateProvider(
 		ProviderName: providerName,
 		Raw:          providerRaw,
 		Source:       providerSource,
-		Log:          log,
 	})
 }
 
 func CloneProvider(
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
-	log log.Logger,
 ) (*ProviderWithOptions, error) {
-	sourceProvider, err := FindProvider(devsyConfig, providerSourceRaw, log)
+	sourceProvider, err := FindProvider(devsyConfig, providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +191,6 @@ func CloneProvider(
 			DevsyConfig:  devsyConfig,
 			ProviderName: providerName,
 			Source:       &sourceProvider.Config.Source,
-			Log:          log,
 		},
 		sourceProvider.Config)
 	if err != nil {
@@ -214,9 +204,8 @@ func CloneProvider(
 func ResolveProviderSource(
 	devsyConfig *config.Config,
 	providerName string,
-	log log.Logger,
 ) (string, error) {
-	providerConfig, err := FindProvider(devsyConfig, providerName, log)
+	providerConfig, err := FindProvider(devsyConfig, providerName)
 	if err != nil {
 		return "", fmt.Errorf("find provider: %w", err)
 	}
@@ -231,7 +220,6 @@ func ResolveProviderSource(
 
 func ResolveProvider(
 	providerSource string,
-	log log.Logger,
 ) ([]byte, *provider.ProviderSource, error) {
 	retSource := &provider.ProviderSource{Raw: strings.TrimSpace(providerSource)}
 
@@ -242,7 +230,6 @@ func ResolveProvider(
 	if out, err := tryResolveURLProvider(
 		providerSource,
 		retSource,
-		log,
 	); hasOutputOrError(
 		out,
 		err,
@@ -254,7 +241,7 @@ func ResolveProvider(
 		return out, retSource, err
 	}
 
-	out, source, err := downloadProviderGithub(providerSource, log)
+	out, source, err := downloadProviderGithub(providerSource)
 	if len(out) > 0 || err != nil {
 		return out, source, err
 	}
@@ -271,9 +258,8 @@ func hasOutputOrError(out []byte, err error) bool {
 func tryResolveURLProvider(
 	providerSource string,
 	retSource *provider.ProviderSource,
-	log log.Logger,
 ) ([]byte, error) {
-	out, ok, err := resolveURLProvider(providerSource, retSource, log)
+	out, ok, err := resolveURLProvider(providerSource, retSource)
 	if !ok {
 		return nil, nil
 	}
@@ -293,7 +279,6 @@ func tryResolveFileProvider(
 
 func downloadProviderGithub(
 	originalPath string,
-	log log.Logger,
 ) ([]byte, *provider.ProviderSource, error) {
 	path := strings.TrimPrefix(originalPath, "github.com/")
 
@@ -316,7 +301,7 @@ func downloadProviderGithub(
 
 	requestURL := buildGithubURL(path, release)
 
-	body, err := download.File(requestURL, log)
+	body, err := download.File(requestURL, oldlog.Default)
 	if err != nil {
 		return nil, nil, fmt.Errorf("download: %w", err)
 	}
@@ -336,7 +321,6 @@ func downloadProviderGithub(
 func loadConfiguredProviders(
 	devsyConfig *config.Config,
 	retProviders map[string]*ProviderWithOptions,
-	log log.Logger,
 ) {
 	defaultContext := devsyConfig.Current()
 	for providerName, providerState := range defaultContext.Providers {
@@ -419,7 +403,6 @@ func installRawProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 		DevsyConfig:  p.DevsyConfig,
 		ProviderName: p.ProviderName,
 		Source:       p.Source,
-		Log:          p.Log,
 	}, providerConfig)
 }
 
@@ -520,7 +503,6 @@ func downloadAndSaveProvider(p ProviderParams, providerConfig *provider.Provider
 	if _, err := provider.DownloadBinaries(
 		providerConfig.Binaries,
 		binariesDir,
-		p.Log,
 	); err != nil {
 		_ = os.RemoveAll(providerDir)
 		return fmt.Errorf("download binaries: %w", err)
@@ -575,7 +557,6 @@ func resolveInternalProvider(
 func resolveURLProvider(
 	providerSource string,
 	retSource *provider.ProviderSource,
-	log log.Logger,
 ) ([]byte, bool, error) {
 	if !strings.HasPrefix(providerSource, "http://") &&
 		!strings.HasPrefix(providerSource, "https://") {
@@ -668,7 +649,6 @@ func SwitchProvider(
 		DevsyConfig: devsyConfig,
 		Args:        []string{workspace.ID},
 		Owner:       platform.AllOwnerFilter,
-		Log:         log.Default,
 	})
 	if err != nil {
 		revert()

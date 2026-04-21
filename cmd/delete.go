@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -143,6 +142,5 @@ func (cmd *DeleteCmd) deleteWorkspace(
 		Force:          cmd.Force,
 		ClientDelete:   cmd.DeleteOptions,
 		Owner:          cmd.Owner,
-		Log:            oldlog.Default,
 	})
 }

@@ -103,7 +103,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		cmd.WorkspaceId = newWorkspaceId
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost, oldlog.Default)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost)
 	if err != nil {
 		return fmt.Errorf("resolve provider: %w", err)
 	}

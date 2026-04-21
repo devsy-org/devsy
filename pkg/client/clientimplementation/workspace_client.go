@@ -745,7 +745,6 @@ func (s *workspaceClient) buildEnvironment(command string) ([]string, error) {
 		ExtraEnv: map[string]string{
 			provider.CommandEnv: command,
 		},
-		Log: s.log,
 	})
 }
 
@@ -757,7 +756,6 @@ func RunCommandWithBinaries(opts CommandOptions) error {
 		Options:   opts.Options,
 		Config:    opts.Config,
 		ExtraEnv:  opts.ExtraEnv,
-		Log:       opts.Log,
 	})
 	if err != nil {
 		return err

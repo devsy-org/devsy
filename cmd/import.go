@@ -290,7 +290,7 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 	devsyConfig *config.Config,
 	log oldlog.Logger,
 ) error {
-	workspaces, err := workspace.List(ctx, devsyConfig, false, cmd.Owner, log)
+	workspaces, err := workspace.List(ctx, devsyConfig, false, cmd.Owner)
 	if err != nil {
 		return fmt.Errorf("error listing workspaces: %w", err)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -61,14 +60,13 @@ func (cmd *CheckProviderUpdateCmd) Run(
 	providerSourceRaw, err := workspace.ResolveProviderSource(
 		devsyConfig,
 		providerName,
-		oldlog.Default,
 	)
 	if err != nil {
 		return fmt.Errorf("provider %s doesn't exist", providerName)
 	}
 
 	// retrieve current config for provider
-	allProviders, err := workspace.LoadAllProviders(devsyConfig, oldlog.Default)
+	allProviders, err := workspace.LoadAllProviders(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -112,7 +110,7 @@ func (cmd *CheckProviderUpdateCmd) Run(
 func loadLatestProvider(
 	providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, _, err := workspace.ResolveProvider(providerSourceRaw, oldlog.Default)
+	providerRaw, _, err := workspace.ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, fmt.Errorf("resolve provider: %w", err)
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +88,6 @@ func getWorkspacesForProvider(
 	workspaces, err := workspace.ListLocalWorkspaces(
 		devsyConfig.DefaultContext,
 		false,
-		oldlog.Default,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing workspaces: %w", err)
@@ -109,7 +107,7 @@ func getMachinesForProvider(
 	devsyConfig *config.Config,
 	providerName string,
 ) ([]*provider.Machine, error) {
-	machines, err := workspace.ListMachines(devsyConfig, oldlog.Default)
+	machines, err := workspace.ListMachines(devsyConfig)
 	if err != nil {
 		return nil, fmt.Errorf("listing machines: %w", err)
 	}
@@ -211,7 +209,7 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 // validateProviderRename verifies that the provider exists, is not a pro
 // provider, is not backing a pro instance, and has configuration state.
 func validateProviderRename(devsyConfig *config.Config, oldName string) error {
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName, oldlog.Default)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName)
 	if err != nil {
 		return fmt.Errorf("provider %s not found", oldName)
 	}
@@ -221,7 +219,7 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("listing pro instances: %w", err)
 	}

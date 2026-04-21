@@ -16,7 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/download"
 	"github.com/devsy-org/devsy/pkg/extract"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/hash"
 	"k8s.io/client-go/util/retry"
 )
@@ -47,7 +48,6 @@ type EnvironmentOptions struct {
 	Options   map[string]config.OptionValue
 	Config    *ProviderConfig
 	ExtraEnv  map[string]string
-	Log       log.Logger
 }
 
 func ToEnvironmentWithBinaries(opts EnvironmentOptions) ([]string, error) {
@@ -107,11 +107,10 @@ func GetBinaries(context string, config *ProviderConfig) (map[string]string, err
 func DownloadBinaries(
 	binaries map[string][]*ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (map[string]string, error) {
 	retBinaries := map[string]string{}
 	for binaryName, binaryLocations := range binaries {
-		binaryPath, err := downloadBinaryForPlatform(binaryName, binaryLocations, targetFolder, log)
+		binaryPath, err := downloadBinaryForPlatform(binaryName, binaryLocations, targetFolder)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +124,6 @@ func downloadBinaryForPlatform(
 	binaryName string,
 	binaryLocations []*ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	for _, binary := range binaryLocations {
 		if binary.OS != runtime.GOOS || binary.Arch != runtime.GOARCH {
@@ -136,12 +134,12 @@ func downloadBinaryForPlatform(
 		binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
 		binaryPath := getBinaryPath(binary, binaryTargetFolder)
 		if verifyOrRemoveBinary(binaryPath, binary.Checksum) ||
-			fromCache(binary, binaryTargetFolder, log) {
+			fromCache(binary, binaryTargetFolder) {
 			return binaryPath, nil
 		}
 
 		// try to download the binary
-		binaryPath, err := downloadWithRetry(binaryName, binary, binaryTargetFolder, log)
+		binaryPath, err := downloadWithRetry(binaryName, binary, binaryTargetFolder)
 		if err != nil {
 			return "", err
 		}
@@ -156,17 +154,16 @@ func downloadWithRetry(
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	var binaryPath string
 	err := retry.OnError(downloadBackoff, isRetriableError, func() error {
-		path, err := downloadBinary(binaryName, binary, targetFolder, log)
+		path, err := downloadBinary(binaryName, binary, targetFolder)
 		if err != nil {
 			return err
 		}
 
 		if binary.Checksum != "" {
-			if !verifyDownloadedBinary(path, binary, binaryName, log) {
+			if !verifyDownloadedBinary(path, binary, binaryName) {
 				return errChecksumVerificationFailed
 			}
 		}
@@ -178,7 +175,7 @@ func downloadWithRetry(
 		return "", fmt.Errorf("failed to download binary %s: %w", binaryName, err)
 	}
 
-	toCache(binary, binaryPath, log)
+	toCache(binary, binaryPath)
 	return binaryPath, nil
 }
 
@@ -229,7 +226,6 @@ func verifyDownloadedBinary(
 	binaryPath string,
 	binary *ProviderBinary,
 	binaryName string,
-	log log.Logger,
 ) bool {
 	fileHash, err := hash.File(binaryPath)
 	if err != nil {
@@ -246,7 +242,7 @@ func verifyDownloadedBinary(
 	return true
 }
 
-func toCache(binary *ProviderBinary, binaryPath string, log log.Logger) {
+func toCache(binary *ProviderBinary, binaryPath string) {
 	if !isRemotePath(binary.Path) {
 		return
 	}
@@ -262,7 +258,7 @@ func toCache(binary *ProviderBinary, binaryPath string, log log.Logger) {
 	}
 }
 
-func fromCache(binary *ProviderBinary, targetFolder string, log log.Logger) bool {
+func fromCache(binary *ProviderBinary, targetFolder string) bool {
 	if !isRemotePath(binary.Path) {
 		return false
 	}
@@ -386,13 +382,12 @@ func downloadBinary(
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	if isRemotePath(binary.Path) {
 		if err := os.MkdirAll(targetFolder, dirPerms); err != nil {
 			return "", fmt.Errorf("create folder: %w", err)
 		}
-		return downloadRemoteBinary(binaryName, binary, targetFolder, log)
+		return downloadRemoteBinary(binaryName, binary, targetFolder)
 	}
 
 	if _, err := os.Stat(binary.Path); err == nil {
@@ -432,15 +427,14 @@ func downloadRemoteBinary(
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	var targetPath string
 	var err error
 
 	if binary.ArchivePath != "" {
-		targetPath, err = downloadArchive(binaryName, binary, targetFolder, log)
+		targetPath, err = downloadArchive(binaryName, binary, targetFolder)
 	} else {
-		targetPath, err = downloadFile(binaryName, binary, targetFolder, log)
+		targetPath, err = downloadFile(binaryName, binary, targetFolder)
 	}
 
 	if err != nil {
@@ -461,7 +455,6 @@ func downloadFile(
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	name := getBinaryFileName(binary)
 	targetPath := filepath.Join(targetFolder, name)
@@ -470,18 +463,17 @@ func downloadFile(
 	// (could be partial download from previous failed attempt)
 	_ = os.Remove(targetPath)
 
-	return downloadAndSaveFile(binaryName, binary, targetPath, log)
+	return downloadAndSaveFile(binaryName, binary, targetPath)
 }
 
 func downloadAndSaveFile(
 	binaryName string,
 	binary *ProviderBinary,
 	targetPath string,
-	log log.Logger,
 ) (string, error) {
 	log.Infof("downloading binary %s from %s", binaryName, binary.Path)
 
-	body, err := download.File(binary.Path, log)
+	body, err := download.File(binary.Path, oldlog.Default)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)
 	}
@@ -506,7 +498,6 @@ func downloadArchive(
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
-	log log.Logger,
 ) (string, error) {
 	targetPath, err := securePath(targetFolder, binary.ArchivePath)
 	if err != nil {
@@ -522,7 +513,6 @@ func downloadArchive(
 		binary:       binary,
 		targetFolder: targetFolder,
 		targetPath:   targetPath,
-		log:          log,
 	})
 }
 
@@ -531,13 +521,12 @@ type archiveDownloadParams struct {
 	binary       *ProviderBinary
 	targetFolder string
 	targetPath   string
-	log          log.Logger
 }
 
 func extractArchive(params archiveDownloadParams) (string, error) {
-	params.log.Infof("downloading binary %s from %s", params.binaryName, params.binary.Path)
+	log.Infof("downloading binary %s from %s", params.binaryName, params.binary.Path)
 
-	body, err := download.File(params.binary.Path, params.log)
+	body, err := download.File(params.binary.Path, oldlog.Default)
 	if err != nil {
 		return "", err
 	}
@@ -548,7 +537,7 @@ func extractArchive(params archiveDownloadParams) (string, error) {
 		return "", err
 	}
 
-	params.log.Debugf("extracted and downloaded archive %s", params.binaryName)
+	log.Debugf("extracted and downloaded archive %s", params.binaryName)
 	return targetPath, nil
 }
 

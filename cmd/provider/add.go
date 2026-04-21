@@ -94,7 +94,6 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			devsyConfig,
 			providerName,
 			cmd.FromExisting,
-			oldlog.Default,
 		)
 		if err != nil {
 			return err
@@ -111,7 +110,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			return fmt.Errorf("please specify either a URL or path, " +
 				"e.g. devsy provider add https://path/to/my/provider.yaml")
 		}
-		c, err := workspace.AddProvider(devsyConfig, providerName, args[0], oldlog.Default)
+		c, err := workspace.AddProvider(devsyConfig, providerName, args[0])
 		if err != nil {
 			return err
 		}
@@ -138,7 +137,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 				return err
 			}
 
-			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true, oldlog.Default)
+			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true)
 			if err != nil {
 				return fmt.Errorf("delete provider: %w", err)
 			}

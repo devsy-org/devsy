@@ -6,10 +6,10 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
 )
 
 // CheckProviderUpdate currently only ensures the local provider is in sync with the remote for Devsy Pro instances.
@@ -17,7 +17,6 @@ import (
 func CheckProviderUpdate(
 	devsyConfig *config.Config,
 	proInstance *provider2.ProInstance,
-	log log.Logger,
 ) error {
 	if version.GetVersion() == version.DevVersion {
 		log.Debugf("skipping provider upgrade check during development")
@@ -28,20 +27,19 @@ func CheckProviderUpdate(
 		return nil
 	}
 
-	return checkProviderUpdateForInstance(devsyConfig, proInstance, log)
+	return checkProviderUpdateForInstance(devsyConfig, proInstance)
 }
 
 func checkProviderUpdateForInstance(
 	devsyConfig *config.Config,
 	proInstance *provider2.ProInstance,
-	log log.Logger,
 ) error {
 	newVersion, err := platform.GetProInstanceDevsyVersion(proInstance)
 	if err != nil {
 		return fmt.Errorf("version for pro instance %s: %w", proInstance.Host, err)
 	}
 
-	p, err := FindProvider(devsyConfig, proInstance.Provider, log)
+	p, err := FindProvider(devsyConfig, proInstance.Provider)
 	if err != nil {
 		return fmt.Errorf("get provider config for pro provider %s: %w", proInstance.Provider, err)
 	}
@@ -65,7 +63,7 @@ func checkProviderUpdateForInstance(
 		newVersion,
 	)
 
-	return applyProviderUpdate(devsyConfig, proInstance.Provider, newVersion, log)
+	return applyProviderUpdate(devsyConfig, proInstance.Provider, newVersion)
 }
 
 func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error) {
@@ -83,9 +81,8 @@ func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error)
 func applyProviderUpdate(
 	devsyConfig *config.Config,
 	providerName, newVersion string,
-	log log.Logger,
 ) error {
-	providerSource, err := ResolveProviderSource(devsyConfig, providerName, log)
+	providerSource, err := ResolveProviderSource(devsyConfig, providerName)
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
 	}
@@ -96,12 +93,12 @@ func applyProviderUpdate(
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = UpdateProvider(devsyConfig, providerName, providerSource, log)
+	_, err = UpdateProvider(devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}
 
-	log.Donef("updated provider: provider=%s", providerName)
+	log.Infof("updated provider: provider=%s", providerName)
 	return nil
 }
 
@@ -109,9 +106,8 @@ func applyProviderUpdate(
 func GetProInstance(
 	devsyConfig *config.Config,
 	providerName string,
-	log log.Logger,
 ) *provider2.ProInstance {
-	proInstances, err := ListProInstances(devsyConfig, log)
+	proInstances, err := ListProInstances(devsyConfig)
 	if err != nil {
 		return nil
 	} else if len(proInstances) == 0 {

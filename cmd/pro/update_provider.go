@@ -52,7 +52,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
 	if err != nil {
 		return fmt.Errorf("load provider: %w", err)
 	}
@@ -62,7 +62,6 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	providerSource, err := workspace.ResolveProviderSource(
 		devsyConfig,
 		provider.Name,
-		oldlog.Default,
 	)
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", provider.Name, err)
@@ -73,7 +72,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource, oldlog.Default)
+	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", provider.Name, err)
 	}
