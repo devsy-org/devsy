@@ -23,7 +23,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/netstat"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	oldlog "github.com/devsy-org/log"
 	"github.com/docker/go-connections/nat"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -94,7 +93,6 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 		p.opts.ConfigureDockerCredentials,
 		p.forwarder,
 		p.opts.Workspace,
-		oldlog.GetInstance(),
 		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
 	)
 	if err != nil {

@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	"github.com/devsy-org/log"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 )
 
-func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient, log log.Logger) io.Reader {
+func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient) io.Reader {
 	reader, writer := io.Pipe()
 
 	go func() {
@@ -20,14 +20,14 @@ func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient, log log.Logger)
 			if resp != nil && len(resp.Content) > 0 {
 				_, err = writer.Write(resp.Content)
 				if err != nil {
-					log.Debugf("Error writing to pipe: %v", err)
+					devsylog.Debugf("Error writing to pipe: %v", err)
 					return
 				}
 			}
 			if errors.Is(err, io.EOF) {
 				return
 			} else if err != nil {
-				log.Debugf("Error receiving from stream: %v", err)
+				devsylog.Debugf("Error receiving from stream: %v", err)
 				return
 			}
 		}
@@ -36,8 +36,8 @@ func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient, log log.Logger)
 	return reader
 }
 
-func NewStreamWriter(stream tunnel.Tunnel_StreamWorkspaceServer, log log.Logger) io.Writer {
-	return &streamWriter{stream: stream, log: log, lastMessage: time.Now()}
+func NewStreamWriter(stream tunnel.Tunnel_StreamWorkspaceServer) io.Writer {
+	return &streamWriter{stream: stream, lastMessage: time.Now()}
 }
 
 type streamWriter struct {
@@ -45,7 +45,6 @@ type streamWriter struct {
 
 	lastMessage  time.Time
 	bytesWritten int64
-	log          log.Logger
 }
 
 func (s *streamWriter) Write(p []byte) (int, error) {
@@ -56,7 +55,7 @@ func (s *streamWriter) Write(p []byte) (int, error) {
 
 	s.bytesWritten += int64(len(p))
 	if time.Since(s.lastMessage) > time.Second*2 {
-		s.log.Infof("Uploaded %.2f MB", float64(s.bytesWritten)/1024/1024)
+		devsylog.Infof("Uploaded %.2f MB", float64(s.bytesWritten)/1024/1024)
 		s.lastMessage = time.Now()
 	}
 

@@ -518,7 +518,6 @@ func (cmd *UpCmd) devsyUpProxy(
 		true,
 		true,
 		client.WorkspaceConfig(),
-		log,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel machine: %w", err)
@@ -650,7 +649,6 @@ func (cmd *UpCmd) devsyUpMachine(
 				client.AgentInjectGitCredentials(cmd.CLIOptions),
 				client.AgentInjectDockerCredentials(cmd.CLIOptions),
 				client.WorkspaceConfig(),
-				log,
 			)
 		},
 	})
