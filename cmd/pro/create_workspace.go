@@ -74,7 +74,6 @@ func (cmd *CreateWorkspaceCmd) Run(
 		Config:  provider,
 		Stdout:  &buf,
 		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, true),
-		Log:     oldlog.Default,
 	})
 	if err != nil {
 		return fmt.Errorf("create workspace: %w", err)

@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/shell"
@@ -406,7 +407,6 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				Stdin:  nil,
 				Stdout: writer,
 				Stderr: writer,
-				Log:    s.log.ErrorStreamOnly(),
 			})
 			if err != nil {
 				if !opt.Force {
@@ -512,7 +512,6 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 			Stdin:  nil,
 			Stdout: writer,
 			Stderr: writer,
-			Log:    s.log.ErrorStreamOnly(),
 		})
 		if err != nil {
 			return err
@@ -546,7 +545,6 @@ func (s *workspaceClient) Command(
 		Stdin:   commandOptions.Stdin,
 		Stdout:  commandOptions.Stdout,
 		Stderr:  commandOptions.Stderr,
-		Log:     s.log.ErrorStreamOnly(),
 	})
 }
 
@@ -682,7 +680,6 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 		Stdin:  nil,
 		Stdout: io.MultiWriter(stdout, buf),
 		Stderr: buf,
-		Log:    s.log.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return client.StatusNotFound, fmt.Errorf(
@@ -727,7 +724,6 @@ type CommandOptions struct {
 	Stdin     io.Reader
 	Stdout    io.Writer
 	Stderr    io.Writer
-	Log       log.Logger
 }
 
 func (s *workspaceClient) buildEnvironment(command string) ([]string, error) {
@@ -766,7 +762,6 @@ func RunCommandWithBinaries(opts CommandOptions) error {
 		Stdin:   opts.Stdin,
 		Stdout:  opts.Stdout,
 		Stderr:  opts.Stderr,
-		Log:     opts.Log,
 	})
 }
 
@@ -777,7 +772,6 @@ type RunCommandOptions struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
-	Log     log.Logger // Optional: for debug mode env var
 }
 
 func RunCommand(opts RunCommandOptions) error {
@@ -785,8 +779,7 @@ func RunCommand(opts RunCommandOptions) error {
 		return nil
 	}
 
-	// Add debug env var if logger provided and in debug mode
-	if opts.Log != nil && opts.Log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
 	}
 

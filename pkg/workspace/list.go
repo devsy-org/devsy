@@ -366,7 +366,6 @@ func listInstancesProxyProvider(
 		Config:  providerConfig,
 		Stdout:  &stdout,
 		Stderr:  &stderr,
-		Log:     oldlog.Default,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to list pro workspaces: %s: %w", stderr.String(), err)
 	}
