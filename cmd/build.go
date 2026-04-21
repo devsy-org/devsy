@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -179,13 +178,12 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *BuildCmd) Run(ctx context.Context, client client.WorkspaceClient) error {
-	return cmd.build(ctx, client, oldlog.Default)
+	return cmd.build(ctx, client)
 }
 
 func (cmd *BuildCmd) build(
 	ctx context.Context,
 	workspaceClient client.WorkspaceClient,
-	log oldlog.Logger,
 ) error {
 	err := workspaceClient.Lock(ctx)
 	if err != nil {
