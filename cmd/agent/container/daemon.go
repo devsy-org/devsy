@@ -19,8 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -209,7 +207,6 @@ func runNetworkServer(
 	if err := os.MkdirAll(RootDir, os.ModePerm); err != nil {
 		return err
 	}
-	logger := initLogging()
 	config := client.NewConfig()
 	config.AccessKey = cmd.Config.Platform.AccessKey
 	config.Host = "https://" + cmd.Config.Platform.PlatformHost
@@ -225,7 +222,7 @@ func runNetworkServer(
 		Client:        baseClient,
 		RootDir:       RootDir,
 		LogF: func(format string, args ...any) {
-			logger.Infof(format, args...)
+			log.Infof(format, args...)
 		},
 	})
 	if err := tsServer.Start(ctx); err != nil {
@@ -262,9 +259,4 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 		return fmt.Errorf("SSH server exited abnormally: %w", err)
 	}
 	return nil
-}
-
-// initLogging initializes logging and returns a combined logger.
-func initLogging() oldlog.Logger {
-	return oldlog.NewStdoutLogger(nil, os.Stdout, os.Stderr, logrus.InfoLevel)
 }
