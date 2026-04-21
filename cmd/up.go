@@ -399,7 +399,6 @@ func (cmd *UpCmd) openIDE(
 		Client:             client,
 		User:               wctx.user,
 		Result:             wctx.result,
-		Log:                log,
 	})
 }
 

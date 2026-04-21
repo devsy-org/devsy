@@ -25,7 +25,6 @@ import (
 	open2 "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/tunnel"
-	"github.com/devsy-org/log"
 )
 
 // Params holds the parameters needed to open an IDE.
@@ -37,7 +36,6 @@ type Params struct {
 	Client             client2.BaseWorkspaceClient
 	User               string
 	Result             *config2.Result
-	Log                log.Logger
 }
 
 // Open dispatches to the correct IDE opener based on ideName.

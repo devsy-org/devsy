@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	oldlog "github.com/devsy-org/log"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 )
 
 func combineOptions(
@@ -160,7 +160,7 @@ func GetBaseEnvironment(context, provider string) map[string]string {
 	retVars[config.EnvProviderContext] = context
 	providerFolder, _ := GetProviderDir(context, provider)
 	retVars[config.EnvProviderFolder] = filepath.ToSlash(providerFolder)
-	retVars[config.EnvLogLevel] = oldlog.Default.GetLevel().String()
+	retVars[config.EnvLogLevel] = devsylog.LevelString()
 	return retVars
 }
 
