@@ -118,7 +118,6 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: contentToParse,
 				BuildInfo:         info,
-				Log:               log.Default,
 			})
 			framework.ExpectNoError(err)
 			_, err = dockerHelper.InspectImage(ctx, prebuildRepoName+":"+prebuildHash, false)
@@ -132,7 +131,6 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: contentToParse,
 				BuildInfo:         info,
-				Log:               log.Default,
 			})
 			framework.ExpectNoError(err)
 
@@ -185,7 +183,6 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: contentToParse,
 				BuildInfo:         info,
-				Log:               log.Default,
 			})
 			framework.ExpectNoError(err)
 			_, err = dockerHelper.InspectImage(
@@ -296,7 +293,6 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: contentToParse,
 				BuildInfo:         info,
-				Log:               log.Default,
 			})
 			framework.ExpectNoError(err)
 

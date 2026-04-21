@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	util "github.com/devsy-org/devsy/pkg/util/hash"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/hash"
 	"github.com/moby/patternmatcher"
 	"github.com/moby/patternmatcher/ignorefile"
@@ -24,7 +24,6 @@ type PrebuildHashParams struct {
 	DockerfilePath    string
 	DockerfileContent string
 	BuildInfo         *ImageBuildInfo
-	Log               log.Logger
 }
 
 // CalculatePrebuildHash computes a deterministic hash for prebuild caching.
@@ -40,7 +39,7 @@ func CalculatePrebuildHash(params PrebuildHashParams) (string, error) {
 
 	excludes, err := readDockerignore(params.ContextPath, params.DockerfilePath)
 	if err != nil {
-		params.Log.Debugf("failed to read .dockerignore: %v", err)
+		log.Debugf("failed to read .dockerignore: %v", err)
 		return "", fmt.Errorf("failed to read dockerignore: %w", err)
 	}
 	excludes = append(excludes, DevsyContextFeatureFolder+"/")
@@ -52,14 +51,14 @@ func CalculatePrebuildHash(params PrebuildHashParams) (string, error) {
 
 	contextHash, err := util.DirectoryHash(params.ContextPath, excludes, includes)
 	if err != nil {
-		params.Log.Debugf("failed to compute context hash for %s: %v", params.ContextPath, err)
+		log.Debugf("failed to compute context hash for %s: %v", params.ContextPath, err)
 		return "", fmt.Errorf("failed to compute context hash: %w", err)
 	}
 
 	combined := arch + string(configJSON) + params.DockerfileContent + contextHash
 	finalHash := pkgconfig.BinaryName + "-" + hash.String(combined)[:32]
 
-	params.Log.Debugf(
+	log.Debugf(
 		"prebuild hash calculated: architecture=%s, contextHash=%s, finalHash=%s, excludeCount=%v, includeCount=%v",
 		arch,
 		contextHash,

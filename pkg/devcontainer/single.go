@@ -162,7 +162,6 @@ func (r *runner) mergeExistingContainerConfig(
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		p.substitutionContext,
-		r.Log,
 	)
 	if err != nil {
 		return nil, err

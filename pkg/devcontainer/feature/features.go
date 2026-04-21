@@ -15,7 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/log/hash"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -100,7 +100,6 @@ func escapeQuotesForShell(str string) string {
 func ProcessFeatureID(
 	id string,
 	devContainerConfig *config.DevContainerConfig,
-	log log.Logger,
 	forceBuild bool,
 ) (string, error) {
 	if strings.HasPrefix(id, "https://") || strings.HasPrefix(id, "http://") {
@@ -108,7 +107,6 @@ func ProcessFeatureID(
 		return processDirectTarFeature(
 			id,
 			config.GetDevsyCustomizations(devContainerConfig).FeatureDownloadHTTPHeaders,
-			log,
 			forceBuild,
 		)
 	} else if strings.HasPrefix(id, "./") || strings.HasPrefix(id, "../") {
@@ -120,10 +118,11 @@ func ProcessFeatureID(
 
 	// get oci feature
 	log.Debugf("process feature: type=%s, id=%s", "oci", id)
-	return processOCIFeature(id, log)
+	return processOCIFeature(id)
 }
 
-func processOCIFeature(id string, log log.Logger) (string, error) {
+//nolint:funlen // pre-existing; tracked for cleanup
+func processOCIFeature(id string) (string, error) {
 	log.Debugf("processing OCI feature: featureId=%s", id)
 
 	// feature already exists?
@@ -158,7 +157,7 @@ func processOCIFeature(id string, log log.Logger) (string, error) {
 	}
 
 	destFile := filepath.Join(featureFolder, "feature.tgz")
-	err = downloadLayer(img, id, destFile, log)
+	err = downloadLayer(img, id, destFile)
 	if err != nil {
 		log.Errorf("failed to download feature layer: error=%v, featureId=%s", err, id)
 		return "", err
@@ -191,7 +190,8 @@ func processOCIFeature(id string, log log.Logger) (string, error) {
 	return featureExtractedFolder, nil
 }
 
-func downloadLayer(img v1.Image, id, destFile string, log log.Logger) error {
+//nolint:cyclop // pre-existing; tracked for cleanup
+func downloadLayer(img v1.Image, id, destFile string) error {
 	manifest, err := img.Manifest()
 	if err != nil {
 		return err
@@ -246,7 +246,6 @@ func downloadLayer(img v1.Image, id, destFile string, log log.Logger) error {
 func processDirectTarFeature(
 	id string,
 	httpHeaders map[string]string,
-	log log.Logger,
 	forceDownload bool,
 ) (string, error) {
 	log.Debugf("processing direct tar feature: featureId=%s, forceDownload=%v", id, forceDownload)
@@ -271,7 +270,7 @@ func processDirectTarFeature(
 
 	// download feature tarball
 	downloadFile := filepath.Join(featureFolder, "feature.tgz")
-	err = downloadFeatureFromURL(id, downloadFile, httpHeaders, log)
+	err = downloadFeatureFromURL(id, downloadFile, httpHeaders)
 	if err != nil {
 		log.Errorf("failed to download feature tarball: error=%v, url=%s", err, id)
 		return "", err
@@ -309,7 +308,6 @@ func downloadFeatureFromURL(
 	url string,
 	destFile string,
 	httpHeaders map[string]string,
-	log log.Logger,
 ) error {
 	log.Debugf("starting feature download: url=%s, destFile=%s", url, destFile)
 

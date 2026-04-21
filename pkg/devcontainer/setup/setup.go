@@ -23,7 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -34,7 +34,6 @@ type ContainerSetupConfig struct {
 	ChownProjects     bool
 	PlatformOptions   *devsy.PlatformOptions
 	TunnelClient      tunnel.TunnelClient
-	Log               log.Logger
 }
 
 // SetupContainerPreAttach runs container setup up to and including postStartCommand.
@@ -56,33 +55,30 @@ func SetupContainerPreAttach(ctx context.Context, cfg *ContainerSetupConfig) err
 
 	setupOptionalFeatures(ctx, cfg)
 
-	cfg.Log.Debugf("running pre-attach lifecycle hooks")
-	if err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Log); err != nil {
+	log.Debugf("running pre-attach lifecycle hooks")
+	if err := RunPreAttachHooks(ctx, cfg.SetupInfo); err != nil {
 		return fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}
 
-	cfg.Log.Debugf("pre-attach setup completed")
+	log.Debugf("pre-attach setup completed")
 	return nil
 }
 
 // SetupContainerPostAttach runs postAttachCommand only.
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
-	cfg.Log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, cfg.Log); err != nil {
+	log.Debugf("running post-attach lifecycle hooks")
+	if err := RunPostAttachHooks(ctx, cfg.SetupInfo); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 
-	cfg.Log.Debugf("devcontainer setup completed")
+	log.Debugf("devcontainer setup completed")
 	return nil
 }
 
 func validateContainerSetupConfig(cfg *ContainerSetupConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("container setup config is nil")
-	}
-	if cfg.Log == nil {
-		return fmt.Errorf("logger not found in container setup config")
 	}
 	if cfg.SetupInfo == nil {
 		return fmt.Errorf("setup info not found in container setup config")
@@ -97,7 +93,7 @@ func validateContainerSetupConfig(cfg *ContainerSetupConfig) error {
 func writeResultFile(cfg *ContainerSetupConfig) {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
-		cfg.Log.Warnf("error marshal result: %v", err)
+		log.Warnf("error marshal result: %v", err)
 		return
 	}
 
@@ -110,21 +106,21 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 		filepath.Dir(pkgconfig.DevContainerResultPath),
 		0o755,
 	); err != nil {
-		cfg.Log.Warnf("error create %s: %v", filepath.Dir(pkgconfig.DevContainerResultPath), err)
+		log.Warnf("error create %s: %v", filepath.Dir(pkgconfig.DevContainerResultPath), err)
 	}
 
 	if err := os.WriteFile(pkgconfig.DevContainerResultPath, rawBytes, 0o600); err != nil {
-		cfg.Log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
+		log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
 	}
 }
 
 func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
-	if err := chownWorkspace(cfg.SetupInfo, cfg.ChownProjects, cfg.Log); err != nil {
+	if err := chownWorkspace(cfg.SetupInfo, cfg.ChownProjects); err != nil {
 		return fmt.Errorf("failed to chown workspace: %w", err)
 	}
 
 	if err := linkRootHome(cfg.SetupInfo); err != nil {
-		cfg.Log.Errorf("Error linking /home/root: %v", err)
+		log.Errorf("Error linking /home/root: %v", err)
 	}
 
 	if err := chownAgentSock(cfg.SetupInfo); err != nil {
@@ -135,13 +131,13 @@ func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
 }
 
 func setupEnvironment(cfg *ContainerSetupConfig) error {
-	cfg.Log.Debugf("patching etc environment")
+	log.Debugf("patching etc environment")
 
-	if err := patchEtcEnvironment(cfg.SetupInfo.MergedConfig, cfg.Log); err != nil {
+	if err := patchEtcEnvironment(cfg.SetupInfo.MergedConfig); err != nil {
 		return fmt.Errorf("patch etc environment: %w", err)
 	}
 
-	if err := patchEtcEnvironmentFlags(cfg.ExtraWorkspaceEnv, cfg.Log); err != nil {
+	if err := patchEtcEnvironmentFlags(cfg.ExtraWorkspaceEnv); err != nil {
 		return fmt.Errorf("patch etc environment from flags: %w", err)
 	}
 
@@ -153,17 +149,16 @@ func setupEnvironment(cfg *ContainerSetupConfig) error {
 }
 
 func setupOptionalFeatures(ctx context.Context, cfg *ContainerSetupConfig) {
-	if err := setupKubeConfig(ctx, cfg.SetupInfo, cfg.TunnelClient, cfg.Log); err != nil {
-		cfg.Log.Errorf("setup KubeConfig: %v", err)
+	if err := setupKubeConfig(ctx, cfg.SetupInfo, cfg.TunnelClient); err != nil {
+		log.Errorf("setup KubeConfig: %v", err)
 	}
 
 	if cfg.PlatformOptions != nil {
 		if err := setupPlatformGitCredentials(
 			config.GetRemoteUser(cfg.SetupInfo),
 			cfg.PlatformOptions,
-			cfg.Log,
 		); err != nil {
-			cfg.Log.Errorf("setup platform git credentials: %v", err)
+			log.Errorf("setup platform git credentials: %v", err)
 		}
 	}
 }
@@ -201,7 +196,7 @@ func linkRootHome(setupInfo *config.Result) error {
 	return nil
 }
 
-func chownWorkspace(setupInfo *config.Result, recursive bool, log log.Logger) error {
+func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	user := config.GetRemoteUser(setupInfo)
 	exists, err := markerFileExists("chownWorkspace", "")
 	if err != nil {
@@ -253,7 +248,7 @@ func patchEtcProfile() error {
 	return nil
 }
 
-func patchEtcEnvironmentFlags(workspaceEnv []string, log log.Logger) error {
+func patchEtcEnvironmentFlags(workspaceEnv []string) error {
 	if len(workspaceEnv) == 0 {
 		return nil
 	}
@@ -274,7 +269,7 @@ func patchEtcEnvironmentFlags(workspaceEnv []string, log log.Logger) error {
 	return nil
 }
 
-func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig, log log.Logger) error {
+func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {
 	if len(mergedConfig.RemoteEnv) == 0 {
 		return nil
 	}
@@ -318,9 +313,8 @@ func setupKubeConfig(
 	ctx context.Context,
 	setupInfo *config.Result,
 	tunnelClient tunnel.TunnelClient,
-	log log.Logger,
 ) error {
-	if shouldSkipKubeConfig(tunnelClient, log) {
+	if shouldSkipKubeConfig(tunnelClient) {
 		return nil
 	}
 	log.Info("setup KubeConfig")
@@ -343,7 +337,7 @@ func setupKubeConfig(
 	return nil
 }
 
-func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient, log log.Logger) bool {
+func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
 	if tunnelClient == nil {
 		return true
 	}
@@ -454,7 +448,6 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 func setupPlatformGitCredentials(
 	userName string,
 	platformOptions *devsy.PlatformOptions,
-	log log.Logger,
 ) error {
 	// platform is not enabled, skip
 	if !platformOptions.Enabled {
@@ -478,13 +471,13 @@ func setupPlatformGitCredentials(
 	}
 
 	// setup platform git http credentials
-	err := setupPlatformGitHTTPCredentials(userName, platformOptions, log)
+	err := setupPlatformGitHTTPCredentials(userName, platformOptions)
 	if err != nil {
 		log.Errorf("Error setting up platform git http credentials: %v", err)
 	}
 
 	// setup platform git ssh keys
-	err = setupPlatformGitSSHKeys(userName, platformOptions, log)
+	err = setupPlatformGitSSHKeys(userName, platformOptions)
 	if err != nil {
 		log.Errorf("Error setting up platform git ssh keys: %v", err)
 	}
@@ -495,7 +488,6 @@ func setupPlatformGitCredentials(
 func setupPlatformGitHTTPCredentials(
 	userName string,
 	platformOptions *devsy.PlatformOptions,
-	log log.Logger,
 ) error {
 	if !platformOptions.Enabled || len(platformOptions.UserCredentials.GitHttp) == 0 {
 		return nil
@@ -517,7 +509,6 @@ func setupPlatformGitHTTPCredentials(
 func setupPlatformGitSSHKeys(
 	userName string,
 	platformOptions *devsy.PlatformOptions,
-	log log.Logger,
 ) error {
 	if !platformOptions.Enabled || len(platformOptions.UserCredentials.GitSsh) == 0 {
 		return nil
