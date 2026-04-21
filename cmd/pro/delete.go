@@ -175,7 +175,6 @@ func cleanupLocalWorkspaces(
 						SSHConfigPath:        client.WorkspaceConfig().SSHConfigPath,
 						SSHConfigIncludePath: client.WorkspaceConfig().SSHConfigIncludePath,
 					},
-					log,
 				)
 				if err != nil {
 					log.Errorf("failed to remove workspace: workspaceId=%s, err=%v", w.ID, err)

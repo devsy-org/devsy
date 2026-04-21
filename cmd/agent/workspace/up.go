@@ -131,7 +131,6 @@ func (cmd *UpCmd) handleInitError(
 			SSHConfigPath:        workspaceInfo.Workspace.SSHConfigPath,
 			SSHConfigIncludePath: workspaceInfo.Workspace.SSHConfigIncludePath,
 		},
-		logger,
 	)
 	if deleteErr != nil {
 		return fmt.Errorf("%s: %w", deleteErr.Error(), err)

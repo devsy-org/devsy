@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
-	oldlog "github.com/devsy-org/log"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,7 +39,6 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 				SSHConfigPath:        c.workspace.SSHConfigPath,
 				SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
 			},
-			oldlog.Default,
 		)
 		if err != nil {
 			return err
@@ -91,7 +89,6 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 			SSHConfigPath:        c.workspace.SSHConfigPath,
 			SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
 		},
-		oldlog.Default,
 	)
 	if err != nil {
 		return err
