@@ -63,7 +63,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 
 	// Log current workspace information. This is both useful to the user to understand the workspace configuration
 	// and to us when we receive troubleshooting logs
-	printInstanceInfo(instance, oldlog.Default)
+	printInstanceInfo(instance)
 
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
 		devsylog.Info("Template update required")
@@ -121,7 +121,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		return nil, fmt.Errorf("no up task id returned from server")
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, task.Status.TaskID, oldlog.Default)
+	return waitTaskDone(ctx, managementClient, instance, task.Status.TaskID)
 }
 
 func waitTaskDone(
@@ -129,9 +129,8 @@ func waitTaskDone(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	log oldlog.Logger,
 ) (*config.Result, error) {
-	exitCode, err := observeTask(ctx, managementClient, instance, taskID, log)
+	exitCode, err := observeTask(ctx, managementClient, instance, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	} else if exitCode != 0 {
@@ -187,7 +186,7 @@ func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool 
 	return !templateResolved || templateChangesAvailable
 }
 
-func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log oldlog.Logger) {
+func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 	workspaceConfig, _ := json.Marshal(struct {
 		Target     storagev1.WorkspaceTarget
 		Template   *storagev1.TemplateRef
@@ -197,7 +196,7 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log oldlog
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debug("Starting pro workspace with configuration", string(workspaceConfig))
+	devsylog.Debug("Starting pro workspace with configuration", string(workspaceConfig))
 }
 
 func observeTask(
@@ -205,7 +204,6 @@ func observeTask(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	log oldlog.Logger,
 ) (int, error) {
 	var (
 		exitCode int
@@ -240,7 +238,7 @@ func observeTask(
 		}
 	}()
 	go func() {
-		exitCode, err = printLogs(printCtx, managementClient, instance, taskID, log)
+		exitCode, err = printLogs(printCtx, managementClient, instance, taskID)
 		errChan <- err
 	}()
 
@@ -266,10 +264,9 @@ func printLogs(
 	managementClient kube.Interface,
 	workspace *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	logger oldlog.Logger,
 ) (int, error) {
 	// get logs reader
-	logger.Debugf("printing logs of task: %s", taskID)
+	devsylog.Debugf("printing logs of task: %s", taskID)
 	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
 		Resource("devsyworkspaceinstances").
@@ -295,8 +292,8 @@ func printLogs(
 	scanner.Buffer(buf, maxCapacity)
 
 	// create json streamer
-	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream(logger)
-	stderrStreamer, stderrDone := devsylog.PipeJSONStream(logger.ErrorStreamOnly())
+	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream(oldlog.Default)
+	stderrStreamer, stderrDone := devsylog.PipeJSONStream(oldlog.Default.ErrorStreamOnly())
 	defer func() {
 		// close the streams
 		_ = stdoutStreamer.Close()
@@ -321,16 +318,16 @@ func printLogs(
 		switch message.Type {
 		case StdoutData:
 			if _, err := stdoutStreamer.Write(message.Bytes); err != nil {
-				logger.Debugf("error read stdout: %v", err)
+				devsylog.Debugf("error read stdout: %v", err)
 				return 1, err
 			}
 		case StderrData:
 			if _, err := stderrStreamer.Write(message.Bytes); err != nil {
-				logger.Debugf("error read stderr: %v", err)
+				devsylog.Debugf("error read stderr: %v", err)
 				return 1, err
 			}
 		case ExitCode:
-			logger.Debugf("exit code: %d", message.ExitCode)
+			devsylog.Debugf("exit code: %d", message.ExitCode)
 			return message.ExitCode, nil
 		}
 	}
