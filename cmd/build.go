@@ -193,7 +193,7 @@ func (cmd *BuildCmd) build(
 	}
 	defer workspaceClient.Unlock()
 
-	err = clientimplementation.StartWait(ctx, workspaceClient, true, log)
+	err = clientimplementation.StartWait(ctx, workspaceClient, true)
 	if err != nil {
 		return err
 	}

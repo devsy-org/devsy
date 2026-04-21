@@ -561,7 +561,7 @@ func (cmd *UpCmd) devsyUpMachine(
 	client client2.WorkspaceClient,
 	log oldlog.Logger,
 ) (*config2.Result, error) {
-	err := clientimplementation.StartWait(ctx, client, true, log)
+	err := clientimplementation.StartWait(ctx, client, true)
 	if err != nil {
 		return nil, err
 	}
