@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -133,7 +132,6 @@ func CloneRepository(
 	targetDir string,
 	helper string,
 	strictHostKeyChecking bool,
-	log log.Logger,
 	cloneOptions ...Option,
 ) error {
 	return CloneRepositoryWithEnv(
@@ -143,7 +141,6 @@ func CloneRepository(
 		targetDir,
 		helper,
 		strictHostKeyChecking,
-		log,
 		cloneOptions...)
 }
 
@@ -165,7 +162,6 @@ func CloneRepositoryWithEnv(
 	targetDir string,
 	helper string,
 	strictHostKeyChecking bool,
-	log log.Logger,
 	cloneOptions ...Option,
 ) error {
 	cloner := NewClonerWithOpts(cloneOptions...)
@@ -188,17 +184,16 @@ func CloneRepositoryWithEnv(
 		targetDir,
 		extraArgs,
 		extraEnv,
-		log,
 	); err != nil {
 		return err
 	}
 
 	if gitInfo.PR != "" {
-		return checkoutPR(ctx, gitInfo, extraEnv, targetDir, log)
+		return checkoutPR(ctx, gitInfo, extraEnv, targetDir)
 	}
 
 	if gitInfo.Commit != "" {
-		return checkoutCommit(ctx, gitInfo, extraEnv, targetDir, log)
+		return checkoutCommit(ctx, gitInfo, extraEnv, targetDir)
 	}
 
 	return nil
@@ -209,7 +204,6 @@ func checkoutPR(
 	gitInfo *GitInfo,
 	extraEnv []string,
 	targetDir string,
-	log log.Logger,
 ) error {
 	log.Debugf("Fetching pull request : %s", gitInfo.PR)
 
@@ -242,10 +236,9 @@ func checkoutCommit(
 	gitInfo *GitInfo,
 	extraEnv []string,
 	targetDir string,
-	log log.Logger,
 ) error {
-	stdout := log.Writer(logrus.InfoLevel, false)
-	stderr := log.Writer(logrus.ErrorLevel, false)
+	stdout := log.Writer(log.LevelInfo)
+	stderr := log.Writer(log.LevelError)
 	defer func() { _ = stdout.Close() }()
 	defer func() { _ = stderr.Close() }()
 

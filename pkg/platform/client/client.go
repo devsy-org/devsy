@@ -20,12 +20,12 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/api/pkg/auth"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -64,7 +64,7 @@ type Client interface {
 	RefreshSelf(ctx context.Context) error
 	Self() *managementv1.Self
 
-	Login(host string, insecure bool, log log.Logger) error
+	Login(host string, insecure bool) error
 	LoginWithAccessKey(host, accessKey string, insecure bool, force bool) error
 	LoginRaw(host, accessKey string, insecure bool) error
 
@@ -301,7 +301,7 @@ func (c *client) Version() (*auth.Version, error) {
 	return version, nil
 }
 
-func (c *client) Login(host string, insecure bool, log log.Logger) error {
+func (c *client) Login(host string, insecure bool) error {
 	var (
 		loginUrl   = fmt.Sprintf(LoginPath, host)
 		key        keyStruct
@@ -313,7 +313,7 @@ func (c *client) Login(host string, insecure bool, log log.Logger) error {
 		return err
 	}
 
-	server := startServer(fmt.Sprintf(RedirectPath, host), keyChannel, log)
+	server := startServer(fmt.Sprintf(RedirectPath, host), keyChannel)
 	err = devsyopen.Run(fmt.Sprintf(LoginPath, host))
 	if err != nil {
 		return fmt.Errorf(
@@ -518,7 +518,7 @@ func GetRestConfig(host, token string, insecure bool) (*rest.Config, error) {
 	return config, nil
 }
 
-func startServer(redirectURI string, keyChannel chan keyStruct, log log.Logger) *http.Server {
+func startServer(redirectURI string, keyChannel chan keyStruct) *http.Server {
 	srv := &http.Server{Addr: ":25843"}
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {

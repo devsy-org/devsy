@@ -12,7 +12,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +26,7 @@ func TestIntegration_SigningFailure_SurfacesServerError(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock, log.Discard)
+		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -41,7 +40,7 @@ func TestIntegration_SigningFailure_SurfacesServerError(t *testing.T) {
 	bufferFile := filepath.Join(tmpDir, "buffer")
 	require.NoError(t, os.WriteFile(bufferFile, []byte("commit content"), 0o600))
 
-	err := gitsshsigning.HandleGitSSHProgramCall("/tmp/key.pub", "git", bufferFile, log.Discard)
+	err := gitsshsigning.HandleGitSSHProgramCall("/tmp/key.pub", "git", bufferFile)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Permission denied")
@@ -68,7 +67,7 @@ func TestIntegration_SigningSuccess_WritesSigFile(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock, log.Discard)
+		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -82,7 +81,7 @@ func TestIntegration_SigningSuccess_WritesSigFile(t *testing.T) {
 	bufferFile := filepath.Join(tmpDir, "buffer")
 	require.NoError(t, os.WriteFile(bufferFile, []byte("commit content"), 0o600))
 
-	err := gitsshsigning.HandleGitSSHProgramCall("/tmp/key.pub", "git", bufferFile, log.Discard)
+	err := gitsshsigning.HandleGitSSHProgramCall("/tmp/key.pub", "git", bufferFile)
 
 	require.NoError(t, err)
 
@@ -112,7 +111,7 @@ func TestIntegration_SignatureRequest_IncludesPublicKeyContent(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock, log.Discard)
+		err := handleGitSSHSignatureRequest(context.Background(), w, r, mock)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -130,7 +129,7 @@ func TestIntegration_SignatureRequest_IncludesPublicKeyContent(t *testing.T) {
 	bufferFile := filepath.Join(tmpDir, "buffer")
 	require.NoError(t, os.WriteFile(bufferFile, []byte("commit content"), 0o600))
 
-	err := gitsshsigning.HandleGitSSHProgramCall(certFile, "git", bufferFile, log.Discard)
+	err := gitsshsigning.HandleGitSSHProgramCall(certFile, "git", bufferFile)
 	require.NoError(t, err)
 
 	var req gitsshsigning.GitSSHSignatureRequest

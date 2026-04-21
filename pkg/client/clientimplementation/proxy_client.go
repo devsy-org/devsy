@@ -224,7 +224,6 @@ func (s *proxyClient) RefreshOptions(
 		s.config,
 		s.workspace,
 		userOptions,
-		s.log,
 		resolver.WithResolveSubOptions(),
 	)
 	if err != nil {

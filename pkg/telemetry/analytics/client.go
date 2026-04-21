@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -31,7 +31,6 @@ func NewClient() Client {
 
 		events:     make(chan Event, 100),
 		httpClient: http.Client{Timeout: 3 * time.Second},
-		log:        log.Default.WithPrefix("analytics"),
 	}
 
 	go c.loop()
@@ -50,7 +49,6 @@ type client struct {
 	endpoint string
 
 	httpClient http.Client
-	log        log.Logger
 }
 
 func (c *client) RecordEvent(event Event) {
@@ -120,22 +118,22 @@ func (c *client) executeUpload(buffer []Event) {
 	if Dry {
 		marshaled, err := json.MarshalIndent(request, "", "  ")
 		if err != nil {
-			c.log.Debugf("failed to marshal analytics request: %v", err)
+			log.Debugf("failed to marshal analytics request: %v", err)
 			return
 		}
-		c.log.Infof("analytics request: %s", string(marshaled))
+		log.Infof("analytics request: %s", string(marshaled))
 		return
 	}
 
 	marshaled, err := json.Marshal(request)
 	if err != nil {
-		c.log.Debugf("failed to marshal analytics request: %v", err)
+		log.Debugf("failed to marshal analytics request: %v", err)
 		return
 	}
 
 	resp, err := c.httpClient.Post(c.endpoint, "application/json", bytes.NewReader(marshaled))
 	if err != nil {
-		c.log.Debugf("error sending analytics request: %v", err)
+		log.Debugf("error sending analytics request: %v", err)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -143,10 +141,10 @@ func (c *client) executeUpload(buffer []Event) {
 	if resp.StatusCode != http.StatusOK {
 		out, err := io.ReadAll(resp.Body)
 		if err != nil {
-			c.log.Debugf("error reading analytics response body: %v", err)
+			log.Debugf("error reading analytics response body: %v", err)
 			return
 		}
-		c.log.Debugf("analytics request returned status %d: %s", resp.StatusCode, string(out))
+		log.Debugf("analytics request returned status %d: %s", resp.StatusCode, string(out))
 	}
 }
 
@@ -155,7 +153,7 @@ func (c *client) exchangeBuffer() []Event {
 	defer c.bufferMutex.Unlock()
 
 	if c.droppedEvents > 0 {
-		c.log.Debugf("dropped %d analytics events (buffer full)", c.droppedEvents)
+		log.Debugf("dropped %d analytics events (buffer full)", c.droppedEvents)
 	}
 
 	events := c.buffer.Drain()

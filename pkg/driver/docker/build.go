@@ -14,8 +14,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/sirupsen/logrus"
 )
 
 func (d *dockerDriver) BuildDevContainer(
@@ -72,7 +72,7 @@ func (s *dockerBuildxStrategy) build(
 	options *build.BuildOptions,
 ) error {
 	args := buildDockerBuildxArgs(options, platform)
-	s.driver.Log.Debugf("running docker buildx build with args: %s", strings.Join(args, " "))
+	log.Debugf("running docker buildx build with args: %s", strings.Join(args, " "))
 	stderrBuf := &bytes.Buffer{}
 	multiWriter := io.MultiWriter(writer, stderrBuf)
 	if err := s.driver.Docker.Run(ctx, args, nil, writer, multiWriter); err != nil {
@@ -176,7 +176,7 @@ func (s *buildkitStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
-	dockerClient, err := docker.NewClient(ctx, s.driver.Log)
+	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("create docker client: %w", err)
 	}
@@ -226,7 +226,7 @@ func (r *imageResolver) tryResolve(
 
 	imageDetails, err := r.driver.Docker.InspectImage(ctx, req.imageName, false)
 	if err != nil {
-		r.driver.Log.Debugf("error trying to find local image %s: %v", req.imageName, err)
+		log.Debugf("error trying to find local image %s: %v", req.imageName, err)
 		return nil, false
 	}
 
@@ -234,7 +234,7 @@ func (r *imageResolver) tryResolve(
 		return nil, false
 	}
 
-	r.driver.Log.Infof("found existing local image %s", req.imageName)
+	log.Infof("found existing local image %s", req.imageName)
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.extendedBuildInfo.MetadataConfig,
@@ -287,7 +287,7 @@ func (d *dockerDriver) prepareBuildOptions(
 		return nil, err
 	}
 
-	d.Log.Debugf("prepared build options: %+v", buildOptions)
+	log.Debugf("prepared build options: %+v", buildOptions)
 	return buildOptions, nil
 }
 
@@ -297,8 +297,8 @@ func (d *dockerDriver) executeBuild(
 	req driver.BuildRequest,
 	buildOptions *build.BuildOptions,
 ) error {
-	d.Log.Infof("build with %s", strategy.name())
-	writer := d.Log.Writer(logrus.InfoLevel, false)
+	log.Infof("build with %s", strategy.name())
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	if err := strategy.build(ctx, writer, req.Options.Platform, buildOptions); err != nil {

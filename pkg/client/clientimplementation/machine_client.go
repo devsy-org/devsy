@@ -161,7 +161,6 @@ func (s *machineClient) RefreshOptions(
 		s.config,
 		s.machine,
 		userOptions,
-		s.log,
 	)
 	if err != nil {
 		return err

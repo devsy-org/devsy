@@ -9,17 +9,16 @@ import (
 
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	shellpkg "github.com/devsy-org/devsy/pkg/shell"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/ssh"
 )
 
-func NewContainerServer(addr string, workdir string, log log.Logger) (Server, error) {
+func NewContainerServer(addr string, workdir string) (Server, error) {
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
 	server := &containerServer{
 		workdir: workdir,
-		log:     log,
 		sshServer: ssh.Server{
 			Addr: addr,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
@@ -55,7 +54,7 @@ func NewContainerServer(addr string, workdir string, log log.Logger) (Server, er
 			},
 			SubsystemHandlers: map[string]ssh.SubsystemHandler{
 				"sftp": func(s ssh.Session) {
-					sftpHandler(s, "", log)
+					sftpHandler(s, "")
 				},
 			},
 		},
@@ -67,7 +66,6 @@ func NewContainerServer(addr string, workdir string, log log.Logger) (Server, er
 
 type containerServer struct {
 	sshServer ssh.Server
-	log       log.Logger
 	workdir   string
 }
 
@@ -76,7 +74,7 @@ func (s *containerServer) Serve(listener net.Listener) error {
 }
 
 func (s *containerServer) ListenAndServe() error {
-	s.log.Debugf("Start ssh server on %s", s.sshServer.Addr)
+	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
 	return s.sshServer.ListenAndServe()
 }
 
@@ -85,14 +83,14 @@ func (s *containerServer) handler(sess ssh.Session) {
 	ptyReq, winCh, isPty := sess.Pty()
 	cmd, err := s.getCommand(sess, isPty)
 	if err != nil {
-		exitWithError(sess, fmt.Errorf("get command: %w", err), s.log)
+		exitWithError(sess, fmt.Errorf("get command: %w", err))
 		return
 	}
 
 	if ssh.AgentRequested(sess) {
 		l, tmpDir, err := setupAgentListener("")
 		if err != nil {
-			exitWithError(sess, err, s.log)
+			exitWithError(sess, err)
 			return
 		}
 		defer func() { _ = l.Close() }()
@@ -100,7 +98,7 @@ func (s *containerServer) handler(sess ssh.Session) {
 
 		err = chownListener(l.Addr().String(), sess.User())
 		if err != nil {
-			exitWithError(sess, fmt.Errorf("chown listener: %w", err), s.log)
+			exitWithError(sess, fmt.Errorf("chown listener: %w", err))
 			return
 		}
 
@@ -115,13 +113,12 @@ func (s *containerServer) handler(sess ssh.Session) {
 			ptyReq: ptyReq,
 			winCh:  winCh,
 			cmd:    cmd,
-			log:    s.log,
 		})
 	} else {
-		err = execNonPTY(sess, cmd, s.log)
+		err = execNonPTY(sess, cmd)
 	}
 
-	exitWithError(sess, err, s.log)
+	exitWithError(sess, err)
 }
 
 func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, error) {

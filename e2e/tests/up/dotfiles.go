@@ -6,7 +6,6 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
-	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 )
 
@@ -22,7 +21,7 @@ var _ = ginkgo.Describe(
 			dtc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker", Log: log.Default}
+			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 			dtc.f, err = setupDockerProvider(dtc.initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 		})

@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -68,7 +67,7 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	values := url.Values{"options": []string{string(rawOpts)}, "cliMode": []string{"true"}}
-	conn, err := platform.DialInstance(baseClient, workspace, "up", values, oldlog.Default)
+	conn, err := platform.DialInstance(baseClient, workspace, "up", values)
 	if err != nil {
 		return err
 	}
@@ -79,7 +78,6 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		os.Stdin,
 		os.Stdout,
 		os.Stderr,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 )
 
 type GetWorkspaceConfigResult struct {
@@ -137,7 +136,6 @@ func findFilesInGitRepo(
 		opts.tmpDirPath,
 		"",
 		opts.strictHostKeyChecking,
-		oldlog.Default,
 		git.WithCloneStrategy(git.BareCloneStrategy),
 	)
 	if err != nil {

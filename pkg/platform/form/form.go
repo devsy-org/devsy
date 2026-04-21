@@ -12,11 +12,11 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
 	"github.com/devsy-org/devsy/pkg/encoding"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -25,7 +25,6 @@ func CreateInstance(
 	ctx context.Context,
 	baseClient client.Client,
 	id, uid, source, picture string,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
@@ -47,14 +46,14 @@ func CreateInstance(
 			huh.NewSelect[*managementv1.Cluster]().
 				Title("Cluster").
 				OptionsFunc(func() []huh.Option[*managementv1.Cluster] {
-					return getClusterOptions(ctx, baseClient, selectedProject, cancelForm, log)
+					return getClusterOptions(ctx, baseClient, selectedProject, cancelForm)
 				}, &selectedProject).
 				Value(&selectedCluster).
 				WithHeight(5),
 			huh.NewSelect[*managementv1.DevsyWorkspaceTemplate]().
 				Title("Template").
 				OptionsFunc(func() []huh.Option[*managementv1.DevsyWorkspaceTemplate] {
-					return getTemplateOptions(ctx, baseClient, selectedProject, cancelForm, log)
+					return getTemplateOptions(ctx, baseClient, selectedProject, cancelForm)
 				}, &selectedProject).
 				Value(&selectedTemplate),
 			huh.NewSelect[string]().
@@ -131,7 +130,6 @@ func UpdateInstance(
 	ctx context.Context,
 	baseClient client.Client,
 	instance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
@@ -293,7 +291,6 @@ func getClusterOptions(
 	client client.Client,
 	project *managementv1.Project,
 	cancel CancelFunc,
-	log log.Logger,
 ) []huh.Option[*managementv1.Cluster] {
 	opts := []huh.Option[*managementv1.Cluster]{}
 	if project == nil {
@@ -323,7 +320,6 @@ func getTemplateOptions(
 	client client.Client,
 	project *managementv1.Project,
 	cancel CancelFunc,
-	log log.Logger,
 ) []huh.Option[*managementv1.DevsyWorkspaceTemplate] {
 	opts := []huh.Option[*managementv1.DevsyWorkspaceTemplate]{}
 	if project == nil {

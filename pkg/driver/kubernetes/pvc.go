@@ -7,6 +7,7 @@ import (
 	"maps"
 
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +23,7 @@ func (k *KubernetesDriver) createPersistentVolumeClaim(
 		return err
 	}
 
-	k.Log.Infof("Create Persistent Volume Claim '%s'", id)
+	log.Infof("Create Persistent Volume Claim '%s'", id)
 	_, err = k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).
@@ -77,7 +78,7 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	annotations[DevsyInfoAnnotation] = containerInfo
 	extraAnnotations, err := parseLabels(k.options.PvcAnnotations)
 	if err != nil {
-		k.Log.Error("Failed to parse annotations from PVC_ANNOTATIONS option: %v", err)
+		log.Errorf("Failed to parse annotations from PVC_ANNOTATIONS option: %v", err)
 	}
 	maps.Copy(annotations, extraAnnotations)
 

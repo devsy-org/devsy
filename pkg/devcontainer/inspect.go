@@ -22,7 +22,7 @@ func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.Im
 	}
 
 	// Use architecture-specific image config retrieval
-	imageConfig, _, err := image.GetImageConfigForArch(ctx, imageName, targetArch, r.Log)
+	imageConfig, _, err := image.GetImageConfigForArch(ctx, imageName, targetArch)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"failed to get image config for architecture %s: %w",

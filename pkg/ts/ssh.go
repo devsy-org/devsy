@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -18,7 +18,6 @@ func WaitForSSHClient(
 	network, address string,
 	user string,
 	timeout time.Duration,
-	log log.Logger,
 ) (*ssh.Client, error) {
 	deadline := time.Now().Add(timeout)
 

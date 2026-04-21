@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/language"
-	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -25,7 +24,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		initialDir, err = os.Getwd()
 		framework.ExpectNoError(err)
 
-		dockerHelper = &docker.DockerHelper{DockerCommand: "docker", Log: log.Default}
+		dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 	})
 
 	ginkgo.It("with env vars", func(ctx context.Context) {

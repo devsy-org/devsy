@@ -10,7 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/file"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -36,7 +36,7 @@ var GitConfigTemplate = `
 // - creates a wrapper script for calling git-ssh-signature
 // - users this script as gpg.ssh.program
 // This is needed since git expects `gpg.ssh.program` to be an executable.
-func ConfigureHelper(userName, gitSigningKey string, log log.Logger) error {
+func ConfigureHelper(userName, gitSigningKey string) error {
 	log.Debug("Creating helper script")
 	if err := createHelperScript(); err != nil {
 		return err

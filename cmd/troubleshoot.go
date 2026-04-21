@@ -182,7 +182,7 @@ func collectProWorkspaceInfo(
 	workspaceUID string,
 	project string,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, host, logger)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, host)
 	if err != nil {
 		return nil, fmt.Errorf("init client from host: %w", err)
 	}

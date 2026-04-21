@@ -7,14 +7,13 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 )
 
 func printUnusedUserValues(
 	userValues map[string]string,
 	options config.OptionDefinitions,
-	log log.Logger,
 ) {
 	allowedOptions := []string{}
 	for k := range options {

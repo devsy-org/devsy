@@ -17,12 +17,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
-func makeEnvironment(env map[string]string, log log.Logger) []string {
+func makeEnvironment(env map[string]string) []string {
 	if env == nil {
 		return nil
 	}
@@ -37,7 +36,6 @@ func makeEnvironment(env map[string]string, log log.Logger) []string {
 
 func NewDockerDriver(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	log log.Logger,
 ) (driver.DockerDriver, error) {
 	dockerCommand := "docker"
 	if workspaceInfo.Agent.Docker.Path != "" {
@@ -55,20 +53,16 @@ func NewDockerDriver(
 	return &dockerDriver{
 		Docker: &docker.DockerHelper{
 			DockerCommand: dockerCommand,
-			Environment:   makeEnvironment(workspaceInfo.Agent.Docker.Env, log),
+			Environment:   makeEnvironment(workspaceInfo.Agent.Docker.Env),
 			ContainerID:   workspaceInfo.Workspace.Source.Container,
 			Builder:       builder,
-			Log:           log,
 		},
-		Log: log,
 	}, nil
 }
 
 type dockerDriver struct {
 	Docker  *docker.DockerHelper
 	Compose *compose.ComposeHelper
-
-	Log log.Logger
 }
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
@@ -99,7 +93,7 @@ func (d *dockerDriver) CommandDevContainer(
 		)
 	}
 	if status != "running" {
-		d.Log.Infof(
+		log.Infof(
 			"container %s is not running (status=%s), restarting",
 			container.ID, status,
 		)
@@ -109,7 +103,7 @@ func (d *dockerDriver) CommandDevContainer(
 		if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
 			return fmt.Errorf("wait for container to be running: %w", err)
 		}
-		d.Log.Infof("container %s is now running", container.ID)
+		log.Infof("container %s is now running", container.ID)
 	}
 
 	args := []string{"exec"}
@@ -122,7 +116,7 @@ func (d *dockerDriver) CommandDevContainer(
 
 func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
 	// push image
-	writer := d.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// build args
@@ -132,7 +126,7 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 	}
 
 	// run command
-	d.Log.Debugf(
+	log.Debugf(
 		"running docker push command: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -147,7 +141,7 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 
 func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) error {
 	// Tag image
-	writer := d.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// build args
@@ -158,7 +152,7 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 	}
 
 	// run command
-	d.Log.Debugf(
+	log.Debugf(
 		"running docker tag command: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -296,7 +290,7 @@ func (d *dockerDriver) RunDockerDevContainer(
 		return err
 	}
 
-	writer := d.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	if err := d.startContainer(ctx, params.LocalWorkspaceFolder, args, writer); err != nil {
@@ -310,11 +304,11 @@ func (d *dockerDriver) EnsureImage(
 	ctx context.Context,
 	options *driver.RunOptions,
 ) error {
-	d.Log.Infof("inspecting image: image=%s", options.Image)
+	log.Infof("inspecting image: image=%s", options.Image)
 	_, err := d.Docker.InspectImage(ctx, options.Image, false)
 	if err != nil {
-		d.Log.Infof("image not found, pulling image: image=%s", options.Image)
-		writer := d.Log.Writer(logrus.DebugLevel, false)
+		log.Infof("image not found, pulling image: image=%s", options.Image)
+		writer := log.Writer(log.LevelDebug)
 		defer func() { _ = writer.Close() }()
 
 		return d.Docker.Pull(ctx, options.Image, nil, writer, writer)
@@ -376,7 +370,7 @@ func (d *dockerDriver) UpdateContainerUserUID(
 	// containerUser is guaranteed non-empty by shouldUpdateUserUID
 
 	if localUser.Uid == "0" {
-		d.Log.Info("local user is root, skipping UID/GID update")
+		log.Info("local user is root, skipping UID/GID update")
 		return nil
 	}
 
@@ -400,11 +394,11 @@ func (d *dockerDriver) UpdateContainerUserUID(
 	defer files.cleanup()
 
 	if shouldSkipUpdate(localUser, info) {
-		d.Log.Info("container user UID/GID already match local user, skipping update")
+		log.Info("container user UID/GID already match local user, skipping update")
 		return nil
 	}
 
-	d.Log.Infof("updating container user %q UID from %s to %s and GID from %s to %s",
+	log.Infof("updating container user %q UID from %s to %s and GID from %s to %s",
 		containerUser, info.Uid, localUser.Uid, info.Gid, localUser.Gid)
 
 	if err := d.copyFilesToContainer(ctx, container.ID, files, writer); err != nil {
@@ -761,7 +755,7 @@ func (d *dockerDriver) startContainer(
 	args []string,
 	writer io.Writer,
 ) error {
-	d.Log.Infof(
+	log.Infof(
 		"running docker command: command=%s, args=%s, cwd=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -770,7 +764,7 @@ func (d *dockerDriver) startContainer(
 
 	err := d.Docker.RunWithDir(ctx, dir, args, nil, writer, writer)
 	if err != nil {
-		d.Log.Errorf(
+		log.Errorf(
 			"docker container failed to start: error=%v, command=%s, args=%s, cwd=%s",
 			err,
 			d.Docker.DockerCommand,
@@ -794,7 +788,7 @@ func appendGPUOptions(
 			args = append(args, "--gpus", "all")
 		}
 		if warnIfMissing {
-			d.Log.Warn("GPU required but not available on host")
+			log.Warn("GPU required but not available on host")
 		}
 	}
 	return args
@@ -904,7 +898,7 @@ func (d *dockerDriver) copyFileFromContainer(
 	writer io.Writer,
 ) error {
 	args := []string{"cp", fmt.Sprintf("%s:%s", containerID, srcPath), dstPath}
-	d.Log.Debugf(
+	log.Debugf(
 		"copying file from container: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -918,7 +912,7 @@ func (d *dockerDriver) copyFileToContainer(
 	writer io.Writer,
 ) error {
 	args := []string{"cp", srcPath, fmt.Sprintf("%s:%s", containerID, dstPath)}
-	d.Log.Debugf(
+	log.Debugf(
 		"copying file to container: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -1048,7 +1042,7 @@ func (d *dockerDriver) applyPermissions(
 	writer io.Writer,
 ) error {
 	args := []string{"exec", "-u", "root", containerID, "chmod", "644", "/etc/passwd", "/etc/group"}
-	d.Log.Debugf(
+	log.Debugf(
 		"modifying permissions of /etc/passwd and /etc/group: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
@@ -1058,7 +1052,7 @@ func (d *dockerDriver) applyPermissions(
 	}
 
 	if containerHome == "" {
-		d.Log.Warnf(
+		log.Warnf(
 			"container home directory not found, skipping chown: containerID=%s",
 			containerID,
 		)
@@ -1075,7 +1069,7 @@ func (d *dockerDriver) applyPermissions(
 		fmt.Sprintf("%s:%s", localUid, localGid),
 		containerHome,
 	}
-	d.Log.Debugf(
+	log.Debugf(
 		"running docker chown command: command=%s, args=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),

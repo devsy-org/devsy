@@ -19,7 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/providers"
-	oldlog "github.com/devsy-org/log"
 )
 
 var ErrNoWorkspaceFound = errors.New("no workspace found")
@@ -301,7 +300,7 @@ func downloadProviderGithub(
 
 	requestURL := buildGithubURL(path, release)
 
-	body, err := download.File(requestURL, oldlog.Default)
+	body, err := download.File(requestURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("download: %w", err)
 	}

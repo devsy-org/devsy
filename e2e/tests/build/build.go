@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
-	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 )
 
@@ -67,7 +66,7 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		var err error
 		initialDir, err = os.Getwd()
 		framework.ExpectNoError(err)
-		dockerHelper = &docker.DockerHelper{DockerCommand: "docker", Log: log.Default}
+		dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 	})
 
 	ginkgo.It("build docker buildx",

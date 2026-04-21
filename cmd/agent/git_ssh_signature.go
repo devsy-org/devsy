@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +49,7 @@ func NewGitSSHSignatureCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			return gitsshsigning.HandleGitSSHProgramCall(
-				parsed.certPath, parsed.namespace, parsed.bufferFile, oldlog.Default)
+				parsed.certPath, parsed.namespace, parsed.bufferFile)
 		},
 	}
 }

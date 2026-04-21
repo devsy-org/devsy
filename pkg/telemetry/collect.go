@@ -10,9 +10,9 @@ import (
 
 	devsyclient "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry/analytics"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
 	"github.com/moby/term"
 	"github.com/spf13/cobra"
 )
@@ -63,7 +63,7 @@ func StartCLI(devsyConfig *config.Config, cmd *cobra.Command) {
 	collector, err := newCLICollector(cmd)
 	if err != nil {
 		// Log the problem but don't fail - use disabled Collector instead
-		log.Default.WithPrefix("telemetry").Infof("%s", err.Error())
+		log.Infof("telemetry: %s", err.Error())
 	} else {
 		CollectorCLI = collector
 	}
@@ -72,7 +72,6 @@ func StartCLI(devsyConfig *config.Config, cmd *cobra.Command) {
 func newCLICollector(cmd *cobra.Command) (*cliCollector, error) {
 	defaultCollector := &cliCollector{
 		analyticsClient: analytics.NewClient(),
-		log:             log.Default.WithPrefix("telemetry"),
 		cmd:             cmd,
 	}
 
@@ -83,8 +82,6 @@ type cliCollector struct {
 	analyticsClient analytics.Client
 	cmd             *cobra.Command
 	client          devsyclient.BaseWorkspaceClient
-
-	log log.Logger
 }
 
 func (d *cliCollector) SetClient(client devsyclient.BaseWorkspaceClient) {
@@ -97,7 +94,7 @@ func (d *cliCollector) Flush() {
 
 func (d *cliCollector) RecordCLI(err error) {
 	if d.cmd == nil {
-		d.log.Debug("no command found, skipping")
+		log.Debug("no command found, skipping")
 		return
 	}
 	cmd := d.cmd.CommandPath()

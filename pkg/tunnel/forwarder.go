@@ -5,9 +5,9 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -16,13 +16,11 @@ import (
 func newForwarder(
 	sshClient *ssh.Client,
 	forwardedPorts []string,
-	log log.Logger,
 ) netstat.Forwarder {
 	return &forwarder{
 		sshClient:      sshClient,
 		forwardedPorts: forwardedPorts,
 		portMap:        map[string]context.CancelFunc{},
-		log:            log,
 	}
 }
 
@@ -34,7 +32,6 @@ type forwarder struct {
 	forwardedPorts []string
 
 	portMap map[string]context.CancelFunc
-	log     log.Logger
 }
 
 // Forward opens an SSH channel in the existing connection with channel type "direct-tcpip" to forward the local port.
@@ -48,7 +45,7 @@ func (f *forwarder) Forward(port string) error {
 
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	f.portMap[port] = cancel
-	f.log.Infof("Start port-forwarding on port %s", port)
+	log.Infof("Start port-forwarding on port %s", port)
 
 	go func(port string) {
 		// do the forward
@@ -60,10 +57,9 @@ func (f *forwarder) Forward(port string) error {
 			"tcp",
 			"localhost:"+port,
 			0,
-			f.log,
 		)
 		if err != nil {
-			f.log.Errorf("Error port forwarding %s: %v", port, err)
+			log.Errorf("Error port forwarding %s: %v", port, err)
 		}
 	}(port)
 
@@ -79,7 +75,7 @@ func (f *forwarder) StopForward(port string) error {
 		return nil
 	}
 
-	f.log.Infof("Stop port-forwarding on port %s", port)
+	log.Infof("Stop port-forwarding on port %s", port)
 	f.portMap[port]()
 	delete(f.portMap, port)
 

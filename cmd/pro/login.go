@@ -208,7 +208,6 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 			cmd.AccessKey,
 			false,
 			cmd.ForceBrowser,
-			log,
 		)
 		if err != nil {
 			return err
@@ -299,7 +298,6 @@ func login(
 	providerName string,
 	accessKey string,
 	skipBrowserLogin, forceBrowser bool,
-	log oldlog.Logger,
 ) error {
 	configPath, err := platform.DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
@@ -329,7 +327,7 @@ func login(
 		if skipBrowserLogin {
 			return fmt.Errorf("unable to login to loft host")
 		}
-		err = loader.Login(url, true, log)
+		err = loader.Login(url, true)
 	}
 	if err != nil {
 		return err

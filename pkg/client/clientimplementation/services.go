@@ -56,7 +56,6 @@ func StartServicesDaemon(ctx context.Context, opts StartServicesDaemonOptions) e
 			ConfigureGitCredentials:        credConfig.git,
 			ConfigureGitSSHSignatureHelper: credConfig.gitSSHSignature,
 			GitSSHSigningKey:               opts.GitSSHSigningKey,
-			Log:                            opts.Log,
 		},
 	)
 }

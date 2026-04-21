@@ -9,9 +9,8 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -26,7 +25,6 @@ type BrowserTunnelParams struct {
 	ExtraPorts       []string
 	AuthSockID       string
 	GitSSHSigningKey string
-	Logger           log.Logger
 
 	// DaemonStartFunc is called when the client is a DaemonClient.
 	// If nil, the SSH tunnel path is always used.
@@ -37,8 +35,8 @@ type BrowserTunnelParams struct {
 func StartBrowserTunnel(p BrowserTunnelParams) error {
 	if p.AuthSockID != "" {
 		go func() {
-			if err := SetupBackhaul(p.Ctx, p.Client, p.AuthSockID, p.Logger); err != nil {
-				p.Logger.Error("Failed to setup backhaul SSH connection: ", err)
+			if err := SetupBackhaul(p.Ctx, p.Client, p.AuthSockID); err != nil {
+				log.Error("Failed to setup backhaul SSH connection: ", err)
 			}
 		}()
 	}
@@ -54,10 +52,10 @@ func startBrowserTunnelSSH(p BrowserTunnelParams) error {
 	return NewTunnel(
 		p.Ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-			writer := p.Logger.Writer(logrus.DebugLevel, false)
+			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
 
-			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.Logger, []string{
+			sshCmd, err := CreateSSHCommand(ctx, p.Client, []string{
 				"--log-output=raw",
 				fmt.Sprintf("--reuse-ssh-auth-sock=%s", p.AuthSockID),
 				"--stdio",
@@ -81,13 +79,7 @@ func runBrowserTunnelServices(
 	p BrowserTunnelParams,
 	containerClient *ssh.Client,
 ) error {
-	streamLogger, ok := p.Logger.(*log.StreamLogger)
-	if ok {
-		streamLogger.JSON(logrus.InfoLevel, map[string]string{
-			"url":  p.TargetURL,
-			"done": "true",
-		})
-	}
+	log.Infow("browser tunnel ready", "url", p.TargetURL, "done", "true")
 
 	err := RunServices(
 		ctx,
@@ -108,7 +100,6 @@ func runBrowserTunnelServices(
 				config.ContextOptionGitSSHSignatureForwarding,
 			) == config.BoolTrue,
 			GitSSHSigningKey: p.GitSSHSigningKey,
-			Log:              p.Logger,
 		},
 	)
 	if err != nil {
@@ -124,7 +115,6 @@ func SetupBackhaul(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
 	authSockID string,
-	logger log.Logger,
 ) error {
 	execPath, err := os.Executable()
 	if err != nil {
@@ -157,13 +147,13 @@ func SetupBackhaul(
 		"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
 	)
 
-	if logger.GetLevel() == logrus.DebugLevel {
+	if log.DebugEnabled() {
 		backhaulCmd.Args = append(backhaulCmd.Args, "--debug")
 	}
 
-	logger.Info("Setting up backhaul SSH connection")
+	log.Info("Setting up backhaul SSH connection")
 
-	writer := logger.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	backhaulCmd.Stdout = writer
@@ -174,7 +164,7 @@ func SetupBackhaul(
 		return err
 	}
 
-	logger.Infof("Done setting up backhaul")
+	log.Infof("Done setting up backhaul")
 
 	return nil
 }
@@ -183,7 +173,6 @@ func SetupBackhaul(
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
-	logger log.Logger,
 	extraArgs []string,
 ) (*exec.Cmd, error) {
 	execPath, err := os.Executable()
@@ -194,7 +183,7 @@ func CreateSSHCommand(
 	args := buildSSHCommandArgs(
 		client.Context(),
 		client.Workspace(),
-		logger.GetLevel() == logrus.DebugLevel,
+		log.DebugEnabled(),
 		extraArgs,
 	)
 

@@ -8,18 +8,17 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver/docker"
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 )
 
-func NewDriver(workspaceInfo *provider2.AgentWorkspaceInfo, log log.Logger) (driver.Driver, error) {
+func NewDriver(workspaceInfo *provider2.AgentWorkspaceInfo) (driver.Driver, error) {
 	driver := workspaceInfo.Agent.Driver
 	switch driver {
 	case "", provider2.DockerDriver:
-		return docker.NewDockerDriver(workspaceInfo, log)
+		return docker.NewDockerDriver(workspaceInfo)
 	case provider2.CustomDriver:
-		return custom.NewCustomDriver(workspaceInfo, log), nil
+		return custom.NewCustomDriver(workspaceInfo), nil
 	case provider2.KubernetesDriver:
-		return kubernetes.NewKubernetesDriver(workspaceInfo, log)
+		return kubernetes.NewKubernetesDriver(workspaceInfo)
 	}
 
 	return nil, fmt.Errorf("unrecognized driver '%s', possible values are %s, %s or %s",

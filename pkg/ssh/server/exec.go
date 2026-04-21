@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/ssh"
 )
 
@@ -22,7 +22,7 @@ import (
 //
 // Loosely modeled after Coder's startNonPTYSession:
 //   - https://github.com/coder/coder/blob/main/agent/agentssh/agentssh.go
-func execNonPTY(sess ssh.Session, cmd *exec.Cmd, log log.Logger) (err error) {
+func execNonPTY(sess ssh.Session, cmd *exec.Cmd) (err error) {
 	log.Debugf("execute SSH server command: %s", strings.Join(cmd.Args, " "))
 
 	cmd.SysProcAttr = cmdSysProcAttr()
@@ -54,7 +54,7 @@ func execNonPTY(sess ssh.Session, cmd *exec.Cmd, log log.Logger) (err error) {
 	}()
 	go func() {
 		for sig := range sigs {
-			forwardSignal(log, sig, cmd.Process)
+			forwardSignal(sig, cmd.Process)
 		}
 	}()
 
@@ -79,7 +79,6 @@ func (p *ptySession) close() error {
 func (p *ptySession) handleSignalsAndResize(
 	sigs <-chan ssh.Signal,
 	winCh <-chan ssh.Window,
-	log log.Logger,
 ) {
 	for sigs != nil || winCh != nil {
 		select {
@@ -88,24 +87,24 @@ func (p *ptySession) handleSignalsAndResize(
 				sigs = nil
 				continue
 			}
-			p.forwardSignal(sig, log)
+			p.forwardSignal(sig)
 		case win, ok := <-winCh:
 			if !ok {
 				winCh = nil
 				continue
 			}
-			p.resizePTY(win, log)
+			p.resizePTY(win)
 		}
 	}
 }
 
-func (p *ptySession) forwardSignal(sig ssh.Signal, log log.Logger) {
+func (p *ptySession) forwardSignal(sig ssh.Signal) {
 	if err := p.proc.Signal(osSignalFrom(sig)); err != nil {
 		log.Debugf("failed to signal pty process: %v", err)
 	}
 }
 
-func (p *ptySession) resizePTY(win ssh.Window, log log.Logger) {
+func (p *ptySession) resizePTY(win ssh.Window) {
 	if err := p.pc.Resize(
 		uint16(win.Height), //nolint:gosec // G115: SSH window dimensions fit uint16
 		uint16(win.Width),  //nolint:gosec // G115: SSH window dimensions fit uint16
@@ -120,7 +119,6 @@ type ptyExecParams struct {
 	ptyReq ssh.Pty
 	winCh  <-chan ssh.Window
 	cmd    *exec.Cmd
-	log    log.Logger
 }
 
 // execPTY executes a command with a PTY, handling terminal resize events and
@@ -135,7 +133,7 @@ type ptyExecParams struct {
 //   - Coder issue:  https://github.com/coder/coder/issues/3371
 //   - Neovim issue: https://github.com/neovim/neovim/issues/3875
 func execPTY(p ptyExecParams) (retErr error) {
-	p.log.Debugf("execute SSH server PTY command: %s", strings.Join(p.cmd.Args, " "))
+	log.Debugf("execute SSH server PTY command: %s", strings.Join(p.cmd.Args, " "))
 	p.sess.DisablePTYEmulation()
 
 	// Build an explicit Env so we can inject TERM without losing inherited
@@ -162,7 +160,7 @@ func execPTY(p ptyExecParams) (retErr error) {
 	ps := &ptySession{pc: pc, proc: proc}
 	defer func() {
 		if closeErr := ps.close(); closeErr != nil {
-			p.log.Debugf("failed to close pty: %v", closeErr)
+			log.Debugf("failed to close pty: %v", closeErr)
 			if retErr == nil {
 				retErr = closeErr
 			}
@@ -176,7 +174,7 @@ func execPTY(p ptyExecParams) (retErr error) {
 		close(sigs)
 	}()
 
-	go ps.handleSignalsAndResize(sigs, p.winCh, p.log)
+	go ps.handleSignalsAndResize(sigs, p.winCh)
 
 	go func() {
 		_, _ = io.Copy(pc.InputWriter(), p.sess)

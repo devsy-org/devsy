@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 )
 
 func ResolveAndSaveOptionsMachine(
@@ -22,7 +21,6 @@ func ResolveAndSaveOptionsMachine(
 	providerConfig *provider.ProviderConfig,
 	originalMachine *provider.Machine,
 	userOptions map[string]string,
-	log log.Logger,
 ) (*provider.Machine, error) {
 	if originalMachine == nil {
 		return nil, fmt.Errorf("originalMachine cannot be nil")
@@ -49,7 +47,6 @@ func ResolveAndSaveOptionsMachine(
 	resolvedOptions, _, err := resolver.New(
 		userOptions,
 		provider.Merge(provider.ToOptionsMachine(machine), binaryPaths),
-		log,
 		resolver.WithResolveLocal(),
 	).Resolve(
 		ctx,
@@ -91,7 +88,6 @@ func ResolveAndSaveOptionsWorkspace(
 	providerConfig *provider.ProviderConfig,
 	originalWorkspace *provider.Workspace,
 	userOptions map[string]string,
-	log log.Logger,
 	options ...resolver.Option,
 ) (*provider.Workspace, error) {
 	if originalWorkspace == nil {
@@ -120,7 +116,6 @@ func ResolveAndSaveOptionsWorkspace(
 	resolvedOptions, _, err := resolver.New(
 		userOptions,
 		provider.Merge(provider.ToOptionsWorkspace(workspace), binaryPaths),
-		log,
 		options...,
 	).Resolve(
 		ctx,
@@ -161,7 +156,6 @@ func ResolveOptions(
 	skipRequired bool,
 	skipSubOptions bool,
 	singleMachine *bool,
-	log log.Logger,
 ) (*config.Config, error) {
 	// get binary paths
 	binaryPaths, err := provider.GetBinaries(devConfig.DefaultContext, providerConfig)
@@ -184,7 +178,6 @@ func ResolveOptions(
 			provider.GetBaseEnvironment(devConfig.DefaultContext, providerConfig.Name),
 			binaryPaths,
 		),
-		log,
 		resolverOpts...,
 	)
 

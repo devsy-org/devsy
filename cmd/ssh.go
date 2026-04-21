@@ -178,7 +178,7 @@ func (cmd *SSHCmd) Run(
 		log.Debug(
 			"adding ssh keys to agent, disable via 'devsy context set-options -o SSH_ADD_PRIVATE_KEYS=false'",
 		)
-		err := devssh.AddPrivateKeysToAgent(ctx, log)
+		err := devssh.AddPrivateKeysToAgent(ctx)
 		if err != nil {
 			log.Debugf("Error adding private keys to ssh-agent: %v", err)
 		}
@@ -271,7 +271,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 	// Handle GPG agent forwarding
 	if cmd.GPGAgentForwarding ||
 		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
-		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient, log) {
+		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient) {
 			log.Debugf("[GPG] exporting already running, skipping")
 		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient, log); err != nil {
 			return err
@@ -369,7 +369,7 @@ func (cmd *SSHCmd) jumpContainer(
 	}
 
 	// tunnel to container
-	return tunnel.NewContainerTunnel(client, log).
+	return tunnel.NewContainerTunnel(client).
 		Run(ctx, func(ctx context.Context, containerClient *ssh.Client) error {
 			// we have a connection to the container, make sure others can connect as well
 			client.Unlock()
@@ -427,7 +427,6 @@ func (cmd *SSHCmd) reverseForwardPorts(
 				mapping.Container.Protocol,
 				mapping.Container.Address,
 				timeout,
-				log,
 			)
 			if !errors.Is(io.EOF, err) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
@@ -472,7 +471,6 @@ func (cmd *SSHCmd) forwardPorts(
 				mapping.Container.Protocol,
 				mapping.Container.Address,
 				timeout,
-				log,
 			)
 			if !errors.Is(io.EOF, err) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
@@ -532,7 +530,7 @@ func (cmd *SSHCmd) startTunnel(
 		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
 		// Check if a forwarding is already enabled and running, in that case
 		// we skip the forwarding and keep using the original one
-		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient, log) {
+		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient) {
 			log.Debugf("[GPG] exporting already running, skipping")
 		} else {
 			err := cmd.setupGPGAgent(ctx, containerClient, log)
@@ -673,7 +671,6 @@ func (cmd *SSHCmd) startServices(
 				ConfigureGitCredentials:        configureGitCredentials,
 				ConfigureGitSSHSignatureHelper: configureGitSSHSignatureHelper,
 				GitSSHSigningKey:               gitSSHSigningKey,
-				Log:                            log,
 			},
 		)
 		if err != nil {

@@ -70,7 +70,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		oldInstance := instance.DeepCopy()
 		instance.Spec.TemplateRef.SyncOnce = true
 
-		instance, err = platform.UpdateInstance(ctx, baseClient, oldInstance, instance, c.log)
+		instance, err = platform.UpdateInstance(ctx, baseClient, oldInstance, instance)
 		if err != nil {
 			return nil, fmt.Errorf("update instance: %w", err)
 		}

@@ -5,11 +5,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/ssh"
 )
 
-func exitWithError(sess ssh.Session, err error, log log.Logger) {
+func exitWithError(sess ssh.Session, err error) {
 	if err != nil {
 		var exitError *exec.ExitError
 		if !errors.As(err, &exitError) {

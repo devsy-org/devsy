@@ -2,21 +2,13 @@ package container
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/agent"
-	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
-
-var BaseLogDir = agent.ContainerDataDir
 
 // SSHServerCmd holds the ssh server cmd flags.
 type SSHServerCmd struct {
@@ -50,8 +42,7 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
-	logger := getFileLogger(cmd.RemoteUser, cmd.Debug)
-	server, err := helperssh.NewContainerServer(cmd.Address, cmd.Workdir, logger)
+	server, err := helperssh.NewContainerServer(cmd.Address, cmd.Workdir)
 	if err != nil {
 		return err
 	}
@@ -68,23 +59,4 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 	}
 
 	return server.ListenAndServe()
-}
-
-func getFileLogger(remoteUser string, debug bool) oldlog.Logger {
-	logLevel := logrus.InfoLevel
-	if debug {
-		logLevel = logrus.DebugLevel
-	}
-	fallback := oldlog.NewDiscardLogger(logLevel)
-
-	targetFolder := filepath.Join(os.TempDir(), config.ConfigDirName)
-	if remoteUser != "" {
-		targetFolder = filepath.Join(BaseLogDir, remoteUser)
-	}
-	err := os.MkdirAll(targetFolder, 0o755)
-	if err != nil {
-		return fallback
-	}
-
-	return oldlog.NewFileLogger(filepath.Join(targetFolder, "ssh.log"), logLevel)
 }

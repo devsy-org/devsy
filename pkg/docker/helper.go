@@ -15,7 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/log/scanner"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -56,7 +56,6 @@ type DockerHelper struct {
 	// allow command to have a custom environment
 	Environment []string
 	Builder     DockerBuilder
-	Log         log.Logger
 }
 
 func (r *DockerHelper) GPUSupportEnabled() (bool, error) {
@@ -191,7 +190,7 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 		logs, _ := r.buildCmd(ctx, "logs", containerId, "--tail", "50").CombinedOutput()
 		details := strings.TrimSpace(string(stateErr) + "\n" + string(logs))
 		if details != "" {
-			r.Log.Errorf("container failed to start: %s", details)
+			log.Errorf("container failed to start: %s", details)
 		}
 		return fmt.Errorf("failed to start container: %s: %w", string(out), err)
 	}
@@ -226,7 +225,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 			details, err := r.InspectContainers(ctx, []string{containerID})
 			if err != nil {
 				lastErr = err
-				r.Log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
+				log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
 				return false, nil
 			}
 			if len(details) == 0 {
@@ -248,7 +247,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 					status,
 				)
 			}
-			r.Log.Debugf(
+			log.Debugf(
 				"WaitContainerRunning: container %s status=%s, waiting...",
 				containerID,
 				status,
@@ -299,7 +298,7 @@ func (r *DockerHelper) InspectImage(
 			return nil, err
 		}
 
-		imageConfig, _, err := image.GetImageConfig(ctx, imageName, r.Log)
+		imageConfig, _, err := image.GetImageConfig(ctx, imageName)
 		if err != nil {
 			return nil, fmt.Errorf("get image config remotely: %w", err)
 		}

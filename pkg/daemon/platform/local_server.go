@@ -676,7 +676,7 @@ func (l *localServer) createWorkspace(
 	}
 	instance.TypeMeta = metav1.TypeMeta{}
 
-	updatedInstance, err := createInstance(r.Context(), l.pc, instance, l.log)
+	updatedInstance, err := createInstance(r.Context(), l.pc, instance)
 	if err != nil {
 		http.Error(w, fmt.Errorf("create workspace: %w", err).Error(), http.StatusBadRequest)
 		return
@@ -705,7 +705,7 @@ func (l *localServer) updateWorkspace(
 		return
 	}
 
-	updatedInstance, err := updateInstance(r.Context(), l.pc, oldInstance, newInstance, l.log)
+	updatedInstance, err := updateInstance(r.Context(), l.pc, oldInstance, newInstance)
 	if err != nil {
 		http.Error(w, fmt.Errorf("update workspace: %w", err).Error(), http.StatusBadRequest)
 		return
@@ -787,7 +787,6 @@ func createInstance(
 	ctx context.Context,
 	client platformclient.Client,
 	instance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
@@ -801,7 +800,7 @@ func createInstance(
 		return nil, fmt.Errorf("create workspace instance: %w", err)
 	}
 
-	return platform.WaitForInstance(ctx, client, updatedInstance, log)
+	return platform.WaitForInstance(ctx, client, updatedInstance)
 }
 
 func updateInstance(
@@ -809,12 +808,11 @@ func updateInstance(
 	client platformclient.Client,
 	oldInstance *managementv1.DevsyWorkspaceInstance,
 	newInstance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	// This ensures the template is kept up to date with configuration changes
 	if newInstance.Spec.TemplateRef != nil {
 		newInstance.Spec.TemplateRef.SyncOnce = true
 	}
 
-	return platform.UpdateInstance(ctx, client, oldInstance, newInstance, log)
+	return platform.UpdateInstance(ctx, client, oldInstance, newInstance)
 }

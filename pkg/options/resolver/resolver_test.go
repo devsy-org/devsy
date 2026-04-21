@@ -8,19 +8,16 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 
 type ResolverTestSuite struct {
 	suite.Suite
 	resolver *Resolver
-	logger   log.Logger
 }
 
 func (suite *ResolverTestSuite) SetupTest() {
-	suite.logger = log.Default
-	suite.resolver = New(map[string]string{}, map[string]string{}, suite.logger)
+	suite.resolver = New(map[string]string{}, map[string]string{})
 }
 
 func TestResolverSuite(t *testing.T) {
@@ -103,7 +100,7 @@ func (suite *ResolverTestSuite) TestResolveOptions_SingleOption() {
 
 func (suite *ResolverTestSuite) TestResolveOptions_UserProvidedValue() {
 	userOptions := map[string]string{"test_option": "user_value"}
-	suite.resolver = New(userOptions, map[string]string{}, suite.logger)
+	suite.resolver = New(userOptions, map[string]string{})
 	suite.resolver.graph = graph.NewGraph[*types.Option]()
 
 	option := &types.Option{
@@ -296,8 +293,7 @@ func (suite *ResolverTestSuite) TestCombineFunction() {
 }
 
 func (suite *ResolverTestSuite) TestBasicResolverFunctionality() {
-	logger := log.Default
-	resolver := New(map[string]string{}, map[string]string{}, logger, WithResolveSubOptions())
+	resolver := New(map[string]string{}, map[string]string{}, WithResolveSubOptions())
 
 	optionDefs := map[string]*types.Option{
 		"parent": {

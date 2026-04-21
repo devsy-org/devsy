@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
 	docker "github.com/devsy-org/devsy/pkg/docker"
-	"github.com/devsy-org/log"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -32,7 +31,7 @@ var _ = ginkgo.Describe(
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dockerHelper = &docker.DockerHelper{DockerCommand: "docker", Log: log.Default}
+			dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 			composeHelper, err = compose.NewComposeHelper(dockerHelper)
 			framework.ExpectNoError(err)
 

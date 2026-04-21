@@ -12,6 +12,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,7 +49,7 @@ func (k *KubernetesDriver) RunDevContainer(
 	workspaceId string,
 	options *driver.RunOptions,
 ) error {
-	k.Log.Debugf("Running devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Running devcontainer for workspace '%s'", workspaceId)
 	workspaceId = getID(workspaceId)
 
 	// namespace
@@ -110,9 +111,9 @@ func (k *KubernetesDriver) runContainer(
 		// Ensure workspace volume mount option is parent or same dir as workspace mount
 		rel, err := filepath.Rel(k.options.WorkspaceVolumeMount, mount.Target)
 		if err != nil {
-			k.Log.Warn("Relative filepath: %v", err)
+			log.Warnf("Relative filepath: %v", err)
 		} else if strings.HasPrefix(rel, "..") {
-			k.Log.Warnf(
+			log.Warnf(
 				"Workspace volume mount needs to be the same as the workspace mount or a parent, skipping option. "+
 					"WorkspaceVolumeMount: %s, MountTarget: %s",
 				k.options.WorkspaceVolumeMount,
@@ -120,7 +121,7 @@ func (k *KubernetesDriver) runContainer(
 			)
 		} else {
 			mount.Target = k.options.WorkspaceVolumeMount
-			k.Log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
+			log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
 		}
 	}
 
@@ -131,7 +132,7 @@ func (k *KubernetesDriver) runContainer(
 		},
 	}
 	if len(k.options.PodManifestTemplate) > 0 {
-		k.Log.Debugf("trying to get pod template manifest from %s", k.options.PodManifestTemplate)
+		log.Debugf("trying to get pod template manifest from %s", k.options.PodManifestTemplate)
 		pod, err = getPodTemplate(k.options.PodManifestTemplate)
 		if err != nil {
 			return err
@@ -151,7 +152,7 @@ func (k *KubernetesDriver) runContainer(
 		if mount.Type == "bind" || mount.Type == "volume" {
 			volumeMounts = append(volumeMounts, volumeMount)
 		} else {
-			k.Log.Warnf(
+			log.Warnf(
 				"Unsupported mount type '%s' in mount '%s', will skip",
 				mount.Type,
 				mount.String(),
@@ -214,7 +215,7 @@ func (k *KubernetesDriver) runContainer(
 		resources = pod.Spec.Containers[0].Resources
 	}
 	if k.options.Resources != "" {
-		resources = parseResources(k.options.Resources, k.Log)
+		resources = parseResources(k.options.Resources)
 	}
 
 	// ensure daemon config secret
@@ -282,12 +283,12 @@ func (k *KubernetesDriver) runContainer(
 			existingOptions,
 		)
 		if err != nil {
-			k.Log.Errorf("Error unmarshalling existing provider options, continuing...: %s", err)
+			log.Errorf("Error unmarshalling existing provider options, continuing...: %s", err)
 		}
 
 		// Nothing changed, can safely return
 		if optionsEqual(existingOptions, k.options) {
-			k.Log.Infof(
+			log.Infof(
 				"Pod '%s' already exists and nothing changed, skipping update",
 				existingPod.Name,
 			)
@@ -295,7 +296,7 @@ func (k *KubernetesDriver) runContainer(
 		}
 
 		// Stop the current pod
-		k.Log.Debug("Provider options changed")
+		log.Debug("Provider options changed")
 		err = k.waitPodDeleted(ctx, id)
 		if err != nil {
 			return fmt.Errorf("stop devcontainer: %s: %w", id, err)
@@ -331,17 +332,17 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 		return err
 	}
 
-	k.Log.Debugf("Create pod with: %s", string(podRaw))
+	log.Debugf("Create pod with: %s", string(podRaw))
 
 	// create the pod
-	k.Log.Infof("Create Pod '%s'", id)
+	log.Infof("Create Pod '%s'", id)
 	_, err = k.client.Client().CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
 
 	// wait for pod running
-	k.Log.Infof("Waiting for DevContainer Pod '%s' to come up...", id)
+	log.Infof("Waiting for DevContainer Pod '%s' to come up...", id)
 	_, err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
@@ -501,8 +502,8 @@ func getNodeSelector(pod *corev1.Pod, rawNodeSelector string) (map[string]string
 }
 
 func (k *KubernetesDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	k.Log.Debugf("Starting devcontainer for workspace '%s'", workspaceId)
-	defer k.Log.Debugf("Done starting devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Starting devcontainer for workspace '%s'", workspaceId)
+	defer log.Debugf("Done starting devcontainer for workspace '%s'", workspaceId)
 
 	workspaceId = getID(workspaceId)
 	_, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
@@ -551,7 +552,7 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
 	_, err := k.client.Client().CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
-		k.Log.Infof("Create namespace '%s'", k.namespace)
+		log.Infof("Create namespace '%s'", k.namespace)
 		_, err := k.client.Client().CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: k.namespace,

@@ -8,13 +8,13 @@ import (
 
 	"github.com/creativeprojects/go-selfupdate"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
-	"github.com/devsy-org/log"
 )
 
 // Upgrade downloads the latest release from github and replaces devsy if a new version is found.
 // If dryRun is true, it only shows what would be downloaded without actually upgrading.
-func Upgrade(ctx context.Context, targetVersion string, dryRun bool, logger log.Logger) error {
+func Upgrade(ctx context.Context, targetVersion string, dryRun bool) error {
 	release, updater, err := detectRelease(ctx, targetVersion)
 	if err != nil {
 		return err
@@ -52,12 +52,12 @@ func Upgrade(ctx context.Context, targetVersion string, dryRun bool, logger log.
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	logger.Infof("downloading version %s", release.Version())
+	log.Infof("downloading version %s", release.Version())
 	if err := updater.UpdateTo(ctx, release, cmdPath); err != nil {
 		return fmt.Errorf("update to version %s: %w", release.Version(), err)
 	}
 
-	logger.Donef("updated devsy to version %s", release.Version())
+	log.Infof("updated devsy to version %s", release.Version())
 	return nil
 }
 

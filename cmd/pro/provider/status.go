@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -79,7 +78,6 @@ func (cmd *StatusCmd) Run(
 		workspace,
 		"getstatus",
 		platform.OptionsFromEnv(config.EnvFlagsStatus),
-		oldlog.Default,
 	)
 	if err != nil {
 		return err
@@ -91,7 +89,6 @@ func (cmd *StatusCmd) Run(
 		stdin,
 		stdout,
 		stderr,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

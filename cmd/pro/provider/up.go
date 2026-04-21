@@ -15,7 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -93,7 +92,6 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 			baseClient,
 			oldInstance,
 			instance,
-			oldlog.Default,
 		)
 		if err != nil {
 			return fmt.Errorf("update instance: %w", err)
@@ -114,7 +112,7 @@ func (cmd *UpCmd) up(
 		options.Add("debug", config.BoolTrue)
 	}
 
-	conn, err := platform.DialInstance(client, workspace, "up", options, oldlog.Default)
+	conn, err := platform.DialInstance(client, workspace, "up", options)
 	if err != nil {
 		return err
 	}
@@ -125,7 +123,6 @@ func (cmd *UpCmd) up(
 		cmd.streams.Stdin,
 		cmd.streams.Stdout,
 		cmd.streams.Stderr,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

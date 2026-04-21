@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
 	"tailscale.com/types/netmap"
@@ -55,7 +55,6 @@ func WaitHostReachable(
 	lc *local.Client,
 	addr Addr,
 	maxRetries int,
-	log log.Logger,
 ) error {
 	for i := range maxRetries {
 		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

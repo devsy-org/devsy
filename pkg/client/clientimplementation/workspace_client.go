@@ -138,7 +138,6 @@ func (s *workspaceClient) RefreshOptions(
 			s.config,
 			s.machine,
 			userOptions,
-			s.log,
 		)
 		if err != nil {
 			return err
@@ -154,7 +153,6 @@ func (s *workspaceClient) RefreshOptions(
 		s.config,
 		s.workspace,
 		userOptions,
-		s.log,
 	)
 	if err != nil {
 		s.log.Errorf("failed to resolve and save options workspace: error=%v", err)
@@ -856,7 +854,7 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams, log log.Logger) e
 		sshConfigIncludePath = includePath
 	}
 
-	err = ssh.RemoveFromConfig(params.WorkspaceID, sshConfigPath, sshConfigIncludePath, log)
+	err = ssh.RemoveFromConfig(params.WorkspaceID, sshConfigPath, sshConfigIncludePath)
 	if err != nil {
 		log.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
 	}

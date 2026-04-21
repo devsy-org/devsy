@@ -15,7 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,7 +115,6 @@ func (cmd *WorkspaceCmd) Run(
 		workspaceUID,
 		workspaceSource,
 		workspacePicture,
-		oldlog.Default,
 	)
 	if err != nil {
 		return err
@@ -164,5 +162,5 @@ func createInstance(
 		return nil, fmt.Errorf("create workspace instance: %w", err)
 	}
 
-	return platform.WaitForInstance(ctx, client, updatedInstance, oldlog.Default)
+	return platform.WaitForInstance(ctx, client, updatedInstance)
 }

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/skratchdot/open-golang/open"
 )
 
@@ -23,13 +23,13 @@ func Run(url string) error {
 }
 
 // Open opens the given url in the default application, retrying every second until the context is done.
-func Open(ctx context.Context, url string, log log.Logger) error {
+func Open(ctx context.Context, url string) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(time.Second):
-			err := tryOpen(ctx, url, Run, log)
+			err := tryOpen(ctx, url, Run)
 			if err == nil {
 				return nil
 			}
@@ -38,13 +38,13 @@ func Open(ctx context.Context, url string, log log.Logger) error {
 }
 
 // JLabDesktop opens the given url in the JLab desktop application, retrying every second until the context is done.
-func JLabDesktop(ctx context.Context, url string, log log.Logger) error {
+func JLabDesktop(ctx context.Context, url string) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(time.Second):
-			err := tryOpen(ctx, url, jlabOpen, log)
+			err := tryOpen(ctx, url, jlabOpen)
 			if err == nil {
 				return nil
 			}
@@ -56,7 +56,8 @@ func jlabOpen(url string) error {
 	return exec.Command("jlab", url).Run()
 }
 
-func tryOpen(ctx context.Context, url string, fn func(string) error, log log.Logger) error {
+//nolint:cyclop
+func tryOpen(ctx context.Context, url string, fn func(string) error) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
@@ -83,7 +84,7 @@ func tryOpen(ctx context.Context, url string, fn func(string) error, log log.Log
 			if err := fn(url); err != nil {
 				return fmt.Errorf("open url: %w", err)
 			}
-			log.Donef("opened url: url=%s", url)
+			log.Infof("opened url: url=%s", url)
 			return nil
 		}
 	}

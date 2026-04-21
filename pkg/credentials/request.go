@@ -10,7 +10,7 @@ import (
 	"time"
 
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -22,7 +22,7 @@ var defaultBackoff = wait.Backoff{
 	Jitter:   0.1,
 }
 
-func PostWithRetry(port int, endpoint string, body io.Reader, log log.Logger) ([]byte, error) {
+func PostWithRetry(port int, endpoint string, body io.Reader) ([]byte, error) {
 	var out []byte
 	err := retry.OnError(defaultBackoff, func(err error) bool {
 		// connection refused is recoverable

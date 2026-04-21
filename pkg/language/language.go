@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 type ProgrammingLanguage string
@@ -132,7 +132,7 @@ var skipDirs = map[string]bool{
 	"bower_components": true,
 }
 
-func DefaultConfig(startPath string, log log.Logger) *config.DevContainerConfig {
+func DefaultConfig(startPath string) *config.DevContainerConfig {
 	language, err := DetectLanguage(startPath)
 	if err != nil {
 		log.Errorf("Error detecting project language: %v", err)

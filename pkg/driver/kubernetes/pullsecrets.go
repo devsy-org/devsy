@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/log"
 	k8sv1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,7 +16,7 @@ func (k *KubernetesDriver) EnsurePullSecret(
 	pullSecretName string,
 	dockerImage string,
 ) (bool, error) {
-	k.Log.Debugf("Ensure pull secrets")
+	log.Debugf("Ensure pull secrets")
 
 	host, err := GetRegistryFromImageName(dockerImage)
 	if err != nil {
@@ -25,17 +26,17 @@ func (k *KubernetesDriver) EnsurePullSecret(
 	dockerCredentials, err := dockercredentials.GetAuthConfig(host)
 	if err != nil || dockerCredentials == nil || dockerCredentials.Username == "" ||
 		dockerCredentials.Secret == "" {
-		k.Log.Debugf("Couldn't retrieve credentials for registry: %s", host)
+		log.Debugf("Couldn't retrieve credentials for registry: %s", host)
 		return false, nil
 	}
 
 	if k.secretExists(ctx, pullSecretName) {
 		if !k.shouldRecreateSecret(ctx, dockerCredentials, pullSecretName, host) {
-			k.Log.Debugf("Pull secret '%s' already exists and is up to date", pullSecretName)
+			log.Debugf("Pull secret '%s' already exists and is up to date", pullSecretName)
 			return true, nil
 		}
 
-		k.Log.Debugf(
+		log.Debugf(
 			"Pull secret '%s' already exists, but is outdated. Recreating...",
 			pullSecretName,
 		)
@@ -50,7 +51,7 @@ func (k *KubernetesDriver) EnsurePullSecret(
 		return false, err
 	}
 
-	k.Log.Infof("Pull secret '%s' created", pullSecretName)
+	log.Infof("Pull secret '%s' created", pullSecretName)
 	return true, nil
 }
 

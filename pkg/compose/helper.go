@@ -16,7 +16,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -63,12 +63,12 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 		dockerCmd = "docker"
 	}
 
-	if helper, err := tryDockerComposeV2(dockerCmd, dockerHelper.Log); err == nil {
+	if helper, err := tryDockerComposeV2(dockerCmd); err == nil {
 		helper.Docker = dockerHelper
 		return helper, nil
 	}
 
-	if helper, err := tryDockerComposeV1(dockerHelper.Log); err == nil {
+	if helper, err := tryDockerComposeV1(); err == nil {
 		helper.Docker = dockerHelper
 		return helper, nil
 	}
@@ -83,7 +83,7 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 // Docker Compose V2 requires the buildx plugin for building images and can be installed using
 // sudo curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.30.1.linux-amd64 -o /usr/libexec/docker/cli-plugins/docker-buildx
 // sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx.
-func tryDockerComposeV2(dockerCmd string, log log.Logger) (*ComposeHelper, error) {
+func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	if exec.Command(dockerCmd, "compose").Run() != nil {
 		return nil, fmt.Errorf("docker compose not available")
 	}
@@ -120,7 +120,7 @@ func tryDockerComposeV2(dockerCmd string, log log.Logger) (*ComposeHelper, error
 	return helper, nil
 }
 
-func tryDockerComposeV1(log log.Logger) (*ComposeHelper, error) {
+func tryDockerComposeV1() (*ComposeHelper, error) {
 	if _, err := exec.LookPath("docker-compose"); err != nil {
 		return nil, fmt.Errorf("docker-compose not found in PATH")
 	}
@@ -204,8 +204,8 @@ func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []str
 	buildArgs = append(buildArgs, "stop")
 
 	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 && h.Docker != nil && h.Docker.Log != nil {
-		h.Docker.Log.Warnf(
+	if len(stderr) > 0 {
+		log.Warnf(
 			"%s: %s",
 			strings.TrimSpace(string(stderr)),
 			strings.TrimSpace(string(out)),
@@ -224,8 +224,8 @@ func (h *ComposeHelper) Remove(ctx context.Context, projectName string, args []s
 	buildArgs = append(buildArgs, "down")
 
 	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 && h.Docker != nil && h.Docker.Log != nil {
-		h.Docker.Log.Warnf(
+	if len(stderr) > 0 {
+		log.Warnf(
 			"%s: %s",
 			strings.TrimSpace(string(stderr)),
 			strings.TrimSpace(string(out)),
@@ -264,8 +264,8 @@ func (h *ComposeHelper) FindProjectFiles(
 	buildArgs = append(buildArgs, "ls", "-a", "--filter", "name="+projectName, "--format", "json")
 
 	rawOut, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 && h.Docker != nil && h.Docker.Log != nil {
-		h.Docker.Log.Warnf(
+	if len(stderr) > 0 {
+		log.Warnf(
 			"%s: %s",
 			strings.TrimSpace(string(stderr)),
 			strings.TrimSpace(string(rawOut)),

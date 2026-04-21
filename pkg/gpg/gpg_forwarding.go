@@ -10,9 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -27,9 +26,8 @@ func IsGpgTunnelRunning(
 	ctx context.Context,
 	user string,
 	client *ssh.Client,
-	log log.Logger,
 ) bool {
-	writer := log.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelError)
 	defer func() { _ = writer.Close() }()
 
 	command := "gpg -K"
