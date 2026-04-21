@@ -22,14 +22,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/dotfiles"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -82,7 +81,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()
 
-	client, logger, err := cmd.prepareClient(ctx, devsyConfig, args)
+	client, err := cmd.prepareClient(ctx, devsyConfig, args)
 	if err != nil {
 		return fmt.Errorf("prepare workspace client: %w", err)
 	}
@@ -91,7 +90,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	telemetry.CollectorCLI.SetClient(client)
-	return cmd.Run(ctx, devsyConfig, client, args, logger)
+	return cmd.Run(ctx, devsyConfig, client, args)
 }
 
 func (cmd *UpCmd) validate() error {
@@ -253,11 +252,10 @@ func (cmd *UpCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	args []string,
-	log oldlog.Logger,
 ) error {
-	cmd.prepareWorkspace(client, log)
+	cmd.prepareWorkspace(client)
 
-	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client, log)
+	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
 		return err
 	}
@@ -265,11 +263,11 @@ func (cmd *UpCmd) Run(
 		return nil // Platform mode
 	}
 
-	if err := cmd.configureWorkspace(devsyConfig, client, wctx, log); err != nil {
+	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
 		return err
 	}
 
-	return cmd.openIDE(ctx, devsyConfig, client, wctx, log)
+	return cmd.openIDE(ctx, devsyConfig, client, wctx)
 }
 
 // workspaceContext holds the result of workspace preparation.
@@ -280,7 +278,7 @@ type workspaceContext struct {
 }
 
 // prepareWorkspace handles initial setup and validation.
-func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient, log oldlog.Logger) {
+func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 	if cmd.Reset {
 		cmd.Recreate = true
 	}
@@ -292,9 +290,9 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient, log oldlo
 
 	if !cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
 		cmd.SSHAuthSockID = util.RandStringBytes(10)
-		log.Debug("Reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
+		devsylog.Debug("Reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
 	} else if cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		log.Debug(
+		devsylog.Debug(
 			"Reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
 		)
 	}
@@ -305,9 +303,8 @@ func (cmd *UpCmd) executeDevsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
-	log oldlog.Logger,
 ) (*workspaceContext, error) {
-	result, err := cmd.devsyUp(ctx, devsyConfig, client, log)
+	result, err := cmd.devsyUp(ctx, devsyConfig, client)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +336,6 @@ func (cmd *UpCmd) configureWorkspace(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
-	log oldlog.Logger,
 ) error {
 	if cmd.ConfigureSSH {
 		devsyHome := ""
@@ -361,7 +357,7 @@ func (cmd *UpCmd) configureWorkspace(
 			return err
 		}
 
-		log.Info("SSH configuration completed in workspace")
+		devsylog.Info("SSH configuration completed in workspace")
 	}
 
 	if err := dotfiles.Setup(dotfiles.SetupParams{
@@ -384,7 +380,6 @@ func (cmd *UpCmd) openIDE(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
-	log oldlog.Logger,
 ) error {
 	if !cmd.OpenIDE {
 		return nil
@@ -406,7 +401,6 @@ func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
-	log oldlog.Logger,
 ) (*config2.Result, error) {
 	var err error
 
@@ -424,12 +418,12 @@ func (cmd *UpCmd) devsyUp(
 
 	switch client := client.(type) {
 	case client2.WorkspaceClient:
-		result, err = cmd.devsyUpMachine(ctx, devsyConfig, client, log)
+		result, err = cmd.devsyUpMachine(ctx, devsyConfig, client)
 		if err != nil {
 			return nil, err
 		}
 	case client2.ProxyClient:
-		result, err = cmd.devsyUpProxy(ctx, client, log)
+		result, err = cmd.devsyUpProxy(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -454,7 +448,6 @@ func (cmd *UpCmd) devsyUp(
 func (cmd *UpCmd) devsyUpProxy(
 	ctx context.Context,
 	client client2.ProxyClient,
-	log oldlog.Logger,
 ) (*config2.Result, error) {
 	// create pipes
 	stdoutReader, stdoutWriter, err := os.Pipe()
@@ -475,7 +468,7 @@ func (cmd *UpCmd) devsyUpProxy(
 	// create up command
 	errChan := make(chan error, 1)
 	go func() {
-		defer log.Debug("done executing up command")
+		defer devsylog.Debug("done executing up command")
 		defer cancel()
 
 		// build devsy up options
@@ -557,7 +550,6 @@ func (cmd *UpCmd) devsyUpMachine(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
-	log oldlog.Logger,
 ) (*config2.Result, error) {
 	err := clientimplementation.StartWait(ctx, client, true)
 	if err != nil {
@@ -571,8 +563,8 @@ func (cmd *UpCmd) devsyUpMachine(
 	}
 
 	// create container etc.
-	log.Info("creating devcontainer")
-	defer log.Debug("done creating devcontainer")
+	devsylog.Info("creating devcontainer")
+	defer devsylog.Debug("done creating devcontainer")
 
 	// if we run on a platform, we need to pass the platform options
 	if cmd.Platform.Enabled {
@@ -591,7 +583,7 @@ func (cmd *UpCmd) devsyUpMachine(
 
 	// ssh tunnel command
 	sshTunnelCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
-	if log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		sshTunnelCmd += " --debug"
 	}
 
@@ -602,7 +594,7 @@ func (cmd *UpCmd) devsyUpMachine(
 		workspaceInfo,
 	)
 
-	if log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		agentCommand += " --debug"
 	}
 
@@ -747,24 +739,22 @@ func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
-) (client2.BaseWorkspaceClient, oldlog.Logger, error) {
+) (client2.BaseWorkspaceClient, error) {
 	// try to parse flags from env
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	var logger oldlog.Logger = oldlog.Default
 	if cmd.Platform.Enabled {
-		logger = logger.ErrorStreamOnly()
-		logger.Debug("Running in platform mode")
-		logger.Debug("Using error output stream")
+		devsylog.Debug("Running in platform mode")
+		devsylog.Debug("Using error output stream")
 
 		// merge context options from env
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
 
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
-		return nil, logger, err
+		return nil, err
 	}
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
@@ -777,9 +767,9 @@ func (cmd *UpCmd) prepareClient(
 	if cmd.Source != "" {
 		source = provider2.ParseWorkspaceSource(cmd.Source)
 		if source == nil {
-			return nil, nil, fmt.Errorf("workspace source is missing")
+			return nil, fmt.Errorf("workspace source is missing")
 		} else if source.LocalFolder != "" && cmd.Platform.Enabled {
-			return nil, nil, fmt.Errorf("local folder is not supported in platform mode. " +
+			return nil, fmt.Errorf("local folder is not supported in platform mode. " +
 				"Please specify a Git repository instead")
 		}
 	}
@@ -811,18 +801,18 @@ func (cmd *UpCmd) prepareClient(
 		},
 	)
 	if err != nil {
-		return nil, logger, err
+		return nil, err
 	}
 
 	if !cmd.Platform.Enabled {
 		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
 		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance)
 		if err != nil {
-			return nil, logger, err
+			return nil, err
 		}
 	}
 
-	return client, logger, nil
+	return client, nil
 }
 
 func WithSignals(ctx context.Context) (context.Context, func()) {
