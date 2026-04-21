@@ -187,7 +187,6 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		ChownProjects:     cmd.ChownWorkspace,
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
-		Log:               sctx.logger,
 	}
 
 	if err := setup.SetupContainerPreAttach(sctx.ctx, cfg); err != nil {

@@ -252,7 +252,6 @@ func (r *runner) runDockerCompose(
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		substitutionContext,
-		r.Log,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get image metadata from container: %w", err)
@@ -647,7 +646,6 @@ func (r *runner) buildAndExtendDockerCompose(
 		imageBuildInfo,
 		buildTarget,
 		parsedConfig,
-		r.Log,
 		false,
 	)
 	if err != nil {

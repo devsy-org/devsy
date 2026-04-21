@@ -194,7 +194,6 @@ func (s *buildkitStrategy) build(
 		writer,
 		platform,
 		options,
-		s.driver.Log,
 	); err != nil {
 		return fmt.Errorf("build: %w", err)
 	}

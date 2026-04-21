@@ -16,9 +16,8 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.
@@ -31,11 +30,10 @@ type lifecycleEnv struct {
 func resolveLifecycleEnv(
 	ctx context.Context,
 	setupInfo *config.Result,
-	log log.Logger,
 ) lifecycleEnv {
 	mergedConfig := setupInfo.MergedConfig
 	remoteUser := config.GetRemoteUser(setupInfo)
-	probedEnv, err := config.ProbeUserEnv(ctx, mergedConfig.UserEnvProbe, remoteUser, log)
+	probedEnv, err := config.ProbeUserEnv(ctx, mergedConfig.UserEnvProbe, remoteUser)
 	if err != nil {
 		log.Errorf(
 			"failed to probe environment, this might lead to an incomplete setup of your workspace: error=%v",
@@ -52,14 +50,14 @@ func resolveLifecycleEnv(
 
 // RunPreAttachHooks runs lifecycle hooks up to and including postStartCommand.
 // These must complete before the IDE can be opened.
-func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Logger) error {
-	env := resolveLifecycleEnv(ctx, setupInfo, log)
+func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result) error {
+	env := resolveLifecycleEnv(ctx, setupInfo)
 	containerDetails := setupInfo.ContainerDetails
 	mergedConfig := setupInfo.MergedConfig
 
 	// only run once per container run
 	if err := run(mergedConfig.OnCreateCommands, env.remoteUser, env.workspaceFolder, env.remoteEnv,
-		"onCreateCommands", containerDetails.Created, log); err != nil {
+		"onCreateCommands", containerDetails.Created); err != nil {
 		return err
 	}
 
@@ -71,7 +69,6 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Lo
 		env.remoteEnv,
 		"updateContentCommands",
 		containerDetails.Created,
-		log,
 	); err != nil {
 		return err
 	}
@@ -84,7 +81,6 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Lo
 		env.remoteEnv,
 		"postCreateCommands",
 		containerDetails.Created,
-		log,
 	); err != nil {
 		return err
 	}
@@ -97,7 +93,6 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Lo
 		env.remoteEnv,
 		"postStartCommands",
 		containerDetails.State.StartedAt,
-		log,
 	); err != nil {
 		return err
 	}
@@ -107,8 +102,8 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Lo
 
 // RunPostAttachHooks runs postAttachCommand only.
 // These run after the IDE has been opened and can be long-running.
-func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result, log log.Logger) error {
-	env := resolveLifecycleEnv(ctx, setupInfo, log)
+func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result) error {
+	env := resolveLifecycleEnv(ctx, setupInfo)
 
 	// run always when attaching to the container
 	return run(
@@ -118,7 +113,6 @@ func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result, log log.L
 		env.remoteEnv,
 		"postAttachCommands",
 		"",
-		log,
 	)
 }
 
@@ -127,7 +121,6 @@ func run(
 	remoteUser, dir string,
 	remoteEnv map[string]string,
 	name, content string,
-	log log.Logger,
 ) error {
 	if len(commands) == 0 {
 		return nil
@@ -193,12 +186,12 @@ func run(
 
 			go func() {
 				defer wg.Done()
-				logPipeOutput(log, stdoutPipe, logrus.InfoLevel)
+				logPipeOutput(stdoutPipe, true)
 			}()
 
 			go func() {
 				defer wg.Done()
-				logPipeOutput(log, stderrPipe, logrus.ErrorLevel)
+				logPipeOutput(stderrPipe, false)
 			}()
 
 			// Wait for command to finish
@@ -214,21 +207,20 @@ func run(
 				return fmt.Errorf("failed to run: %s, error: %w", strings.Join(c, " "), err)
 			}
 
-			log.Donef("ran command: command=%s, args=%s", k, strings.Join(c, " "))
+			log.Infof("ran command: command=%s, args=%s", k, strings.Join(c, " "))
 		}
 	}
 
 	return nil
 }
 
-func logPipeOutput(log log.Logger, pipe io.ReadCloser, level logrus.Level) {
+func logPipeOutput(pipe io.ReadCloser, isStdout bool) {
 	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
 		line := scanner.Text()
-		switch level {
-		case logrus.InfoLevel:
+		if isStdout {
 			log.Info(line)
-		case logrus.ErrorLevel:
+		} else {
 			if containsError(line) {
 				log.Error(line)
 			} else {

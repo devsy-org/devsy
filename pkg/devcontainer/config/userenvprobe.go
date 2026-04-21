@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
-	"github.com/devsy-org/log"
 )
 
 type UserEnvProbe string
@@ -50,7 +50,6 @@ func ProbeUserEnv(
 	ctx context.Context,
 	probe string,
 	userName string,
-	log log.Logger,
 ) (map[string]string, error) {
 	userEnvProbe, err := NewUserEnvProbe(probe)
 	if err != nil {
@@ -82,7 +81,6 @@ func ProbeUserEnv(
 		userName,
 		"cat /proc/self/environ",
 		'\x00',
-		log,
 	)
 	if err != nil {
 		log.Debugf(
@@ -100,7 +98,6 @@ func ProbeUserEnv(
 			userName,
 			"printenv",
 			'\n',
-			log,
 		)
 		if newErr != nil {
 			log.Warnf("failed to probe user environment variables: %v, %v", err, newErr)
@@ -115,7 +112,7 @@ func ProbeUserEnv(
 	return probedEnv, nil
 }
 
-func parseProbeOutput(out []byte, sep byte, log log.Logger) map[string]string {
+func parseProbeOutput(out []byte, sep byte) map[string]string {
 	// Parse NUL-separated NAME=VALUE entries robustly.
 	entries := bytes.Split(out, []byte{sep})
 	retEnv := make(map[string]string, len(entries))
@@ -145,7 +142,6 @@ func doProbe(
 	userName string,
 	probeCmd string,
 	sep byte,
-	log log.Logger,
 ) (map[string]string, error) {
 	args := preferredShell
 	args = append(args, getShellArgs(userEnvProbe, probeCmd)...)
@@ -164,7 +160,7 @@ func doProbe(
 		return nil, fmt.Errorf("probe user env: %w", err)
 	}
 
-	retEnv := parseProbeOutput(out, sep, log)
+	retEnv := parseProbeOutput(out, sep)
 
 	delete(retEnv, "PWD")
 

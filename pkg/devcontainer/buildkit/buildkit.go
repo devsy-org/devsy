@@ -10,7 +10,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/devsy-org/log"
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -22,7 +21,6 @@ func Build(
 	writer io.Writer,
 	platform string,
 	options *build.BuildOptions,
-	log log.Logger,
 ) error {
 	dockerConfig, err := docker.LoadDockerConfig()
 	if err != nil {

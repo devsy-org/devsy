@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const ImageMetadataLabel = "devcontainer.metadata"
@@ -107,7 +107,6 @@ func DevContainerConfigToImageMetadata(devConfig *config.DevContainerConfig) *co
 func GetImageMetadataFromContainer(
 	containerDetails *config.ContainerDetails,
 	substituteContext *config.SubstitutionContext,
-	log log.Logger,
 ) (*config.ImageMetadataConfig, error) {
 	if containerDetails == nil || containerDetails.Config.Labels == nil ||
 		containerDetails.Config.Labels[ImageMetadataLabel] == "" {
@@ -141,7 +140,6 @@ func GetImageMetadataFromContainer(
 func GetImageMetadata(
 	imageDetails *config.ImageDetails,
 	substituteContext *config.SubstitutionContext,
-	log log.Logger,
 ) (*config.ImageMetadataConfig, error) {
 	if imageDetails == nil {
 		return &config.ImageMetadataConfig{}, nil

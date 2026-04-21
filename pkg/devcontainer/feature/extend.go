@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
 )
 
@@ -57,10 +57,9 @@ func GetExtendedBuildInfo(
 	imageBuildInfo *config.ImageBuildInfo,
 	target string,
 	devContainerConfig *config.SubstitutedConfig,
-	log log.Logger,
 	forceBuild bool,
 ) (*ExtendedBuildInfo, error) {
-	features, err := fetchFeatures(devContainerConfig.Config, log, forceBuild)
+	features, err := fetchFeatures(devContainerConfig.Config, forceBuild)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
 	}
@@ -285,12 +284,10 @@ func findContainerUsers(
 
 func fetchFeatures(
 	devContainerConfig *config.DevContainerConfig,
-	log log.Logger,
 	forceBuild bool,
 ) ([]*config.FeatureSet, error) {
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
-		log:                log,
 		forceBuild:         forceBuild,
 	}
 
@@ -334,7 +331,6 @@ func getUserFeatures(
 
 type featureProcessor struct {
 	devContainerConfig *config.DevContainerConfig
-	log                log.Logger
 	forceBuild         bool
 }
 
@@ -342,12 +338,12 @@ func (p *featureProcessor) processFeature(
 	featureID string,
 	featureOptions any,
 ) (*config.FeatureSet, error) {
-	featureFolder, err := ProcessFeatureID(featureID, p.devContainerConfig, p.log, p.forceBuild)
+	featureFolder, err := ProcessFeatureID(featureID, p.devContainerConfig, p.forceBuild)
 	if err != nil {
 		return nil, fmt.Errorf("process feature ID %s: %w", featureID, err)
 	}
 
-	p.log.Debugf("parse dev container feature in %s", featureFolder)
+	log.Debugf("parse dev container feature in %s", featureFolder)
 	featureConfig, err := config.ParseDevContainerFeature(featureFolder)
 	if err != nil {
 		return nil, fmt.Errorf("parse feature: %w", err)
@@ -387,7 +383,7 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 		normalizedDepID := normalizeFeatureID(depID)
 		depFeatureSet, exists := r.features[normalizedDepID]
 		if !exists {
-			r.processor.log.Debugf("installing dependency feature %s", depID)
+			log.Debugf("installing dependency feature %s", depID)
 			var err error
 			depFeatureSet, err = r.processor.processFeature(depID, depOptions)
 			if err != nil {

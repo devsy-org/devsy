@@ -10,7 +10,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/image"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 )
 
 type GetWorkspaceConfigResult struct {
@@ -29,7 +30,6 @@ type gitRepoFindOptions struct {
 	tmpDirPath            string
 	strictHostKeyChecking bool
 	maxDepth              int
-	log                   log.Logger
 }
 
 func FindDevcontainerFiles(
@@ -37,12 +37,11 @@ func FindDevcontainerFiles(
 	rawSource, tmpDirPath string,
 	maxDepth int,
 	strictHostKeyChecking bool,
-	log log.Logger,
 ) (*GetWorkspaceConfigResult, error) {
 	// local path
 	isLocalPath, _ := file.IsLocalDir(rawSource)
 	if isLocalPath {
-		return FindFilesInLocalDir(rawSource, maxDepth, log)
+		return FindFilesInLocalDir(rawSource, maxDepth)
 	}
 
 	// git repo
@@ -61,7 +60,6 @@ func FindDevcontainerFiles(
 			tmpDirPath:            tmpDirPath,
 			strictHostKeyChecking: strictHostKeyChecking,
 			maxDepth:              maxDepth,
-			log:                   log,
 		}
 		return findFilesInGitRepo(ctx, opts)
 	}
@@ -84,7 +82,6 @@ func FindDevcontainerFiles(
 func FindFilesInLocalDir(
 	rawSource string,
 	maxDepth int,
-	log log.Logger,
 ) (*GetWorkspaceConfigResult, error) {
 	log.Debug("Local directory detected")
 	result := &GetWorkspaceConfigResult{ConfigPaths: []string{}}
@@ -133,21 +130,21 @@ func findFilesInGitRepo(
 		opts.gitPRReference,
 		opts.gitSubDir,
 	)
-	opts.log.Debugf("Cloning Git repository into %s", opts.tmpDirPath)
+	log.Debugf("Cloning Git repository into %s", opts.tmpDirPath)
 	err := git.CloneRepository(
 		ctx,
 		gitInfo,
 		opts.tmpDirPath,
 		"",
 		opts.strictHostKeyChecking,
-		opts.log,
+		oldlog.Default,
 		git.WithCloneStrategy(git.BareCloneStrategy),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	opts.log.Debug("Listing git file tree")
+	log.Debug("Listing git file tree")
 	ref := "HEAD"
 	// checkout on branch if available
 	if opts.gitBranch != "" {

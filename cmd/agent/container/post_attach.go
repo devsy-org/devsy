@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -41,8 +40,6 @@ func NewPostAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the postAttachCommand lifecycle hooks.
 func (cmd *PostAttachCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default
-
 	decompressed, err := compress.Decompress(cmd.SetupInfo)
 	if err != nil {
 		return err
@@ -54,7 +51,7 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 	}
 
 	log.Debugf("running postAttachCommand hooks")
-	if err := setup.RunPostAttachHooks(ctx, setupInfo, logger); err != nil {
+	if err := setup.RunPostAttachHooks(ctx, setupInfo); err != nil {
 		log.Errorf("postAttachCommand failed: %v", err)
 	}
 

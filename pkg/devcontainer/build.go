@@ -75,7 +75,6 @@ func (r *runner) extendImage(
 		imageBuildInfo,
 		imageBase,
 		parsedConfig,
-		r.Log,
 		options.ForceBuild,
 	)
 	if err != nil {
@@ -157,7 +156,6 @@ func (r *runner) buildAndExtendImage(
 		imageBuildInfo,
 		imageBase,
 		parsedConfig,
-		r.Log,
 		options.ForceBuild,
 	)
 	if err != nil {
@@ -228,7 +226,7 @@ func (r *runner) getImageBuildInfoFromImage(
 		user = imageDetails.Config.User
 	}
 
-	imageMetadata, err := metadata.GetImageMetadata(imageDetails, substitutionContext, r.Log)
+	imageMetadata, err := metadata.GetImageMetadata(imageDetails, substitutionContext)
 	if err != nil {
 		return nil, fmt.Errorf("get image metadata: %w", err)
 	}
@@ -283,7 +281,7 @@ func (r *runner) getImageBuildInfoFromDockerfile(
 	}
 
 	// parse metadata from image details
-	imageMetadataConfig, err := metadata.GetImageMetadata(imageDetails, substitutionContext, r.Log)
+	imageMetadataConfig, err := metadata.GetImageMetadata(imageDetails, substitutionContext)
 	if err != nil {
 		return nil, fmt.Errorf("get image metadata: %w", err)
 	}
@@ -318,7 +316,6 @@ func (r *runner) buildImage(
 		DockerfilePath:    dockerfilePath,
 		DockerfileContent: dockerfileContent,
 		BuildInfo:         buildInfo,
-		Log:               r.Log,
 	})
 	if err != nil {
 		return nil, err

@@ -102,7 +102,6 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 			devsyConfig.ContextOption(
 				config.ContextOptionSSHStrictHostKeyChecking,
 			) == config.BoolTrue,
-			logger,
 		)
 		if err != nil {
 			errChan <- err

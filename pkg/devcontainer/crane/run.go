@@ -10,7 +10,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 )
 
 var craneSigningKey string
@@ -79,7 +78,6 @@ func IsAvailable() bool {
 func PullConfigFromSource(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 	options *provider2.CLIOptions,
-	log log.Logger,
 ) (string, error) {
 	var data string
 	var err error
@@ -112,13 +110,12 @@ func PullConfigFromSource(
 		return "", err
 	}
 
-	return writeContentToDirectory(workspaceInfo, content, log)
+	return writeContentToDirectory(workspaceInfo, content)
 }
 
 func writeContentToDirectory(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 	content *Content,
-	_ log.Logger,
 ) (string, error) {
 	path := workspaceInfo.ContentFolder
 	if path == "" {

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -95,10 +94,10 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	err := RunPreAttachHooks(ctx, result, log.Default)
+	err := RunPreAttachHooks(ctx, result)
 	assert.NoError(s.T(), err)
 
-	err = RunPostAttachHooks(ctx, result, log.Default)
+	err = RunPostAttachHooks(ctx, result)
 	assert.NoError(s.T(), err)
 }
 

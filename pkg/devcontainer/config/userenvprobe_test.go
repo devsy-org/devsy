@@ -3,8 +3,6 @@ package config
 import (
 	"reflect"
 	"testing"
-
-	"github.com/devsy-org/log"
 )
 
 //nolint:funlen,lll // It's just test input vectors.
@@ -152,8 +150,7 @@ func TestParseProbeOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testLogger := log.Default.ErrorStreamOnly()
-			result := parseProbeOutput(tt.output, tt.sep, testLogger)
+			result := parseProbeOutput(tt.output, tt.sep)
 
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("parseProbeOutput() mismatch\ngot:  %+v\nwant: %+v", result, tt.expected)
