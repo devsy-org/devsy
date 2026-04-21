@@ -21,9 +21,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/log"
-	"github.com/devsy-org/log/terminal"
 	"github.com/gofrs/flock"
 )
 

@@ -31,9 +31,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/util"
 	oldlog "github.com/devsy-org/log"
-	"github.com/devsy-org/log/survey"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -434,7 +434,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 			NoOption  = "No, please re-run the DNS check"
 		)
 
-		answer, err := oldlog.Default.Question(&survey.QuestionOptions{
+		answer, err := log.QuestionDefault(&survey.QuestionOptions{
 			Question:     "Unable to reach Devsy at https://" + host + ". Do you want to start port-forwarding instead?",
 			DefaultValue: YesOption,
 			Options: []string{
@@ -998,7 +998,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 	if cmd.Context != "" {
 		contextToLoad = cmd.Context
 	} else if loftConfig.LastInstallContext != "" && loftConfig.LastInstallContext != contextToLoad {
-		contextToLoad, err = oldlog.Default.Question(&survey.QuestionOptions{
+		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
 			Question:     "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. Please choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, loftConfig.LastInstallContext},
@@ -1083,7 +1083,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 					NoOption  = "No, my cluster is running not locally (GKE, EKS, Bare Metal, etc.)"
 				)
 
-				answer, err := oldlog.Default.Question(&survey.QuestionOptions{
+				answer, err := log.QuestionDefault(&survey.QuestionOptions{
 					Question:     "Seems like your cluster is running locally (docker desktop, minikube, kind etc.). Is that correct?",
 					DefaultValue: YesOption,
 					Options: []string{
@@ -1105,7 +1105,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 					NoOption  = "No"
 				)
 
-				answer, err := oldlog.Default.Question(&survey.QuestionOptions{
+				answer, err := log.QuestionDefault(&survey.QuestionOptions{
 					Question:     "Enabling ingress is usually only useful for remote clusters. Do you still want to deploy the ingress to your local cluster?",
 					DefaultValue: NoOption,
 					Options: []string{
@@ -1562,8 +1562,8 @@ func isInstalledLocally(
 	return kerrors.IsNotFound(err)
 }
 
-func enterHostNameQuestion(log oldlog.Logger) (string, error) {
-	return log.Question(&survey.QuestionOptions{
+func enterHostNameQuestion(logger oldlog.Logger) (string, error) {
+	return log.QuestionWith(logger, &survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
 			config.ProductNamePro,
@@ -1585,7 +1585,7 @@ func ensureIngressController(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	kubeContext string,
-	log oldlog.Logger,
+	logger oldlog.Logger,
 ) error {
 	// first create an ingress controller
 	const (
@@ -1593,7 +1593,7 @@ func ensureIngressController(
 		NoOption  = "No, I already have an ingress controller installed."
 	)
 
-	answer, err := log.Question(&survey.QuestionOptions{
+	answer, err := log.QuestionWith(logger, &survey.QuestionOptions{
 		Question:     "Ingress controller required. Should the nginx-ingress controller be installed?",
 		DefaultValue: YesOption,
 		Options: []string{
@@ -1622,9 +1622,9 @@ func ensureIngressController(
 			"controller.config.hsts=false",
 			"--wait",
 		}
-		log.WriteString(logrus.InfoLevel, "\n")
-		log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-		log.Info("Waiting for ingress controller deployment, this can take several minutes...")
+		logger.WriteString(logrus.InfoLevel, "\n")
+		logger.Infof("Executing command: helm %s\n", strings.Join(args, " "))
+		logger.Info("Waiting for ingress controller deployment, this can take several minutes...")
 		helmCmd := exec.CommandContext(
 			ctx,
 			"helm",
@@ -1670,7 +1670,7 @@ func ensureIngressController(
 			}
 		}
 
-		log.Done("installed ingress-nginx to your kubernetes cluster!")
+		logger.Done("installed ingress-nginx to your kubernetes cluster!")
 	}
 
 	return nil

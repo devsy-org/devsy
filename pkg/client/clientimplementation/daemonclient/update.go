@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/log/terminal"
+	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
 func (c *client) updateInstance(ctx context.Context) error {

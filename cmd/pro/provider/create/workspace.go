@@ -15,7 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log/terminal"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

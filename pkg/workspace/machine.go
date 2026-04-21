@@ -13,10 +13,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/log"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/survey"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
 	oldlog "github.com/devsy-org/log"
-	"github.com/devsy-org/log/survey"
-	"github.com/devsy-org/log/terminal"
 )
 
 // ListMachines returns all machines configured in the given Devsy context.
@@ -189,7 +189,7 @@ func selectMachine(devsyConfig *config.Config) (client.MachineClient, error) {
 		return nil, errProvideWorkspaceArg
 	}
 
-	answer, err := oldlog.Default.Question(&survey.QuestionOptions{
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
 		Question:     "Please select a machine from the list below",
 		DefaultValue: machineIDs[0],
 		Options:      machineIDs,
