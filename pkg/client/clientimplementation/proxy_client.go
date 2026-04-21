@@ -95,7 +95,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 
 // executeWithJSONLog runs a command with JSON log streaming.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
-	writer, _ := devsylog.PipeJSONStream(e.client.log.ErrorStreamOnly())
+	writer, _ := devsylog.PipeJSONStream()
 	defer func() { _ = writer.Close() }()
 
 	params.stderr = writer
@@ -398,7 +398,7 @@ func (s *proxyClient) Status(
 		)
 	}
 
-	devsylog.ReadJSONStream(bytes.NewReader(buf.Bytes()), s.log.ErrorStreamOnly())
+	devsylog.ReadJSONStream(bytes.NewReader(buf.Bytes()))
 	status := &client.WorkspaceStatus{}
 	err = json.Unmarshal(stdout.Bytes(), status)
 	if err != nil {

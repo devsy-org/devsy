@@ -19,7 +19,6 @@ import (
 	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
-	oldlog "github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -292,8 +291,8 @@ func printLogs(
 	scanner.Buffer(buf, maxCapacity)
 
 	// create json streamer
-	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream(oldlog.Default)
-	stderrStreamer, stderrDone := devsylog.PipeJSONStream(oldlog.Default.ErrorStreamOnly())
+	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream()
+	stderrStreamer, stderrDone := devsylog.PipeJSONStream()
 	defer func() {
 		// close the streams
 		_ = stdoutStreamer.Close()
