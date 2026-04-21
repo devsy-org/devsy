@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -53,8 +52,6 @@ func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
-
 	// write workspace info
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo)
 	if err != nil {
@@ -76,7 +73,7 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// wait until devcontainer is started
-	err = startDevContainer(ctx, workspaceInfo, runner, logger)
+	err = startDevContainer(ctx, workspaceInfo, runner)
 	if err != nil {
 		return err
 	}
@@ -112,7 +109,6 @@ func startDevContainer(
 	ctx context.Context,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 	runner devcontainer.Runner,
-	logger oldlog.Logger,
 ) error {
 	containerDetails, err := runner.Find(ctx)
 	if err != nil {
@@ -122,7 +118,7 @@ func startDevContainer(
 	// start container if necessary
 	if containerDetails == nil || containerDetails.State.Status != "running" {
 		// start container
-		_, err = StartContainer(ctx, runner, logger, workspaceConfig)
+		_, err = StartContainer(ctx, runner, workspaceConfig)
 		if err != nil {
 			return err
 		}
@@ -132,7 +128,7 @@ func startDevContainer(
 		err = runner.Command(ctx, "root", "cat "+pkgconfig.DevContainerResultPath, nil, buf, buf)
 		if err != nil {
 			// start container
-			_, err = StartContainer(ctx, runner, logger, workspaceConfig)
+			_, err = StartContainer(ctx, runner, workspaceConfig)
 			if err != nil {
 				return err
 			}
@@ -145,7 +141,6 @@ func startDevContainer(
 func StartContainer(
 	ctx context.Context,
 	runner devcontainer.Runner,
-	logger oldlog.Logger,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 ) (*config.Result, error) {
 	log.Debugf("starting Devsy container")

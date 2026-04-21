@@ -10,6 +10,7 @@ import (
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -55,7 +56,7 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				)
 			}
 
-			return cmd.Run(cobraCmd.Context(), args[0], oldlog.Default)
+			return cmd.Run(cobraCmd.Context(), args[0])
 		},
 	}
 
@@ -81,7 +82,7 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 }
 
 //nolint:cyclop,funlen // pre-existing complexity
-func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger) error {
+func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 	if strings.HasPrefix(fullURL, "http://") {
 		return fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
 	} else if !strings.HasPrefix(fullURL, "https://") {
@@ -165,10 +166,10 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 		}
 		if rv.LT(semver.Version{Major: 0, Minor: 6, Patch: 999}) &&
 			remoteVersion != versionpkg.DevVersion {
-			log.Debug("remote version < 0.7.0, installing proxy provider")
+			devsylog.Debug("remote version < 0.7.0, installing proxy provider")
 			// proxy providers are deprecated and shouldn't be used
 			// unless explicitly the server version is below 0.7.0
-			err = cmd.addLoftProvider(devsyConfig, fullURL, log)
+			err = cmd.addLoftProvider(devsyConfig, fullURL)
 			if err != nil {
 				return err
 			}
@@ -212,7 +213,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 		if err != nil {
 			return err
 		}
-		log.Donef("logged into Devsy Pro instance: url=%s", fullURL)
+		devsylog.Infof("logged into Devsy Pro instance: url=%s", fullURL)
 	}
 
 	// 3. Configure provider
@@ -226,21 +227,20 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  nil,
-			Log:            log,
+			Log:            oldlog.Default,
 		})
 		if err != nil {
 			return fmt.Errorf("configure provider: %w", err)
 		}
 	}
 
-	log.Done("configured Devsy Pro")
+	devsylog.Info("configured Devsy Pro")
 	return nil
 }
 
 func (cmd *LoginCmd) addLoftProvider(
 	devsyConfig *config.Config,
 	url string,
-	log oldlog.Logger,
 ) error {
 	// find out loft version
 	err := cmd.resolveProviderSource(url)
@@ -249,11 +249,11 @@ func (cmd *LoginCmd) addLoftProvider(
 	}
 
 	// add the provider
-	log.Infof("Add Devsy Pro provider...")
+	devsylog.Infof("Add Devsy Pro provider...")
 
 	// is development?
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {
-		log.Debugf("Add development provider")
+		devsylog.Debugf("Add development provider")
 		_, err = workspace.AddProviderRaw(workspace.ProviderParams{
 			DevsyConfig:  devsyConfig,
 			ProviderName: cmd.Provider,
