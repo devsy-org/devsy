@@ -19,7 +19,7 @@ import (
 	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -63,10 +63,10 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 
 	// Log current workspace information. This is both useful to the user to understand the workspace configuration
 	// and to us when we receive troubleshooting logs
-	printInstanceInfo(instance, c.log)
+	printInstanceInfo(instance, oldlog.Default)
 
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
-		c.log.Info("Template update required")
+		devsylog.Info("Template update required")
 		oldInstance := instance.DeepCopy()
 		instance.Spec.TemplateRef.SyncOnce = true
 
@@ -74,7 +74,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		if err != nil {
 			return nil, fmt.Errorf("update instance: %w", err)
 		}
-		c.log.Info("updated template")
+		devsylog.Info("updated template")
 	}
 
 	// encode options
@@ -85,7 +85,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	}
 
 	// prompt user to attach to active task or start new one
-	c.log.Debug("Check active up task")
+	devsylog.Debug("Check active up task")
 	activeUpTask, err := findActiveUpTask(ctx, managementClient, instance)
 	if err != nil {
 		return nil, fmt.Errorf("find active up task: %w", err)
@@ -93,7 +93,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 
 	// if we have an active up task, cancel it before creating a new one
 	if activeUpTask != nil {
-		c.log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
+		devsylog.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
 		_, err = managementClient.Loft().
 			ManagementV1().
 			DevsyWorkspaceInstances(instance.Namespace).
@@ -121,7 +121,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		return nil, fmt.Errorf("no up task id returned from server")
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, task.Status.TaskID, c.log)
+	return waitTaskDone(ctx, managementClient, instance, task.Status.TaskID, oldlog.Default)
 }
 
 func waitTaskDone(
@@ -129,7 +129,7 @@ func waitTaskDone(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	log log.Logger,
+	log oldlog.Logger,
 ) (*config.Result, error) {
 	exitCode, err := observeTask(ctx, managementClient, instance, taskID, log)
 	if err != nil {
@@ -187,7 +187,7 @@ func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool 
 	return !templateResolved || templateChangesAvailable
 }
 
-func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log log.Logger) {
+func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance, log oldlog.Logger) {
 	workspaceConfig, _ := json.Marshal(struct {
 		Target     storagev1.WorkspaceTarget
 		Template   *storagev1.TemplateRef
@@ -205,7 +205,7 @@ func observeTask(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	log log.Logger,
+	log oldlog.Logger,
 ) (int, error) {
 	var (
 		exitCode int
@@ -266,7 +266,7 @@ func printLogs(
 	managementClient kube.Interface,
 	workspace *managementv1.DevsyWorkspaceInstance,
 	taskID string,
-	logger log.Logger,
+	logger oldlog.Logger,
 ) (int, error) {
 	// get logs reader
 	logger.Debugf("printing logs of task: %s", taskID)

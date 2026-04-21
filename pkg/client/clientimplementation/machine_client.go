@@ -10,18 +10,16 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 func NewMachineClient(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 	machine *provider.Machine,
-	log log.Logger,
 ) (client.MachineClient, error) {
 	if !provider.IsMachineProvider() {
 		log.Error("provider is not a machine provider")
@@ -36,7 +34,6 @@ func NewMachineClient(
 		devsyConfig: devsyConfig,
 		config:      provider,
 		machine:     machine,
-		log:         log,
 	}
 	mc.executor = &machineExecutor{client: mc}
 
@@ -47,7 +44,6 @@ type machineClient struct {
 	devsyConfig *config.Config
 	config      *provider.ProviderConfig
 	machine     *provider.Machine
-	log         log.Logger
 	executor    *machineExecutor
 }
 
@@ -64,7 +60,6 @@ type execConfig struct {
 	stderr       io.Writer
 	extraEnv     map[string]string
 	stdin        io.Reader
-	log          log.Logger
 	withProgress bool
 	startMsg     string
 	doneMsg      string
@@ -73,15 +68,15 @@ type execConfig struct {
 func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 	var done chan struct{}
 	if cfg.withProgress {
-		done = scheduleLogMessage("Devsy "+cfg.name+" operation is in progress", e.client.log)
+		done = scheduleLogMessage("Devsy " + cfg.name + " operation is in progress")
 		defer close(done)
 	}
 
 	if cfg.startMsg != "" {
-		e.client.log.Infof(cfg.startMsg)
+		log.Infof(cfg.startMsg)
 	}
 
-	opts := CommandOptions{
+	err := RunCommandWithBinaries(CommandOptions{
 		Ctx:      ctx,
 		Name:     cfg.name,
 		Command:  cfg.command,
@@ -93,20 +88,13 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 		Stderr:   cfg.stderr,
 		ExtraEnv: cfg.extraEnv,
 		Stdin:    cfg.stdin,
-		Log:      cfg.log,
-	}
-
-	if opts.Log == nil {
-		opts.Log = e.client.log
-	}
-
-	err := RunCommandWithBinaries(opts)
+	})
 	if err != nil {
 		return err
 	}
 
 	if cfg.doneMsg != "" {
-		e.client.log.Done(cfg.doneMsg)
+		log.Infof(cfg.doneMsg)
 	}
 
 	return nil
@@ -119,7 +107,7 @@ func (e *machineExecutor) lifecycleCommand(
 	command types.StrArray,
 	verb, pastVerb string,
 ) error {
-	writer := e.client.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	return e.execute(ctx, execConfig{
@@ -213,7 +201,6 @@ func (s *machineClient) Command(ctx context.Context, commandOptions client.Comma
 		extraEnv: map[string]string{
 			provider.CommandEnv: commandOptions.Command,
 		},
-		log: s.log.ErrorStreamOnly(),
 	})
 }
 
@@ -228,7 +215,7 @@ func (s *machineClient) Status(
 		name:    "status",
 		command: s.config.Exec.Status,
 		stdout:  stdout,
-		stderr:  io.MultiWriter(stderr, s.log.Writer(logrus.InfoLevel, true)),
+		stderr:  io.MultiWriter(stderr, log.Writer(log.LevelInfo)),
 	})
 	if err != nil {
 		return client.StatusNotFound, fmt.Errorf(
@@ -254,7 +241,7 @@ func (s *machineClient) Describe(ctx context.Context) (string, error) {
 		name:    "describe",
 		command: s.config.Exec.Describe,
 		stdout:  stdout,
-		stderr:  io.MultiWriter(stderr, s.log.Writer(logrus.InfoLevel, true)),
+		stderr:  io.MultiWriter(stderr, log.Writer(log.LevelInfo)),
 	})
 	if err != nil {
 		return client.DescriptionNotFound, fmt.Errorf(
@@ -276,7 +263,7 @@ func (s *machineClient) Delete(ctx context.Context, options client.DeleteOptions
 		}
 	}
 
-	writer := s.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	err := s.executor.execute(ctx, execConfig{
@@ -293,13 +280,13 @@ func (s *machineClient) Delete(ctx context.Context, options client.DeleteOptions
 		return err
 	}
 	if err != nil {
-		s.log.Errorf("failed to delete machine: machineId=%s, err=%v", s.machine.ID, err)
+		log.Errorf("failed to delete machine: machineId=%s, err=%v", s.machine.ID, err)
 	}
 
 	return DeleteMachineFolder(s.machine.Context, s.machine.ID)
 }
 
-func scheduleLogMessage(msg string, log log.Logger) chan struct{} {
+func scheduleLogMessage(msg string) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		for {

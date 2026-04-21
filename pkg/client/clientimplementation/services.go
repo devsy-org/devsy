@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/tunnel"
-	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -17,7 +16,6 @@ type StartServicesDaemonOptions struct {
 	Client           client.DaemonClient
 	SSHClient        *ssh.Client
 	User             string
-	Log              log.Logger
 	ForwardPorts     bool
 	ExtraPorts       []string
 	GitSSHSigningKey string

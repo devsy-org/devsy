@@ -8,6 +8,7 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/platform"
+	oldlog "github.com/devsy-org/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,7 +48,7 @@ func (c *client) Stop(ctx context.Context, opt clientpkg.StopOptions) error {
 		return fmt.Errorf("no stop task id returned from server")
 	}
 
-	_, err = observeTask(ctx, managementClient, workspace, retStop.Status.TaskID, c.log)
+	_, err = observeTask(ctx, managementClient, workspace, retStop.Status.TaskID, oldlog.Default)
 	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}

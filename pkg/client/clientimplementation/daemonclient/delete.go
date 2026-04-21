@@ -7,7 +7,9 @@ import (
 
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
+	oldlog "github.com/devsy-org/log"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -38,7 +40,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 				SSHConfigPath:        c.workspace.SSHConfigPath,
 				SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
 			},
-			c.log,
+			oldlog.Default,
 		)
 		if err != nil {
 			return err
@@ -77,7 +79,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 		}
 
 		if !kerrors.IsNotFound(err) {
-			c.log.Errorf("Error deleting workspace: %v", err)
+			log.Errorf("Error deleting workspace: %v", err)
 		}
 	}
 
@@ -89,7 +91,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 			SSHConfigPath:        c.workspace.SSHConfigPath,
 			SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
 		},
-		c.log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return err
@@ -102,7 +104,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 	}
 
 	// wait until the workspace is deleted
-	c.log.Debugf("Waiting for workspace to get deleted...")
+	log.Debugf("Waiting for workspace to get deleted...")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -122,7 +124,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 				return true, nil
 			}
 
-			c.log.Debugf("Workspace is not deleted yet, waiting again...")
+			log.Debugf("Workspace is not deleted yet, waiting again...")
 			return false, nil
 		},
 	)
