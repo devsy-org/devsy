@@ -281,7 +281,7 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 
 	// try to lock workspace
 	s.log.Debug("acquire workspace lock")
-	err := tryLock(ctx, s.workspaceLock, "workspace", s.log)
+	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
@@ -290,7 +290,7 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 	// try to lock machine
 	if s.machineLock != nil {
 		s.log.Debug("acquire machine lock")
-		err := tryLock(ctx, s.machineLock, "machine", s.log)
+		err := tryLock(ctx, s.machineLock, "machine")
 		if err != nil {
 			return fmt.Errorf("error locking machine: %w", err)
 		}
@@ -438,7 +438,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 		WorkspaceID:          s.workspace.ID,
 		SSHConfigPath:        s.workspace.SSHConfigPath,
 		SSHConfigIncludePath: s.workspace.SSHConfigIncludePath,
-	}, s.log)
+	})
 }
 
 func (s *workspaceClient) isMachineRunning(ctx context.Context) (bool, error) {
@@ -831,7 +831,7 @@ type DeleteWorkspaceFolderParams struct {
 	SSHConfigIncludePath string
 }
 
-func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams, log log.Logger) error {
+func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 	path, err := ssh.ResolveSSHConfigPath(params.SSHConfigPath)
 	if err != nil {
 		return err
@@ -849,7 +849,7 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams, log log.Logger) e
 
 	err = ssh.RemoveFromConfig(params.WorkspaceID, sshConfigPath, sshConfigIncludePath)
 	if err != nil {
-		log.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
+		devsylog.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
 	}
 
 	workspaceFolder, err := provider.GetWorkspaceDir(params.Context, params.WorkspaceID)

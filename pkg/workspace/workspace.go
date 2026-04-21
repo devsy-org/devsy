@@ -140,7 +140,7 @@ func getWorkspaceClient(
 	machine *providerpkg.Machine,
 ) (client.BaseWorkspaceClient, error) {
 	if provider.IsProxyProvider() {
-		return clientimplementation.NewProxyClient(devsyConfig, provider, workspace, oldlog.Default)
+		return clientimplementation.NewProxyClient(devsyConfig, provider, workspace)
 	} else if provider.IsDaemonProvider() {
 		return daemonclient.New(devsyConfig, provider, workspace)
 	} else {
@@ -294,7 +294,6 @@ func resolveWorkspace(
 				SSHConfigPath:        params.SSHConfigPath,
 				SSHConfigIncludePath: params.SSHConfigIncludePath,
 			},
-			oldlog.Default,
 		)
 		return nil, nil, nil, err
 	}

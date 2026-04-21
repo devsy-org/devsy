@@ -23,7 +23,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 	"github.com/gofrs/flock"
 )
 
@@ -36,13 +35,11 @@ func NewProxyClient(
 	devsyConfig *config.Config,
 	prov *provider.ProviderConfig,
 	workspace *provider.Workspace,
-	log log.Logger,
 ) (client.ProxyClient, error) {
 	pc := &proxyClient{
 		devsyConfig: devsyConfig,
 		config:      prov,
 		workspace:   workspace,
-		log:         log,
 	}
 	pc.executor = &proxyExecutor{client: pc}
 	return pc, nil
@@ -57,7 +54,6 @@ type proxyClient struct {
 	devsyConfig *config.Config
 	config      *provider.ProviderConfig
 	workspace   *provider.Workspace
-	log         log.Logger
 	executor    *proxyExecutor
 }
 
@@ -106,12 +102,12 @@ func (s *proxyClient) Lock(ctx context.Context) error {
 	s.initLock()
 
 	// try to lock workspace
-	s.log.Debugf("Acquire workspace lock...")
-	err := tryLock(ctx, s.workspaceLock, "workspace", s.log)
+	devsylog.Debugf("Acquire workspace lock...")
+	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
-	s.log.Debugf("Acquired workspace lock...")
+	devsylog.Debugf("Acquired workspace lock...")
 
 	return nil
 }
@@ -122,11 +118,11 @@ func (s *proxyClient) Unlock() {
 	// try to unlock workspace
 	err := s.workspaceLock.Unlock()
 	if err != nil {
-		s.log.Warnf("Error unlocking workspace: %v", err)
+		devsylog.Warnf("Error unlocking workspace: %v", err)
 	}
 }
 
-func tryLock(ctx context.Context, lock *flock.Flock, name string, log log.Logger) error {
+func tryLock(ctx context.Context, lock *flock.Flock, name string) error {
 	done := scheduleLogMessage(
 		fmt.Sprintf(
 			"Trying to lock %s, seems like another process is running that blocks this %s",
@@ -356,7 +352,7 @@ func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) erro
 		return fmt.Errorf("error deleting workspace: %w", err)
 	}
 	if err != nil {
-		s.log.Errorf("Error deleting workspace: %v", err)
+		devsylog.Errorf("Error deleting workspace: %v", err)
 	}
 
 	return DeleteWorkspaceFolder(DeleteWorkspaceFolderParams{
@@ -364,7 +360,7 @@ func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) erro
 		WorkspaceID:          s.workspace.ID,
 		SSHConfigPath:        s.workspace.SSHConfigPath,
 		SSHConfigIncludePath: s.workspace.SSHConfigIncludePath,
-	}, s.log)
+	})
 }
 
 func (s *proxyClient) Status(

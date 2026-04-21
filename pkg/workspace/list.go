@@ -20,7 +20,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	oldlog "github.com/devsy-org/log"
 )
 
 const ProjectLabel = "devsy.sh/project"
@@ -65,7 +64,6 @@ func List(
 							SSHConfigPath:        localWorkspace.SSHConfigPath,
 							SSHConfigIncludePath: localWorkspace.SSHConfigIncludePath,
 						},
-						oldlog.Default,
 					)
 					if err != nil {
 						log.Debugf(

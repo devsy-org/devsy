@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
-	oldlog "github.com/devsy-org/log"
 )
 
 // DeleteOptions holds the parameters for deleting a workspace.
@@ -146,7 +145,6 @@ func forceDeleteFolder(opts DeleteOptions, workspaceID string) (string, error) {
 			Context:     opts.DevsyConfig.DefaultContext,
 			WorkspaceID: workspaceID,
 		},
-		oldlog.Default,
 	)
 	if err != nil {
 		return "", err
@@ -176,7 +174,6 @@ func deleteImportedWorkspace(
 			SSHConfigPath:        wsCfg.SSHConfigPath,
 			SSHConfigIncludePath: wsCfg.SSHConfigIncludePath,
 		},
-		oldlog.Default,
 	)
 	if err != nil {
 		return "", true, err
@@ -250,7 +247,6 @@ func deleteSingleMachine(
 			SSHConfigPath:        wsCfg.SSHConfigPath,
 			SSHConfigIncludePath: wsCfg.SSHConfigIncludePath,
 		},
-		oldlog.Default,
 	)
 	if err != nil {
 		return false, err
