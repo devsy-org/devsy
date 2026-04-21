@@ -17,7 +17,6 @@ import (
 	pkgprovider "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -95,13 +94,12 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		return
 	}
 
-	logger := oldlog.Default.ErrorStreamOnly()
-	info.Providers, err = collectProviders(info.Config, logger)
+	info.Providers, err = collectProviders(info.Config)
 	if err != nil {
 		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("collect providers: %w", err)})
 	}
 
-	info.DevsyProInstances, err = collectPlatformInfo(info.Config, logger)
+	info.DevsyProInstances, err = collectPlatformInfo(info.Config)
 	if err != nil {
 		info.Errors = append(
 			info.Errors,
@@ -141,7 +139,6 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 					ctx,
 					info.Config,
 					proInstance.Host,
-					logger,
 					info.Workspace.UID,
 					info.Workspace.Pro.Project,
 				)
@@ -178,7 +175,6 @@ func collectProWorkspaceInfo(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	host string,
-	logger oldlog.Logger,
 	workspaceUID string,
 	project string,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
@@ -216,7 +212,6 @@ func collectProWorkspaceInfo(
 // It returns a map of providers with their default settings and an error if any occurs.
 func collectProviders(
 	devsyConfig *config.Config,
-	logger oldlog.Logger,
 ) (map[string]provider.ProviderWithDefault, error) {
 	providers, err := workspace.LoadAllProviders(devsyConfig)
 	if err != nil {
@@ -260,7 +255,6 @@ type DevsyProInstance struct {
 // This means that even when an error value is returned, the pro instance slice will contain valid values.
 func collectPlatformInfo(
 	devsyConfig *config.Config,
-	logger oldlog.Logger,
 ) ([]DevsyProInstance, error) {
 	proInstanceList, err := workspace.ListProInstances(devsyConfig)
 	if err != nil {

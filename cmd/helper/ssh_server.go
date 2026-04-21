@@ -8,11 +8,11 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"github.com/devsy-org/devsy/pkg/token"
-	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/ssh"
 	"github.com/spf13/cobra"
 )
@@ -151,7 +151,7 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("address %s already in use: %w", cmd.Address, err)
 		}
 
-		oldlog.Default.ErrorStreamOnly().Infof("address %s already in use", cmd.Address)
+		devsylog.Infof("address %s already in use", cmd.Address)
 		return nil
 	}
 

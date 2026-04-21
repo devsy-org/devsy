@@ -11,8 +11,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			logger := oldlog.Default.ErrorStreamOnly()
 			client, err := workspace2.Get(ctx, workspace2.GetOptions{
 				DevsyConfig: devsyConfig,
 				Args:        args,
@@ -58,7 +57,7 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 
-			return cmd.Run(ctx, client, logger)
+			return cmd.Run(ctx, client)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -84,7 +83,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 func (cmd *StatusCmd) Run(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
-	log oldlog.Logger,
 ) error {
 	// parse timeout
 	if cmd.Timeout != "" {
@@ -108,28 +106,28 @@ func (cmd *StatusCmd) Run(
 	case "plain":
 		switch instanceStatus {
 		case client2.StatusStopped:
-			log.Infof(
+			devsylog.Infof(
 				"Workspace '%s' is '%s', you can start it via 'devsy up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		case client2.StatusBusy:
-			log.Infof(
+			devsylog.Infof(
 				"Workspace '%s' is '%s', which means its currently unaccessible. "+
 					"This is usually resolved by waiting a couple of minutes",
 				client.Workspace(),
 				instanceStatus,
 			)
 		case client2.StatusNotFound:
-			log.Infof(
+			devsylog.Infof(
 				"Workspace '%s' is '%s', you can create it via 'devsy up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		default:
-			log.Infof("Workspace '%s' is '%s'", client.Workspace(), instanceStatus)
+			devsylog.Infof("Workspace '%s' is '%s'", client.Workspace(), instanceStatus)
 		}
 	case "json":
 		out, err := json.Marshal(&client2.WorkspaceStatus{
