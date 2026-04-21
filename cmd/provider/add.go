@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -129,7 +128,6 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  &cmd.SingleMachine,
-			Log:            oldlog.Default,
 		})
 		if configureErr != nil {
 			devsyConfig, err := config.LoadConfig(cmd.Context, "")

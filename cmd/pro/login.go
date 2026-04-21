@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -227,7 +226,6 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 			SkipInit:       false,
 			SkipSubOptions: false,
 			SingleMachine:  nil,
-			Log:            oldlog.Default,
 		})
 		if err != nil {
 			return fmt.Errorf("configure provider: %w", err)

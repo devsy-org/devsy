@@ -9,7 +9,6 @@ import (
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -86,7 +85,6 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		SkipInit:       true,
 		SkipSubOptions: false,
 		SingleMachine:  nil,
-		Log:            oldlog.Discard,
 	})
 	if err != nil {
 		return fmt.Errorf(
