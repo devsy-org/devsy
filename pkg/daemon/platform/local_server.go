@@ -12,14 +12,13 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
 	"github.com/gorilla/handlers"
-	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"tailscale.com/client/local"
@@ -35,7 +34,6 @@ type localServer struct {
 	listener       *memnet.Listener
 	pc             platformclient.Client
 	platformStatus *platformStatus
-	log            log.Logger
 	stopChan       chan struct{}
 }
 
@@ -90,12 +88,10 @@ func newLocalServer(
 	lc *local.Client,
 	pc platformclient.Client,
 	devsyContext string,
-	log log.Logger,
 ) (*localServer, error) {
 	l := &localServer{
 		lc:             lc,
 		pc:             pc,
-		log:            log,
 		devsyContext:   devsyContext,
 		listener:       memnet.Listen("localclient.devsy:80"),
 		platformStatus: &platformStatus{authenticated: true},
@@ -122,27 +118,25 @@ func newLocalServer(
 	mux.HandleFunc("GET "+routeDockerCredentials, l.getDockerCredentials)
 
 	handler := handlers.RecoveryHandler(
-		handlers.RecoveryLogger(panicLogger{log: l.log}),
+		handlers.RecoveryLogger(panicLogger{}),
 		handlers.PrintRecoveryStack(true),
 	)(mux)
-	handler = handlers.LoggingHandler(log.Writer(logrus.DebugLevel, true), handler)
+	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
 	l.httpServer = &http.Server{Handler: handler}
 
 	return l, nil
 }
 
-type panicLogger struct {
-	log log.Logger
-}
+type panicLogger struct{}
 
 func (r panicLogger) Println(args ...any) {
-	r.log.Error(args...)
+	log.Error(args...)
 }
 
 func (l *localServer) ListenAndServe() error {
 	errChan := make(chan error, 1)
 	go func() {
-		l.log.Info("Start config watcher")
+		log.Info("Start config watcher")
 		err := l.watchPlatform(l.stopChan)
 		errChan <- err
 	}()
@@ -160,7 +154,7 @@ func (l *localServer) ListenAndServe() error {
 }
 
 func (l *localServer) Close() error {
-	l.log.Info("shutting down local server")
+	log.Info("shutting down local server")
 	l.stopChan <- struct{}{}
 	_ = l.listener.Close()
 	return nil
@@ -176,11 +170,11 @@ func (l *localServer) Dial(ctx context.Context, network, addr string) (net.Conn,
 
 func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
 	for {
-		l.log.Debug("Check platform status")
+		log.Debug("Check platform status")
 
 		managementClient, err := l.pc.Management()
 		if err != nil {
-			l.log.Error(fmt.Errorf("create mangement client: %w", err))
+			log.Error(fmt.Errorf("create mangement client: %w", err))
 		} else {
 			_, err = managementClient.Loft().
 				ManagementV1().
@@ -189,10 +183,10 @@ func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
 			l.platformStatus.mu.Lock()
 			if err != nil {
 				if IsAccessKeyNotFound(err) {
-					l.log.Warnf("client not authenticated: %s", err)
+					log.Warnf("client not authenticated: %s", err)
 					l.platformStatus.authenticated = false
 				} else {
-					l.log.Errorf("failed to create self: %v", err)
+					log.Errorf("failed to create self: %v", err)
 				}
 			} else {
 				// We don't want to be too restrictive in case the error
@@ -586,7 +580,6 @@ func (l *localServer) watchWorkspaces(
 		OwnerFilter:    ownerFilter,
 		PlatformClient: l.pc,
 		TsClient:       l.lc,
-		Log:            l.log,
 	},
 		// we need to debounce events here to avoid spamming the client with too many events
 		throttle(func(instanceList []*ProWorkspaceInstance) {
@@ -610,7 +603,7 @@ func (l *localServer) watchWorkspaces(
 			fmt.Errorf("failed to watch workspaces: %w", err).Error(),
 			http.StatusInternalServerError,
 		)
-		l.log.Errorf("watch workspaces: %w", err)
+		log.Errorf("watch workspaces: %w", err)
 		return
 	}
 }

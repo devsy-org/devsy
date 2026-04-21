@@ -13,11 +13,9 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 	"tailscale.com/types/netmap"
@@ -28,7 +26,6 @@ type Daemon struct {
 	tsServer       *tsnet.Server
 	localServer    *localServer
 	rootDir        string
-	log            log.Logger
 }
 
 type InitConfig struct {
@@ -42,8 +39,6 @@ type InitConfig struct {
 }
 
 func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
-	log := initLogging(config.RootDir, config.Debug)
-
 	socketAddr := GetSocketAddr(config.ProviderName)
 	log.Infof("Starting Daemon on address: %s", socketAddr)
 	// listen to socket for early return  in case it's already in use
@@ -60,13 +55,12 @@ func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
 		config.UserName,
 		config.RootDir,
 		platformConfig.Insecure,
-		log,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create tailscale server: %w", err)
 	}
 
-	localServer, err := newLocalServer(lc, config.PlatformClient, config.Context, log)
+	localServer, err := newLocalServer(lc, config.PlatformClient, config.Context)
 	if err != nil {
 		return nil, fmt.Errorf("create local server: %w", err)
 	}
@@ -76,7 +70,6 @@ func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
 		tsServer:       tsServer,
 		localServer:    localServer,
 		rootDir:        config.RootDir,
-		log:            log,
 	}, nil
 }
 
@@ -84,20 +77,20 @@ func (d *Daemon) Start(ctx context.Context) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		d.log.Infof("Starting local server: %s", d.localServer.Addr())
+		log.Infof("Starting local server: %s", d.localServer.Addr())
 		errChan <- d.localServer.ListenAndServe()
 	}()
 	go func() {
-		d.log.Info("Start proxying connections")
+		log.Info("Start proxying connections")
 		errChan <- d.Listen(d.socketListener)
 	}()
 	go func() {
-		d.log.Info("Start netmap watcher")
+		log.Info("Start netmap watcher")
 		errChan <- d.watchNetmap(ctx)
 	}()
 
 	defer func() {
-		d.log.Info("Cleaning up daemon resources")
+		log.Info("Cleaning up daemon resources")
 		_ = d.tsServer.Close()
 		_ = d.localServer.Close()
 		_ = d.socketListener.Close()
@@ -127,7 +120,7 @@ func (d *Daemon) Listen(ln net.Listener) error {
 	for {
 		rawConn, err := ln.Accept()
 		if err != nil {
-			d.log.Debugf("Failed to accept connection: %v", err)
+			log.Debugf("Failed to accept connection: %v", err)
 			continue
 		}
 
@@ -135,7 +128,7 @@ func (d *Daemon) Listen(ln net.Listener) error {
 		clientType, err := getClientType(bConn)
 		if err != nil {
 			_ = bConn.Close()
-			d.log.Debugf("Unknown client type: %v", err)
+			log.Debugf("Unknown client type: %v", err)
 			continue
 		}
 		switch clientType {
@@ -153,7 +146,7 @@ func (d *Daemon) handler(conn net.Conn, dialFunc dialFunc) {
 	defer cancel()
 	backendConn, err := dialFunc(ctx)
 	if err != nil {
-		d.log.Error("dial: %v", err)
+		log.Errorf("dial: %v", err)
 		return
 	}
 	defer func() { _ = backendConn.Close() }()
@@ -179,30 +172,11 @@ func (d *Daemon) watchNetmap(ctx context.Context) error {
 	return ts.WatchNetmap(ctx, lc, func(netMap *netmap.NetworkMap) {
 		nm, err := json.Marshal(netMap)
 		if err != nil {
-			d.log.Errorf("Failed to marshal netmap: %v", err)
+			log.Errorf("Failed to marshal netmap: %v", err)
 		} else {
 			_ = os.WriteFile(filepath.Join(d.rootDir, "netmap.json"), nm, 0o644)
 		}
 	})
-}
-
-func initLogging(rootDir string, debug bool) log.Logger {
-	logLevel := logrus.InfoLevel
-	if debug {
-		logLevel = logrus.DebugLevel
-	}
-
-	logPath := filepath.Join(rootDir, "daemon.log")
-	logger := log.NewFileLogger(logPath, logLevel)
-	if os.Getenv(config.EnvUI) != config.BoolTrue {
-		logger = devsylog.NewCombinedLogger(
-			logLevel,
-			logger,
-			log.NewStreamLogger(os.Stdout, os.Stderr, logLevel),
-		)
-	}
-
-	return logger
 }
 
 type dialFunc func(context.Context) (net.Conn, error)

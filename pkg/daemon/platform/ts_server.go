@@ -6,10 +6,9 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
 	"tailscale.com/ipn/store"
@@ -21,7 +20,6 @@ func newTSServer(
 	ctx context.Context,
 	host, accessKey, userName, rootDir string,
 	insecure bool,
-	log log.Logger,
 ) (*tsnet.Server, *local.Client, error) {
 	// Build the platform URL
 	baseUrl := url.URL{
@@ -46,7 +44,7 @@ func newTSServer(
 
 	logPrefix := "[ts] "
 	logf := func(format string, args ...any) {
-		if log.GetLevel() == logrus.DebugLevel {
+		if log.DebugEnabled() {
 			log.Debugf(logPrefix+format, args...)
 		}
 	}

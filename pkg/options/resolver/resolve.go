@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/survey"
 	"github.com/devsy-org/log/terminal"
 )
@@ -151,8 +153,8 @@ func (r *Resolver) resolveOption(
 		}
 
 		// check if there is only one option
-		r.log.Info(option.Description)
-		answer, err := r.log.Question(&survey.QuestionOptions{
+		log.Info(option.Description)
+		answer, err := oldlog.Default.Question(&survey.QuestionOptions{
 			Question:               fmt.Sprintf("Please enter a value for %s", optionName),
 			Options:                questionOpts,
 			ValidationRegexPattern: option.ValidationPattern,

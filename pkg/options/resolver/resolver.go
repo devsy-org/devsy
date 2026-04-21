@@ -7,7 +7,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/types"
-	oldlog "github.com/devsy-org/log"
 )
 
 const (
@@ -58,7 +57,6 @@ type Resolver struct {
 	resolveGlobal     bool
 	resolveSubOptions bool
 	skipRequired      bool
-	log               oldlog.Logger
 }
 
 type Option func(r *Resolver)
@@ -104,12 +102,6 @@ func WithResolveSubOptions() Option {
 func WithSkipRequired(skip bool) Option {
 	return func(r *Resolver) {
 		r.skipRequired = skip
-	}
-}
-
-func WithLogger(log oldlog.Logger) Option {
-	return func(r *Resolver) {
-		r.log = log
 	}
 }
 
