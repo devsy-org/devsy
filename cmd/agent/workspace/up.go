@@ -222,7 +222,7 @@ func InitContentFolder(
 		return false, err
 	}
 
-	if err := downloadWorkspaceBinaries(workspaceInfo, logger); err != nil {
+	if err := downloadWorkspaceBinaries(workspaceInfo); err != nil {
 		_ = os.RemoveAll(workspaceInfo.ContentFolder)
 		return false, err
 	}
@@ -259,7 +259,6 @@ func createContentFolder(path string) error {
 
 func downloadWorkspaceBinaries(
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) error {
 	binariesDir, err := agent.GetAgentBinariesDir(
 		workspaceInfo.Agent.DataPath,
@@ -274,7 +273,7 @@ func downloadWorkspaceBinaries(
 		)
 	}
 
-	_, err = provider.DownloadBinaries(workspaceInfo.Agent.Binaries, binariesDir, logger)
+	_, err = provider.DownloadBinaries(workspaceInfo.Agent.Binaries, binariesDir)
 	if err != nil {
 		return fmt.Errorf(
 			"error downloading workspace %s binaries: %w",
@@ -347,7 +346,7 @@ func (w *workspaceInitializer) initialize() error {
 
 func (w *workspaceInitializer) setupDaemonIfNeeded() {
 	if w.shouldInstallDaemon {
-		if err := installDaemon(w.workspaceInfo, w.logger); err != nil {
+		if err := installDaemon(w.workspaceInfo); err != nil {
 			log.Errorf("install Devsy daemon: %v", err)
 		}
 	}
@@ -696,7 +695,7 @@ func configureCredentials(cfg credentialsConfig) (string, string, error) {
 	return dockerCredentials, gitCredentials, nil
 }
 
-func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, logger oldlog.Logger) error {
+func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo) error {
 	if len(workspaceInfo.Agent.Exec.Shutdown) == 0 {
 		return nil
 	}
@@ -705,7 +704,6 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo, logger oldlog.Log
 	return agentdaemon.InstallDaemon(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.CLIOptions.DaemonInterval,
-		logger,
 	)
 }
 

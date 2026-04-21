@@ -6,7 +6,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +37,7 @@ func (cmd *StartCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devsyConfig, args, oldlog.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args)
 	if err != nil {
 		return err
 	}

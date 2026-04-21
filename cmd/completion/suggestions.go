@@ -7,7 +7,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -59,7 +58,7 @@ func GetWorkspaceSuggestions(
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	workspaces, err := workspace.List(rootCmd.Context(), devsyConfig, false, owner, oldlog.Default)
+	workspaces, err := workspace.List(rootCmd.Context(), devsyConfig, false, owner)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -85,7 +84,7 @@ func GetProviderSuggestions(
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	providers, err := workspace.LoadAllProviders(devsyConfig, oldlog.Default.ErrorStreamOnly())
+	providers, err := workspace.LoadAllProviders(devsyConfig)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

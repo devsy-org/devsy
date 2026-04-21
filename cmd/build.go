@@ -79,7 +79,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			// create a temporary workspace
-			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner, oldlog.Default)
+			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
 			sshConfigFile, err := os.CreateTemp("", config.BinaryName+"ssh.config")
 			if err != nil {
 				return err
@@ -108,7 +108,6 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 					ChangeLastUsed:       false,
 					Owner:                cmd.Owner,
 				},
-				oldlog.Default,
 			)
 			if err != nil {
 				return err

@@ -120,7 +120,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	machineClient, err := workspace.GetMachine(devsyConfig, args, oldlog.Default)
+	machineClient, err := workspace.GetMachine(devsyConfig, args)
 	if err != nil {
 		return err
 	}

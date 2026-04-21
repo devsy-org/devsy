@@ -4,13 +4,12 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 )
 
 func ListProInstances(
 	devsyConfig *config.Config,
-	log log.Logger,
 ) ([]*provider2.ProInstance, error) {
 	proInstanceDir, err := provider2.GetProInstancesDir(devsyConfig.DefaultContext)
 	if err != nil {

@@ -53,7 +53,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig, oldlog.Default)
+	proInstances, err := workspace.ListProInstances(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			entry := &proTableEntry{
 				ProInstance:  proInstance,
 				Context:      devsyConfig.DefaultContext,
-				Capabilities: getCapabilities(devsyConfig, proInstance, oldlog.Discard),
+				Capabilities: getCapabilities(devsyConfig, proInstance),
 			}
 			if cmd.Login {
 				err = checkLogin(ctx, devsyConfig, proInstance)
@@ -164,10 +164,9 @@ func checkLogin(
 func getCapabilities(
 	devsyConfig *config.Config,
 	proInstance *provider.ProInstance,
-	log oldlog.Logger,
 ) []Capability {
 	capabilities := []Capability{}
-	provider, err := workspace.FindProvider(devsyConfig, proInstance.Provider, log)
+	provider, err := workspace.FindProvider(devsyConfig, proInstance.Provider)
 	if err != nil {
 		return capabilities
 	}

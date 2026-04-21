@@ -84,7 +84,7 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 		logger = oldlog.Default.ErrorStreamOnly()
 	}
 
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, logger)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
 	if err != nil {
 		return err
 	}

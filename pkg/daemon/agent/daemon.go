@@ -15,8 +15,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 )
 
 type SshConfig struct {
@@ -155,7 +155,8 @@ func quoteSystemdArg(arg string) string {
 	return arg
 }
 
-func InstallDaemon(agentDir string, interval string, log log.Logger) error {
+//nolint:cyclop,funlen // pre-existing complexity
+func InstallDaemon(agentDir string, interval string) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
 	}
@@ -176,7 +177,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
-		return startFallbackDaemon(executable, args, log)
+		return startFallbackDaemon(executable, args)
 	}
 
 	quoted := make([]string, len(args))
@@ -224,7 +225,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 			"systemctl", "restart", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args, log)
+			return startFallbackDaemon(executable, args)
 		}
 		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
@@ -233,7 +234,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 			"systemctl", "start", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args, log)
+			return startFallbackDaemon(executable, args)
 		}
 		log.Infof("installed Devsy daemon into server")
 	}
@@ -241,7 +242,7 @@ func InstallDaemon(agentDir string, interval string, log log.Logger) error {
 	return nil
 }
 
-func startFallbackDaemon(executable string, args []string, log log.Logger) error {
+func startFallbackDaemon(executable string, args []string) error {
 	daemonArgs := args[1:] // strip executable path
 	err := command.StartBackgroundOnce(pkgconfig.DaemonProcessName, func() (*exec.Cmd, error) {
 		//nolint:gosec // executable is from os.Executable()

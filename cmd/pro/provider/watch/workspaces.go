@@ -21,7 +21,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -253,7 +252,6 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	localWorkspaces, err := workspace.ListLocalWorkspaces(
 		s.context,
 		false,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err == nil {
 		for _, workspace := range localWorkspaces {

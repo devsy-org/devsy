@@ -10,7 +10,6 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +54,6 @@ func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
 		Args:           args,
 		ChangeLastUsed: true,
 		Owner:          cmd.Owner,
-		Log:            oldlog.Default.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return err

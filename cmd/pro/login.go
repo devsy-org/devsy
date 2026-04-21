@@ -106,7 +106,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 	}
 
 	// check if there is already a pro instance with that url
-	proInstances, err := workspace.ListProInstances(devsyConfig, log)
+	proInstances, err := workspace.ListProInstances(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 		cmd.Provider = provider.ToProInstanceID(cmd.Provider)
 
 		// check if provider already exists
-		providers, err := workspace.LoadAllProviders(devsyConfig, log)
+		providers, err := workspace.LoadAllProviders(devsyConfig)
 		if err != nil {
 			return fmt.Errorf("load providers: %w", err)
 		}
@@ -174,7 +174,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string, log oldlog.Logger)
 			}
 		} else {
 			// add built-in pro (daemon) provider
-			_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro", log)
+			_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro")
 			if err != nil {
 				return err
 			}
@@ -260,13 +260,12 @@ func (cmd *LoginCmd) addLoftProvider(
 			ProviderName: cmd.Provider,
 			Source:       &provider.ProviderSource{},
 			Raw:          []byte(fallbackProvider),
-			Log:          log,
 		})
 		if err != nil {
 			return err
 		}
 	} else {
-		_, err = workspace.AddProvider(devsyConfig, cmd.Provider, cmd.ProviderSource, log)
+		_, err = workspace.AddProvider(devsyConfig, cmd.Provider, cmd.ProviderSource)
 		if err != nil {
 			return err
 		}

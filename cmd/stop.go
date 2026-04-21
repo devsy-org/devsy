@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +45,6 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 				DevsyConfig: devsyConfig,
 				Args:        args,
 				Owner:       cmd.Owner,
-				Log:         oldlog.Default,
 			})
 			if err != nil {
 				return err
@@ -118,7 +116,6 @@ func (cmd *StopCmd) stopSingleMachine(
 	singleMachineName := workspace2.SingleMachineName(
 		devsyConfig,
 		client.Provider(),
-		oldlog.Default,
 	)
 	if !devsyConfig.Current().IsSingleMachine(client.Provider()) ||
 		client.WorkspaceConfig().Machine.ID != singleMachineName {
@@ -126,7 +123,7 @@ func (cmd *StopCmd) stopSingleMachine(
 	}
 
 	// try to find other workspace with same machine
-	workspaces, err := workspace2.List(ctx, devsyConfig, false, cmd.Owner, oldlog.Default)
+	workspaces, err := workspace2.List(ctx, devsyConfig, false, cmd.Owner)
 	if err != nil {
 		return false, fmt.Errorf("list workspaces: %w", err)
 	}
@@ -149,7 +146,6 @@ func (cmd *StopCmd) stopSingleMachine(
 	machineClient, err := workspace2.GetMachine(
 		devsyConfig,
 		[]string{singleMachineName},
-		oldlog.Default,
 	)
 	if err != nil {
 		return false, fmt.Errorf("get machine: %w", err)

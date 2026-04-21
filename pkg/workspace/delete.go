@@ -7,8 +7,9 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 )
 
 // DeleteOptions holds the parameters for deleting a workspace.
@@ -19,7 +20,6 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
-	Log            log.Logger
 }
 
 // Delete deletes a workspace, handling imported workspaces, single-machine
@@ -29,7 +29,6 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 		DevsyConfig: opts.DevsyConfig,
 		Args:        opts.Args,
 		Owner:       opts.Owner,
-		Log:         opts.Log,
 	})
 	if err != nil {
 		return handleDeleteLoadError(ctx, opts, err)
@@ -117,7 +116,7 @@ func handleDeleteLoadError(
 		)
 	}
 
-	workspaceID := Exists(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner, opts.Log)
+	workspaceID := Exists(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
 	if workspaceID == "" {
 		if opts.IgnoreNotFound {
 			return "", nil
@@ -127,7 +126,7 @@ func handleDeleteLoadError(
 	}
 
 	if !opts.Force {
-		opts.Log.Errorf(
+		log.Errorf(
 			"failed to load workspace, use --force to delete anyway",
 		)
 
@@ -140,20 +139,20 @@ func handleDeleteLoadError(
 // forceDeleteFolder removes the workspace folder when the workspace client
 // cannot be loaded and --force is set.
 func forceDeleteFolder(opts DeleteOptions, workspaceID string) (string, error) {
-	opts.Log.Errorf("error retrieving workspace, force-deleting folder")
+	log.Errorf("error retrieving workspace, force-deleting folder")
 
 	err := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
 			Context:     opts.DevsyConfig.DefaultContext,
 			WorkspaceID: workspaceID,
 		},
-		opts.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return "", err
 	}
 
-	opts.Log.Donef("deleted workspace %s", workspaceID)
+	log.Infof("deleted workspace %s", workspaceID)
 
 	return workspaceID, nil
 }
@@ -177,13 +176,13 @@ func deleteImportedWorkspace(
 			SSHConfigPath:        wsCfg.SSHConfigPath,
 			SSHConfigIncludePath: wsCfg.SSHConfigIncludePath,
 		},
-		opts.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return "", true, err
 	}
 
-	opts.Log.Donef(
+	log.Infof(
 		"skipped remote deletion of workspace %s, use --force to delete remotely",
 		client.Workspace(),
 	)
@@ -220,7 +219,7 @@ func deleteSingleMachine(
 	client client2.BaseWorkspaceClient,
 	opts DeleteOptions,
 ) (bool, error) {
-	singleMachineName := SingleMachineName(opts.DevsyConfig, client.Provider(), opts.Log)
+	singleMachineName := SingleMachineName(opts.DevsyConfig, client.Provider())
 	if !opts.DevsyConfig.Current().IsSingleMachine(client.Provider()) ||
 		client.WorkspaceConfig().Machine.ID != singleMachineName {
 		return false, nil
@@ -234,7 +233,7 @@ func deleteSingleMachine(
 		return false, nil
 	}
 
-	machineClient, err := GetMachine(opts.DevsyConfig, []string{singleMachineName}, opts.Log)
+	machineClient, err := GetMachine(opts.DevsyConfig, []string{singleMachineName})
 	if err != nil {
 		return false, fmt.Errorf("get machine: %w", err)
 	}
@@ -251,13 +250,13 @@ func deleteSingleMachine(
 			SSHConfigPath:        wsCfg.SSHConfigPath,
 			SSHConfigIncludePath: wsCfg.SSHConfigIncludePath,
 		},
-		opts.Log,
+		oldlog.Default,
 	)
 	if err != nil {
 		return false, err
 	}
 
-	opts.Log.Donef("deleted workspace %s", client.Workspace())
+	log.Infof("deleted workspace %s", client.Workspace())
 
 	return true, nil
 }
@@ -270,7 +269,7 @@ func hasOtherWorkspaces(
 	machineName string,
 	opts DeleteOptions,
 ) (bool, error) {
-	workspaces, err := List(ctx, opts.DevsyConfig, false, opts.Owner, opts.Log)
+	workspaces, err := List(ctx, opts.DevsyConfig, false, opts.Owner)
 	if err != nil {
 		return false, err
 	}

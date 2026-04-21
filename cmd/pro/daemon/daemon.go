@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +36,7 @@ func findProProvider(
 		return nil, nil, err
 	}
 
-	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host, oldlog.Default)
+	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host)
 	if err != nil {
 		return devsyConfig, nil, fmt.Errorf("load provider: %w", err)
 	}

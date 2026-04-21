@@ -15,7 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +88,6 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 	providerWithOptions, err := workspace.FindProvider(
 		devsyConfig,
 		providerName,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err

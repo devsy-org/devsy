@@ -14,7 +14,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -156,7 +155,7 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
 	// get environ
-	environ, err := custom.ToEnvironWithBinaries(workspace, oldlog.Default)
+	environ, err := custom.ToEnvironWithBinaries(workspace)
 	if err != nil {
 		log.Errorf("%v", err)
 		return

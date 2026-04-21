@@ -53,7 +53,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 				DevsyConfig: devsyConfig,
 				Args:        args,
 				Owner:       cmd.Owner,
-				Log:         oldlog.Default,
 			})
 			if err != nil {
 				return err

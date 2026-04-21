@@ -11,19 +11,20 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/log"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/survey"
 	"github.com/devsy-org/log/terminal"
 )
 
 // ListMachines returns all machines configured in the given Devsy context.
-func ListMachines(devsyConfig *config.Config, log log.Logger) ([]*providerpkg.Machine, error) {
-	return listMachines(devsyConfig, log)
+func ListMachines(devsyConfig *config.Config) ([]*providerpkg.Machine, error) {
+	return listMachines(devsyConfig)
 }
 
-func listMachines(devsyConfig *config.Config, log log.Logger) ([]*providerpkg.Machine, error) {
+func listMachines(devsyConfig *config.Config) ([]*providerpkg.Machine, error) {
 	machineDir, err := providerpkg.GetMachinesDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return nil, err
@@ -55,9 +56,8 @@ func ResolveMachine(
 	devsyConfig *config.Config,
 	args []string,
 	userOptions []string,
-	log log.Logger,
 ) (client.Client, error) {
-	machineClient, err := resolveMachine(devsyConfig, args, log)
+	machineClient, err := resolveMachine(devsyConfig, args)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,6 @@ func ResolveMachine(
 func resolveMachine(
 	devsyConfig *config.Config,
 	args []string,
-	log log.Logger,
 ) (client.Client, error) {
 	// check if we have no args
 	if len(args) == 0 {
@@ -87,11 +86,11 @@ func resolveMachine(
 	// check if desired id already exists
 	if providerpkg.MachineExists(devsyConfig.DefaultContext, machineID) {
 		log.Infof("Machine %s already exists", machineID)
-		return loadExistingMachine(machineID, devsyConfig, log)
+		return loadExistingMachine(machineID, devsyConfig)
 	}
 
 	// get default provider
-	defaultProvider, _, err := LoadProviders(devsyConfig, log)
+	defaultProvider, _, err := LoadProviders(devsyConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +110,7 @@ func resolveMachine(
 		devsyConfig,
 		defaultProvider.Config,
 		machineObj,
-		log,
+		oldlog.Default,
 	)
 	if err != nil {
 		_ = os.RemoveAll(filepath.Dir(machineObj.Origin))
@@ -145,11 +144,10 @@ func MachineExists(devsyConfig *config.Config, args []string) string {
 func GetMachine(
 	devsyConfig *config.Config,
 	args []string,
-	log log.Logger,
 ) (client.MachineClient, error) {
 	// check if we have no args
 	if len(args) == 0 {
-		return selectMachine(devsyConfig, log)
+		return selectMachine(devsyConfig)
 	}
 
 	// check if workspace already exists
@@ -164,10 +162,10 @@ func GetMachine(
 	}
 
 	// load workspace config
-	return loadExistingMachine(machineID, devsyConfig, log)
+	return loadExistingMachine(machineID, devsyConfig)
 }
 
-func selectMachine(devsyConfig *config.Config, log log.Logger) (client.MachineClient, error) {
+func selectMachine(devsyConfig *config.Config) (client.MachineClient, error) {
 	if !terminal.IsTerminalIn {
 		return nil, errProvideWorkspaceArg
 	}
@@ -191,7 +189,7 @@ func selectMachine(devsyConfig *config.Config, log log.Logger) (client.MachineCl
 		return nil, errProvideWorkspaceArg
 	}
 
-	answer, err := log.Question(&survey.QuestionOptions{
+	answer, err := oldlog.Default.Question(&survey.QuestionOptions{
 		Question:     "Please select a machine from the list below",
 		DefaultValue: machineIDs[0],
 		Options:      machineIDs,
@@ -202,20 +200,19 @@ func selectMachine(devsyConfig *config.Config, log log.Logger) (client.MachineCl
 	}
 
 	// load workspace
-	return loadExistingMachine(answer, devsyConfig, log)
+	return loadExistingMachine(answer, devsyConfig)
 }
 
 func loadExistingMachine(
 	machineID string,
 	devsyConfig *config.Config,
-	log log.Logger,
 ) (client.MachineClient, error) {
 	machineConfig, err := providerpkg.LoadMachineConfig(devsyConfig.DefaultContext, machineID)
 	if err != nil {
 		return nil, err
 	}
 
-	providerWithOptions, err := FindProvider(devsyConfig, machineConfig.Provider.Name, log)
+	providerWithOptions, err := FindProvider(devsyConfig, machineConfig.Provider.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +221,7 @@ func loadExistingMachine(
 		devsyConfig,
 		providerWithOptions.Config,
 		machineConfig,
-		log,
+		oldlog.Default,
 	)
 }
 
@@ -256,9 +253,9 @@ func createMachine(context, machineID, providerName string) (*providerpkg.Machin
 	return machine, nil
 }
 
-func SingleMachineName(devsyConfig *config.Config, provider string, log log.Logger) string {
+func SingleMachineName(devsyConfig *config.Config, provider string) string {
 	legacyMachineName := config.BinaryName + "-shared-" + provider
-	machines, err := listMachines(devsyConfig, log)
+	machines, err := listMachines(devsyConfig)
 	if err == nil {
 		for _, machine := range machines {
 			if machine.Provider.Name == provider && machine.ID == legacyMachineName {
@@ -268,7 +265,11 @@ func SingleMachineName(devsyConfig *config.Config, provider string, log log.Logg
 	}
 
 	return encoding.SafeConcatNameMax(
-		[]string{config.BinaryName + "-shared", provider, encoding.GetMachineUIDShort(log)},
+		[]string{
+			config.BinaryName + "-shared",
+			provider,
+			encoding.GetMachineUIDShort(oldlog.Default),
+		},
 		encoding.MachineUIDLength,
 	)
 }

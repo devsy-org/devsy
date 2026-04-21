@@ -81,7 +81,7 @@ func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
 		return err
 	}
 
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName, oldlog.Default)
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
 	if err != nil {
 		return err
 	}

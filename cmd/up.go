@@ -816,15 +816,14 @@ func (cmd *UpCmd) prepareClient(
 			ChangeLastUsed:       true,
 			Owner:                cmd.Owner,
 		},
-		logger,
 	)
 	if err != nil {
 		return nil, logger, err
 	}
 
 	if !cmd.Platform.Enabled {
-		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider(), logger)
-		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance, logger)
+		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
+		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance)
 		if err != nil {
 			return nil, logger, err
 		}

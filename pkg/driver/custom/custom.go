@@ -309,7 +309,7 @@ func (c *customDriver) runCommand(
 	log.Debugf("Run %s driver command: %s", name, strings.Join(command, " "))
 
 	// get environ
-	environ, err := ToEnvironWithBinaries(c.workspaceInfo, log)
+	environ, err := ToEnvironWithBinaries(c.workspaceInfo)
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,6 @@ func (c *customDriver) runCommand(
 
 func ToEnvironWithBinaries(
 	workspace *provider.AgentWorkspaceInfo,
-	log log.Logger,
 ) ([]string, error) {
 	// get binaries dir
 	binariesDir, err := agent.GetAgentBinariesDirFromWorkspaceDir(workspace.Origin)
@@ -346,7 +345,7 @@ func ToEnvironWithBinaries(
 	}
 
 	// download binaries
-	agentBinaries, err := provider.DownloadBinaries(workspace.Agent.Binaries, binariesDir, log)
+	agentBinaries, err := provider.DownloadBinaries(workspace.Agent.Binaries, binariesDir)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"error downloading workspace %s binaries: %w",
