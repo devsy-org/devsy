@@ -16,6 +16,7 @@ import (
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/options/resolver"
@@ -24,7 +25,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ts"
-	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 	"tailscale.com/client/local"
 	"tailscale.com/tailcfg"
@@ -34,7 +34,6 @@ func New(
 	devsyConfig *config.Config,
 	prov *provider.ProviderConfig,
 	workspace *provider.Workspace,
-	log log.Logger,
 ) (clientpkg.DaemonClient, error) {
 	tsClient := &local.Client{
 		Socket:        daemon.GetSocketAddr(workspace.Provider.Name),
@@ -45,7 +44,6 @@ func New(
 		devsyConfig: devsyConfig,
 		config:      prov,
 		workspace:   workspace,
-		log:         log,
 		tsClient:    tsClient,
 		localClient: daemon.NewLocalClient(prov.Name),
 	}, nil
@@ -57,7 +55,6 @@ type client struct {
 	devsyConfig *config.Config
 	config      *provider.ProviderConfig
 	workspace   *provider.Workspace
-	log         log.Logger
 	tsClient    *local.Client
 	localClient *daemon.LocalClient
 }
@@ -181,7 +178,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		return fmt.Errorf("reach host: %w", err)
 	}
 
-	c.log.Debugf("Host %s is reachable. Proceeding with SSH session...", wAddr.Host())
+	log.Debugf("Host %s is reachable. Proceeding with SSH session...", wAddr.Host())
 	return nil
 }
 

@@ -257,7 +257,6 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 					Client:       client,
 					SSHClient:    toolSSHClient,
 					User:         cmd.User,
-					Log:          log,
 					ForwardPorts: false,
 					ExtraPorts:   nil,
 				},

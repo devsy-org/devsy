@@ -134,7 +134,6 @@ func tryLock(ctx context.Context, lock *flock.Flock, name string, log log.Logger
 			name,
 			name,
 		),
-		log,
 	)
 	defer close(done)
 

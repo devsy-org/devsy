@@ -333,7 +333,7 @@ func (s *workspaceClient) Create(ctx context.Context) error {
 	}
 
 	// create machine client
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 	if err != nil {
 		return err
 	}
@@ -420,7 +420,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 		}
 	} else if s.machine != nil && s.workspace.Machine.ID != "" && len(s.config.Exec.Delete) > 0 {
 		// delete machine if config was found
-		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 		if err != nil {
 			if !opt.Force {
 				return err
@@ -447,7 +447,7 @@ func (s *workspaceClient) isMachineRunning(ctx context.Context) (bool, error) {
 	}
 
 	// delete machine if config was found
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 	if err != nil {
 		return false, err
 	}
@@ -471,7 +471,7 @@ func (s *workspaceClient) Start(ctx context.Context) error {
 		return nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 	if err != nil {
 		return err
 	}
@@ -522,7 +522,7 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 		return nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 	if err != nil {
 		return err
 	}
@@ -563,7 +563,7 @@ func (s *workspaceClient) Status(
 			return client.StatusNotFound, nil
 		}
 
-		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 		if err != nil {
 			return client.StatusNotFound, err
 		}
@@ -613,7 +613,7 @@ func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 			return client.DescriptionNotFound, nil
 		}
 
-		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine, s.log)
+		machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
 		if err != nil {
 			return client.DescriptionNotFound, err
 		}

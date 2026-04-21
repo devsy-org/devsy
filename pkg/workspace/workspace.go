@@ -142,7 +142,7 @@ func getWorkspaceClient(
 	if provider.IsProxyProvider() {
 		return clientimplementation.NewProxyClient(devsyConfig, provider, workspace, oldlog.Default)
 	} else if provider.IsDaemonProvider() {
-		return daemonclient.New(devsyConfig, provider, workspace, oldlog.Default)
+		return daemonclient.New(devsyConfig, provider, workspace)
 	} else {
 		return clientimplementation.NewWorkspaceClient(
 			devsyConfig,
@@ -408,7 +408,6 @@ func createWorkspace(
 				devsyConfig,
 				provider.Config,
 				machineConfig,
-				oldlog.Default,
 			)
 			if err != nil {
 				_ = clientimplementation.DeleteMachineFolder(

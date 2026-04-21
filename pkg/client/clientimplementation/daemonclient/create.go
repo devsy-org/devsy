@@ -40,7 +40,6 @@ func (c *client) Create(
 		c.workspace.UID,
 		c.workspace.Source.String(),
 		c.workspace.Picture,
-		c.log,
 	)
 	if err != nil {
 		return err

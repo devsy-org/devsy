@@ -237,7 +237,6 @@ func makeDaemonStartFunc(
 				Client:           daemonClient,
 				SSHClient:        toolClient,
 				User:             params.User,
-				Log:              params.Log,
 				ForwardPorts:     forwardPorts,
 				ExtraPorts:       extraPorts,
 				GitSSHSigningKey: params.GitSSHSigningKey,

@@ -16,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/types"
-	oldlog "github.com/devsy-org/log"
 )
 
 // ListMachines returns all machines configured in the given Devsy context.
@@ -110,7 +109,6 @@ func resolveMachine(
 		devsyConfig,
 		defaultProvider.Config,
 		machineObj,
-		oldlog.Default,
 	)
 	if err != nil {
 		_ = os.RemoveAll(filepath.Dir(machineObj.Origin))
@@ -221,7 +219,6 @@ func loadExistingMachine(
 		devsyConfig,
 		providerWithOptions.Config,
 		machineConfig,
-		oldlog.Default,
 	)
 }
 
