@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -29,8 +28,6 @@ func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				os.Getenv("DEVSY_CONFIG") != "" {
 				globalFlags.Config = os.Getenv(platform.ConfigEnv)
 			}
-
-			oldlog.Default.SetFormat(oldlog.JSONFormat)
 
 			if os.Getenv(config.EnvDebug) == config.BoolTrue {
 				globalFlags.Debug = true

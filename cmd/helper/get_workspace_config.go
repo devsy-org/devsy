@@ -11,8 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -70,15 +68,7 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 	}
 	rawSource := args[0]
 
-	level := oldlog.Default.GetLevel()
-	if cmd.Debug {
-		level = logrus.DebugLevel
-	}
-	var logger oldlog.Logger = oldlog.NewStdoutLogger(os.Stdin, os.Stdout, os.Stderr, level)
-	if os.Getenv(config.EnvUI) == config.BoolTrue {
-		logger = oldlog.Discard
-	}
-	logger.Debugf("Resolving devcontainer config for source: %s", rawSource)
+	log.Debugf("Resolving devcontainer config for source: %s", rawSource)
 
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.timeout)
 	defer cancel()
