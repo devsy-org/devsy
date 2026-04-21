@@ -209,7 +209,6 @@ func (cmd *BuildCmd) build(
 			WorkspaceClient: workspaceClient,
 			CLIOptions:      cmd.CLIOptions,
 			AgentCommand:    "build",
-			Log:             log,
 		},
 	)
 	return err
