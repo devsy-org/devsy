@@ -11,10 +11,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -71,8 +70,6 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	if !ok {
 		return fmt.Errorf("this command is not supported for proxy providers")
 	}
-	log := oldlog.Default
-
 	// create readers
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
@@ -86,7 +83,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	defer func() { _ = stdinWriter.Close() }()
 	// ssh tunnel command
 	sshServerCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
-	if log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
 
@@ -96,7 +93,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	// start ssh server in background
 	errChan := make(chan error, 1)
 	go func() {
-		stderr := log.Writer(logrus.DebugLevel, false)
+		stderr := devsylog.Writer(devsylog.LevelDebug)
 		defer func() { _ = stderr.Close() }()
 
 		errChan <- agent.InjectAgent(&agent.InjectOptions{
@@ -127,7 +124,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		client.Context(),
 		client.Workspace(),
 	)
-	if log.GetLevel() == logrus.DebugLevel {
+	if devsylog.DebugEnabled() {
 		agentCommand += " --debug"
 	}
 
