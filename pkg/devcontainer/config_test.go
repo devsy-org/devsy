@@ -6,7 +6,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -23,7 +22,6 @@ func (s *SubstituteTestSuite) SetupTest() {
 	s.runner = &runner{
 		ID:                   "test-id",
 		LocalWorkspaceFolder: "/workspace",
-		Log:                  log.Discard,
 		WorkspaceConfig: &provider2.AgentWorkspaceInfo{
 			Workspace: &provider2.Workspace{
 				ID: "test-workspace",

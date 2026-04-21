@@ -18,8 +18,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	"github.com/docker/cli/cli/config/types"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -29,7 +29,6 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/sirupsen/logrus"
 	"github.com/tonistiigi/fsutil"
 )
 
@@ -42,7 +41,6 @@ type BuildRemoteOptions struct {
 	LocalWorkspaceFolder string
 	Options              provider.BuildOptions
 	TargetArch           string
-	Log                  log.Logger
 }
 
 func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInfo, error) {
@@ -89,7 +87,6 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 		Client:    c,
 		Info:      info,
 		SolveOpts: solveOpts,
-		Logger:    opts.Log,
 	}); err != nil {
 		return nil, err
 	}
@@ -202,11 +199,11 @@ type checkExistingImageParams struct {
 func checkExistingImage(params checkExistingImageParams) *config.BuildInfo {
 	imageDetails, err := getImageDetails(params.Ctx, params.Ref, params.TargetArch, params.Keychain)
 	if err != nil {
-		params.Opts.Log.Debugf("image check failed, continuing with build: %v", err)
+		log.Debugf("image check failed, continuing with build: %v", err)
 		return nil
 	}
 
-	params.Opts.Log.Infof("skipping build because an existing image was found %s", params.ImageName)
+	log.Infof("skipping build because an existing image was found %s", params.ImageName)
 
 	var imageMetadata *config.ImageMetadataConfig
 	if params.Opts.ExtendedBuildInfo != nil {
@@ -414,17 +411,16 @@ type executeBuildParams struct {
 	Client    *client.Client
 	Info      *client.Info
 	SolveOpts client.SolveOpt
-	Logger    log.Logger
 }
 
 func executeBuild(params executeBuildParams) error {
-	params.Logger.Infof(
+	log.Infof(
 		"start building %s using platform builder (%s)",
 		params.SolveOpts.Exports[0].Attrs[string(exptypes.OptKeyName)],
 		params.Info.BuildkitVersion.Version,
 	)
 
-	writer := params.Logger.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	pw, err := NewPrinter(params.Ctx, writer)

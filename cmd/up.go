@@ -642,7 +642,6 @@ func (cmd *UpCmd) devsyUpMachine(
 		AgentInject: agentInjectFunc,
 		SSHCommand:  sshTunnelCmd,
 		Command:     agentCommand,
-		Log:         log,
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
 			return tunnelserver.RunUpServer(
 				ctx,

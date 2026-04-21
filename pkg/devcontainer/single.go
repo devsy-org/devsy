@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -54,7 +55,7 @@ func (r *runner) runSingleContainer(
 	options UpOptions,
 	timeout time.Duration,
 ) (*config.Result, error) {
-	r.Log.Debugf("starting devcontainer for workspace %s", r.ID)
+	log.Debugf("starting devcontainer for workspace %s", r.ID)
 
 	substitutionContext.Userns = options.Userns
 	substitutionContext.UidMap = options.UidMap
@@ -284,7 +285,7 @@ func (r *runner) injectDaemonEntrypoint(
 	if p.options.Platform.AccessKey == "" {
 		return
 	}
-	r.Log.Debugf("Platform config detected, injecting Devsy daemon entrypoint.")
+	log.Debugf("Platform config detected, injecting Devsy daemon entrypoint.")
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
 		p.options.Platform,
@@ -293,7 +294,7 @@ func (r *runner) injectDaemonEntrypoint(
 		mergedConfig,
 	)
 	if err != nil {
-		r.Log.Errorf("Failed to marshal daemon config: %v", err)
+		log.Errorf("Failed to marshal daemon config: %v", err)
 		return
 	}
 	mergedConfig.ContainerEnv[pkgconfig.EnvWorkspaceDaemonConfig] = data

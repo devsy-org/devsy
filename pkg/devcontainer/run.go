@@ -15,9 +15,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/language"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 type Runner interface {
@@ -46,7 +45,6 @@ type Runner interface {
 func NewRunner(
 	agentPath, agentDownloadURL string,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
-	log log.Logger,
 ) (Runner, error) {
 	driver, err := drivercreate.NewDriver(workspaceConfig)
 	if err != nil {
@@ -62,7 +60,6 @@ func NewRunner(
 		LocalWorkspaceFolder: workspaceConfig.ContentFolder,
 		ID:                   GetRunnerIDFromWorkspace(workspaceConfig.Workspace),
 		WorkspaceConfig:      workspaceConfig,
-		Log:                  log,
 	}, nil
 }
 
@@ -76,8 +73,6 @@ type runner struct {
 	LocalWorkspaceFolder string
 
 	ID string
-
-	Log log.Logger
 }
 
 type UpOptions struct {
@@ -93,7 +88,7 @@ func (r *runner) Up(
 	options UpOptions,
 	timeout time.Duration,
 ) (*config.Result, error) {
-	r.Log.Debugf(
+	log.Debugf(
 		"Up devcontainer for workspace '%s' with timeout %s",
 		r.WorkspaceConfig.Workspace.ID,
 		timeout,
@@ -111,12 +106,11 @@ func (r *runner) Up(
 			r.LocalWorkspaceFolder,
 			substitutedConfig.Config,
 			options.InitEnv,
-			r.Log,
 		); err != nil {
 			return nil, err
 		}
 	} else if len(substitutedConfig.Config.InitializeCommand) > 0 {
-		r.Log.Info("Skipping initializeCommand on platform")
+		log.Info("Skipping initializeCommand on platform")
 	}
 
 	switch {
@@ -145,7 +139,7 @@ func (r *runner) runDefaultContainer(
 	timeout time.Duration,
 ) (*config.Result, error) {
 	if options.FallbackImage != "" {
-		r.Log.Warn(
+		log.Warn(
 			"dev container config is missing one of \"image\", \"dockerFile\" or \"dockerComposeFile\" properties, " +
 				"using fallback image " + options.FallbackImage,
 		)
@@ -154,7 +148,7 @@ func (r *runner) runDefaultContainer(
 			Image: options.FallbackImage,
 		}
 	} else {
-		r.Log.Warn(
+		log.Warn(
 			"dev container config is missing one of \"image\", \"dockerFile\" or \"dockerComposeFile\" properties, " +
 				"defaulting to auto-detection",
 		)
@@ -211,7 +205,6 @@ func runInitializeCommand(
 	workspaceFolder string,
 	config *config.DevContainerConfig,
 	extraEnvVars []string,
-	log log.Logger,
 ) error {
 	if len(config.InitializeCommand) == 0 {
 		return nil
@@ -240,8 +233,8 @@ func runInitializeCommand(
 
 		// run the command
 		log.Infof("Running initializeCommand from devcontainer.json: '%s'", strings.Join(args, " "))
-		writer := log.Writer(logrus.InfoLevel, false)
-		errwriter := log.Writer(logrus.ErrorLevel, false)
+		writer := log.Writer(log.LevelInfo)
+		errwriter := log.Writer(log.LevelError)
 		defer func() { _ = writer.Close() }()
 		defer func() { _ = errwriter.Close() }()
 

@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/language"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -107,7 +108,7 @@ func (r *runner) getRawConfig(options provider2.CLIOptions) (*config.DevContaine
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("parsing devcontainer.json: %w", err)
 	} else if rawParsedConfig == nil {
-		r.Log.Infof("Couldn't find a devcontainer.json")
+		log.Infof("Couldn't find a devcontainer.json")
 		return r.getDefaultConfig(options)
 	}
 	return rawParsedConfig, nil
@@ -118,12 +119,12 @@ func (r *runner) getDefaultConfig(
 ) (*config.DevContainerConfig, error) {
 	defaultConfig := &config.DevContainerConfig{}
 	if options.FallbackImage != "" {
-		r.Log.Infof("Using fallback image %s", options.FallbackImage)
+		log.Infof("Using fallback image %s", options.FallbackImage)
 		defaultConfig.ImageContainer = config.ImageContainer{
 			Image: options.FallbackImage,
 		}
 	} else {
-		r.Log.Infof("Try detecting project programming language...")
+		log.Infof("Try detecting project programming language...")
 		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder)
 	}
 
@@ -208,7 +209,7 @@ func (r *runner) substitute(
 			parsedConfig.Features = make(map[string]any)
 		}
 		maps.Copy(parsedConfig.Features, additionalFeatures)
-		r.Log.Infof(
+		log.Infof(
 			"Merged %d additional feature(s): %v",
 			len(additionalFeatures),
 			slices.Collect(maps.Keys(additionalFeatures)),

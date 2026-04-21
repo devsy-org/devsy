@@ -14,10 +14,9 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -27,21 +26,12 @@ type (
 	TunnelServerFunc func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error)
 )
 
-var logLevelMap = map[string]logrus.Level{
-	"debug": logrus.DebugLevel,
-	"info":  logrus.InfoLevel,
-	"warn":  logrus.WarnLevel,
-	"error": logrus.ErrorLevel,
-	"fatal": logrus.FatalLevel,
-}
-
 type ExecuteCommandOptions struct {
 	Client           client2.WorkspaceClient
 	AddPrivateKeys   bool
 	AgentInject      AgentInjectFunc
 	SSHCommand       string
 	Command          string
-	Log              log.Logger
 	TunnelServerFunc TunnelServerFunc
 }
 
@@ -64,7 +54,7 @@ type sshSessionTunnel struct {
 
 // ExecuteCommand runs the command in an SSH Tunnel and returns the result.
 func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.Result, error) {
-	opts.Log.Debugf("starting SSH tunnel execution: ssh=%q workspace=%q addKeys=%v",
+	log.Debugf("starting SSH tunnel execution: ssh=%q workspace=%q addKeys=%v",
 		opts.SSHCommand, opts.Command, opts.AddPrivateKeys)
 
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -84,7 +74,7 @@ func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.R
 	})
 
 	if opts.AddPrivateKeys {
-		addPrivateKeys(cancelCtx, opts)
+		addPrivateKeys(cancelCtx)
 	}
 
 	wg.Go(func() {
@@ -137,9 +127,9 @@ func waitForTunnelCompletion(ctx context.Context, ts *sshSessionTunnel) (*config
 		return nil, fmt.Errorf("tunnel server: %w", err)
 	}
 
-	ts.opts.Log.Debug("awaiting tunnel server command completion")
+	log.Debug("awaiting tunnel server command completion")
 	errs := collectTunnelErrors(ts, result)
-	ts.opts.Log.Debug("SSH tunnel execution completed")
+	log.Debug("SSH tunnel execution completed")
 
 	return result, errors.Join(errs...)
 }
@@ -159,16 +149,16 @@ func collectTunnelErrors(
 		select {
 		case r := <-ts.helperDone:
 			if r.err != nil {
-				ts.opts.Log.Debugf("helper goroutine error: %v", r.err)
+				log.Debugf("helper goroutine error: %v", r.err)
 				errs = append(errs, r.err)
 			}
 		case r := <-ts.tunnelDone:
 			if isTunnelError(r.err, result) {
-				ts.opts.Log.Debugf("tunnel goroutine error: %v", r.err)
+				log.Debugf("tunnel goroutine error: %v", r.err)
 				errs = append(errs, r.err)
 			}
 		case <-timer.C:
-			ts.opts.Log.Debug("timed out waiting for goroutines after successful result")
+			log.Debug("timed out waiting for goroutines after successful result")
 
 			return errs
 		}
@@ -241,13 +231,13 @@ func executeSSHServerHelper(
 	cancel context.CancelFunc,
 	ts *sshSessionTunnel,
 ) sshTunnelResult {
-	defer ts.opts.Log.Debug("done executing SSH server helper command")
+	defer log.Debug("done executing SSH server helper command")
 	defer cancel()
 
-	writer := ts.opts.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	ts.opts.Log.Debugf("injecting and running SSH server command: %q", ts.opts.SSHCommand)
+	log.Debugf("injecting and running SSH server command: %q", ts.opts.SSHCommand)
 	err := ts.opts.AgentInject(
 		ctx,
 		ts.opts.SSHCommand,
@@ -264,11 +254,11 @@ func executeSSHServerHelper(
 	return sshTunnelResult{source: "helper"}
 }
 
-func addPrivateKeys(ctx context.Context, opts ExecuteCommandOptions) {
-	opts.Log.Debug("adding SSH keys to agent")
+func addPrivateKeys(ctx context.Context) {
+	log.Debug("adding SSH keys to agent")
 	err := devssh.AddPrivateKeysToAgent(ctx)
 	if err != nil {
-		opts.Log.Debugf("failed to add private keys to SSH agent: %v", err)
+		log.Debugf("failed to add private keys to SSH agent: %v", err)
 	}
 }
 
@@ -282,7 +272,7 @@ func runSSHTunnel(
 ) sshTunnelResult {
 	defer cancel()
 
-	ts.opts.Log.Debug("creating SSH client")
+	log.Debug("creating SSH client")
 	sshClient, err := devssh.StdioClient(ts.sshPipes.stdoutReader, ts.sshPipes.stdinWriter, false)
 	if err != nil {
 		return sshTunnelResult{
@@ -290,22 +280,22 @@ func runSSHTunnel(
 			err:    fmt.Errorf("failed to create SSH client: %w", err),
 		}
 	}
-	ts.opts.Log.Debug("SSH client created")
+	log.Debug("SSH client created")
 	defer func() {
 		_ = sshClient.Close()
-		ts.opts.Log.Debug("SSH client closed")
+		log.Debug("SSH client closed")
 	}()
 
-	sess, err := establishSSHSession(ctx, ts, sshClient)
+	sess, err := establishSSHSession(ctx, sshClient)
 	if err != nil {
 		return sshTunnelResult{source: "tunnel", err: err}
 	}
 	defer func() {
 		_ = sess.Close()
-		ts.opts.Log.Debug("SSH session closed")
+		log.Debug("SSH session closed")
 	}()
 
-	if err = setupSSHAgentForwarding(ts, sshClient, sess); err != nil {
+	if err = setupSSHAgentForwarding(sshClient, sess); err != nil {
 		return sshTunnelResult{source: "tunnel", err: fmt.Errorf("forward agent: %w", err)}
 	}
 
@@ -314,7 +304,6 @@ func runSSHTunnel(
 
 func establishSSHSession(
 	ctx context.Context,
-	ts *sshSessionTunnel,
 	sshClient *ssh.Client,
 ) (*ssh.Session, error) {
 	backoff := wait.Backoff{
@@ -331,10 +320,10 @@ func establishSSHSession(
 		func(ctx context.Context) (bool, error) {
 			sess, err := sshClient.NewSession()
 			if err != nil {
-				ts.opts.Log.Debugf("SSH server not ready: %v", err)
+				log.Debugf("SSH server not ready: %v", err)
 				return false, nil // Retry
 			}
-			ts.opts.Log.Debug("SSH session created")
+			log.Debug("SSH session created")
 			session = sess
 			return true, nil // Success
 		},
@@ -359,7 +348,6 @@ func establishSSHSession(
 // Stale SSH_AUTH_SOCK is common in practice (tmux, screen, reconnected
 // terminals), so a fatal error here would break devsy up for many users.
 func setupSSHAgentForwarding(
-	ts *sshSessionTunnel,
 	sshClient *ssh.Client,
 	sess *ssh.Session,
 ) error {
@@ -368,7 +356,7 @@ func setupSSHAgentForwarding(
 		return nil
 	}
 
-	ts.opts.Log.Debugf("forwarding SSH agent: socket=%s", identityAgent)
+	log.Debugf("forwarding SSH agent: socket=%s", identityAgent)
 
 	var err error
 	if err = devsshagent.ForwardToRemote(sshClient, identityAgent); err == nil {
@@ -376,7 +364,7 @@ func setupSSHAgentForwarding(
 	}
 
 	if err != nil {
-		ts.opts.Log.Warnf("SSH agent forwarding failed (continuing without agent): %v", err)
+		log.Warnf("SSH agent forwarding failed (continuing without agent): %v", err)
 	}
 	return nil
 }
@@ -389,10 +377,10 @@ func runCommandInSSHTunnel(
 	ts *sshSessionTunnel,
 	sshClient *ssh.Client,
 ) sshTunnelResult {
-	streamer := NewTunnelLogStreamer(ts.opts.Log)
+	streamer := NewTunnelLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
-	ts.opts.Log.Debugf("running agent command in SSH tunnel: %q", ts.opts.Command)
+	log.Debugf("running agent command in SSH tunnel: %q", ts.opts.Command)
 	err := devssh.Run(ctx, devssh.RunOptions{
 		Client:  sshClient,
 		Command: ts.opts.Command,
@@ -419,19 +407,17 @@ func runCommandInSSHTunnel(
 const maxLogLines = 1
 
 type TunnelLogStreamer struct {
-	pw     *io.PipeWriter
-	logger log.Logger
-	done   chan struct{}
+	pw   *io.PipeWriter
+	done chan struct{}
 
 	mu        sync.Mutex
 	lastLines []string
 }
 
-func NewTunnelLogStreamer(logger log.Logger) *TunnelLogStreamer {
+func NewTunnelLogStreamer() *TunnelLogStreamer {
 	pr, pw := io.Pipe()
 	l := &TunnelLogStreamer{
 		pw:        pw,
-		logger:    logger,
 		done:      make(chan struct{}),
 		lastLines: make([]string, 0, maxLogLines),
 	}
@@ -481,7 +467,7 @@ func (l *TunnelLogStreamer) process(r io.Reader) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		l.logger.Debugf("error reading tunnel output: %v", err)
+		log.Debugf("error reading tunnel output: %v", err)
 	}
 }
 
@@ -493,20 +479,41 @@ func (l *TunnelLogStreamer) logLine(line string) {
 		return
 	}
 
-	if matched, level := l.extractLogLevel(line); matched {
-		l.logger.Print(level, line)
+	if matched, level := extractLogLevel(line); matched {
+		logAtLevel(level, line)
 	} else {
-		l.logger.Debug(line)
+		log.Debug(line)
 	}
 }
 
-func (l *TunnelLogStreamer) extractLogLevel(line string) (bool, logrus.Level) {
+func extractLogLevel(line string) (bool, string) {
 	parts := strings.SplitN(line, " ", 3)
 	if len(parts) < 2 || !strings.Contains(parts[0], ":") {
-		return false, logrus.DebugLevel
+		return false, ""
 	}
 
-	level, ok := logLevelMap[strings.ToLower(parts[1])]
+	level := strings.ToLower(parts[1])
+	switch level {
+	case "debug", "info", "warn", "error", "fatal":
+		return true, level
+	default:
+		return false, ""
+	}
+}
 
-	return ok, level
+func logAtLevel(level, msg string) {
+	switch level {
+	case "debug":
+		log.Debug(msg)
+	case "info":
+		log.Info(msg)
+	case "warn":
+		log.Warn(msg)
+	case "error":
+		log.Error(msg)
+	case "fatal":
+		log.Fatal(msg)
+	default:
+		log.Debug(msg)
+	}
 }

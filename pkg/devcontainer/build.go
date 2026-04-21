@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -186,7 +187,7 @@ func (r *runner) getDockerfilePath(parsedConfig *config.DevContainerConfig) (str
 	dockerfilePathFromConfig := parsedConfig.GetDockerfile()
 	var dockerfilePath string
 	if filepath.IsAbs(dockerfilePathFromConfig) {
-		r.Log.Debugf(
+		log.Debugf(
 			"using absolute dockerfile path: dockerfilePath=%s, pathType=absolute",
 			dockerfilePathFromConfig,
 		)
@@ -194,14 +195,14 @@ func (r *runner) getDockerfilePath(parsedConfig *config.DevContainerConfig) (str
 	} else {
 		configFileDir := filepath.Dir(parsedConfig.Origin)
 		dockerfilePath = filepath.Join(configFileDir, dockerfilePathFromConfig)
-		r.Log.Debugf(
+		log.Debugf(
 			"using relative dockerfile path: dockerfilePath=%s, configDir=%s, pathType=relative",
 			dockerfilePathFromConfig,
 			configFileDir,
 		)
 	}
 
-	r.Log.Debugf("resolved dockerfile path: finalPath=%s", dockerfilePath)
+	log.Debugf("resolved dockerfile path: finalPath=%s", dockerfilePath)
 
 	_, err := os.Stat(dockerfilePath)
 	if err != nil {
@@ -331,7 +332,7 @@ func (r *runner) buildImage(
 			options.PrebuildRepositories,
 			devsyCustomizations.PrebuildRepository...)
 
-		r.Log.Debugf(
+		log.Debugf(
 			"Try to find prebuild image %s in repositories %s",
 			prebuildHash,
 			strings.Join(options.PrebuildRepositories, ","),
@@ -341,7 +342,7 @@ func (r *runner) buildImage(
 			img, err := image.GetImageForArch(ctx, prebuildImage, targetArch)
 			if err == nil && img != nil {
 				// prebuild image found
-				r.Log.Infof("Found existing prebuilt image %s", prebuildImage)
+				log.Infof("Found existing prebuilt image %s", prebuildImage)
 
 				// inspect image
 				imageDetails, err := r.inspectImage(ctx, prebuildImage)
@@ -358,7 +359,7 @@ func (r *runner) buildImage(
 					Tags:          options.Tag,
 				}, nil
 			} else if err != nil {
-				r.Log.Debugf("Error trying to find prebuild image %s: %v", prebuildImage, err)
+				log.Debugf("Error trying to find prebuild image %s: %v", prebuildImage, err)
 			}
 		}
 	}
@@ -373,7 +374,6 @@ func (r *runner) buildImage(
 			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
 			Options:              options,
 			TargetArch:           targetArch,
-			Log:                  r.Log,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("(remote): %w", err)
@@ -444,13 +444,13 @@ func (r *runner) buildDevImageCompose(
 		composeGlobalArgs = append(composeGlobalArgs, "--env-file", envFile)
 	}
 
-	r.Log.Debugf("Loading docker compose project %+v", composeFiles)
+	log.Debugf("Loading docker compose project %+v", composeFiles)
 	project, err := compose.LoadDockerComposeProject(ctx, composeFiles, envFiles)
 	if err != nil {
 		return nil, fmt.Errorf("load docker compose project: %w", err)
 	}
 	project.Name = composeHelper.GetProjectName(r.ID)
-	r.Log.Debugf("Loaded project %s", project.Name)
+	log.Debugf("Loaded project %s", project.Name)
 
 	service := parsedConfig.Config.Service
 	composeService, err := project.GetService(service)
