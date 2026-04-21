@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -38,12 +37,9 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *StopCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
-
 	// get workspace
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(
 		cmd.WorkspaceInfo,
-		logger,
 	)
 	if err != nil {
 		return fmt.Errorf("error parsing workspace info: %w", err)
@@ -52,7 +48,7 @@ func (cmd *StopCmd) Run(ctx context.Context) error {
 	}
 
 	// stop docker container
-	err = stopContainer(ctx, workspaceInfo, logger)
+	err = stopContainer(ctx, workspaceInfo)
 	if err != nil {
 		return fmt.Errorf("stop container: %w", err)
 	}
@@ -63,7 +59,6 @@ func (cmd *StopCmd) Run(ctx context.Context) error {
 func stopContainer(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) error {
 	log.Debugf("stopping Devsy container")
 	runner, err := CreateRunner(workspaceInfo)

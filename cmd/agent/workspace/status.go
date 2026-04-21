@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -38,10 +37,8 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *StatusCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
-
 	// get workspace
-	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(cmd.WorkspaceInfo, logger)
+	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(cmd.WorkspaceInfo)
 	if err != nil {
 		return err
 	} else if shouldExit {

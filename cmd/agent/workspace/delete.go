@@ -10,7 +10,6 @@ import (
 	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -48,12 +47,9 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
-
 	// get workspace
 	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(
 		cmd.WorkspaceInfo,
-		logger,
 	)
 	if err != nil {
 		return fmt.Errorf("error parsing workspace info: %w", err)
@@ -71,7 +67,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 
 	// cleanup docker container
 	if cmd.Container {
-		err = removeContainer(ctx, workspaceInfo, logger)
+		err = removeContainer(ctx, workspaceInfo)
 		if err != nil {
 			return fmt.Errorf("remove container: %w", err)
 		}
@@ -85,7 +81,6 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 func removeContainer(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) error {
 	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
 	runner, err := CreateRunner(workspaceInfo)

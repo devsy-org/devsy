@@ -5,7 +5,6 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +36,7 @@ func NewUpdateConfigCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *UpdateConfigCmd) Run(ctx context.Context) error {
 	// write workspace info
-	shouldExit, _, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo, oldlog.Default)
+	shouldExit, _, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo)
 	if err != nil {
 		return err
 	} else if shouldExit {

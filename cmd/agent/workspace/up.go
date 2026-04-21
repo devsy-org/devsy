@@ -95,10 +95,9 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 func (cmd *UpCmd) loadWorkspaceInfo(ctx context.Context) (*provider.AgentWorkspaceInfo, error) {
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfoAndDeleteOld(
 		cmd.WorkspaceInfo,
-		func(workspaceInfo *provider.AgentWorkspaceInfo, l oldlog.Logger) error {
-			return deleteWorkspace(ctx, workspaceInfo, l)
+		func(workspaceInfo *provider.AgentWorkspaceInfo) error {
+			return deleteWorkspace(ctx, workspaceInfo)
 		},
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing workspace info: %w", err)

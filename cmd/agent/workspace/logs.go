@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -39,14 +38,11 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *LogsCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
-
 	// get workspace info
 	shouldExit, workspaceInfo, err := agent.ReadAgentWorkspaceInfo(
 		cmd.AgentDir,
 		cmd.Context,
 		cmd.ID,
-		logger,
 	)
 	if err != nil {
 		return err

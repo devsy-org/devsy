@@ -21,7 +21,6 @@ import (
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 const ProjectLabel = "devsy.sh/project"
@@ -224,7 +223,7 @@ func listProWorkspacesForProvider(
 		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", provider)
 	}
 	if err != nil {
-		if oldlog.Default.GetLevel() >= logrus.DebugLevel {
+		if log.DebugEnabled() {
 			log.Warnf("Failed to list pro workspaces for provider %s: %v", provider, err)
 		}
 		return nil, err
