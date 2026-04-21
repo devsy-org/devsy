@@ -11,8 +11,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/devsy-org/log"
 )
 
 const containersExtension = "ms-vscode-remote.remote-containers"
@@ -22,7 +22,6 @@ type OpenParams struct {
 	Folder    string
 	NewWindow bool
 	Flavor    Flavor
-	Log       log.Logger
 }
 
 type openConfig struct {
@@ -86,7 +85,7 @@ var openConfigs = map[Flavor]openConfig{
 func Open(ctx context.Context, params OpenParams) error {
 	cliErr := openViaCLI(ctx, params)
 	if cliErr == nil {
-		params.Log.Infof("opened %s via CLI", params.Flavor.DisplayName())
+		log.Infof("opened %s via CLI", params.Flavor.DisplayName())
 		return nil
 	}
 
@@ -96,7 +95,7 @@ func Open(ctx context.Context, params OpenParams) error {
 
 	browserErr := openViaBrowser(params)
 	if browserErr == nil {
-		params.Log.Infof("opened %s via browser", params.Flavor.DisplayName())
+		log.Infof("opened %s via browser", params.Flavor.DisplayName())
 		return nil
 	}
 
@@ -123,10 +122,10 @@ func openViaBrowser(params OpenParams) error {
 	}
 	openURL := u.String()
 
-	params.Log.Debugf("opening URL %s", openURL)
+	log.Debugf("opening URL %s", openURL)
 	err := devsyopen.Run(openURL)
 	if err != nil {
-		params.Log.Errorf(
+		log.Errorf(
 			"flavor %s is not installed on host device: %v",
 			params.Flavor.DisplayName(),
 			err,
@@ -158,13 +157,13 @@ func openViaCLI(ctx context.Context, params OpenParams) error {
 	}
 
 	if !hasSSHExtension {
-		if err := ensureSSHExtension(ctx, cliPath, config.sshExtension, params.Log); err != nil {
+		if err := ensureSSHExtension(ctx, cliPath, config.sshExtension); err != nil {
 			return err
 		}
 	}
 
 	args := buildOpenArgs(params.Workspace, params.Folder, params.NewWindow, hasContainersExtension)
-	params.Log.Debugf(
+	log.Debugf(
 		"flavor %s command %s %s",
 		params.Flavor.DisplayName(),
 		cliPath,
@@ -204,7 +203,7 @@ func listInstalledExtensions(
 	return hasSSH, hasContainers, nil
 }
 
-func ensureSSHExtension(ctx context.Context, cliPath, sshExtension string, log log.Logger) error {
+func ensureSSHExtension(ctx context.Context, cliPath, sshExtension string) error {
 	args := []string{"--install-extension", sshExtension}
 	log.Debugf("%s %s", cliPath, strings.Join(args, " "))
 	out, err := exec.CommandContext(ctx, cliPath, args...).CombinedOutput()

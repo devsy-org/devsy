@@ -20,7 +20,7 @@ import (
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -66,13 +66,11 @@ func NewRStudioServer(
 	workspaceFolder string,
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *RStudioServer {
 	return &RStudioServer{
 		values:          values,
 		workspaceFolder: workspaceFolder,
 		userName:        userName,
-		log:             log,
 	}
 }
 
@@ -80,7 +78,6 @@ type RStudioServer struct {
 	values          map[string]config.OptionValue
 	workspaceFolder string
 	userName        string
-	log             log.Logger
 }
 
 var codenameRegEx = regexp.MustCompile(`\nUBUNTU_CODENAME=(.*)\n`)
@@ -94,31 +91,31 @@ func (o *RStudioServer) Install() error {
 
 	// Skip if already installed
 	if command.ExistsForUser("rstudio-server", o.userName) {
-		o.log.Debug("RStudio is already installed, skipping installation")
+		log.Debug("RStudio is already installed, skipping installation")
 		return nil
 	}
-	o.log.Info("Installing RStudio")
+	log.Info("Installing RStudio")
 
-	err := ensureGdebi(o.log)
+	err := ensureGdebi()
 	if err != nil {
 		return err
 	}
 
 	// Check if local file exists
 	if _, err := os.Stat(debPath); os.IsNotExist(err) {
-		o.log.Info("Rstudio deb not file, downloading")
-		codename, err := getDistroCodename(o.log)
+		log.Info("Rstudio deb not file, downloading")
+		codename, err := getDistroCodename()
 		if err != nil {
 			return err
 		}
 
-		debPath, err = downloadRStudioDeb(codename, o.log)
+		debPath, err = downloadRStudioDeb(codename)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = installDeb(debPath, o.log)
+	err = installDeb(debPath)
 	if err != nil {
 		return err
 	}
@@ -137,14 +134,14 @@ func (o *RStudioServer) Install() error {
 	if err != nil {
 		return err
 	}
-	o.log.Done("installed RStudio")
+	log.Info("installed RStudio")
 
 	return o.Start()
 }
 
 func (o *RStudioServer) Start() error {
 	return command.StartBackgroundOnce("rstudio", func() (*exec.Cmd, error) {
-		o.log.Info("Starting RStudio...")
+		log.Info("Starting RStudio...")
 		runCommand := "rstudio-server start"
 		args := []string{}
 		if o.userName != "" {
@@ -158,7 +155,7 @@ func (o *RStudioServer) Start() error {
 	})
 }
 
-func ensureGdebi(log log.Logger) error {
+func ensureGdebi() error {
 	if !command.Exists("gdebi") {
 		log.Info("Installing dependency gdebi-core")
 		out, err := exec.Command("apt", "update").CombinedOutput()
@@ -176,7 +173,7 @@ func ensureGdebi(log log.Logger) error {
 	return nil
 }
 
-func getDistroCodename(log log.Logger) (string, error) {
+func getDistroCodename() (string, error) {
 	// Base distro needs to be ubuntu
 	all, err := os.ReadFile("/etc/os-release")
 	if err != nil {
@@ -200,7 +197,7 @@ func getDistroCodename(log log.Logger) (string, error) {
 	return ubuntuCodename, nil
 }
 
-func downloadRStudioDeb(ubuntuCodename string, log log.Logger) (string, error) {
+func downloadRStudioDeb(ubuntuCodename string) (string, error) {
 	downloadURL := getDownloadURL(
 		"stable",
 		ubuntuCodename,
@@ -209,11 +206,11 @@ func downloadRStudioDeb(ubuntuCodename string, log log.Logger) (string, error) {
 	log.Infof("Downloading RStudio from %s", downloadURL)
 
 	// Download .deb
-	debPath, err := download(downloadFolder, downloadURL, log)
+	debPath, err := download(downloadFolder, downloadURL)
 	if err != nil {
 		return "", fmt.Errorf("download: %w", err)
 	}
-	log.Done("downloaded RStudio")
+	log.Info("downloaded RStudio")
 
 	return debPath, nil
 }
@@ -222,7 +219,8 @@ func getDownloadURL(version, ubuntuCodename, architecture string) string {
 	return "https://rstudio.org/download/latest/" + version + "/server/" + ubuntuCodename + "/rstudio-server-latest-" + architecture + ".deb"
 }
 
-func download(targetFolder, downloadURL string, log log.Logger) (string, error) {
+//nolint:cyclop // pre-existing complexity
+func download(targetFolder, downloadURL string) (string, error) {
 	err := os.MkdirAll(targetFolder, os.ModePerm)
 	if err != nil {
 		return "", err
@@ -258,7 +256,6 @@ func download(targetFolder, downloadURL string, log log.Logger) (string, error) 
 	_, err = io.Copy(file, &ide.ProgressReader{
 		Reader:    resp.Body,
 		TotalSize: resp.ContentLength,
-		Log:       log,
 	})
 	if err != nil {
 		return "", fmt.Errorf("download file: %w", err)
@@ -267,7 +264,7 @@ func download(targetFolder, downloadURL string, log log.Logger) (string, error) 
 	return targetPath, nil
 }
 
-func installDeb(debPath string, log log.Logger) error {
+func installDeb(debPath string) error {
 	log.Info("Installing deb")
 
 	out, err := exec.Command("gdebi", "--non-interactive", debPath).CombinedOutput()

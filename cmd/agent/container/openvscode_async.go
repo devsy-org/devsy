@@ -8,7 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +47,7 @@ func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 	}
 
 	// install IDE
-	err = setupOpenVSCodeExtensions(setupInfo, oldlog.Default)
+	err = setupOpenVSCodeExtensions(setupInfo)
 	if err != nil {
 		return err
 	}
@@ -56,9 +55,9 @@ func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func setupOpenVSCodeExtensions(setupInfo *config.Result, logger oldlog.Logger) error {
+func setupOpenVSCodeExtensions(setupInfo *config.Result) error {
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
 	user := config.GetRemoteUser(setupInfo)
-	return openvscode.NewOpenVSCodeServer(vsCodeConfiguration.Extensions, "", user, "", "", nil, logger).
+	return openvscode.NewOpenVSCodeServer(vsCodeConfiguration.Extensions, "", user, "", "", nil).
 		InstallExtensions()
 }

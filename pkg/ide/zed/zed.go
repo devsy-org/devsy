@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/devsy-org/log"
 )
 
 // Open first finds the zed binary for the local platform and then opens the zed editor with the given workspace folder.
@@ -16,7 +16,6 @@ func Open(
 	ctx context.Context,
 	values map[string]config.OptionValue,
 	userName, workspaceFolder, workspaceID string,
-	log log.Logger,
 ) error {
 	log.Info("Opening Zed editor...")
 

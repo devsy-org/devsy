@@ -94,7 +94,7 @@ func openDesktopIDE(
 		return zed.Open(
 			ctx, ideOptions, params.User,
 			params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-			params.Client.Workspace(), params.Log,
+			params.Client.Workspace(),
 		)
 
 	default:
@@ -160,7 +160,6 @@ func openVSCodeFlavor(
 		Folder:    params.Result.SubstitutionContext.ContainerWorkspaceFolder,
 		NewWindow: vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
 		Flavor:    vsCodeFlavorMap[ideName],
-		Log:       params.Log,
 	})
 }
 
@@ -172,39 +171,38 @@ func openJetBrains(
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
 	workspace := params.Client.Workspace()
 	user := params.User
-	logger := params.Log
 	type jetbrainsFactory func() interface{ OpenGateway(string, string) error }
 
 	jetbrainsMap := map[string]jetbrainsFactory{
 		string(config.IDERustRover): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRustRoverServer(user, ideOptions, logger)
+			return jetbrains.NewRustRoverServer(user, ideOptions)
 		},
 		string(config.IDEGoland): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewGolandServer(user, ideOptions, logger)
+			return jetbrains.NewGolandServer(user, ideOptions)
 		},
 		string(config.IDEPyCharm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPyCharmServer(user, ideOptions, logger)
+			return jetbrains.NewPyCharmServer(user, ideOptions)
 		},
 		string(config.IDEPhpStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPhpStorm(user, ideOptions, logger)
+			return jetbrains.NewPhpStorm(user, ideOptions)
 		},
 		string(config.IDEIntellij): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewIntellij(user, ideOptions, logger)
+			return jetbrains.NewIntellij(user, ideOptions)
 		},
 		string(config.IDECLion): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewCLionServer(user, ideOptions, logger)
+			return jetbrains.NewCLionServer(user, ideOptions)
 		},
 		string(config.IDERider): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRiderServer(user, ideOptions, logger)
+			return jetbrains.NewRiderServer(user, ideOptions)
 		},
 		string(config.IDERubyMine): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRubyMineServer(user, ideOptions, logger)
+			return jetbrains.NewRubyMineServer(user, ideOptions)
 		},
 		string(config.IDEWebStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewWebStormServer(user, ideOptions, logger)
+			return jetbrains.NewWebStormServer(user, ideOptions)
 		},
 		string(config.IDEDataSpell): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewDataSpellServer(user, ideOptions, logger)
+			return jetbrains.NewDataSpellServer(user, ideOptions)
 		},
 	}
 

@@ -19,9 +19,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/extract"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
 )
 
 const (
@@ -71,23 +71,20 @@ type GenericOptions struct {
 func newGenericServer(
 	userName string,
 	options *GenericOptions,
-	log log.Logger,
 ) *GenericJetBrainsServer {
 	return &GenericJetBrainsServer{
 		userName: userName,
 		options:  options,
-		log:      log,
 	}
 }
 
 type GenericJetBrainsServer struct {
 	userName string
 	options  *GenericOptions
-	log      log.Logger
 }
 
 func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string) error {
-	o.log.Infof("Starting %s through JetBrains Gateway...", o.options.DisplayName)
+	log.Infof("Starting %s through JetBrains Gateway...", o.options.DisplayName)
 	err := devsyopen.Run(
 		`jetbrains-gateway://connect#idePath=` + url.QueryEscape(
 			o.getDirectory(path.Join("/", "home", o.userName)),
@@ -98,8 +95,8 @@ func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string
 		) + `&type=ssh&deploy=false`,
 	)
 	if err != nil {
-		o.log.Debugf("Error opening jetbrains-gateway: %v", err)
-		o.log.Errorf(
+		log.Debugf("Error opening jetbrains-gateway: %v", err)
+		log.Errorf(
 			"Seems like you don't have JetBrains Gateway installed on your computer. " +
 				"Please install JetBrains Gateway via https://www.jetbrains.com/remote-development/gateway/",
 		)
@@ -117,7 +114,7 @@ func (o *GenericJetBrainsServer) getDownloadFolder() string {
 }
 
 func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
-	o.log.Infof("setup backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
+	log.Infof("setup backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 	baseFolder, err := getBaseFolder(o.userName)
 	if err != nil {
 		return err
@@ -126,7 +123,7 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 
 	_, err = os.Stat(targetLocation)
 	if err == nil {
-		o.log.Infof(
+		log.Infof(
 			"already installed skip install: displayName=%s, id=%s",
 			o.options.DisplayName,
 			o.options.ID,
@@ -134,13 +131,13 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 		return nil
 	}
 
-	o.log.Infof("downloading archive: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
-	archivePath, err := o.download(o.getDownloadFolder(), o.log)
+	log.Infof("downloading archive: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
+	archivePath, err := o.download(o.getDownloadFolder())
 	if err != nil {
 		return err
 	}
 
-	o.log.Infof("extracting archive: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
+	log.Infof("extracting archive: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 	err = o.extractArchive(archivePath, targetLocation)
 	if err != nil {
 		return err
@@ -150,7 +147,7 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	if err != nil {
 		return fmt.Errorf("chown: %w", err)
 	}
-	o.log.Infof("installed backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
+	log.Infof("installed backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 
 	jetBrainsConfiguration := config.GetJetBrainsConfiguration(setupInfo.MergedConfig)
 	plugins := jetBrainsConfiguration.Plugins
@@ -160,7 +157,7 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 		return nil
 	}
 
-	o.log.Infof("installing JetBrains plugins: plugins=%v", plugins)
+	log.Infof("installing JetBrains plugins: plugins=%v", plugins)
 
 	installPluginsCommand := exec.Command(
 		path.Join(targetLocation, "bin", "remote-dev-server.sh"),
@@ -193,8 +190,8 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 		)
 	}
 
-	o.log.Debugf("remote-dev-server.sh output: %s", out)
-	o.log.Infof("installed JetBrains plugins: plugins=%v", plugins)
+	log.Debugf("remote-dev-server.sh output: %s", out)
+	log.Infof("installed JetBrains plugins: plugins=%v", plugins)
 
 	return nil
 }
@@ -228,7 +225,8 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 	return extract.Extract(file, toPath, extract.StripLevels(1))
 }
 
-func (o *GenericJetBrainsServer) download(targetFolder string, log log.Logger) (string, error) {
+//nolint:cyclop // pre-existing complexity
+func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
 	err := os.MkdirAll(targetFolder, os.ModePerm)
 	if err != nil {
 		return "", err
@@ -272,7 +270,6 @@ func (o *GenericJetBrainsServer) download(targetFolder string, log log.Logger) (
 	_, err = io.Copy(file, &ide.ProgressReader{
 		Reader:    resp.Body,
 		TotalSize: resp.ContentLength,
-		Log:       log,
 	})
 	if err != nil {
 		return "", fmt.Errorf("download file: %w", err)

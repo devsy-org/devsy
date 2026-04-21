@@ -7,27 +7,27 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 // InstallAPKRequirements installs the requirements using apk.
 //
 // This is used by Alpine- and Wolfi-based images.
-func InstallAPKRequirements(logger log.Logger) {
+func InstallAPKRequirements() {
 	if !command.Exists("apk") {
 		return
 	}
 
 	dependencies := []string{"build-base"}
 	if all, err := os.ReadFile("/etc/os-release"); err != nil {
-		logger.Errorf("Error reading /etc/os-release: %v", err)
+		log.Errorf("Error reading /etc/os-release: %v", err)
 		return
 	} else if !bytes.Contains(all, []byte("ID=alpine")) {
 		// Alpine needs gcompat for compatibility with musl.
 		// Wolfi-based distros don't need this, and Wolfi doesn't have it.
 		dependencies = append(dependencies, "gcompat")
 	}
-	logger.Debugf("Install apk requirements...")
+	log.Debugf("Install apk requirements...")
 	if !command.Exists("git") {
 		dependencies = append(dependencies, "git")
 	}
@@ -41,6 +41,6 @@ func InstallAPKRequirements(logger log.Logger) {
 	out, err := exec.Command("sh", "-c", "apk update && apk add "+strings.Join(dependencies, " ")).
 		CombinedOutput()
 	if err != nil {
-		logger.Errorf("Error updating apk dependencies: %v", command.WrapCommandError(out, err))
+		log.Errorf("Error updating apk dependencies: %v", command.WrapCommandError(out, err))
 	}
 }

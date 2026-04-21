@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
@@ -39,13 +39,11 @@ func NewJupyterNotebookServer(
 	workspaceFolder string,
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *JupyterNotbookServer {
 	return &JupyterNotbookServer{
 		values:          values,
 		workspaceFolder: workspaceFolder,
 		userName:        userName,
-		log:             log,
 	}
 }
 
@@ -53,7 +51,6 @@ type JupyterNotbookServer struct {
 	values          map[string]config.OptionValue
 	workspaceFolder string
 	userName        string
-	log             log.Logger
 }
 
 func (o *JupyterNotbookServer) Install() error {
@@ -92,7 +89,7 @@ func (o *JupyterNotbookServer) installNotebook() error {
 	}
 
 	// install
-	o.log.Infof("installing jupyter notebook")
+	log.Infof("installing jupyter notebook")
 	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(
@@ -101,13 +98,13 @@ func (o *JupyterNotbookServer) installNotebook() error {
 		)
 	}
 
-	o.log.Info("installed jupyter notebook")
+	log.Info("installed jupyter notebook")
 	return nil
 }
 
 func (o *JupyterNotbookServer) Start() error {
 	return command.StartBackgroundOnce("jupyter", func() (*exec.Cmd, error) {
-		o.log.Infof("Starting jupyter notebook in background...")
+		log.Infof("Starting jupyter notebook in background...")
 		runCommand := fmt.Sprintf(
 			"jupyter notebook --ip='*' --NotebookApp.notebook_dir='%s' --NotebookApp.token='' "+
 				"--NotebookApp.password='' --no-browser --port '%s' --allow-root",

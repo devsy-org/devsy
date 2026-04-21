@@ -3,7 +3,6 @@ package jetbrains
 import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
-	"github.com/devsy-org/log"
 )
 
 const (
@@ -31,7 +30,6 @@ var RustRoverOptions = ide.Options{
 func NewRustRoverServer(
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *GenericJetBrainsServer {
 	amd64Download, arm64Download := getDownloadURLs(
 		RustRoverOptions,
@@ -45,5 +43,5 @@ func NewRustRoverServer(
 		DisplayName:   "RustRover",
 		DownloadAmd64: amd64Download,
 		DownloadArm64: arm64Download,
-	}, log)
+	})
 }

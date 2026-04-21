@@ -15,8 +15,8 @@ import (
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/scanner"
 )
 
@@ -48,19 +48,16 @@ var Options = ide.Options{
 func NewFleetServer(
 	userName string,
 	values map[string]config.OptionValue,
-	log log.Logger,
 ) *FleetServer {
 	return &FleetServer{
 		values:   values,
 		userName: userName,
-		log:      log,
 	}
 }
 
 type FleetServer struct {
 	values   map[string]config.OptionValue
 	userName string
-	log      log.Logger
 }
 
 func (o *FleetServer) Install(projectDir string) error {
@@ -85,7 +82,7 @@ func (o *FleetServer) Install(projectDir string) error {
 	}
 
 	// download binary
-	o.log.Infof("Downloading fleet...")
+	log.Infof("Downloading fleet...")
 	resp, err := devsyhttp.GetHTTPClient().Get(url)
 	if err != nil {
 		return err
@@ -119,7 +116,7 @@ func (o *FleetServer) Install(projectDir string) error {
 		}
 	}
 
-	o.log.Infof("downloaded fleet")
+	log.Infof("downloaded fleet")
 	return o.Start(fleetBinary, location, projectDir)
 }
 
@@ -129,7 +126,7 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 	stderrBuffer := &bytes.Buffer{}
 
 	err := command.StartBackgroundOnce("fleet", func() (*exec.Cmd, error) {
-		o.log.Infof("Starting fleet in background...")
+		log.Infof("Starting fleet in background...")
 		// Determine version of fleet to use
 		var runCommand string
 		version := Options.GetValue(o.values, VersionOption)
@@ -175,7 +172,7 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 	defer func() { _ = readCloser.Close() }()
 
 	// wait for the jet brains url and then exit
-	o.log.Infof("waiting for fleet to start")
+	log.Infof("waiting for fleet to start")
 	s := scanner.NewScanner(readCloser)
 	stdoutBuffer := &bytes.Buffer{}
 	for s.Scan() {
@@ -192,7 +189,7 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 				return err
 			}
 
-			o.log.Infof("fleet started")
+			log.Infof("fleet started")
 			return o.startMonitor()
 		} else {
 			_, _ = stdoutBuffer.Write([]byte(text + "\n"))
@@ -213,7 +210,7 @@ func (o *FleetServer) startMonitor() error {
 	}
 
 	return command.StartBackgroundOnce("fleet-monitor", func() (*exec.Cmd, error) {
-		o.log.Infof("starting fleet monitor in background")
+		log.Infof("starting fleet monitor in background")
 		runCommand := fmt.Sprintf("%s helper fleet-server --workspaceid %s", self, "test")
 		args := []string{}
 		if o.userName != "" {
