@@ -1,11 +1,12 @@
 package survey
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 
 	surveypkg "github.com/AlecAivazis/survey/v2"
-	"github.com/pkg/errors"
 )
 
 // QuestionOptions defines a question and its options.
@@ -104,7 +105,7 @@ func buildValidator(params *QuestionOptions, compiledRegex *regexp.Regexp) func(
 	return func(val any) error {
 		str, ok := val.(string)
 		if !ok {
-			return errors.New("Input was not a string")
+			return errors.New("input was not a string")
 		}
 
 		if !compiledRegex.MatchString(str) {
@@ -112,7 +113,7 @@ func buildValidator(params *QuestionOptions, compiledRegex *regexp.Regexp) func(
 				return errors.New(params.ValidationMessage)
 			}
 
-			return errors.Errorf("Answer has to match pattern: %s", compiledRegex.String())
+			return fmt.Errorf("answer has to match pattern: %s", compiledRegex.String())
 		}
 
 		if params.ValidationFunc != nil {
@@ -121,7 +122,7 @@ func buildValidator(params *QuestionOptions, compiledRegex *regexp.Regexp) func(
 					return errors.New(params.ValidationMessage)
 				}
 
-				return errors.Errorf("%v", err)
+				return fmt.Errorf("%v", err)
 			}
 		}
 
