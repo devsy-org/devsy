@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 type Forwarder interface {
@@ -14,17 +14,15 @@ type Forwarder interface {
 	StopForward(port string) error
 }
 
-func NewWatcher(forwarder Forwarder, log log.Logger) *Watcher {
+//nolint:funcorder
+func NewWatcher(forwarder Forwarder) *Watcher {
 	return &Watcher{
 		forwarder:      forwarder,
 		forwardedPorts: map[string]bool{},
-		log:            log,
 	}
 }
 
 type Watcher struct {
-	log log.Logger
-
 	forwarder      Forwarder
 	forwardedPorts map[string]bool
 }
@@ -37,7 +35,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		case <-time.After(time.Second * 3):
 			err := w.runOnce()
 			if err != nil {
-				w.log.Errorf("Error watching ports: %v", err)
+				log.Errorf("Error watching ports: %v", err)
 			}
 		}
 	}
@@ -52,7 +50,7 @@ func (w *Watcher) runOnce() error {
 	// stop ports that are not there anymore
 	for port := range w.forwardedPorts {
 		if !newPorts[port] {
-			w.log.Debugf("Stop port %s", port)
+			log.Debugf("Stop port %s", port)
 			err = w.forwarder.StopForward(port)
 			if err != nil {
 				return fmt.Errorf("error stop forwarding port %s: %w", port, err)
@@ -63,7 +61,7 @@ func (w *Watcher) runOnce() error {
 	// start ports that were not there before
 	for port := range newPorts {
 		if !w.forwardedPorts[port] {
-			w.log.Debugf("Found open port %s ready to forward", port)
+			log.Debugf("Found open port %s ready to forward", port)
 			err = w.forwarder.Forward(port)
 			if err != nil {
 				return fmt.Errorf("error forwarding port %s: %w", port, err)

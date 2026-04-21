@@ -8,14 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseSignatureResponse_NonJSONBody(t *testing.T) {
 	body := []byte("get git ssh signature: permission denied")
-	_, err := parseSignatureResponse(body, log.Discard)
+	_, err := parseSignatureResponse(body)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "get git ssh signature: permission denied")
 }
@@ -26,7 +25,7 @@ func TestParseSignatureResponse_ValidJSON(t *testing.T) {
 	body, err := json.Marshal(response)
 	require.NoError(t, err)
 
-	result, err := parseSignatureResponse(body, log.Discard)
+	result, err := parseSignatureResponse(body)
 	require.NoError(t, err)
 	assert.Equal(t, sig, result)
 }
@@ -44,7 +43,7 @@ func TestRequestContentSignature_ServerError_PlainText(t *testing.T) {
 	signatureServerURL = server.URL + "/git-ssh-signature"
 	t.Cleanup(func() { signatureServerURL = "" })
 
-	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub", log.Discard)
+	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to sign commit")
 	assert.NotContains(t, err.Error(), "invalid character")
@@ -61,7 +60,7 @@ func TestRequestContentSignature_ServerError_JSON(t *testing.T) {
 	signatureServerURL = server.URL + "/git-ssh-signature"
 	t.Cleanup(func() { signatureServerURL = "" })
 
-	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub", log.Discard)
+	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "signing failed")
 }
@@ -78,7 +77,7 @@ func TestRequestContentSignature_Success(t *testing.T) {
 	signatureServerURL = server.URL + "/git-ssh-signature"
 	t.Cleanup(func() { signatureServerURL = "" })
 
-	result, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub", log.Discard)
+	result, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub")
 	require.NoError(t, err)
 	assert.Equal(t, sig, result)
 	assert.Contains(t, string(result), "BEGIN SSH SIGNATURE")
@@ -94,7 +93,7 @@ func TestRequestContentSignature_InvalidJSON(t *testing.T) {
 	signatureServerURL = server.URL + "/git-ssh-signature"
 	t.Cleanup(func() { signatureServerURL = "" })
 
-	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub", log.Discard)
+	_, err := requestContentSignature([]byte("commit content"), "/tmp/key.pub")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not json at all")
 }

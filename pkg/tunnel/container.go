@@ -15,21 +15,20 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
 // NewContainerTunnel constructs a ContainerTunnel using the workspace client, if proxy is True then
 // the workspace's agent config is not periodically updated.
-func NewContainerTunnel(client client.WorkspaceClient, log log.Logger) *ContainerTunnel {
+//nolint:funcorder
+func NewContainerTunnel(client client.WorkspaceClient) *ContainerTunnel {
 	updateConfigInterval := time.Second * 30
 	return &ContainerTunnel{
 		client:               client,
 		updateConfigInterval: updateConfigInterval,
-		log:                  log,
 	}
 }
 
@@ -37,7 +36,6 @@ func NewContainerTunnel(client client.WorkspaceClient, log log.Logger) *Containe
 type ContainerTunnel struct {
 	client               client.WorkspaceClient
 	updateConfigInterval time.Duration
-	log                  log.Logger
 }
 
 // Handler defines what to do once the tunnel has a client established.
@@ -77,12 +75,12 @@ func (c *ContainerTunnel) Run(
 	// tunnel to host
 	tunnelChan := make(chan error, 1)
 	go func() {
-		writer := c.log.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
+		writer := log.Writer(log.LevelInfo)
 		defer func() { _ = writer.Close() }()
-		defer c.log.Debugf("Tunnel to host closed")
+		defer log.Debugf("Tunnel to host closed")
 
 		command := fmt.Sprintf("'%s' helper ssh-server --stdio", c.client.AgentPath())
-		if c.log.GetLevel() == logrus.DebugLevel {
+		if log.DebugEnabled() {
 			command += " --debug"
 		}
 		tunnelChan <- agent.InjectAgent(&agent.InjectOptions{
@@ -118,8 +116,8 @@ func (c *ContainerTunnel) Run(
 
 		defer func() { _ = sshClient.Close() }()
 		defer cancel()
-		defer c.log.Debugf("connection to container closed")
-		c.log.Debugf("connected to host")
+		defer log.Debugf("connection to container closed")
+		log.Debugf("connected to host")
 
 		// update workspace remotely
 		if c.updateConfigInterval > 0 {
@@ -158,19 +156,19 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 		case <-ctx.Done():
 			return
 		case <-time.After(c.updateConfigInterval):
-			c.log.Debugf("Start refresh")
+			log.Debugf("Start refresh")
 
 			// update options
 			err := c.client.RefreshOptions(ctx, nil, false)
 			if err != nil {
-				c.log.Errorf("Error refreshing workspace options: %v", err)
+				log.Errorf("Error refreshing workspace options: %v", err)
 				break
 			}
 
 			// compress info
 			workspaceInfo, agentInfo, err := c.client.AgentInfo(provider.CLIOptions{})
 			if err != nil {
-				c.log.Errorf("Error compressing workspace info: %v", err)
+				log.Errorf("Error compressing workspace info: %v", err)
 				break
 			}
 
@@ -185,7 +183,7 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 				command += fmt.Sprintf(" --agent-dir '%s'", agentInfo.Agent.DataPath)
 			}
 
-			c.log.Debugf("Run command in container: %s", command)
+			log.Debugf("Run command in container: %s", command)
 			err = devssh.Run(ctx, devssh.RunOptions{
 				Client:  sshClient,
 				Command: command,
@@ -193,9 +191,9 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 				Stderr:  buf,
 			})
 			if err != nil {
-				c.log.Errorf("Error updating remote workspace: %s%v", buf.String(), err)
+				log.Errorf("Error updating remote workspace: %s%v", buf.String(), err)
 			} else {
-				c.log.Debugf("Out: %s", buf.String())
+				log.Debugf("Out: %s", buf.String())
 			}
 		}
 	}
@@ -232,20 +230,20 @@ func (c *ContainerTunnel) runInContainer(
 
 	// tunnel to container
 	go func() {
-		writer := c.log.Writer(logrus.InfoLevel, false)
+		writer := log.Writer(log.LevelInfo)
 		defer func() { _ = writer.Close() }()
 		defer func() { _ = stdoutWriter.Close() }()
 		defer cancel()
 
-		c.log.Debugf("Run container tunnel")
-		defer c.log.Debugf("Container tunnel exited")
+		log.Debugf("Run container tunnel")
+		defer log.Debugf("Container tunnel exited")
 
 		command := fmt.Sprintf(
 			"'%s' agent container-tunnel --workspace-info '%s'",
 			c.client.AgentPath(),
 			workspaceInfo,
 		)
-		if c.log.GetLevel() == logrus.DebugLevel {
+		if log.DebugEnabled() {
 			command += " --debug"
 		}
 		if err := devssh.Run(cancelCtx, devssh.RunOptions{
@@ -257,9 +255,9 @@ func (c *ContainerTunnel) runInContainer(
 			EnvVars: envVars,
 		}); err != nil {
 			if errors.Is(err, context.Canceled) {
-				c.log.Debugf("container tunnel closed: %v", err)
+				log.Debugf("container tunnel closed: %v", err)
 			} else {
-				c.log.Errorf("error tunneling to container: %v", err)
+				log.Errorf("error tunneling to container: %v", err)
 			}
 			return
 		}
@@ -271,7 +269,7 @@ func (c *ContainerTunnel) runInContainer(
 		return err
 	}
 	defer func() { _ = containerClient.Close() }()
-	c.log.Debugf("connected to container")
+	log.Debugf("connected to container")
 
 	// start handler
 	return handler(cancelCtx, containerClient)

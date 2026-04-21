@@ -10,9 +10,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 )
 
 // SetupParams holds all parameters needed for dotfiles setup.
@@ -23,7 +22,6 @@ type SetupParams struct {
 	EnvKeyValues []string
 	Client       client2.BaseWorkspaceClient
 	DevsyConfig  *config.Config
-	Log          log.Logger
 }
 
 // Setup clones and installs dotfiles into the devcontainer.
@@ -39,12 +37,12 @@ func Setup(p SetupParams) error {
 	}
 
 	if dotfilesRepo == "" {
-		p.Log.Debug("No dotfiles repo specified, skipping")
+		log.Debug("No dotfiles repo specified, skipping")
 		return nil
 	}
 
-	p.Log.Infof("Dotfiles Git repository %s specified", dotfilesRepo)
-	p.Log.Debug("Cloning dotfiles into the devcontainer...")
+	log.Infof("Dotfiles Git repository %s specified", dotfilesRepo)
+	log.Debug("Cloning dotfiles into the devcontainer...")
 
 	dotCmd, err := buildDotCmd(buildDotCmdParams{
 		devsyConfig:      p.DevsyConfig,
@@ -53,18 +51,17 @@ func Setup(p SetupParams) error {
 		envFiles:         p.EnvFiles,
 		envKeyValuePairs: p.EnvKeyValues,
 		client:           p.Client,
-		log:              p.Log,
 	})
 	if err != nil {
 		return err
 	}
-	if p.Log.GetLevel() == logrus.DebugLevel {
+	if log.DebugEnabled() {
 		dotCmd.Args = append(dotCmd.Args, "--debug")
 	}
 
-	p.Log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
+	log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
 
-	writer := p.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 
 	dotCmd.Stdout = writer
 	dotCmd.Stderr = writer
@@ -74,7 +71,7 @@ func Setup(p SetupParams) error {
 		return err
 	}
 
-	p.Log.Infof("Done setting up dotfiles into the devcontainer")
+	log.Infof("Done setting up dotfiles into the devcontainer")
 
 	return nil
 }
@@ -113,7 +110,6 @@ type buildDotCmdParams struct {
 	envFiles         []string
 	envKeyValuePairs []string
 	client           client2.BaseWorkspaceClient
-	log              log.Logger
 }
 
 func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
@@ -148,13 +144,13 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	strictHostKey := p.devsyConfig.ContextOption(
 		config.ContextOptionSSHStrictHostKeyChecking,
 	) == config.BoolTrue
-	debug := p.log.GetLevel() == logrus.DebugLevel
+	debug := log.DebugEnabled()
 	agentArguments := buildDotCmdAgentArguments(
 		p.dotfilesRepo, p.dotfilesScript, strictHostKey, debug,
 	)
 
 	if p.dotfilesScript != "" {
-		p.log.Infof("Dotfiles script %s specified", p.dotfilesScript)
+		log.Infof("Dotfiles script %s specified", p.dotfilesScript)
 	}
 
 	sshCmd = append(sshCmd,

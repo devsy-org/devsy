@@ -371,7 +371,6 @@ func (cmd *UpCmd) configureWorkspace(
 		EnvKeyValues: cmd.DotfilesScriptEnv,
 		Client:       client,
 		DevsyConfig:  devsyConfig,
-		Log:          log,
 	}); err != nil {
 		return err
 	}
@@ -693,7 +692,6 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		GPGAgent:             params.gpgagent,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
-		Log:                  oldlog.Default,
 	})
 	if err != nil {
 		return err

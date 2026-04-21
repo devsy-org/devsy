@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -152,7 +151,7 @@ func getPublicKeys() (string, error) {
 		return "", fmt.Errorf("get port: %w", err)
 	}
 
-	out, err := credentials.PostWithRetry(port, "gpg-public-keys", nil, oldlog.Default)
+	out, err := credentials.PostWithRetry(port, "gpg-public-keys", nil)
 	if err != nil {
 		return "", fmt.Errorf("get public gpg keys: %w", err)
 	}

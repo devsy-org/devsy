@@ -196,7 +196,7 @@ func configureProviderOptions(
 	// fill defaults
 	devsyConfig, err = options2.ResolveOptions(
 		ctx, devsyConfig, cfg.Provider, options,
-		cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine, cfg.Log,
+		cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resolve options: %w", err)

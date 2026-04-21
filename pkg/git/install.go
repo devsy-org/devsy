@@ -5,13 +5,13 @@ import (
 	"os/exec"
 
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
-func InstallBinary(log log.Logger) error {
-	writer := log.Writer(logrus.InfoLevel, false)
-	errwriter := log.Writer(logrus.ErrorLevel, false)
+//nolint:cyclop
+func InstallBinary() error {
+	writer := log.Writer(log.LevelInfo)
+	errwriter := log.Writer(log.LevelError)
 	defer func() { _ = writer.Close() }()
 	defer func() { _ = errwriter.Close() }()
 
@@ -60,7 +60,7 @@ func InstallBinary(log log.Logger) error {
 		return fmt.Errorf("couldn't install git")
 	}
 
-	log.Donef("installed git")
+	log.Infof("installed git")
 
 	return nil
 }

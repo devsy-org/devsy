@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes/throttledlogger"
+	"github.com/devsy-org/devsy/pkg/log"
+	oldlog "github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,7 +17,7 @@ import (
 )
 
 func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*corev1.Pod, error) {
-	throttledLogger := throttledlogger.NewThrottledLogger(k.Log, time.Second*5)
+	throttledLogger := throttledlogger.NewThrottledLogger(oldlog.GetInstance(), time.Second*5)
 
 	timeoutDuration, err := time.ParseDuration(k.options.PodTimeout)
 	if err != nil {
@@ -147,7 +149,7 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 				// delete succeeded pods
 				if IsTerminated(containerStatus) && Succeeded(containerStatus) {
 					// delete pod that is succeeded
-					k.Log.Debugf("Delete Pod '%s' because it is succeeded", id)
+					log.Debugf("Delete Pod '%s' because it is succeeded", id)
 					err = k.waitPodDeleted(ctx, id)
 					if err != nil {
 						return false, err

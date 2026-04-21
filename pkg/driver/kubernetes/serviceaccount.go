@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -23,7 +24,7 @@ func (k *KubernetesDriver) createServiceAccount(
 		return fmt.Errorf("get service account: %w", err)
 	} else if kerrors.IsNotFound(err) {
 		// create service account if it does not exist
-		k.Log.Infof("Create Service Account '%s'", serviceAccount)
+		log.Infof("Create Service Account '%s'", serviceAccount)
 		_, err := k.client.Client().
 			CoreV1().
 			ServiceAccounts(k.namespace).
@@ -48,7 +49,7 @@ func (k *KubernetesDriver) createServiceAccount(
 			return fmt.Errorf("get role binding: %w", err)
 		} else if kerrors.IsNotFound(err) {
 			// create role binding
-			k.Log.Infof("Create Role Binding '%s'", serviceAccount)
+			log.Infof("Create Role Binding '%s'", serviceAccount)
 			_, err := k.client.Client().
 				RbacV1().
 				RoleBindings(k.namespace).

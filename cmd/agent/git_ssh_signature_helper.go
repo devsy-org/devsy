@@ -6,7 +6,6 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +46,7 @@ func NewGitSSHSignatureHelperCmd(flags *flags.GlobalFlags) *cobra.Command {
 			}
 			cmd.CertPath = args[0]
 
-			err = gitsshsigning.ConfigureHelper(usr.Username, cmd.CertPath, oldlog.Default)
+			err = gitsshsigning.ConfigureHelper(usr.Username, cmd.CertPath)
 			if err != nil {
 				return err
 			}

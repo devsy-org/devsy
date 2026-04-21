@@ -6,11 +6,11 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/credentials"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 )
 
-func GetDevsyConfig(context, provider string, port int, logger log.Logger) (*client.Config, error) {
+func GetDevsyConfig(context, provider string, port int) (*client.Config, error) {
 	request := &DevsyConfigRequest{
 		Context:  context,
 		Provider: provider,
@@ -18,7 +18,7 @@ func GetDevsyConfig(context, provider string, port int, logger log.Logger) (*cli
 
 	rawJson, err := json.Marshal(request)
 	if err != nil {
-		logger.Errorf("Error parsing request: %w", err)
+		log.Errorf("Error parsing request: %w", err)
 		return nil, err
 	}
 
@@ -27,7 +27,6 @@ func GetDevsyConfig(context, provider string, port int, logger log.Logger) (*cli
 		port,
 		"loft-platform-credentials",
 		bytes.NewReader(rawJson),
-		logger,
 	)
 	if err != nil {
 		return nil, err

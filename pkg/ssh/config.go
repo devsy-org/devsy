@@ -12,8 +12,8 @@ import (
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/scanner"
 )
 
@@ -35,7 +35,6 @@ type SSHConfigParams struct {
 	GPGAgent             bool
 	DevsyHome            string
 	Provider             string
-	Log                  log.Logger
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
@@ -63,7 +62,7 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 		return fmt.Errorf("parse ssh config: %w", err)
 	}
 
-	return writeSSHConfig(targetPath, newFile, params.Log)
+	return writeSSHConfig(targetPath, newFile)
 }
 
 type DevsySSHEntry struct {
@@ -323,7 +322,6 @@ func RemoveFromConfig(
 	workspaceID string,
 	sshConfigPath string,
 	sshConfigIncludePath string,
-	log log.Logger,
 ) error {
 	configLock.Lock()
 	defer configLock.Unlock()
@@ -338,10 +336,10 @@ func RemoveFromConfig(
 		return fmt.Errorf("parse ssh config: %w", err)
 	}
 
-	return writeSSHConfig(targetPath, newFile, log)
+	return writeSSHConfig(targetPath, newFile)
 }
 
-func writeSSHConfig(path, content string, log log.Logger) error {
+func writeSSHConfig(path, content string) error {
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err != nil {

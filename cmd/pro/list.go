@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -153,7 +152,6 @@ func checkLogin(
 		"",
 		true,
 		false,
-		oldlog.Default,
 	); err != nil {
 		return fmt.Errorf("not logged into %s", proInstance.Host)
 	}

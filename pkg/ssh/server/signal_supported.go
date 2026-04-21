@@ -6,7 +6,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/ssh"
 )
 
@@ -14,7 +14,7 @@ func cmdSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-func forwardSignal(log log.Logger, sig ssh.Signal, proc *os.Process) {
+func forwardSignal(sig ssh.Signal, proc *os.Process) {
 	s := osSignalFrom(sig)
 	log.Debugf("forwarding signal %s to process %d", s, proc.Pid)
 	if err := proc.Signal(s); err != nil {

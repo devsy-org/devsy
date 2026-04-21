@@ -5,11 +5,11 @@ import (
 	"os/exec"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/log"
 )
 
-func AuthDevsyCliToPlatform(config *client.Config, logger log.Logger) error {
+func AuthDevsyCliToPlatform(config *client.Config) error {
 	cmd := exec.Command( // #nosec G204 -- binary name is a compile-time constant
 		pkgconfig.BinaryName,
 		"pro",
@@ -20,7 +20,7 @@ func AuthDevsyCliToPlatform(config *client.Config, logger log.Logger) error {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Debugf(
+		log.Debugf(
 			"Failed executing `%s pro login`: %w, output: %s",
 			pkgconfig.BinaryName,
 			err,
@@ -37,17 +37,17 @@ func AuthDevsyCliToPlatform(config *client.Config, logger log.Logger) error {
 	return nil
 }
 
-func AuthVClusterCliToPlatform(config *client.Config, logger log.Logger) error {
+func AuthVClusterCliToPlatform(config *client.Config) error {
 	// Check if vcluster is available inside the workspace
 	if _, err := exec.LookPath("vcluster"); err != nil {
-		logger.Debugf("'vcluster' command is not available")
+		log.Debugf("'vcluster' command is not available")
 		return nil
 	}
 
 	cmd := exec.Command("vcluster", "login", "--access-key", config.AccessKey, config.Host)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Debugf("Failed executing `vcluster login` : %w, output: %s", err, out)
+		log.Debugf("Failed executing `vcluster login` : %w, output: %s", err, out)
 		return fmt.Errorf("error executing 'vcluster login' command: %w", err)
 	}
 

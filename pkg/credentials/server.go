@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const DefaultPort = "12049"
@@ -22,36 +22,35 @@ func RunCredentialsServer(
 	ctx context.Context,
 	port int,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	var handler http.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		log.Debugf("incoming client connection: path=%s", request.URL.Path)
 		switch request.URL.Path {
 		case "/git-credentials":
-			err := handleGitCredentialsRequest(ctx, writer, request, client, log)
+			err := handleGitCredentialsRequest(ctx, writer, request, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		case "/docker-credentials":
-			err := handleDockerCredentialsRequest(ctx, writer, request, client, log)
+			err := handleDockerCredentialsRequest(ctx, writer, request, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		case "/git-ssh-signature":
-			err := handleGitSSHSignatureRequest(ctx, writer, request, client, log)
+			err := handleGitSSHSignatureRequest(ctx, writer, request, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		case "/loft-platform-credentials":
-			err := handleLoftPlatformCredentialsRequest(ctx, writer, request, client, log)
+			err := handleLoftPlatformCredentialsRequest(ctx, writer, request, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 			}
 		case "/gpg-public-keys":
-			err := handleGPGPublicKeysRequest(ctx, writer, client, log)
+			err := handleGPGPublicKeysRequest(ctx, writer, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 			}
@@ -97,7 +96,6 @@ func handleDockerCredentialsRequest(
 	writer http.ResponseWriter,
 	request *http.Request,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -122,7 +120,6 @@ func handleGitCredentialsRequest(
 	writer http.ResponseWriter,
 	request *http.Request,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -148,7 +145,6 @@ func handleGitSSHSignatureRequest(
 	writer http.ResponseWriter,
 	request *http.Request,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -185,7 +181,6 @@ func handleLoftPlatformCredentialsRequest(
 	writer http.ResponseWriter,
 	request *http.Request,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -210,7 +205,6 @@ func handleGPGPublicKeysRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) error {
 	response, err := client.GPGPublicKeys(ctx, &tunnel.Message{})
 	if err != nil {

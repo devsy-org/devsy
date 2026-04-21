@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"os/user"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/ssh"
 )
 
@@ -28,7 +28,6 @@ type server struct {
 	workdir     string
 	reuseSock   string
 	sshServer   ssh.Server
-	log         log.Logger
 }
 
 func NewServer(
@@ -37,7 +36,6 @@ func NewServer(
 	keys []ssh.PublicKey,
 	workdir string,
 	reuseSock string,
-	log log.Logger,
 ) (Server, error) {
 	sh, err := shell.GetShell("")
 	if err != nil {
@@ -55,7 +53,6 @@ func NewServer(
 		shell:       sh,
 		workdir:     workdir,
 		reuseSock:   reuseSock,
-		log:         log,
 		currentUser: currentUser.Username,
 		sshServer: ssh.Server{
 			Addr: addr,
@@ -92,7 +89,7 @@ func NewServer(
 			},
 			SubsystemHandlers: map[string]ssh.SubsystemHandler{
 				"sftp": func(s ssh.Session) {
-					sftpHandler(s, currentUser.Username, log)
+					sftpHandler(s, currentUser.Username)
 				},
 			},
 		},
@@ -130,7 +127,7 @@ func (s *server) handler(sess ssh.Session) {
 	if ssh.AgentRequested(sess) {
 		l, tmpDir, err := setupAgentListener(s.reuseSock)
 		if err != nil {
-			exitWithError(sess, err, s.log)
+			exitWithError(sess, err)
 			return
 		}
 		defer func() { _ = l.Close() }()
@@ -148,14 +145,13 @@ func (s *server) handler(sess ssh.Session) {
 			ptyReq: ptyReq,
 			winCh:  winCh,
 			cmd:    cmd,
-			log:    s.log,
 		})
 	} else {
-		err = execNonPTY(sess, cmd, s.log)
+		err = execNonPTY(sess, cmd)
 	}
 
 	// exit session
-	exitWithError(sess, err, s.log)
+	exitWithError(sess, err)
 }
 
 func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
@@ -209,6 +205,6 @@ func (s *server) Serve(listener net.Listener) error {
 }
 
 func (s *server) ListenAndServe() error {
-	s.log.Debugf("Start ssh server on %s", s.sshServer.Addr)
+	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
 	return s.sshServer.ListenAndServe()
 }

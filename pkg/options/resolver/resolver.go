@@ -7,7 +7,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
+	oldlog "github.com/devsy-org/log"
 )
 
 const (
@@ -52,13 +52,13 @@ type Resolver struct {
 
 	// internal
 	graph *graph.Graph[*types.Option]
-	log   log.Logger
 
 	// options
 	resolveLocal      bool
 	resolveGlobal     bool
 	resolveSubOptions bool
 	skipRequired      bool
+	log               oldlog.Logger
 }
 
 type Option func(r *Resolver)
@@ -66,7 +66,6 @@ type Option func(r *Resolver)
 func New(
 	userOptions map[string]string,
 	extraValues map[string]string,
-	logger log.Logger,
 	opts ...Option,
 ) *Resolver {
 	if userOptions == nil {
@@ -76,7 +75,6 @@ func New(
 	resolver := &Resolver{
 		userOptions: userOptions,
 		extraValues: extraValues,
-		log:         logger,
 	}
 	for _, o := range opts {
 		o(resolver)
@@ -106,6 +104,12 @@ func WithResolveSubOptions() Option {
 func WithSkipRequired(skip bool) Option {
 	return func(r *Resolver) {
 		r.skipRequired = skip
+	}
+}
+
+func WithLogger(log oldlog.Logger) Option {
+	return func(r *Resolver) {
+		r.log = log
 	}
 }
 
@@ -165,7 +169,6 @@ func (r *Resolver) Resolve(
 		printUnusedUserValues(
 			r.userOptions,
 			mergeMaps(optionDefinitions, newDynamicDefinitions),
-			r.log,
 		)
 	}
 

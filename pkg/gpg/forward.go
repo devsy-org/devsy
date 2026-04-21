@@ -5,13 +5,13 @@ import (
 	"os/exec"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
 )
 
 // ForwardAgent starts a background SSH connection that forwards the local GPG agent.
-func ForwardAgent(client client2.BaseWorkspaceClient, logger log.Logger) error {
-	logger.Debug("gpg forwarding enabled, performing immediately")
+func ForwardAgent(client client2.BaseWorkspaceClient) error {
+	log.Debug("gpg forwarding enabled, performing immediately")
 
 	execPath, err := os.Executable()
 	if err != nil {
@@ -27,14 +27,14 @@ func ForwardAgent(client client2.BaseWorkspaceClient, logger log.Logger) error {
 		remoteUser = "root"
 	}
 
-	logger.Info("forwarding gpg-agent")
+	log.Info("forwarding gpg-agent")
 
 	args := buildForwardArgs(remoteUser, client.Context(), client.Workspace())
 
 	go func() {
 		//nolint:gosec // execPath comes from os.Executable()
 		if runErr := exec.Command(execPath, args...).Run(); runErr != nil {
-			logger.Errorf("failure in forwarding gpg-agent: %v", runErr)
+			log.Errorf("failure in forwarding gpg-agent: %v", runErr)
 		}
 	}()
 

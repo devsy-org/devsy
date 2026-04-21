@@ -10,7 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 // HTTPStatusError wraps HTTP status code errors for better error handling.
@@ -51,7 +51,8 @@ func Head(rawURL string) (int, error) {
 	return resp.StatusCode, nil
 }
 
-func File(rawURL string, log log.Logger) (io.ReadCloser, error) {
+//nolint:cyclop
+func File(rawURL string) (io.ReadCloser, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err

@@ -22,7 +22,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
-	oldlog "github.com/devsy-org/log"
 	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -289,7 +288,7 @@ func CloneRepositoryForWorkspace(
 				"seems like git isn't installed on your system. Please make sure to install git and make it available in the PATH",
 			)
 		}
-		if err := git.InstallBinary(oldlog.Default.ErrorStreamOnly()); err != nil {
+		if err := git.InstallBinary(); err != nil {
 			return err
 		}
 	}
@@ -412,7 +411,6 @@ func CloneRepositoryForWorkspace(
 			workspaceDir,
 			helper,
 			options.StrictHostKeyChecking,
-			oldlog.Default.ErrorStreamOnly(),
 			getGitOptions(options)...)
 		if err != nil {
 			// cleanup workspace dir if clone failed, otherwise we won't try to clone again when rebuilding this workspace

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -16,7 +16,6 @@ type ForwardingFunction func(
 	*ssh.Client,
 	string,
 	string,
-	log.Logger,
 )
 
 func PortForward(
@@ -24,7 +23,6 @@ func PortForward(
 	client *ssh.Client,
 	localNetwork, localAddr, remoteNetwork, remoteAddr string,
 	exitAfterTimeout time.Duration,
-	log log.Logger,
 ) error {
 	listener, err := net.Listen(localNetwork, localAddr)
 	if err != nil {
@@ -35,7 +33,7 @@ func PortForward(
 	return portForwarding(
 		ctx, client, listener,
 		localAddr, remoteNetwork, remoteAddr,
-		exitAfterTimeout, log, forward,
+		exitAfterTimeout, forward,
 	)
 }
 
@@ -44,7 +42,6 @@ func ReversePortForward(
 	client *ssh.Client,
 	remoteNetwork, remoteAddr, localNetwork, localAddr string,
 	exitAfterTimeout time.Duration,
-	log log.Logger,
 ) error {
 	listener, err := client.Listen(remoteNetwork, remoteAddr)
 	if err != nil {
@@ -55,7 +52,7 @@ func ReversePortForward(
 	return portForwarding(
 		ctx, client, listener,
 		remoteAddr, localNetwork, localAddr,
-		exitAfterTimeout, log, reverseForward,
+		exitAfterTimeout, reverseForward,
 	)
 }
 
@@ -65,7 +62,6 @@ func portForwarding(
 	listener net.Listener,
 	srcAddr, dstNetwork, dstAddr string,
 	exitAfterTimeout time.Duration,
-	log log.Logger,
 	forwardFn ForwardingFunction,
 ) error {
 	done := make(chan struct{})
@@ -84,7 +80,7 @@ func portForwarding(
 			"Stopping devsy up, because it stayed idle for a while. " +
 				"You can disable this via 'devsy context set-options -o EXIT_AFTER_TIMEOUT=false'",
 		)
-	}, srcAddr, log)
+	}, srcAddr)
 	for {
 		// waiting for a new connection
 		connection, err := listener.Accept()
@@ -99,7 +95,7 @@ func portForwarding(
 		go func() {
 			defer counter.Dec()
 
-			forwardFn(connection, client, dstNetwork, dstAddr, log)
+			forwardFn(connection, client, dstNetwork, dstAddr)
 		}()
 	}
 }
@@ -108,7 +104,6 @@ func forward(
 	localConn net.Conn,
 	client *ssh.Client,
 	remoteNetwork, remoteAddr string,
-	log log.Logger,
 ) {
 	// Setup sshConn (type net.Conn)
 	sshConn, err := client.Dial(remoteNetwork, remoteAddr)
@@ -147,7 +142,6 @@ func reverseForward(
 	remoteConn net.Conn,
 	client *ssh.Client,
 	localNetwork, localAddr string,
-	log log.Logger,
 ) {
 	// Setup localConn (type net.Conn)
 	localConn, err := net.Dial(localNetwork, localAddr)

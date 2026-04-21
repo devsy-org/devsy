@@ -104,7 +104,6 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		keys,
 		cmd.Workdir,
 		cmd.ReuseSSHAuthSock,
-		oldlog.Default.ErrorStreamOnly(),
 	)
 	if err != nil {
 		return err

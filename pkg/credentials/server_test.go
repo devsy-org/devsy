@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	"github.com/devsy-org/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +33,7 @@ func TestHandleGitSSHSignature_GRPCError_ReturnsJSON500(t *testing.T) {
 	)
 	w := httptest.NewRecorder()
 
-	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock, log.Discard)
+	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock)
 	require.NoError(t, err)
 
 	resp := w.Result()
@@ -62,7 +61,7 @@ func TestHandleGitSSHSignature_BodyReadError_ReturnsJSON500(t *testing.T) {
 	)
 	w := httptest.NewRecorder()
 
-	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock, log.Discard)
+	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock)
 	require.NoError(t, err, "error should be written to response, not returned")
 
 	resp := w.Result()
@@ -90,7 +89,7 @@ func TestHandleGitSSHSignature_GRPCSuccess_ReturnsJSON200(t *testing.T) {
 	)
 	w := httptest.NewRecorder()
 
-	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock, log.Discard)
+	err := handleGitSSHSignatureRequest(context.Background(), w, req, mock)
 	require.NoError(t, err)
 
 	resp := w.Result()

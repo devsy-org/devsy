@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +49,6 @@ func NewInstallDotfilesCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
-	logger := oldlog.Default.ErrorStreamOnly()
 	targetDir := filepath.Join(os.Getenv("HOME"), "dotfiles")
 
 	_, err := os.Stat(targetDir)
@@ -64,7 +62,6 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 			targetDir,
 			"",
 			cmd.StrictHostKeyChecking,
-			logger,
 		); err != nil {
 			return err
 		}

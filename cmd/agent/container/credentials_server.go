@@ -19,7 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -84,14 +83,11 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	// create debug logger
-	logger := tunnelserver.NewTunnelLogger(ctx, tunnelClient, cmd.Debug)
-
 	// forward ports
 	if cmd.ForwardPorts {
 		go func() {
 			log.Debugf("Start watching & forwarding open ports")
-			err = forwardPorts(ctx, tunnelClient, logger)
+			err = forwardPorts(ctx, tunnelClient)
 			if err != nil {
 				log.Errorf("error forwarding ports: %v", err)
 			}
@@ -106,7 +102,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 
 	// configure docker credential helper
 	if cmd.ConfigureDockerHelper {
-		err = dockercredentials.ConfigureCredentialsContainer(cmd.User, port, logger)
+		err = dockercredentials.ConfigureCredentialsContainer(cmd.User, port)
 		if err != nil {
 			return err
 		}
@@ -144,7 +140,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		if err != nil {
 			log.Errorf("Failed to decode git SSH signing key, signing will be unavailable: %v", err)
 		} else {
-			err = gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey), logger)
+			err = gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey))
 			if err != nil {
 				log.Errorf(
 					"Failed to configure git SSH signature helper, signing will be unavailable: %v",
@@ -158,7 +154,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		}
 	}
 
-	return credentials.RunCredentialsServer(ctx, port, tunnelClient, logger)
+	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
 }
 
 func configureGitUserLocally(
@@ -204,8 +200,8 @@ func configureGitUserLocally(
 	return nil
 }
 
-func forwardPorts(ctx context.Context, client tunnel.TunnelClient, logger oldlog.Logger) error {
-	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}, logger).Run(ctx)
+func forwardPorts(ctx context.Context, client tunnel.TunnelClient) error {
+	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}).Run(ctx)
 }
 
 type forwarder struct {

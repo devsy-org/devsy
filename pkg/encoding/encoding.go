@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machineid"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
 	"github.com/google/uuid"
 )
 
@@ -65,28 +65,24 @@ func SafeConcatNameMax(name []string, max int) string {
 	return fullPath
 }
 
-func GetMachineUIDShort(log log.Logger) string {
-	return GetMachineUID(log)[0:5]
+func GetMachineUIDShort() string {
+	return GetMachineUID()[0:5]
 }
 
 // Gets machine ID and encodes it together with users $HOME path and extra key to protect privacy.
 // Returns a hex-encoded string.
-func GetMachineUID(log log.Logger) string {
+func GetMachineUID() string {
 	id, err := machineid.ID()
 	if err != nil {
 		id = "error"
-		if log != nil {
-			log.Debugf("Error retrieving machine uid: %v", err)
-		}
+		log.Debugf("Error retrieving machine uid: %v", err)
 	}
 	// get $HOME to distinguish two users on the same machine
 	// will be hashed later together with the ID
 	home, err := util.UserHomeDir()
 	if err != nil {
 		home = "error"
-		if log != nil {
-			log.Debugf("Error retrieving machine home: %v", err)
-		}
+		log.Debugf("Error retrieving machine home: %v", err)
 	}
 	mac := hmac.New(sha256.New, []byte(id))
 	mac.Write([]byte(hashingKey))

@@ -48,7 +48,7 @@ func NewRunner(
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 	log log.Logger,
 ) (Runner, error) {
-	driver, err := drivercreate.NewDriver(workspaceConfig, log)
+	driver, err := drivercreate.NewDriver(workspaceConfig)
 	if err != nil {
 		return nil, err
 	}

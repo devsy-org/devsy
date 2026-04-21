@@ -8,7 +8,7 @@ import (
 	"time"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -31,7 +31,6 @@ func WaitForPodReady(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	namespace string,
-	log log.Logger,
 ) (*corev1.Pod, error) {
 	// wait until we have a running loft pod
 	now := time.Now()

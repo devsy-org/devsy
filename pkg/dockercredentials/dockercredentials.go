@@ -13,8 +13,8 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/random"
-	"github.com/devsy-org/log"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/types"
 )
@@ -54,7 +54,7 @@ func (c *Credentials) AuthToken() string {
 	return c.Secret
 }
 
-func ConfigureCredentialsContainer(userName string, port int, log log.Logger) error {
+func ConfigureCredentialsContainer(userName string, port int) error {
 	userHome, err := command.GetHome(userName)
 	if err != nil {
 		return err
@@ -65,7 +65,7 @@ func ConfigureCredentialsContainer(userName string, port int, log log.Logger) er
 		configDir = filepath.Join(userHome, ".docker")
 	}
 
-	return configureCredentials(userName, "#!/bin/sh", "/usr/local/bin", configDir, port, log)
+	return configureCredentials(userName, "#!/bin/sh", "/usr/local/bin", configDir, port)
 }
 
 const AzureContainerRegistryUsername = "00000000-0000-0000-0000-000000000000"
@@ -74,7 +74,6 @@ func configureCredentials(
 	userName, shebang string,
 	targetDir, configDir string,
 	port int,
-	log log.Logger,
 ) error {
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -139,7 +138,7 @@ func configureCredentials(
 	return nil
 }
 
-func ConfigureCredentialsDockerless(targetFolder string, port int, log log.Logger) (string, error) {
+func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
 	dockerConfigDir := filepath.Join(targetFolder, ".cache", random.String(6))
 	err := configureCredentials(
 		"",
@@ -147,7 +146,6 @@ func ConfigureCredentialsDockerless(targetFolder string, port int, log log.Logge
 		dockerConfigDir,
 		dockerConfigDir,
 		port,
-		log,
 	)
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
@@ -169,9 +167,9 @@ func ConfigureCredentialsDockerless(targetFolder string, port int, log log.Logge
 	return dockerConfigDir, nil
 }
 
-func ConfigureCredentialsMachine(targetFolder string, port int, log log.Logger) (string, error) {
+func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) {
 	dockerConfigDir := filepath.Join(targetFolder, ".cache", random.String(12))
-	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port, log)
+	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port)
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
 		return "", err

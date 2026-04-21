@@ -227,7 +227,7 @@ func runNetworkServer(
 		LogF: func(format string, args ...any) {
 			logger.Infof(format, args...)
 		},
-	}, logger)
+	})
 	if err := tsServer.Start(ctx); err != nil {
 		return fmt.Errorf("network server: %w", err)
 	}

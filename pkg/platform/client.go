@@ -8,28 +8,25 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 )
 
 func InitClientFromHost(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	devsyProHost string,
-	log log.Logger,
 ) (client.Client, error) {
-	provider, err := ProviderFromHost(ctx, devsyConfig, devsyProHost, log)
+	provider, err := ProviderFromHost(ctx, devsyConfig, devsyProHost)
 	if err != nil {
 		return nil, fmt.Errorf("provider from pro instance: %w", err)
 	}
 
-	return InitClientFromProvider(ctx, devsyConfig, provider, log)
+	return InitClientFromProvider(ctx, devsyConfig, provider)
 }
 
 func InitClientFromProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName string,
-	log log.Logger,
 ) (client.Client, error) {
 	configPath, err := DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
@@ -43,7 +40,6 @@ func ProviderFromHost(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	devsyProHost string,
-	log log.Logger,
 ) (string, error) {
 	proInstanceConfig, err := provider.LoadProInstanceConfig(
 		devsyConfig.DefaultContext,

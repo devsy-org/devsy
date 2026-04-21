@@ -5,7 +5,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/gorilla/websocket"
 )
 
@@ -15,7 +15,6 @@ func ExecuteConn(
 	stdin io.Reader,
 	stdout io.Writer,
 	stderr io.Writer,
-	log log.Logger,
 ) (int, error) {
 	conn := NewWebsocketConn(rawConn)
 

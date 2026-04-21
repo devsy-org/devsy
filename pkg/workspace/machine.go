@@ -268,7 +268,7 @@ func SingleMachineName(devsyConfig *config.Config, provider string) string {
 		[]string{
 			config.BinaryName + "-shared",
 			provider,
-			encoding.GetMachineUIDShort(oldlog.Default),
+			encoding.GetMachineUIDShort(),
 		},
 		encoding.MachineUIDLength,
 	)

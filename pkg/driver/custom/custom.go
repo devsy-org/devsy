@@ -14,16 +14,15 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 	"github.com/devsy-org/log/scanner"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap/zapcore"
 )
 
-func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger) driver.Driver {
+func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo) driver.Driver {
 	return &customDriver{
-		log:           log,
 		workspaceInfo: workspaceInfo,
 	}
 }
@@ -31,8 +30,6 @@ func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo, log log.Logger)
 var _ driver.Driver = (*customDriver)(nil)
 
 type customDriver struct {
-	log log.Logger
-
 	workspaceInfo *provider.AgentWorkspaceInfo
 }
 
@@ -41,7 +38,7 @@ func (c *customDriver) FindDevContainer(
 	ctx context.Context,
 	workspaceId string,
 ) (*config.ContainerDetails, error) {
-	writer := c.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// run command
@@ -55,7 +52,6 @@ func (c *customDriver) FindDevContainer(
 		stdout,
 		writer,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error finding dev container: %s%w", stdout.String(), err)
@@ -94,7 +90,6 @@ func (c *customDriver) CommandDevContainer(
 			"DEVCONTAINER_USER=" + user,
 			"DEVCONTAINER_COMMAND=" + command,
 		},
-		c.log,
 	)
 	if err != nil {
 		return err
@@ -105,7 +100,7 @@ func (c *customDriver) CommandDevContainer(
 
 // TargetArchitecture returns the architecture of the container runtime. e.g. amd64 or arm64.
 func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
-	writer := c.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// run command
@@ -119,7 +114,6 @@ func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId strin
 		stdout,
 		writer,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return "", fmt.Errorf("error getting target architecture: %s%w", stdout.String(), err)
@@ -139,7 +133,7 @@ func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId strin
 
 // DeleteDevContainer deletes the devcontainer.
 func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
-	writer := c.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// run command
@@ -152,7 +146,6 @@ func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 		writer,
 		writer,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return fmt.Errorf("error deleting devcontainer: %w", err)
@@ -163,7 +156,7 @@ func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 
 // StartDevContainer starts the devcontainer.
 func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	writer := c.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// run command
@@ -176,7 +169,6 @@ func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string
 		writer,
 		writer,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return fmt.Errorf("error starting devcontainer: %w", err)
@@ -187,7 +179,7 @@ func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string
 
 // StopDevContainer stops the devcontainer.
 func (c *customDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	writer := c.log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// run command
@@ -200,7 +192,6 @@ func (c *customDriver) StopDevContainer(ctx context.Context, workspaceId string)
 		writer,
 		writer,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return fmt.Errorf("error stopping devcontainer: %w", err)
@@ -226,7 +217,7 @@ func (c *customDriver) RunDevContainer(
 	go func() {
 		scan := scanner.NewScanner(reader)
 		for scan.Scan() {
-			c.log.Info(scan.Text())
+			log.Info(scan.Text())
 		}
 		done <- struct{}{}
 	}()
@@ -243,7 +234,6 @@ func (c *customDriver) RunDevContainer(
 		[]string{
 			"DEVCONTAINER_RUN_OPTIONS=" + string(out),
 		},
-		c.log,
 	)
 	if err != nil {
 		// close writer, wait for logging to flush and shut down
@@ -275,7 +265,6 @@ func (c *customDriver) GetDevContainerLogs(
 		stdout,
 		stderr,
 		nil,
-		c.log,
 	)
 	if err != nil {
 		return fmt.Errorf("error getting devcontainer logs: %w", err)
@@ -299,7 +288,6 @@ func (c *customDriver) runCommand(
 	stdout io.Writer,
 	stderr io.Writer,
 	extraEnv []string,
-	log log.Logger,
 ) error {
 	if len(command) == 0 {
 		return nil
@@ -317,7 +305,7 @@ func (c *customDriver) runCommand(
 	environ = append(environ, extraEnv...)
 
 	// set debug level
-	if log.GetLevel() == logrus.DebugLevel {
+	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
 		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
 	}
 

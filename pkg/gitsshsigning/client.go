@@ -12,7 +12,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const defaultCredentialsServerPort = "12049"
@@ -30,18 +30,18 @@ func getCredentialsPort() (int, error) {
 }
 
 // HandleGitSSHProgramCall implements logic handling call from git when signing a commit.
-func HandleGitSSHProgramCall(certPath, namespace, bufferFile string, log log.Logger) error {
+func HandleGitSSHProgramCall(certPath, namespace, bufferFile string) error {
 	content, err := extractContentFromGitBuffer(bufferFile)
 	if err != nil {
 		return err
 	}
 
-	signature, err := requestContentSignature(content, certPath, log)
+	signature, err := requestContentSignature(content, certPath)
 	if err != nil {
 		return err
 	}
 
-	if err := writeSignatureToFile(signature, bufferFile, log); err != nil {
+	if err := writeSignatureToFile(signature, bufferFile); err != nil {
 		return err
 	}
 
@@ -54,22 +54,22 @@ func extractContentFromGitBuffer(bufferFile string) ([]byte, error) {
 }
 
 // requestContentSignature sends an HTTP request to the credentials server to sign the content.
-func requestContentSignature(content []byte, certPath string, log log.Logger) ([]byte, error) {
+func requestContentSignature(content []byte, certPath string) ([]byte, error) {
 	requestBody, err := createSignatureRequestBody(content, certPath)
 	if err != nil {
 		return nil, err
 	}
 
-	responseBody, err := sendSignatureRequest(requestBody, log)
+	responseBody, err := sendSignatureRequest(requestBody)
 	if err != nil {
 		return nil, err
 	}
 
-	return parseSignatureResponse(responseBody, log)
+	return parseSignatureResponse(responseBody)
 }
 
 // writeSignatureToFile writes the signed content to a .sig file.
-func writeSignatureToFile(signature []byte, bufferFile string, log log.Logger) error {
+func writeSignatureToFile(signature []byte, bufferFile string) error {
 	sigFile := bufferFile + ".sig"
 	// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
 	if err := os.WriteFile(sigFile, signature, 0o644); err != nil {
@@ -115,7 +115,7 @@ func getSignatureURL() (string, error) {
 	return "http://localhost:" + strconv.Itoa(port) + "/git-ssh-signature", nil
 }
 
-func sendSignatureRequest(requestBody []byte, log log.Logger) ([]byte, error) {
+func sendSignatureRequest(requestBody []byte) ([]byte, error) {
 	url, err := getSignatureURL()
 	if err != nil {
 		return nil, err
@@ -148,7 +148,7 @@ func sendSignatureRequest(requestBody []byte, log log.Logger) ([]byte, error) {
 	return body, nil
 }
 
-func parseSignatureResponse(responseBody []byte, log log.Logger) ([]byte, error) {
+func parseSignatureResponse(responseBody []byte) ([]byte, error) {
 	signatureResponse := &GitSSHSignatureResponse{}
 	if err := json.Unmarshal(responseBody, signatureResponse); err != nil {
 		log.Errorf("Error decoding git ssh signature: %v", err)

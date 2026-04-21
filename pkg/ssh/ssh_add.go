@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log"
 	"golang.org/x/crypto/ssh"
 )
 
-func AddPrivateKeysToAgent(ctx context.Context, log log.Logger) error {
+func AddPrivateKeysToAgent(ctx context.Context) error {
 	if devsshagent.GetSSHAuthSocket() == "" {
 		return fmt.Errorf("ssh-agent is not started")
 	} else if !command.Exists("ssh-add") {

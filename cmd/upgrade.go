@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/upgrade"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +22,7 @@ func NewUpgradeCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			if err := upgrade.Upgrade(ctx, cmd.Version, cmd.DryRun, oldlog.Default); err != nil {
+			if err := upgrade.Upgrade(ctx, cmd.Version, cmd.DryRun); err != nil {
 				return fmt.Errorf("unable to upgrade: %w", err)
 			}
 			return nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	dockerclient "github.com/docker/docker/client"
 )
 
@@ -14,7 +14,7 @@ type Client struct {
 }
 
 // NewClient creates a new docker client.
-func NewClient(ctx context.Context, log log.Logger) (*Client, error) {
+func NewClient(ctx context.Context) (*Client, error) {
 	cli, err := newDockerClientFromEnvironment()
 	if err != nil {
 		log.Warnf("Error creating docker client from environment: %v", err)

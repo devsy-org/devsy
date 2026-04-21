@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/version"
-	oldlog "github.com/devsy-org/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -234,7 +233,6 @@ func injectAgent(ctx *injectContext) error {
 		Stdout:       opts.Stdout,
 		Stderr:       stderr,
 		Timeout:      opts.Timeout,
-		Log:          oldlog.Default.ErrorStreamOnly(),
 	})
 	if err != nil {
 		return handleInjectError(err, wasExecuted, buf)

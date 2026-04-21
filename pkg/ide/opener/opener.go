@@ -21,6 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/ide/zed"
+	pkglog "github.com/devsy-org/devsy/pkg/log"
 	open2 "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -88,7 +89,7 @@ func openDesktopIDE(
 		return openJetBrains(ideName, ideOptions, params)
 
 	case string(config.IDEFleet):
-		return startFleet(ctx, params.Client, params.Log)
+		return startFleet(ctx, params.Client)
 
 	case string(config.IDEZed):
 		return zed.Open(
@@ -257,7 +258,7 @@ func openJupyterBrowser(
 	params Params,
 ) error {
 	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client, params.Log); err != nil {
+		if err := gpg.ForwardAgent(params.Client); err != nil {
 			return err
 		}
 	}
@@ -273,7 +274,7 @@ func openJupyterBrowser(
 	targetURL := fmt.Sprintf("http://localhost:%d/lab", jupyterPort)
 	if jupyter.Options.GetValue(ideOptions, jupyter.OpenOption) == config.BoolTrue {
 		go func() {
-			if openErr := open2.Open(ctx, targetURL, params.Log); openErr != nil {
+			if openErr := open2.Open(ctx, targetURL); openErr != nil {
 				params.Log.Errorf("error opening jupyter notebook: error=%v", openErr)
 			}
 
@@ -295,7 +296,6 @@ func openJupyterBrowser(
 		ExtraPorts:       extraPorts,
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
-		Logger:           params.Log,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
 	})
 }
@@ -306,7 +306,7 @@ func openRStudioBrowser(
 	params Params,
 ) error {
 	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client, params.Log); err != nil {
+		if err := gpg.ForwardAgent(params.Client); err != nil {
 			return err
 		}
 	}
@@ -322,7 +322,7 @@ func openRStudioBrowser(
 	targetURL := fmt.Sprintf("http://localhost:%d", rsPort)
 	if rstudio.Options.GetValue(ideOptions, rstudio.OpenOption) == config.BoolTrue {
 		go func() {
-			if openErr := open2.Open(ctx, targetURL, params.Log); openErr != nil {
+			if openErr := open2.Open(ctx, targetURL); openErr != nil {
 				params.Log.Errorf("error opening rstudio: %v", openErr)
 			}
 
@@ -343,7 +343,6 @@ func openRStudioBrowser(
 		ExtraPorts:       extraPorts,
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
-		Logger:           params.Log,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
 	})
 }
@@ -354,7 +353,7 @@ func openVSCodeBrowser(
 	params Params,
 ) error {
 	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client, params.Log); err != nil {
+		if err := gpg.ForwardAgent(params.Client); err != nil {
 			return err
 		}
 	}
@@ -371,7 +370,7 @@ func openVSCodeBrowser(
 	targetURL := fmt.Sprintf("http://localhost:%d/?folder=%s", vscodePort, folder)
 	if openvscode.Options.GetValue(ideOptions, openvscode.OpenOption) == config.BoolTrue {
 		go func() {
-			if openErr := open2.Open(ctx, targetURL, params.Log); openErr != nil {
+			if openErr := open2.Open(ctx, targetURL); openErr != nil {
 				params.Log.Errorf("error opening vscode: %v", openErr)
 			}
 
@@ -398,17 +397,15 @@ func openVSCodeBrowser(
 		ExtraPorts:       extraPorts,
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
-		Logger:           params.Log,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
 	})
 }
 
-func startFleet(ctx context.Context, client client2.BaseWorkspaceClient, logger log.Logger) error {
+func startFleet(ctx context.Context, client client2.BaseWorkspaceClient) error {
 	stdout := &bytes.Buffer{}
 	sshCmd, err := tunnel.CreateSSHCommand(
 		ctx,
 		client,
-		logger,
 		[]string{"--command", "cat " + fleet.FleetURLFileName},
 	)
 	if err != nil {
@@ -425,11 +422,11 @@ func startFleet(ctx context.Context, client client2.BaseWorkspaceClient, logger 
 		return fmt.Errorf("seems like fleet is not running within the container")
 	}
 
-	logger.Warnf(
+	pkglog.Warnf(
 		"Fleet is exposed at a publicly reachable URL, please make sure to not disclose this URL " +
 			"to anyone as they will be able to reach your workspace from that",
 	)
-	logger.Infof("Starting Fleet at %s ...", url)
+	pkglog.Infof("Starting Fleet at %s ...", url)
 
 	return open2.Run(url)
 }

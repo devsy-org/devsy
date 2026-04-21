@@ -266,7 +266,7 @@ func executeSSHServerHelper(
 
 func addPrivateKeys(ctx context.Context, opts ExecuteCommandOptions) {
 	opts.Log.Debug("adding SSH keys to agent")
-	err := devssh.AddPrivateKeysToAgent(ctx, opts.Log)
+	err := devssh.AddPrivateKeysToAgent(ctx)
 	if err != nil {
 		opts.Log.Debugf("failed to add private keys to SSH agent: %v", err)
 	}

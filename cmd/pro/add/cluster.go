@@ -98,7 +98,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	// Get clusterName from command argument
 	clusterName := args[0]
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host)
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		close(errChan)
 	}()
 
-	_, err = platform.WaitForPodReady(ctx, clientset, namespace, oldlog.Default)
+	_, err = platform.WaitForPodReady(ctx, clientset, namespace)
 	if err = errors.Join(err, <-errChan); err != nil {
 		return fmt.Errorf("wait for pod: %w", err)
 	}

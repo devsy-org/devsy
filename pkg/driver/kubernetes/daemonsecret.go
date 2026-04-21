@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	k8sv1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,15 +17,15 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 	secretName string,
 	data string,
 ) error {
-	k.Log.Debugf("Ensure daemon config secret")
+	log.Debugf("Ensure daemon config secret")
 
 	if k.secretExists(ctx, secretName) {
 		if !k.shouldRecreateDaemonConfigSecret(ctx, data, secretName) {
-			k.Log.Debugf("Daemon config secret '%s' already exists and is up to date", secretName)
+			log.Debugf("Daemon config secret '%s' already exists and is up to date", secretName)
 			return nil
 		}
 
-		k.Log.Debugf(
+		log.Debugf(
 			"Daemon config secret '%s' already exists, but is outdated. Recreating...",
 			secretName,
 		)
@@ -45,7 +46,7 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 		return fmt.Errorf("create daemon config secret: %w", err)
 	}
 
-	k.Log.Infof("Daemon config secret '%s' created", secretName)
+	log.Infof("Daemon config secret '%s' created", secretName)
 	return nil
 }
 

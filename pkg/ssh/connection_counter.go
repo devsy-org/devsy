@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 func newConnectionCounter(
@@ -13,14 +13,12 @@ func newConnectionCounter(
 	timeout time.Duration,
 	onTimeout func(),
 	address string,
-	log log.Logger,
 ) *connectionCounter {
 	return &connectionCounter{
 		ctx:       ctx,
 		address:   address,
 		timeout:   timeout,
 		onTimeout: onTimeout,
-		log:       log,
 	}
 }
 
@@ -30,7 +28,6 @@ type connectionCounter struct {
 	ctx       context.Context
 	timeout   time.Duration
 	onTimeout func()
-	log       log.Logger
 
 	m           sync.Mutex
 	connections int
@@ -42,7 +39,7 @@ func (c *connectionCounter) Add() {
 	defer c.m.Unlock()
 
 	c.connections++
-	c.log.Debugf("New connection on %s (Total: %d)", c.address, c.connections)
+	log.Debugf("New connection on %s (Total: %d)", c.address, c.connections)
 }
 
 func (c *connectionCounter) Dec() {
@@ -50,7 +47,7 @@ func (c *connectionCounter) Dec() {
 	defer c.m.Unlock()
 
 	c.connections--
-	c.log.Debugf("Closed connection on %s (Total: %d)", c.address, c.connections)
+	log.Debugf("Closed connection on %s (Total: %d)", c.address, c.connections)
 	if c.connections <= 0 && c.timeout > 0 {
 		c.generation++
 

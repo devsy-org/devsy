@@ -19,7 +19,6 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
@@ -112,7 +111,6 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		ctx,
 		devsyConfig,
 		provider.Name,
-		oldlog.Default,
 	)
 	if err != nil {
 		return fmt.Errorf("base client: %w", err)
@@ -203,7 +201,6 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 		false,
 		false,
 		nil,
-		oldlog.Default,
 	)
 	if err != nil {
 		return fmt.Errorf("resolve options: %w", err)

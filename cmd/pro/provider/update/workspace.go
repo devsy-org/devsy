@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/terminal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -120,7 +119,7 @@ func (cmd *WorkspaceCmd) Run(
 		)
 	}
 
-	newInstance, err := form.UpdateInstance(ctx, baseClient, oldInstance, oldlog.Default)
+	newInstance, err := form.UpdateInstance(ctx, baseClient, oldInstance)
 	if err != nil {
 		return err
 	}
@@ -144,5 +143,5 @@ func updateInstance(
 		newInstance.Spec.TemplateRef.SyncOnce = true
 	}
 
-	return platform.UpdateInstance(ctx, client, oldInstance, newInstance, oldlog.Default)
+	return platform.UpdateInstance(ctx, client, oldInstance, newInstance)
 }

@@ -15,10 +15,10 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/log"
 	"github.com/gorilla/websocket"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -180,7 +180,6 @@ func DialInstance(
 	workspace *managementv1.DevsyWorkspaceInstance,
 	subResource string,
 	values url.Values,
-	log log.Logger,
 ) (*websocket.Conn, error) {
 	restConfig, err := baseClient.ManagementConfig()
 	if err != nil {
@@ -231,7 +230,6 @@ func UpdateInstance(
 	client client.Client,
 	oldInstance *managementv1.DevsyWorkspaceInstance,
 	newInstance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {
@@ -260,14 +258,13 @@ func UpdateInstance(
 		return nil, fmt.Errorf("patch workspace instance: %w (patch: %s)", err, string(data))
 	}
 
-	return WaitForInstance(ctx, client, res, log)
+	return WaitForInstance(ctx, client, res)
 }
 
 func WaitForInstance(
 	ctx context.Context,
 	client client.Client,
 	instance *managementv1.DevsyWorkspaceInstance,
-	log log.Logger,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
 	managementClient, err := client.Management()
 	if err != nil {

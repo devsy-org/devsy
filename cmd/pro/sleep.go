@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -66,7 +65,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host, oldlog.Default)
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host)
 	if err != nil {
 		return err
 	}

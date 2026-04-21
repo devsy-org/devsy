@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -16,8 +17,8 @@ func (k *KubernetesDriver) TargetArchitecture(
 		return k.options.Architecture, nil
 	}
 
-	k.Log.Debugf("Getting target architecture for workspace '%s'", workspaceId)
-	defer k.Log.Debugf("Done getting target architecture for workspace '%s'", workspaceId)
+	log.Debugf("Getting target architecture for workspace '%s'", workspaceId)
+	defer log.Debugf("Done getting target architecture for workspace '%s'", workspaceId)
 
 	// get all nodes
 	nodes, err := k.client.Client().CoreV1().Nodes().List(ctx, metav1.ListOptions{})

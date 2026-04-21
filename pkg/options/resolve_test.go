@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/log"
 	"gotest.tools/assert"
 )
 
@@ -669,7 +668,7 @@ func TestResolveOptions(t *testing.T) {
 		if testCase.ResolveGlobal {
 			resolverOpts = append(resolverOpts, resolver.WithResolveGlobal())
 		}
-		r := resolver.New(testCase.UserValues, testCase.ExtraValues, log.Default, resolverOpts...)
+		r := resolver.New(testCase.UserValues, testCase.ExtraValues, resolverOpts...)
 		options, dynamicOptions, err := r.Resolve(
 			context.Background(),
 			testCase.ResolvedDynamicDefinitions,

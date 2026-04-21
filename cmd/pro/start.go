@@ -1158,7 +1158,7 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
 	// wait for loft pod to start
 	log.Info("waiting for Devsy Pro pod to be running")
-	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace, oldlog.Default)
+	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
 	log.Infof("release Pod started")
 	if err != nil {
 		return nil, err

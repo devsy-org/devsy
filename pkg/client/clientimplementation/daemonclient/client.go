@@ -112,7 +112,6 @@ func (c *client) RefreshOptions(
 		c.config,
 		c.workspace,
 		userOptions,
-		c.log,
 		resolver.WithResolveSubOptions(),
 	)
 	if err != nil {
@@ -135,7 +134,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
-	err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 5, c.log)
+	err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 5)
 	if err != nil {
 		instance, getWorkspaceErr := c.localClient.GetWorkspace(ctx, c.workspace.UID)
 		// if we can't reach the daemon try to start the desktop app
@@ -155,7 +154,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 			time.Sleep(2 * time.Second)
 
 			// let's try again
-			err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 20, c.log)
+			err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 20)
 			if err != nil {
 				instance, getWorkspaceErr = c.localClient.GetWorkspace(ctx, c.workspace.UID)
 			} else {
@@ -210,11 +209,11 @@ func (c *client) SSHClients(
 		return c.tsClient.DialTCP(ctx, addressParts[0], uint16(port))
 	}
 
-	toolClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, "root", time.Second*10, c.log)
+	toolClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, "root", time.Second*10)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH tool client: %w", err)
 	}
-	userClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, user, time.Second*10, c.log)
+	userClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, user, time.Second*10)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH user client: %w", err)
 	}

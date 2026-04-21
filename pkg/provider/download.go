@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/download"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/log"
-	oldlog "github.com/devsy-org/log"
 	"github.com/devsy-org/log/hash"
 	"k8s.io/client-go/util/retry"
 )
@@ -473,7 +472,7 @@ func downloadAndSaveFile(
 ) (string, error) {
 	log.Infof("downloading binary %s from %s", binaryName, binary.Path)
 
-	body, err := download.File(binary.Path, oldlog.Default)
+	body, err := download.File(binary.Path)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)
 	}
@@ -526,7 +525,7 @@ type archiveDownloadParams struct {
 func extractArchive(params archiveDownloadParams) (string, error) {
 	log.Infof("downloading binary %s from %s", params.binaryName, params.binary.Path)
 
-	body, err := download.File(params.binary.Path, oldlog.Default)
+	body, err := download.File(params.binary.Path)
 	if err != nil {
 		return "", err
 	}

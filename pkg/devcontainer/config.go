@@ -124,7 +124,7 @@ func (r *runner) getDefaultConfig(
 		}
 	} else {
 		r.Log.Infof("Try detecting project programming language...")
-		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder, r.Log)
+		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder)
 	}
 
 	defaultConfig.Origin = path.Join(filepath.ToSlash(r.LocalWorkspaceFolder), ".devcontainer.json")

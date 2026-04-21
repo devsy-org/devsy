@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/pflag"
 )
 
@@ -25,7 +24,6 @@ type Cloner interface {
 		repository string,
 		targetDir string,
 		extraArgs, extraEnv []string,
-		log log.Logger,
 	) error
 }
 
@@ -116,21 +114,11 @@ func (c *cloner) initialArgs() []string {
 	return []string{"clone"}
 }
 
-type progressWriter struct {
-	level logrus.Level
-	log   log.Logger
-}
-
-func (w *progressWriter) Write(p []byte) (n int, err error) {
-	return w.log.WriteLevel(w.level, p)
-}
-
 func (c *cloner) Clone(
 	ctx context.Context,
 	repository string,
 	targetDir string,
 	extraArgs, extraEnv []string,
-	log log.Logger,
 ) error {
 	args := c.initialArgs()
 	args = append(args, extraArgs...)
@@ -142,7 +130,7 @@ func (c *cloner) Clone(
 		extraEnv = append(extraEnv, "GIT_LFS_SKIP_SMUDGE=1")
 	}
 
-	w := &progressWriter{log: log, level: logrus.InfoLevel}
+	w := log.Writer(log.LevelInfo)
 	gitCommand := CommandContext(ctx, extraEnv, args...)
 	gitCommand.Stdout = w
 	gitCommand.Stderr = w

@@ -12,6 +12,11 @@ const (
 	LevelFatal = 0
 )
 
+// DebugEnabled reports whether debug-level messages are currently logged.
+func DebugEnabled() bool {
+	return sugar.Desugar().Core().Enabled(zapcore.DebugLevel)
+}
+
 // VerbosityToLevel converts a -v count (0-3) to a zapcore.Level.
 // 0 = error+fatal only, 1 = +warn+info, 2 = +debug, 3 = trace (mapped to zap Debug-1).
 func VerbosityToLevel(verbosity int) zapcore.Level {

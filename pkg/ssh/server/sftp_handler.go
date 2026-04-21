@@ -5,14 +5,13 @@ import (
 	"io"
 
 	"github.com/devsy-org/devsy/pkg/command"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/ssh"
 	"github.com/pkg/sftp"
-	"github.com/sirupsen/logrus"
 )
 
-func sftpHandler(sess ssh.Session, currentUser string, log log.Logger) {
-	writer := log.Writer(logrus.DebugLevel, false)
+func sftpHandler(sess ssh.Session, currentUser string) {
+	writer := log.Writer(log.LevelDebug)
 	defer func() { _ = writer.Close() }()
 
 	user := sess.User()

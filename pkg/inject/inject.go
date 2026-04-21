@@ -13,7 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 //go:embed inject.sh
@@ -37,7 +37,6 @@ type InjectOptions struct {
 	Stdout       io.Writer
 	Stderr       io.Writer
 	Timeout      time.Duration
-	Log          log.Logger
 }
 
 func Inject(opts InjectOptions) (bool, error) {
@@ -46,9 +45,6 @@ func Inject(opts InjectOptions) (bool, error) {
 	}
 	if opts.Exec == nil {
 		return false, fmt.Errorf("exec function is required")
-	}
-	if opts.Log == nil {
-		return false, fmt.Errorf("log is required")
 	}
 	if opts.ScriptParams == nil {
 		return false, fmt.Errorf("script params is required")
@@ -59,7 +55,7 @@ func Inject(opts InjectOptions) (bool, error) {
 		if opts.ScriptParams.DownloadURLs != nil {
 			url = opts.ScriptParams.DownloadURLs.Base
 		}
-		opts.Log.Debugf("prefer downloading agent from URL: url=%s", url)
+		log.Debugf("prefer downloading agent from URL: url=%s", url)
 	}
 
 	scriptRawCode, err := GenerateScript(Script, opts.ScriptParams)
@@ -67,8 +63,8 @@ func Inject(opts InjectOptions) (bool, error) {
 		return true, err
 	}
 
-	opts.Log.Debug("execute inject script")
-	defer opts.Log.Debug("done injecting")
+	log.Debug("execute inject script")
+	defer log.Debug("done injecting")
 
 	// start script
 	stdinReader, stdinWriter, err := os.Pipe()
@@ -100,7 +96,7 @@ func Inject(opts InjectOptions) (bool, error) {
 	execErrChan := make(chan error, 1)
 	go func() {
 		defer func() { _ = stdoutWriter.Close() }()
-		defer opts.Log.Debug("done exec")
+		defer log.Debug("done exec")
 
 		err := opts.Exec(cancelCtx, scriptRawCode, stdinReader, stdoutWriter, delayedStderr)
 		if err != nil && !errors.Is(err, context.Canceled) &&
@@ -115,7 +111,7 @@ func Inject(opts InjectOptions) (bool, error) {
 	injectChan := make(chan injectResult, 1)
 	go func() {
 		defer func() { _ = stdinWriter.Close() }()
-		defer opts.Log.Debug("done inject")
+		defer log.Debug("done inject")
 
 		wasExecuted, err := inject(
 			opts.LocalFile,
@@ -125,7 +121,6 @@ func Inject(opts InjectOptions) (bool, error) {
 			opts.Stdout,
 			delayedStderr,
 			opts.Timeout,
-			opts.Log,
 		)
 		injectChan <- injectResult{
 			wasExecuted: wasExecuted,
@@ -151,7 +146,7 @@ func Inject(opts InjectOptions) (bool, error) {
 		return result.wasExecuted, nil
 	}
 
-	opts.Log.Debugf("Rerun command as binary was injected")
+	log.Debugf("Rerun command as binary was injected")
 	delayedStderr.Start()
 	return true, opts.Exec(
 		opts.Ctx,
@@ -170,7 +165,6 @@ func inject(
 	stdoutOut io.Writer,
 	delayedStderr *delayedWriter,
 	timeout time.Duration,
-	log log.Logger,
 ) (bool, error) {
 	// wait until we read start
 	var line string

@@ -7,8 +7,8 @@ import (
 	"io"
 
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,7 +17,6 @@ import (
 // NewKubernetesDriver constructs a struct capable of provisioning a workspace and it's resources using kubernetes.
 func NewKubernetesDriver(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
-	log log.Logger,
 ) (driver.ReprovisioningDriver, error) {
 	options := workspaceInfo.Agent.Kubernetes
 	if options.KubernetesConfig != "" {
@@ -43,7 +42,6 @@ func NewKubernetesDriver(
 		namespace:   namespace,
 		options:     &options,
 		agentConfig: &workspaceInfo.Agent,
-		Log:         log,
 	}, nil
 }
 
@@ -54,7 +52,6 @@ type KubernetesDriver struct {
 
 	options     *provider2.ProviderKubernetesDriverConfig
 	agentConfig *provider2.ProviderAgentConfig
-	Log         log.Logger
 }
 
 func (k *KubernetesDriver) CanReprovision() bool {
@@ -91,8 +88,8 @@ func (k *KubernetesDriver) getDevContainerPvc(
 }
 
 func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	k.Log.Debugf("Stopping devcontainer for workspace '%s'", workspaceId)
-	defer k.Log.Debugf("Done stopping devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Stopping devcontainer for workspace '%s'", workspaceId)
+	defer log.Debugf("Done stopping devcontainer for workspace '%s'", workspaceId)
 
 	workspaceId = getID(workspaceId)
 
@@ -106,20 +103,20 @@ func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId str
 }
 
 func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
-	k.Log.Debugf("Deleting devcontainer for workspace '%s'", workspaceId)
-	defer k.Log.Debugf("Done deleting devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Deleting devcontainer for workspace '%s'", workspaceId)
+	defer log.Debugf("Done deleting devcontainer for workspace '%s'", workspaceId)
 
 	workspaceId = getID(workspaceId)
 
 	// delete pod
-	k.Log.Infof("Delete pod '%s'...", workspaceId)
+	log.Infof("Delete pod '%s'...", workspaceId)
 	err := k.waitPodDeleted(ctx, workspaceId)
 	if err != nil {
 		return err
 	}
 
 	// delete pvc
-	k.Log.Infof("Delete persistent volume claim '%s'...", workspaceId)
+	log.Infof("Delete persistent volume claim '%s'...", workspaceId)
 	err = k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).
@@ -132,7 +129,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete role binding & service account
 	if k.options.ClusterRole != "" {
-		k.Log.Infof("Delete role binding '%s'...", workspaceId)
+		log.Infof("Delete role binding '%s'...", workspaceId)
 		err = k.client.Client().
 			RbacV1().
 			RoleBindings(k.namespace).
@@ -144,7 +141,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete daemon config secret
 	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
-		k.Log.Infof("Delete daemon config secret '%s'...", workspaceId)
+		log.Infof("Delete daemon config secret '%s'...", workspaceId)
 		err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId))
 		if err != nil {
 			return err
@@ -153,7 +150,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete pull secret
 	if k.options.KubernetesPullSecretsEnabled != "" {
-		k.Log.Infof("Delete pull secret '%s'...", workspaceId)
+		log.Infof("Delete pull secret '%s'...", workspaceId)
 		err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId))
 		if err != nil {
 			return err

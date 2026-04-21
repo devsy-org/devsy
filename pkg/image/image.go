@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/devsy-org/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -98,7 +98,6 @@ func (t *contextAwareTransport) RoundTrip(req *http.Request) (*http.Response, er
 func GetImageConfig(
 	ctx context.Context,
 	image string,
-	log log.Logger,
 ) (*v1.ConfigFile, v1.Image, error) {
 	log.Debugf("Getting image config for image '%s'", image)
 	defer log.Debugf("Done getting image config for image '%s'", image)
@@ -136,7 +135,6 @@ func shouldNotBeSlugged(data string, regexp *regexp.Regexp, maxSize int) bool {
 func GetImageConfigForArch(
 	ctx context.Context,
 	image, arch string,
-	log log.Logger,
 ) (*v1.ConfigFile, v1.Image, error) {
 	log.Debugf("Getting image config for image '%s' with architecture '%s'", image, arch)
 	defer log.Debugf("Done getting image config for image '%s' with architecture '%s'", image, arch)

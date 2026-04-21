@@ -140,7 +140,6 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 			serverPort, err := credentials.StartCredentialsServer(
 				ctx,
 				sctx.tunnelClient,
-				sctx.logger,
 			)
 			if err != nil {
 				return "", err
@@ -148,7 +147,6 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 			return dockercredentials.ConfigureCredentialsDockerless(
 				agent.DockerlessCredentialsPath,
 				serverPort,
-				sctx.logger,
 			)
 		},
 	}); err != nil {
@@ -162,7 +160,6 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 	cleanupFunc := cmd.setupGitCredentials(
 		sctx.ctx,
 		sctx.tunnelClient,
-		sctx.logger,
 	)
 
 	// Clone repository before cleaning up git credentials
@@ -283,7 +280,6 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 func (cmd *SetupContainerCmd) setupGitCredentials(
 	ctx context.Context,
 	tunnelClient tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) func() {
 	if !cmd.InjectGitCredentials {
 		return nil
@@ -295,7 +291,7 @@ func (cmd *SetupContainerCmd) setupGitCredentials(
 	}
 
 	cancelCtx, cancel := context.WithCancel(ctx)
-	cleanupFunc, err := configureSystemGitCredentials(cancelCtx, tunnelClient, logger)
+	cleanupFunc, err := configureSystemGitCredentials(cancelCtx, tunnelClient)
 	if err != nil {
 		cancel()
 		log.Errorf("error configuring git credentials: %v", err)
@@ -637,13 +633,12 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 func configureSystemGitCredentials(
 	ctx context.Context,
 	client tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) (func(), error) {
 	if !command.Exists("git") {
 		return nil, errors.New("git not found")
 	}
 
-	serverPort, err := credentials.StartCredentialsServer(ctx, client, logger)
+	serverPort, err := credentials.StartCredentialsServer(ctx, client)
 	if err != nil {
 		return nil, err
 	}

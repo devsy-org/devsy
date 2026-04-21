@@ -9,15 +9,14 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/log"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/random"
-	"github.com/devsy-org/log"
 )
 
 func StartCredentialsServer(
 	ctx context.Context,
 	client tunnel.TunnelClient,
-	log log.Logger,
 ) (int, error) {
 	port, err := portpkg.FindAvailablePort(random.InRange(13000, 17000))
 	if err != nil {
@@ -25,19 +24,19 @@ func StartCredentialsServer(
 	}
 
 	go func() {
-		err := RunCredentialsServer(ctx, port, client, log)
+		err := RunCredentialsServer(ctx, port, client)
 		if err != nil {
 			log.Errorf("error running git credentials server: error=%v", err)
 		}
 	}()
 
-	if err := waitForServer(ctx, port, log); err != nil {
+	if err := waitForServer(ctx, port); err != nil {
 		return 0, err
 	}
 	return port, nil
 }
 
-func waitForServer(ctx context.Context, port int, log log.Logger) error {
+func waitForServer(ctx context.Context, port int) error {
 	maxWait := time.Second * 4
 	now := time.Now()
 	for {
