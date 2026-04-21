@@ -10,8 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +77,7 @@ func (cmd *CheckHealthCmd) Run(
 		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
 		Stdout:  &buf,
-		Stderr:  oldlog.Default.Writer(logrus.ErrorLevel, true),
+		Stderr:  devsylog.Writer(devsylog.LevelError),
 	})
 	if err != nil {
 		return fmt.Errorf("check health with provider \"%s\": %w", provider.Name, err)

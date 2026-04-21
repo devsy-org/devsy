@@ -10,8 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +72,7 @@ func (cmd *CreateWorkspaceCmd) Run(
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,
-		Stderr:  oldlog.Default.ErrorStreamOnly().Writer(logrus.ErrorLevel, true),
+		Stderr:  devsylog.Writer(devsylog.LevelError),
 	})
 	if err != nil {
 		return fmt.Errorf("create workspace: %w", err)

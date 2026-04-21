@@ -18,8 +18,7 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/workspace"
-	oldlog "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	devsylog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -125,7 +124,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	writer := oldlog.Default.ErrorStreamOnly().Writer(logrus.InfoLevel, false)
+	writer := devsylog.Writer(devsylog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// Get the timeout from the context options
