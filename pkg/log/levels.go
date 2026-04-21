@@ -17,6 +17,24 @@ func DebugEnabled() bool {
 	return sugar.Desugar().Core().Enabled(zapcore.DebugLevel)
 }
 
+// LevelString returns the lowest enabled log level as a lowercase string
+// (e.g. "debug", "info", "warn", "error", "fatal").
+func LevelString() string {
+	core := sugar.Desugar().Core()
+	for _, l := range []zapcore.Level{
+		zapcore.DebugLevel,
+		zapcore.InfoLevel,
+		zapcore.WarnLevel,
+		zapcore.ErrorLevel,
+		zapcore.FatalLevel,
+	} {
+		if core.Enabled(l) {
+			return l.String()
+		}
+	}
+	return "info"
+}
+
 // VerbosityToLevel converts a -v count (0-3) to a zapcore.Level.
 // 0 = error+fatal only, 1 = +warn+info, 2 = +debug, 3 = trace (mapped to zap Debug-1).
 func VerbosityToLevel(verbosity int) zapcore.Level {
