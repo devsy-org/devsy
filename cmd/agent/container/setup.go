@@ -40,7 +40,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ts"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -95,12 +94,11 @@ type setupContext struct {
 	workspaceInfo *provider2.ContainerWorkspaceInfo
 	setupInfo     *config.Result
 	tunnelClient  tunnel.TunnelClient
-	logger        oldlog.Logger
 }
 
 // Run runs the command logic.
 func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
-	tunnelClient, logger, err := cmd.initializeTunnelClient(ctx)
+	tunnelClient, err := cmd.initializeTunnelClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -115,7 +113,6 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		workspaceInfo: workspaceInfo,
 		setupInfo:     setupInfo,
 		tunnelClient:  tunnelClient,
-		logger:        logger,
 	}
 
 	if err := cmd.prepareWorkspace(sctx); err != nil {
@@ -211,20 +208,19 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(
 	ctx context.Context,
-) (tunnel.TunnelClient, oldlog.Logger, error) {
+) (tunnel.TunnelClient, error) {
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initializing tunnel client: %w", err)
+		return nil, fmt.Errorf("initializing tunnel client: %w", err)
 	}
 
-	logger := tunnelserver.NewTunnelLogger(ctx, tunnelClient, cmd.Debug)
 	log.Debugf("created logger")
 
 	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
-		return nil, nil, fmt.Errorf("ping client: %w", err)
+		return nil, fmt.Errorf("ping client: %w", err)
 	}
 
-	return tunnelClient, logger, nil
+	return tunnelClient, nil
 }
 
 func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.ContainerWorkspaceInfo, *config.Result, error) {
@@ -268,7 +264,6 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 			sctx.workspaceInfo,
 			m,
 			sctx.tunnelClient,
-			sctx.logger,
 		); err != nil {
 			return err
 		}
@@ -675,7 +670,6 @@ func streamMount(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	m *config.Mount,
 	tunnelClient tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) error {
 	// if we have a platform workspace socket we connect directly to it
 	if workspaceInfo.CLIOptions.Platform.Enabled {
