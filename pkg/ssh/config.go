@@ -13,8 +13,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log/scanner"
 )
 
 var configLock sync.Mutex

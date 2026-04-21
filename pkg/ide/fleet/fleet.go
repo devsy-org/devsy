@@ -16,8 +16,8 @@ import (
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
-	"github.com/devsy-org/log/scanner"
 )
 
 const (

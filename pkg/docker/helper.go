@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/log/scanner"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 

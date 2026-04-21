@@ -13,7 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/git"
-	"github.com/devsy-org/log/scanner"
+	"github.com/devsy-org/devsy/pkg/scanner"
 )
 
 type GitCredentials struct {

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/devsy-org/log/scanner"
+	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/moby/buildkit/frontend/dockerfile/command"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
