@@ -85,7 +85,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 		return cmd.handleInitError(err, workspaceInfo, logger)
 	}
 
-	if err := cmd.up(ctx, workspaceInfo, tunnelClient, logger); err != nil {
+	if err := cmd.up(ctx, workspaceInfo, tunnelClient); err != nil {
 		return fmt.Errorf("devcontainer up: %w", err)
 	}
 
@@ -150,9 +150,8 @@ func (cmd *UpCmd) up(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
-	logger oldlog.Logger,
 ) error {
-	result, err := cmd.devsyUp(ctx, workspaceInfo, logger)
+	result, err := cmd.devsyUp(ctx, workspaceInfo)
 	if err != nil {
 		return err
 	}
@@ -181,9 +180,8 @@ func (cmd *UpCmd) sendResult(
 func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) (*config2.Result, error) {
-	runner, err := CreateRunner(workspaceInfo, logger)
+	runner, err := CreateRunner(workspaceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -196,19 +194,16 @@ func (cmd *UpCmd) devsyUp(
 
 func CreateRunner(
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
 		agent.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
-		logger,
 	)
 }
 
 func InitContentFolder(
 	workspaceInfo *provider.AgentWorkspaceInfo,
-	logger oldlog.Logger,
 ) (bool, error) {
 	exists, err := contentFolderExists(workspaceInfo.ContentFolder)
 	if err != nil {
@@ -515,7 +510,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		)
 	}
 
-	exists, err := InitContentFolder(params.workspaceInfo, params.log)
+	exists, err := InitContentFolder(params.workspaceInfo)
 	if err != nil {
 		return err
 	}

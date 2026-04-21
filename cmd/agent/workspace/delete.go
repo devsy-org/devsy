@@ -88,7 +88,7 @@ func removeContainer(
 	logger oldlog.Logger,
 ) error {
 	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
-	runner, err := CreateRunner(workspaceInfo, logger)
+	runner, err := CreateRunner(workspaceInfo)
 	if err != nil {
 		return err
 	}

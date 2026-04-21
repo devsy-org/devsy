@@ -59,7 +59,6 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 		agent.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
-		logger,
 	)
 	if err != nil {
 		return fmt.Errorf("create runner: %w", err)

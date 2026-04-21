@@ -8,8 +8,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
-	logLib "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -193,7 +191,7 @@ type PrepareBuildContextSuite struct {
 }
 
 func (s *PrepareBuildContextSuite) SetupTest() {
-	s.runner = &runner{Log: logLib.NewDiscardLogger(logrus.InfoLevel)}
+	s.runner = &runner{}
 }
 
 func (s *PrepareBuildContextSuite) TestNoContextRelativePath() {

@@ -20,9 +20,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	oldlog "github.com/devsy-org/log"
 )
 
 const (
@@ -52,8 +52,8 @@ func (r *runner) setupContainer(
 	if err := r.injectAgentIntoContainer(ctx, params.timeout); err != nil {
 		return nil, err
 	}
-	r.Log.Debugf("injected into container")
-	defer r.Log.Debugf("done setting up container")
+	log.Debugf("injected into container")
+	defer log.Debugf("done setting up container")
 
 	info, err := r.prepareSetupInfo(params)
 	if err != nil {
@@ -127,7 +127,6 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 		result.MergedConfig.Mounts = filterWorkspaceMounts(
 			result.MergedConfig.Mounts,
 			r.WorkspaceConfig.ContentFolder,
-			r.Log,
 		)
 	}
 
@@ -173,7 +172,7 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 }
 
 func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string) string {
-	r.Log.Infof("setting up container")
+	log.Infof("setting up container")
 	args := []string{
 		shellescape.Quote(agent.ContainerDevsyHelperLocation),
 		"agent", "container", "setup",
@@ -229,7 +228,7 @@ func (r *runner) addDebugFlag(args *[]string) {
 }
 
 func (r *runner) isDebugMode() bool {
-	return r.Log.GetLevel() == logrus.DebugLevel
+	return log.DebugEnabled()
 }
 
 func (r *runner) executeSetup(
@@ -245,7 +244,7 @@ func (r *runner) executeSetup(
 			r.WorkspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.WorkspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			config.GetMounts(result),
-			r.Log,
+			oldlog.Default.ErrorStreamOnly(),
 			tunnelserver.WithPlatformOptions(&r.WorkspaceConfig.CLIOptions.Platform),
 		)
 	}
@@ -275,7 +274,6 @@ func (r *runner) executeSetup(
 		AgentInject:      agentInjectFunc,
 		SSHCommand:       sshTunnelCmd,
 		Command:          setupCommand,
-		Log:              r.Log,
 		TunnelServerFunc: runSetupServer,
 	})
 }
@@ -310,7 +308,6 @@ func getRelativeDevContainerJson(origin, localWorkspaceFolder string) string {
 func filterWorkspaceMounts(
 	mounts []*config.Mount,
 	baseFolder string,
-	log log.Logger,
 ) []*config.Mount {
 	retMounts := []*config.Mount{}
 	for _, mount := range mounts {

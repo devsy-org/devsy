@@ -18,8 +18,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/joho/godotenv"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -160,7 +160,7 @@ func (r *runner) runDockerCompose(
 	}
 	composeGlobalArgs := projFiles.composeGlobalArgs
 
-	r.Log.Debugf("Loading docker compose project %+v", projFiles.composeFiles)
+	log.Debugf("Loading docker compose project %+v", projFiles.composeFiles)
 	project, err := compose.LoadDockerComposeProject(
 		ctx,
 		projFiles.composeFiles,
@@ -170,7 +170,7 @@ func (r *runner) runDockerCompose(
 		return nil, fmt.Errorf("load docker compose project: %w", err)
 	}
 	project.Name = composeHelper.GetProjectName(r.ID)
-	r.Log.Debugf("Loaded project %s", project.Name)
+	log.Debugf("Loaded project %s", project.Name)
 
 	containerDetails, err := composeHelper.FindDevContainer(
 		ctx,
@@ -187,13 +187,13 @@ func (r *runner) runDockerCompose(
 		// Try to find existing project first
 		existingProjectFiles, err := composeHelper.FindProjectFiles(ctx, project.Name)
 		if err != nil {
-			r.Log.Errorf("Error finding project files: %s", err)
+			log.Errorf("Error finding project files: %s", err)
 		} else if len(existingProjectFiles) > 0 && !options.Recreate {
-			r.Log.Debugf("Found existing project files: %s", existingProjectFiles)
+			log.Debugf("Found existing project files: %s", existingProjectFiles)
 			// make sure all project files are still available
 			for _, file := range existingProjectFiles {
 				if _, err := os.Stat(file); err != nil {
-					r.Log.Warnf("Project file %s does not exist anymore, recreating project", file)
+					log.Warnf("Project file %s does not exist anymore, recreating project", file)
 					containerDetails = nil
 					break
 				}
@@ -209,10 +209,10 @@ func (r *runner) runDockerCompose(
 			upArgs = r.onlyRunServices(upArgs, parsedConfig)
 
 			// Run docker-compose
-			writer := r.Log.Writer(logrus.InfoLevel, false)
+			writer := log.Writer(log.LevelInfo)
 			err = composeHelper.Run(ctx, upArgs, nil, writer, writer)
 			if err != nil {
-				r.Log.Errorf("Error starting project: %s", err)
+				log.Errorf("Error starting project: %s", err)
 			} else {
 				// wait for running and get container details
 				details, err := composeHelper.FindDevContainer(
@@ -221,7 +221,7 @@ func (r *runner) runDockerCompose(
 					parsedConfig.Config.Service,
 				)
 				if err != nil {
-					r.Log.Errorf("Error finding dev container: %s", err)
+					log.Errorf("Error finding dev container: %s", err)
 				} else {
 					containerDetails = details
 					didStartProject = true
@@ -262,10 +262,10 @@ func (r *runner) runDockerCompose(
 			ctx,
 			r.ID,
 			parsedConfig.Config,
-			r.Log.Writer(logrus.InfoLevel, false),
+			log.Writer(log.LevelInfo),
 		)
 		if err != nil {
-			r.Log.Errorf("failed to update container user UID/GID: error=%v", err)
+			log.Errorf("failed to update container user UID/GID: error=%v", err)
 			return nil, err
 		}
 	}
@@ -503,7 +503,7 @@ func (r *runner) startContainer(
 	}
 
 	if container != nil && options.Recreate {
-		r.Log.Debugf("Deleting dev container %s due to --recreate", container.ID)
+		log.Debugf("Deleting dev container %s due to --recreate", container.ID)
 
 		if err := r.Driver.StopDevContainer(ctx, r.ID); err != nil {
 			return nil, fmt.Errorf("stop dev container: %w", err)
@@ -523,7 +523,7 @@ func (r *runner) startContainer(
 	upArgs = r.onlyRunServices(upArgs, parsedConfig)
 
 	// start compose
-	writer := r.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	err = composeHelper.Run(ctx, upArgs, nil, writer, writer)
 	if err != nil {
@@ -688,7 +688,7 @@ func (r *runner) buildAndExtendDockerCompose(
 			dockerfileContents,
 		)
 
-		r.Log.Debugf(
+		log.Debugf(
 			"Creating extended Dockerfile %s with content: \n %s",
 			extendedDockerfilePath,
 			extendedDockerfileContent,
@@ -732,9 +732,9 @@ func (r *runner) buildAndExtendDockerCompose(
 	}
 
 	// build image
-	writer := r.Log.Writer(logrus.InfoLevel, false)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	r.Log.Debugf("Run %s %s", composeHelper.Command, strings.Join(buildArgs, " "))
+	log.Debugf("Run %s %s", composeHelper.Command, strings.Join(buildArgs, " "))
 	err = composeHelper.Run(ctx, buildArgs, nil, writer, writer)
 	if err != nil {
 		return composeExtendResult{buildImageName: buildImageName}, err
@@ -887,7 +887,7 @@ func (r *runner) prepareBuildContext(
 		if err != nil {
 			return nil, err
 		}
-		r.Log.Debugf(
+		log.Debugf(
 			"modified Dockerfile path in context to %s and content for extended compose build context %s",
 			relDockerFilePath,
 			composeService.Build.Context,
@@ -968,7 +968,7 @@ func (r *runner) writeComposeFile(service *composetypes.ServiceConfig) (string, 
 		fmt.Sprintf("%s-%d.yml", FeaturesBuildOverrideFilePrefix, time.Now().Second()),
 	)
 
-	r.Log.Debugf(
+	log.Debugf(
 		"Creating docker-compose build %s with content:\n %s",
 		dockerComposePath,
 		string(dockerComposeData),
@@ -1026,7 +1026,7 @@ func (r *runner) extendedDockerComposeUp(
 		fmt.Sprintf("%s-%d.yml", FeaturesStartOverrideFilePrefix, time.Now().Second()),
 	)
 
-	r.Log.Debugf(
+	log.Debugf(
 		"Creating docker-compose up %s with content:\n %s",
 		dockerComposePath,
 		string(dockerComposeData),
@@ -1173,7 +1173,7 @@ func (r *runner) configureGPUResources(
 			}
 		}
 		if warnIfMissing {
-			r.Log.Warn("GPU required but not available on host")
+			log.Warn("GPU required but not available on host")
 		}
 	}
 }

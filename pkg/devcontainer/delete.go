@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 func (r *runner) Delete(ctx context.Context) error {
@@ -16,7 +17,7 @@ func (r *runner) Delete(ctx context.Context) error {
 		return nil
 	}
 
-	r.Log.Infof("deleting devcontainer: devcontainerID=%s", containerDetails.ID)
+	log.Infof("deleting devcontainer: devcontainerID=%s", containerDetails.ID)
 	if isDockerCompose, projectName := getDockerComposeProject(containerDetails); isDockerCompose {
 		err = r.deleteDockerCompose(ctx, projectName)
 		if err != nil {

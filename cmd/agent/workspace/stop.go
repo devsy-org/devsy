@@ -66,7 +66,7 @@ func stopContainer(
 	logger oldlog.Logger,
 ) error {
 	log.Debugf("stopping Devsy container")
-	runner, err := CreateRunner(workspaceInfo, logger)
+	runner, err := CreateRunner(workspaceInfo)
 	if err != nil {
 		return err
 	}

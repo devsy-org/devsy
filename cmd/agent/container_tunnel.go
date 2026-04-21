@@ -64,13 +64,13 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// make sure content folder exists
-	_, err = workspace.InitContentFolder(workspaceInfo, logger)
+	_, err = workspace.InitContentFolder(workspaceInfo)
 	if err != nil {
 		return err
 	}
 
 	// create runner
-	runner, err := workspace.CreateRunner(workspaceInfo, logger)
+	runner, err := workspace.CreateRunner(workspaceInfo)
 	if err != nil {
 		return err
 	}
