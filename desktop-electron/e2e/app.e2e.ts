@@ -15,17 +15,17 @@ test.afterAll(async () => {
 
 test.describe("App Launch", () => {
   test("should render the sidebar", async () => {
-    const sidebar = page.locator("nav")
+    const sidebar = page.locator("[data-sidebar=\"sidebar\"]")
     await expect(sidebar).toBeVisible()
   })
 
   test("should show the Dashboard heading", async () => {
-    const heading = page.locator("h2")
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h2").first()
     await expect(heading).toContainText(/dashboard/i)
   })
 
   test("should display workspace count on the dashboard", async () => {
-    const main = page.locator("main")
+    const main = page.locator("[data-slot=\"sidebar-inset\"] main")
     await expect(main).toContainText("Workspaces")
   })
 })
