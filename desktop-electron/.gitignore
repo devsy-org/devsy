@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.svelte-kit/
+build/
+resources/bin/devpod
+resources/bin/devpod.exe
+*.tsbuildinfo
