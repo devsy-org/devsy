@@ -80,12 +80,12 @@ jobs:
         run: |
           if [ "${{ matrix.go-arch }}" = "universal" ]; then
             # macOS universal binary: build both architectures and lipo them
-            GOOS=darwin GOARCH=amd64 go build -o devpod-amd64 ./cmd/devpod
-            GOOS=darwin GOARCH=arm64 go build -o devpod-arm64 ./cmd/devpod
+            GOOS=darwin GOARCH=amd64 go build -o devpod-amd64 .
+            GOOS=darwin GOARCH=arm64 go build -o devpod-arm64 .
             lipo -create -output desktop-electron/resources/bin/devpod devpod-amd64 devpod-arm64
             rm devpod-amd64 devpod-arm64
           else
-            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -o desktop-electron/resources/bin/devpod ./cmd/devpod
+            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -o desktop-electron/resources/bin/devpod .
           fi
           chmod +x desktop-electron/resources/bin/devpod
 
@@ -94,7 +94,7 @@ jobs:
         run: |
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
-          go build -o desktop-electron/resources/bin/devpod.exe ./cmd/devpod
+          go build -o desktop-electron/resources/bin/devpod.exe .
 
       # ── Install Electron dependencies ──
       - name: Install dependencies
