@@ -80,125 +80,161 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	return loginCmd
 }
 
-//nolint:cyclop,funlen // pre-existing complexity
 func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
-	if strings.HasPrefix(fullURL, "http://") {
-		return fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
-	} else if !strings.HasPrefix(fullURL, "https://") {
-		fullURL = "https://" + fullURL
-	} else if cmd.Provider != "" && len(cmd.Provider) > 32 {
-		return fmt.Errorf("cannot use a provider name greater than 32 characters")
+	fullURL, err := cmd.normalizeURL(fullURL)
+	if err != nil {
+		return err
 	}
 
-	// get host from url
+	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
+	if err != nil {
+		return err
+	}
+
+	devsyConfig, err = cmd.ensureProvider(devsyConfig, currentInstance, fullURL)
+	if err != nil {
+		return err
+	}
+
+	return cmd.loginAndConfigure(ctx, devsyConfig, fullURL)
+}
+
+func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
+	if strings.HasPrefix(fullURL, "http://") {
+		return "", fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
+	}
+	if !strings.HasPrefix(fullURL, "https://") {
+		return "https://" + fullURL, nil
+	}
+	if cmd.Provider != "" && len(cmd.Provider) > 32 {
+		return "", fmt.Errorf("cannot use a provider name greater than 32 characters")
+	}
+	return fullURL, nil
+}
+
+func (cmd *LoginCmd) resolveInstance(
+	fullURL string,
+) (*config.Config, *provider.ProInstance, error) {
 	parsedURL, err := url.Parse(fullURL)
 	if err != nil {
-		return fmt.Errorf("invalid url %s: %w", fullURL, err)
+		return nil, nil, fmt.Errorf("invalid url %s: %w", fullURL, err)
 	}
-
-	// extract host
 	host := parsedURL.Host
 
-	// load devsy config
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	// check if there is already a pro instance with that url
 	proInstances, err := workspace.ListProInstances(devsyConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	currentInstance := findInstance(proInstances, host)
+	if currentInstance != nil {
+		cmd.Provider = currentInstance.Provider
+		return devsyConfig, currentInstance, nil
+	}
+
+	if err := cmd.resolveNewProviderName(devsyConfig, host); err != nil {
+		return nil, nil, err
+	}
+
+	return devsyConfig, nil, nil
+}
+
+func findInstance(instances []*provider.ProInstance, host string) *provider.ProInstance {
+	for _, inst := range instances {
+		if inst.Host == host {
+			return inst
+		}
+	}
+	return nil
+}
+
+func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host string) error {
+	if cmd.Provider == "" {
+		cmd.Provider = config.ProReleaseName
+	}
+	cmd.Provider = provider.ToProInstanceID(cmd.Provider)
+
+	providers, err := workspace.LoadAllProviders(devsyConfig)
+	if err != nil {
+		return fmt.Errorf("load providers: %w", err)
+	}
+
+	if providers[cmd.Provider] != nil {
+		cmd.Provider = provider.ToProInstanceID(config.BinaryName + "-" + host)
+		if providers[cmd.Provider] != nil {
+			return fmt.Errorf(
+				"provider %s already exists, please choose a different name via --provider",
+				cmd.Provider,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (cmd *LoginCmd) ensureProvider(
+	devsyConfig *config.Config,
+	currentInstance *provider.ProInstance,
+	fullURL string,
+) (*config.Config, error) {
+	if currentInstance != nil {
+		return devsyConfig, nil
+	}
+
+	parsedURL, _ := url.Parse(fullURL)
+	instance := &provider.ProInstance{
+		Provider:          cmd.Provider,
+		Host:              parsedURL.Host,
+		CreationTimestamp: types.Now(),
+	}
+
+	if err := cmd.addProviderByVersion(devsyConfig, fullURL); err != nil {
+		return nil, err
+	}
+
+	if err := provider.SaveProInstanceConfig(devsyConfig.DefaultContext, instance); err != nil {
+		return nil, err
+	}
+
+	return config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+}
+
+func (cmd *LoginCmd) addProviderByVersion(devsyConfig *config.Config, fullURL string) error {
+	remoteVersion, err := platform.GetDevsyVersion(fullURL)
 	if err != nil {
 		return err
 	}
 
-	// check if url is found somewhere
-	var currentInstance *provider.ProInstance
-	for _, proInstance := range proInstances {
-		if proInstance.Host == host {
-			currentInstance = proInstance
-			break
-		}
-	}
-	if currentInstance != nil {
-		cmd.Provider = currentInstance.Provider
-	} else {
-		// find a provider name
-		if cmd.Provider == "" {
-			cmd.Provider = config.ProReleaseName
-		}
-		cmd.Provider = provider.ToProInstanceID(cmd.Provider)
-
-		// check if provider already exists
-		providers, err := workspace.LoadAllProviders(devsyConfig)
-		if err != nil {
-			return fmt.Errorf("load providers: %w", err)
-		}
-
-		// provider already exists?
-		if providers[cmd.Provider] != nil {
-			// alternative name
-			cmd.Provider = provider.ToProInstanceID(config.BinaryName + "-" + host)
-			if providers[cmd.Provider] != nil {
-				return fmt.Errorf(
-					"provider %s already exists, please choose a different name via --provider",
-					cmd.Provider,
-				)
-			}
-		}
+	rv, err := semver.Parse(strings.TrimPrefix(remoteVersion, "v"))
+	if err != nil {
+		return fmt.Errorf("invalid version %s: %w", remoteVersion, err)
 	}
 
-	// 1. Add provider
-	if currentInstance == nil {
-		currentInstance = &provider.ProInstance{
-			Provider:          cmd.Provider,
-			Host:              host,
-			CreationTimestamp: types.Now(),
-		}
-
-		remoteVersion, err := platform.GetDevsyVersion(fullURL)
-		if err != nil {
-			return err
-		}
-		rv, err := semver.Parse(strings.TrimPrefix(remoteVersion, "v"))
-		if err != nil {
-			return fmt.Errorf("invalid version %s: %w", remoteVersion, err)
-		}
-		if rv.LT(semver.Version{Major: 0, Minor: 6, Patch: 999}) &&
-			remoteVersion != versionpkg.DevVersion {
-			log.Debug("remote version < 0.7.0, installing proxy provider")
-			// proxy providers are deprecated and shouldn't be used
-			// unless explicitly the server version is below 0.7.0
-			err = cmd.addLoftProvider(devsyConfig, fullURL)
-			if err != nil {
-				return err
-			}
-		} else {
-			// add built-in pro (daemon) provider
-			_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro")
-			if err != nil {
-				return err
-			}
-		}
-
-		err = provider.SaveProInstanceConfig(devsyConfig.DefaultContext, currentInstance)
-		if err != nil {
-			return err
-		}
-
-		// reload devsy config
-		devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
-		if err != nil {
-			return err
-		}
+	if rv.LT(semver.Version{Major: 0, Minor: 6, Patch: 999}) &&
+		remoteVersion != versionpkg.DevVersion {
+		log.Debug("remote version < 0.7.0, installing proxy provider")
+		return cmd.addLoftProvider(devsyConfig, fullURL)
 	}
 
-	// get provider config
+	_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro")
+	return err
+}
+
+func (cmd *LoginCmd) loginAndConfigure(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	fullURL string,
+) error {
 	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	// 2. Login to Loft
 	if cmd.Login {
 		err = login(
 			ctx,
@@ -215,7 +251,6 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 		log.Infof("logged into Devsy Pro instance: url=%s", fullURL)
 	}
 
-	// 3. Configure provider
 	if cmd.Use {
 		err := providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
 			Provider:       providerConfig,
