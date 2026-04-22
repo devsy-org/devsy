@@ -64,22 +64,47 @@ func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return importCmd
 }
 
-//nolint:cyclop // pre-existing complexity
 func (cmd *ImportCmd) Run(
 	ctx context.Context,
 	devsyConfig *config.Config,
 ) error {
-	exportConfig := &provider.ExportConfig{}
-	err := json.Unmarshal([]byte(cmd.Data), exportConfig)
+	exportConfig, err := cmd.parseExportConfig()
 	if err != nil {
-		return fmt.Errorf("decode workspace data: %w", err)
-	} else if exportConfig.Workspace == nil {
-		return fmt.Errorf("workspace is missing in imported data")
-	} else if exportConfig.Provider == nil {
-		return fmt.Errorf("provider is missing in imported data")
+		return err
 	}
 
-	// set ids correctly
+	cmd.setDefaultIDs(exportConfig)
+
+	if err := cmd.checkForConflictingIDs(ctx, exportConfig, devsyConfig); err != nil {
+		return err
+	}
+
+	if err := cmd.importProvider(devsyConfig, exportConfig); err != nil {
+		return err
+	}
+
+	if err := cmd.importMachine(devsyConfig, exportConfig); err != nil {
+		return err
+	}
+
+	return cmd.importWorkspace(devsyConfig, exportConfig)
+}
+
+func (cmd *ImportCmd) parseExportConfig() (*provider.ExportConfig, error) {
+	exportConfig := &provider.ExportConfig{}
+	if err := json.Unmarshal([]byte(cmd.Data), exportConfig); err != nil {
+		return nil, fmt.Errorf("decode workspace data: %w", err)
+	}
+	if exportConfig.Workspace == nil {
+		return nil, fmt.Errorf("workspace is missing in imported data")
+	}
+	if exportConfig.Provider == nil {
+		return nil, fmt.Errorf("provider is missing in imported data")
+	}
+	return exportConfig, nil
+}
+
+func (cmd *ImportCmd) setDefaultIDs(exportConfig *provider.ExportConfig) {
 	if cmd.MachineID == "" && exportConfig.Machine != nil {
 		cmd.MachineID = exportConfig.Machine.ID
 	}
@@ -89,32 +114,6 @@ func (cmd *ImportCmd) Run(
 	if cmd.ProviderID == "" {
 		cmd.ProviderID = exportConfig.Provider.ID
 	}
-
-	// check if conflicting ids
-	err = cmd.checkForConflictingIDs(ctx, exportConfig, devsyConfig)
-	if err != nil {
-		return err
-	}
-
-	// import provider
-	err = cmd.importProvider(devsyConfig, exportConfig)
-	if err != nil {
-		return err
-	}
-
-	// import machine
-	err = cmd.importMachine(devsyConfig, exportConfig)
-	if err != nil {
-		return err
-	}
-
-	// import workspace
-	err = cmd.importWorkspace(devsyConfig, exportConfig)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (cmd *ImportCmd) importWorkspace(
