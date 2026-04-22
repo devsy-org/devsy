@@ -190,22 +190,27 @@ func processOCIFeature(id string) (string, error) {
 	return featureExtractedFolder, nil
 }
 
-//nolint:cyclop // pre-existing; tracked for cleanup
-func downloadLayer(img v1.Image, id, destFile string) error {
+func validateImageManifest(img v1.Image) (*v1.Manifest, error) {
 	manifest, err := img.Manifest()
 	if err != nil {
-		return err
-	} else if manifest.Config.MediaType != DEVCONTAINER_MANIFEST_MEDIATYPE {
-		return fmt.Errorf(
+		return nil, err
+	}
+	if manifest.Config.MediaType != DEVCONTAINER_MANIFEST_MEDIATYPE {
+		return nil, fmt.Errorf(
 			"incorrect manifest type %s, expected %s",
 			manifest.Config.MediaType,
 			DEVCONTAINER_MANIFEST_MEDIATYPE,
 		)
-	} else if len(manifest.Layers) == 0 {
-		return fmt.Errorf("unexpected amount of layers, expected at least 1")
 	}
+	if len(manifest.Layers) == 0 {
+		return nil, fmt.Errorf("unexpected amount of layers, expected at least 1")
+	}
+	return manifest, nil
+}
 
-	// download layer
+func fetchLayerData(
+	img v1.Image, manifest *v1.Manifest, id, destFile string,
+) (io.ReadCloser, error) {
 	log.Debugf(
 		"download feature layer: featureId=%s, digest=%s, destFile=%s",
 		id,
@@ -214,17 +219,20 @@ func downloadLayer(img v1.Image, id, destFile string) error {
 	)
 	layer, err := img.LayerByDigest(manifest.Layers[0].Digest)
 	if err != nil {
-		return fmt.Errorf("retrieve layer: %w", err)
+		return nil, fmt.Errorf("retrieve layer: %w", err)
 	}
 
 	data, err := layer.Uncompressed()
 	if err != nil {
-		return fmt.Errorf("download: %w", err)
+		return nil, fmt.Errorf("download: %w", err)
 	}
-	defer func() { _ = data.Close() }()
 
+	return data, nil
+}
+
+func writeLayerToFile(data io.Reader, destFile string) error {
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(filepath.Dir(destFile), 0o755)
+	err := os.MkdirAll(filepath.Dir(destFile), 0o755)
 	if err != nil {
 		return fmt.Errorf("create target folder: %w", err)
 	}
@@ -241,6 +249,21 @@ func downloadLayer(img v1.Image, id, destFile string) error {
 	}
 
 	return nil
+}
+
+func downloadLayer(img v1.Image, id, destFile string) error {
+	manifest, err := validateImageManifest(img)
+	if err != nil {
+		return err
+	}
+
+	data, err := fetchLayerData(img, manifest, id, destFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = data.Close() }()
+
+	return writeLayerToFile(data, destFile)
 }
 
 func processDirectTarFeature(
