@@ -4,6 +4,7 @@ import { CliRunner } from "./cli.js"
 import { DaemonState } from "./state.js"
 import { LogStore } from "./log-store.js"
 import { registerIpcHandlers } from "./ipc.js"
+import { PtyManager } from "./pty.js"
 import { Watcher } from "./watcher.js"
 import { AppTray } from "./tray.js"
 
@@ -43,10 +44,6 @@ function createWindow(): void {
   })
 }
 
-app.on("before-quit", () => {
-  ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
-})
-
 app.whenReady().then(() => {
   // Resolve bundled CLI binary
   const binaryPath = CliRunner.resolveBinaryPath(process.resourcesPath)
@@ -61,11 +58,23 @@ app.whenReady().then(() => {
     console.error("Failed to prune old logs:", e)
   }
 
+  // Initialize PTY manager
+  const ptyManager = new PtyManager({
+    binaryPath: binaryPath,
+    getMainWindow: () => mainWindow,
+  })
+
+  app.on("before-quit", () => {
+    ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    ptyManager.destroyAll()
+  })
+
   // Register IPC handlers
   registerIpcHandlers({
     cli,
     state,
     logStore,
+    pty: ptyManager,
     getMainWindow: () => mainWindow,
   })
 
