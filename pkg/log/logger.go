@@ -30,7 +30,12 @@ func Init(cfg Config) {
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
 	core := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.FatalLevel))
+
+	opts := []zap.Option{
+		zap.AddCaller(),
+		zap.AddStacktrace(zapcore.FatalLevel),
+	}
+	logger := zap.New(core, opts...)
 	sugar = logger.Sugar()
 }
 

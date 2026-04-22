@@ -58,8 +58,6 @@ github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2 h1:+vx7roKuyA63n
 github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2/go.mod h1:HBCaDeC1lPdgDeDbhX8XFpy1jqjK0IBG8W5K+xYqA0w=
 github.com/ProtonMail/go-crypto v1.3.0 h1:ILq8+Sf5If5DCpHQp4PbZdS1J7HDFRXz/+xKBiRGFrw=
 github.com/ProtonMail/go-crypto v1.3.0/go.mod h1:9whxjD8Rbs29b4XWbB8irEcE8KHMqaR2e7GWU1R+/PE=
-github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d h1:licZJFw2RwpHMqeKTCYkitsPqHNxTmd4SNR5r94FGM8=
-github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d/go.mod h1:asat636LX7Bqt5lYEZ27JNDcqxfjdBQuJ/MM4CN/Lzo=
 github.com/agext/levenshtein v1.2.3 h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7lmo=
 github.com/agext/levenshtein v1.2.3/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
 github.com/akutz/memconn v0.1.0 h1:NawI0TORU4hcOMsMr11g7vwlCdkYeLKXBcxWu2W/P8A=
@@ -235,8 +233,6 @@ github.com/devsy-org/api v1.1.0 h1:l7T9k7RVwatwN4lxeDTF3iN6EYmfGZgR3ZTJMDGha1M=
 github.com/devsy-org/api v1.1.0/go.mod h1:mAZklKdnywJYiXDReBLte/H+3m69z6G7RHB3n1lI53Q=
 github.com/devsy-org/apiserver v1.5.0 h1:tAr2tH9QwtNEu8BTbBgHkJD6ae43S5LDdHGphLsELB8=
 github.com/devsy-org/apiserver v1.5.0/go.mod h1:2jKuqy8XdH/g4bIjmkj3efQgshN/NjMzm17SkvvSR88=
-github.com/devsy-org/log v1.1.0 h1:LktC2pLnGwaduspO+euTzzj3Fbt4G1S1bDcb4f3xTSE=
-github.com/devsy-org/log v1.1.0/go.mod h1:B/D8SOjJ34lQS5O1BupXwXvWsJRK+ul3JvYYahTkCE8=
 github.com/devsy-org/ssh v1.1.0 h1:LKwUPuyijX+x8L4zzEsObBptRjr8OTKugVCl3UPMTOs=
 github.com/devsy-org/ssh v1.1.0/go.mod h1:+/FJAVr49LxNS0E4IPOXQZOnwrvNqc6cNLT7unu3MD4=
 github.com/devsy-org/tailscale v1.92.2 h1:8Ew/cGVUaQa9N6Acab9SgXDWJp/Kzn3T0UejLyWPTfo=
@@ -444,8 +440,6 @@ github.com/jsimonetti/rtnetlink v1.4.0 h1:Z1BF0fRgcETPEa0Kt0MRk3yV5+kF1FWTni6KUF
 github.com/jsimonetti/rtnetlink v1.4.0/go.mod h1:5W1jDvWdnthFJ7fxYX1GMK07BUpI4oskfOqvPteYS6E=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
-github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213 h1:qGQQKEcAR99REcMpsXCp3lJ03zYT1PkRd3kQGPn9GVg=
-github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213/go.mod h1:vNUNkEQ1e29fT/6vq2aBdFsgNPmy8qMdSay1npru+Sw=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 h1:Z9n2FFNUXsshfwJMBgNA0RU6/i7WVaAegv3PtuIHPMs=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/keybase/go-keychain v0.0.1 h1:way+bWYa6lDppZoZcgMbYsvC7GxljxrskdNInRtuthU=
