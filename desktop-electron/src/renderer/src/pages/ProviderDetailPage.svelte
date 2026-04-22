@@ -24,7 +24,7 @@ let { params = {} }: { params?: Record<string, string> } = $props()
 
 let id = $derived(params.id ?? "")
 let provider = $derived($providers.find((p) => p.name === id))
-let isSetup = $derived(() => {
+let isSetup = $derived.by(() => {
   const qs = new URLSearchParams($querystring ?? "")
   return qs.get("setup") === "true"
 })
