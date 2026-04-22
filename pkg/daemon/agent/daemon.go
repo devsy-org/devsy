@@ -155,7 +155,6 @@ func quoteSystemdArg(arg string) string {
 	return arg
 }
 
-//nolint:cyclop,funlen // pre-existing complexity
 func InstallDaemon(agentDir string, interval string) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
@@ -166,14 +165,7 @@ func InstallDaemon(agentDir string, interval string) error {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	// install ourselves with devsy agent daemon
-	args := []string{executable, "agent", "daemon"}
-	if agentDir != "" {
-		args = append(args, "--agent-dir", agentDir)
-	}
-	if interval != "" {
-		args = append(args, "--interval", interval)
-	}
+	args := buildDaemonArgs(executable, agentDir, interval)
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
@@ -186,6 +178,29 @@ func InstallDaemon(agentDir string, interval string) error {
 	}
 	unitContent := systemdUnitContents(strings.Join(quoted, " "))
 
+	needsReload, err := installOrUpdateUnit(unitContent)
+	if err != nil {
+		return err
+	}
+
+	return ensureServiceRunning(needsReload, executable, args)
+}
+
+func buildDaemonArgs(executable, agentDir, interval string) []string {
+	args := []string{executable, "agent", "daemon"}
+	if agentDir != "" {
+		args = append(args, "--agent-dir", agentDir)
+	}
+	if interval != "" {
+		args = append(args, "--interval", interval)
+	}
+	return args
+}
+
+// installOrUpdateUnit writes the systemd unit file and runs daemon-reload when
+// the service is not yet installed or its unit content has changed. It returns
+// true when a reload was performed.
+func installOrUpdateUnit(unitContent string) (bool, error) {
 	needsReload := false
 	if !isServiceInstalled() {
 		needsReload = true
@@ -196,21 +211,29 @@ func InstallDaemon(agentDir string, interval string) error {
 		}
 	}
 
-	if needsReload {
-		//nolint:gosec // systemd unit files must be world-readable (0644)
-		if err := os.WriteFile(
-			serviceFilePath(), []byte(unitContent), 0o644,
-		); err != nil {
-			return fmt.Errorf("write service file: %w", err)
-		}
-
-		if out, err := exec.Command(
-			"systemctl", "daemon-reload",
-		).CombinedOutput(); err != nil {
-			return fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
-		}
+	if !needsReload {
+		return false, nil
 	}
 
+	//nolint:gosec // systemd unit files must be world-readable (0644)
+	if err := os.WriteFile(
+		serviceFilePath(), []byte(unitContent), 0o644,
+	); err != nil {
+		return false, fmt.Errorf("write service file: %w", err)
+	}
+
+	if out, err := exec.Command(
+		"systemctl", "daemon-reload",
+	).CombinedOutput(); err != nil {
+		return false, fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
+	}
+
+	return true, nil
+}
+
+// ensureServiceRunning enables the systemd service and starts or restarts it as
+// needed. If systemctl fails, it falls back to a background process.
+func ensureServiceRunning(needsReload bool, executable string, args []string) error {
 	// Always enable so the service starts on boot, even if it was previously disabled.
 	//nolint:gosec // BinaryName is a compile-time constant, not tainted input
 	if out, err := exec.Command("systemctl", "enable", pkgconfig.BinaryName).
