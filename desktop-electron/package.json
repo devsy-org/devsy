@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "homepage": "https://devpod.sh",
+  "author": {
+    "name": "Loft Labs",
+    "email": "support@loft.sh"
+  },
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
