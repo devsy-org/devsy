@@ -19,6 +19,7 @@ import (
 // Only the fields we need for test assertions are included.
 type logLine struct {
 	Message string `json:"message,omitempty"`
+	Msg     string `json:"msg,omitempty"`
 }
 
 type baseTestContext struct {
@@ -70,12 +71,14 @@ func findMessage(reader io.Reader, message string) error {
 	for scan.Scan() {
 		if line := scan.Bytes(); len(line) > 0 {
 			lineObject := &logLine{}
-			if err := json.Unmarshal(
-				line,
-				lineObject,
-			); err == nil &&
-				strings.Contains(lineObject.Message, message) {
-				return nil
+			if err := json.Unmarshal(line, lineObject); err == nil {
+				msg := lineObject.Message
+				if msg == "" {
+					msg = lineObject.Msg
+				}
+				if strings.Contains(msg, message) {
+					return nil
+				}
 			}
 		}
 	}

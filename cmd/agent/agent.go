@@ -8,8 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
-	"github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
 
@@ -52,18 +51,13 @@ func AgentPersistentPreRunE(
 	}
 	parent.Annotations[AgentExecutedAnnotation] = "true"
 
-	if globalFlags.LogOutput == "json" {
-		log.Default.SetFormat(log.JSONFormat)
-	} else {
-		log.Default.MakeRaw()
-	}
-
-	switch {
-	case globalFlags.Quiet:
-		log.Default.SetLevel(logrus.FatalLevel)
-	case globalFlags.Debug:
-		log.Default.SetLevel(logrus.DebugLevel)
-	}
+	// Initialise the zap logger for the agent subprocess.
+	// stdout is the binary protocol channel, so all log output goes to stderr.
+	log.Init(log.Config{
+		Quiet:  globalFlags.Quiet,
+		Debug:  globalFlags.Debug,
+		Format: globalFlags.LogOutput,
+	})
 
 	if globalFlags.DevsyHome != "" {
 		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)

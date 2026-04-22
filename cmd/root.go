@@ -18,8 +18,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
-	log2 "github.com/devsy-org/log"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
@@ -41,20 +39,6 @@ func NewRootCmd() *cobra.Command {
 				Debug:     globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue,
 				Format:    globalFlags.LogOutput,
 			})
-
-			// Configure the old logger too, until the migration is complete.
-			if globalFlags.LogOutput == "json" {
-				log2.Default.SetFormat(log2.JSONFormat)
-			} else if globalFlags.LogOutput == "raw" {
-				log2.Default.SetFormat(log2.RawFormat)
-			}
-
-			switch {
-			case globalFlags.Quiet:
-				log2.Default.SetLevel(logrus.FatalLevel)
-			case globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue:
-				log2.Default.SetLevel(logrus.DebugLevel)
-			}
 
 			if globalFlags.DevsyHome != "" {
 				_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
@@ -99,13 +83,13 @@ func Execute() {
 		}
 
 		if globalFlags.Debug {
-			log2.Default.Fatalf("%+v", err)
+			log.Fatalf("%+v", err)
 		} else {
 			if rootCmd.Annotations == nil ||
 				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
-				log2.Default.Error("Try using -v or --debug flag to see more verbose output")
+				log.Error("Try using -v or --debug flag to see more verbose output")
 			}
-			log2.Default.Fatal(err)
+			log.Fatal(err)
 		}
 	}
 }
@@ -174,7 +158,7 @@ func inheritFlagsFromEnvironment(flags *flag.FlagSet) {
 			// set the variable holding the flag's value to the default supplied by the environment
 			err := flag.Value.Set(value)
 			if err != nil {
-				log2.Default.Fatalf(
+				log.Fatalf(
 					"failed to set flag %s from the environment variable %s with value %s: %+v",
 					flag.Name,
 					environmentVariable,
