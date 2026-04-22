@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .svelte-kit/
-build/
+build/*
 !build/entitlements.mac.plist
 resources/bin/devpod
 resources/bin/devpod.exe
