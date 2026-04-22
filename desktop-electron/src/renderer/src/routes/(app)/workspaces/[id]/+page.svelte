@@ -33,7 +33,7 @@ import {
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { toasts } from "$lib/stores/toasts.js"
 import type { AuditEntry, LogEntry } from "$lib/types/index.js"
-import type { UnlistenFn } from "@tauri-apps/api/event"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
 

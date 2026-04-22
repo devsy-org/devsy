@@ -1,4 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { writable } from "svelte/store"
 import { contextList } from "$lib/ipc/commands.js"
 import { onContextsChanged } from "$lib/ipc/events.js"

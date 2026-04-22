@@ -1,4 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { get, writable } from "svelte/store"
 import { machineList, machineStatus } from "$lib/ipc/commands.js"
 import { onMachinesChanged } from "$lib/ipc/events.js"

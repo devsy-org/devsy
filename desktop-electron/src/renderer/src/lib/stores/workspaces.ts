@@ -1,4 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { get, writable } from "svelte/store"
 import { workspaceList, workspaceStatus } from "$lib/ipc/commands.js"
 import { onWorkspacesChanged } from "$lib/ipc/events.js"
