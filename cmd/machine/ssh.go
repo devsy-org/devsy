@@ -14,7 +14,7 @@ import (
 	devagent "github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
@@ -124,7 +124,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	writer := devsylog.Writer(devsylog.LevelInfo)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// Get the timeout from the context options

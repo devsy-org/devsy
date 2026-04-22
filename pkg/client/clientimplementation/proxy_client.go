@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
@@ -91,7 +91,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 
 // executeWithJSONLog runs a command with JSON log streaming.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
-	writer, _ := devsylog.PipeJSONStream()
+	writer, _ := log.PipeJSONStream()
 	defer func() { _ = writer.Close() }()
 
 	params.stderr = writer
@@ -102,12 +102,12 @@ func (s *proxyClient) Lock(ctx context.Context) error {
 	s.initLock()
 
 	// try to lock workspace
-	devsylog.Debugf("Acquire workspace lock...")
+	log.Debugf("Acquire workspace lock...")
 	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
-	devsylog.Debugf("Acquired workspace lock...")
+	log.Debugf("Acquired workspace lock...")
 
 	return nil
 }
@@ -118,7 +118,7 @@ func (s *proxyClient) Unlock() {
 	// try to unlock workspace
 	err := s.workspaceLock.Unlock()
 	if err != nil {
-		devsylog.Warnf("Error unlocking workspace: %v", err)
+		log.Warnf("Error unlocking workspace: %v", err)
 	}
 }
 
@@ -352,7 +352,7 @@ func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) erro
 		return fmt.Errorf("error deleting workspace: %w", err)
 	}
 	if err != nil {
-		devsylog.Errorf("Error deleting workspace: %v", err)
+		log.Errorf("Error deleting workspace: %v", err)
 	}
 
 	return DeleteWorkspaceFolder(DeleteWorkspaceFolderParams{
@@ -394,7 +394,7 @@ func (s *proxyClient) Status(
 		)
 	}
 
-	devsylog.ReadJSONStream(bytes.NewReader(buf.Bytes()))
+	log.ReadJSONStream(bytes.NewReader(buf.Bytes()))
 	status := &client.WorkspaceStatus{}
 	err = json.Unmarshal(stdout.Bytes(), status)
 	if err != nil {

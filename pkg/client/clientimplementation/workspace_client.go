@@ -19,7 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/shell"
@@ -151,15 +151,15 @@ func (s *workspaceClient) RefreshOptions(
 		userOptions,
 	)
 	if err != nil {
-		devsylog.Errorf("failed to resolve and save options workspace: error=%v", err)
+		log.Errorf("failed to resolve and save options workspace: error=%v", err)
 		return err
 	}
 
 	if workspace != nil {
 		s.workspace = workspace
-		devsylog.Debugf("refreshed workspace options: workspaceId=%s", s.workspace.ID)
+		log.Debugf("refreshed workspace options: workspaceId=%s", s.workspace.ID)
 	} else {
-		devsylog.Debug("workspace is nil; not updating workspace options")
+		log.Debug("workspace is nil; not updating workspace options")
 	}
 	return nil
 }
@@ -213,7 +213,7 @@ func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.Ag
 	if s.workspace != nil {
 		result, err := provider.LoadWorkspaceResult(s.workspace.Context, s.workspace.ID)
 		if err != nil {
-			devsylog.Debugf("error loading workspace result: error=%v", err)
+			log.Debugf("error loading workspace result: error=%v", err)
 		} else if result != nil {
 			lastDevContainerConfig = result.DevContainerConfigWithPath
 		}
@@ -275,21 +275,21 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 	}
 
 	// try to lock workspace
-	devsylog.Debug("acquire workspace lock")
+	log.Debug("acquire workspace lock")
 	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
-	devsylog.Debug("acquired workspace lock")
+	log.Debug("acquired workspace lock")
 
 	// try to lock machine
 	if s.machineLock != nil {
-		devsylog.Debug("acquire machine lock")
+		log.Debug("acquire machine lock")
 		err := tryLock(ctx, s.machineLock, "machine")
 		if err != nil {
 			return fmt.Errorf("error locking machine: %w", err)
 		}
-		devsylog.Debug("acquired machine lock")
+		log.Debug("acquired machine lock")
 	}
 
 	return nil
@@ -297,19 +297,19 @@ func (s *workspaceClient) Lock(ctx context.Context) error {
 
 func (s *workspaceClient) Unlock() {
 	if err := s.initLock(); err != nil {
-		devsylog.Warnf("initializing lock: %v", err)
+		log.Warnf("initializing lock: %v", err)
 		return
 	}
 
 	if s.machineLock != nil {
 		if err := s.machineLock.Unlock(); err != nil {
-			devsylog.Warnf("error unlocking machine: %v", err)
+			log.Warnf("error unlocking machine: %v", err)
 		}
 	}
 
 	if s.workspaceLock != nil {
 		if err := s.workspaceLock.Unlock(); err != nil {
-			devsylog.Warnf("error unlocking workspace: %v", err)
+			log.Warnf("error unlocking workspace: %v", err)
 		}
 	}
 }
@@ -374,10 +374,10 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				return err
 			}
 		} else if isRunning {
-			writer := devsylog.Writer(devsylog.LevelInfo)
+			writer := log.Writer(log.LevelInfo)
 			defer func() { _ = writer.Close() }()
 
-			devsylog.Info("deleting workspace container")
+			log.Info("deleting workspace container")
 			compressed, info, err := s.compressedAgentInfo(provider.CLIOptions{})
 			if err != nil {
 				return fmt.Errorf("agent info")
@@ -409,7 +409,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				}
 
 				if !errors.Is(err, context.DeadlineExceeded) {
-					devsylog.Errorf("error deleting container: error=%v", err)
+					log.Errorf("error deleting container: error=%v", err)
 				}
 			}
 		}
@@ -479,10 +479,10 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 	defer s.m.Unlock()
 
 	if !s.isMachineProvider() || !s.workspace.Machine.AutoDelete {
-		writer := devsylog.Writer(devsylog.LevelInfo)
+		writer := log.Writer(log.LevelInfo)
 		defer func() { _ = writer.Close() }()
 
-		devsylog.Info("stopping container")
+		log.Info("stopping container")
 		compressed, info, err := s.compressedAgentInfo(provider.CLIOptions{})
 		if err != nil {
 			return fmt.Errorf("agent info")
@@ -511,7 +511,7 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 		if err != nil {
 			return err
 		}
-		devsylog.Info("stopped container")
+		log.Info("stopped container")
 
 		return nil
 	}
@@ -693,7 +693,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 		)
 	}
 
-	devsylog.Debugf(
+	log.Debugf(
 		"container status command output: stdout=%s, stderr=%s, parsed=%v",
 		stdout.String(),
 		buf.String(),
@@ -774,7 +774,7 @@ func RunCommand(opts RunCommandOptions) error {
 		return nil
 	}
 
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
 	}
 
@@ -844,7 +844,7 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 
 	err = ssh.RemoveFromConfig(params.WorkspaceID, sshConfigPath, sshConfigIncludePath)
 	if err != nil {
-		devsylog.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
+		log.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
 	}
 
 	workspaceFolder, err := provider.GetWorkspaceDir(params.Context, params.WorkspaceID)
@@ -901,7 +901,7 @@ func StartWait(
 
 func handleBusyStatus(startWaiting *time.Time) bool {
 	if time.Since(*startWaiting) > logThreshold {
-		devsylog.Info("workspace is busy, waiting for workspace to become ready")
+		log.Info("workspace is busy, waiting for workspace to become ready")
 		*startWaiting = time.Now()
 	}
 	return true
@@ -992,7 +992,7 @@ func buildAgentCommand(
 		agentCommand,
 		workspaceInfo,
 	)
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		command += " --debug"
 	}
 	return command
@@ -1025,10 +1025,10 @@ type agentInjectionOptions struct {
 func runAgentInjection(opts agentInjectionOptions) chan error {
 	errChan := make(chan error, 1)
 	go func() {
-		defer devsylog.Debugf("up command completed")
+		defer log.Debugf("up command completed")
 		defer opts.cancel()
 
-		writer := devsylog.Writer(devsylog.LevelInfo)
+		writer := log.Writer(log.LevelInfo)
 		defer func() { _ = writer.Close() }()
 
 		errChan <- agent.InjectAgent(&agent.InjectOptions{
