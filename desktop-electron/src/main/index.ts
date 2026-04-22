@@ -45,8 +45,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  // Resolve bundled CLI binary
-  const binaryPath = CliRunner.resolveBinaryPath(process.resourcesPath)
+  // Resolve CLI binary: env override for testing, otherwise bundled in resources
+  const binaryPath =
+    process.env.DEVPOD_CLI_PATH ||
+    CliRunner.resolveBinaryPath(process.resourcesPath)
   const cli = new CliRunner(binaryPath)
 
   // Initialize log store and prune old logs
