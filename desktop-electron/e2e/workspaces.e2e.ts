@@ -24,15 +24,13 @@ test.describe("Workspaces Page", () => {
   })
 
   test("should have a Create Workspace button", async () => {
-    const btn = page.locator('a[href="#/workspaces/new"]')
+    const btn = page.getByRole("button", { name: /create workspace/i })
     await expect(btn).toBeVisible()
   })
 
-  test("should navigate to the create workspace form", async () => {
-    await page.click('a[href="#/workspaces/new"]')
-    const main = page.locator("[data-slot=\"sidebar-inset\"] main")
-    await expect(main).toBeVisible({ timeout: 5000 })
-    const text = await main.textContent()
-    expect(text).toMatch(/create|new|workspace/i)
+  test("should open the create workspace form", async () => {
+    await page.getByRole("button", { name: /create workspace/i }).click()
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible({ timeout: 5000 })
   })
 })
