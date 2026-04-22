@@ -18,7 +18,7 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 700,
     show: false,
-    title: "DevPod",
+    title: "Devsy",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,

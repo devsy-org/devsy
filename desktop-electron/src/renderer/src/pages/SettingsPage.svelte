@@ -121,7 +121,7 @@ let filteredIdes = $derived(
     : IDE_OPTIONS,
 )
 
-// Local-only options (not stored in DevPod CLI)
+// Local-only options (not stored in Devsy CLI)
 let local = $state<LocalOptions>({
   debugFlag: false,
   sshKeyPath: "",
@@ -284,7 +284,7 @@ function toggleLocal(key: keyof LocalOptions) {
         <div class="flex items-center justify-between">
           <div>
             <Label>Automatically Keep Up to Date</Label>
-            <p class="text-xs text-muted-foreground">Download and install new DevPod versions in background</p>
+            <p class="text-xs text-muted-foreground">Download and install new Devsy versions in background</p>
           </div>
           <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
         </div>
@@ -292,7 +292,7 @@ function toggleLocal(key: keyof LocalOptions) {
         <div class="space-y-2">
           <Label>Current Version</Label>
           {#if cliVersion}
-            <p class="text-sm">DevPod CLI: <span class="font-mono">{cliVersion}</span></p>
+            <p class="text-sm">Devsy CLI: <span class="font-mono">{cliVersion}</span></p>
           {:else}
             <p class="text-sm text-muted-foreground">Version information not available</p>
           {/if}
@@ -300,7 +300,7 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <div class="space-y-3">
           <Label>Switch Version</Label>
-          <p class="text-xs text-muted-foreground">Install a specific DevPod CLI version. Useful for downgrading if a newer version introduced issues.</p>
+          <p class="text-xs text-muted-foreground">Install a specific Devsy CLI version. Useful for downgrading if a newer version introduced issues.</p>
           <div class="flex gap-2">
             <Input
               value={targetVersion}
@@ -420,7 +420,7 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <div class="space-y-2">
           <Label>Additional CLI Flags</Label>
-          <p class="text-xs text-muted-foreground">Append custom flags to all DevPod CLI commands</p>
+          <p class="text-xs text-muted-foreground">Append custom flags to all Devsy CLI commands</p>
           <Input
             value={local.additionalCliFlags}
             placeholder="--flag1 --flag2=value"
@@ -432,7 +432,7 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <div class="space-y-2">
           <Label>Additional Environment Variables</Label>
-          <p class="text-xs text-muted-foreground">Comma-separated environment variables passed to DevPod commands</p>
+          <p class="text-xs text-muted-foreground">Comma-separated environment variables passed to Devsy commands</p>
           <Input
             value={local.additionalEnvVars}
             placeholder="FOO=bar,BAZ=false"

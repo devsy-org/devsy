@@ -1,6 +1,6 @@
-appId: sh.loft.devpod
-productName: DevPod
-copyright: Copyright © 2026 Loft Labs
+appId: dev.devsy.app
+productName: Devsy
+copyright: Copyright © 2026 Devsy
 
 directories:
   output: release
