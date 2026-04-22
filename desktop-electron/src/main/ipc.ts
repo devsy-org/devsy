@@ -3,11 +3,13 @@ import type { BrowserWindow } from "electron"
 import type { CliRunner } from "./cli.js"
 import type { DaemonState } from "./state.js"
 import type { LogStore } from "./log-store.js"
+import type { PtyManager } from "./pty.js"
 
 interface IpcDependencies {
   cli: CliRunner
   state: DaemonState
   logStore: LogStore
+  pty: PtyManager
   getMainWindow: () => BrowserWindow | null
 }
 
@@ -276,5 +278,52 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     )
 
     return cmdId
+  })
+
+  // ── Terminal ──
+  ipcMain.handle(
+    "terminal_create",
+    async (_event, args: { cols: number; rows: number }) => {
+      return deps.pty.createSession(args.cols, args.rows)
+    },
+  )
+
+  ipcMain.handle(
+    "terminal_create_ssh",
+    async (
+      _event,
+      args: { workspaceId: string; cols: number; rows: number },
+    ) => {
+      return deps.pty.createSshSession(args.workspaceId, args.cols, args.rows)
+    },
+  )
+
+  ipcMain.handle(
+    "terminal_write",
+    async (_event, args: { sessionId: string; data: number[] }) => {
+      const text = new TextDecoder().decode(new Uint8Array(args.data))
+      deps.pty.writeToSession(args.sessionId, text)
+    },
+  )
+
+  ipcMain.handle(
+    "terminal_resize",
+    async (
+      _event,
+      args: { sessionId: string; cols: number; rows: number },
+    ) => {
+      deps.pty.resizeSession(args.sessionId, args.cols, args.rows)
+    },
+  )
+
+  ipcMain.handle(
+    "terminal_close",
+    async (_event, args: { sessionId: string }) => {
+      deps.pty.closeSession(args.sessionId)
+    },
+  )
+
+  ipcMain.handle("terminal_list", async () => {
+    return deps.pty.listSessions()
   })
 }
