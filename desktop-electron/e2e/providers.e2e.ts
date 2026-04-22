@@ -8,7 +8,7 @@ let page: Page
 test.beforeAll(async () => {
   ;({ app, page } = await launchApp())
   await page.click('[data-sidebar="sidebar"] a[href="#/providers"]')
-  await page.locator("[data-slot=\"sidebar-inset\"] h2").first().waitFor({ timeout: 5000 })
+  await page.locator("[data-slot=\"sidebar-inset\"] h1").first().waitFor({ timeout: 5000 })
 })
 
 test.afterAll(async () => {
@@ -17,7 +17,7 @@ test.afterAll(async () => {
 
 test.describe("Providers Page", () => {
   test("should show the providers heading", async () => {
-    const heading = page.locator("[data-slot=\"sidebar-inset\"] h2").first()
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
     await expect(heading).toContainText(/providers/i)
   })
 
