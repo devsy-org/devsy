@@ -112,7 +112,9 @@ func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
 	return fullURL, nil
 }
 
-func (cmd *LoginCmd) resolveInstance(fullURL string) (*config.Config, *provider.ProInstance, error) {
+func (cmd *LoginCmd) resolveInstance(
+	fullURL string,
+) (*config.Config, *provider.ProInstance, error) {
 	parsedURL, err := url.Parse(fullURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid url %s: %w", fullURL, err)
