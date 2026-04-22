@@ -12,7 +12,7 @@ import (
 
 const (
 	defaultTimeout                    = 10 * time.Minute
-	LoftPlatformConfigFileName string = "devsy-config.json" // TODO: replace hardcoded strings with this
+	LoftPlatformConfigFileName string = "devsy-config.json"
 )
 
 func Timeout() time.Duration {
