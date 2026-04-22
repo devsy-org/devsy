@@ -2,10 +2,10 @@
   "name": "devsy-desktop",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://devsy.dev",
+  "homepage": "https://devsy.sh",
   "author": {
     "name": "Devsy",
-    "email": "support@devsy.dev"
+    "email": "support@devsy.sh"
   },
   "type": "module",
   "main": "dist/main/index.js",
