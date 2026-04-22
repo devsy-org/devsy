@@ -8,7 +8,7 @@ let page: Page
 test.beforeAll(async () => {
   ;({ app, page } = await launchApp())
   await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
-  await page.locator("[data-slot=\"sidebar-inset\"] h2").first().waitFor({ timeout: 5000 })
+  await page.locator("[data-slot=\"sidebar-inset\"] h1").first().waitFor({ timeout: 5000 })
 })
 
 test.afterAll(async () => {

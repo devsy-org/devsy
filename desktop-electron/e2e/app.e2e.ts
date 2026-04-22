@@ -20,7 +20,7 @@ test.describe("App Launch", () => {
   })
 
   test("should show the Dashboard heading", async () => {
-    const heading = page.locator("[data-slot=\"sidebar-inset\"] h2").first()
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
     await expect(heading).toContainText(/dashboard/i)
   })
 
