@@ -26,6 +26,7 @@ export async function launchApp(): Promise<{
 
   const page = await app.firstWindow()
   await page.waitForLoadState("domcontentloaded")
+  await page.locator("[data-sidebar=\"sidebar\"]").waitFor({ timeout: 10000 })
 
   return { app, page }
 }
