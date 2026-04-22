@@ -152,4 +152,129 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       logStore.deleteLog(args.workspaceId, args.filename)
     },
   )
+
+  ipcMain.handle(
+    "workspace_up",
+    async (
+      _event,
+      args: { source: string; workspaceId?: string; provider?: string; ide?: string },
+    ) => {
+      const cliArgs = ["up", args.source]
+      if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
+      if (args.provider) cliArgs.push("--provider", args.provider)
+      if (args.ide) cliArgs.push("--ide", args.ide)
+
+      const wsId = args.workspaceId ?? args.source
+      const cmdId = crypto.randomUUID()
+      const logPath = logStore.createLogFile(wsId)
+      const win = deps.getMainWindow()
+
+      cli.runStreaming(
+        cliArgs,
+        (line) => {
+          logStore.appendLog(logPath, line)
+          win?.webContents.send("command-progress", {
+            commandId: cmdId,
+            message: line,
+            done: false,
+          })
+        },
+        (code) => {
+          const exitMsg = `Exit code: ${code}`
+          logStore.appendLog(logPath, exitMsg)
+          win?.webContents.send("command-progress", {
+            commandId: cmdId,
+            message: exitMsg,
+            done: true,
+          })
+        },
+      )
+
+      return cmdId
+    },
+  )
+
+  ipcMain.handle("workspace_stop", async (_event, args: { workspaceId: string }) => {
+    const cmdId = crypto.randomUUID()
+    const logPath = logStore.createLogFile(args.workspaceId)
+    const win = deps.getMainWindow()
+
+    cli.runStreaming(
+      ["stop", args.workspaceId],
+      (line) => {
+        logStore.appendLog(logPath, line)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+      },
+      (code) => {
+        const exitMsg = `Exit code: ${code}`
+        logStore.appendLog(logPath, exitMsg)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
+      },
+    )
+
+    return cmdId
+  })
+
+  ipcMain.handle("workspace_delete", async (_event, args: { workspaceId: string }) => {
+    const cmdId = crypto.randomUUID()
+    const logPath = logStore.createLogFile(args.workspaceId)
+    const win = deps.getMainWindow()
+
+    cli.runStreaming(
+      ["delete", args.workspaceId, "--force"],
+      (line) => {
+        logStore.appendLog(logPath, line)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+      },
+      (code) => {
+        const exitMsg = `Exit code: ${code}`
+        logStore.appendLog(logPath, exitMsg)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
+      },
+    )
+
+    return cmdId
+  })
+
+  ipcMain.handle("workspace_rebuild", async (_event, args: { workspaceId: string }) => {
+    const cmdId = crypto.randomUUID()
+    const logPath = logStore.createLogFile(args.workspaceId)
+    const win = deps.getMainWindow()
+
+    cli.runStreaming(
+      ["up", args.workspaceId, "--recreate"],
+      (line) => {
+        logStore.appendLog(logPath, line)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+      },
+      (code) => {
+        const exitMsg = `Exit code: ${code}`
+        logStore.appendLog(logPath, exitMsg)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
+      },
+    )
+
+    return cmdId
+  })
+
+  ipcMain.handle("workspace_reset", async (_event, args: { workspaceId: string }) => {
+    const cmdId = crypto.randomUUID()
+    const logPath = logStore.createLogFile(args.workspaceId)
+    const win = deps.getMainWindow()
+
+    cli.runStreaming(
+      ["up", args.workspaceId, "--reset"],
+      (line) => {
+        logStore.appendLog(logPath, line)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+      },
+      (code) => {
+        const exitMsg = `Exit code: ${code}`
+        logStore.appendLog(logPath, exitMsg)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
+      },
+    )
+
+    return cmdId
+  })
 }
