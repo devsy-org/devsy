@@ -121,11 +121,7 @@ func ProcessFeatureID(
 	return processOCIFeature(id)
 }
 
-//nolint:funlen // pre-existing; tracked for cleanup
-func processOCIFeature(id string) (string, error) {
-	log.Debugf("processing OCI feature: featureId=%s", id)
-
-	// feature already exists?
+func checkFeatureCache(id string) (string, bool) {
 	featureFolder := getFeaturesTempFolder(id)
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 	_, err := os.Stat(featureExtractedFolder)
@@ -136,12 +132,24 @@ func processOCIFeature(id string) (string, error) {
 		)
 		if err == nil {
 			log.Debugf("feature already cached: folder=%s", featureExtractedFolder)
-			return featureExtractedFolder, nil
+			return featureExtractedFolder, true
 		} else {
 			log.Debugf("feature folder exists but seems empty: folder=%s", featureExtractedFolder)
 			_ = os.RemoveAll(featureFolder)
 		}
 	}
+	return "", false
+}
+
+func processOCIFeature(id string) (string, error) {
+	log.Debugf("processing OCI feature: featureId=%s", id)
+
+	if cached, ok := checkFeatureCache(id); ok {
+		return cached, nil
+	}
+
+	featureFolder := getFeaturesTempFolder(id)
+	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 
 	ref, err := name.ParseReference(id)
 	if err != nil {
