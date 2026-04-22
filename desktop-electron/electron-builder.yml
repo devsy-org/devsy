@@ -19,6 +19,8 @@ extraResources:
 mac:
   category: public.app-category.developer-tools
   icon: resources/icon.icns
+  x64ArchFiles:
+    - Contents/Resources/bin/devpod
   target:
     - target: dmg
       arch:
