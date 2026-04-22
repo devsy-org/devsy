@@ -28,7 +28,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
-	oldlog "github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -74,7 +73,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	tunnelClient, _, credentialsDir, err := initWorkspace(initWorkspaceParams{
+	tunnelClient, credentialsDir, err := initWorkspace(initWorkspaceParams{
 		ctx:                 cancelCtx,
 		workspaceInfo:       workspaceInfo,
 		debug:               cmd.Debug,
@@ -280,7 +279,7 @@ type workspaceInitializer struct {
 	debug                bool
 	shouldInstallDaemon  bool
 	tunnelClient         tunnel.TunnelClient
-	logger               oldlog.Logger
+	logger               tunnelserver.Logger
 	dockerCredentialsDir string
 	gitCredentialsHelper string
 }
@@ -292,8 +291,7 @@ type initWorkspaceParams struct {
 	shouldInstallDaemon bool
 }
 
-//nolint:revive // pre-existing 4 return values
-func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, oldlog.Logger, string, error) {
+func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, string, error) {
 	init := &workspaceInitializer{
 		ctx:                 params.ctx,
 		workspaceInfo:       params.workspaceInfo,
@@ -302,10 +300,10 @@ func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, oldlog.Logg
 	}
 
 	if err := init.initialize(); err != nil {
-		return nil, init.logger, init.dockerCredentialsDir, err
+		return nil, init.dockerCredentialsDir, err
 	}
 
-	return init.tunnelClient, init.logger, init.dockerCredentialsDir, nil
+	return init.tunnelClient, init.dockerCredentialsDir, nil
 }
 
 func (w *workspaceInitializer) initialize() error {
@@ -490,7 +488,7 @@ type prepareWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
 	gitHelper     string
-	log           oldlog.Logger
+	log           tunnelserver.Logger
 }
 
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
@@ -547,7 +545,7 @@ type prepareGitWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	gitHelper     string
 	exists        bool
-	log           oldlog.Logger
+	log           tunnelserver.Logger
 }
 
 func prepareGitWorkspace(params prepareGitWorkspaceParams) error {

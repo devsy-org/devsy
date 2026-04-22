@@ -17,7 +17,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func NewTunnelLogger(ctx context.Context, client tunnel.TunnelClient, debug bool) log.Logger {
+// Logger is the minimal logging interface used by workspace initialization.
+// It is implemented by tunnelLogger, which sends log messages through the
+// tunnel protocol back to the client.
+type Logger interface {
+	Debugf(format string, args ...any)
+	Info(args ...any)
+	Infof(format string, args ...any)
+	Warnf(format string, args ...any)
+}
+
+func NewTunnelLogger(ctx context.Context, client tunnel.TunnelClient, debug bool) Logger {
 	level := logrus.InfoLevel
 	if debug {
 		level = logrus.DebugLevel
