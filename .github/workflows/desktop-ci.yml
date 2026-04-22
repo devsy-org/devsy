@@ -1,0 +1,189 @@
+name: Desktop CI
+
+on:
+  push:
+    branches: [electron-ui, main]
+    paths:
+      - "desktop-electron/**"
+      - ".github/workflows/desktop-ci.yml"
+  pull_request:
+    paths:
+      - "desktop-electron/**"
+      - ".github/workflows/desktop-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-electron/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Type check
+        working-directory: desktop-electron
+        run: npm run check
+
+      - name: Unit tests
+        working-directory: desktop-electron
+        run: npm run test
+
+  build-desktop:
+    needs: lint-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            go-os: darwin
+            go-arch: universal
+            builder-args: --mac
+          - os: windows-latest
+            go-os: windows
+            go-arch: amd64
+            builder-args: --win
+          - os: ubuntu-latest
+            go-os: linux
+            go-arch: amd64
+            builder-args: --linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-electron/package-lock.json
+
+      # ── Build Go CLI binary ──
+      - name: Build CLI (unix)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "${{ matrix.go-arch }}" = "universal" ]; then
+            # macOS universal binary: build both architectures and lipo them
+            GOOS=darwin GOARCH=amd64 go build -o devpod-amd64 ./cmd/devpod
+            GOOS=darwin GOARCH=arm64 go build -o devpod-arm64 ./cmd/devpod
+            lipo -create -output desktop-electron/resources/bin/devpod devpod-amd64 devpod-arm64
+            rm devpod-amd64 devpod-arm64
+          else
+            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -o desktop-electron/resources/bin/devpod ./cmd/devpod
+          fi
+          chmod +x desktop-electron/resources/bin/devpod
+
+      - name: Build CLI (windows)
+        if: runner.os == 'Windows'
+        run: |
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -o desktop-electron/resources/bin/devpod.exe ./cmd/devpod
+
+      # ── Install Electron dependencies ──
+      - name: Install dependencies
+        working-directory: desktop-electron
+        run: npm ci
+
+      # ── Install xvfb on Linux for e2e tests ──
+      - name: Install xvfb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # ── E2E tests ──
+      - name: Run e2e tests (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop-electron
+        run: |
+          npm run electron:build
+          xvfb-run npx playwright test
+
+      - name: Run e2e tests (macOS/Windows)
+        if: runner.os != 'Linux'
+        working-directory: desktop-electron
+        run: |
+          npm run electron:build
+          npx playwright test
+
+      # ── Package ──
+      - name: Package with electron-builder
+        working-directory: desktop-electron
+        run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing (set these secrets when ready):
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # ── Upload artifacts ──
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop-electron/release/*.dmg
+            desktop-electron/release/*.zip
+            desktop-electron/release/*.exe
+            desktop-electron/release/*.AppImage
+            desktop-electron/release/*.deb
+            desktop-electron/release/*.rpm
+          if-no-files-found: warn
+
+  build-flatpak:
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-ubuntu-latest
+          path: desktop-electron/flatpak/
+
+      - name: Find and rename .deb file
+        working-directory: desktop-electron/flatpak
+        run: |
+          DEB=$(ls *.deb 2>/dev/null | head -1)
+          if [ -n "$DEB" ]; then
+            mv "$DEB" devpod-desktop.deb
+          else
+            echo "No .deb file found"
+            exit 1
+          fi
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: desktop-electron/flatpak/sh.loft.devpod.yml
+          bundle: DevPod.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-flatpak
+          path: DevPod.flatpak
