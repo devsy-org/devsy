@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient) io.Reader {
@@ -20,14 +20,14 @@ func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient) io.Reader {
 			if resp != nil && len(resp.Content) > 0 {
 				_, err = writer.Write(resp.Content)
 				if err != nil {
-					devsylog.Debugf("Error writing to pipe: %v", err)
+					log.Debugf("Error writing to pipe: %v", err)
 					return
 				}
 			}
 			if errors.Is(err, io.EOF) {
 				return
 			} else if err != nil {
-				devsylog.Debugf("Error receiving from stream: %v", err)
+				log.Debugf("Error receiving from stream: %v", err)
 				return
 			}
 		}
@@ -55,7 +55,7 @@ func (s *streamWriter) Write(p []byte) (int, error) {
 
 	s.bytesWritten += int64(len(p))
 	if time.Since(s.lastMessage) > time.Second*2 {
-		devsylog.Infof("Uploaded %.2f MB", float64(s.bytesWritten)/1024/1024)
+		log.Infof("Uploaded %.2f MB", float64(s.bytesWritten)/1024/1024)
 		s.lastMessage = time.Now()
 	}
 

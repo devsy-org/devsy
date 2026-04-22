@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/extract"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -161,7 +161,7 @@ func (cmd *ImportCmd) importWorkspace(
 		return fmt.Errorf("save workspace config: %w", err)
 	}
 
-	devsylog.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
+	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (cmd *ImportCmd) importMachine(
 
 	// if machine already exists we skip
 	if cmd.MachineReuse && provider.MachineExists(devsyConfig.DefaultContext, cmd.MachineID) {
-		devsylog.Infof("Reusing existing machine %s", cmd.MachineID)
+		log.Infof("Reusing existing machine %s", cmd.MachineID)
 		return nil
 	}
 
@@ -215,7 +215,7 @@ func (cmd *ImportCmd) importMachine(
 		return fmt.Errorf("save machine config: %w", err)
 	}
 
-	devsylog.Infof("imported machine: machineId=%s", cmd.MachineID)
+	log.Infof("imported machine: machineId=%s", cmd.MachineID)
 	return nil
 }
 
@@ -225,7 +225,7 @@ func (cmd *ImportCmd) importProvider(
 ) error {
 	// if provider already exists we skip
 	if cmd.ProviderReuse && provider.ProviderExists(devsyConfig.DefaultContext, cmd.ProviderID) {
-		devsylog.Infof("Reusing existing provider %s", cmd.ProviderID)
+		log.Infof("Reusing existing provider %s", cmd.ProviderID)
 		return nil
 	}
 
@@ -276,7 +276,7 @@ func (cmd *ImportCmd) importProvider(
 		}
 	}
 
-	devsylog.Infof("imported provider: providerId=%s", cmd.ProviderID)
+	log.Infof("imported provider: providerId=%s", cmd.ProviderID)
 	return nil
 }
 

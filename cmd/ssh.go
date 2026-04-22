@@ -21,7 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/gpg"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
@@ -173,12 +173,12 @@ func (cmd *SSHCmd) Run(
 	// add ssh keys to agent
 	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
 		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
-		devsylog.Debug(
+		log.Debug(
 			"adding ssh keys to agent, disable via 'devsy context set-options -o SSH_ADD_PRIVATE_KEYS=false'",
 		)
 		err := devssh.AddPrivateKeysToAgent(ctx)
 		if err != nil {
-			devsylog.Debugf("Error adding private keys to ssh-agent: %v", err)
+			log.Debugf("Error adding private keys to ssh-agent: %v", err)
 		}
 	}
 
@@ -221,7 +221,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 	devsyConfig *config.Config,
 	client client2.DaemonClient,
 ) error {
-	devsylog.Debugf("Starting tailscale connection")
+	log.Debugf("Starting tailscale connection")
 
 	err := client.CheckWorkspaceReachable(ctx)
 	if err != nil {
@@ -259,7 +259,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 				},
 			)
 			if err != nil {
-				devsylog.Errorf("Error starting services: %v", err)
+				log.Errorf("Error starting services: %v", err)
 			}
 		}()
 	}
@@ -268,7 +268,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 	if cmd.GPGAgentForwarding ||
 		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient) {
-			devsylog.Debugf("[GPG] exporting already running, skipping")
+			log.Debugf("[GPG] exporting already running, skipping")
 		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient); err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func (cmd *SSHCmd) startProxyTunnel(
 	devsyConfig *config.Config,
 	client client2.ProxyClient,
 ) error {
-	devsylog.Debugf("Start proxy tunnel")
+	log.Debugf("Start proxy tunnel")
 	return tunnel.NewTunnel(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
@@ -381,7 +381,7 @@ func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
 			return timeout, fmt.Errorf("parse forward ports timeout: %w", err)
 		}
 
-		devsylog.Infof("Using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
+		log.Infof("Using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
 	}
 
 	return timeout, nil
@@ -404,7 +404,7 @@ func (cmd *SSHCmd) reverseForwardPorts(
 		}
 
 		// start the forwarding
-		devsylog.Infof(
+		log.Infof(
 			"Reverse forwarding local %s/%s to remote %s/%s",
 			mapping.Host.Protocol,
 			mapping.Host.Address,
@@ -447,7 +447,7 @@ func (cmd *SSHCmd) forwardPorts(
 		}
 
 		// start the forwarding
-		devsylog.Infof(
+		log.Infof(
 			"Forwarding local %s/%s to remote %s/%s",
 			mapping.Host.Protocol,
 			mapping.Host.Address,
@@ -512,7 +512,7 @@ func (cmd *SSHCmd) startTunnel(
 		)
 	}
 	// start ssh
-	writer := devsylog.Writer(devsylog.LevelInfo)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// check if we should do gpg agent forwarding
@@ -521,7 +521,7 @@ func (cmd *SSHCmd) startTunnel(
 		// Check if a forwarding is already enabled and running, in that case
 		// we skip the forwarding and keep using the original one
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient) {
-			devsylog.Debugf("[GPG] exporting already running, skipping")
+			log.Debugf("[GPG] exporting already running, skipping")
 		} else {
 			err := cmd.setupGPGAgent(ctx, containerClient)
 			if err != nil {
@@ -532,7 +532,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
-	devsylog.Debugf("Run outer container tunnel")
+	log.Debugf("Run outer container tunnel")
 	commandArgs := []string{
 		agent.ContainerDevsyHelperLocation,
 		"helper",
@@ -543,7 +543,7 @@ func (cmd *SSHCmd) startTunnel(
 		workdir,
 	}
 	if cmd.ReuseSSHAuthSock != "" {
-		devsylog.Debug("Reusing SSH_AUTH_SOCK")
+		log.Debug("Reusing SSH_AUTH_SOCK")
 		commandArgs = append(commandArgs, "--reuse-ssh-auth-sock", cmd.ReuseSSHAuthSock)
 	}
 	if cmd.Debug {
@@ -624,7 +624,7 @@ func resolveMergedWorkspaceFolder(
 
 	result, err := provider.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
 	if err != nil {
-		devsylog.Debugf("Error loading workspace result for workdir resolution: %v", err)
+		log.Debugf("Error loading workspace result for workdir resolution: %v", err)
 		return ""
 	}
 	if result == nil || result.MergedConfig == nil {
@@ -660,7 +660,7 @@ func (cmd *SSHCmd) startServices(
 			},
 		)
 		if err != nil {
-			devsylog.Debugf("Error running credential server: %v", err)
+			log.Debugf("Error running credential server: %v", err)
 		}
 	}
 }
@@ -671,14 +671,14 @@ func (cmd *SSHCmd) setupGPGAgent(
 	ctx context.Context,
 	containerClient *ssh.Client,
 ) error {
-	devsylog.Debugf("[GPG] exporting gpg owner trust from host")
+	log.Debugf("[GPG] exporting gpg owner trust from host")
 	ownerTrustExport, err := gpg.GetHostOwnerTrust()
 	if err != nil {
 		return fmt.Errorf("export local ownertrust from GPG: %w", err)
 	}
 	ownerTrustArgument := base64.StdEncoding.EncodeToString(ownerTrustExport)
 
-	devsylog.Debugf("[GPG] detecting gpg-agent socket path on host")
+	log.Debugf("[GPG] detecting gpg-agent socket path on host")
 	// Detect local agent extra socket, this will be forwarded to the remote and
 	// symlinked in multiple paths
 	gpgExtraSocketBytes, err := exec.Command("gpgconf", []string{"--list-dir", "agent-extra-socket"}...).
@@ -688,7 +688,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 	}
 
 	gpgExtraSocketPath := strings.TrimSpace(string(gpgExtraSocketBytes))
-	devsylog.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
+	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
 
 	gitKey := gpgSigningKey()
 
@@ -706,7 +706,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 		gpgExtraSocketPath,
 	}
 
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		forwardAgent = append(forwardAgent, "--debug")
 	}
 
@@ -720,16 +720,16 @@ func (cmd *SSHCmd) setupGPGAgent(
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
 	}
 
-	devsylog.Debugf(
+	log.Debugf(
 		"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
 		gpgExtraSocketPath,
 	)
 
 	go func() {
-		devsylog.Error(cmd.reverseForwardPorts(ctx, containerClient))
+		log.Error(cmd.reverseForwardPorts(ctx, containerClient))
 	}()
 
-	writer := devsylog.Writer(devsylog.LevelInfo)
+	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	err = devssh.Run(ctx, devssh.RunOptions{
 		Client:  containerClient,
@@ -754,7 +754,7 @@ func gpgSigningKey() string {
 		formatStr = strings.TrimSpace(string(format))
 	}
 	if formatStr == "ssh" {
-		devsylog.Debugf(
+		log.Debugf(
 			"[GPG] gpg.format is ssh, skipping GPG signing key (handled by SSH signing helper)",
 		)
 		return ""
@@ -762,7 +762,7 @@ func gpgSigningKey() string {
 
 	key, err := exec.Command("git", "config", "--get", "user.signingKey").Output()
 	if err != nil {
-		devsylog.Debugf("[GPG] no git signkey detected, skipping")
+		log.Debugf("[GPG] no git signkey detected, skipping")
 		return ""
 	}
 
@@ -772,14 +772,14 @@ func gpgSigningKey() string {
 	// looks like a file path and the format isn't x509 (which legitimately
 	// uses certificate file paths via gpgsm), it's an SSH key.
 	if (strings.HasPrefix(result, "/") || strings.HasPrefix(result, "~")) && formatStr != "x509" {
-		devsylog.Debugf(
+		log.Debugf(
 			"[GPG] signing key %s looks like a file path, skipping (not a GPG key ID)",
 			result,
 		)
 		return ""
 	}
 
-	devsylog.Debugf("[GPG] detected git sign key %s", result)
+	log.Debugf("[GPG] detected git sign key %s", result)
 	return result
 }
 
@@ -798,7 +798,7 @@ func startSSHKeepAlive(
 		case <-ticker.C:
 			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
 			if err != nil {
-				devsylog.Errorf("Failed to send keepalive: %w", err)
+				log.Errorf("Failed to send keepalive: %w", err)
 			}
 		}
 	}

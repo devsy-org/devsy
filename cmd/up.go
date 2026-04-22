@@ -22,7 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dotfiles"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
@@ -290,9 +290,9 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 
 	if !cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
 		cmd.SSHAuthSockID = util.RandStringBytes(10)
-		devsylog.Debug("Reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
+		log.Debug("Reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
 	} else if cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		devsylog.Debug(
+		log.Debug(
 			"Reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
 		)
 	}
@@ -357,7 +357,7 @@ func (cmd *UpCmd) configureWorkspace(
 			return err
 		}
 
-		devsylog.Info("SSH configuration completed in workspace")
+		log.Info("SSH configuration completed in workspace")
 	}
 
 	if err := dotfiles.Setup(dotfiles.SetupParams{
@@ -468,7 +468,7 @@ func (cmd *UpCmd) devsyUpProxy(
 	// create up command
 	errChan := make(chan error, 1)
 	go func() {
-		defer devsylog.Debug("done executing up command")
+		defer log.Debug("done executing up command")
 		defer cancel()
 
 		// build devsy up options
@@ -563,8 +563,8 @@ func (cmd *UpCmd) devsyUpMachine(
 	}
 
 	// create container etc.
-	devsylog.Info("creating devcontainer")
-	defer devsylog.Debug("done creating devcontainer")
+	log.Info("creating devcontainer")
+	defer log.Debug("done creating devcontainer")
 
 	// if we run on a platform, we need to pass the platform options
 	if cmd.Platform.Enabled {
@@ -583,7 +583,7 @@ func (cmd *UpCmd) devsyUpMachine(
 
 	// ssh tunnel command
 	sshTunnelCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug"
 	}
 
@@ -594,7 +594,7 @@ func (cmd *UpCmd) devsyUpMachine(
 		workspaceInfo,
 	)
 
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		agentCommand += " --debug"
 	}
 
@@ -746,8 +746,8 @@ func (cmd *UpCmd) prepareClient(
 	}
 
 	if cmd.Platform.Enabled {
-		devsylog.Debug("Running in platform mode")
-		devsylog.Debug("Using error output stream")
+		log.Debug("Running in platform mode")
+		log.Debug("Using error output stream")
 
 		// merge context options from env
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())

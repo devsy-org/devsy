@@ -16,7 +16,7 @@ import (
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	devsyconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	corev1 "k8s.io/api/core/v1"
@@ -65,7 +65,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	printInstanceInfo(instance)
 
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
-		devsylog.Info("Template update required")
+		log.Info("Template update required")
 		oldInstance := instance.DeepCopy()
 		instance.Spec.TemplateRef.SyncOnce = true
 
@@ -73,7 +73,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		if err != nil {
 			return nil, fmt.Errorf("update instance: %w", err)
 		}
-		devsylog.Info("updated template")
+		log.Info("updated template")
 	}
 
 	// encode options
@@ -84,7 +84,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	}
 
 	// prompt user to attach to active task or start new one
-	devsylog.Debug("Check active up task")
+	log.Debug("Check active up task")
 	activeUpTask, err := findActiveUpTask(ctx, managementClient, instance)
 	if err != nil {
 		return nil, fmt.Errorf("find active up task: %w", err)
@@ -92,7 +92,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 
 	// if we have an active up task, cancel it before creating a new one
 	if activeUpTask != nil {
-		devsylog.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
+		log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
 		_, err = managementClient.Loft().
 			ManagementV1().
 			DevsyWorkspaceInstances(instance.Namespace).
@@ -195,7 +195,7 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	devsylog.Debug("Starting pro workspace with configuration", string(workspaceConfig))
+	log.Debug("Starting pro workspace with configuration", string(workspaceConfig))
 }
 
 func observeTask(
@@ -265,7 +265,7 @@ func printLogs(
 	taskID string,
 ) (int, error) {
 	// get logs reader
-	devsylog.Debugf("printing logs of task: %s", taskID)
+	log.Debugf("printing logs of task: %s", taskID)
 	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
 		Resource("devsyworkspaceinstances").
@@ -291,8 +291,8 @@ func printLogs(
 	scanner.Buffer(buf, maxCapacity)
 
 	// create json streamer
-	stdoutStreamer, stdoutDone := devsylog.PipeJSONStream()
-	stderrStreamer, stderrDone := devsylog.PipeJSONStream()
+	stdoutStreamer, stdoutDone := log.PipeJSONStream()
+	stderrStreamer, stderrDone := log.PipeJSONStream()
 	defer func() {
 		// close the streams
 		_ = stdoutStreamer.Close()
@@ -317,16 +317,16 @@ func printLogs(
 		switch message.Type {
 		case StdoutData:
 			if _, err := stdoutStreamer.Write(message.Bytes); err != nil {
-				devsylog.Debugf("error read stdout: %v", err)
+				log.Debugf("error read stdout: %v", err)
 				return 1, err
 			}
 		case StderrData:
 			if _, err := stderrStreamer.Write(message.Bytes); err != nil {
-				devsylog.Debugf("error read stderr: %v", err)
+				log.Debugf("error read stderr: %v", err)
 				return 1, err
 			}
 		case ExitCode:
-			devsylog.Debugf("exit code: %d", message.ExitCode)
+			log.Debugf("exit code: %d", message.ExitCode)
 			return message.ExitCode, nil
 		}
 	}

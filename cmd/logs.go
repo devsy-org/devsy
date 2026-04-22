@@ -11,7 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -83,7 +83,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	defer func() { _ = stdinWriter.Close() }()
 	// ssh tunnel command
 	sshServerCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
 
@@ -93,7 +93,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	// start ssh server in background
 	errChan := make(chan error, 1)
 	go func() {
-		stderr := devsylog.Writer(devsylog.LevelDebug)
+		stderr := log.Writer(log.LevelDebug)
 		defer func() { _ = stderr.Close() }()
 
 		errChan <- agent.InjectAgent(&agent.InjectOptions{
@@ -124,7 +124,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		client.Context(),
 		client.Workspace(),
 	)
-	if devsylog.DebugEnabled() {
+	if log.DebugEnabled() {
 		agentCommand += " --debug"
 	}
 

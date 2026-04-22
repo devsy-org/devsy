@@ -21,7 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	devsyconfig "github.com/devsy-org/devsy/pkg/loftconfig"
-	devsylog "github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -237,7 +237,7 @@ func (t *tunnelServer) GitCredentials(
 	ctx context.Context,
 	message *tunnel.Message,
 ) (*tunnel.Message, error) {
-	devsylog.Debugf(
+	log.Debugf(
 		"getting git credentials: allowGitCredentials=%v, workspaceIsNil=%v",
 		t.allowGitCredentials,
 		t.workspace == nil,
@@ -287,7 +287,7 @@ func (t *tunnelServer) GitCredentials(
 			// This allows downstream credential helpers to figure out which passwords needs to be fetched
 			credentials.Path = path
 		} else {
-			devsylog.Warn("workspace is not available for git credentials")
+			log.Warn("workspace is not available for git credentials")
 		}
 
 		response, err := gitcredentials.GetCredentials(credentials)
@@ -404,22 +404,22 @@ func (t *tunnelServer) SendResult(
 }
 
 func (t *tunnelServer) Ping(context.Context, *tunnel.Empty) (*tunnel.Empty, error) {
-	devsylog.Debug("received ping from agent")
+	log.Debug("received ping from agent")
 	return &tunnel.Empty{}, nil
 }
 
 func (t *tunnelServer) Log(ctx context.Context, message *tunnel.LogMessage) (*tunnel.Empty, error) {
 	switch message.LogLevel {
 	case tunnel.LogLevel_DEBUG:
-		devsylog.Debug(strings.TrimSpace(message.Message))
+		log.Debug(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_INFO:
-		devsylog.Info(strings.TrimSpace(message.Message))
+		log.Info(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_WARNING:
-		devsylog.Warn(strings.TrimSpace(message.Message))
+		log.Warn(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_ERROR:
-		devsylog.Error(strings.TrimSpace(message.Message))
+		log.Error(strings.TrimSpace(message.Message))
 	case tunnel.LogLevel_DONE:
-		devsylog.Info(strings.TrimSpace(message.Message))
+		log.Info(strings.TrimSpace(message.Message))
 	}
 
 	return &tunnel.Empty{}, nil
@@ -445,7 +445,7 @@ func (t *tunnelServer) StreamWorkspace(
 	if err == nil {
 		excludes, err = ignorefile.ReadAll(f)
 		if err != nil {
-			devsylog.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
+			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
 		}
 	}
 
@@ -488,7 +488,7 @@ func (t *tunnelServer) StreamMount(
 		if err == nil {
 			excludes, err = ignorefile.ReadAll(f)
 			if err != nil {
-				devsylog.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
+				log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
 			}
 		}
 	}
