@@ -449,7 +449,7 @@ func (w *workspaceInitializer) prepareWorkspaceContent() error {
 		workspaceInfo: w.workspaceInfo,
 		client:        w.tunnelClient,
 		gitHelper:     w.gitCredentialsHelper,
-		log:           w.logger,
+		logger:        w.logger,
 	})
 }
 
@@ -488,7 +488,7 @@ type prepareWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
 	gitHelper     string
-	log           tunnelserver.Logger
+	logger        tunnelserver.Logger
 }
 
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
@@ -506,7 +506,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		return err
 	}
 	if exists && !params.workspaceInfo.CLIOptions.Recreate {
-		params.log.Debugf("workspace exists, skip downloading")
+		params.logger.Debugf("workspace exists, skip downloading")
 		return nil
 	}
 
@@ -516,7 +516,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 			workspaceInfo: params.workspaceInfo,
 			gitHelper:     params.gitHelper,
 			exists:        exists,
-			log:           params.log,
+			logger:        params.logger,
 		})
 	}
 
@@ -525,7 +525,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 	}
 
 	if params.workspaceInfo.Workspace.Source.Image != "" {
-		params.log.Debugf("prepare image")
+		params.logger.Debugf("prepare image")
 		return prepareImage(
 			params.workspaceInfo.ContentFolder,
 			params.workspaceInfo.Workspace.Source.Image,
@@ -533,7 +533,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 	}
 
 	if params.workspaceInfo.Workspace.Source.Container != "" {
-		params.log.Debugf("workspace is a container, nothing to do")
+		params.logger.Debugf("workspace is a container, nothing to do")
 		return nil
 	}
 
@@ -545,27 +545,27 @@ type prepareGitWorkspaceParams struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
 	gitHelper     string
 	exists        bool
-	log           tunnelserver.Logger
+	logger        tunnelserver.Logger
 }
 
 func prepareGitWorkspace(params prepareGitWorkspaceParams) error {
 	if params.workspaceInfo.CLIOptions.Reset {
-		params.log.Info("resetting git based workspace, removing old content folder")
+		params.logger.Info("resetting git based workspace, removing old content folder")
 		if err := os.RemoveAll(params.workspaceInfo.ContentFolder); err != nil {
-			params.log.Warnf("failed to remove workspace folder, still proceeding: %v", err)
+			params.logger.Warnf("failed to remove workspace folder, still proceeding: %v", err)
 		}
 	}
 
 	if params.workspaceInfo.CLIOptions.Recreate && !params.workspaceInfo.CLIOptions.Reset &&
 		params.exists {
-		params.log.Info(
+		params.logger.Info(
 			"rebuilding without resetting a git based workspace, keeping old content folder",
 		)
 		return nil
 	}
 
 	if crane.ShouldUse(&params.workspaceInfo.CLIOptions) {
-		params.log.Infof(
+		params.logger.Infof(
 			"pulling devcontainer spec from %v",
 			params.workspaceInfo.CLIOptions.Platform.EnvironmentTemplate,
 		)
