@@ -97,8 +97,8 @@ func tryGithubPrivateDownload(parsed *url.URL) (io.ReadCloser, error) {
 		return nil, nil
 	}
 
-	org, repo, release, file := parseGithubURL(parsed.Path)
-	if org == "" {
+	ref, ok := parseGithubURL(parsed.Path)
+	if !ok {
 		return nil, nil
 	}
 
@@ -113,7 +113,11 @@ func tryGithubPrivateDownload(parsed *url.URL) (io.ReadCloser, error) {
 	}
 
 	log.Debugf("Make request with credentials")
-	return downloadGithubRelease(org, repo, release, file, credentials.Password)
+	return downloadGithubRelease(ref, credentials.Password)
+}
+
+type githubReleaseRef struct {
+	org, repo, release, file string
 }
 
 type GithubRelease struct {
@@ -125,29 +129,30 @@ type GithubReleaseAsset struct {
 	Name string `json:"name,omitempty"`
 }
 
-func downloadGithubRelease(org, repo, release, file, token string) (io.ReadCloser, error) {
-	assetID, err := fetchGithubReleaseAssetID(org, repo, release, file, token)
+func downloadGithubRelease(ref githubReleaseRef, token string) (io.ReadCloser, error) {
+	assetID, err := fetchGithubReleaseAssetID(ref, token)
 	if err != nil {
 		return nil, err
 	}
 
-	return downloadGithubAsset(org, repo, assetID, token)
+	return downloadGithubAsset(ref.org, ref.repo, assetID, token)
 }
 
-func fetchGithubReleaseAssetID(org, repo, release, file, token string) (int, error) {
+//nolint:cyclop
+func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) {
 	var releasePath string
-	if release == "" {
+	if ref.release == "" {
 		releasePath = fmt.Sprintf(
 			"/repos/%s/%s/releases/latest",
-			url.PathEscape(org),
-			url.PathEscape(repo),
+			url.PathEscape(ref.org),
+			url.PathEscape(ref.repo),
 		)
 	} else {
 		releasePath = fmt.Sprintf(
 			"/repos/%s/%s/releases/tags/%s",
-			url.PathEscape(org),
-			url.PathEscape(repo),
-			url.PathEscape(release),
+			url.PathEscape(ref.org),
+			url.PathEscape(ref.repo),
+			url.PathEscape(ref.release),
 		)
 	}
 
@@ -189,11 +194,11 @@ func fetchGithubReleaseAssetID(org, repo, release, file, token string) (int, err
 	}
 
 	for _, asset := range releaseObj.Assets {
-		if asset.Name == file {
+		if asset.Name == ref.file {
 			return asset.ID, nil
 		}
 	}
-	return 0, fmt.Errorf("couldn't find asset %s in github release (%s)", file, releaseURL)
+	return 0, fmt.Errorf("couldn't find asset %s in github release (%s)", ref.file, releaseURL)
 }
 
 func downloadGithubAsset(org, repo string, assetID int, token string) (io.ReadCloser, error) {
@@ -232,19 +237,27 @@ func downloadGithubAsset(org, repo string, assetID int, token string) (io.ReadCl
 	return resp.Body, nil
 }
 
-func parseGithubURL(path string) (org, repo, release, file string) {
+func parseGithubURL(path string) (githubReleaseRef, bool) {
 	splitted := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(splitted) != 6 {
-		return "", "", "", ""
-	} else if splitted[2] != "releases" {
-		return "", "", "", ""
-	} else if (splitted[3] != "latest" || splitted[4] != "download") && splitted[3] != "download" {
-		return "", "", "", ""
+
+	switch {
+	case len(splitted) != 6:
+		return githubReleaseRef{}, false
+	case splitted[2] != "releases":
+		return githubReleaseRef{}, false
+	case (splitted[3] != "latest" || splitted[4] != "download") && splitted[3] != "download":
+		return githubReleaseRef{}, false
 	}
 
-	if splitted[3] == "latest" {
-		return splitted[0], splitted[1], "", splitted[5]
+	ref := githubReleaseRef{
+		org:  splitted[0],
+		repo: splitted[1],
+		file: splitted[5],
 	}
 
-	return splitted[0], splitted[1], splitted[4], splitted[5]
+	if splitted[3] != "latest" {
+		ref.release = splitted[4]
+	}
+
+	return ref, true
 }
