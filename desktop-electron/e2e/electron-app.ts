@@ -11,8 +11,14 @@ export async function launchApp(): Promise<{
   page: Page
 }> {
   // Point the app at the mock devpod binary via environment variable
-  const mockBinary = resolve(ROOT, "e2e/fixtures/mock-devpod")
-  chmodSync(mockBinary, 0o755)
+  // Use .cmd wrapper on Windows (execFile handles .cmd natively), bash script on Unix
+  const mockBinary =
+    process.platform === "win32"
+      ? resolve(ROOT, "e2e/fixtures/mock-devpod.cmd")
+      : resolve(ROOT, "e2e/fixtures/mock-devpod")
+  if (process.platform !== "win32") {
+    chmodSync(mockBinary, 0o755)
+  }
 
   const app = await electron.launch({
     args: [resolve(ROOT, "dist/main/index.js")],
