@@ -4,6 +4,8 @@ import { CliRunner } from "./cli.js"
 import { DaemonState } from "./state.js"
 import { LogStore } from "./log-store.js"
 import { registerIpcHandlers } from "./ipc.js"
+import { Watcher } from "./watcher.js"
+import { AppTray } from "./tray.js"
 
 let mainWindow: BrowserWindow | null = null
 const state = new DaemonState()
@@ -66,6 +68,21 @@ app.whenReady().then(() => {
     logStore,
     getMainWindow: () => mainWindow,
   })
+
+  // Start state watcher
+  const watcher = new Watcher({
+    cli,
+    state,
+    getMainWindow: () => mainWindow,
+  })
+  watcher.start()
+
+  // Set up system tray
+  const appTray = new AppTray({
+    state,
+    getMainWindow: () => mainWindow,
+  })
+  appTray.setup()
 
   createWindow()
 
