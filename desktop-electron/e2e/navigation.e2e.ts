@@ -32,6 +32,33 @@ test.describe("Sidebar Navigation", () => {
     await expect(heading).toContainText(/machines/i, { timeout: 5000 })
   })
 
+  test("should navigate to Contexts page", async () => {
+    await page.click('[data-sidebar="sidebar"] a[href="#/contexts"]')
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
+    await expect(heading).toContainText(/contexts/i, { timeout: 5000 })
+  })
+
+  test("should navigate to Terminals page", async () => {
+    await page.click('[data-sidebar="sidebar"] a[href="#/terminals"]')
+    // Terminals page doesn't have an h1 — it shows "No active terminals" or the terminal tabs
+    const main = page.locator("[data-slot=\"sidebar-inset\"]")
+    await expect(main).toContainText(/no active terminals|new shell/i, {
+      timeout: 5000,
+    })
+  })
+
+  test("should navigate to SSH Keys page", async () => {
+    await page.click('[data-sidebar="sidebar"] a[href="#/ssh-keys"]')
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
+    await expect(heading).toContainText(/ssh keys/i, { timeout: 5000 })
+  })
+
+  test("should navigate to Settings page", async () => {
+    await page.click('[data-sidebar="sidebar"] a[href="#/settings"]')
+    const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
+    await expect(heading).toContainText(/settings/i, { timeout: 5000 })
+  })
+
   test("should navigate back to Dashboard", async () => {
     await page.click('[data-sidebar="sidebar"] a[href="#/"]')
     const heading = page.locator("[data-slot=\"sidebar-inset\"] h1").first()
