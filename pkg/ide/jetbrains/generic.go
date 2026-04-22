@@ -225,7 +225,6 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 	return extract.Extract(file, toPath, extract.StripLevels(1))
 }
 
-//nolint:cyclop // pre-existing complexity
 func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
 	err := os.MkdirAll(targetFolder, os.ModePerm)
 	if err != nil {
@@ -239,23 +238,37 @@ func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
 
 	targetPath := path.Join(filepath.ToSlash(targetFolder), o.options.ID+".tar.gz")
 
-	// initiate download
 	log.Infof("downloading archive: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 	defer log.Infof(
 		"downloaded archive: displayName=%s, id=%s",
 		o.options.DisplayName,
 		o.options.ID,
 	)
-	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
+
+	resp, err := fetchArchive(downloadURL)
 	if err != nil {
-		return "", fmt.Errorf("download binary: %w", err)
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("download binary returned status code %d: %w", resp.StatusCode, err)
+	return saveArchive(targetPath, resp)
+}
+
+func fetchArchive(downloadURL string) (*http.Response, error) {
+	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("download binary: %w", err)
 	}
 
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("download binary returned status code %d: %w", resp.StatusCode, err)
+	}
+
+	return resp, nil
+}
+
+func saveArchive(targetPath string, resp *http.Response) (string, error) {
 	stat, err := os.Stat(targetPath)
 	if err == nil && stat.Size() == resp.ContentLength {
 		return targetPath, nil
