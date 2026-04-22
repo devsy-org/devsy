@@ -141,6 +141,14 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     await cli.runRaw(cliArgs)
   })
 
+  ipcMain.handle("context_create", async (_event, args: { name: string }) => {
+    await cli.runRaw(["context", "create", args.name])
+  })
+
+  ipcMain.handle("context_delete", async (_event, args: { name: string }) => {
+    await cli.runRaw(["context", "delete", args.name])
+  })
+
   // ── System ──
   ipcMain.handle("devpod_version", async () => {
     return cli.runRaw(["version"])

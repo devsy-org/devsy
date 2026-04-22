@@ -13,6 +13,7 @@ import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
+import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -174,6 +175,27 @@ onDestroy(() => {
   unlisten?.()
 })
 
+function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+  if (progress.message) {
+    outputLines = [...outputLines, progress.message]
+    requestAnimationFrame(() => {
+      outputEl?.scrollIntoView({ block: "end", behavior: "smooth" })
+    })
+  }
+  if (progress.done) {
+    submitting = false
+    if (stripAnsi(progress.message).includes("Exit code: 0")) {
+      createdId = wsId ?? null
+      toasts.success(`Workspace ${wsId ?? "created"} is ready`)
+      requestAnimationFrame(() => {
+        openBtnEl?.scrollIntoView({ block: "center", behavior: "smooth" })
+      })
+    } else {
+      toasts.error("Workspace creation failed. Check output for details.")
+    }
+  }
+}
+
 async function handleSubmit() {
   if (!source.trim()) {
     error = "Source is required"
@@ -202,35 +224,37 @@ async function handleSubmit() {
   outputLines = []
 
   try {
+    // Buffer events arriving before commandId is known to avoid the race
+    // where streaming events arrive before workspaceUp() resolves.
+    const pendingEvents: CommandProgress[] = []
+    let resolvedCommandId: string | null = null
+
     unlisten = await onCommandProgress((progress) => {
-      if (commandId && progress.commandId === commandId) {
-        if (progress.message) {
-          outputLines = [...outputLines, progress.message]
-          requestAnimationFrame(() => {
-            outputEl?.scrollIntoView({ block: "end", behavior: "smooth" })
-          })
+      if (resolvedCommandId) {
+        if (progress.commandId === resolvedCommandId) {
+          handleProgress(progress, workspaceId)
         }
-        if (progress.done) {
-          submitting = false
-          if (stripAnsi(progress.message).includes("Exit code: 0")) {
-            createdId = workspaceId ?? null
-            toasts.success(`Workspace ${workspaceId ?? "created"} is ready`)
-            requestAnimationFrame(() => {
-              openBtnEl?.scrollIntoView({ block: "center", behavior: "smooth" })
-            })
-          } else {
-            toasts.error("Workspace creation failed. Check output for details.")
-          }
-        }
+      } else {
+        pendingEvents.push(progress)
       }
     })
 
-    commandId = await workspaceUp({
+    const cmdId = await workspaceUp({
       source: source.trim(),
       workspaceId,
       provider: selectedProvider || undefined,
       ide: selectedIde || undefined,
     })
+
+    commandId = cmdId
+    resolvedCommandId = cmdId
+
+    // Replay any events that arrived before the commandId was known
+    for (const event of pendingEvents) {
+      if (event.commandId === cmdId) {
+        handleProgress(event, workspaceId)
+      }
+    }
   } catch (err) {
     toasts.error(`Failed to create workspace: ${err}`)
     submitting = false
