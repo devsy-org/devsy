@@ -7,7 +7,6 @@
  */
 
 import type {
-  AuditEntry,
   Context,
   LogEntry,
   Machine,
@@ -102,63 +101,6 @@ const MACHINES: Machine[] = [
 ]
 
 const CONTEXTS: Context[] = [{ name: "default" }, { name: "staging" }]
-
-const AUDIT_ENTRIES: AuditEntry[] = [
-  {
-    id: 1,
-    timestamp: now,
-    action: "start",
-    resourceType: "workspace",
-    resourceId: "my-project",
-    details: "",
-    success: true,
-  },
-  {
-    id: 2,
-    timestamp: hourAgo,
-    action: "stop",
-    resourceType: "workspace",
-    resourceId: "backend-api",
-    details: "",
-    success: true,
-  },
-  {
-    id: 3,
-    timestamp: hourAgo,
-    action: "create",
-    resourceType: "workspace",
-    resourceId: "ml-notebook",
-    details: "",
-    success: true,
-  },
-  {
-    id: 4,
-    timestamp: dayAgo,
-    action: "add",
-    resourceType: "provider",
-    resourceId: "docker",
-    details: "",
-    success: true,
-  },
-  {
-    id: 5,
-    timestamp: dayAgo,
-    action: "add",
-    resourceType: "provider",
-    resourceId: "kubernetes",
-    details: "",
-    success: true,
-  },
-  {
-    id: 6,
-    timestamp: dayAgo,
-    action: "delete",
-    resourceType: "workspace",
-    resourceId: "old-project",
-    details: "forced",
-    success: false,
-  },
-]
 
 const SSH_KEYS: SshKeyInfo[] = [
   {
@@ -282,18 +224,6 @@ const COMMANDS: Record<string, Handler> = {
   }),
   context_set_options: () => undefined,
 
-  // Audit
-  audit_recent: (args) => {
-    const limit = (args.limit as number) ?? 10
-    return AUDIT_ENTRIES.slice(0, limit)
-  },
-  audit_by_resource: (args) =>
-    AUDIT_ENTRIES.filter(
-      (e) =>
-        e.resourceType === args.resourceType &&
-        e.resourceId === args.resourceId,
-    ),
-
   // System
   devpod_version: () => "v0.6.0-mock",
   devpod_upgrade: () => "Successfully upgraded",
@@ -361,5 +291,5 @@ export async function listen<T>(
 // ── Detection ────────────────────────────────────────────────────────
 
 export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+  return false
 }
