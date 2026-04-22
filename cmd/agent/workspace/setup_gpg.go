@@ -53,26 +53,10 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 // - ensuring the gpg-agent is stopped in the container
 // - starting a reverse-tunnel of the local unix socket to remote
 // - ensuring paths and permissions are correctly set in the remote.
-//
-//nolint:cyclop,funlen // pre-existing complexity
 func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	log.Debugf("Initializing gpg-agent forwarding")
 
-	log.Debugf("Fetching public key")
-	rawPublicKeys, err := getPublicKeys()
-	if err != nil {
-		log.Errorf("Fetch public key: %v", err)
-		return err
-	}
-
-	log.Debugf("Decoding public key")
-	publicKey, err := base64.StdEncoding.DecodeString(rawPublicKeys)
-	if err != nil {
-		return err
-	}
-
-	log.Debugf("Decoding input owner trust")
-	ownerTrust, err := base64.StdEncoding.DecodeString(cmd.OwnerTrust)
+	publicKey, ownerTrust, err := fetchAndDecodeKeys(cmd.OwnerTrust)
 	if err != nil {
 		return err
 	}
@@ -84,54 +68,7 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 		GitKey:     cmd.GitKey,
 	}
 
-	log.Debugf("Stopping container gpg-agent")
-	err = gpgConf.StopGpgAgent()
-	if err != nil {
-		log.Errorf("stop container gpg-agent: %v", err)
-		return err
-	}
-
-	log.Debugf("Importing gpg public key in container")
-	err = gpgConf.ImportGpgKey()
-	if err != nil {
-		log.Errorf("Import gpg public key in container: %v", err)
-		return err
-	}
-
-	log.Debugf("Importing gpg owner trust in container")
-	err = gpgConf.ImportOwnerTrust()
-	if err != nil {
-		log.Errorf("Import gpg owner trust in container: %v", err)
-		return err
-	}
-
-	log.Debugf("Ensuring paths existence and permissions")
-	err = gpgConf.SetupRemoteSocketDirTree()
-	if err != nil {
-		log.Errorf("Ensure paths existence and permissions: %v", err)
-		return err
-	}
-
-	// Now we again kill the agent and remove the socket to really be sure every
-	// thing is clean
-	log.Debugf("Ensure stopping container gpg-agent")
-	err = gpgConf.StopGpgAgent()
-	if err != nil {
-		log.Errorf("Ensure stopping container gpg-agent: %v", err)
-		return err
-	}
-
-	log.Debugf("Setup local gnupg socket links")
-	err = gpgConf.SetupRemoteSocketLink()
-	if err != nil {
-		log.Errorf("Setup local gnupg socket links: %v", err)
-		return err
-	}
-
-	log.Debugf("Setup gpg.conf")
-	err = gpgConf.SetupGpgConf()
-	if err != nil {
-		log.Errorf("Setup gpg.conf: %v", err)
+	if err := configureGPGAgent(&gpgConf); err != nil {
 		return err
 	}
 
@@ -140,6 +77,77 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 		if err := gitcredentials.SetupGpgGitKey(gpgConf.GitKey); err != nil {
 			log.Warnf("Setup git signing key failed (non-fatal): %v", err)
 		}
+	}
+
+	return nil
+}
+
+func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
+	log.Debugf("Fetching public key")
+	rawPublicKeys, err := getPublicKeys()
+	if err != nil {
+		log.Errorf("Fetch public key: %v", err)
+		return nil, nil, err
+	}
+
+	log.Debugf("Decoding public key")
+	publicKey, err := base64.StdEncoding.DecodeString(rawPublicKeys)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Debugf("Decoding input owner trust")
+	ownerTrust, err := base64.StdEncoding.DecodeString(ownerTrustB64)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return publicKey, ownerTrust, nil
+}
+
+func configureGPGAgent(gpgConf *gpg.GPGConf) error {
+	log.Debugf("Stopping container gpg-agent")
+	if err := gpgConf.StopGpgAgent(); err != nil {
+		log.Errorf("stop container gpg-agent: %v", err)
+		return err
+	}
+
+	log.Debugf("Importing gpg public key in container")
+	if err := gpgConf.ImportGpgKey(); err != nil {
+		log.Errorf("Import gpg public key in container: %v", err)
+		return err
+	}
+
+	log.Debugf("Importing gpg owner trust in container")
+	if err := gpgConf.ImportOwnerTrust(); err != nil {
+		log.Errorf("Import gpg owner trust in container: %v", err)
+		return err
+	}
+
+	log.Debugf("Ensuring paths existence and permissions")
+	if err := gpgConf.SetupRemoteSocketDirTree(); err != nil {
+		log.Errorf("Ensure paths existence and permissions: %v", err)
+		return err
+	}
+
+	// Now we again kill the agent and remove the socket to really be sure every
+	// thing is clean
+	log.Debugf("Ensure stopping container gpg-agent")
+	if err := gpgConf.StopGpgAgent(); err != nil {
+		log.Errorf("Ensure stopping container gpg-agent: %v", err)
+		return err
+	}
+
+	log.Debugf("Setup local gnupg socket links")
+	if err := gpgConf.SetupRemoteSocketLink(); err != nil {
+		log.Errorf("Setup local gnupg socket links: %v", err)
+		return err
+	}
+
+	log.Debugf("Setup gpg.conf")
+	if err := gpgConf.SetupGpgConf(); err != nil {
+		log.Errorf("Setup gpg.conf: %v", err)
+		return err
 	}
 
 	return nil
