@@ -16,15 +16,16 @@ func InstallBinary() error {
 	defer func() { _ = errwriter.Close() }()
 
 	// try to install git via apt / apk
-	if command.Exists("apt") {
+	switch {
+	case command.Exists("apt"):
 		if err := installGitWithApt(writer, errwriter); err != nil {
 			return err
 		}
-	} else if command.Exists("apk") {
+	case command.Exists("apk"):
 		if err := installGitWithApk(writer, errwriter); err != nil {
 			return err
 		}
-	} else {
+	default:
 		// TODO: use golang git implementation
 		return fmt.Errorf("couldn't find a package manager to install git")
 	}
@@ -68,7 +69,7 @@ func installGitWithApk(writer, errwriter io.Writer) error {
 }
 
 func runCmd(stdout, stderr io.Writer, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) // #nosec G204 -- args are internally constructed
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
