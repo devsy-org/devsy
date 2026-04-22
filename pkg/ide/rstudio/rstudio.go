@@ -101,18 +101,9 @@ func (o *RStudioServer) Install() error {
 		return err
 	}
 
-	// Check if local file exists
-	if _, err := os.Stat(debPath); os.IsNotExist(err) {
-		log.Info("Rstudio deb not file, downloading")
-		codename, err := getDistroCodename()
-		if err != nil {
-			return err
-		}
-
-		debPath, err = downloadRStudioDeb(codename)
-		if err != nil {
-			return err
-		}
+	debPath, err = ensureDebAvailable(debPath)
+	if err != nil {
+		return err
 	}
 
 	err = installDeb(debPath)
@@ -197,6 +188,21 @@ func getDistroCodename() (string, error) {
 	return ubuntuCodename, nil
 }
 
+func ensureDebAvailable(debPath string) (string, error) {
+	if _, err := os.Stat(debPath); !os.IsNotExist(err) {
+		return debPath, nil
+	}
+
+	log.Info("Rstudio deb not file, downloading")
+
+	codename, err := getDistroCodename()
+	if err != nil {
+		return "", err
+	}
+
+	return downloadRStudioDeb(codename)
+}
+
 func downloadRStudioDeb(ubuntuCodename string) (string, error) {
 	downloadURL := getDownloadURL(
 		"stable",
@@ -219,7 +225,6 @@ func getDownloadURL(version, ubuntuCodename, architecture string) string {
 	return "https://rstudio.org/download/latest/" + version + "/server/" + ubuntuCodename + "/rstudio-server-latest-" + architecture + ".deb"
 }
 
-//nolint:cyclop // pre-existing complexity
 func download(targetFolder, downloadURL string) (string, error) {
 	err := os.MkdirAll(targetFolder, os.ModePerm)
 	if err != nil {
@@ -234,12 +239,8 @@ func download(targetFolder, downloadURL string) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		if resp.StatusCode == http.StatusNotFound {
-			return "", fmt.Errorf("RStudio version doesn't exist: %s", downloadURL) //nolint:all
-		}
-
-		return "", fmt.Errorf("download binary returned status code %d", resp.StatusCode)
+	if err := validateResponseStatus(resp, downloadURL); err != nil {
+		return "", err
 	}
 
 	stat, err := os.Stat(targetPath)
@@ -247,9 +248,27 @@ func download(targetFolder, downloadURL string) (string, error) {
 		return targetPath, nil
 	}
 
+	if err := saveResponseToFile(targetPath, resp); err != nil {
+		return "", err
+	}
+
+	return targetPath, nil
+}
+
+func validateResponseStatus(resp *http.Response, downloadURL string) error {
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		return nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("RStudio version doesn't exist: %s", downloadURL) //nolint:all
+	}
+	return fmt.Errorf("download binary returned status code %d", resp.StatusCode)
+}
+
+func saveResponseToFile(targetPath string, resp *http.Response) error {
 	file, err := os.Create(targetPath)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -258,10 +277,10 @@ func download(targetFolder, downloadURL string) (string, error) {
 		TotalSize: resp.ContentLength,
 	})
 	if err != nil {
-		return "", fmt.Errorf("download file: %w", err)
+		return fmt.Errorf("download file: %w", err)
 	}
 
-	return targetPath, nil
+	return nil
 }
 
 func installDeb(debPath string) error {
