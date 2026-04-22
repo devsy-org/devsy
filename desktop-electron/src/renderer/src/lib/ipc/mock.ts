@@ -1,6 +1,6 @@
 /**
  * Mock IPC layer for browser-only development.
- * When Tauri is not available (no window.__TAURI_INTERNALS__), this module
+ * When Electron is not available (no window.electronAPI), this module
  * provides fake invoke() and listen() that return realistic sample data.
  *
  * Usage: `npm run dev` opens http://localhost:1420 in any browser.

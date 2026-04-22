@@ -17,7 +17,7 @@ import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
-import type { UnlistenFn } from "@tauri-apps/api/event"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 
 let {
   open = $bindable(false),

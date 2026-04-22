@@ -17,7 +17,6 @@ import { initSettings } from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady } from "$lib/ipc/commands.js"
-import { isTauri } from "$lib/ipc/mock.js"
 
 let { children } = $props()
 
@@ -57,14 +56,10 @@ onMount(() => {
   initContexts()
   destroySettings = initSettings()
 
-  // Signal Tauri that the frontend is ready — closes splash, shows main window
-  if (isTauri()) {
-    import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke("app_ready"))
-      .catch((err) => {
-        console.warn("[DevPod] appReady failed:", err)
-      })
-  }
+  // Signal the backend that the frontend is ready
+  appReady().catch((err) => {
+    console.warn("[DevPod] appReady failed:", err)
+  })
 })
 
 onDestroy(() => {
