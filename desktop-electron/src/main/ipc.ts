@@ -1,9 +1,27 @@
 import { ipcMain } from "electron"
 import type { BrowserWindow } from "electron"
+import { readdir, readFile, mkdir } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import type { CliRunner } from "./cli.js"
 import type { DaemonState } from "./state.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
+
+const execFileAsync = promisify(execFile)
+
+interface SshKeyInfo {
+  name: string
+  keyType: string
+  fingerprint: string
+  comment: string
+  publicKey: string
+  path: string
+  hasPassphrase: boolean
+}
 
 interface IpcDependencies {
   cli: CliRunner
@@ -326,4 +344,139 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle("terminal_list", async () => {
     return deps.pty.listSessions()
   })
+
+  // ── SSH Keys ──
+  ipcMain.handle("ssh_key_list", async () => {
+    const sshDir = join(homedir(), ".ssh")
+    if (!existsSync(sshDir)) return []
+
+    const entries = await readdir(sshDir)
+    const pubFiles = entries.filter((f) => f.endsWith(".pub"))
+    const keys: SshKeyInfo[] = []
+
+    for (const pubFile of pubFiles) {
+      const pubPath = join(sshDir, pubFile)
+      let pubContent: string
+      try {
+        pubContent = (await readFile(pubPath, "utf-8")).trim()
+      } catch {
+        continue
+      }
+
+      const parts = pubContent.split(/\s+/, 3)
+      if (parts.length < 2) continue
+
+      const keyType = parts[0]
+      const comment = parts[2] ?? ""
+      const baseName = pubFile.replace(/\.pub$/, "")
+      const privatePath = join(sshDir, baseName)
+
+      // Get fingerprint via ssh-keygen
+      let fingerprint = ""
+      try {
+        const { stdout } = await execFileAsync("ssh-keygen", [
+          "-l",
+          "-f",
+          pubPath,
+        ])
+        fingerprint = stdout.trim()
+      } catch {
+        // ssh-keygen not available or key unreadable
+      }
+
+      // Check if private key has passphrase
+      let hasPassphrase = false
+      if (existsSync(privatePath)) {
+        try {
+          const { status } = await new Promise<{ status: number | null }>(
+            (resolve) => {
+              const proc = execFile(
+                "ssh-keygen",
+                ["-y", "-P", "", "-f", privatePath],
+                () => {},
+              )
+              proc.on("close", (status) => resolve({ status }))
+            },
+          )
+          hasPassphrase = status !== 0
+        } catch {
+          hasPassphrase = false
+        }
+      }
+
+      keys.push({
+        name: baseName,
+        keyType,
+        fingerprint,
+        comment,
+        publicKey: pubContent,
+        path: privatePath,
+        hasPassphrase,
+      })
+    }
+
+    keys.sort((a, b) => a.name.localeCompare(b.name))
+    return keys
+  })
+
+  ipcMain.handle(
+    "ssh_key_generate",
+    async (
+      _event,
+      args: { name: string; keyType?: string; comment?: string },
+    ) => {
+      const sshDir = join(homedir(), ".ssh")
+      await mkdir(sshDir, { recursive: true, mode: 0o700 })
+
+      const keyPath = join(sshDir, args.name)
+      if (existsSync(keyPath)) {
+        throw new Error(`Key '${args.name}' already exists`)
+      }
+
+      const algo = args.keyType ?? "ed25519"
+      const cmt = args.comment ?? `devpod-${args.name}`
+
+      await execFileAsync("ssh-keygen", [
+        "-t",
+        algo,
+        "-C",
+        cmt,
+        "-N",
+        "",
+        "-f",
+        keyPath,
+      ])
+
+      // Read the generated public key
+      const pubPath = `${keyPath}.pub`
+      const pubContent = (await readFile(pubPath, "utf-8")).trim()
+      const parts = pubContent.split(/\s+/, 3)
+      const keyType = parts[0] ?? ""
+
+      // Get fingerprint
+      let fingerprint = ""
+      try {
+        const { stdout } = await execFileAsync("ssh-keygen", [
+          "-l",
+          "-f",
+          pubPath,
+        ])
+        fingerprint = stdout.trim()
+      } catch {
+        // Ignore
+      }
+
+      const key: SshKeyInfo = {
+        name: args.name,
+        keyType,
+        fingerprint,
+        comment: cmt,
+        publicKey: pubContent,
+        path: keyPath,
+        hasPassphrase: false,
+      }
+
+      return key
+    },
+  )
 }
