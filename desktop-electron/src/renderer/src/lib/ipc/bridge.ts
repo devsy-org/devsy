@@ -44,14 +44,18 @@ if (isElectron()) {
     })
     return Promise.resolve(unlisten)
   }
-} else {
+} else if (import.meta.env.DEV) {
   console.info(
-    "%c[DevPod] Running in browser mock mode",
+    "%c[Devsy] Running in browser mock mode",
     "color: #f59e0b; font-weight: bold",
   )
   const mock = await import("./mock.js")
   _invoke = mock.invoke as InvokeFn
   _listen = mock.listen as ListenFn
+} else {
+  throw new Error(
+    "electronAPI not found. The preload script failed to expose the Electron API.",
+  )
 }
 
 export const invoke = _invoke
