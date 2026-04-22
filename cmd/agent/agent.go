@@ -56,7 +56,7 @@ func AgentPersistentPreRunE(
 	log.Init(log.Config{
 		Quiet:  globalFlags.Quiet,
 		Debug:  globalFlags.Debug,
-		Format: globalFlags.LogOutput,
+		Format: "json", // Agent must always use JSON: stdout is binary protocol, host reads stderr via ReadJSONStream
 	})
 
 	if globalFlags.DevsyHome != "" {
