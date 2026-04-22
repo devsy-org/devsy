@@ -1,0 +1,113 @@
+import { Tray, Menu, app, nativeImage } from "electron"
+import type { BrowserWindow } from "electron"
+import { join } from "node:path"
+import type { DaemonState } from "./state.js"
+
+interface TrayDeps {
+  state: DaemonState
+  getMainWindow: () => BrowserWindow | null
+}
+
+export class AppTray {
+  private tray: Tray | null = null
+  private rebuildTimer: ReturnType<typeof setInterval> | null = null
+
+  constructor(private deps: TrayDeps) {}
+
+  setup(): void {
+    const iconPath = join(__dirname, "../../resources/icon.png")
+    let icon: Electron.NativeImage
+    try {
+      icon = nativeImage.createFromPath(iconPath)
+    } catch {
+      icon = nativeImage.createEmpty()
+    }
+
+    this.tray = new Tray(icon)
+    this.tray.setToolTip("DevPod")
+    this.rebuildMenu()
+
+    this.tray.on("click", () => {
+      const win = this.deps.getMainWindow()
+      if (win) {
+        win.show()
+        win.focus()
+      }
+    })
+
+    // Rebuild menu every 5 seconds
+    this.rebuildTimer = setInterval(() => this.rebuildMenu(), 5000)
+  }
+
+  destroy(): void {
+    if (this.rebuildTimer) {
+      clearInterval(this.rebuildTimer)
+      this.rebuildTimer = null
+    }
+    if (this.tray) {
+      this.tray.destroy()
+      this.tray = null
+    }
+  }
+
+  private rebuildMenu(): void {
+    if (!this.tray) return
+
+    const workspaces = this.deps.state.workspaceList()
+    const count = workspaces.length
+    const statusLabel = count === 0 ? "No workspaces" : `${count} workspace${count === 1 ? "" : "s"}`
+
+    const template: Electron.MenuItemConstructorOptions[] = [
+      { label: statusLabel, enabled: false },
+    ]
+
+    if (workspaces.length > 0) {
+      template.push({ type: "separator" })
+      for (const ws of workspaces.slice(0, 10)) {
+        template.push({
+          label: `  ${ws.id}`,
+          click: () => {
+            const win = this.deps.getMainWindow()
+            if (win) {
+              win.show()
+              win.focus()
+              win.webContents.send("navigate", `/workspaces/${ws.id}`)
+            }
+          },
+        })
+      }
+      if (count > 10) {
+        template.push({ label: `  ... and ${count - 10} more`, enabled: false })
+      }
+    }
+
+    template.push(
+      { type: "separator" },
+      {
+        label: "Show DevPod",
+        click: () => {
+          const win = this.deps.getMainWindow()
+          if (win) {
+            win.show()
+            win.focus()
+          }
+        },
+      },
+      {
+        label: "Hide",
+        click: () => {
+          this.deps.getMainWindow()?.hide()
+        },
+      },
+      { type: "separator" },
+      {
+        label: "Quit DevPod",
+        click: () => app.quit(),
+      },
+    )
+
+    const menu = Menu.buildFromTemplate(template)
+    this.tray.setContextMenu(menu)
+    this.tray.setToolTip(`DevPod — ${statusLabel}`)
+  }
+}
