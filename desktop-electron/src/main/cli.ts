@@ -6,12 +6,25 @@ import type { ChildProcess } from "node:child_process"
 const execFile = promisify(execFileCb)
 
 export class CliRunner {
-  constructor(private binaryPath: string) {}
+  private execPath: string
+  private prefixArgs: string[]
+
+  constructor(private binaryPath: string) {
+    // If the binary is a Node.js script, run it through node directly
+    // (supports DEVPOD_CLI_PATH pointing to a .cjs/.js file for testing)
+    if (/\.[cm]?js$/.test(binaryPath)) {
+      this.execPath = process.execPath
+      this.prefixArgs = [binaryPath]
+    } else {
+      this.execPath = binaryPath
+      this.prefixArgs = []
+    }
+  }
 
   async run<T>(args: string[]): Promise<T> {
-    const fullArgs = [...args, "--output", "json"]
+    const fullArgs = [...this.prefixArgs, ...args, "--output", "json"]
     try {
-      const { stdout } = await execFile(this.binaryPath, fullArgs)
+      const { stdout } = await execFile(this.execPath, fullArgs)
       return JSON.parse(stdout) as T
     } catch (error: unknown) {
       throw this.wrapError(error)
@@ -20,7 +33,7 @@ export class CliRunner {
 
   async runRaw(args: string[]): Promise<string> {
     try {
-      const { stdout } = await execFile(this.binaryPath, args)
+      const { stdout } = await execFile(this.execPath, [...this.prefixArgs, ...args])
       return stdout
     } catch (error: unknown) {
       throw this.wrapError(error)
@@ -32,7 +45,7 @@ export class CliRunner {
     onLine: (line: string, stream: "stdout" | "stderr") => void,
     onExit: (code: number) => void,
   ): ChildProcess {
-    const child = spawn(this.binaryPath, args)
+    const child = spawn(this.execPath, [...this.prefixArgs, ...args])
 
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
