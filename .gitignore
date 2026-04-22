@@ -18,4 +18,3 @@ desktop-electron/dist/
 desktop-electron/release/
 desktop-electron/playwright-report/
 desktop-electron/test-results/
-desktop-electron/e2e/fixtures/_mock-devpod.cmd
