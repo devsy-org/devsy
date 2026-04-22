@@ -15,16 +15,26 @@ export class AppTray {
   constructor(private deps: TrayDeps) {}
 
   setup(): void {
-    const iconPath = join(__dirname, "../../resources/icon.png")
     let icon: Electron.NativeImage
-    try {
-      icon = nativeImage.createFromPath(iconPath)
-    } catch {
-      icon = nativeImage.createEmpty()
+    if (process.platform === "darwin") {
+      const trayIconPath = join(__dirname, "../../resources/tray/icon-tray.png")
+      try {
+        icon = nativeImage.createFromPath(trayIconPath)
+        icon.setTemplateImage(true)
+      } catch {
+        icon = nativeImage.createEmpty()
+      }
+    } else {
+      const iconPath = join(__dirname, "../../resources/icon.png")
+      try {
+        icon = nativeImage.createFromPath(iconPath)
+      } catch {
+        icon = nativeImage.createEmpty()
+      }
     }
 
     this.tray = new Tray(icon)
-    this.tray.setToolTip("DevPod")
+    this.tray.setToolTip("Devsy")
     this.rebuildMenu()
 
     this.tray.on("click", () => {
@@ -84,7 +94,7 @@ export class AppTray {
     template.push(
       { type: "separator" },
       {
-        label: "Show DevPod",
+        label: "Show Devsy",
         click: () => {
           const win = this.deps.getMainWindow()
           if (win) {
@@ -101,13 +111,13 @@ export class AppTray {
       },
       { type: "separator" },
       {
-        label: "Quit DevPod",
+        label: "Quit Devsy",
         click: () => app.quit(),
       },
     )
 
     const menu = Menu.buildFromTemplate(template)
     this.tray.setContextMenu(menu)
-    this.tray.setToolTip(`DevPod — ${statusLabel}`)
+    this.tray.setToolTip(`Devsy — ${statusLabel}`)
   }
 }
