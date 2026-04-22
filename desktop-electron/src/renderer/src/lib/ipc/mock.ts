@@ -223,6 +223,13 @@ const COMMANDS: Record<string, Handler> = {
     SSH_CONFIG_INCLUDE_PATH: { value: "" },
   }),
   context_set_options: () => undefined,
+  context_create: (args) => {
+    CONTEXTS.push({ name: args.name as string })
+  },
+  context_delete: (args) => {
+    const idx = CONTEXTS.findIndex((c) => c.name === args.name)
+    if (idx !== -1) CONTEXTS.splice(idx, 1)
+  },
 
   // System
   devpod_version: () => "v0.6.0-mock",

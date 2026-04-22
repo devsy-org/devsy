@@ -149,6 +149,14 @@ export async function contextSetOptions(
   return invoke("context_set_options", { options, context })
 }
 
+export async function contextCreate(name: string): Promise<void> {
+  return invoke("context_create", { name })
+}
+
+export async function contextDelete(name: string): Promise<void> {
+  return invoke("context_delete", { name })
+}
+
 // Audit commands
 export async function auditRecent(limit?: number): Promise<AuditEntry[]> {
   return invoke<AuditEntry[]>("audit_recent", { limit })

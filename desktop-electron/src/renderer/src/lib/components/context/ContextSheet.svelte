@@ -11,12 +11,14 @@ import * as Sheet from "$lib/components/ui/sheet/index.js"
 import {
   contextOptions as fetchContextOptions,
   contextSetOptions,
+  contextDelete,
 } from "$lib/ipc/commands.js"
 import {
   parseContextOptions,
   CONTEXT_OPTION_KEYS,
 } from "$lib/stores/settings.js"
 import type { ContextOptions } from "$lib/stores/settings.js"
+import { refreshContexts } from "$lib/stores/contexts.js"
 import { toasts } from "$lib/stores/toasts.js"
 import type { Context } from "$lib/types/index.js"
 
@@ -51,6 +53,21 @@ let opts = $state<ContextOptions>({
 
 let loading = $state(true)
 let saving = $state(false)
+let deleting = $state(false)
+
+async function handleDelete() {
+  deleting = true
+  try {
+    await contextDelete(context.name)
+    await refreshContexts()
+    toasts.success(`Context "${context.name}" deleted`)
+    open = false
+  } catch (err) {
+    toasts.error(`Failed to delete context: ${err}`)
+  } finally {
+    deleting = false
+  }
+}
 
 async function loadOptions() {
   loading = true
@@ -303,6 +320,16 @@ function toggleOption(key: keyof ContextOptions) {
             <Switch checked={opts.gpgAgentForwarding} onCheckedChange={() => toggleOption("gpgAgentForwarding")} disabled={saving} />
           </div>
         </div>
+
+        {#if !isActive}
+          <Separator />
+          <div class="space-y-2">
+            <h3 class="text-sm font-semibold text-destructive uppercase tracking-wider">Danger Zone</h3>
+            <Button variant="destructive" class="w-full" disabled={deleting} onclick={handleDelete}>
+              {deleting ? "Deleting..." : `Delete Context "${context.name}"`}
+            </Button>
+          </div>
+        {/if}
       {/if}
     </div>
   </Sheet.ResizableContent>

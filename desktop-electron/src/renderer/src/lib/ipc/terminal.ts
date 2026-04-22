@@ -40,19 +40,19 @@ export async function terminalListSessions(): Promise<string[]> {
 }
 
 interface TerminalOutputPayload {
-  session_id: string
+  sessionId: string
   data: number[]
 }
 
 interface TerminalExitPayload {
-  session_id: string
+  sessionId: string
 }
 
 export function onTerminalOutput(
   callback: (sessionId: string, data: Uint8Array) => void,
 ): Promise<UnlistenFn> {
   return listen<TerminalOutputPayload>("terminal:output", (event) => {
-    callback(event.payload.session_id, new Uint8Array(event.payload.data))
+    callback(event.payload.sessionId, new Uint8Array(event.payload.data))
   })
 }
 
@@ -60,6 +60,6 @@ export function onTerminalExit(
   callback: (sessionId: string) => void,
 ): Promise<UnlistenFn> {
   return listen<TerminalExitPayload>("terminal:exit", (event) => {
-    callback(event.payload.session_id)
+    callback(event.payload.sessionId)
   })
 }
