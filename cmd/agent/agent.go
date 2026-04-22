@@ -63,8 +63,6 @@ func AgentPersistentPreRunE(
 		log.Default.SetLevel(logrus.FatalLevel)
 	case globalFlags.Debug:
 		log.Default.SetLevel(logrus.DebugLevel)
-	case os.Getenv(config.EnvDebug) == config.BoolTrue:
-		log.Default.SetLevel(logrus.DebugLevel)
 	}
 
 	if globalFlags.DevsyHome != "" {
