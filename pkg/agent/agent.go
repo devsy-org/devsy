@@ -410,7 +410,6 @@ func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo
 	return nil
 }
 
-//nolint:cyclop // pre-existing complexity
 func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	// check if root is required
 	if runtime.GOOS != "linux" || os.Getuid() == 0 ||
@@ -418,20 +417,7 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 		return false, nil
 	}
 
-	// check if we can reach docker with no problems
-	dockerRootRequired := false
-	if workspaceInfo != nil &&
-		(workspaceInfo.Agent.Driver == "" || workspaceInfo.Agent.Driver == provider2.DockerDriver) {
-		var err error
-		dockerRootRequired, err = dockerReachable(
-			workspaceInfo.Agent.Docker.Path,
-			workspaceInfo.Agent.Docker.Env,
-		)
-		if err != nil {
-			log.Debugf("error trying to reach docker daemon: error=%v", err)
-			dockerRootRequired = true
-		}
-	}
+	dockerRootRequired := isDockerRootRequired(workspaceInfo)
 
 	// check if daemon needs to be installed
 	agentRootRequired := workspaceInfo == nil || len(workspaceInfo.Agent.Exec.Shutdown) > 0
@@ -462,6 +448,26 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func isDockerRootRequired(workspaceInfo *provider2.AgentWorkspaceInfo) bool {
+	if workspaceInfo == nil {
+		return false
+	}
+	if workspaceInfo.Agent.Driver != "" && workspaceInfo.Agent.Driver != provider2.DockerDriver {
+		return false
+	}
+
+	rootRequired, err := dockerReachable(
+		workspaceInfo.Agent.Docker.Path,
+		workspaceInfo.Agent.Docker.Env,
+	)
+	if err != nil {
+		log.Debugf("error trying to reach docker daemon: error=%v", err)
+		return true
+	}
+
+	return rootRequired
 }
 
 type Exec func(
