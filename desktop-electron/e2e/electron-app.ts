@@ -2,23 +2,29 @@ import { _electron as electron } from "@playwright/test"
 import type { ElectronApplication, Page } from "@playwright/test"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { chmodSync } from "node:fs"
+import { chmodSync, writeFileSync } from "node:fs"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+
+function getMockBinary(): string {
+  const cjsScript = resolve(ROOT, "e2e/fixtures/mock-devpod.cjs")
+  if (process.platform === "win32") {
+    // Generate .cmd wrapper at runtime with CRLF line endings
+    // so cmd.exe parses it correctly regardless of git line-ending settings
+    const cmdPath = resolve(ROOT, "e2e/fixtures/_mock-devpod.cmd")
+    writeFileSync(cmdPath, `@echo off\r\nnode "${cjsScript}" %*\r\n`)
+    return cmdPath
+  }
+  const bashWrapper = resolve(ROOT, "e2e/fixtures/mock-devpod")
+  chmodSync(bashWrapper, 0o755)
+  return bashWrapper
+}
 
 export async function launchApp(): Promise<{
   app: ElectronApplication
   page: Page
 }> {
-  // Point the app at the mock devpod binary via environment variable
-  // Use .cmd wrapper on Windows (execFile handles .cmd natively), bash script on Unix
-  const mockBinary =
-    process.platform === "win32"
-      ? resolve(ROOT, "e2e/fixtures/mock-devpod.cmd")
-      : resolve(ROOT, "e2e/fixtures/mock-devpod")
-  if (process.platform !== "win32") {
-    chmodSync(mockBinary, 0o755)
-  }
+  const mockBinary = getMockBinary()
 
   const app = await electron.launch({
     args: [resolve(ROOT, "dist/main/index.js")],
