@@ -53,15 +53,10 @@ func AgentPersistentPreRunE(
 
 	// Initialise the zap logger for the agent subprocess.
 	// stdout is the binary protocol channel, so all log output goes to stderr.
-	// "raw" outputs message text only (no timestamp/level/caller/stacktrace),
-	// matching the old MakeRaw() behavior. This is required because agent stderr
-	// is captured by TunnelLogStreamer.ErrorOutput and embedded in the parent's
-	// error chain; JSON or console format would cause double-escaping or
-	// multi-line stacktraces that get truncated to the last line.
 	log.Init(log.Config{
 		Quiet:  globalFlags.Quiet,
 		Debug:  globalFlags.Debug,
-		Format: "raw",
+		Format: "json", // Agent must use JSON: single-line output is captured by TunnelLogStreamer.lastLines
 	})
 
 	if globalFlags.DevsyHome != "" {

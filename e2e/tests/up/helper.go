@@ -79,6 +79,24 @@ func findMessage(reader io.Reader, message string) error {
 				if strings.Contains(msg, message) {
 					return nil
 				}
+				// Agent JSON may be embedded in the parent's error chain.
+				// Parse any nested JSON lines within the msg to resolve
+				// double-escaped quotes.
+				for _, part := range strings.Split(msg, "\n") {
+					part = strings.TrimSpace(part)
+					if len(part) > 0 && part[0] == '{' {
+						inner := &logLine{}
+						if json.Unmarshal([]byte(part), inner) == nil {
+							innerMsg := inner.Message
+							if innerMsg == "" {
+								innerMsg = inner.Msg
+							}
+							if strings.Contains(innerMsg, message) {
+								return nil
+							}
+						}
+					}
+				}
 			}
 		}
 	}
