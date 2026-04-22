@@ -1,19 +1,27 @@
 <script lang="ts">
-import { Layers, Settings2 } from "@lucide/svelte"
+import { Layers, Plus, Settings2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
+import { Input } from "$lib/components/ui/input/index.js"
+import { Label } from "$lib/components/ui/label/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import * as Dialog from "$lib/components/ui/dialog/index.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ContextSheet from "$lib/components/context/ContextSheet.svelte"
 import {
   contexts,
   activeContext,
   contextsLoading,
+  refreshContexts,
 } from "$lib/stores/contexts.js"
-import { contextUse } from "$lib/ipc/commands.js"
+import { contextUse, contextCreate } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 
 let selectedContext = $state<string | null>(null)
 let sheetOpen = $state(false)
+
+let createDialogOpen = $state(false)
+let newContextName = $state("")
+let creating = $state(false)
 
 let selectedCtx = $derived(
   selectedContext
@@ -35,11 +43,61 @@ async function handleUse(e: Event, name: string) {
     toasts.error(`Failed to switch context: ${err}`)
   }
 }
+
+async function handleCreate() {
+  const name = newContextName.trim()
+  if (!name) return
+  creating = true
+  try {
+    await contextCreate(name)
+    await refreshContexts()
+    toasts.success(`Context "${name}" created`)
+    createDialogOpen = false
+    newContextName = ""
+  } catch (err) {
+    toasts.error(`Failed to create context: ${err}`)
+  } finally {
+    creating = false
+  }
+}
 </script>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">Contexts</h1>
+    <Dialog.Root bind:open={createDialogOpen}>
+      <Dialog.Trigger>
+        {#snippet child({ props })}
+          <Button size="sm" {...props}>
+            <Plus class="mr-2 h-4 w-4" />
+            Create Context
+          </Button>
+        {/snippet}
+      </Dialog.Trigger>
+      <Dialog.Content class="sm:max-w-md">
+        <Dialog.Header>
+          <Dialog.Title>Create Context</Dialog.Title>
+          <Dialog.Description>Create a new context to organize your workspace configurations.</Dialog.Description>
+        </Dialog.Header>
+        <form onsubmit={(e) => { e.preventDefault(); handleCreate() }} class="space-y-4">
+          <div class="space-y-1.5">
+            <Label>Name</Label>
+            <Input
+              placeholder="e.g. staging, production"
+              value={newContextName}
+              oninput={(e) => (newContextName = e.currentTarget.value)}
+              disabled={creating}
+            />
+          </div>
+          <Dialog.Footer>
+            <Button type="button" variant="outline" onclick={() => (createDialogOpen = false)} disabled={creating}>Cancel</Button>
+            <Button type="submit" disabled={creating || !newContextName.trim()}>
+              {creating ? "Creating..." : "Create"}
+            </Button>
+          </Dialog.Footer>
+        </form>
+      </Dialog.Content>
+    </Dialog.Root>
   </div>
 
   {#if $contextsLoading}

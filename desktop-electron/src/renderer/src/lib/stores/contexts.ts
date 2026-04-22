@@ -10,6 +10,16 @@ export const contextsLoading = writable(true)
 
 let unlisten: UnlistenFn | null = null
 
+export async function refreshContexts() {
+  try {
+    const result = await contextList()
+    contexts.set(result.contexts)
+    activeContext.set(result.activeContext)
+  } catch {
+    // IPC not available
+  }
+}
+
 export async function initContexts() {
   contextsLoading.set(true)
   try {
