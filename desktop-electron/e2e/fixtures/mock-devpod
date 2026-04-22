@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Mock devpod binary for e2e tests
+# Returns canned JSON responses for each subcommand
+
+set -euo pipefail
+
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+  list)
+    cat <<'JSON'
+[
+  {
+    "id": "test-workspace",
+    "source": { "gitRepository": "https://github.com/example/repo" },
+    "provider": { "name": "docker" },
+    "status": "Running",
+    "lastUsed": "2026-04-22T10:00:00Z",
+    "creationTimestamp": "2026-04-20T08:00:00Z"
+  },
+  {
+    "id": "dev-env",
+    "source": { "gitRepository": "https://github.com/example/dev" },
+    "provider": { "name": "docker" },
+    "status": "Stopped",
+    "lastUsed": "2026-04-21T15:00:00Z",
+    "creationTimestamp": "2026-04-19T09:00:00Z"
+  }
+]
+JSON
+    ;;
+  provider)
+    SUB="${1:-}"
+    case "$SUB" in
+      list)
+        cat <<'JSON'
+{
+  "docker": {
+    "config": {
+      "name": "docker",
+      "version": "v0.5.0",
+      "icon": "https://example.com/docker.svg",
+      "description": "Docker provider",
+      "source": {},
+      "options": {},
+      "optionGroups": []
+    },
+    "state": { "initialized": true },
+    "default": true
+  },
+  "kubernetes": {
+    "config": {
+      "name": "kubernetes",
+      "version": "v0.3.0",
+      "icon": "https://example.com/k8s.svg",
+      "description": "Kubernetes provider",
+      "source": {},
+      "options": {},
+      "optionGroups": []
+    },
+    "state": { "initialized": false },
+    "default": false
+  }
+}
+JSON
+        ;;
+      *)
+        echo "OK"
+        ;;
+    esac
+    ;;
+  machine)
+    SUB="${1:-}"
+    case "$SUB" in
+      list)
+        echo '[]'
+        ;;
+      *)
+        echo "OK"
+        ;;
+    esac
+    ;;
+  context)
+    SUB="${1:-}"
+    case "$SUB" in
+      list)
+        cat <<'JSON'
+[
+  { "name": "default", "default": true }
+]
+JSON
+        ;;
+      *)
+        echo "OK"
+        ;;
+    esac
+    ;;
+  status)
+    echo '{"state": "Running"}'
+    ;;
+  version)
+    echo "v0.1.0-test"
+    ;;
+  ssh)
+    # For terminal SSH tests — just run a simple shell
+    exec /bin/sh
+    ;;
+  up|stop|delete)
+    echo "Starting operation..."
+    sleep 0.1
+    echo "Operation complete."
+    ;;
+  *)
+    echo "mock-devpod: unknown command '$CMD'" >&2
+    exit 1
+    ;;
+esac
