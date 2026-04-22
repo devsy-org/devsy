@@ -11,6 +11,7 @@
     "moduleResolution": "bundler",
     "module": "ESNext",
     "target": "ESNext",
+    "types": ["vite/client"],
     "paths": {
       "$lib/*": ["./src/lib/*"]
     }
