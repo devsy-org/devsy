@@ -1,9 +1,10 @@
 import { _electron as electron } from "@playwright/test"
 import type { ElectronApplication, Page } from "@playwright/test"
-import { resolve } from "node:path"
+import { resolve, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import { copyFileSync, mkdirSync } from "node:fs"
 
-const ROOT = resolve(__dirname, "..")
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
 export async function launchApp(): Promise<{
   app: ElectronApplication
