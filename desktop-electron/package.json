@@ -2,6 +2,7 @@
   "name": "devpod-desktop",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://devpod.sh",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
