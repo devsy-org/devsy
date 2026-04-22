@@ -54,9 +54,12 @@ func AgentPersistentPreRunE(
 	// Initialise the zap logger for the agent subprocess.
 	// stdout is the binary protocol channel, so all log output goes to stderr.
 	log.Init(log.Config{
-		Quiet:  globalFlags.Quiet,
-		Debug:  globalFlags.Debug,
-		Format: "json", // Agent must always use JSON: stdout is binary protocol, host reads stderr via ReadJSONStream
+		Quiet: globalFlags.Quiet,
+		Debug: globalFlags.Debug,
+		// No Format: agent errors are embedded as text in the parent's error chain
+		// (via TunnelLogStreamer.ErrorOutput). Using JSON here causes double-escaping
+		// of quotes when the parent re-logs the error as JSON. Plain text (the default)
+		// matches the old MakeRaw() behavior.
 	})
 
 	if globalFlags.DevsyHome != "" {
