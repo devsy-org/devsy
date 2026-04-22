@@ -1,29 +1,57 @@
 /**
- * IPC bridge — re-exports invoke/listen from Tauri when available,
+ * IPC bridge — uses Electron's contextBridge API when running in Electron,
  * falls back to mock implementations for browser-only development.
  */
 
-import { isTauri } from "./mock.js"
+import type { UnlistenFn } from "./types.js"
 
-// Dynamic re-export based on runtime environment
-let _invoke: typeof import("@tauri-apps/api/core").invoke
-let _listen: typeof import("@tauri-apps/api/event").listen
+function isElectron(): boolean {
+  return typeof window !== "undefined" && "electronAPI" in window
+}
 
-if (isTauri()) {
-  // Running inside Tauri webview — use real IPC
-  const core = await import("@tauri-apps/api/core")
-  const event = await import("@tauri-apps/api/event")
-  _invoke = core.invoke
-  _listen = event.listen
+interface ElectronAPI {
+  invoke: (channel: string, args?: Record<string, unknown>) => Promise<unknown>
+  on: (channel: string, callback: (payload: unknown) => void) => () => void
+}
+
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI
+  }
+}
+
+type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
+type ListenFn = <T>(
+  event: string,
+  callback: (event: { payload: T }) => void,
+) => Promise<UnlistenFn>
+
+let _invoke: InvokeFn
+let _listen: ListenFn
+
+if (isElectron()) {
+  const api = window.electronAPI!
+
+  _invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
+    api.invoke(cmd, args) as Promise<T>
+
+  _listen = <T>(
+    event: string,
+    callback: (event: { payload: T }) => void,
+  ): Promise<UnlistenFn> => {
+    const unlisten = api.on(event, (payload) => {
+      callback({ payload: payload as T })
+    })
+    return Promise.resolve(unlisten)
+  }
 } else {
-  // Running in plain browser — use mocks
   console.info(
     "%c[DevPod] Running in browser mock mode",
     "color: #f59e0b; font-weight: bold",
   )
   const mock = await import("./mock.js")
-  _invoke = mock.invoke as typeof _invoke
-  _listen = mock.listen as typeof _listen
+  _invoke = mock.invoke as InvokeFn
+  _listen = mock.listen as ListenFn
 }
 
 export const invoke = _invoke
