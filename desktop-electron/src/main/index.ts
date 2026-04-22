@@ -1,7 +1,12 @@
 import { app, BrowserWindow } from "electron"
 import { join } from "node:path"
+import { CliRunner } from "./cli.js"
+import { DaemonState } from "./state.js"
+import { LogStore } from "./log-store.js"
+import { registerIpcHandlers } from "./ipc.js"
 
 let mainWindow: BrowserWindow | null = null
+const state = new DaemonState()
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -18,15 +23,13 @@ function createWindow(): void {
     },
   })
 
-  // Hide instead of close
   mainWindow.on("close", (event) => {
-    if (mainWindow && !app.isQuitting) {
+    if (mainWindow && !(app as typeof app & { isQuitting?: boolean }).isQuitting) {
       event.preventDefault()
       mainWindow.hide()
     }
   })
 
-  // Load renderer
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -39,10 +42,31 @@ function createWindow(): void {
 }
 
 app.on("before-quit", () => {
-  (app as typeof app & { isQuitting: boolean }).isQuitting = true
+  ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
 })
 
 app.whenReady().then(() => {
+  // Resolve bundled CLI binary
+  const binaryPath = CliRunner.resolveBinaryPath(process.resourcesPath)
+  const cli = new CliRunner(binaryPath)
+
+  // Initialize log store and prune old logs
+  const logStore = LogStore.defaultPath()
+  try {
+    const pruned = logStore.prune(30)
+    if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
+  } catch (e) {
+    console.error("Failed to prune old logs:", e)
+  }
+
+  // Register IPC handlers
+  registerIpcHandlers({
+    cli,
+    state,
+    logStore,
+    getMainWindow: () => mainWindow,
+  })
+
   createWindow()
 
   app.on("activate", () => {
@@ -57,3 +81,5 @@ app.on("window-all-closed", () => {
     app.quit()
   }
 })
+
+export { mainWindow, state }
