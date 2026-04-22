@@ -1,15 +1,10 @@
 import { get } from "svelte/store"
 import { beforeEach, describe, expect, it } from "vitest"
-import { _setBrowser } from "$lib/__mocks__/app-environment.js"
 
-// browser starts false so module-level getInitialTheme() skips localStorage.
-// We import settings AFTER the mock is in place.
 import { applyTheme, cycleTheme, theme } from "./settings.js"
 
 describe("settings store", () => {
   beforeEach(() => {
-    // Enable browser for the test functions
-    _setBrowser(true)
     theme.set("dark")
     localStorage.clear()
     document.documentElement.classList.remove("dark")

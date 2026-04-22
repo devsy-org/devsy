@@ -4,8 +4,7 @@ import { readable } from "svelte/store"
 export { push, replace, router }
 
 /**
- * Drop-in replacement for SvelteKit's goto().
- * Navigates using the hash router.
+ * Navigate to a path using the hash router.
  */
 export function goto(path: string, opts?: { replaceState?: boolean }) {
   if (opts?.replaceState) {
