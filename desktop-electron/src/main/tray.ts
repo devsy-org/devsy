@@ -1,4 +1,4 @@
-import { Tray, Menu, app, nativeImage } from "electron"
+import { Tray, Menu, app, nativeImage, nativeTheme } from "electron"
 import type { BrowserWindow } from "electron"
 import { join } from "node:path"
 import type { DaemonState } from "./state.js"
@@ -15,27 +15,18 @@ export class AppTray {
   constructor(private deps: TrayDeps) {}
 
   setup(): void {
-    let icon: Electron.NativeImage
-    if (process.platform === "darwin") {
-      const trayIconPath = join(__dirname, "../../resources/tray/icon-tray.png")
-      try {
-        icon = nativeImage.createFromPath(trayIconPath)
-        icon.setTemplateImage(true)
-      } catch {
-        icon = nativeImage.createEmpty()
-      }
-    } else {
-      const iconPath = join(__dirname, "../../resources/icon.png")
-      try {
-        icon = nativeImage.createFromPath(iconPath)
-      } catch {
-        icon = nativeImage.createEmpty()
-      }
-    }
-
+    const icon = this.createTrayIcon()
     this.tray = new Tray(icon)
     this.tray.setToolTip("Devsy")
     this.rebuildMenu()
+
+    if (process.platform !== "darwin") {
+      nativeTheme.on("updated", () => {
+        if (this.tray) {
+          this.tray.setImage(this.createTrayIcon())
+        }
+      })
+    }
 
     this.tray.on("click", () => {
       const win = this.deps.getMainWindow()
@@ -57,6 +48,30 @@ export class AppTray {
     if (this.tray) {
       this.tray.destroy()
       this.tray = null
+    }
+  }
+
+  private createTrayIcon(): Electron.NativeImage {
+    const trayDir = join(__dirname, "../../resources/tray")
+    if (process.platform === "darwin") {
+      // macOS: use Template images — Electron auto-adapts to menu bar theme
+      const iconPath = join(trayDir, "icon-trayTemplate.png")
+      try {
+        const icon = nativeImage.createFromPath(iconPath)
+        icon.setTemplateImage(true)
+        return icon
+      } catch {
+        return nativeImage.createEmpty()
+      }
+    }
+
+    // Windows/Linux: pick light or dark variant based on system theme
+    const variant = nativeTheme.shouldUseDarkColors ? "dark" : "light"
+    const iconPath = join(trayDir, `icon-tray-${variant}.png`)
+    try {
+      return nativeImage.createFromPath(iconPath)
+    } catch {
+      return nativeImage.createEmpty()
     }
   }
 
