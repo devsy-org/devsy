@@ -82,7 +82,7 @@ func findMessage(reader io.Reader, message string) error {
 				// Agent JSON may be embedded in the parent's error chain.
 				// Parse any nested JSON lines within the msg to resolve
 				// double-escaped quotes.
-				for _, part := range strings.Split(msg, "\n") {
+				for part := range strings.SplitSeq(msg, "\n") {
 					part = strings.TrimSpace(part)
 					if len(part) > 0 && part[0] == '{' {
 						inner := &logLine{}
