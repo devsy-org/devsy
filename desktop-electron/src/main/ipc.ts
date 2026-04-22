@@ -434,7 +434,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       }
 
       const algo = args.keyType ?? "ed25519"
-      const cmt = args.comment ?? `devpod-${args.name}`
+      const cmt = args.comment ?? `devsy-${args.name}`
 
       await execFileAsync("ssh-keygen", [
         "-t",

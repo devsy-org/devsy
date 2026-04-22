@@ -108,7 +108,7 @@ async function copyPublicKey(key: SshKeyInfo) {
         <div class="space-y-2">
           <Label>Key Name</Label>
           <Input
-            placeholder="e.g. devpod-aws"
+            placeholder="e.g. devsy-aws"
             value={newKeyName}
             oninput={(e) => (newKeyName = e.currentTarget.value)}
           />

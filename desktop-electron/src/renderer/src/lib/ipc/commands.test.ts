@@ -220,28 +220,28 @@ describe("IPC commands", () => {
 
     it("sshKeyGenerate passes all parameters", async () => {
       const mockKey = {
-        name: "devpod-aws",
+        name: "devsy-aws",
         keyType: "ed25519",
         fingerprint: "SHA256:xyz789",
         comment: "dev@example.com",
         publicKey: "ssh-ed25519 BBBB...",
-        path: "/home/user/.ssh/devpod-aws",
+        path: "/home/user/.ssh/devsy-aws",
         hasPassphrase: false,
       }
       mockInvoke.mockResolvedValue(mockKey)
 
       const result = await sshKeyGenerate({
-        name: "devpod-aws",
+        name: "devsy-aws",
         keyType: "ed25519",
         comment: "dev@example.com",
       })
 
       expect(mockInvoke).toHaveBeenCalledWith("ssh_key_generate", {
-        name: "devpod-aws",
+        name: "devsy-aws",
         keyType: "ed25519",
         comment: "dev@example.com",
       })
-      expect(result.name).toBe("devpod-aws")
+      expect(result.name).toBe("devsy-aws")
     })
 
     it("sshKeyGenerate works with minimal parameters", async () => {

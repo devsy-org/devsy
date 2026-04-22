@@ -79,7 +79,7 @@ function isActive(href: string): boolean {
             <Box class="size-4" />
           </div>
           <div class="grid flex-1 text-left text-sm leading-tight">
-            <span class="truncate font-semibold">DevPod</span>
+            <span class="truncate font-semibold">Devsy</span>
             <span class="truncate text-xs text-muted-foreground">Desktop</span>
           </div>
         </Sidebar.MenuButton>

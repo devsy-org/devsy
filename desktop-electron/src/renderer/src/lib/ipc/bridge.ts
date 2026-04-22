@@ -46,7 +46,7 @@ if (isElectron()) {
   }
 } else {
   console.info(
-    "%c[DevPod] Running in browser mock mode",
+    "%c[Devsy] Running in browser mock mode",
     "color: #f59e0b; font-weight: bold",
   )
   const mock = await import("./mock.js")

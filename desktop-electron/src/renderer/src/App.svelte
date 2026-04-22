@@ -87,7 +87,7 @@ onMount(() => {
 
   // Signal the backend that the frontend is ready
   appReady().catch((err) => {
-    console.warn("[DevPod] appReady failed:", err)
+    console.warn("[Devsy] appReady failed:", err)
   })
 })
 

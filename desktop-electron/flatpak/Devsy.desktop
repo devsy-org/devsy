@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=DevPod
+Name=Devsy
 Comment=Dev environments in any infrastructure
 Exec=devpod-wrapper
-Icon=sh.loft.devpod
+Icon=dev.devsy.app
 Terminal=false
 Type=Application
 Categories=Development;
-StartupWMClass=DevPod
+StartupWMClass=Devsy

@@ -15,7 +15,7 @@ export interface ParsedLogLine {
 }
 
 /**
- * Parse a DevPod CLI log line into structured fields.
+ * Parse a Devsy CLI log line into structured fields.
  * Format: `<time> <level> <message> <source.go:line>`
  * ANSI codes are stripped before parsing.
  */

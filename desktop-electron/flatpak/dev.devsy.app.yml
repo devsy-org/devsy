@@ -1,4 +1,4 @@
-app-id: sh.loft.devpod
+app-id: dev.devsy.app
 runtime: org.freedesktop.Platform
 runtime-version: "24.08"
 sdk: org.freedesktop.Sdk
@@ -24,23 +24,23 @@ finish-args:
   - --talk-name=org.freedesktop.Flatpak
 
 modules:
-  - name: devpod-desktop
+  - name: devsy-desktop
     buildsystem: simple
     build-commands:
       # Extract the .deb package
-      - ar x devpod-desktop.deb
+      - ar x devsy-desktop.deb
       - tar xf data.tar.*
       # Install the Electron app
-      - cp -r opt/DevPod /app/devpod
+      - cp -r opt/Devsy /app/devsy
       # Install the CLI binary
-      - install -Dm755 opt/DevPod/resources/bin/devpod /app/bin/devpod
+      - install -Dm755 opt/Devsy/resources/bin/devpod /app/bin/devpod
       # Install desktop file, icon, and wrapper
-      - install -Dm644 DevPod.desktop /app/share/applications/sh.loft.devpod.desktop
+      - install -Dm644 Devsy.desktop /app/share/applications/dev.devsy.app.desktop
       - install -Dm755 devpod-wrapper /app/bin/devpod-wrapper
     sources:
       - type: file
-        path: devpod-desktop.deb
+        path: devsy-desktop.deb
       - type: file
-        path: DevPod.desktop
+        path: Devsy.desktop
       - type: file
         path: devpod-wrapper
