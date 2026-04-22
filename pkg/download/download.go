@@ -138,17 +138,16 @@ func downloadGithubRelease(ref githubReleaseRef, token string) (io.ReadCloser, e
 	return downloadGithubAsset(ref.org, ref.repo, assetID, token)
 }
 
-//nolint:cyclop
-func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) {
-	var releasePath string
+func (ref githubReleaseRef) releaseURL() string {
+	var path string
 	if ref.release == "" {
-		releasePath = fmt.Sprintf(
+		path = fmt.Sprintf(
 			"/repos/%s/%s/releases/latest",
 			url.PathEscape(ref.org),
 			url.PathEscape(ref.repo),
 		)
 	} else {
-		releasePath = fmt.Sprintf(
+		path = fmt.Sprintf(
 			"/repos/%s/%s/releases/tags/%s",
 			url.PathEscape(ref.org),
 			url.PathEscape(ref.repo),
@@ -156,34 +155,43 @@ func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) 
 		)
 	}
 
-	releaseURL := (&url.URL{
+	return (&url.URL{
 		Scheme: "https",
 		Host:   "api.github.com",
-		Path:   releasePath,
+		Path:   path,
 	}).String()
+}
 
-	req, err := http.NewRequest(http.MethodGet, releaseURL, nil)
+func githubAPIGetJSON(apiURL, token string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
+
 	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return 0, &HTTPStatusError{
+		return nil, &HTTPStatusError{
 			StatusCode: resp.StatusCode,
-			URL:        releaseURL,
+			URL:        apiURL,
 			Body:       string(body),
 		}
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
+}
+
+func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) {
+	releaseURL := ref.releaseURL()
+
+	raw, err := githubAPIGetJSON(releaseURL, token)
 	if err != nil {
 		return 0, err
 	}
@@ -198,6 +206,7 @@ func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) 
 			return asset.ID, nil
 		}
 	}
+
 	return 0, fmt.Errorf("couldn't find asset %s in github release (%s)", ref.file, releaseURL)
 }
 
