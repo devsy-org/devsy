@@ -9,13 +9,13 @@ export type ColorScheme = "default" | "emerald" | "purple"
 export type UIScale = "xs" | "sm" | "md" | "lg" | "xl"
 export type SidebarPosition = "left" | "right"
 
-const STORAGE_KEY = "devpod-theme"
-const COLOR_SCHEME_KEY = "devpod-color-scheme"
-const UI_SCALE_KEY = "devpod-ui-scale"
-const SIDEBAR_KEY = "devpod-sidebar-position"
-const AUTO_UPDATE_KEY = "devpod-auto-update"
-const FIXED_IDE_KEY = "devpod-fixed-ide"
-const DEFAULT_IDE_KEY = "devpod-default-ide"
+const STORAGE_KEY = "devsy-theme"
+const COLOR_SCHEME_KEY = "devsy-color-scheme"
+const UI_SCALE_KEY = "devsy-ui-scale"
+const SIDEBAR_KEY = "devsy-sidebar-position"
+const AUTO_UPDATE_KEY = "devsy-auto-update"
+const FIXED_IDE_KEY = "devsy-fixed-ide"
+const DEFAULT_IDE_KEY = "devsy-default-ide"
 
 const UI_SCALE_CLASSES: Record<UIScale, string> = {
   xs: "ui-scale-xs",
@@ -165,9 +165,9 @@ export function setFixedIde(value: boolean) {
   fixedIde.set(value)
 }
 
-// ── Context Options (DevPod CLI) ────────────────────────────────────
+// ── Context Options (Devsy CLI) ─────────────────────────────────────
 
-// Options stored in DevPod CLI context (devpod context set-options)
+// Options stored in Devsy CLI context (devpod context set-options)
 export interface ContextOptions {
   telemetry: boolean
   agentUrl: string
@@ -187,7 +187,7 @@ export interface ContextOptions {
   sshConfigIncludePath: string
 }
 
-// Options stored locally (not supported by DevPod CLI context)
+// Options stored locally (not supported by Devsy CLI context)
 export interface LocalOptions {
   debugFlag: boolean
   sshKeyPath: string
@@ -229,7 +229,7 @@ export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
   experimentalMultiDevcontainer: false,
 }
 
-// Map from our keys to DevPod CLI context option keys
+// Map from our keys to Devsy CLI context option keys
 export const CONTEXT_OPTION_KEYS: Record<keyof ContextOptions, string> = {
   telemetry: "TELEMETRY",
   agentUrl: "AGENT_URL",
@@ -253,7 +253,7 @@ export const contextOptions = writable<ContextOptions>({
   ...DEFAULT_CONTEXT_OPTIONS,
 })
 
-const LOCAL_OPTIONS_KEY = "devpod-local-options"
+const LOCAL_OPTIONS_KEY = "devsy-local-options"
 
 export const localOptions = writable<LocalOptions>({
   ...DEFAULT_LOCAL_OPTIONS,

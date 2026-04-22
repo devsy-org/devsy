@@ -14,29 +14,29 @@ describe("settings store", () => {
     it("applies dark theme", () => {
       applyTheme("dark")
 
-      expect(localStorage.getItem("devpod-theme")).toBe("dark")
+      expect(localStorage.getItem("devsy-theme")).toBe("dark")
       expect(document.documentElement.classList.contains("dark")).toBe(true)
     })
 
     it("applies light theme", () => {
       applyTheme("light")
 
-      expect(localStorage.getItem("devpod-theme")).toBe("light")
+      expect(localStorage.getItem("devsy-theme")).toBe("light")
       expect(document.documentElement.classList.contains("dark")).toBe(false)
     })
 
     it("applies system theme using media query", () => {
       applyTheme("system")
 
-      expect(localStorage.getItem("devpod-theme")).toBe("system")
+      expect(localStorage.getItem("devsy-theme")).toBe("system")
     })
 
     it("persists theme to localStorage", () => {
       applyTheme("light")
-      expect(localStorage.getItem("devpod-theme")).toBe("light")
+      expect(localStorage.getItem("devsy-theme")).toBe("light")
 
       applyTheme("dark")
-      expect(localStorage.getItem("devpod-theme")).toBe("dark")
+      expect(localStorage.getItem("devsy-theme")).toBe("dark")
     })
   })
 

@@ -1,11 +1,11 @@
 {
-  "name": "devpod-desktop",
+  "name": "devsy-desktop",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://devpod.sh",
+  "homepage": "https://devsy.dev",
   "author": {
-    "name": "Loft Labs",
-    "email": "support@loft.sh"
+    "name": "Devsy",
+    "email": "support@devsy.dev"
   },
   "type": "module",
   "main": "dist/main/index.js",
