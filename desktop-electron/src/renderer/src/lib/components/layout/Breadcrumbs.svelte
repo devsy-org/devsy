@@ -1,6 +1,6 @@
 <script lang="ts">
 import { ChevronRight } from "@lucide/svelte"
-import { page } from "$app/stores"
+import { location } from "$lib/router.js"
 
 interface Crumb {
   label: string
@@ -19,7 +19,7 @@ const LABELS: Record<string, string> = {
 }
 
 let crumbs = $derived.by(() => {
-  const parts = $page.url.pathname.split("/").filter(Boolean)
+  const parts = $location.split("/").filter(Boolean)
   if (parts.length === 0) return [] as Crumb[]
 
   const result: Crumb[] = []
@@ -29,7 +29,7 @@ let crumbs = $derived.by(() => {
     path += `/${parts[i]}`
     const isLast = i === parts.length - 1
     const label = LABELS[parts[i]] ?? decodeURIComponent(parts[i])
-    result.push({ label, href: isLast ? undefined : path })
+    result.push({ label, href: isLast ? undefined : `#${path}` })
   }
 
   return result
@@ -38,7 +38,7 @@ let crumbs = $derived.by(() => {
 
 {#if crumbs.length > 0}
   <nav class="flex items-center gap-1 text-sm text-muted-foreground">
-    <a href="/" class="hover:text-foreground transition-colors">Home</a>
+    <a href="#/" class="hover:text-foreground transition-colors">Home</a>
     {#each crumbs as crumb}
       <ChevronRight class="h-3 w-3" />
       {#if crumb.href}

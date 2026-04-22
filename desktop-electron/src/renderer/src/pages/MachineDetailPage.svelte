@@ -1,6 +1,5 @@
 <script lang="ts">
-import { page } from "$app/stores"
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { onMount, onDestroy } from "svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
@@ -20,7 +19,9 @@ import { toasts } from "$lib/stores/toasts.js"
 import type { AuditEntry } from "$lib/types/index.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 
-let id = $derived($page.params.id as string)
+let { params = {} }: { params?: Record<string, string> } = $props()
+
+let id = $derived(params.id ?? "")
 let machine = $derived($machines.find((m) => m.id === id))
 
 let status = $state<string | null>(null)

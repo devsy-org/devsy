@@ -6,8 +6,7 @@ import {
   Plug,
   SearchX,
 } from "@lucide/svelte"
-import { goto } from "$app/navigation"
-import { page } from "$app/stores"
+import { goto, querystring } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -31,14 +30,14 @@ let setupProvider = $derived(
 
 // Auto-open sheet when arriving with ?setup=<name>
 $effect(() => {
-  const setup = $page.url.searchParams.get("setup")
+  const params = new URLSearchParams($querystring ?? "")
+  const setup = params.get("setup")
   if (setup && $providers.length > 0) {
     setupProviderName = setup
     setupSheetOpen = true
     // Clean up the URL
-    const url = new URL($page.url)
-    url.searchParams.delete("setup")
-    history.replaceState({}, "", url.pathname)
+    const hash = window.location.hash.split("?")[0]
+    history.replaceState({}, "", window.location.pathname + hash)
   }
 })
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"

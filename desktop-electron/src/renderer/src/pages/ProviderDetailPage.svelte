@@ -1,6 +1,5 @@
 <script lang="ts">
-import { page } from "$app/stores"
-import { goto } from "$app/navigation"
+import { goto, querystring } from "$lib/router.js"
 import { onMount } from "svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -21,9 +20,14 @@ import {
 import { toasts } from "$lib/stores/toasts.js"
 import type { ProviderOption } from "$lib/types/index.js"
 
-let id = $derived($page.params.id as string)
+let { params = {} }: { params?: Record<string, string> } = $props()
+
+let id = $derived(params.id ?? "")
 let provider = $derived($providers.find((p) => p.name === id))
-let isSetup = $derived($page.url.searchParams.get("setup") === "true")
+let isSetup = $derived(() => {
+  const qs = new URLSearchParams($querystring ?? "")
+  return qs.get("setup") === "true"
+})
 let isInitialized = $derived(provider?.state?.initialized === true)
 
 let options = $state<Record<string, ProviderOption>>({})

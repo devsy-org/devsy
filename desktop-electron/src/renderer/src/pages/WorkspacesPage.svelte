@@ -10,8 +10,7 @@ import {
   Square,
   Trash2,
 } from "@lucide/svelte"
-import { goto } from "$app/navigation"
-import { page } from "$app/stores"
+import { goto, querystring } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
@@ -34,7 +33,8 @@ let createSheetOpen = $state(false)
 let search = $state("")
 
 $effect(() => {
-  if ($page.url.searchParams.get("create") === "true") {
+  const params = new URLSearchParams($querystring ?? "")
+  if (params.get("create") === "true") {
     createSheetOpen = true
   }
 })

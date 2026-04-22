@@ -1,5 +1,5 @@
 <script lang="ts">
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { get } from "svelte/store"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
