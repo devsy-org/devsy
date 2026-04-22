@@ -1,7 +1,18 @@
-import pty from "node-pty"
 import type { IPty } from "node-pty"
 import { platform } from "node:os"
 import type { BrowserWindow } from "electron"
+
+// Lazy-load node-pty so the app can start even when the native module is unavailable
+// (e.g. during e2e tests where native bindings aren't rebuilt for Electron's ABI).
+let ptyModule: typeof import("node-pty") | null = null
+
+function requirePty(): typeof import("node-pty") {
+  if (!ptyModule) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ptyModule = require("node-pty") as typeof import("node-pty")
+  }
+  return ptyModule
+}
 
 interface PtyDeps {
   binaryPath: string
@@ -14,6 +25,7 @@ export class PtyManager {
   constructor(private deps: PtyDeps) {}
 
   createSession(cols: number, rows: number): string {
+    const pty = requirePty()
     const shell =
       platform() === "win32"
         ? "powershell.exe"
@@ -32,6 +44,7 @@ export class PtyManager {
   }
 
   createSshSession(workspaceId: string, cols: number, rows: number): string {
+    const pty = requirePty()
     const sessionId = crypto.randomUUID()
     const proc = pty.spawn(this.deps.binaryPath, ["ssh", workspaceId], {
       name: "xterm-256color",
