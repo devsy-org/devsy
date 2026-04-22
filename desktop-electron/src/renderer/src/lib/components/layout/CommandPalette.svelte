@@ -1,6 +1,6 @@
 <script lang="ts">
 import { LayoutDashboard, Box, Plug, Server, KeyRound } from "@lucide/svelte"
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { paletteOpen } from "$lib/stores/command-palette.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { providers } from "$lib/stores/providers.js"

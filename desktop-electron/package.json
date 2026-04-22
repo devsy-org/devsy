@@ -5,7 +5,6 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "vite dev --config src/renderer/vite.config.ts",
     "electron:dev": "electron-vite dev",
     "electron:build": "electron-vite build",
     "electron:preview": "electron-vite preview",
@@ -13,19 +12,18 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "svelte-kit sync --config src/renderer/svelte.config.js && svelte-check --tsconfig src/renderer/tsconfig.json"
+    "check": "svelte-check --tsconfig src/renderer/tsconfig.json"
   },
   "dependencies": {
     "chokidar": "^4.0.0",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "svelte-spa-router": "^5.0.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",
     "@internationalized/date": "^3.12.1",
     "@lucide/svelte": "^1.8.0",
     "@playwright/test": "^1.50.0",
-    "@sveltejs/adapter-static": "^3.0.0",
-    "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tailwindcss/vite": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",

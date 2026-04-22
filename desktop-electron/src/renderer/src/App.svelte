@@ -1,6 +1,6 @@
 <script lang="ts">
-import "../../app.css"
-import { goto } from "$app/navigation"
+import "./app.css"
+import Router, { push } from "svelte-spa-router"
 import { onMount, onDestroy } from "svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
@@ -18,7 +18,36 @@ import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady } from "$lib/ipc/commands.js"
 
-let { children } = $props()
+import DashboardPage from "./pages/DashboardPage.svelte"
+import WorkspacesPage from "./pages/WorkspacesPage.svelte"
+import WorkspaceDetailPage from "./pages/WorkspaceDetailPage.svelte"
+import ProvidersPage from "./pages/ProvidersPage.svelte"
+import ProviderAddPage from "./pages/ProviderAddPage.svelte"
+import ProviderDetailPage from "./pages/ProviderDetailPage.svelte"
+import MachinesPage from "./pages/MachinesPage.svelte"
+import MachineDetailPage from "./pages/MachineDetailPage.svelte"
+import ContextsPage from "./pages/ContextsPage.svelte"
+import SettingsPage from "./pages/SettingsPage.svelte"
+import SshKeysPage from "./pages/SshKeysPage.svelte"
+import TerminalsPage from "./pages/TerminalsPage.svelte"
+import NotFoundPage from "./pages/NotFoundPage.svelte"
+
+const routes = {
+  "/": DashboardPage,
+  "/workspaces": WorkspacesPage,
+  "/workspaces/new": WorkspacesPage,
+  "/workspaces/:id": WorkspaceDetailPage,
+  "/providers": ProvidersPage,
+  "/providers/add": ProviderAddPage,
+  "/providers/:id": ProviderDetailPage,
+  "/machines": MachinesPage,
+  "/machines/:id": MachineDetailPage,
+  "/contexts": ContextsPage,
+  "/settings": SettingsPage,
+  "/ssh-keys": SshKeysPage,
+  "/terminals": TerminalsPage,
+  "*": NotFoundPage,
+}
 
 let destroySettings: (() => void) | undefined
 
@@ -40,12 +69,12 @@ function handleKeydown(e: KeyboardEvent) {
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "n") {
     e.preventDefault()
-    goto("/workspaces/new")
+    push("/workspaces/new")
     return
   }
   if ((e.metaKey || e.ctrlKey) && NAV_KEYS[e.key]) {
     e.preventDefault()
-    goto(NAV_KEYS[e.key])
+    push(NAV_KEYS[e.key])
   }
 }
 
@@ -89,7 +118,7 @@ onDestroy(() => {
     </header>
 
     <main class="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-      {@render children()}
+      <Router {routes} />
     </main>
   </SidebarUI.Inset>
 

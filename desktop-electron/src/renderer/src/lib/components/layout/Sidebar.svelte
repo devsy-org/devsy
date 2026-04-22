@@ -10,7 +10,7 @@ import {
   Settings,
   SquareTerminal,
 } from "@lucide/svelte"
-import { page } from "$app/stores"
+import { location } from "$lib/router.js"
 import * as Sidebar from "$lib/components/ui/sidebar/index.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { providers } from "$lib/stores/providers.js"
@@ -65,8 +65,8 @@ let mainNav: NavItem[] = $derived([
 
 function isActive(href: string): boolean {
   return href === "/"
-    ? $page.url.pathname === "/"
-    : $page.url.pathname.startsWith(href)
+    ? $location === "/"
+    : $location.startsWith(href)
 }
 </script>
 
@@ -97,7 +97,7 @@ function isActive(href: string): boolean {
             <Sidebar.MenuItem>
               <Sidebar.MenuButton isActive={isActive(item.href)} tooltipContent={item.label}>
                 {#snippet child({ props })}
-                  <a href={item.href} {...props}>
+                  <a href="#/{item.href === '/' ? '' : item.href.slice(1)}" {...props}>
                     <Icon />
                     <span>{item.label}</span>
                   </a>
@@ -118,7 +118,7 @@ function isActive(href: string): boolean {
       <Sidebar.MenuItem>
         <Sidebar.MenuButton isActive={isActive("/settings")} tooltipContent="Settings">
           {#snippet child({ props })}
-            <a href="/settings" {...props}>
+            <a href="#/settings" {...props}>
               <Settings />
               <span>Settings</span>
             </a>

@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onDestroy } from "svelte"
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { Check, ChevronsUpDown } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as Command from "$lib/components/ui/command/index.js"

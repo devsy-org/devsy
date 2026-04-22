@@ -8,9 +8,9 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
     />
     <title>DevPod</title>
-    %sveltekit.head%
   </head>
-  <body data-sveltekit-preload-data="hover">
-    <div style="display: contents">%sveltekit.body%</div>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

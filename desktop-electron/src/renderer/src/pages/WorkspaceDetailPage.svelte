@@ -1,6 +1,5 @@
 <script lang="ts">
-import { page } from "$app/stores"
-import { goto } from "$app/navigation"
+import { goto, querystring } from "$lib/router.js"
 import { onMount, onDestroy } from "svelte"
 import { Check, ChevronsUpDown, ClipboardCopy, Trash2 } from "@lucide/svelte"
 import * as Tooltip from "$lib/components/ui/tooltip/index.js"
@@ -37,6 +36,8 @@ import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
 
+let { params = {} }: { params?: Record<string, string> } = $props()
+
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
   { value: "vscode", label: "VS Code" },
@@ -64,7 +65,7 @@ const IDE_OPTIONS = [
   { value: "rstudio", label: "RStudio Server" },
 ]
 
-let id = $derived($page.params.id as string)
+let id = $derived(params.id ?? "")
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
 
 let isRunning = $derived(workspace?.status?.toLowerCase() === "running")
@@ -161,10 +162,11 @@ onMount(async () => {
   loadAudit()
 
   // Auto-trigger IDE open when navigated with ?action=open-ide
-  const action = $page.url.searchParams.get("action")
+  const qs = new URLSearchParams($querystring ?? "")
+  const action = qs.get("action")
   if (action === "open-ide") {
     // Clear query param so refresh doesn't re-trigger
-    history.replaceState({}, "", $page.url.pathname)
+    history.replaceState({}, "", window.location.pathname + window.location.hash.split("?")[0])
     handleOpenIde()
   }
 })

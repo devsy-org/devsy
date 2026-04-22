@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Box, Plug, Server } from "@lucide/svelte"
 import { onMount } from "svelte"
-import { goto } from "$app/navigation"
+import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
@@ -177,7 +177,7 @@ async function quickStop(wsId: string) {
             {@const href = resourceHref(entry)}
             <a
               class="flex items-center gap-3 px-4 py-3 transition-colors {href ? 'hover:bg-accent/50 cursor-pointer' : 'cursor-default'}"
-              href={href ?? "#"}
+              href={href ? `#${href}` : "#"}
               onclick={(e) => { if (!href) e.preventDefault() }}
             >
               <span
