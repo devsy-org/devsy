@@ -178,7 +178,7 @@ jobs:
         run: |
           DEB=$(ls *.deb 2>/dev/null | head -1)
           if [ -n "$DEB" ]; then
-            mv "$DEB" devpod-desktop.deb
+            mv "$DEB" devsy-desktop.deb
           else
             echo "No .deb file found"
             exit 1
@@ -187,12 +187,12 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: desktop-electron/flatpak/sh.loft.devpod.yml
-          bundle: DevPod.flatpak
+          manifest-path: desktop-electron/flatpak/dev.devsy.app.yml
+          bundle: Devsy.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v4
         with:
           name: desktop-flatpak
-          path: DevPod.flatpak
+          path: Devsy.flatpak
