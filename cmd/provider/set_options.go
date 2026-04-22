@@ -58,18 +58,15 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 	return setOptionsCmd
 }
 
-//nolint:cyclop // pre-existing complexity
 func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	providerName := devsyConfig.Current().DefaultProvider
-	if len(args) > 0 {
-		providerName = args[0]
-	} else if providerName == "" {
-		return fmt.Errorf("please specify a provider")
+	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return err
 	}
 	log.Debugf("providerName=%+v", providerName)
 
@@ -97,21 +94,36 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// save provider config
-	if !cmd.Dry {
-		err = config.SaveConfig(devsyConfig)
-		if err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-	} else {
-		// print options to stdout
-		err = printOptions(devsyConfig, providerWithOptions, "json", true)
-		if err != nil {
-			return fmt.Errorf("print options: %w", err)
-		}
+	if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
+		return err
 	}
 
-	// print success message
 	log.Infof("set options for provider: providerName=%s", providerWithOptions.Config.Name)
+	return nil
+}
+
+func resolveProviderName(args []string, defaultProvider string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	if defaultProvider == "" {
+		return "", fmt.Errorf("please specify a provider")
+	}
+	return defaultProvider, nil
+}
+
+func (cmd *SetOptionsCmd) saveOrPrintConfig(
+	devsyConfig *config.Config,
+	providerWithOptions *workspace.ProviderWithOptions,
+) error {
+	if cmd.Dry {
+		if err := printOptions(devsyConfig, providerWithOptions, "json", true); err != nil {
+			return fmt.Errorf("print options: %w", err)
+		}
+		return nil
+	}
+	if err := config.SaveConfig(devsyConfig); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
 	return nil
 }
