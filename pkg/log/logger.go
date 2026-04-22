@@ -22,7 +22,7 @@ type Config struct {
 	Verbosity int    // 0=error, 1=info+warn, 2=debug, 3=trace
 	Quiet     bool   // fatal only
 	Debug     bool   // backwards compat, equivalent to Verbosity=2
-	Format    string // "text", "json", "logfmt"
+	Format    string // "text", "json", "logfmt", "raw"
 }
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
@@ -30,7 +30,12 @@ func Init(cfg Config) {
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
 	core := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.FatalLevel))
+
+	var opts []zap.Option
+	if cfg.Format != "raw" {
+		opts = append(opts, zap.AddCaller(), zap.AddStacktrace(zapcore.FatalLevel))
+	}
+	logger := zap.New(core, opts...)
 	sugar = logger.Sugar()
 }
 
@@ -50,6 +55,11 @@ func resolveEncoder(format string) zapcore.Encoder {
 		return zapcore.NewJSONEncoder(jsonEncoderConfig())
 	case "logfmt":
 		return newLogfmtEncoder()
+	case "raw":
+		// Message only — no timestamp, level, or caller. Matches old MakeRaw().
+		return zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+			MessageKey: "M",
+		})
 	default:
 		// "text" — use console encoder, with color if stderr is a terminal
 		if term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // fd fits in int
