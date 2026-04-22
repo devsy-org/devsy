@@ -121,6 +121,15 @@ jobs:
           npm run electron:build
           npx playwright test
 
+      # ── Setup Python for native module rebuilds ──
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install setuptools
+        run: pip install setuptools
+
       # ── Package ──
       - name: Package with electron-builder
         working-directory: desktop-electron
