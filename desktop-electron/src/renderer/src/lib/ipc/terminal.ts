@@ -46,6 +46,8 @@ interface TerminalOutputPayload {
 
 interface TerminalExitPayload {
   sessionId: string
+  exitCode?: number
+  signal?: number
 }
 
 export function onTerminalOutput(
@@ -57,9 +59,9 @@ export function onTerminalOutput(
 }
 
 export function onTerminalExit(
-  callback: (sessionId: string) => void,
+  callback: (sessionId: string, exitCode?: number, signal?: number) => void,
 ): Promise<UnlistenFn> {
   return listen<TerminalExitPayload>("terminal:exit", (event) => {
-    callback(event.payload.sessionId)
+    callback(event.payload.sessionId, event.payload.exitCode, event.payload.signal)
   })
 }

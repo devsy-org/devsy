@@ -103,6 +103,7 @@ let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 
 let sshSessionId = $state<string | null>(null)
+let sshExited = $state(false)
 let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
@@ -177,7 +178,9 @@ onDestroy(() => {
   unlisten?.()
   // Clean up SSH session if navigating away
   if (sshSessionId) {
-    terminalClose(sshSessionId).catch(() => {})
+    if (!sshExited) {
+      terminalClose(sshSessionId).catch(() => {})
+    }
     destroyTerminalInstance(sshSessionId)
     removeTerminal(sshSessionId)
   }
@@ -230,6 +233,7 @@ async function deleteLog(entry: LogEntry) {
 
 async function handleConnect() {
   connecting = true
+  sshExited = false
   try {
     const sessionId = await terminalCreateSsh(id, 80, 24)
     sshSessionId = sessionId
@@ -250,21 +254,22 @@ async function handleConnect() {
 
 async function handleDisconnect() {
   if (!sshSessionId) return
-  try {
-    await terminalClose(sshSessionId)
-  } catch {
-    // session may already be gone
+  if (!sshExited) {
+    try {
+      await terminalClose(sshSessionId)
+    } catch {
+      // session may already be gone
+    }
   }
   destroyTerminalInstance(sshSessionId)
   removeTerminal(sshSessionId)
   sshSessionId = null
+  sshExited = false
 }
 
-function handleSshExit() {
+function handleSshExit(_exitCode?: number, _signal?: number) {
   if (sshSessionId) {
-    destroyTerminalInstance(sshSessionId)
-    removeTerminal(sshSessionId)
-    sshSessionId = null
+    sshExited = true
   }
 }
 
@@ -373,13 +378,13 @@ async function handleDelete() {
           {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
           Open IDE
         </Button>
-        {#if sshSessionId}
+        {#if sshSessionId && !sshExited}
           <Button variant="outline" size="sm" onclick={handleDisconnect}>
             <SquareTerminal class="h-4 w-4" />
             Disconnect
           </Button>
         {:else}
-          <Button variant="outline" size="sm" onclick={handleConnect} disabled={connecting || isStopped}>
+          <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
             {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
             SSH Terminal
           </Button>
@@ -634,8 +639,16 @@ async function handleDelete() {
             <div class="min-h-0 flex-1 rounded-md border overflow-hidden">
               <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
             </div>
-            <div class="mt-2 flex justify-end shrink-0">
-              <Button variant="outline" size="sm" onclick={handleDisconnect}>Disconnect</Button>
+            <div class="mt-2 flex items-center justify-end gap-2 shrink-0">
+              {#if sshExited}
+                <span class="text-sm text-muted-foreground">Session ended</span>
+                <Button variant="outline" size="sm" onclick={handleDisconnect}>Close</Button>
+                <Button size="sm" onclick={async () => { await handleDisconnect(); handleConnect() }} disabled={connecting}>
+                  {connecting ? "Reconnecting..." : "Reconnect"}
+                </Button>
+              {:else}
+                <Button variant="outline" size="sm" onclick={handleDisconnect}>Disconnect</Button>
+              {/if}
             </div>
           {:else}
             <div class="flex min-h-0 flex-1 items-center justify-center rounded-md border bg-muted/50">

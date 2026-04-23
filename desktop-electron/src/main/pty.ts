@@ -104,9 +104,9 @@ export class PtyManager {
       })
     })
 
-    proc.onExit(() => {
+    proc.onExit(({ exitCode, signal }) => {
       this.sessions.delete(sessionId)
-      this.send("terminal:exit", { sessionId })
+      this.send("terminal:exit", { sessionId, exitCode, signal })
     })
   }
 

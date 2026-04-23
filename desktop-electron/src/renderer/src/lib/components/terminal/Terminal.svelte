@@ -5,6 +5,7 @@ import type { FitAddon } from "@xterm/addon-fit"
 import {
   terminalWrite,
   terminalResize,
+  terminalListSessions,
   onTerminalOutput,
   onTerminalExit,
 } from "$lib/ipc/terminal.js"
@@ -20,7 +21,7 @@ let {
   sessionId,
   active = true,
   onExit,
-}: { sessionId: string; active?: boolean; onExit?: () => void } = $props()
+}: { sessionId: string; active?: boolean; onExit?: (exitCode?: number, signal?: number) => void } = $props()
 
 let containerEl: HTMLDivElement | undefined = $state()
 
@@ -66,7 +67,38 @@ onMount(async () => {
       term?.focus()
     })
   } else {
-    // Create new terminal instance
+    // Register exit listener BEFORE async imports to avoid losing early exit events.
+    // The PTY process may exit during the import window; without this, the event is lost
+    // and the terminal appears open but is dead.
+    const unlistenExit = await onTerminalExit((sid, exitCode, signal) => {
+      if (sid === sessionId) {
+        onExit?.(exitCode, signal)
+      }
+    })
+
+    // Buffer output that arrives before xterm is ready
+    const outputBuffer: Uint8Array[] = []
+    const unlistenOutput = await onTerminalOutput((sid, data) => {
+      if (sid === sessionId) {
+        if (term) {
+          term.write(data)
+        } else {
+          outputBuffer.push(data)
+        }
+      }
+    })
+
+    // Check if the session already exited before our listeners were registered.
+    // The exit event may have been sent and lost during the IPC round-trip.
+    const activeSessions = await terminalListSessions()
+    if (!activeSessions.includes(sessionId)) {
+      unlistenOutput()
+      unlistenExit()
+      onExit?.()
+      return
+    }
+
+    // Now safely do async imports — listeners are active, so no events are lost
     const [{ Terminal: XTerm }, { FitAddon: XFitAddon }] = await Promise.all([
       import("@xterm/xterm"),
       import("@xterm/addon-fit"),
@@ -85,21 +117,14 @@ onMount(async () => {
     term.open(containerEl)
     fitAddon.fit()
 
+    // Flush any output that arrived during async imports
+    for (const data of outputBuffer) {
+      term.write(data)
+    }
+
     term.onData((data) => {
       const encoded = new TextEncoder().encode(data)
       terminalWrite(sessionId, Array.from(encoded))
-    })
-
-    const unlistenOutput = await onTerminalOutput((sid, data) => {
-      if (sid === sessionId && term) {
-        term.write(data)
-      }
-    })
-
-    const unlistenExit = await onTerminalExit((sid) => {
-      if (sid === sessionId) {
-        onExit?.()
-      }
     })
 
     const unsubscribeTheme = theme.subscribe(() => {
