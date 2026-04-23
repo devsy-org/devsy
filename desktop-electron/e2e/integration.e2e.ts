@@ -292,8 +292,9 @@ test.describe.serial("Workspace lifecycle - Node.js", () => {
   })
 
   test("should delete workspace from detail page", async () => {
-    // Click Delete button (the destructive one in the action bar)
-    await page.getByRole("button", { name: "Delete" }).click()
+    // Open the More actions dropdown, then click Delete
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Delete" }).click()
 
     // ConfirmDialog appears — click the confirm Delete in the dialog
     const confirmDialog = page.locator('[data-slot="dialog-content"]')
@@ -380,8 +381,9 @@ test.describe.serial("Workspace lifecycle - Python", () => {
       .locator("h1", { hasText: "python" })
       .waitFor({ timeout: 10000 })
 
-    // Click Delete
-    await page.getByRole("button", { name: "Delete" }).click()
+    // Open the More actions dropdown, then click Delete
+    await page.getByRole("button", { name: "More actions" }).click()
+    await page.getByRole("menuitem", { name: "Delete" }).click()
 
     // Confirm in the dialog
     const confirmDialog = page.locator('[data-slot="dialog-content"]')

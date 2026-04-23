@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test"
 import type { ElectronApplication, Page } from "@playwright/test"
-import { launchApp } from "./electron-app.js"
+import { launchApp, resetMockState } from "./electron-app.js"
 
 let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
+  resetMockState()
   ;({ app, page } = await launchApp())
   // Navigate to workspaces and wait for data to load from mock CLI
   await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
