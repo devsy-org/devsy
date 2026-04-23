@@ -122,9 +122,14 @@ func ProcessFeatureID(
 }
 
 func checkFeatureCache(id string) (string, bool) {
-	featureFolder := getFeaturesTempFolder(id)
+	featureFolder, err := getFeaturesTempFolder(id)
+	if err != nil {
+		log.Debugf("failed to resolve feature cache dir: %v", err)
+		return "", false
+	}
+
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
-	_, err := os.Stat(featureExtractedFolder)
+	_, err = os.Stat(featureExtractedFolder)
 	if err == nil {
 		// make sure feature.json is there as well
 		_, err = os.Stat(
@@ -148,7 +153,11 @@ func processOCIFeature(id string) (string, error) {
 		return cached, nil
 	}
 
-	featureFolder := getFeaturesTempFolder(id)
+	featureFolder, err := getFeaturesTempFolder(id)
+	if err != nil {
+		return "", fmt.Errorf("resolve feature cache dir: %w", err)
+	}
+
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 
 	ref, err := name.ParseReference(id)
@@ -291,9 +300,13 @@ func processDirectTarFeature(
 	}
 
 	// feature already exists?
-	featureFolder := getFeaturesTempFolder(id)
+	featureFolder, err := getFeaturesTempFolder(id)
+	if err != nil {
+		return "", fmt.Errorf("resolve feature cache dir: %w", err)
+	}
+
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
-	_, err := os.Stat(featureExtractedFolder)
+	_, err = os.Stat(featureExtractedFolder)
 	if err == nil && !forceDownload {
 		log.Debugf("direct tar feature already cached: folder=%s", featureExtractedFolder)
 		return featureExtractedFolder, nil
@@ -407,7 +420,8 @@ func tryDownload(url, destFile string, httpHeaders map[string]string) error {
 	return nil
 }
 
-func getFeaturesTempFolder(id string) string {
+func getFeaturesTempFolder(id string) (string, error) {
 	hashedID := hash.String(id)[:10]
-	return filepath.Join(os.TempDir(), pkgconfig.BinaryName, "features", hashedID)
+
+	return pkgconfig.DefaultPathManager().FeatureCacheDir(hashedID)
 }

@@ -25,8 +25,12 @@ type BinaryManager struct {
 	sources []BinarySource
 }
 
-func NewBinaryManager(downloadURL string) *BinaryManager {
-	cachePath := filepath.Join(os.TempDir(), config.BinaryName+"-cache")
+func NewBinaryManager(downloadURL string) (*BinaryManager, error) {
+	cachePath, err := config.DefaultPathManager().AgentCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("agent cache dir: %w", err)
+	}
+
 	cache := &BinaryCache{BaseDir: cachePath}
 
 	return &BinaryManager{
@@ -35,7 +39,7 @@ func NewBinaryManager(downloadURL string) *BinaryManager {
 			&FileCacheSource{Cache: cache},
 			&HTTPDownloadSource{BaseURL: downloadURL, Cache: cache},
 		},
-	}
+	}, nil
 }
 
 func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.ReadCloser, error) {
