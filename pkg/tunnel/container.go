@@ -45,8 +45,6 @@ type Handler func(ctx context.Context, containerClient *ssh.Client) error
 
 // Run creates an "outer" tunnel to the host to start the SSH server so that the "inner" tunnel can
 // connect to the container over SSH.
-//
-//nolint:funlen // goroutine setup with InjectAgent options is inherently verbose
 func (c *ContainerTunnel) Run(
 	ctx context.Context,
 	handler Handler,
@@ -76,33 +74,7 @@ func (c *ContainerTunnel) Run(
 	// tunnel to host
 	tunnelChan := make(chan error, 1)
 	go func() {
-		writer := log.Writer(log.LevelInfo)
-		defer func() { _ = writer.Close() }()
-		defer log.Debugf("Tunnel to host closed")
-
-		command := fmt.Sprintf("'%s' helper ssh-server --stdio", c.client.AgentPath())
-		if log.DebugEnabled() {
-			command += " --debug"
-		}
-		tunnelChan <- agent.InjectAgent(&agent.InjectOptions{
-			Ctx: cancelCtx,
-			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-				return c.client.Command(ctx, client.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
-				})
-			},
-			IsLocal:         c.client.AgentLocal(),
-			RemoteAgentPath: c.client.AgentPath(),
-			DownloadURL:     c.client.AgentURL(),
-			Command:         command,
-			Stdin:           stdinReader,
-			Stdout:          stdoutWriter,
-			Stderr:          writer,
-			Timeout:         timeout,
-		})
+		tunnelChan <- c.runHostTunnel(cancelCtx, stdinReader, stdoutWriter, timeout)
 	}()
 
 	// connect to container
@@ -133,6 +105,42 @@ func (c *ContainerTunnel) Run(
 	}()
 
 	return awaitGoroutines(tunnelChan, containerChan, stdoutWriter, stdinWriter)
+}
+
+// runHostTunnel injects the devsy agent onto the host and starts the SSH server,
+// forwarding stdio through the provided pipes.
+func (c *ContainerTunnel) runHostTunnel(
+	ctx context.Context,
+	stdinReader, stdoutWriter *os.File,
+	timeout time.Duration,
+) error {
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+	defer log.Debugf("Tunnel to host closed")
+
+	command := fmt.Sprintf("'%s' helper ssh-server --stdio", c.client.AgentPath())
+	if log.DebugEnabled() {
+		command += " --debug"
+	}
+	return agent.InjectAgent(&agent.InjectOptions{
+		Ctx: ctx,
+		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+			return c.client.Command(ctx, client.CommandOptions{
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
+		},
+		IsLocal:         c.client.AgentLocal(),
+		RemoteAgentPath: c.client.AgentPath(),
+		DownloadURL:     c.client.AgentURL(),
+		Command:         command,
+		Stdin:           stdinReader,
+		Stdout:          stdoutWriter,
+		Stderr:          writer,
+		Timeout:         timeout,
+	})
 }
 
 // awaitGoroutines waits for both the container and tunnel goroutines to report
