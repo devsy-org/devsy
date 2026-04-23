@@ -151,12 +151,9 @@ func templateUpdateRequired(instance *managementv1.DevsyWorkspaceInstance) bool 
 
 func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 	workspaceConfig, _ := json.Marshal(struct {
-		// Cluster    storagev1.WorkspaceTargetNamespace
 		Template   *storagev1.TemplateRef
 		Parameters string
 	}{
-		// Cluster:    cluster,
-		// FIXME: Bring back runner ref
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})

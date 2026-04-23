@@ -12,8 +12,7 @@ import (
 var sugar *zap.SugaredLogger
 
 func init() {
-	// Default: silent until Init() is called. This avoids double-logging
-	// during the migration period when the old logger is still active.
+	// Default: silent until Init() is called.
 	sugar = zap.NewNop().Sugar()
 }
 

@@ -5,12 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
-)
-
-const (
-	LoftPlatformConfigFileName = "devsy-config.json" // TODO: move somewhere else, replace hardoced strings with usage of this const
 )
 
 type DevsyConfigRequest struct {
@@ -48,7 +45,7 @@ func readConfig(contextName string, providerName string) (*client.Config, error)
 		return nil, err
 	}
 
-	configPath := filepath.Join(providerDir, LoftPlatformConfigFileName)
+	configPath := filepath.Join(providerDir, platform.LoftPlatformConfigFileName)
 
 	// Check if given context and provider have Loft Platform configuration
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

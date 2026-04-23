@@ -114,10 +114,6 @@ func CreateInstance(
 					Name:    selectedTemplate.GetName(),
 					Version: selectedTemplateVersion,
 				},
-				// FIXME: Bring back runner ref
-				// ClusterRef: storagev1.ClusterRef{
-				// 	Cluster: selectedCluster.GetName(),
-				// },
 				Parameters: renderedParameters,
 			},
 		},
