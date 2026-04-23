@@ -25,7 +25,7 @@ func (w *windowsPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: APPDATA environment variable is not set")
 	}
 
-	return filepath.Join(appData, RepoName), nil
+	return ensureDir(filepath.Join(appData, RepoName))
 }
 
 func (w *windowsPathManager) DataDir() (string, error) {
@@ -34,7 +34,7 @@ func (w *windowsPathManager) DataDir() (string, error) {
 		return "", fmt.Errorf("data dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return filepath.Join(localAppData, RepoName), nil
+	return ensureDir(filepath.Join(localAppData, RepoName))
 }
 
 func (w *windowsPathManager) CacheDir() (string, error) {
@@ -43,7 +43,7 @@ func (w *windowsPathManager) CacheDir() (string, error) {
 		return "", fmt.Errorf("cache dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return filepath.Join(localAppData, RepoName, "cache"), nil
+	return ensureDir(filepath.Join(localAppData, RepoName, "cache"))
 }
 
 func (w *windowsPathManager) StateDir() (string, error) {
@@ -52,9 +52,9 @@ func (w *windowsPathManager) StateDir() (string, error) {
 		return "", fmt.Errorf("state dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return filepath.Join(localAppData, RepoName, "state"), nil
+	return ensureDir(filepath.Join(localAppData, RepoName, "state"))
 }
 
 func (w *windowsPathManager) RuntimeDir() (string, error) {
-	return filepath.Join(os.TempDir(), RepoName), nil
+	return ensureDir(filepath.Join(os.TempDir(), RepoName))
 }

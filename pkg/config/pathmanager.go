@@ -1,10 +1,23 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+// ensureDir creates the directory at path (and any parents) if it does not
+// already exist. It returns the path unchanged so callers can use it inline:
+//
+//	return ensureDir(filepath.Join(base, RepoName))
+func ensureDir(path string) (string, error) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return "", fmt.Errorf("create directory %s: %w", path, err)
+	}
+
+	return path, nil
+}
 
 // PathManager centralises all filesystem path computation for the Devsy CLI.
 // Per-OS implementations supply the five top-level directory methods; every

@@ -21,7 +21,7 @@ func newPlatformPathManager() PathManager {
 
 func (l *linuxPathManager) ConfigDir() (string, error) {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return filepath.Join(dir, RepoName), nil
+		return ensureDir(filepath.Join(dir, RepoName))
 	}
 
 	home, err := os.UserHomeDir()
@@ -29,12 +29,12 @@ func (l *linuxPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return filepath.Join(home, ".config", RepoName), nil
+	return ensureDir(filepath.Join(home, ".config", RepoName))
 }
 
 func (l *linuxPathManager) DataDir() (string, error) {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
-		return filepath.Join(dir, RepoName), nil
+		return ensureDir(filepath.Join(dir, RepoName))
 	}
 
 	home, err := os.UserHomeDir()
@@ -42,12 +42,12 @@ func (l *linuxPathManager) DataDir() (string, error) {
 		return "", fmt.Errorf("data dir: %w", err)
 	}
 
-	return filepath.Join(home, ".local", "share", RepoName), nil
+	return ensureDir(filepath.Join(home, ".local", "share", RepoName))
 }
 
 func (l *linuxPathManager) CacheDir() (string, error) {
 	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" {
-		return filepath.Join(dir, RepoName), nil
+		return ensureDir(filepath.Join(dir, RepoName))
 	}
 
 	home, err := os.UserHomeDir()
@@ -55,12 +55,12 @@ func (l *linuxPathManager) CacheDir() (string, error) {
 		return "", fmt.Errorf("cache dir: %w", err)
 	}
 
-	return filepath.Join(home, ".cache", RepoName), nil
+	return ensureDir(filepath.Join(home, ".cache", RepoName))
 }
 
 func (l *linuxPathManager) StateDir() (string, error) {
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, RepoName), nil
+		return ensureDir(filepath.Join(dir, RepoName))
 	}
 
 	home, err := os.UserHomeDir()
@@ -68,13 +68,13 @@ func (l *linuxPathManager) StateDir() (string, error) {
 		return "", fmt.Errorf("state dir: %w", err)
 	}
 
-	return filepath.Join(home, ".local", "state", RepoName), nil
+	return ensureDir(filepath.Join(home, ".local", "state", RepoName))
 }
 
 func (l *linuxPathManager) RuntimeDir() (string, error) {
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return filepath.Join(dir, RepoName), nil
+		return ensureDir(filepath.Join(dir, RepoName))
 	}
 
-	return filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())), nil
+	return ensureDir(filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())))
 }
