@@ -304,6 +304,64 @@ var _ = ginkgo.Describe(
 				"postStartCommand should have run again after restart")
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("waitFor defers postCreateCommand to background", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-waitfor",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			err = dtc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			// onCreateCommand and updateContentCommand should have run (foreground).
+			out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/on-create.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("onCreateDone"))
+
+			out, err = dtc.execSSH(ctx, tempDir, "cat $HOME/update-content.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("updateContentDone"))
+
+			// postCreateCommand runs as a deferred hook in the background.
+			// Wait for it to complete and verify the marker file + env substitution.
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/deferred.marker 2>/dev/null")
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+				gomega.Equal("postCreateDone"),
+				"deferred postCreateCommand should eventually complete in background",
+			)
+
+			// Verify the deferred hook received substituted env vars, not literals.
+			envPath, err := dtc.execSSH(ctx, tempDir, "cat $HOME/deferred-env-path.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(envPath).To(gomega.ContainSubstring("/usr/local/bin"),
+				"deferred hook should receive resolved PATH, not ${containerEnv:PATH}")
+			gomega.Expect(envPath).NotTo(gomega.ContainSubstring("${containerEnv:"),
+				"deferred hook should not contain literal variable references")
+
+			// postStartCommand also deferred — verify it ran.
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(
+					ctx,
+					tempDir,
+					"cat $HOME/post-start-deferred.out 2>/dev/null",
+				)
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+				gomega.Equal("postStartDone"),
+				"deferred postStartCommand should eventually complete in background",
+			)
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("IDE accessible before postAttachCommand completes", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-post-attach-nonblocking",
