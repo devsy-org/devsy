@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onDestroy } from "svelte"
 import { goto } from "$lib/router.js"
-import { Check, ChevronsUpDown } from "@lucide/svelte"
+import { Check, ChevronsUpDown, TriangleAlert } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -293,6 +293,18 @@ async function handleSubmit() {
         </div>
       {/if}
 
+      {#if $providers.length === 0}
+        <div class="flex items-start gap-3 rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
+          <div class="flex flex-col gap-2">
+            <span>No providers configured. You need at least one provider to create a workspace.</span>
+            <Button variant="outline" size="sm" onclick={() => { open = false; goto('/providers/add') }}>
+              Add Provider
+            </Button>
+          </div>
+        </div>
+      {/if}
+
       <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit() }}>
         <div class="space-y-1.5">
           <Label class="text-sm">Source *</Label>
@@ -344,6 +356,14 @@ async function handleSubmit() {
                       </Command.Item>
                     {/each}
                   </Command.Group>
+                  <Command.Separator />
+                  <Command.Item
+                    value="__add_provider__"
+                    class="justify-start text-muted-foreground"
+                    onSelect={() => { providerComboOpen = false; providerSearch = ""; open = false; goto('/providers/add') }}
+                  >
+                    + Add Provider
+                  </Command.Item>
                 </Command.List>
               </Command.Root>
             </Popover.Content>
@@ -385,7 +405,7 @@ async function handleSubmit() {
         </div>
 
         <Sheet.Footer class="px-0 pt-2">
-          <Button type="submit" disabled={submitting} class="w-full">
+          <Button type="submit" disabled={submitting || $providers.length === 0} class="w-full">
             {#if submitting}<Spinner />{/if}
             {submitting ? "Creating..." : "Create Workspace"}
           </Button>
