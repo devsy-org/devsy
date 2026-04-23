@@ -28,12 +28,11 @@ import {
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
-  auditByResource,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import type { AuditEntry, LogEntry } from "$lib/types/index.js"
+import type { LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
@@ -97,8 +96,6 @@ let selectedLog = $state<string | null>(null)
 let logContent = $state<string>("")
 let logsLoading = $state(false)
 
-let auditEntries = $state<AuditEntry[]>([])
-let auditLoading = $state(false)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 
@@ -152,7 +149,6 @@ onMount(async () => {
             goto("/workspaces")
             return
           }
-          loadAudit()
           loadLogs()
         }
       }
@@ -162,7 +158,6 @@ onMount(async () => {
   }
 
   loadLogs()
-  loadAudit()
 
   // Auto-trigger IDE open when navigated with ?action=open-ide
   const qs = new URLSearchParams($querystring ?? "")
@@ -194,17 +189,6 @@ async function loadLogs() {
     logEntries = []
   } finally {
     logsLoading = false
-  }
-}
-
-async function loadAudit() {
-  auditLoading = true
-  try {
-    auditEntries = await auditByResource("workspace", id)
-  } catch {
-    auditEntries = []
-  } finally {
-    auditLoading = false
   }
 }
 
@@ -373,22 +357,20 @@ async function handleDelete() {
         </Button>
       {/if}
 
-      {#if isRunning}
-        <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={operationRunning}>
-          {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
-          Open IDE
+      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning}>
+        {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
+        Open IDE
+      </Button>
+      {#if sshSessionId && !sshExited}
+        <Button variant="outline" size="sm" onclick={handleDisconnect}>
+          <SquareTerminal class="h-4 w-4" />
+          Disconnect
         </Button>
-        {#if sshSessionId && !sshExited}
-          <Button variant="outline" size="sm" onclick={handleDisconnect}>
-            <SquareTerminal class="h-4 w-4" />
-            Disconnect
-          </Button>
-        {:else}
-          <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
-            {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
-            SSH Terminal
-          </Button>
-        {/if}
+      {:else}
+        <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
+          {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
+          SSH Terminal
+        </Button>
       {/if}
 
       <DropdownMenu.Root>
@@ -433,7 +415,6 @@ async function handleDelete() {
         <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
         <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
         <Tabs.Trigger value="terminal">Terminal</Tabs.Trigger>
-        <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
       </Tabs.List>
 
       <Tabs.Content value="overview">
@@ -663,39 +644,6 @@ async function handleDelete() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value="activity">
-        <div class="mt-4 space-y-4">
-          {#if auditLoading}
-            <p class="text-sm text-muted-foreground">Loading activity...</p>
-          {:else if auditEntries.length === 0}
-            <p class="text-sm text-muted-foreground">
-              No activity recorded for this workspace.
-            </p>
-          {:else}
-            <div class="divide-y rounded-md border">
-              {#each auditEntries as entry}
-                <div class="flex items-center gap-3 px-4 py-3">
-                  <span
-                    class={badgeVariants({
-                      variant: entry.success ? "default" : "destructive",
-                    })}
-                  >
-                    {entry.action}
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    {#if entry.details}
-                      <span class="text-sm text-muted-foreground">{entry.details}</span>
-                    {/if}
-                  </div>
-                  <span class="shrink-0 text-xs text-muted-foreground">
-                    {formatTimestamp(entry.timestamp)}
-                  </span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </Tabs.Content>
     </Tabs.Root>
   {/if}
 </div>
