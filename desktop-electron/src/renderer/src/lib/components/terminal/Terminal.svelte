@@ -94,7 +94,9 @@ onMount(async () => {
     if (!activeSessions.includes(sessionId)) {
       unlistenOutput()
       unlistenExit()
-      onExit?.()
+      // Signal connection failure with exit code -1 so parent can distinguish
+      // from a normal session exit (where xterm was created and output was visible)
+      onExit?.(-1)
       return
     }
 

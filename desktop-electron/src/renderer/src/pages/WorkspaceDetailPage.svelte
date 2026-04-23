@@ -101,6 +101,7 @@ let deleting = $state(false)
 
 let sshSessionId = $state<string | null>(null)
 let sshExited = $state(false)
+let sshConnectionFailed = $state(false)
 let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
@@ -218,6 +219,7 @@ async function deleteLog(entry: LogEntry) {
 async function handleConnect() {
   connecting = true
   sshExited = false
+  sshConnectionFailed = false
   try {
     const sessionId = await terminalCreateSsh(id, 80, 24)
     sshSessionId = sessionId
@@ -249,11 +251,15 @@ async function handleDisconnect() {
   removeTerminal(sshSessionId)
   sshSessionId = null
   sshExited = false
+  sshConnectionFailed = false
 }
 
-function handleSshExit(_exitCode?: number, _signal?: number) {
+function handleSshExit(exitCode?: number, _signal?: number) {
   if (sshSessionId) {
     sshExited = true
+    if (exitCode === -1) {
+      sshConnectionFailed = true
+    }
   }
 }
 
@@ -618,11 +624,21 @@ async function handleDelete() {
         <div class="absolute inset-0 mt-4 flex flex-col">
           {#if sshSessionId}
             <div class="min-h-0 flex-1 rounded-md border overflow-hidden">
-              <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
+              {#if sshConnectionFailed}
+                <div class="flex h-full items-center justify-center bg-muted/50">
+                  <div class="text-center">
+                    <SquareTerminal class="mx-auto h-8 w-8 text-muted-foreground/50" />
+                    <p class="mt-2 text-sm font-medium">SSH connection failed</p>
+                    <p class="mt-1 text-xs text-muted-foreground">The workspace may not be running or the SSH server is not available.</p>
+                  </div>
+                </div>
+              {:else}
+                <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
+              {/if}
             </div>
             <div class="mt-2 flex items-center justify-end gap-2 shrink-0">
               {#if sshExited}
-                <span class="text-sm text-muted-foreground">Session ended</span>
+                <span class="text-sm text-muted-foreground">{sshConnectionFailed ? "Connection failed" : "Session ended"}</span>
                 <Button variant="outline" size="sm" onclick={handleDisconnect}>Close</Button>
                 <Button size="sm" onclick={async () => { await handleDisconnect(); handleConnect() }} disabled={connecting}>
                   {connecting ? "Reconnecting..." : "Reconnect"}
