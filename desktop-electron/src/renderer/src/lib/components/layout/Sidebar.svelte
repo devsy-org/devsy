@@ -27,9 +27,10 @@ const SHORTCUT_BY_HREF: Record<string, string> = {
   "/workspaces": "2",
   "/providers": "3",
   "/machines": "4",
-  "/terminals": "5",
-  "/ssh-keys": "6",
-  "/settings": "7",
+  "/contexts": "5",
+  "/terminals": "6",
+  "/ssh-keys": "7",
+  "/settings": "8",
 }
 
 const isMac =
@@ -146,7 +147,7 @@ function isActive(href: string): boolean {
             <a href="#/settings" {...props}>
               <Settings />
               <span>Settings</span>
-              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}7</kbd>
+              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}8</kbd>
             </a>
           {/snippet}
         </Sidebar.MenuButton>

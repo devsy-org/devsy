@@ -101,8 +101,17 @@ export class CliRunner {
   private wrapError(error: unknown): Error {
     if (error instanceof Error && "stderr" in error) {
       const stderr = CliRunner.stripAnsi(String((error as { stderr: string }).stderr))
-      return new Error(stderr || error.message)
+      return new Error(this.sanitizeMessage(stderr || error.message))
     }
-    return error instanceof Error ? error : new Error(String(error))
+    return error instanceof Error ? new Error(this.sanitizeMessage(error.message)) : new Error(String(error))
+  }
+
+  /** Strip the full binary path from error messages to avoid exposing system paths to the user. */
+  private sanitizeMessage(msg: string): string {
+    const binPath = this.binaryPath
+    if (binPath && msg.includes(binPath)) {
+      return msg.replaceAll(binPath, "devsy")
+    }
+    return msg
   }
 }

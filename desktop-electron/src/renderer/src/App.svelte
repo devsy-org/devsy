@@ -56,9 +56,10 @@ const NAV_KEYS: Record<string, string> = {
   "2": "/workspaces",
   "3": "/providers",
   "4": "/machines",
-  "5": "/terminals",
-  "6": "/ssh-keys",
-  "7": "/settings",
+  "5": "/contexts",
+  "6": "/terminals",
+  "7": "/ssh-keys",
+  "8": "/settings",
 }
 
 function handleKeydown(e: KeyboardEvent) {

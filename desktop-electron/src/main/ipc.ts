@@ -147,7 +147,13 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   })
 
   ipcMain.handle("context_create", async (_event, args: { name: string }) => {
+    // The Go CLI's `context create` auto-activates the new context.
+    // Restore the previous active context so creating doesn't switch away.
+    const { activeContext: prev } = state.contextList()
     await cli.runRaw(["context", "create", args.name])
+    if (prev) {
+      await cli.runRaw(["context", "use", prev])
+    }
   })
 
   ipcMain.handle("context_delete", async (_event, args: { name: string }) => {

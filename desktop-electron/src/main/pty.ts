@@ -1,5 +1,6 @@
 import type { IPty } from "node-pty"
 import { platform } from "node:os"
+import { dirname } from "node:path"
 import type { BrowserWindow } from "electron"
 
 // Lazy-load node-pty so the app can start even when the native module is unavailable
@@ -28,8 +29,20 @@ interface PtyDeps {
 
 export class PtyManager {
   private sessions = new Map<string, IPty>()
+  private env: Record<string, string>
 
-  constructor(private deps: PtyDeps) {}
+  constructor(private deps: PtyDeps) {
+    // Build an augmented PATH so shells spawned from the Electron GUI can find
+    // the bundled devsy binary and common macOS tool directories.
+    const currentPath = process.env.PATH ?? ""
+    const extraDirs = [dirname(deps.binaryPath)]
+    if (platform() === "darwin") {
+      extraDirs.push("/usr/local/bin", "/opt/homebrew/bin", "/opt/homebrew/sbin")
+    }
+    const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
+    const augmentedPath = missing.length > 0 ? `${missing.join(":")}:${currentPath}` : currentPath
+    this.env = { ...process.env, TERM: "xterm-256color", PATH: augmentedPath } as Record<string, string>
+  }
 
   createSession(cols: number, rows: number): string {
     const pty = requirePty()
@@ -43,7 +56,7 @@ export class PtyManager {
       name: "xterm-256color",
       cols,
       rows,
-      env: { ...process.env, TERM: "xterm-256color" },
+      env: this.env,
     })
 
     this.wire(sessionId, proc)
@@ -57,7 +70,7 @@ export class PtyManager {
       name: "xterm-256color",
       cols,
       rows,
-      env: { ...process.env, TERM: "xterm-256color" },
+      env: this.env,
     })
 
     this.wire(sessionId, proc)

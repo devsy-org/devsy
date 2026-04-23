@@ -72,13 +72,8 @@ let initialOpts = $state<ContextOptions>({
   sshConfigIncludePath: "",
 })
 
-const textKeys: (keyof ContextOptions)[] = [
-  "agentUrl", "dotfilesUrl", "dotfilesScript",
-  "agentInjectTimeout", "registryCache", "sshConfigPath", "sshConfigIncludePath",
-]
-
 let isDirty = $derived.by(() => {
-  return textKeys.some((k) => opts[k] !== initialOpts[k])
+  return (Object.keys(opts) as (keyof ContextOptions)[]).some((k) => opts[k] !== initialOpts[k])
 })
 
 let loading = $state(true)
@@ -119,29 +114,15 @@ $effect(() => {
   }
 })
 
-async function saveOption(key: keyof ContextOptions, value: string | boolean) {
-  saving = true
-  const cliKey = CONTEXT_OPTION_KEYS[key]
-  try {
-    await contextSetOptions([`${cliKey}=${String(value)}`], context.name)
-    ;(opts as unknown as Record<string, string | boolean>)[key] = value
-    toasts.success("Option saved")
-  } catch (err) {
-    toasts.error(`Failed to save: ${extractErrorMessage(err)}`)
-  } finally {
-    saving = false
-  }
-}
-
 function toggleOption(key: keyof ContextOptions) {
-  saveOption(key, !opts[key])
+  ;(opts as unknown as Record<string, string | boolean>)[key] = !opts[key]
 }
 
 async function handleSaveAll() {
   saving = true
   try {
     const changes: string[] = []
-    for (const key of textKeys) {
+    for (const key of Object.keys(opts) as (keyof ContextOptions)[]) {
       if (opts[key] !== initialOpts[key]) {
         const cliKey = CONTEXT_OPTION_KEYS[key]
         changes.push(`${cliKey}=${String(opts[key])}`)
@@ -195,7 +176,7 @@ async function handleSaveAll() {
               <Label>Telemetry</Label>
               <p class="text-xs text-muted-foreground">Send anonymous usage data</p>
             </div>
-            <Switch checked={opts.telemetry} onCheckedChange={() => toggleOption("telemetry")} disabled={saving} />
+            <Switch checked={opts.telemetry} onCheckedChange={() => toggleOption("telemetry")} disabled={saving || loading} />
           </div>
 
           <div class="space-y-1.5">
@@ -239,7 +220,7 @@ async function handleSaveAll() {
               <Label>Exit After Timeout</Label>
               <p class="text-xs text-muted-foreground">Shut down workspace after inactivity timeout</p>
             </div>
-            <Switch checked={opts.exitAfterTimeout} onCheckedChange={() => toggleOption("exitAfterTimeout")} disabled={saving} />
+            <Switch checked={opts.exitAfterTimeout} onCheckedChange={() => toggleOption("exitAfterTimeout")} disabled={saving || loading} />
           </div>
         </div>
 
@@ -285,7 +266,7 @@ async function handleSaveAll() {
               <Label>SSH Agent Forwarding</Label>
               <p class="text-xs text-muted-foreground">Forward SSH agent to workspaces</p>
             </div>
-            <Switch checked={opts.sshAgentForwarding} onCheckedChange={() => toggleOption("sshAgentForwarding")} disabled={saving} />
+            <Switch checked={opts.sshAgentForwarding} onCheckedChange={() => toggleOption("sshAgentForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">
@@ -293,7 +274,7 @@ async function handleSaveAll() {
               <Label>SSH Add Private Keys</Label>
               <p class="text-xs text-muted-foreground">Automatically add private SSH keys to agent</p>
             </div>
-            <Switch checked={opts.sshAddPrivateKeys} onCheckedChange={() => toggleOption("sshAddPrivateKeys")} disabled={saving} />
+            <Switch checked={opts.sshAddPrivateKeys} onCheckedChange={() => toggleOption("sshAddPrivateKeys")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">
@@ -301,7 +282,7 @@ async function handleSaveAll() {
               <Label>Strict Host Key Checking</Label>
               <p class="text-xs text-muted-foreground">Enable strict SSH host key verification</p>
             </div>
-            <Switch checked={opts.sshStrictHostKeyChecking} onCheckedChange={() => toggleOption("sshStrictHostKeyChecking")} disabled={saving} />
+            <Switch checked={opts.sshStrictHostKeyChecking} onCheckedChange={() => toggleOption("sshStrictHostKeyChecking")} disabled={saving || loading} />
           </div>
 
           <div class="space-y-1.5">
@@ -340,7 +321,7 @@ async function handleSaveAll() {
               <Label>Docker Credentials</Label>
               <p class="text-xs text-muted-foreground">Forward Docker credentials to workspaces</p>
             </div>
-            <Switch checked={opts.dockerCredentialForwarding} onCheckedChange={() => toggleOption("dockerCredentialForwarding")} disabled={saving} />
+            <Switch checked={opts.dockerCredentialForwarding} onCheckedChange={() => toggleOption("dockerCredentialForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">
@@ -348,7 +329,7 @@ async function handleSaveAll() {
               <Label>Git Credentials</Label>
               <p class="text-xs text-muted-foreground">Forward Git credential helper to workspaces</p>
             </div>
-            <Switch checked={opts.gitCredentialForwarding} onCheckedChange={() => toggleOption("gitCredentialForwarding")} disabled={saving} />
+            <Switch checked={opts.gitCredentialForwarding} onCheckedChange={() => toggleOption("gitCredentialForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">
@@ -356,7 +337,7 @@ async function handleSaveAll() {
               <Label>Git SSH Signature</Label>
               <p class="text-xs text-muted-foreground">Forward Git SSH signature to workspaces</p>
             </div>
-            <Switch checked={opts.gitSshSignatureForwarding} onCheckedChange={() => toggleOption("gitSshSignatureForwarding")} disabled={saving} />
+            <Switch checked={opts.gitSshSignatureForwarding} onCheckedChange={() => toggleOption("gitSshSignatureForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">
@@ -364,7 +345,7 @@ async function handleSaveAll() {
               <Label>GPG Agent</Label>
               <p class="text-xs text-muted-foreground">Forward GPG agent to workspaces</p>
             </div>
-            <Switch checked={opts.gpgAgentForwarding} onCheckedChange={() => toggleOption("gpgAgentForwarding")} disabled={saving} />
+            <Switch checked={opts.gpgAgentForwarding} onCheckedChange={() => toggleOption("gpgAgentForwarding")} disabled={saving || loading} />
           </div>
         </div>
 
