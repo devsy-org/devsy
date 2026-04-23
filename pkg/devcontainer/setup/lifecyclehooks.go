@@ -20,6 +20,55 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
+// LifecyclePhase identifies a devcontainer lifecycle command.
+type LifecyclePhase string
+
+const (
+	PhaseOnCreate      LifecyclePhase = "onCreateCommand"
+	PhaseUpdateContent LifecyclePhase = "updateContentCommand"
+	PhasePostCreate    LifecyclePhase = "postCreateCommand"
+	PhasePostStart     LifecyclePhase = "postStartCommand"
+	PhasePostAttach    LifecyclePhase = "postAttachCommand"
+)
+
+// DefaultWaitFor is the spec-defined default for the waitFor property.
+const DefaultWaitFor = PhaseUpdateContent
+
+// phaseOrder defines the canonical lifecycle ordering per the devcontainer spec.
+var phaseOrder = []LifecyclePhase{
+	PhaseOnCreate,
+	PhaseUpdateContent,
+	PhasePostCreate,
+	PhasePostStart,
+	PhasePostAttach,
+}
+
+// validWaitForPhase returns true when phase is an allowed waitFor value.
+func validWaitForPhase(phase LifecyclePhase) bool {
+	return slices.Contains(phaseOrder, phase)
+}
+
+// resolveWaitFor normalises the raw waitFor string from the config,
+// falling back to the spec default for empty or invalid values.
+func resolveWaitFor(raw string) LifecyclePhase {
+	if raw == "" {
+		return DefaultWaitFor
+	}
+	p := LifecyclePhase(raw)
+	if !validWaitForPhase(p) {
+		return DefaultWaitFor
+	}
+	return p
+}
+
+// hookRunParams groups the arguments for running a single lifecycle phase.
+type hookRunParams struct {
+	commands []types.LifecycleHook
+	env      lifecycleEnv
+	name     string
+	content  string
+}
+
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.
 type lifecycleEnv struct {
 	remoteUser      string
@@ -57,71 +106,133 @@ func resolveLifecycleEnv(
 	}
 }
 
-// RunPreAttachHooks runs lifecycle hooks up to and including postStartCommand.
-// These must complete before the IDE can be opened.
-//
-// When prebuild is true, only onCreateCommand and updateContentCommand are
-// executed (the devcontainer prebuild phase). updateContentCommand always
-// reruns during prebuild — the marker-file check is bypassed so that
-// content changes are picked up.
-func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, prebuild bool) error {
-	env := resolveLifecycleEnv(ctx, setupInfo)
-	containerDetails := setupInfo.ContainerDetails
-	mergedConfig := setupInfo.MergedConfig
+// preAttachPhaseParams returns the hookRunParams for each pre-attach
+// lifecycle phase in spec order.
+func preAttachPhaseParams(
+	setupInfo *config.Result,
+	env lifecycleEnv,
+	prebuild bool,
+) []phaseHook {
+	cd := setupInfo.ContainerDetails
+	mc := setupInfo.MergedConfig
 
-	// only run once per container run
-	if err := run(mergedConfig.OnCreateCommands, env.remoteUser, env.workspaceFolder, env.remoteEnv,
-		"onCreateCommands", containerDetails.Created); err != nil {
-		return err
-	}
-
-	// During prebuild, pass empty content so the marker check is bypassed
-	// and updateContentCommand always reruns (addresses the TODO below).
-	// During normal runs, use containerDetails.Created so it only runs once.
-	updateContentMarker := containerDetails.Created
+	updateContentMarker := cd.Created
 	if prebuild {
 		updateContentMarker = ""
 	}
-	if err := run(
-		mergedConfig.UpdateContentCommands,
-		env.remoteUser,
-		env.workspaceFolder,
-		env.remoteEnv,
-		"updateContentCommands",
-		updateContentMarker,
-	); err != nil {
-		return err
-	}
 
-	// Prebuild phase stops after updateContentCommand — skip the user-session hooks.
+	return []phaseHook{
+		{PhaseOnCreate, hookRunParams{mc.OnCreateCommands, env, "onCreateCommands", cd.Created}},
+		{
+			PhaseUpdateContent,
+			hookRunParams{
+				mc.UpdateContentCommands,
+				env,
+				"updateContentCommands",
+				updateContentMarker,
+			},
+		},
+		{
+			PhasePostCreate,
+			hookRunParams{mc.PostCreateCommands, env, "postCreateCommands", cd.Created},
+		},
+		{
+			PhasePostStart,
+			hookRunParams{mc.PostStartCommands, env, "postStartCommands", cd.State.StartedAt},
+		},
+	}
+}
+
+// phaseHook pairs a lifecycle phase with the parameters needed to run it.
+type phaseHook struct {
+	phase  LifecyclePhase
+	params hookRunParams
+}
+
+// RunPreAttachHooks runs lifecycle hooks up to and including the waitFor phase
+// synchronously and returns a slice of deferred phases that should run in the
+// background.
+//
+// When prebuild is true, only onCreateCommand and updateContentCommand are
+// executed and waitFor is ignored.
+func RunPreAttachHooks(
+	ctx context.Context,
+	setupInfo *config.Result,
+	prebuild bool,
+) (DeferredHooks, error) {
+	env := resolveLifecycleEnv(ctx, setupInfo)
+	all := preAttachPhaseParams(setupInfo, env, prebuild)
+
 	if prebuild {
-		return nil
+		return DeferredHooks{}, runPrebuildHooks(all)
 	}
 
-	// only run once per container run
-	if err := run(
-		mergedConfig.PostCreateCommands,
-		env.remoteUser,
-		env.workspaceFolder,
-		env.remoteEnv,
-		"postCreateCommands",
-		containerDetails.Created,
-	); err != nil {
-		return err
+	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor)
+	deferred, err := runWithWaitFor(all, waitFor)
+	return DeferredHooks{hooks: deferred}, err
+}
+
+// runPrebuildHooks runs only onCreateCommand and updateContentCommand.
+func runPrebuildHooks(all []phaseHook) error {
+	for _, ph := range all {
+		if ph.phase != PhaseOnCreate && ph.phase != PhaseUpdateContent {
+			continue
+		}
+		if err := runHook(ph.params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runWithWaitFor runs hooks up to and including waitFor synchronously
+// and returns the remaining hooks as deferred.
+func runWithWaitFor(
+	all []phaseHook,
+	waitFor LifecyclePhase,
+) ([]phaseHook, error) {
+	pastWaitFor := false
+	var deferred []phaseHook
+
+	for _, ph := range all {
+		if pastWaitFor {
+			deferred = append(deferred, ph)
+			continue
+		}
+		if err := runHook(ph.params); err != nil {
+			return nil, err
+		}
+		if ph.phase == waitFor {
+			pastWaitFor = true
+		}
 	}
 
-	// run when the container was restarted
-	if err := run(
-		mergedConfig.PostStartCommands,
-		env.remoteUser,
-		env.workspaceFolder,
-		env.remoteEnv,
-		"postStartCommands",
-		containerDetails.State.StartedAt,
-	); err != nil {
-		return err
-	}
+	return deferred, nil
+}
 
+// DeferredHooks holds lifecycle hooks that should run in the background
+// after the foreground (waitFor) hooks have completed.
+type DeferredHooks struct {
+	hooks []phaseHook
+}
+
+// Empty returns true when there are no deferred hooks with commands to run.
+func (d DeferredHooks) Empty() bool {
+	for _, ph := range d.hooks {
+		if len(ph.params.commands) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// Run executes all deferred hooks sequentially.
+func (d DeferredHooks) Run() error {
+	for _, ph := range d.hooks {
+		if err := runHook(ph.params); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -130,112 +241,127 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, prebuild b
 func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result) error {
 	env := resolveLifecycleEnv(ctx, setupInfo)
 
-	// run always when attaching to the container
-	return run(
-		setupInfo.MergedConfig.PostAttachCommands,
-		env.remoteUser,
-		env.workspaceFolder,
-		env.remoteEnv,
-		"postAttachCommands",
-		"",
-	)
+	return runHook(hookRunParams{
+		commands: setupInfo.MergedConfig.PostAttachCommands,
+		env:      env,
+		name:     "postAttachCommands",
+		content:  "",
+	})
 }
 
-func run(
-	commands []types.LifecycleHook,
-	remoteUser, dir string,
-	remoteEnv map[string]string,
-	name, content string,
-) error {
-	if len(commands) == 0 {
+func runHook(p hookRunParams) error {
+	if len(p.commands) == 0 {
 		return nil
 	}
 
-	// check marker file
-	if content != "" {
-		exists, err := markerFileExists(name, content)
-		if err != nil {
-			return err
-		} else if exists {
-			return nil
-		}
+	if skip, err := shouldSkipHook(p.name, p.content); err != nil || skip {
+		return err
 	}
 
-	remoteEnvArr := []string{}
+	envArr := buildEnvArr(p.env.remoteEnv)
+	return executeHookCommands(p, envArr)
+}
+
+func shouldSkipHook(name, content string) (bool, error) {
+	if content == "" {
+		return false, nil
+	}
+	return markerFileExists(name, content)
+}
+
+func buildEnvArr(remoteEnv map[string]string) []string {
+	arr := make([]string, 0, len(remoteEnv))
 	for k, v := range remoteEnv {
-		remoteEnvArr = append(remoteEnvArr, k+"="+v)
+		arr = append(arr, k+"="+v)
 	}
+	return arr
+}
 
-	for _, cmd := range commands {
+func executeHookCommands(p hookRunParams, envArr []string) error {
+	for _, cmd := range p.commands {
 		if len(cmd) == 0 {
 			continue
 		}
-
 		for k, c := range cmd {
-			log.Infof("running %s lifecycle hook: %s %s", name, k, strings.Join(c, " "))
-			currentUser, err := user.Current()
-			if err != nil {
+			if err := runSingleHookCommand(p, envArr, k, c); err != nil {
 				return err
 			}
-
-			if len(c) == 0 {
-				log.Debugf("skipping empty command for lifecycle hook %s", name)
-				continue
-			}
-			args := buildCommandArgs(c, remoteUser, currentUser.Username)
-
-			// create command
-			cmd := exec.Command(args[0], args[1:]...)
-			cmd.Dir = dir
-			cmd.Env = os.Environ()
-			cmd.Env = append(cmd.Env, remoteEnvArr...)
-
-			// Create pipes for stdout and stderr
-			stdoutPipe, err := cmd.StdoutPipe()
-			if err != nil {
-				return fmt.Errorf("failed to get stdout pipe: %w", err)
-			}
-			stderrPipe, err := cmd.StderrPipe()
-			if err != nil {
-				return fmt.Errorf("failed to get stderr pipe: %w", err)
-			}
-
-			// Start the command
-			if err := cmd.Start(); err != nil {
-				return fmt.Errorf("failed to start command: %w", err)
-			}
-
-			// Use WaitGroup to wait for both stdout and stderr processing
-			var wg sync.WaitGroup
-			wg.Add(2)
-
-			go func() {
-				defer wg.Done()
-				logPipeOutput(stdoutPipe, true)
-			}()
-
-			go func() {
-				defer wg.Done()
-				logPipeOutput(stderrPipe, false)
-			}()
-
-			// Wait for command to finish
-			wg.Wait()
-			err = cmd.Wait()
-			if err != nil {
-				log.Debugf(
-					"failed running %s lifecycle script: command=%v, error=%v",
-					k,
-					cmd.Args,
-					err,
-				)
-				return fmt.Errorf("failed to run: %s, error: %w", strings.Join(c, " "), err)
-			}
-
-			log.Infof("ran command: command=%s, args=%s", k, strings.Join(c, " "))
 		}
 	}
+	return nil
+}
 
+func runSingleHookCommand(
+	p hookRunParams,
+	remoteEnvArr []string,
+	key string, c []string,
+) error {
+	log.Infof("running %s lifecycle hook: %s %s", p.name, key, strings.Join(c, " "))
+	currentUser, err := user.Current()
+	if err != nil {
+		return err
+	}
+
+	if len(c) == 0 {
+		log.Debugf("skipping empty command for lifecycle hook %s", p.name)
+		return nil
+	}
+	args := buildCommandArgs(c, p.env.remoteUser, currentUser.Username)
+
+	resolvedPath, err := exec.LookPath(args[0])
+	if err != nil {
+		return fmt.Errorf("command not found: %s: %w", args[0], err)
+	}
+
+	cmd := &exec.Cmd{
+		Path: resolvedPath,
+		Args: args,
+		Dir:  p.env.workspaceFolder,
+		Env:  append(os.Environ(), remoteEnvArr...),
+	}
+
+	return executeAndLog(cmd, key, c)
+}
+
+func executeAndLog(cmd *exec.Cmd, key string, c []string) error {
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start command: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		logPipeOutput(stdoutPipe, true)
+	}()
+
+	go func() {
+		defer wg.Done()
+		logPipeOutput(stderrPipe, false)
+	}()
+
+	wg.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Debugf(
+			"failed running %s lifecycle script: command=%v, error=%v",
+			key,
+			cmd.Args,
+			err,
+		)
+		return fmt.Errorf("failed to run: %s, error: %w", strings.Join(c, " "), err)
+	}
+
+	log.Infof("ran command: command=%s, args=%s", key, strings.Join(c, " "))
 	return nil
 }
 

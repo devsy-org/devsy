@@ -188,29 +188,89 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		Prebuild:          cmd.Prebuild,
 	}
 
-	if err := setup.SetupContainerPreAttach(sctx.ctx, cfg); err != nil {
+	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)
+	if err != nil {
 		return err
 	}
 
 	if !cmd.Prebuild {
-		if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+		if err := cmd.setupPostAttach(sctx, deferred); err != nil {
 			return err
-		}
-
-		if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
-			return err
-		}
-
-		// Launch postAttachCommand as a detached background process before sending
-		// the result. Once sendSetupResult returns, the client tears down the SSH
-		// tunnel which kills this process, so postAttach must already be running
-		// independently.
-		if err := cmd.startPostAttachHooks(sctx); err != nil {
-			log.Errorf("failed to start postAttachCommand: %v", err)
 		}
 	}
 
 	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)
+}
+
+func (cmd *SetupContainerCmd) setupPostAttach(
+	sctx *setupContext,
+	deferred setup.DeferredHooks,
+) error {
+	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+		return err
+	}
+
+	if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
+		return err
+	}
+
+	// Re-serialize the post-substitution setupInfo for background processes.
+	// fillContainerEnv() modifies sctx.setupInfo after initial parsing, so
+	// cmd.SetupInfo (the original CLI arg) has unresolved variables like
+	// ${containerEnv:PATH}. Background hooks need the resolved values.
+	resolvedSetupInfo, err := compressSetupInfo(sctx.setupInfo)
+	if err != nil {
+		return fmt.Errorf("re-serialize setup info: %w", err)
+	}
+
+	if !deferred.Empty() {
+		if err := cmd.startDeferredHooks(resolvedSetupInfo); err != nil {
+			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
+		}
+	}
+
+	if err := cmd.startPostAttachHooks(sctx); err != nil {
+		log.Errorf("failed to start postAttachCommand: %v", err)
+	}
+
+	return nil
+}
+
+// compressSetupInfo marshals and compresses a config.Result for passing
+// to background subprocesses.
+func compressSetupInfo(setupInfo *config.Result) (string, error) {
+	raw, err := json.Marshal(setupInfo)
+	if err != nil {
+		return "", fmt.Errorf("marshal setup info: %w", err)
+	}
+	return compress.Compress(string(raw))
+}
+
+func (cmd *SetupContainerCmd) startDeferredHooks(setupInfo string) error {
+	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
+		log.Debugf("starting deferred lifecycle hooks as background process")
+		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild)
+	})
+}
+
+func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{
+		"agent", "container", "deferred-hooks",
+		"--setup-info", setupInfo,
+	}
+	if prebuild {
+		args = append(args, "--prebuild")
+	}
+
+	return &exec.Cmd{
+		Path: binaryPath,
+		Args: append([]string{binaryPath}, args...),
+	}, nil
 }
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(

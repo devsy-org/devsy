@@ -37,32 +37,37 @@ type ContainerSetupConfig struct {
 	TunnelClient      tunnel.TunnelClient
 }
 
-// SetupContainerPreAttach runs container setup up to and including postStartCommand.
-// After this returns, the workspace is ready for IDE access.
-func SetupContainerPreAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
+// SetupContainerPreAttach runs container setup up to and including the waitFor
+// lifecycle phase. Hooks after waitFor are returned as DeferredHooks for the
+// caller to launch in the background.
+func SetupContainerPreAttach(
+	ctx context.Context,
+	cfg *ContainerSetupConfig,
+) (DeferredHooks, error) {
 	if err := validateContainerSetupConfig(cfg); err != nil {
-		return err
+		return DeferredHooks{}, err
 	}
 
 	writeResultFile(cfg)
 
 	if err := setupWorkspaceOwnership(cfg); err != nil {
-		return err
+		return DeferredHooks{}, err
 	}
 
 	if err := setupEnvironment(cfg); err != nil {
-		return err
+		return DeferredHooks{}, err
 	}
 
 	setupOptionalFeatures(ctx, cfg)
 
 	log.Debugf("running pre-attach lifecycle hooks")
-	if err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Prebuild); err != nil {
-		return fmt.Errorf("lifecycle hooks pre-attach: %w", err)
+	deferred, err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Prebuild)
+	if err != nil {
+		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}
 
 	log.Debugf("pre-attach setup completed")
-	return nil
+	return deferred, nil
 }
 
 // SetupContainerPostAttach runs postAttachCommand only.
