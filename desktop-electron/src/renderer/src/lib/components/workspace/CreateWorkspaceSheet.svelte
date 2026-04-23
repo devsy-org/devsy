@@ -10,6 +10,7 @@ import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Sheet from "$lib/components/ui/sheet/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
+import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
@@ -106,7 +107,7 @@ const TEMPLATES = [
   },
   {
     name: "Ruby",
-    source: "https://github.com/skevetter/devpod-quickstart-ruby",
+    source: "https://github.com/skevetter/devsy-quickstart-ruby",
   },
 ]
 
@@ -162,6 +163,8 @@ $effect(() => {
   }
 })
 
+let confirmCancelOpen = $state(false)
+
 let error = $state("")
 let submitting = $state(false)
 let createdId = $state<string | null>(null)
@@ -195,6 +198,14 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
       toasts.error("Workspace creation failed. Check output for details.")
     }
   }
+}
+
+function handleOpenChange(newOpen: boolean) {
+  if (!newOpen && submitting) {
+    confirmCancelOpen = true
+    return
+  }
+  open = newOpen
 }
 
 async function handleSubmit() {
@@ -263,7 +274,7 @@ async function handleSubmit() {
 }
 </script>
 
-<Sheet.Root bind:open>
+<Sheet.Root open={open} onOpenChange={handleOpenChange}>
   <Sheet.ResizableContent>
     <Sheet.Header class="p-6">
       <Sheet.Title>Create Workspace</Sheet.Title>
@@ -452,3 +463,12 @@ async function handleSubmit() {
     </div>
   </Sheet.ResizableContent>
 </Sheet.Root>
+
+<ConfirmDialog
+  bind:open={confirmCancelOpen}
+  title="Cancel workspace creation?"
+  description="A workspace is currently being created. Closing this sheet will not stop the process, but you will lose visibility of the progress."
+  confirmLabel="Close Anyway"
+  variant="destructive"
+  onconfirm={() => { open = false; confirmCancelOpen = false }}
+/>

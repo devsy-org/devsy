@@ -77,6 +77,7 @@ async function createSsh(workspaceId: string) {
 }
 
 async function closeSession(id: string) {
+  const idx = $terminals.findIndex((t) => t.id === id)
   try {
     await terminalClose(id)
   } catch {
@@ -85,15 +86,18 @@ async function closeSession(id: string) {
   destroyTerminalInstance(id)
   removeTerminal(id)
   if (activeSessionId === id) {
-    activeSessionId = $terminals.length > 0 ? $terminals[0].id : undefined
+    const remaining = $terminals
+    activeSessionId = remaining.length > 0 ? remaining[Math.min(idx, remaining.length - 1)].id : undefined
   }
 }
 
 function handleExit() {
   if (activeSessionId) {
+    const idx = $terminals.findIndex((t) => t.id === activeSessionId)
     destroyTerminalInstance(activeSessionId)
     removeTerminal(activeSessionId)
-    activeSessionId = $terminals.length > 0 ? $terminals[0].id : undefined
+    const remaining = $terminals
+    activeSessionId = remaining.length > 0 ? remaining[Math.min(idx, remaining.length - 1)].id : undefined
   }
 }
 </script>
