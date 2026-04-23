@@ -52,7 +52,24 @@ let opts = $state<ContextOptions>({
   sshConfigIncludePath: "",
 })
 
-let initialOpts = $state<ContextOptions>({ ...opts })
+let initialOpts = $state<ContextOptions>({
+  telemetry: true,
+  agentUrl: "",
+  dotfilesUrl: "",
+  dotfilesScript: "",
+  dockerCredentialForwarding: true,
+  gitCredentialForwarding: true,
+  gitSshSignatureForwarding: true,
+  sshAgentForwarding: true,
+  sshAddPrivateKeys: true,
+  sshStrictHostKeyChecking: false,
+  gpgAgentForwarding: false,
+  agentInjectTimeout: "20",
+  registryCache: "",
+  exitAfterTimeout: true,
+  sshConfigPath: "",
+  sshConfigIncludePath: "",
+})
 
 const textKeys: (keyof ContextOptions)[] = [
   "agentUrl", "dotfilesUrl", "dotfilesScript",
