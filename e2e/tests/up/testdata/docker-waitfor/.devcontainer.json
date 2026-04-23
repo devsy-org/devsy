@@ -1,0 +1,11 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "updateContentCommand",
+  "remoteEnv": {
+    "CONTAINER_ENV_PATH": "${containerEnv:PATH}"
+  },
+  "onCreateCommand": "echo onCreateDone > $HOME/on-create.out",
+  "updateContentCommand": "echo updateContentDone > $HOME/update-content.out",
+  "postCreateCommand": "echo -n ${CONTAINER_ENV_PATH} > $HOME/deferred-env-path.out && echo postCreateDone > $HOME/deferred.marker",
+  "postStartCommand": "echo postStartDone > $HOME/post-start-deferred.out"
+}
