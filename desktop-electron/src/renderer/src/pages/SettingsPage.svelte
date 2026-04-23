@@ -37,6 +37,7 @@ import {
   devpodUpgrade,
   devpodUpgradeDryRun,
 } from "$lib/ipc/commands.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 
@@ -221,6 +222,40 @@ function toggleLocal(key: keyof LocalOptions) {
 
     <!-- ═══ GENERAL ═══ -->
     <Tabs.Content value="general" class="w-full">
+      {#if loading}
+        <div class="mt-4 space-y-6">
+          <!-- Toggle row skeleton (Debug Mode) -->
+          <div class="flex items-center justify-between">
+            <div class="space-y-1.5">
+              <Skeleton class="h-4 w-32" />
+              <Skeleton class="h-3 w-48" />
+            </div>
+            <Skeleton class="h-5 w-10 rounded-full" />
+          </div>
+
+          <!-- Input row skeleton (SSH Key) -->
+          <div class="space-y-2">
+            <Skeleton class="h-4 w-40" />
+            <Skeleton class="h-3 w-56" />
+            <Skeleton class="h-9 w-full" />
+          </div>
+
+          <Separator />
+
+          <!-- Section header (Proxy Configuration) -->
+          <Skeleton class="h-5 w-40" />
+
+          <!-- Input row skeletons (HTTP Proxy, HTTPS Proxy) -->
+          <div class="space-y-2">
+            <Skeleton class="h-4 w-24" />
+            <Skeleton class="h-9 w-full" />
+          </div>
+          <div class="space-y-2">
+            <Skeleton class="h-4 w-28" />
+            <Skeleton class="h-9 w-full" />
+          </div>
+        </div>
+      {:else}
       <div class="mt-4 space-y-6">
         <div class="flex items-center justify-between">
           <div>
@@ -343,6 +378,7 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
 
       </div>
+      {/if}
     </Tabs.Content>
 
     <!-- ═══ APPEARANCE ═══ -->

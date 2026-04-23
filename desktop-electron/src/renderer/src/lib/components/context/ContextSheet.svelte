@@ -21,6 +21,7 @@ import {
 import type { ContextOptions } from "$lib/stores/settings.js"
 import { refreshContexts } from "$lib/stores/contexts.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Context } from "$lib/types/index.js"
 
@@ -155,7 +156,59 @@ async function handleSaveAll() {
 
     <div class="flex-1 overflow-y-auto space-y-5 px-6 pb-6">
       {#if loading}
-        <p class="text-sm text-muted-foreground">Loading options...</p>
+        <div class="space-y-5">
+          <!-- General section -->
+          <div class="space-y-4">
+            <Skeleton class="h-4 w-24" />
+            {#each Array(3) as _}
+              <div class="flex items-center justify-between">
+                <div class="space-y-1.5">
+                  <Skeleton class="h-4 w-36" />
+                  <Skeleton class="h-3 w-48" />
+                </div>
+                <Skeleton class="h-5 w-10 rounded-full" />
+              </div>
+            {/each}
+            <div class="space-y-1.5">
+              <Skeleton class="h-4 w-32" />
+              <Skeleton class="h-3 w-48" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+          </div>
+
+          <Skeleton class="h-px w-full" />
+
+          <!-- Dotfiles section -->
+          <div class="space-y-4">
+            <Skeleton class="h-4 w-24" />
+            <div class="space-y-1.5">
+              <Skeleton class="h-4 w-28" />
+              <Skeleton class="h-3 w-48" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+            <div class="space-y-1.5">
+              <Skeleton class="h-4 w-32" />
+              <Skeleton class="h-3 w-48" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+          </div>
+
+          <Skeleton class="h-px w-full" />
+
+          <!-- SSH section -->
+          <div class="space-y-4">
+            <Skeleton class="h-4 w-16" />
+            {#each Array(3) as _}
+              <div class="flex items-center justify-between">
+                <div class="space-y-1.5">
+                  <Skeleton class="h-4 w-36" />
+                  <Skeleton class="h-3 w-48" />
+                </div>
+                <Skeleton class="h-5 w-10 rounded-full" />
+              </div>
+            {/each}
+          </div>
+        </div>
       {:else}
         {#if !isActive}
           <Alert.Root>
