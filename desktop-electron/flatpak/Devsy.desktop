@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Devsy
 Comment=Dev environments in any infrastructure
-Exec=devpod-wrapper
+Exec=devsy-wrapper
 Icon=dev.devsy.app
 Terminal=false
 Type=Application

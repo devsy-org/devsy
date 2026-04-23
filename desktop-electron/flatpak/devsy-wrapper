@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Wrapper script for running Devsy inside Flatpak
+
+export ELECTRON_IS_DEV=0
+
+# Determine if running inside Flatpak
+if [ -f "/.flatpak-info" ]; then
+  # Sync the devsy binary to a host-accessible location
+  DEVSY_HOME="${HOME}/.local/share/devsy"
+  mkdir -p "${DEVSY_HOME}"
+
+  if [ -f /app/bin/devsy ]; then
+    cp /app/bin/devsy "${DEVSY_HOME}/devsy"
+    chmod +x "${DEVSY_HOME}/devsy"
+  fi
+fi
+
+exec /app/devsy/devsy-desktop "$@"
