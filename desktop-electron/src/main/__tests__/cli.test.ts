@@ -19,7 +19,7 @@ describe("CliRunner", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    cli = new CliRunner("/usr/local/bin/devpod")
+    cli = new CliRunner("/usr/local/bin/devsy")
   })
 
   describe("run", () => {
@@ -32,7 +32,7 @@ describe("CliRunner", () => {
       const result = await cli.run<{ id: string }[]>(["list", "--skip-pro"])
       expect(result).toEqual([{ id: "ws-1" }])
       expect(mockExecFile).toHaveBeenCalledWith(
-        "/usr/local/bin/devpod",
+        "/usr/local/bin/devsy",
         ["list", "--skip-pro", "--output", "json"],
         expect.any(Function),
       )

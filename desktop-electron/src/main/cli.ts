@@ -69,7 +69,7 @@ export class CliRunner {
   }
 
   static resolveBinaryPath(resourcesPath: string): string {
-    const binaryName = process.platform === "win32" ? "devpod.exe" : "devpod"
+    const binaryName = process.platform === "win32" ? "devsy.exe" : "devsy"
     const { join } = require("node:path")
     return join(resourcesPath, "bin", binaryName)
   }

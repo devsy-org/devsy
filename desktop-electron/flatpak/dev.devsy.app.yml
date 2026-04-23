@@ -4,7 +4,7 @@ runtime-version: "24.08"
 sdk: org.freedesktop.Sdk
 base: org.electronjs.Electron2.BaseApp
 base-version: "24.08"
-command: devpod-wrapper
+command: devsy-wrapper
 
 finish-args:
   # Wayland + X11 + GPU
@@ -33,14 +33,14 @@ modules:
       # Install the Electron app
       - cp -r opt/Devsy /app/devsy
       # Install the CLI binary
-      - install -Dm755 opt/Devsy/resources/bin/devpod /app/bin/devpod
+      - install -Dm755 opt/Devsy/resources/bin/devsy /app/bin/devsy
       # Install desktop file, icon, and wrapper
       - install -Dm644 Devsy.desktop /app/share/applications/dev.devsy.app.desktop
-      - install -Dm755 devpod-wrapper /app/bin/devpod-wrapper
+      - install -Dm755 devsy-wrapper /app/bin/devsy-wrapper
     sources:
       - type: file
         path: devsy-desktop.deb
       - type: file
         path: Devsy.desktop
       - type: file
-        path: devpod-wrapper
+        path: devsy-wrapper
