@@ -3,13 +3,16 @@ import { Box, Plug, Server } from "@lucide/svelte"
 import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
-import { workspaces } from "$lib/stores/workspaces.js"
-import { providers } from "$lib/stores/providers.js"
-import { machines } from "$lib/stores/machines.js"
+import { workspaces, workspacesLoading } from "$lib/stores/workspaces.js"
+import { providers, providersLoading } from "$lib/stores/providers.js"
+import { machines, machinesLoading } from "$lib/stores/machines.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { activeContext } from "$lib/stores/contexts.js"
 import { workspaceStop } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+
+let loading = $derived($workspacesLoading || $providersLoading || $machinesLoading)
 
 let runningWorkspaces = $derived(
   $workspaces.filter((ws) => ws.status?.toLowerCase() === "running"),
@@ -68,62 +71,80 @@ async function quickStop(wsId: string) {
     {/if}
   </div>
 
-  <div class="grid gap-4 sm:grid-cols-3">
-    {#each stats as stat (stat.label)}
-      {@const Icon = stat.icon}
-      <button
-        type="button"
-        class="rounded-lg border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50"
-        onclick={() => goto(stat.href)}
-      >
-        <div class="flex items-center justify-between">
-          <div class="text-3xl font-bold">{stat.count}</div>
-          <Icon class="h-5 w-5 text-muted-foreground" />
+  {#if loading}
+    <div class="grid gap-4 sm:grid-cols-3">
+      {#each Array(3) as _}
+        <div class="rounded-lg border bg-card p-6 shadow-sm">
+          <div class="flex items-center justify-between">
+            <Skeleton class="h-9 w-16" />
+            <Skeleton class="h-5 w-5 rounded" />
+          </div>
+          <Skeleton class="mt-2 h-4 w-24" />
         </div>
-        <div class="mt-1 text-sm text-muted-foreground">{stat.label}</div>
-        {#if stat.sub}
-          <div class="mt-1 text-xs text-green-600 dark:text-green-400">{stat.sub}</div>
-        {/if}
-      </button>
-    {/each}
-  </div>
+      {/each}
+    </div>
+    <div class="flex gap-2">
+      <Skeleton class="h-9 w-36 rounded-md" />
+      <Skeleton class="h-9 w-32 rounded-md" />
+    </div>
+  {:else}
+    <div class="grid gap-4 sm:grid-cols-3">
+      {#each stats as stat (stat.label)}
+        {@const Icon = stat.icon}
+        <button
+          type="button"
+          class="rounded-lg border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50"
+          onclick={() => goto(stat.href)}
+        >
+          <div class="flex items-center justify-between">
+            <div class="text-3xl font-bold">{stat.count}</div>
+            <Icon class="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div class="mt-1 text-sm text-muted-foreground">{stat.label}</div>
+          {#if stat.sub}
+            <div class="mt-1 text-xs text-green-600 dark:text-green-400">{stat.sub}</div>
+          {/if}
+        </button>
+      {/each}
+    </div>
 
-  <div class="flex gap-2">
-    <Button onclick={() => goto("/workspaces?create=true")}>New Workspace</Button>
-    <Button variant="outline" onclick={() => goto("/providers/add")}>Add Provider</Button>
-  </div>
+    <div class="flex gap-2">
+      <Button onclick={() => goto("/workspaces?create=true")}>New Workspace</Button>
+      <Button variant="outline" onclick={() => goto("/providers/add")}>Add Provider</Button>
+    </div>
 
-  {#if runningWorkspaces.length > 0}
-    <div class="space-y-3">
-      <h2 class="text-lg font-semibold">Active Workspaces</h2>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each runningWorkspaces as ws (ws.id)}
-          <div class="rounded-lg border bg-card p-4 shadow-sm">
-            <div class="flex items-start justify-between gap-2">
-              <button
-                class="min-w-0 truncate font-medium hover:underline text-left"
-                onclick={() => goto(`/workspaces/${ws.id}`)}
-              >
-                {ws.id}
-              </button>
-              <div class="flex shrink-0 gap-1">
-                <Button variant="outline" size="sm" onclick={() => goto(`/workspaces/${ws.id}`)}>
-                  Open
-                </Button>
-                <Button variant="ghost" size="sm" onclick={() => quickStop(ws.id)}>
-                  Stop
-                </Button>
+    {#if runningWorkspaces.length > 0}
+      <div class="space-y-3">
+        <h2 class="text-lg font-semibold">Active Workspaces</h2>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {#each runningWorkspaces as ws (ws.id)}
+            <div class="rounded-lg border bg-card p-4 shadow-sm">
+              <div class="flex items-start justify-between gap-2">
+                <button
+                  class="min-w-0 truncate font-medium hover:underline text-left"
+                  onclick={() => goto(`/workspaces/${ws.id}`)}
+                >
+                  {ws.id}
+                </button>
+                <div class="flex shrink-0 gap-1">
+                  <Button variant="outline" size="sm" onclick={() => goto(`/workspaces/${ws.id}`)}>
+                    Open
+                  </Button>
+                  <Button variant="ghost" size="sm" onclick={() => quickStop(ws.id)}>
+                    Stop
+                  </Button>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 mt-1">
+                {#if ws.provider?.name}
+                  <span class="text-xs text-muted-foreground">{ws.provider.name}</span>
+                {/if}
+                <span class={badgeVariants({ variant: "default" })}>{ws.status}</span>
               </div>
             </div>
-            <div class="flex items-center gap-2 mt-1">
-              {#if ws.provider?.name}
-                <span class="text-xs text-muted-foreground">{ws.provider.name}</span>
-              {/if}
-              <span class={badgeVariants({ variant: "default" })}>{ws.status}</span>
-            </div>
-          </div>
-        {/each}
+          {/each}
+        </div>
       </div>
-    </div>
+    {/if}
   {/if}
 </div>

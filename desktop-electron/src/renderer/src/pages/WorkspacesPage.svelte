@@ -62,6 +62,12 @@ let filtered = $derived.by(() => {
 
   if (sortBy === "name") {
     list = [...list].sort((a, b) => a.id.localeCompare(b.id))
+  } else {
+    list = [...list].sort((a, b) => {
+      const ta = a.lastUsed ? new Date(a.lastUsed).getTime() : 0
+      const tb = b.lastUsed ? new Date(b.lastUsed).getTime() : 0
+      return tb - ta
+    })
   }
 
   return list

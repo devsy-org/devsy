@@ -39,7 +39,7 @@ let allItems = $derived.by(() => {
       label: "New Workspace",
       description: "Create a workspace",
       category: "Navigation",
-      href: "/workspaces/new",
+      href: "/workspaces?create=true",
     },
     {
       id: "nav-providers",
