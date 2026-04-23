@@ -31,6 +31,11 @@ interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null
 }
 
+/** Format a line in zap console format so log-parser.ts can parse it. */
+function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
+  return `${new Date().toISOString()}\t${level}\t${line}`
+}
+
 export function registerIpcHandlers(deps: IpcDependencies): void {
   const { cli, state, logStore } = deps
 
@@ -200,15 +205,16 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       cli.runStreaming(
         cliArgs,
         (line) => {
-          logStore.appendLog(logPath, line)
+          const formatted = formatLogLine(line)
+          logStore.appendLog(logPath, formatted)
           win?.webContents.send("command-progress", {
             commandId: cmdId,
-            message: line,
+            message: formatted,
             done: false,
           })
         },
         (code) => {
-          const exitMsg = `Exit code: ${code}`
+          const exitMsg = formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR")
           logStore.appendLog(logPath, exitMsg)
           win?.webContents.send("command-progress", {
             commandId: cmdId,
@@ -230,11 +236,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     cli.runStreaming(
       ["stop", args.workspaceId],
       (line) => {
-        logStore.appendLog(logPath, line)
-        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+        const formatted = formatLogLine(line)
+        logStore.appendLog(logPath, formatted)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: formatted, done: false })
       },
       (code) => {
-        const exitMsg = `Exit code: ${code}`
+        const exitMsg = formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR")
         logStore.appendLog(logPath, exitMsg)
         win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
       },
@@ -251,11 +258,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     cli.runStreaming(
       ["delete", args.workspaceId, "--force"],
       (line) => {
-        logStore.appendLog(logPath, line)
-        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+        const formatted = formatLogLine(line)
+        logStore.appendLog(logPath, formatted)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: formatted, done: false })
       },
       (code) => {
-        const exitMsg = `Exit code: ${code}`
+        const exitMsg = formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR")
         logStore.appendLog(logPath, exitMsg)
         win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
       },
@@ -272,11 +280,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     cli.runStreaming(
       ["up", args.workspaceId, "--recreate"],
       (line) => {
-        logStore.appendLog(logPath, line)
-        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+        const formatted = formatLogLine(line)
+        logStore.appendLog(logPath, formatted)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: formatted, done: false })
       },
       (code) => {
-        const exitMsg = `Exit code: ${code}`
+        const exitMsg = formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR")
         logStore.appendLog(logPath, exitMsg)
         win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
       },
@@ -293,11 +302,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     cli.runStreaming(
       ["up", args.workspaceId, "--reset"],
       (line) => {
-        logStore.appendLog(logPath, line)
-        win?.webContents.send("command-progress", { commandId: cmdId, message: line, done: false })
+        const formatted = formatLogLine(line)
+        logStore.appendLog(logPath, formatted)
+        win?.webContents.send("command-progress", { commandId: cmdId, message: formatted, done: false })
       },
       (code) => {
-        const exitMsg = `Exit code: ${code}`
+        const exitMsg = formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR")
         logStore.appendLog(logPath, exitMsg)
         win?.webContents.send("command-progress", { commandId: cmdId, message: exitMsg, done: true })
       },
