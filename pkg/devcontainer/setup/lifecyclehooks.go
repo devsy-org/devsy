@@ -308,11 +308,17 @@ func runSingleHookCommand(
 	}
 	args := buildCommandArgs(c, p.env.remoteUser, currentUser.Username)
 
-	// create command
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Dir = p.env.workspaceFolder
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, remoteEnvArr...)
+	resolvedPath, err := exec.LookPath(args[0])
+	if err != nil {
+		return fmt.Errorf("command not found: %s: %w", args[0], err)
+	}
+
+	cmd := &exec.Cmd{
+		Path: resolvedPath,
+		Args: args,
+		Dir:  p.env.workspaceFolder,
+		Env:  append(os.Environ(), remoteEnvArr...),
+	}
 
 	return executeAndLog(cmd, key, c)
 }

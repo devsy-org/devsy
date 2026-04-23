@@ -248,7 +248,10 @@ func (cmd *SetupContainerCmd) buildDeferredHooksCmd() (*exec.Cmd, error) {
 		args = append(args, "--prebuild")
 	}
 
-	return exec.Command(binaryPath, args...), nil
+	return &exec.Cmd{
+		Path: binaryPath,
+		Args: append([]string{binaryPath}, args...),
+	}, nil
 }
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(
