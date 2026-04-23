@@ -56,8 +56,8 @@ function defaultState() {
         provider: { name: "docker" },
         ide: { name: "vscode" },
         status: "Running",
-        lastUsedTimestamp: "2026-04-22T10:00:00Z",
-        creationTimestamp: "2026-04-20T08:00:00Z",
+        lastUsed: "2026-04-22T10:00:00Z",
+        created: "2026-04-20T08:00:00Z",
         context: "default",
       },
       {
@@ -67,8 +67,8 @@ function defaultState() {
         provider: { name: "kubernetes" },
         ide: { name: "goland" },
         status: "Stopped",
-        lastUsedTimestamp: "2026-04-21T15:00:00Z",
-        creationTimestamp: "2026-04-19T09:00:00Z",
+        lastUsed: "2026-04-21T15:00:00Z",
+        created: "2026-04-19T09:00:00Z",
         context: "default",
       },
     ],
@@ -313,8 +313,8 @@ switch (cmd) {
       provider: { name: providerFlag || "docker" },
       ide: { name: ideFlag || "none" },
       status: "Running",
-      lastUsedTimestamp: new Date().toISOString(),
-      creationTimestamp: new Date().toISOString(),
+      lastUsed: new Date().toISOString(),
+      created: new Date().toISOString(),
       context: "default",
     })
     saveState(state)

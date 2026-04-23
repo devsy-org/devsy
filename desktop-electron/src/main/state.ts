@@ -1,6 +1,6 @@
 export interface Workspace {
   id: string
-  lastUsedTimestamp?: string
+  lastUsed?: string
   [key: string]: unknown
 }
 
@@ -58,7 +58,7 @@ export class DaemonState {
 
   workspaceList(): Workspace[] {
     return [...this.workspaces.values()].sort((a, b) =>
-      (b.lastUsedTimestamp ?? "").localeCompare(a.lastUsedTimestamp ?? ""),
+      (b.lastUsed ?? "").localeCompare(a.lastUsed ?? ""),
     )
   }
 

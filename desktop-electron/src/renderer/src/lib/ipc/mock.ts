@@ -30,8 +30,8 @@ const WORKSPACES: Workspace[] = [
     ide: { name: "vscode" },
     source: { gitRepository: "github.com/acme/my-project", gitBranch: "main" },
     status: "Running",
-    creationTimestamp: dayAgo,
-    lastUsedTimestamp: hourAgo,
+    created: dayAgo,
+    lastUsed: hourAgo,
     context: "default",
   },
   {
@@ -41,8 +41,8 @@ const WORKSPACES: Workspace[] = [
     ide: { name: "goland" },
     source: { gitRepository: "github.com/acme/backend-api" },
     status: "Stopped",
-    creationTimestamp: dayAgo,
-    lastUsedTimestamp: dayAgo,
+    created: dayAgo,
+    lastUsed: dayAgo,
     context: "default",
   },
   {
@@ -52,8 +52,8 @@ const WORKSPACES: Workspace[] = [
     ide: { name: "jupyternotebook" },
     source: { image: "jupyter/scipy-notebook:latest" },
     status: "Running",
-    creationTimestamp: hourAgo,
-    lastUsedTimestamp: now,
+    created: hourAgo,
+    lastUsed: now,
     context: "default",
   },
 ]
@@ -88,15 +88,15 @@ const MACHINES: Machine[] = [
     id: "docker-desktop",
     provider: { name: "docker" },
     status: "Running",
-    creationTimestamp: dayAgo,
-    lastUsedTimestamp: hourAgo,
+    created: dayAgo,
+    lastUsed: hourAgo,
   },
   {
     id: "k8s-cluster-1",
     provider: { name: "kubernetes" },
     status: "Running",
-    creationTimestamp: dayAgo,
-    lastUsedTimestamp: now,
+    created: dayAgo,
+    lastUsed: now,
   },
 ]
 

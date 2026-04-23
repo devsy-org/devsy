@@ -3,7 +3,7 @@ import { DaemonState } from "../state.js"
 import type { Workspace, Provider, Machine, Context } from "../state.js"
 
 function makeWorkspace(id: string, lastUsed: string): Workspace {
-  return { id, lastUsedTimestamp: lastUsed }
+  return { id, lastUsed: lastUsed }
 }
 
 function makeProvider(name: string): Provider {
@@ -42,7 +42,7 @@ describe("DaemonState", () => {
     expect(state.updateProviders([makeProvider("docker"), makeProvider("kubernetes")])).toBe(true)
   })
 
-  it("sorts workspaces by lastUsedTimestamp descending", () => {
+  it("sorts workspaces by lastUsed descending", () => {
     const state = new DaemonState()
     state.updateWorkspaces([
       makeWorkspace("old", "2024-01-01"),
