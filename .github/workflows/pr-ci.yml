@@ -7,6 +7,31 @@ on:
   pull_request:
 
 jobs:
+  precommit:
+    name: Pre-commit Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: j178/prek-action@v2
+
+  lint-gate:
+    name: Lint Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          only-new-issues: true
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -24,6 +49,7 @@ jobs:
 
   build-ui:
     name: User Interface Build
+    needs: [precommit, lint-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -55,6 +81,7 @@ jobs:
 
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
+    needs: [precommit, lint-gate]
     strategy:
       matrix:
         include:
