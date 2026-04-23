@@ -214,8 +214,17 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return err
 	}
 
+	// Re-serialize the post-substitution setupInfo for background processes.
+	// fillContainerEnv() modifies sctx.setupInfo after initial parsing, so
+	// cmd.SetupInfo (the original CLI arg) has unresolved variables like
+	// ${containerEnv:PATH}. Background hooks need the resolved values.
+	resolvedSetupInfo, err := compressSetupInfo(sctx.setupInfo)
+	if err != nil {
+		return fmt.Errorf("re-serialize setup info: %w", err)
+	}
+
 	if !deferred.Empty() {
-		if err := cmd.startDeferredHooks(); err != nil {
+		if err := cmd.startDeferredHooks(resolvedSetupInfo); err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
@@ -227,14 +236,24 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	return nil
 }
 
-func (cmd *SetupContainerCmd) startDeferredHooks() error {
+// compressSetupInfo marshals and compresses a config.Result for passing
+// to background subprocesses.
+func compressSetupInfo(setupInfo *config.Result) (string, error) {
+	raw, err := json.Marshal(setupInfo)
+	if err != nil {
+		return "", fmt.Errorf("marshal setup info: %w", err)
+	}
+	return compress.Compress(string(raw))
+}
+
+func (cmd *SetupContainerCmd) startDeferredHooks(setupInfo string) error {
 	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
 		log.Debugf("starting deferred lifecycle hooks as background process")
-		return cmd.buildDeferredHooksCmd()
+		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild)
 	})
 }
 
-func (cmd *SetupContainerCmd) buildDeferredHooksCmd() (*exec.Cmd, error) {
+func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -242,9 +261,9 @@ func (cmd *SetupContainerCmd) buildDeferredHooksCmd() (*exec.Cmd, error) {
 
 	args := []string{
 		"agent", "container", "deferred-hooks",
-		"--setup-info", cmd.SetupInfo,
+		"--setup-info", setupInfo,
 	}
-	if cmd.Prebuild {
+	if prebuild {
 		args = append(args, "--prebuild")
 	}
 
