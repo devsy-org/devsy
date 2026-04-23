@@ -98,7 +98,7 @@ async function handleDelete() {
         {acting ? "Stopping..." : "Stop"}
       </Button>
     {/if}
-    <Button variant="destructive" size="sm" onclick={openDeleteConfirm} disabled={acting}>Delete</Button>
+    <Button variant="destructive" size="sm" onclick={openDeleteConfirm} disabled={acting || isRunning} title={isRunning ? "Stop the machine before deleting" : undefined}>Delete</Button>
   </div>
 </button>
 

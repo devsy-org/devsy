@@ -8,6 +8,7 @@ import { Switch } from "$lib/components/ui/switch/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
 import * as Sheet from "$lib/components/ui/sheet/index.js"
+import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import {
   contextOptions as fetchContextOptions,
   contextSetOptions,
@@ -83,6 +84,7 @@ let isDirty = $derived.by(() => {
 let loading = $state(true)
 let saving = $state(false)
 let deleting = $state(false)
+let confirmDeleteOpen = $state(false)
 
 async function handleDelete() {
   deleting = true
@@ -319,7 +321,7 @@ async function handleSaveAll() {
             <p class="text-xs text-muted-foreground">Path for SSH config includes</p>
             <Input
               value={opts.sshConfigIncludePath}
-              placeholder="~/.ssh/devpod_config"
+              placeholder="~/.ssh/devsy_config"
               oninput={(e) => (opts.sshConfigIncludePath = e.currentTarget.value)}
               disabled={saving}
               class="h-9"
@@ -370,7 +372,7 @@ async function handleSaveAll() {
           <Separator />
           <div class="space-y-2">
             <h3 class="text-sm font-semibold text-destructive uppercase tracking-wider">Danger Zone</h3>
-            <Button variant="destructive" class="w-full" disabled={deleting} onclick={handleDelete}>
+            <Button variant="destructive" class="w-full" disabled={deleting} onclick={() => confirmDeleteOpen = true}>
               {deleting ? "Deleting..." : `Delete Context "${context.name}"`}
             </Button>
           </div>
@@ -378,18 +380,27 @@ async function handleSaveAll() {
       {/if}
     </div>
 
-    <Sheet.Footer class="p-6">
-      <div class="flex items-center gap-2">
-        <Button onclick={handleSaveAll} disabled={saving || !isDirty} size="sm">
-          {saving ? "Saving..." : "Save"}
-        </Button>
-        {#if isDirty}
+    {#if isDirty}
+      <Sheet.Footer class="p-6">
+        <div class="flex items-center gap-2">
+          <Button onclick={handleSaveAll} disabled={saving} size="sm">
+            {saving ? "Saving..." : "Save"}
+          </Button>
           <Button variant="outline" size="sm" onclick={() => { opts = { ...initialOpts } }}>
             Reset
           </Button>
           <span class="text-xs text-muted-foreground">Unsaved changes</span>
-        {/if}
-      </div>
-    </Sheet.Footer>
+        </div>
+      </Sheet.Footer>
+    {/if}
   </Sheet.ResizableContent>
 </Sheet.Root>
+
+<ConfirmDialog
+  bind:open={confirmDeleteOpen}
+  title="Delete context"
+  description="This will permanently delete context '{context.name}'. This action cannot be undone."
+  confirmLabel="Delete"
+  loading={deleting}
+  onconfirm={handleDelete}
+/>
