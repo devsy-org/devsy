@@ -334,7 +334,7 @@ async function handleSubmit() {
             <Popover.Trigger class="w-full">
               {#snippet child({ props })}
                 <Button variant="outline" class="h-9 w-full justify-between" {...props} disabled={submitting}>
-                  <span class="truncate text-left">{providerLabel}</span>
+                  <span class="flex-1 truncate text-left">{providerLabel}</span>
                   <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               {/snippet}
@@ -379,7 +379,7 @@ async function handleSubmit() {
             <Popover.Trigger class="w-full">
               {#snippet child({ props })}
                 <Button variant="outline" class="h-9 w-full justify-between" {...props} disabled={submitting}>
-                  <span class="truncate text-left">{ideLabel}</span>
+                  <span class="flex-1 truncate text-left">{ideLabel}</span>
                   <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               {/snippet}
