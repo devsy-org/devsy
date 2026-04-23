@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/gofrs/flock"
 )
 
@@ -21,9 +21,18 @@ type CreateCommand func() (*exec.Cmd, error)
 // command already has Stdout/Stderr configured. The PID is recorded in
 // TMPDIR/commandName.pid. These files are not cleaned up on exit.
 func StartBackgroundOnce(commandName string, createCommand CreateCommand) error {
-	lockFile := filepath.Join(os.TempDir(), commandName+".lock")
-	pidFile := filepath.Join(os.TempDir(), commandName+".pid")
-	streamsFile := filepath.Join(os.TempDir(), commandName+".streams")
+	lockFile, err := config.DefaultPathManager().ProcessLockFile(commandName)
+	if err != nil {
+		return fmt.Errorf("process lock file: %w", err)
+	}
+	pidFile, err := config.DefaultPathManager().ProcessPIDFile(commandName)
+	if err != nil {
+		return fmt.Errorf("process pid file: %w", err)
+	}
+	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(commandName)
+	if err != nil {
+		return fmt.Errorf("process streams file: %w", err)
+	}
 
 	// Create a file-based lock to prevent multiple invocations of this function
 	// before the process is created.
