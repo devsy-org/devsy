@@ -97,6 +97,7 @@ func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []strin
 	args = appendBuildFlags(args, options.Load, options.Push)
 	args = appendImageTags(args, options.Images)
 	args = appendBuildArgsAndContexts(args, options.BuildArgs, options.Contexts)
+	args = appendLabels(args, options.Labels)
 	args = appendTargetAndPlatform(args, options.Target, platform)
 	args = appendCacheOptions(args, options.CacheFrom, options.CacheTo)
 	args = append(args, options.CliOpts...)
@@ -141,6 +142,19 @@ func appendBuildArgsAndContexts(args []string, buildArgs, contexts map[string]st
 
 	for _, k := range contextKeys {
 		args = append(args, "--build-context", k+"="+contexts[k])
+	}
+	return args
+}
+
+func appendLabels(args []string, labels map[string]string) []string {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		args = append(args, "--label", k+"="+labels[k])
 	}
 	return args
 }
