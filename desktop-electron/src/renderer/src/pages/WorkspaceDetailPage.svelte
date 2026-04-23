@@ -644,17 +644,15 @@ async function handleDelete() {
                 <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
               {/if}
             </div>
-            <div class="mt-2 flex items-center justify-end gap-2 shrink-0">
-              {#if sshExited}
+            {#if sshExited}
+              <div class="mt-2 flex items-center justify-end gap-2 shrink-0">
                 <span class="text-sm text-muted-foreground">{sshConnectionFailed ? "Connection failed" : "Session ended"}</span>
                 <Button variant="outline" size="sm" onclick={handleDisconnect}>Close</Button>
                 <Button size="sm" onclick={async () => { await handleDisconnect(); handleConnect() }} disabled={connecting}>
                   {connecting ? "Reconnecting..." : "Reconnect"}
                 </Button>
-              {:else}
-                <Button variant="outline" size="sm" onclick={handleDisconnect}>Disconnect</Button>
-              {/if}
-            </div>
+              </div>
+            {/if}
           {:else}
             <div class="flex min-h-0 flex-1 items-center justify-center rounded-md border bg-muted/50">
               <div class="text-center">

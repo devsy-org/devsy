@@ -78,6 +78,7 @@ let isDirty = $derived.by(() => {
 })
 
 let loading = $state(true)
+let hasLoadedOnce = $state(false)
 let saving = $state(false)
 let deleting = $state(false)
 let confirmDeleteOpen = $state(false)
@@ -97,7 +98,9 @@ async function handleDelete() {
 }
 
 async function loadOptions() {
-  loading = true
+  if (!hasLoadedOnce) {
+    loading = true
+  }
   try {
     const raw = await fetchContextOptions(context.name)
     opts = parseContextOptions(raw)
@@ -106,6 +109,7 @@ async function loadOptions() {
     // Keep defaults
   } finally {
     loading = false
+    hasLoadedOnce = true
   }
 }
 
