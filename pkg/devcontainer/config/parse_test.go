@@ -41,7 +41,10 @@ func TestSecretsRoundTrip(t *testing.T) {
 			t.Errorf("expected description 'API token', got %q", myToken.Description)
 		}
 		if myToken.DocumentationUrl != "https://example.com/docs" {
-			t.Errorf("expected documentationUrl 'https://example.com/docs', got %q", myToken.DocumentationUrl)
+			t.Errorf(
+				"expected documentationUrl 'https://example.com/docs', got %q",
+				myToken.DocumentationUrl,
+			)
 		}
 		empty, ok := cfg.Secrets["EMPTY_SECRET"]
 		if !ok {
@@ -76,7 +79,10 @@ func TestSecretsRoundTrip(t *testing.T) {
 			t.Fatalf("expected 1 secret after round-trip, got %d", len(loaded.Secrets))
 		}
 		if loaded.Secrets["DB_PASSWORD"].Description != "database password" {
-			t.Errorf("expected 'database password', got %q", loaded.Secrets["DB_PASSWORD"].Description)
+			t.Errorf(
+				"expected 'database password', got %q",
+				loaded.Secrets["DB_PASSWORD"].Description,
+			)
 		}
 	})
 }
