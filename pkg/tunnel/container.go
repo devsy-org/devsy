@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -54,11 +55,9 @@ func (c *ContainerTunnel) Run(
 		return nil
 	}
 
-	// create context
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// create readers
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return err
@@ -70,45 +69,17 @@ func (c *ContainerTunnel) Run(
 	defer func() { _ = stdoutWriter.Close() }()
 	defer func() { _ = stdinWriter.Close() }()
 
-	// Get the timeout from the context options
 	timeout := config.ParseTimeOption(cfg, config.ContextOptionAgentInjectTimeout)
 
 	// tunnel to host
 	tunnelChan := make(chan error, 1)
 	go func() {
-		writer := log.Writer(log.LevelInfo)
-		defer func() { _ = writer.Close() }()
-		defer log.Debugf("Tunnel to host closed")
-
-		command := fmt.Sprintf("'%s' helper ssh-server --stdio", c.client.AgentPath())
-		if log.DebugEnabled() {
-			command += " --debug"
-		}
-		tunnelChan <- agent.InjectAgent(&agent.InjectOptions{
-			Ctx: cancelCtx,
-			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-				return c.client.Command(ctx, client.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
-				})
-			},
-			IsLocal:         c.client.AgentLocal(),
-			RemoteAgentPath: c.client.AgentPath(),
-			DownloadURL:     c.client.AgentURL(),
-			Command:         command,
-			Stdin:           stdinReader,
-			Stdout:          stdoutWriter,
-			Stderr:          writer,
-			Timeout:         timeout,
-		})
+		tunnelChan <- c.runHostTunnel(cancelCtx, stdinReader, stdoutWriter, timeout)
 	}()
 
 	// connect to container
 	containerChan := make(chan error, 1)
 	go func() {
-		// start ssh client as root / default user
 		sshClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
 		if err != nil {
 			containerChan <- fmt.Errorf("create ssh client: %w", err)
@@ -120,14 +91,12 @@ func (c *ContainerTunnel) Run(
 		defer log.Debugf("connection to container closed")
 		log.Debugf("connected to host")
 
-		// update workspace remotely
 		if c.updateConfigInterval > 0 {
 			go func() {
 				c.updateConfig(cancelCtx, sshClient)
 			}()
 		}
 
-		// wait until we are done
 		if err := c.runInContainer(cancelCtx, sshClient, handler, envVars); err != nil {
 			containerChan <- fmt.Errorf("run in container: %w", err)
 		} else {
@@ -135,19 +104,91 @@ func (c *ContainerTunnel) Run(
 		}
 	}()
 
-	// wait for result
+	return awaitGoroutines(tunnelChan, containerChan, stdoutWriter, stdinWriter)
+}
+
+// runHostTunnel injects the devsy agent onto the host and starts the SSH server,
+// forwarding stdio through the provided pipes.
+func (c *ContainerTunnel) runHostTunnel(
+	ctx context.Context,
+	stdinReader, stdoutWriter *os.File,
+	timeout time.Duration,
+) error {
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+	defer log.Debugf("Tunnel to host closed")
+
+	command := fmt.Sprintf("'%s' helper ssh-server --stdio", c.client.AgentPath())
+	if log.DebugEnabled() {
+		command += " --debug"
+	}
+	return agent.InjectAgent(&agent.InjectOptions{
+		Ctx: ctx,
+		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+			return c.client.Command(ctx, client.CommandOptions{
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
+		},
+		IsLocal:         c.client.AgentLocal(),
+		RemoteAgentPath: c.client.AgentPath(),
+		DownloadURL:     c.client.AgentURL(),
+		Command:         command,
+		Stdin:           stdinReader,
+		Stdout:          stdoutWriter,
+		Stderr:          writer,
+		Timeout:         timeout,
+	})
+}
+
+// awaitGoroutines waits for both the container and tunnel goroutines to report
+// and returns the appropriate error. The container result is the primary result;
+// the tunnel result provides root-cause context when the container gets EOF.
+func awaitGoroutines(
+	tunnelChan, containerChan <-chan error,
+	stdoutWriter, stdinWriter *os.File,
+) error {
+	var tunnelErr, containerErr error
+
 	select {
-	case err := <-containerChan:
-		if err != nil {
-			return fmt.Errorf("tunnel to container: %w", err)
+	case containerErr = <-containerChan:
+		select {
+		case tunnelErr = <-tunnelChan:
+		default:
 		}
+	case tunnelErr = <-tunnelChan:
+		// Host tunnel exited before container finished. Close pipes to unblock
+		// the container goroutine (may be blocked in SSH handshake).
+		_ = stdoutWriter.Close()
+		_ = stdinWriter.Close()
+		containerErr = <-containerChan
+	}
+
+	return classifyTunnelErrors(tunnelErr, containerErr)
+}
+
+// classifyTunnelErrors determines which error to report when the tunnel and/or
+// container goroutines fail. EOF errors from the container are suppressed when
+// the tunnel error is the root cause.
+func classifyTunnelErrors(tunnelErr, containerErr error) error {
+	if containerErr == nil {
 		return nil
-	case err := <-tunnelChan:
-		if err != nil {
-			return fmt.Errorf("connect to server: %w", err)
+	}
+	if isEOFError(containerErr) {
+		if tunnelErr != nil {
+			return fmt.Errorf("connect to server: %w", tunnelErr)
 		}
 		return nil
 	}
+	return fmt.Errorf("tunnel to container: %w", containerErr)
+}
+
+// isEOFError reports whether an error is caused by an EOF condition,
+// including wrapped SSH handshake failures from closed pipes.
+func isEOFError(err error) bool {
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), ": EOF")
 }
 
 // updateConfig is called periodically to keep the workspace agent config up to date.
@@ -207,13 +248,11 @@ func (c *ContainerTunnel) runInContainer(
 	handler Handler,
 	envVars map[string]string,
 ) error {
-	// compress info
 	workspaceInfo, _, err := c.client.AgentInfo(provider.CLIOptions{})
 	if err != nil {
 		return err
 	}
 
-	// create pipes
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return err
@@ -225,53 +264,77 @@ func (c *ContainerTunnel) runInContainer(
 	defer func() { _ = stdoutWriter.Close() }()
 	defer func() { _ = stdinWriter.Close() }()
 
-	// create cancel context
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// tunnel to container
+	tunnelDone := make(chan error, 1)
 	go func() {
-		writer := log.Writer(log.LevelInfo)
-		defer func() { _ = writer.Close() }()
-		defer func() { _ = stdoutWriter.Close() }()
-		defer cancel()
-
-		log.Debugf("Run container tunnel")
-		defer log.Debugf("Container tunnel exited")
-
-		command := fmt.Sprintf(
-			"'%s' agent container-tunnel --workspace-info '%s'",
-			c.client.AgentPath(),
-			workspaceInfo,
-		)
-		if log.DebugEnabled() {
-			command += " --debug"
-		}
-		if err := devssh.Run(cancelCtx, devssh.RunOptions{
-			Client:  sshClient,
-			Command: command,
-			Stdin:   stdinReader,
-			Stdout:  stdoutWriter,
-			Stderr:  writer,
-			EnvVars: envVars,
-		}); err != nil {
-			if errors.Is(err, context.Canceled) {
-				log.Debugf("container tunnel closed: %v", err)
-			} else {
-				log.Errorf("error tunneling to container: %v", err)
-			}
-			return
-		}
+		tunnelDone <- c.runContainerTunnel(cancelCtx, containerTunnelOpts{
+			sshClient:     sshClient,
+			workspaceInfo: workspaceInfo,
+			stdinReader:   stdinReader,
+			stdoutWriter:  stdoutWriter,
+			envVars:       envVars,
+		})
 	}()
 
-	// start ssh client
 	containerClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
 	if err != nil {
-		return err
+		// StdioClient failed — check if the tunnel goroutine already exited
+		// with an error. If so, the tunnel error is the root cause.
+		select {
+		case tunnelErr := <-tunnelDone:
+			if tunnelErr != nil {
+				return tunnelErr
+			}
+		default:
+		}
+		return fmt.Errorf("ssh client: %w", err)
 	}
 	defer func() { _ = containerClient.Close() }()
 	log.Debugf("connected to container")
 
-	// start handler
 	return handler(cancelCtx, containerClient)
+}
+
+type containerTunnelOpts struct {
+	sshClient     *ssh.Client
+	workspaceInfo string
+	stdinReader   *os.File
+	stdoutWriter  *os.File
+	envVars       map[string]string
+}
+
+// runContainerTunnel runs the container tunnel SSH command. It closes
+// stdoutWriter on exit so StdioClient gets EOF when the tunnel dies.
+// Context-cancelled errors are suppressed (expected during normal shutdown).
+func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+	defer func() { _ = opts.stdoutWriter.Close() }()
+
+	log.Debugf("Run container tunnel")
+	defer log.Debugf("Container tunnel exited")
+
+	command := fmt.Sprintf(
+		"'%s' agent container-tunnel --workspace-info '%s'",
+		c.client.AgentPath(),
+		opts.workspaceInfo,
+	)
+	if log.DebugEnabled() {
+		command += " --debug"
+	}
+	err := devssh.Run(ctx, devssh.RunOptions{
+		Client:  opts.sshClient,
+		Command: command,
+		Stdin:   opts.stdinReader,
+		Stdout:  opts.stdoutWriter,
+		Stderr:  writer,
+		EnvVars: opts.envVars,
+	})
+	if err != nil && ctx.Err() == nil {
+		return fmt.Errorf("container tunnel: %w", err)
+	}
+	return nil
 }
