@@ -1,28 +1,14 @@
 <script lang="ts">
 import { Box, Plug, Server } from "@lucide/svelte"
-import { onMount } from "svelte"
 import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
-import { Separator } from "$lib/components/ui/separator/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { providers } from "$lib/stores/providers.js"
 import { machines } from "$lib/stores/machines.js"
 import { activeContext } from "$lib/stores/contexts.js"
-import { auditRecent, workspaceStop } from "$lib/ipc/commands.js"
+import { workspaceStop } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
-import type { AuditEntry } from "$lib/types/index.js"
-import { formatTimestamp } from "$lib/utils/time.js"
-
-let activity = $state<AuditEntry[]>([])
-
-onMount(async () => {
-  try {
-    activity = await auditRecent(10)
-  } catch {
-    activity = []
-  }
-})
 
 let runningWorkspaces = $derived(
   $workspaces.filter((ws) => ws.status?.toLowerCase() === "running"),
@@ -60,29 +46,6 @@ const stats = $derived([
         : undefined,
   },
 ])
-
-function resourceHref(entry: AuditEntry): string | null {
-  if (!entry.resourceId) return null
-  switch (entry.resourceType) {
-    case "workspace":
-      if ($workspaces.some((ws) => ws.id === entry.resourceId)) {
-        return `/workspaces/${entry.resourceId}`
-      }
-      return null
-    case "provider":
-      if ($providers.some((p) => p.name === entry.resourceId)) {
-        return `/providers`
-      }
-      return null
-    case "machine":
-      if ($machines.some((m) => m.id === entry.resourceId)) {
-        return `/machines/${entry.resourceId}`
-      }
-      return null
-    default:
-      return null
-  }
-}
 
 async function quickStop(wsId: string) {
   try {
@@ -162,46 +125,4 @@ async function quickStop(wsId: string) {
       </div>
     </div>
   {/if}
-
-  <Separator />
-
-  <div class="space-y-4">
-    <h2 class="text-lg font-semibold">Recent Activity</h2>
-
-    {#if activity.length === 0}
-      <p class="text-sm text-muted-foreground">No recent activity.</p>
-    {:else}
-      <div class="max-h-64 overflow-y-auto rounded-md border">
-        <div class="divide-y">
-          {#each activity as entry}
-            {@const href = resourceHref(entry)}
-            <a
-              class="flex items-center gap-3 px-4 py-3 transition-colors {href ? 'hover:bg-accent/50 cursor-pointer' : 'cursor-default'}"
-              href={href ? `#${href}` : "#"}
-              onclick={(e) => { if (!href) e.preventDefault() }}
-            >
-              <span
-                class={badgeVariants({
-                  variant: entry.success ? "default" : "destructive",
-                })}
-              >
-                {entry.action}
-              </span>
-              <div class="min-w-0 flex-1">
-                <span class="text-sm">
-                  {entry.resourceType}
-                  {#if entry.resourceId}
-                    <span class="font-medium">{entry.resourceId}</span>
-                  {/if}
-                </span>
-              </div>
-              <span class="shrink-0 text-xs text-muted-foreground">
-                {formatTimestamp(entry.timestamp)}
-              </span>
-            </a>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  </div>
 </div>
