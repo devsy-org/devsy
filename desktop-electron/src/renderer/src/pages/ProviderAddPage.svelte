@@ -61,17 +61,26 @@ async function doAdd(name: string, source?: string) {
   submitting = true
   try {
     await providerAdd(name, source !== name ? source : undefined)
-    await providerUse(name)
-    toasts.success(`Added provider ${name}`)
-    goto(`/providers?setup=${name}`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes("already exists")) {
       toasts.info(`Provider ${name} is already installed`)
       goto(`/providers?setup=${name}`)
-      return
+    } else {
+      toasts.error(`Failed to add provider: ${msg}`)
     }
-    toasts.error(`Failed to add provider: ${msg}`)
+    submitting = false
+    return
+  }
+
+  try {
+    await providerUse(name)
+    toasts.success(`Added provider ${name}`)
+    goto(`/providers?setup=${name}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    toasts.error(`Provider added but initialization failed: ${msg}`)
+    goto("/providers")
   } finally {
     submitting = false
   }

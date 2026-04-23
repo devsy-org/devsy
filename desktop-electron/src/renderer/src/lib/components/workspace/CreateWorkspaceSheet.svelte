@@ -353,6 +353,9 @@ async function handleSubmit() {
                       >
                         <Check class="mr-2 h-4 w-4 {selectedProvider === p.name ? 'opacity-100' : 'opacity-0'}" />
                         {p.name}
+                        {#if p.state?.initialized === false}
+                          <span class="ml-auto text-xs text-destructive">(not initialized)</span>
+                        {/if}
                       </Command.Item>
                     {/each}
                   </Command.Group>
