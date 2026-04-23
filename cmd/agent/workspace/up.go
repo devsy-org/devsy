@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -418,6 +419,10 @@ func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
 		return path, nil
 	}
 
+	if dockerCmd == "docker" && runtime.GOOS == "darwin" {
+		return findDarwinDocker()
+	}
+
 	if w.isDockerInstallDisabled() {
 		log.Debug(
 			"docker not found but installation was disabled, installing anyway as it is required",
@@ -428,6 +433,27 @@ func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
 	dockerPath, err := installDocker()
 	log.Debugf("docker installation path=%q, err=%v", dockerPath, err)
 	return dockerPath, err
+}
+
+// darwinDockerPaths are well-known locations where Docker Desktop installs
+// the docker CLI on macOS. Declared as a variable so tests can override.
+var darwinDockerPaths = []string{
+	"/usr/local/bin/docker",
+	"/opt/homebrew/bin/docker",
+	"/Applications/Docker.app/Contents/Resources/bin/docker",
+}
+
+// findDarwinDocker checks well-known macOS Docker Desktop paths and returns
+// the first one that exists. If none are found it returns an error directing
+// the user to install Docker Desktop.
+func findDarwinDocker() (string, error) {
+	for _, path := range darwinDockerPaths {
+		if _, err := os.Stat(path); err == nil {
+			log.Debugf("found docker at %s", path)
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("Docker Desktop not found. On macOS, install Docker Desktop from https://www.docker.com/products/docker-desktop")
 }
 
 func (w *workspaceInitializer) getDockerCommand() string {
