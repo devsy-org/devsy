@@ -65,6 +65,10 @@ export async function providerUse(name: string): Promise<void> {
   return invoke("provider_use", { name })
 }
 
+export async function providerInit(name: string): Promise<void> {
+  return invoke("provider_init", { name })
+}
+
 export async function providerUpdate(name: string): Promise<void> {
   return invoke("provider_update", { name })
 }

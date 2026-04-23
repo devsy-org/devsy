@@ -6,7 +6,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
-import { providerAdd, providerUse } from "$lib/ipc/commands.js"
+import { providerAdd, providerInit, providerUse } from "$lib/ipc/commands.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -63,6 +63,7 @@ function handleConfirmName() {
 
 async function doAdd(name: string, source?: string) {
   submitting = true
+  const isFirstProvider = get(providers).length === 0
   try {
     await providerAdd(name, source !== name ? source : undefined)
   } catch (err) {
@@ -79,7 +80,11 @@ async function doAdd(name: string, source?: string) {
   }
 
   try {
-    await providerUse(name)
+    if (isFirstProvider) {
+      await providerUse(name)
+    } else {
+      await providerInit(name)
+    }
     toasts.success(`Added provider ${name}`)
     goto("/providers")
   } catch (err) {

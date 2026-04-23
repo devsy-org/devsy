@@ -13,6 +13,7 @@ import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { providers } from "$lib/stores/providers.js"
 import {
+  providerInit,
   providerUse,
   providerUpdate,
   providerDelete,
@@ -118,7 +119,7 @@ async function handleSetDefault() {
 async function handleInitialize() {
   initializing = true
   try {
-    await providerUse(id)
+    await providerInit(id)
     toasts.success(`Initialized ${id}`)
   } catch (err) {
     toasts.error(`Failed to initialize: ${extractErrorMessage(err)}`)
