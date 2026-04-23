@@ -5,9 +5,31 @@ import type { ChildProcess } from "node:child_process"
 
 const execFile = promisify(execFileCb)
 
+/**
+ * On macOS, GUI apps (including Electron) inherit a minimal PATH that excludes
+ * /usr/local/bin and /opt/homebrew/bin. This means tools like docker, git, etc.
+ * installed via Homebrew or Docker Desktop are invisible to child processes.
+ * We augment PATH so all spawned CLI processes can find these tools.
+ */
+function buildEnv(): NodeJS.ProcessEnv {
+  if (process.platform !== "darwin") return process.env
+
+  const currentPath = process.env.PATH ?? ""
+  const extraDirs = [
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+  ]
+  const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
+  if (missing.length === 0) return process.env
+
+  return { ...process.env, PATH: `${missing.join(":")}:${currentPath}` }
+}
+
 export class CliRunner {
   private execPath: string
   private prefixArgs: string[]
+  private env: NodeJS.ProcessEnv
 
   constructor(private binaryPath: string) {
     // If the binary is a Node.js script, run it through node directly.
@@ -20,12 +42,13 @@ export class CliRunner {
       this.execPath = binaryPath
       this.prefixArgs = []
     }
+    this.env = buildEnv()
   }
 
   async run<T>(args: string[]): Promise<T> {
     const fullArgs = [...this.prefixArgs, ...args, "--output", "json"]
     try {
-      const { stdout } = await execFile(this.execPath, fullArgs)
+      const { stdout } = await execFile(this.execPath, fullArgs, { env: this.env })
       return JSON.parse(stdout) as T
     } catch (error: unknown) {
       throw this.wrapError(error)
@@ -34,7 +57,7 @@ export class CliRunner {
 
   async runRaw(args: string[]): Promise<string> {
     try {
-      const { stdout } = await execFile(this.execPath, [...this.prefixArgs, ...args])
+      const { stdout } = await execFile(this.execPath, [...this.prefixArgs, ...args], { env: this.env })
       return stdout
     } catch (error: unknown) {
       throw this.wrapError(error)
@@ -46,7 +69,7 @@ export class CliRunner {
     onLine: (line: string, stream: "stdout" | "stderr") => void,
     onExit: (code: number) => void,
   ): ChildProcess {
-    const child = spawn(this.execPath, [...this.prefixArgs, ...args])
+    const child = spawn(this.execPath, [...this.prefixArgs, ...args], { env: this.env })
 
     if (child.stdout) {
       const rl = createInterface({ input: child.stdout })
