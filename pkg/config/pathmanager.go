@@ -12,6 +12,9 @@ import (
 //
 //	return ensureDir(filepath.Join(base, RepoName))
 func ensureDir(path string) (string, error) {
+	// #nosec G703 -- paths are derived from user-controlled env vars (XDG_*) or
+	// well-known OS defaults; path traversal is not a concern for a CLI tool
+	// running as the invoking user.
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return "", fmt.Errorf("create directory %s: %w", path, err)
 	}
