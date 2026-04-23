@@ -50,6 +50,7 @@ type SetupContainerCmd struct {
 	ChownWorkspace         bool
 	StreamMounts           bool
 	InjectGitCredentials   bool
+	Prebuild               bool
 	ContainerWorkspaceInfo string
 	SetupInfo              string
 	AccessKey              string
@@ -72,6 +73,9 @@ func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	setupContainerCmd.Flags().
 		BoolVar(&cmd.StreamMounts, "stream-mounts", false, "If true, will try to stream the bind mounts from the host")
+	setupContainerCmd.Flags().
+		BoolVar(&cmd.Prebuild, "prebuild", false,
+			"If true, only run prebuild lifecycle hooks (onCreateCommand + updateContentCommand)")
 	setupContainerCmd.Flags().
 		BoolVar(&cmd.ChownWorkspace, "chown-workspace", false, "If Devsy should chown the workspace to the remote user")
 	setupContainerCmd.Flags().
@@ -181,26 +185,29 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		ChownProjects:     cmd.ChownWorkspace,
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
+		Prebuild:          cmd.Prebuild,
 	}
 
 	if err := setup.SetupContainerPreAttach(sctx.ctx, cfg); err != nil {
 		return err
 	}
 
-	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
-		return err
-	}
+	if !cmd.Prebuild {
+		if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+			return err
+		}
 
-	if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
-		return err
-	}
+		if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
+			return err
+		}
 
-	// Launch postAttachCommand as a detached background process before sending
-	// the result. Once sendSetupResult returns, the client tears down the SSH
-	// tunnel which kills this process, so postAttach must already be running
-	// independently.
-	if err := cmd.startPostAttachHooks(sctx); err != nil {
-		log.Errorf("failed to start postAttachCommand: %v", err)
+		// Launch postAttachCommand as a detached background process before sending
+		// the result. Once sendSetupResult returns, the client tears down the SSH
+		// tunnel which kills this process, so postAttach must already be running
+		// independently.
+		if err := cmd.startPostAttachHooks(sctx); err != nil {
+			log.Errorf("failed to start postAttachCommand: %v", err)
+		}
 	}
 
 	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)

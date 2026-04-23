@@ -50,7 +50,12 @@ func resolveLifecycleEnv(
 
 // RunPreAttachHooks runs lifecycle hooks up to and including postStartCommand.
 // These must complete before the IDE can be opened.
-func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result) error {
+//
+// When prebuild is true, only onCreateCommand and updateContentCommand are
+// executed (the devcontainer prebuild phase). updateContentCommand always
+// reruns during prebuild — the marker-file check is bypassed so that
+// content changes are picked up.
+func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result, prebuild bool) error {
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	containerDetails := setupInfo.ContainerDetails
 	mergedConfig := setupInfo.MergedConfig
@@ -61,16 +66,27 @@ func RunPreAttachHooks(ctx context.Context, setupInfo *config.Result) error {
 		return err
 	}
 
-	// TODO: rerun when contents changed
+	// During prebuild, pass empty content so the marker check is bypassed
+	// and updateContentCommand always reruns (addresses the TODO below).
+	// During normal runs, use containerDetails.Created so it only runs once.
+	updateContentMarker := containerDetails.Created
+	if prebuild {
+		updateContentMarker = ""
+	}
 	if err := run(
 		mergedConfig.UpdateContentCommands,
 		env.remoteUser,
 		env.workspaceFolder,
 		env.remoteEnv,
 		"updateContentCommands",
-		containerDetails.Created,
+		updateContentMarker,
 	); err != nil {
 		return err
+	}
+
+	// Prebuild phase stops after updateContentCommand — skip the user-session hooks.
+	if prebuild {
+		return nil
 	}
 
 	// only run once per container run

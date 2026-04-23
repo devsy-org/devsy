@@ -218,6 +218,7 @@ type CLIOptions struct {
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
 	InitEnv                     []string          `json:"initEnv,omitempty"`
 	Recreate                    bool              `json:"recreate,omitempty"`
+	Prebuild                    bool              `json:"prebuild,omitempty"`
 	Reset                       bool              `json:"reset,omitempty"`
 	DisableDaemon               bool              `json:"disableDaemon,omitempty"`
 	DaemonInterval              string            `json:"daemonInterval,omitempty"`

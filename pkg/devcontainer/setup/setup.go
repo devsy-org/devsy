@@ -32,6 +32,7 @@ type ContainerSetupConfig struct {
 	SetupInfo         *config.Result
 	ExtraWorkspaceEnv []string
 	ChownProjects     bool
+	Prebuild          bool
 	PlatformOptions   *devsy.PlatformOptions
 	TunnelClient      tunnel.TunnelClient
 }
@@ -56,7 +57,7 @@ func SetupContainerPreAttach(ctx context.Context, cfg *ContainerSetupConfig) err
 	setupOptionalFeatures(ctx, cfg)
 
 	log.Debugf("running pre-attach lifecycle hooks")
-	if err := RunPreAttachHooks(ctx, cfg.SetupInfo); err != nil {
+	if err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Prebuild); err != nil {
 		return fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}
 
