@@ -25,75 +25,35 @@ const (
 )
 
 func GetProInstancesDir(context string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "pro"), nil
+	return config.DefaultPathManager().ProInstancesDir(context)
 }
 
 func GetMachinesDir(context string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "machines"), nil
+	return config.DefaultPathManager().MachinesDir(context)
 }
 
 func GetLocksDir(context string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "locks"), nil
+	return config.DefaultPathManager().LocksDir(context)
 }
 
 func GetWorkspacesDir(context string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "workspaces"), nil
+	return config.DefaultPathManager().WorkspacesDir(context)
 }
 
 func GetProvidersDir(context string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "providers"), nil
+	return config.DefaultPathManager().ProvidersDir(context)
 }
 
 func GetProviderDir(context, providerName string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "providers", providerName), nil
+	return config.DefaultPathManager().ProviderDir(context, providerName)
 }
 
 func GetDaemonDir(context, providerName string) (string, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "providers", providerName, "daemon"), nil
+	return config.DefaultPathManager().ProviderDaemonDir(context, providerName)
 }
 
 func GetProviderBinariesDir(context, providerName string) (string, error) {
-	providerDir, err := GetProviderDir(context, providerName)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(providerDir, "binaries"), nil
+	return config.DefaultPathManager().ProviderBinariesDir(context, providerName)
 }
 
 func GetMachineDir(context, machineID string) (string, error) {
@@ -101,12 +61,7 @@ func GetMachineDir(context, machineID string) (string, error) {
 		return "", fmt.Errorf("machine id is empty")
 	}
 
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "machines", machineID), nil
+	return config.DefaultPathManager().MachineDir(context, machineID)
 }
 
 func GetWorkspaceDir(context, workspaceID string) (string, error) {
@@ -114,12 +69,7 @@ func GetWorkspaceDir(context, workspaceID string) (string, error) {
 		return "", fmt.Errorf("workspace id is empty")
 	}
 
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(configDir, "contexts", context, "workspaces", workspaceID), nil
+	return config.DefaultPathManager().WorkspaceDir(context, workspaceID)
 }
 
 func GetProInstanceDir(context, proInstanceHost string) (string, error) {
@@ -127,18 +77,7 @@ func GetProInstanceDir(context, proInstanceHost string) (string, error) {
 		return "", fmt.Errorf("pro instance host is empty")
 	}
 
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(
-		configDir,
-		"contexts",
-		context,
-		"pro",
-		ToProInstanceID(proInstanceHost),
-	), nil
+	return config.DefaultPathManager().ProInstanceDir(context, ToProInstanceID(proInstanceHost))
 }
 
 var (
