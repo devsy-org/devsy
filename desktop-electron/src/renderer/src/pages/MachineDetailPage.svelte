@@ -1,9 +1,11 @@
 <script lang="ts">
 import { goto } from "$lib/router.js"
 import { onMount, onDestroy } from "svelte"
+import { Ellipsis, Trash2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import * as Tabs from "$lib/components/ui/tabs/index.js"
 import { ScrollArea } from "$lib/components/ui/scroll-area/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
@@ -136,20 +138,42 @@ async function handleDelete(force = false) {
     {/if}
   </div>
 
-  <div class="flex gap-2">
-    {#if isStopped}
-      <Button size="sm" onclick={handleStart} disabled={polling}>
-        {polling ? "Starting..." : "Start"}
-      </Button>
-    {/if}
-    {#if isRunning}
-      <Button variant="outline" size="sm" onclick={handleStop} disabled={polling}>
-        {polling ? "Stopping..." : "Stop"}
-      </Button>
-    {/if}
-    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={polling}>Delete</Button>
-    <Button variant="outline" size="sm" onclick={() => (confirmForceDeleteOpen = true)} disabled={polling}>Force Delete</Button>
-  </div>
+  {#if machine}
+    <div class="flex gap-2">
+      {#if isStopped}
+        <Button size="sm" onclick={handleStart} disabled={polling}>
+          {polling ? "Starting..." : "Start"}
+        </Button>
+      {/if}
+      {#if isRunning}
+        <Button variant="outline" size="sm" onclick={handleStop} disabled={polling}>
+          {polling ? "Stopping..." : "Stop"}
+        </Button>
+      {/if}
+      <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)} disabled={polling}>Delete</Button>
+
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline" size="icon" class="h-8 w-8">
+              <Ellipsis class="h-4 w-4" />
+              <span class="sr-only">More actions</span>
+            </Button>
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="end">
+          <DropdownMenu.Item
+            class="text-destructive data-[highlighted]:text-destructive"
+            onclick={() => (confirmForceDeleteOpen = true)}
+            disabled={polling}
+          >
+            <Trash2 class="mr-2 h-4 w-4" />
+            Force Delete
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+    </div>
+  {/if}
 
   <Separator />
 

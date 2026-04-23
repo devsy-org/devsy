@@ -354,67 +354,69 @@ async function handleDelete() {
     {/if}
   </div>
 
-  <div class="flex items-center gap-2">
-    {#if isRunning || isBusy}
-      <Button size="sm" onclick={handleStop} disabled={operationRunning}>
-        {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
-        Stop
-      </Button>
-    {:else}
-      <Button size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
-        {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
-        Start
-      </Button>
-    {/if}
-
-    {#if isRunning}
-      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={operationRunning}>
-        {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
-        Open IDE
-      </Button>
-      {#if sshSessionId}
-        <Button variant="outline" size="sm" onclick={handleDisconnect}>
-          <SquareTerminal class="h-4 w-4" />
-          Disconnect
+  {#if workspace}
+    <div class="flex items-center gap-2">
+      {#if isRunning || isBusy}
+        <Button size="sm" onclick={handleStop} disabled={operationRunning}>
+          {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
+          Stop
         </Button>
       {:else}
-        <Button variant="outline" size="sm" onclick={handleConnect} disabled={connecting}>
-          {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
-          SSH Terminal
+        <Button size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
+          {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
+          Start
         </Button>
       {/if}
-    {/if}
 
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        {#snippet child({ props })}
-          <Button {...props} variant="outline" size="icon" class="h-8 w-8">
-            <Ellipsis class="h-4 w-4" />
-            <span class="sr-only">More actions</span>
+      {#if isRunning}
+        <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={operationRunning}>
+          {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
+          Open IDE
+        </Button>
+        {#if sshSessionId}
+          <Button variant="outline" size="sm" onclick={handleDisconnect}>
+            <SquareTerminal class="h-4 w-4" />
+            Disconnect
           </Button>
-        {/snippet}
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end">
-        <DropdownMenu.Item onclick={handleRebuild} disabled={operationRunning}>
-          <RotateCcw class="mr-2 h-4 w-4" />
-          Rebuild
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={handleReset} disabled={operationRunning}>
-          <RefreshCw class="mr-2 h-4 w-4" />
-          Reset
-        </DropdownMenu.Item>
-        <DropdownMenu.Separator />
-        <DropdownMenu.Item
-          class="text-destructive data-[highlighted]:text-destructive"
-          onclick={() => (confirmDeleteOpen = true)}
-          disabled={operationRunning}
-        >
-          <Trash2 class="mr-2 h-4 w-4" />
-          Delete
-        </DropdownMenu.Item>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
-  </div>
+        {:else}
+          <Button variant="outline" size="sm" onclick={handleConnect} disabled={connecting || isStopped}>
+            {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
+            SSH Terminal
+          </Button>
+        {/if}
+      {/if}
+
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline" size="icon" class="h-8 w-8">
+              <Ellipsis class="h-4 w-4" />
+              <span class="sr-only">More actions</span>
+            </Button>
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="end">
+          <DropdownMenu.Item onclick={handleRebuild} disabled={operationRunning}>
+            <RotateCcw class="mr-2 h-4 w-4" />
+            Rebuild
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onclick={handleReset} disabled={operationRunning}>
+            <RefreshCw class="mr-2 h-4 w-4" />
+            Reset
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item
+            class="text-destructive data-[highlighted]:text-destructive"
+            onclick={() => (confirmDeleteOpen = true)}
+            disabled={operationRunning}
+          >
+            <Trash2 class="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+    </div>
+  {/if}
 
   <Separator />
 
@@ -639,7 +641,7 @@ async function handleDelete() {
             <div class="flex min-h-0 flex-1 items-center justify-center rounded-md border bg-muted/50">
               <div class="text-center">
                 <p class="text-muted-foreground">No active terminal session.</p>
-                <Button size="sm" class="mt-3" onclick={handleConnect} disabled={connecting}>
+                <Button size="sm" class="mt-3" onclick={handleConnect} disabled={connecting || isStopped}>
                   {connecting ? "Connecting..." : "Connect to workspace"}
                 </Button>
               </div>

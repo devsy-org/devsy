@@ -172,11 +172,13 @@ async function handleSaveOptions() {
     {/if}
   </div>
 
-  <div class="flex gap-2">
-    <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
-    <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
-    <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
-  </div>
+  {#if provider}
+    <div class="flex gap-2">
+      <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+      <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
+      <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
+    </div>
+  {/if}
 
   {#if !provider}
     <p class="text-muted-foreground">Provider not found.</p>
