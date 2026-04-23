@@ -48,7 +48,9 @@ app.whenReady().then(() => {
   // Resolve CLI binary: env override for testing, otherwise bundled in resources
   const binaryPath =
     process.env.DEVPOD_CLI_PATH ||
-    CliRunner.resolveBinaryPath(process.resourcesPath)
+    (app.isPackaged
+      ? CliRunner.resolveBinaryPath(process.resourcesPath)
+      : CliRunner.resolveBinaryPath(join(__dirname, '../../resources')))
   const cli = new CliRunner(binaryPath)
 
   // Initialize log store and prune old logs

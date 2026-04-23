@@ -8,8 +8,15 @@ let ptyModule: typeof import("node-pty") | null = null
 
 function requirePty(): typeof import("node-pty") {
   if (!ptyModule) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ptyModule = require("node-pty") as typeof import("node-pty")
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      ptyModule = require("node-pty") as typeof import("node-pty")
+    } catch (err) {
+      throw new Error(
+        "Failed to load node-pty native module. Run: npx electron-rebuild -f -w node-pty",
+        { cause: err },
+      )
+    }
   }
   return ptyModule
 }
