@@ -7,6 +7,58 @@ on:
   pull_request:
 
 jobs:
+  precommit:
+    name: Pre-commit Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: biomejs/setup-biome@v2
+
+      - uses: actions/setup-python@v6
+        with:
+          cache: pip
+          python-version: 3.x
+
+      - run: pip install -r requirements.txt
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          install-only: true
+
+      - run: go install golang.org/x/tools/cmd/goimports@latest
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - run: pre-commit run --all-files
+
+  lint-gate:
+    name: Lint Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jlumbroso/free-disk-space@v1.3.1
+
+      - uses: actions/checkout@v6
+
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          only-new-issues: true
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -24,6 +76,7 @@ jobs:
 
   build-ui:
     name: User Interface Build
+    needs: [precommit, lint-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -55,6 +108,7 @@ jobs:
 
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
+    needs: [precommit, lint-gate]
     strategy:
       matrix:
         include:
