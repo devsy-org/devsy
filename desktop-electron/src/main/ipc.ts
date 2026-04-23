@@ -206,12 +206,13 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     "workspace_up",
     async (
       _event,
-      args: { source: string; workspaceId?: string; provider?: string; ide?: string },
+      args: { source: string; workspaceId?: string; provider?: string; ide?: string; debug?: boolean },
     ) => {
       const cliArgs = ["up", args.source]
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
+      if (args.debug) cliArgs.push("--debug")
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
@@ -244,13 +245,16 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     },
   )
 
-  ipcMain.handle("workspace_stop", async (_event, args: { workspaceId: string }) => {
+  ipcMain.handle("workspace_stop", async (_event, args: { workspaceId: string; debug?: boolean }) => {
     const cmdId = crypto.randomUUID()
     const logPath = logStore.createLogFile(args.workspaceId)
     const win = deps.getMainWindow()
 
+    const cliArgs = ["stop", args.workspaceId]
+    if (args.debug) cliArgs.push("--debug")
+
     cli.runStreaming(
-      ["stop", args.workspaceId],
+      cliArgs,
       (line) => {
         const formatted = formatLogLine(line)
         logStore.appendLog(logPath, formatted)
@@ -266,13 +270,17 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     return cmdId
   })
 
-  ipcMain.handle("workspace_delete", async (_event, args: { workspaceId: string }) => {
+  ipcMain.handle("workspace_delete", async (_event, args: { workspaceId: string; debug?: boolean }) => {
     const cmdId = crypto.randomUUID()
     const logPath = logStore.createLogFile(args.workspaceId)
     const win = deps.getMainWindow()
 
+    const cliArgs = ["delete", args.workspaceId]
+    if (args.debug) cliArgs.push("--debug")
+    cliArgs.push("--force")
+
     cli.runStreaming(
-      ["delete", args.workspaceId, "--force"],
+      cliArgs,
       (line) => {
         const formatted = formatLogLine(line)
         logStore.appendLog(logPath, formatted)
@@ -288,13 +296,16 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     return cmdId
   })
 
-  ipcMain.handle("workspace_rebuild", async (_event, args: { workspaceId: string }) => {
+  ipcMain.handle("workspace_rebuild", async (_event, args: { workspaceId: string; debug?: boolean }) => {
     const cmdId = crypto.randomUUID()
     const logPath = logStore.createLogFile(args.workspaceId)
     const win = deps.getMainWindow()
 
+    const cliArgs = ["up", args.workspaceId, "--recreate"]
+    if (args.debug) cliArgs.push("--debug")
+
     cli.runStreaming(
-      ["up", args.workspaceId, "--recreate"],
+      cliArgs,
       (line) => {
         const formatted = formatLogLine(line)
         logStore.appendLog(logPath, formatted)
@@ -310,13 +321,16 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     return cmdId
   })
 
-  ipcMain.handle("workspace_reset", async (_event, args: { workspaceId: string }) => {
+  ipcMain.handle("workspace_reset", async (_event, args: { workspaceId: string; debug?: boolean }) => {
     const cmdId = crypto.randomUUID()
     const logPath = logStore.createLogFile(args.workspaceId)
     const win = deps.getMainWindow()
 
+    const cliArgs = ["up", args.workspaceId, "--reset"]
+    if (args.debug) cliArgs.push("--debug")
+
     cli.runStreaming(
-      ["up", args.workspaceId, "--reset"],
+      cliArgs,
       (line) => {
         const formatted = formatLogLine(line)
         logStore.appendLog(logPath, formatted)

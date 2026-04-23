@@ -31,6 +31,7 @@ import {
   workspaceLogDelete,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
+import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { LogEntry } from "$lib/types/index.js"
@@ -265,6 +266,10 @@ function handleSshExit(exitCode?: number, _signal?: number) {
   }
 }
 
+function isDebug(): boolean {
+  return loadLocalOptions().debugFlag
+}
+
 function startStreamingOp(label: string) {
   operationLabel = label
   operationRunning = true
@@ -275,7 +280,7 @@ function startStreamingOp(label: string) {
 async function handleStart() {
   startStreamingOp("Start")
   try {
-    commandId = await workspaceUp({ source: id })
+    commandId = await workspaceUp({ source: id, debug: isDebug() })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
@@ -286,7 +291,7 @@ async function handleOpenIde() {
   const ide = currentIde !== "none" ? currentIde : undefined
   startStreamingOp("Open IDE")
   try {
-    commandId = await workspaceUp({ source: id, ide })
+    commandId = await workspaceUp({ source: id, ide, debug: isDebug() })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)
@@ -296,7 +301,7 @@ async function handleOpenIde() {
 async function handleStop() {
   startStreamingOp("Stop")
   try {
-    commandId = await workspaceStop(id)
+    commandId = await workspaceStop(id, isDebug())
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
@@ -306,7 +311,7 @@ async function handleStop() {
 async function handleRebuild() {
   startStreamingOp("Rebuild")
   try {
-    commandId = await workspaceRebuild(id)
+    commandId = await workspaceRebuild(id, isDebug())
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
@@ -316,7 +321,7 @@ async function handleRebuild() {
 async function handleReset() {
   startStreamingOp("Reset")
   try {
-    commandId = await workspaceReset(id)
+    commandId = await workspaceReset(id, isDebug())
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
@@ -328,7 +333,7 @@ async function handleDelete() {
   startStreamingOp("Delete")
   deleting = true
   try {
-    commandId = await workspaceDelete(id)
+    commandId = await workspaceDelete(id, isDebug())
   } catch (err) {
     operationRunning = false
     deleting = false
