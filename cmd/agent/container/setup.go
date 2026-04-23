@@ -188,29 +188,67 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		Prebuild:          cmd.Prebuild,
 	}
 
-	if err := setup.SetupContainerPreAttach(sctx.ctx, cfg); err != nil {
+	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)
+	if err != nil {
 		return err
 	}
 
 	if !cmd.Prebuild {
-		if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+		if err := cmd.setupPostAttach(sctx, deferred); err != nil {
 			return err
-		}
-
-		if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
-			return err
-		}
-
-		// Launch postAttachCommand as a detached background process before sending
-		// the result. Once sendSetupResult returns, the client tears down the SSH
-		// tunnel which kills this process, so postAttach must already be running
-		// independently.
-		if err := cmd.startPostAttachHooks(sctx); err != nil {
-			log.Errorf("failed to start postAttachCommand: %v", err)
 		}
 	}
 
 	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)
+}
+
+func (cmd *SetupContainerCmd) setupPostAttach(
+	sctx *setupContext,
+	deferred setup.DeferredHooks,
+) error {
+	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+		return err
+	}
+
+	if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
+		return err
+	}
+
+	if !deferred.Empty() {
+		if err := cmd.startDeferredHooks(); err != nil {
+			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
+		}
+	}
+
+	if err := cmd.startPostAttachHooks(sctx); err != nil {
+		log.Errorf("failed to start postAttachCommand: %v", err)
+	}
+
+	return nil
+}
+
+func (cmd *SetupContainerCmd) startDeferredHooks() error {
+	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
+		log.Debugf("starting deferred lifecycle hooks as background process")
+		return cmd.buildDeferredHooksCmd()
+	})
+}
+
+func (cmd *SetupContainerCmd) buildDeferredHooksCmd() (*exec.Cmd, error) {
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{
+		"agent", "container", "deferred-hooks",
+		"--setup-info", cmd.SetupInfo,
+	}
+	if cmd.Prebuild {
+		args = append(args, "--prebuild")
+	}
+
+	return exec.Command(binaryPath, args...), nil
 }
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(

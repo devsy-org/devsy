@@ -94,8 +94,9 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	err := RunPreAttachHooks(ctx, result, false)
+	deferred, err := RunPreAttachHooks(ctx, result, false)
 	assert.NoError(s.T(), err)
+	assert.True(s.T(), deferred.Empty())
 
 	err = RunPostAttachHooks(ctx, result)
 	assert.NoError(s.T(), err)
@@ -129,6 +130,116 @@ func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
 	assert.Equal(t, "s3cret", env.remoteEnv["SECRET_PRESENT"])
 	_, found := env.remoteEnv["SECRET_ABSENT"]
 	assert.False(t, found, "SECRET_ABSENT should not be in remoteEnv when not set in environment")
+}
+
+func (s *LifecycleHookTestSuite) TestResolveWaitForDefault() {
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor(""))
+}
+
+func (s *LifecycleHookTestSuite) TestResolveWaitForValid() {
+	assert.Equal(s.T(), PhasePostCreate, resolveWaitFor("postCreateCommand"))
+	assert.Equal(s.T(), PhasePostStart, resolveWaitFor("postStartCommand"))
+	assert.Equal(s.T(), PhaseOnCreate, resolveWaitFor("onCreateCommand"))
+	assert.Equal(s.T(), PhasePostAttach, resolveWaitFor("postAttachCommand"))
+	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand"))
+}
+
+func (s *LifecycleHookTestSuite) TestResolveWaitForInvalid() {
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("bogus"))
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("initializeCommand"))
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("POSTCREATECOMMAND"))
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForDefaultSplit() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+
+	deferred, err := runWithWaitFor(all, DefaultWaitFor)
+	assert.NoError(t, err)
+
+	// Default waitFor is updateContentCommand.
+	// Deferred should be postCreateCommand and postStartCommand.
+	assert.Len(t, deferred, 2)
+	assert.Equal(t, PhasePostCreate, deferred[0].phase)
+	assert.Equal(t, PhasePostStart, deferred[1].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForPostCreate() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+
+	deferred, err := runWithWaitFor(all, PhasePostCreate)
+	assert.NoError(t, err)
+
+	// Only postStartCommand should be deferred.
+	assert.Len(t, deferred, 1)
+	assert.Equal(t, PhasePostStart, deferred[0].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForPostStart() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+
+	deferred, err := runWithWaitFor(all, PhasePostStart)
+	assert.NoError(t, err)
+
+	// All pre-attach hooks run in foreground, nothing deferred.
+	assert.Empty(t, deferred)
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForOnCreate() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+
+	deferred, err := runWithWaitFor(all, PhaseOnCreate)
+	assert.NoError(t, err)
+
+	// updateContentCommand, postCreateCommand, postStartCommand deferred.
+	assert.Len(t, deferred, 3)
+	assert.Equal(t, PhaseUpdateContent, deferred[0].phase)
+	assert.Equal(t, PhasePostCreate, deferred[1].phase)
+	assert.Equal(t, PhasePostStart, deferred[2].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
+	ctx := context.Background()
+	result := &config.Result{
+		MergedConfig: &config.MergedDevContainerConfig{
+			DevContainerConfigBase: config.DevContainerConfigBase{
+				// Set waitFor to onCreateCommand — prebuild should ignore this.
+				WaitFor: "onCreateCommand",
+			},
+		},
+		ContainerDetails: &config.ContainerDetails{
+			State: config.ContainerDetailsState{},
+		},
+		SubstitutionContext: &config.SubstitutionContext{
+			ContainerWorkspaceFolder: "/workspaces/test",
+		},
+	}
+
+	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
+	deferred, err := RunPreAttachHooks(ctx, result, true)
+	assert.NoError(s.T(), err)
+	assert.True(s.T(), deferred.Empty())
+}
+
+func (s *LifecycleHookTestSuite) TestDeferredHooksEmpty() {
+	d := DeferredHooks{}
+	assert.True(s.T(), d.Empty())
+	assert.NoError(s.T(), d.Run())
+}
+
+// makeTestPhaseHooks creates a phaseHook slice with no commands so that
+// runHook is a no-op. This lets us test the split logic without executing
+// real processes.
+func makeTestPhaseHooks() []phaseHook {
+	return []phaseHook{
+		{phase: PhaseOnCreate, params: hookRunParams{name: "onCreateCommands"}},
+		{phase: PhaseUpdateContent, params: hookRunParams{name: "updateContentCommands"}},
+		{phase: PhasePostCreate, params: hookRunParams{name: "postCreateCommands"}},
+		{phase: PhasePostStart, params: hookRunParams{name: "postStartCommands"}},
+	}
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {
