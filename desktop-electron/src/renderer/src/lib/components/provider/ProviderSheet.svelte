@@ -198,16 +198,7 @@ async function handleSaveOptions() {
 }
 </script>
 
-<Sheet.Root bind:open onOpenChange={async (isOpen) => {
-  if (!isOpen && setup && !setupCompleted) {
-    try {
-      await providerDelete(provider.name)
-      ondeleted?.()
-    } catch {
-      // Provider may already be gone
-    }
-  }
-}}>
+<Sheet.Root bind:open>
   <Sheet.ResizableContent>
     <Sheet.Header class="p-6">
       <Sheet.Title class="flex items-center gap-2">
