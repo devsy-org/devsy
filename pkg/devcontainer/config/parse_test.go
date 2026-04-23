@@ -7,6 +7,80 @@ import (
 	"testing"
 )
 
+func TestSecretsRoundTrip(t *testing.T) {
+	t.Run("parse secrets from devcontainer.json", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "devcontainer.json")
+		raw := `{
+			"name": "test-secrets",
+			"secrets": {
+				"MY_TOKEN": {
+					"description": "API token",
+					"documentationUrl": "https://example.com/docs"
+				},
+				"EMPTY_SECRET": {}
+			}
+		}`
+		if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := ParseDevContainerJSONFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(cfg.Secrets) != 2 {
+			t.Fatalf("expected 2 secrets, got %d", len(cfg.Secrets))
+		}
+		myToken, ok := cfg.Secrets["MY_TOKEN"]
+		if !ok {
+			t.Fatal("expected MY_TOKEN secret")
+		}
+		if myToken.Description != "API token" {
+			t.Errorf("expected description 'API token', got %q", myToken.Description)
+		}
+		if myToken.DocumentationUrl != "https://example.com/docs" {
+			t.Errorf("expected documentationUrl 'https://example.com/docs', got %q", myToken.DocumentationUrl)
+		}
+		empty, ok := cfg.Secrets["EMPTY_SECRET"]
+		if !ok {
+			t.Fatal("expected EMPTY_SECRET secret")
+		}
+		if empty.Description != "" || empty.DocumentationUrl != "" {
+			t.Errorf("expected empty SecretConfig, got %+v", empty)
+		}
+	})
+
+	t.Run("save and reload secrets", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cfg := &DevContainerConfig{
+			DevContainerConfigBase: DevContainerConfigBase{
+				Name: "round-trip",
+				Secrets: map[string]SecretConfig{
+					"DB_PASSWORD": {Description: "database password"},
+				},
+			},
+		}
+		cfg.Origin = filepath.Join(tmpDir, "devcontainer.json")
+
+		if err := SaveDevContainerJSON(cfg); err != nil {
+			t.Fatal(err)
+		}
+
+		loaded, err := ParseDevContainerJSONFile(cfg.Origin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(loaded.Secrets) != 1 {
+			t.Fatalf("expected 1 secret after round-trip, got %d", len(loaded.Secrets))
+		}
+		if loaded.Secrets["DB_PASSWORD"].Description != "database password" {
+			t.Errorf("expected 'database password', got %q", loaded.Secrets["DB_PASSWORD"].Description)
+		}
+	})
+}
+
 func TestSaveDevContainerJSON(t *testing.T) {
 	type args struct {
 		config *DevContainerConfig

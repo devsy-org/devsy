@@ -103,6 +103,16 @@ type DevContainerConfigBase struct {
 	// DEPRECATED: Use 'customizations/vscode/devPort' instead
 	// The port VS Code can use to connect to its backend.
 	DevPort int `json:"devPort,omitempty"`
+
+	// Secrets declared by the dev container. Keys are secret names; values describe the secret.
+	// At runtime, each key is looked up in the host environment and, if set, injected into lifecycle commands.
+	Secrets map[string]SecretConfig `json:"secrets,omitempty"`
+}
+
+// SecretConfig describes a secret declared in devcontainer.json.
+type SecretConfig struct {
+	Description      string `json:"description,omitempty"`
+	DocumentationUrl string `json:"documentationUrl,omitempty"`
 }
 
 type DevContainerActions struct {
