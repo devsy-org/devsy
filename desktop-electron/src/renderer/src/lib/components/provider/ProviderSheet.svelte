@@ -7,11 +7,14 @@ import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Sheet from "$lib/components/ui/sheet/index.js"
+import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
+import { Spinner } from "$lib/components/ui/spinner/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import {
   providerUse,
   providerUpdate,
   providerDelete,
+  providerInit,
   providerOptions,
   providerSetOptions,
   providerRename,
@@ -43,6 +46,7 @@ let setupCompleted = $state(false)
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
+let initializing = $state(false)
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -125,6 +129,18 @@ async function handleUpdate() {
     toasts.success(`Updated ${provider.name}`)
   } catch (err) {
     toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
+  }
+}
+
+async function handleInitialize() {
+  initializing = true
+  try {
+    await providerInit(provider.name)
+    toasts.success(`Initialized ${provider.name}`)
+  } catch (err) {
+    toasts.error(`Failed to initialize: ${extractErrorMessage(err)}`)
+  } finally {
+    initializing = false
   }
 }
 
@@ -237,10 +253,20 @@ async function handleSaveOptions() {
       {/if}
     </Sheet.Header>
 
-    <div class="flex gap-2 px-6">
-      <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
-      <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
-      <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
+    <div class="flex items-center gap-2 px-6">
+      {#if provider.state?.initialized !== true}
+        <Button variant="outline" size="sm" onclick={handleInitialize} disabled={initializing}>
+          {#if initializing}
+            <Spinner class="mr-2 size-3" />
+          {/if}
+          {initializing ? "Initializing..." : "Initialize"}
+        </Button>
+      {/if}
+      <ButtonGroup.Root>
+        <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+        <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
+        <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
+      </ButtonGroup.Root>
     </div>
 
     <Separator />
@@ -308,19 +334,19 @@ async function handleSaveOptions() {
       {/if}
     </div>
 
-    <Sheet.Footer class="p-6">
-      <div class="flex items-center gap-2">
-        <Button onclick={handleSaveOptions} disabled={saving || !isDirty} size="sm">
-          {saving ? "Saving..." : "Save"}
-        </Button>
-        {#if isDirty}
+    {#if isDirty}
+      <Sheet.Footer class="p-6">
+        <div class="flex items-center gap-2">
+          <Button onclick={handleSaveOptions} disabled={saving} size="sm">
+            {saving ? "Saving..." : "Save"}
+          </Button>
           <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }}>
             Reset
           </Button>
           <span class="text-xs text-muted-foreground">Unsaved changes</span>
-        {/if}
-      </div>
-    </Sheet.Footer>
+        </div>
+      </Sheet.Footer>
+    {/if}
   </Sheet.ResizableContent>
 </Sheet.Root>
 
