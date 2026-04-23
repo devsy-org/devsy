@@ -51,6 +51,17 @@ let opts = $state<ContextOptions>({
   sshConfigIncludePath: "",
 })
 
+let initialOpts = $state<ContextOptions>({ ...opts })
+
+const textKeys: (keyof ContextOptions)[] = [
+  "agentUrl", "dotfilesUrl", "dotfilesScript",
+  "agentInjectTimeout", "registryCache", "sshConfigPath", "sshConfigIncludePath",
+]
+
+let isDirty = $derived.by(() => {
+  return textKeys.some((k) => opts[k] !== initialOpts[k])
+})
+
 let loading = $state(true)
 let saving = $state(false)
 let deleting = $state(false)
@@ -74,6 +85,7 @@ async function loadOptions() {
   try {
     const raw = await fetchContextOptions(context.name)
     opts = parseContextOptions(raw)
+    initialOpts = { ...opts }
   } catch {
     // Keep defaults
   } finally {
@@ -103,6 +115,28 @@ async function saveOption(key: keyof ContextOptions, value: string | boolean) {
 
 function toggleOption(key: keyof ContextOptions) {
   saveOption(key, !opts[key])
+}
+
+async function handleSaveAll() {
+  saving = true
+  try {
+    const changes: string[] = []
+    for (const key of textKeys) {
+      if (opts[key] !== initialOpts[key]) {
+        const cliKey = CONTEXT_OPTION_KEYS[key]
+        changes.push(`${cliKey}=${String(opts[key])}`)
+      }
+    }
+    if (changes.length > 0) {
+      await contextSetOptions(changes, context.name)
+      initialOpts = { ...opts }
+      toasts.success("Options saved")
+    }
+  } catch (err) {
+    toasts.error(`Failed to save: ${err}`)
+  } finally {
+    saving = false
+  }
 }
 </script>
 
@@ -151,7 +185,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.agentUrl}
               placeholder="Leave empty for default"
               oninput={(e) => (opts.agentUrl = e.currentTarget.value)}
-              onblur={() => saveOption("agentUrl", opts.agentUrl)}
               disabled={saving}
               class="h-9"
             />
@@ -164,7 +197,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.agentInjectTimeout}
               placeholder="20"
               oninput={(e) => (opts.agentInjectTimeout = e.currentTarget.value)}
-              onblur={() => saveOption("agentInjectTimeout", opts.agentInjectTimeout)}
               disabled={saving}
               class="h-9 max-w-24"
             />
@@ -177,7 +209,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.registryCache}
               placeholder="Leave empty for default"
               oninput={(e) => (opts.registryCache = e.currentTarget.value)}
-              onblur={() => saveOption("registryCache", opts.registryCache)}
               disabled={saving}
               class="h-9"
             />
@@ -205,7 +236,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.dotfilesUrl}
               placeholder="https://github.com/user/dotfiles"
               oninput={(e) => (opts.dotfilesUrl = e.currentTarget.value)}
-              onblur={() => saveOption("dotfilesUrl", opts.dotfilesUrl)}
               disabled={saving}
               class="h-9"
             />
@@ -218,7 +248,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.dotfilesScript}
               placeholder="install.sh"
               oninput={(e) => (opts.dotfilesScript = e.currentTarget.value)}
-              onblur={() => saveOption("dotfilesScript", opts.dotfilesScript)}
               disabled={saving}
               class="h-9"
             />
@@ -262,7 +291,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.sshConfigPath}
               placeholder="~/.ssh/config"
               oninput={(e) => (opts.sshConfigPath = e.currentTarget.value)}
-              onblur={() => saveOption("sshConfigPath", opts.sshConfigPath)}
               disabled={saving}
               class="h-9"
             />
@@ -275,7 +303,6 @@ function toggleOption(key: keyof ContextOptions) {
               value={opts.sshConfigIncludePath}
               placeholder="~/.ssh/devpod_config"
               oninput={(e) => (opts.sshConfigIncludePath = e.currentTarget.value)}
-              onblur={() => saveOption("sshConfigIncludePath", opts.sshConfigIncludePath)}
               disabled={saving}
               class="h-9"
             />
@@ -332,5 +359,19 @@ function toggleOption(key: keyof ContextOptions) {
         {/if}
       {/if}
     </div>
+
+    <Sheet.Footer class="p-6">
+      <div class="flex items-center gap-2">
+        <Button onclick={handleSaveAll} disabled={saving || !isDirty} size="sm">
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        {#if isDirty}
+          <Button variant="outline" size="sm" onclick={() => { opts = { ...initialOpts } }}>
+            Reset
+          </Button>
+          <span class="text-xs text-muted-foreground">Unsaved changes</span>
+        {/if}
+      </div>
+    </Sheet.Footer>
   </Sheet.ResizableContent>
 </Sheet.Root>
