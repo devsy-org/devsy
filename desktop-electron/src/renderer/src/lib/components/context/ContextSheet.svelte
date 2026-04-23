@@ -20,6 +20,7 @@ import {
 import type { ContextOptions } from "$lib/stores/settings.js"
 import { refreshContexts } from "$lib/stores/contexts.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Context } from "$lib/types/index.js"
 
 let {
@@ -74,7 +75,7 @@ async function handleDelete() {
     toasts.success(`Context "${context.name}" deleted`)
     open = false
   } catch (err) {
-    toasts.error(`Failed to delete context: ${err}`)
+    toasts.error(`Failed to delete context: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -107,7 +108,7 @@ async function saveOption(key: keyof ContextOptions, value: string | boolean) {
     ;(opts as unknown as Record<string, string | boolean>)[key] = value
     toasts.success("Option saved")
   } catch (err) {
-    toasts.error(`Failed to save: ${err}`)
+    toasts.error(`Failed to save: ${extractErrorMessage(err)}`)
   } finally {
     saving = false
   }
@@ -133,7 +134,7 @@ async function handleSaveAll() {
       toasts.success("Options saved")
     }
   } catch (err) {
-    toasts.error(`Failed to save: ${err}`)
+    toasts.error(`Failed to save: ${extractErrorMessage(err)}`)
   } finally {
     saving = false
   }

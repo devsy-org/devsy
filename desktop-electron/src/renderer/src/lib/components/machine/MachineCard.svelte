@@ -5,6 +5,7 @@ import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import { machineStart, machineStop, machineDelete } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Machine } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
 
@@ -27,7 +28,7 @@ async function handleStart(e: Event) {
     await machineStart(machine.id)
     toasts.success(`Started ${machine.id}`)
   } catch (err) {
-    toasts.error(`Failed to start: ${err}`)
+    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     acting = false
   }
@@ -40,7 +41,7 @@ async function handleStop(e: Event) {
     await machineStop(machine.id)
     toasts.success(`Stopped ${machine.id}`)
   } catch (err) {
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     acting = false
   }
@@ -58,7 +59,7 @@ async function handleDelete() {
     toasts.success(`Deleted ${machine.id}`)
     confirmDeleteOpen = false
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -82,7 +83,7 @@ async function handleDelete() {
       <span class={badgeVariants({ variant: "secondary" })}>{machine.provider.name}</span>
     {/if}
     <span class="text-xs text-muted-foreground">
-      Created {timeAgo(machine.creationTimestamp)}
+      Created {timeAgo(machine.created)}
     </span>
   </div>
 

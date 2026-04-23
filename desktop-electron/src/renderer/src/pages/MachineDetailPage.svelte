@@ -16,6 +16,7 @@ import {
   auditByResource,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { AuditEntry } from "$lib/types/index.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 
@@ -86,7 +87,7 @@ async function handleStart() {
     toasts.success(`Started ${id}`)
     await refreshStatus()
   } catch (err) {
-    toasts.error(`Failed to start: ${err}`)
+    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     polling = false
   }
@@ -99,7 +100,7 @@ async function handleStop() {
     toasts.success(`Stopped ${id}`)
     await refreshStatus()
   } catch (err) {
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     polling = false
   }
@@ -114,7 +115,7 @@ async function handleDelete(force = false) {
     confirmForceDeleteOpen = false
     goto("/machines")
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -173,10 +174,10 @@ async function handleDelete(force = false) {
           <div>{status ?? machine.status ?? "Unknown"}</div>
 
           <div class="text-muted-foreground">Created</div>
-          <div>{machine.creationTimestamp ? formatTimestamp(machine.creationTimestamp) : "N/A"}</div>
+          <div>{machine.created ? formatTimestamp(machine.created) : "N/A"}</div>
 
           <div class="text-muted-foreground">Last Used</div>
-          <div>{machine.lastUsedTimestamp ? formatTimestamp(machine.lastUsedTimestamp) : "N/A"}</div>
+          <div>{machine.lastUsed ? formatTimestamp(machine.lastUsed) : "N/A"}</div>
         </div>
       </Tabs.Content>
 

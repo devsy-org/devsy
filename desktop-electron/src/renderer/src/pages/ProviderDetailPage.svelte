@@ -18,6 +18,7 @@ import {
   providerSetOptions,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { ProviderOption } from "$lib/types/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
@@ -106,7 +107,7 @@ async function handleSetDefault() {
     await providerUse(id)
     toasts.success(`Set ${id} as default provider`)
   } catch (err) {
-    toasts.error(`Failed to set default: ${err}`)
+    toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -115,7 +116,7 @@ async function handleUpdate() {
     await providerUpdate(id)
     toasts.success(`Updated ${id}`)
   } catch (err) {
-    toasts.error(`Failed to update: ${err}`)
+    toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -127,7 +128,7 @@ async function handleDelete() {
     confirmDeleteOpen = false
     goto("/providers")
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -149,7 +150,7 @@ async function handleSaveOptions() {
       toasts.success("Options saved")
     }
   } catch (err) {
-    toasts.error(`Failed to save options: ${err}`)
+    toasts.error(`Failed to save options: ${extractErrorMessage(err)}`)
   } finally {
     saving = false
   }

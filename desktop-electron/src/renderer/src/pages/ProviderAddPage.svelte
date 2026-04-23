@@ -8,6 +8,7 @@ import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { providerAdd, providerUse } from "$lib/ipc/commands.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 
 const PROVIDERS = [
   { name: "docker", description: "Local Docker containers" },
@@ -67,7 +68,7 @@ async function doAdd(name: string, source?: string) {
       toasts.info(`Provider ${name} is already installed`)
       goto("/providers")
     } else {
-      toasts.error(`Failed to add provider: ${msg}`)
+      toasts.error(`Failed to add provider: ${extractErrorMessage(msg)}`)
     }
     submitting = false
     return
@@ -79,7 +80,7 @@ async function doAdd(name: string, source?: string) {
     goto("/providers")
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    toasts.error(`Provider added but initialization failed: ${msg}`)
+    toasts.error(`Provider added but initialization failed: ${extractErrorMessage(msg)}`)
     goto("/providers")
   } finally {
     submitting = false

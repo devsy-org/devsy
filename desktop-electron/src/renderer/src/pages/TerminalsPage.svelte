@@ -25,6 +25,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import { onMount } from "svelte"
 
 let activeSessionId: string | undefined = $state()
@@ -71,7 +72,7 @@ async function createSsh(workspaceId: string) {
     activeSessionId = id
     toasts.success(`Connected to ${workspaceId}`)
   } catch (e) {
-    toasts.error(`Failed to connect to ${workspaceId}: ${e}`)
+    toasts.error(`Failed to connect to ${workspaceId}: ${extractErrorMessage(e)}`)
   }
 }
 

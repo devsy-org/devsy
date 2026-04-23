@@ -25,6 +25,7 @@ import {
   workspaceDelete,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import { workspaces, workspacesLoading } from "$lib/stores/workspaces.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
@@ -91,7 +92,7 @@ async function handleStart(ws: Workspace) {
     await workspaceUp({ source: ws.id })
     toasts.success(`Starting ${ws.id}...`)
   } catch (err) {
-    toasts.error(`Failed to start: ${err}`)
+    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
   }
@@ -103,7 +104,7 @@ async function handleStop(ws: Workspace) {
     await workspaceStop(ws.id)
     toasts.success(`Stopping ${ws.id}...`)
   } catch (err) {
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
   }
@@ -118,7 +119,7 @@ async function handleDelete() {
     confirmDeleteOpen = false
     confirmDeleteId = null
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -213,7 +214,7 @@ async function handleDelete() {
                   <span class={badgeVariants({ variant: statusVariant(ws.status) })}>{ws.status}</span>
                 {/if}
               </Table.Cell>
-              <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsedTimestamp)}</Table.Cell>
+              <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
               <Table.Cell onclick={(e: MouseEvent) => e.stopPropagation()}>
                 <DropdownMenu.Root>

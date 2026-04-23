@@ -31,6 +31,7 @@ import {
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { AuditEntry, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
@@ -222,7 +223,7 @@ async function deleteLog(entry: LogEntry) {
     }
     toasts.success("Log file deleted")
   } catch (err) {
-    toasts.error(`Failed to delete log: ${err}`)
+    toasts.error(`Failed to delete log: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -240,7 +241,7 @@ async function handleConnect() {
     activeTab = "terminal"
     toasts.success(`Connected to ${id}`)
   } catch (err) {
-    toasts.error(`Failed to connect: ${err}`)
+    toasts.error(`Failed to connect: ${extractErrorMessage(err)}`)
   } finally {
     connecting = false
   }
@@ -279,7 +280,7 @@ async function handleStart() {
     commandId = await workspaceUp({ source: id })
   } catch (err) {
     operationRunning = false
-    toasts.error(`Failed to start: ${err}`)
+    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -290,7 +291,7 @@ async function handleOpenIde() {
     commandId = await workspaceUp({ source: id, ide })
   } catch (err) {
     operationRunning = false
-    toasts.error(`Failed to open IDE: ${err}`)
+    toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -300,7 +301,7 @@ async function handleStop() {
     commandId = await workspaceStop(id)
   } catch (err) {
     operationRunning = false
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -310,7 +311,7 @@ async function handleRebuild() {
     commandId = await workspaceRebuild(id)
   } catch (err) {
     operationRunning = false
-    toasts.error(`Failed to rebuild: ${err}`)
+    toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -320,7 +321,7 @@ async function handleReset() {
     commandId = await workspaceReset(id)
   } catch (err) {
     operationRunning = false
-    toasts.error(`Failed to reset: ${err}`)
+    toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -333,7 +334,7 @@ async function handleDelete() {
   } catch (err) {
     operationRunning = false
     deleting = false
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   }
 }
 </script>
@@ -466,10 +467,10 @@ async function handleDelete() {
           <div>{workspace.status ?? "Unknown"}</div>
 
           <div class="text-muted-foreground">Created</div>
-          <div>{workspace.creationTimestamp ? formatTimestamp(workspace.creationTimestamp) : "N/A"}</div>
+          <div>{workspace.created ? formatTimestamp(workspace.created) : "N/A"}</div>
 
           <div class="text-muted-foreground">Last Used</div>
-          <div>{workspace.lastUsedTimestamp ? formatTimestamp(workspace.lastUsedTimestamp) : "N/A"}</div>
+          <div>{workspace.lastUsed ? formatTimestamp(workspace.lastUsed) : "N/A"}</div>
 
           <div class="text-muted-foreground">Context</div>
           <div>{workspace.context ?? "N/A"}</div>

@@ -38,6 +38,7 @@ import {
   devpodUpgradeDryRun,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 
 // ── Theme ───────────────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ async function handleUpgrade() {
       return
     }
   } catch (err) {
-    toasts.error(`Invalid version: ${err}`)
+    toasts.error(`Invalid version: ${extractErrorMessage(err)}`)
     return
   }
 
@@ -165,7 +166,7 @@ async function handleUpgrade() {
     cliVersion = version.trim()
     toasts.success(`Upgraded to ${version}. Restart the app to complete.`)
   } catch (err) {
-    toasts.error(`Upgrade failed: ${err}`)
+    toasts.error(`Upgrade failed: ${extractErrorMessage(err)}`)
   } finally {
     upgrading = false
   }

@@ -9,6 +9,7 @@ import {
   workspaceDelete,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
 
@@ -44,7 +45,7 @@ async function handleStart(e: Event) {
     await workspaceUp({ source: workspace.id })
     toasts.success(`Starting ${workspace.id}...`)
   } catch (err) {
-    toasts.error(`Failed to start: ${err}`)
+    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     acting = false
   }
@@ -57,7 +58,7 @@ async function handleStop(e: Event) {
     await workspaceStop(workspace.id)
     toasts.success(`Stopping ${workspace.id}...`)
   } catch (err) {
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     acting = false
   }
@@ -75,7 +76,7 @@ async function handleDelete() {
     toasts.success(`Deleted ${workspace.id}`)
     confirmDeleteOpen = false
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -90,7 +91,7 @@ async function handleDelete() {
   <div class="flex items-start justify-between gap-3">
     <h3 class="text-lg font-semibold truncate">{workspace.id}</h3>
     <span class="text-xs text-muted-foreground whitespace-nowrap pt-1">
-      {timeAgo(workspace.lastUsedTimestamp)}
+      {timeAgo(workspace.lastUsed)}
     </span>
   </div>
 

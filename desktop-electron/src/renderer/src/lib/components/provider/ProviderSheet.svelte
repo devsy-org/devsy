@@ -17,6 +17,7 @@ import {
   providerRename,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Provider, ProviderOption } from "$lib/types/index.js"
 
 let {
@@ -97,7 +98,7 @@ async function loadOptions() {
     }
     initialValues = { ...optionValues }
   } catch (err) {
-    toasts.error(`Failed to load options: ${err}`)
+    toasts.error(`Failed to load options: ${extractErrorMessage(err)}`)
   } finally {
     loading = false
   }
@@ -114,7 +115,7 @@ async function handleSetDefault() {
     await providerUse(provider.name)
     toasts.success(`Set ${provider.name} as default provider`)
   } catch (err) {
-    toasts.error(`Failed to set default: ${err}`)
+    toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -123,7 +124,7 @@ async function handleUpdate() {
     await providerUpdate(provider.name)
     toasts.success(`Updated ${provider.name}`)
   } catch (err) {
-    toasts.error(`Failed to update: ${err}`)
+    toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -136,7 +137,7 @@ async function handleDelete() {
     open = false
     ondeleted?.()
   } catch (err) {
-    toasts.error(`Failed to delete: ${err}`)
+    toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
   }
@@ -160,7 +161,7 @@ async function handleRename() {
     renaming = false
     open = false
   } catch (err) {
-    toasts.error(`Failed to rename: ${err}`)
+    toasts.error(`Failed to rename: ${extractErrorMessage(err)}`)
   } finally {
     renameSaving = false
   }
@@ -191,7 +192,7 @@ async function handleSaveOptions() {
       toasts.success("Options saved")
     }
   } catch (err) {
-    toasts.error(`Failed to save options: ${err}`)
+    toasts.error(`Failed to save options: ${extractErrorMessage(err)}`)
   } finally {
     saving = false
   }

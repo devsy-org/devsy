@@ -15,6 +15,7 @@ import {
 } from "$lib/stores/contexts.js"
 import { contextUse, contextCreate } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 
 let selectedContext = $state<string | null>(null)
 let sheetOpen = $state(false)
@@ -40,7 +41,7 @@ async function handleUse(e: Event, name: string) {
     await contextUse(name)
     toasts.success(`Switched to context "${name}"`)
   } catch (err) {
-    toasts.error(`Failed to switch context: ${err}`)
+    toasts.error(`Failed to switch context: ${extractErrorMessage(err)}`)
   }
 }
 
@@ -55,7 +56,7 @@ async function handleCreate() {
     createDialogOpen = false
     newContextName = ""
   } catch (err) {
-    toasts.error(`Failed to create context: ${err}`)
+    toasts.error(`Failed to create context: ${extractErrorMessage(err)}`)
   } finally {
     creating = false
   }

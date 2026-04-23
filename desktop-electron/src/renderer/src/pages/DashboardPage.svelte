@@ -9,6 +9,7 @@ import { machines } from "$lib/stores/machines.js"
 import { activeContext } from "$lib/stores/contexts.js"
 import { workspaceStop } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 
 let runningWorkspaces = $derived(
   $workspaces.filter((ws) => ws.status?.toLowerCase() === "running"),
@@ -52,7 +53,7 @@ async function quickStop(wsId: string) {
     await workspaceStop(wsId)
     toasts.success(`Stopping ${wsId}...`)
   } catch (err) {
-    toasts.error(`Failed to stop: ${err}`)
+    toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   }
 }
 </script>

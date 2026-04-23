@@ -17,6 +17,7 @@ import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { extractErrorMessage } from "$lib/utils/error.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
@@ -256,7 +257,7 @@ async function handleSubmit() {
       }
     }
   } catch (err) {
-    toasts.error(`Failed to create workspace: ${err}`)
+    toasts.error(`Failed to create workspace: ${extractErrorMessage(err)}`)
     submitting = false
   }
 }
