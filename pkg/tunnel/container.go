@@ -270,9 +270,13 @@ func (c *ContainerTunnel) runInContainer(
 	// tunnel to container
 	tunnelDone := make(chan error, 1)
 	go func() {
-		tunnelDone <- c.runContainerTunnel(
-			cancelCtx, sshClient, workspaceInfo, stdinReader, stdoutWriter, envVars,
-		)
+		tunnelDone <- c.runContainerTunnel(cancelCtx, containerTunnelOpts{
+			sshClient:     sshClient,
+			workspaceInfo: workspaceInfo,
+			stdinReader:   stdinReader,
+			stdoutWriter:  stdoutWriter,
+			envVars:       envVars,
+		})
 	}()
 
 	containerClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
@@ -294,21 +298,21 @@ func (c *ContainerTunnel) runInContainer(
 	return handler(cancelCtx, containerClient)
 }
 
+type containerTunnelOpts struct {
+	sshClient     *ssh.Client
+	workspaceInfo string
+	stdinReader   *os.File
+	stdoutWriter  *os.File
+	envVars       map[string]string
+}
+
 // runContainerTunnel runs the container tunnel SSH command. It closes
 // stdoutWriter on exit so StdioClient gets EOF when the tunnel dies.
 // Context-cancelled errors are suppressed (expected during normal shutdown).
-//
-//nolint:revive // argument-limit: pipe endpoints require separate reader/writer files
-func (c *ContainerTunnel) runContainerTunnel(
-	ctx context.Context,
-	sshClient *ssh.Client,
-	workspaceInfo string,
-	stdinReader, stdoutWriter *os.File,
-	envVars map[string]string,
-) error {
+func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	defer func() { _ = stdoutWriter.Close() }()
+	defer func() { _ = opts.stdoutWriter.Close() }()
 
 	log.Debugf("Run container tunnel")
 	defer log.Debugf("Container tunnel exited")
@@ -316,18 +320,18 @@ func (c *ContainerTunnel) runContainerTunnel(
 	command := fmt.Sprintf(
 		"'%s' agent container-tunnel --workspace-info '%s'",
 		c.client.AgentPath(),
-		workspaceInfo,
+		opts.workspaceInfo,
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
 	err := devssh.Run(ctx, devssh.RunOptions{
-		Client:  sshClient,
+		Client:  opts.sshClient,
 		Command: command,
-		Stdin:   stdinReader,
-		Stdout:  stdoutWriter,
+		Stdin:   opts.stdinReader,
+		Stdout:  opts.stdoutWriter,
 		Stderr:  writer,
-		EnvVars: envVars,
+		EnvVars: opts.envVars,
 	})
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("container tunnel: %w", err)
