@@ -172,7 +172,10 @@ func InjectAgent(opts *InjectOptions) error {
 	}
 
 	vc := newVersionChecker(opts)
-	bm := NewBinaryManager(opts.DownloadURL)
+	bm, err := NewBinaryManager(opts.DownloadURL)
+	if err != nil {
+		return fmt.Errorf("create binary manager: %w", err)
+	}
 
 	backoff := wait.Backoff{
 		Steps:    30,

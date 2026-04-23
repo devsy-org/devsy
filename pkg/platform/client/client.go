@@ -24,7 +24,6 @@ import (
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
-	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/devsy/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -32,10 +31,9 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-var CacheFolder = ".loft"
+var CacheFolder string
 
-// DefaultCacheConfig is the path to the config.
-var DefaultCacheConfig = "config.json"
+var DefaultCacheConfig string
 
 // Copied from platform `pkg/authentication/registry.go`.
 var ErrAccessKeyNotFound = fmt.Errorf("platform access key not found. Please login again")
@@ -49,13 +47,13 @@ const (
 )
 
 func init() {
-	hd, _ := util.UserHomeDir()
-	if folder, ok := os.LookupEnv("DEVSY_CACHE_FOLDER"); ok {
-		CacheFolder = filepath.Join(hd, folder)
-	} else {
-		CacheFolder = filepath.Join(hd, CacheFolder)
+	platformCache, err := pkgconfig.DefaultPathManager().PlatformCacheDir()
+	if err != nil {
+		// Fallback to temp dir if PathManager fails
+		platformCache = filepath.Join(os.TempDir(), "devsy-platform")
 	}
-	DefaultCacheConfig = filepath.Join(CacheFolder, DefaultCacheConfig)
+	CacheFolder = platformCache
+	DefaultCacheConfig = filepath.Join(CacheFolder, "config.json")
 }
 
 type Client interface {

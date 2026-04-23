@@ -14,7 +14,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/util"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -82,34 +81,42 @@ func GetPrivateKeyRaw(context, workspaceID string) ([]byte, error) {
 	return GetPrivateKeyRawBase(workspaceDir)
 }
 
-func GetDevsyKeysDir() string {
-	dir, err := util.UserHomeDir()
-	if err == nil {
-		tempDir := filepath.Join(dir, config.ConfigDirName, "keys")
-		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-		err = os.MkdirAll(tempDir, 0o755)
-		if err == nil {
-			return tempDir
-		}
+func GetDevsyKeysDir() (string, error) {
+	dir, err := config.DefaultPathManager().SSHKeysDir()
+	if err != nil {
+		return "", fmt.Errorf("ssh keys dir: %w", err)
 	}
 
-	tempDir := os.TempDir()
-	return filepath.Join(tempDir, config.BinaryName+"-ssh")
+	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create ssh keys dir: %w", err)
+	}
+
+	return dir, nil
 }
 
 func GetDevsyHostKey() (string, error) {
-	tempDir := GetDevsyKeysDir()
-	return GetHostKeyBase(tempDir)
+	dir, err := GetDevsyKeysDir()
+	if err != nil {
+		return "", err
+	}
+	return GetHostKeyBase(dir)
 }
 
 func GetDevsyPublicKey() (string, error) {
-	tempDir := GetDevsyKeysDir()
-	return GetPublicKeyBase(tempDir)
+	dir, err := GetDevsyKeysDir()
+	if err != nil {
+		return "", err
+	}
+	return GetPublicKeyBase(dir)
 }
 
 func GetDevsyPrivateKeyRaw() ([]byte, error) {
-	tempDir := GetDevsyKeysDir()
-	return GetPrivateKeyRawBase(tempDir)
+	dir, err := GetDevsyKeysDir()
+	if err != nil {
+		return nil, err
+	}
+	return GetPrivateKeyRawBase(dir)
 }
 
 func GetHostKey(context, workspaceID string) (string, error) {

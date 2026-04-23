@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"path/filepath"
+
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 func init() {
@@ -23,12 +26,21 @@ func init() {
 			return
 		}
 
-		f, err := os.OpenFile("/tmp/pprof_ports", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		stateDir, err := config.DefaultPathManager().StateDir()
 		if err == nil {
-			f.Write(
-				[]byte(fmt.Sprintf("%d=%d\n", os.Getpid(), listener.Addr().(*net.TCPAddr).Port)),
+			_ = os.MkdirAll(stateDir, 0o755)
+			f, err := os.OpenFile(
+				filepath.Join(stateDir, "pprof_ports"),
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644,
 			)
-			f.Close()
+			if err == nil {
+				f.Write(
+					[]byte(fmt.Sprintf(
+						"%d=%d\n", os.Getpid(), listener.Addr().(*net.TCPAddr).Port,
+					)),
+				)
+				f.Close()
+			}
 		}
 
 		http.Serve(listener, myMux)

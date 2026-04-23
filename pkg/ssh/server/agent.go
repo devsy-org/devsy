@@ -6,26 +6,32 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/ssh"
 )
 
 func setupAgentListener(reuseSock string) (net.Listener, string, error) {
-	// on some systems (like containers) /tmp may not exists, this ensures
-	// that we have a compliant directory structure
-	err := os.MkdirAll("/tmp", 0o755) // #nosec G301
+	runtimeDir, err := config.DefaultPathManager().RuntimeDir()
 	if err != nil {
-		return nil, "", fmt.Errorf("create /tmp dir: %w", err)
+		return nil, "", fmt.Errorf("runtime dir: %w", err)
+	}
+
+	// Ensure the runtime directory exists (on some systems like containers
+	// it may not exist yet).
+	err = os.MkdirAll(runtimeDir, 0o755) // #nosec G301
+	if err != nil {
+		return nil, "", fmt.Errorf("create runtime dir: %w", err)
 	}
 
 	// Check if we should create a "shared" socket to be reused by clients
 	// used for browser tunnels such as openvscode, since the IDE itself doesn't create an SSH connection it uses a "backhaul" connection and uses the existing socket
 	dir := ""
 	if reuseSock != "" {
-		dir = filepath.Join(os.TempDir(), fmt.Sprintf("auth-agent-%s", reuseSock))
+		dir = filepath.Join(runtimeDir, fmt.Sprintf("auth-agent-%s", reuseSock))
 		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 		err = os.MkdirAll(dir, 0o755)
 		if err != nil {
-			return nil, "", fmt.Errorf("creating SSH_AUTH_SOCK dir in /tmp: %w", err)
+			return nil, "", fmt.Errorf("creating SSH_AUTH_SOCK dir: %w", err)
 		}
 	}
 
