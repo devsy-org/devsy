@@ -57,7 +57,7 @@ type DevContainerConfigBase struct {
 	ForwardPorts types.StrIntArray `json:"forwardPorts,omitempty"`
 
 	// Set default properties that are applied when a specific port number is forwarded.
-	PortsAttributes map[string]PortAttribute `json:"portAttributes,omitempty"`
+	PortsAttributes map[string]PortAttribute `json:"portsAttributes,omitempty"`
 
 	// Set default properties that are applied to all ports that don't get properties from the setting `remote.portsAttributes`.
 	OtherPortsAttributes *PortAttribute `json:"otherPortsAttributes,omitempty"`
