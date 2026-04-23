@@ -1,8 +1,9 @@
 import { _electron as electron } from "@playwright/test"
 import type { ElectronApplication, Page } from "@playwright/test"
-import { resolve, dirname } from "node:path"
+import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { chmodSync } from "node:fs"
+import { chmodSync, unlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -36,4 +37,12 @@ export async function launchApp(): Promise<{
   await page.waitForTimeout(4000)
 
   return { app, page }
+}
+
+export function resetMockState(): void {
+  try {
+    unlinkSync(join(tmpdir(), "devsy-mock-state.json"))
+  } catch {
+    // File doesn't exist, that's fine
+  }
 }
