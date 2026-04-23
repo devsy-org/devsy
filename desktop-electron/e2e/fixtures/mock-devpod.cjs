@@ -118,6 +118,7 @@ while (i < args.length) {
 const cmd = positional[0] || ""
 const sub = positional[1] || ""
 const extra = positional[2] || ""
+const extra2 = positional[3] || ""
 
 function out(data) {
   process.stdout.write(typeof data === "string" ? data + "\n" : JSON.stringify(data, null, 2) + "\n")
@@ -185,7 +186,7 @@ switch (cmd) {
       }
       case "rename": {
         const oldName = extra
-        const newName = nameFlag
+        const newName = nameFlag || extra2
         if (oldName && newName && state.providers[oldName]) {
           const entry = state.providers[oldName]
           entry.config.name = newName
