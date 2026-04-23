@@ -36,6 +36,7 @@ import type { LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import { stripAnsi } from "$lib/utils/log-parser.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
@@ -554,7 +555,13 @@ async function handleDelete() {
               </Accordion.Trigger>
               <Accordion.Content>
                 {#if logsLoading}
-                  <p class="text-sm text-muted-foreground">Loading logs...</p>
+                  <div class="rounded-md border">
+                    <div class="space-y-3 p-4">
+                      {#each { length: 4 } as _}
+                        <Skeleton class="h-4 w-full" />
+                      {/each}
+                    </div>
+                  </div>
                 {:else if logEntries.length === 0}
                   <p class="text-sm text-muted-foreground">No log files found for this workspace.</p>
                 {:else}

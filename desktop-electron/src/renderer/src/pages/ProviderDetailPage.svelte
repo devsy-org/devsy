@@ -18,6 +18,7 @@ import {
   providerSetOptions,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { ProviderOption } from "$lib/types/index.js"
 
@@ -209,7 +210,15 @@ async function handleSaveOptions() {
       </h2>
 
       {#if loading}
-        <p class="text-sm text-muted-foreground">Loading options...</p>
+        <div class="space-y-4">
+          {#each { length: 4 } as _}
+            <div class="space-y-1.5">
+              <Skeleton class="h-4 w-32" />
+              <Skeleton class="h-9 w-full" />
+            </div>
+          {/each}
+          <Skeleton class="h-9 w-20" />
+        </div>
       {:else if Object.keys(options).length === 0}
         <p class="text-sm text-muted-foreground">No configurable options available.</p>
       {:else}

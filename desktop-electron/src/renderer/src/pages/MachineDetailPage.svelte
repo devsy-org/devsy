@@ -18,6 +18,7 @@ import {
   auditByResource,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
+import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { AuditEntry } from "$lib/types/index.js"
 import { formatTimestamp } from "$lib/utils/time.js"
@@ -208,7 +209,15 @@ async function handleDelete(force = false) {
       <Tabs.Content value="activity">
         <div class="mt-4 space-y-4">
           {#if auditLoading}
-            <p class="text-sm text-muted-foreground">Loading activity...</p>
+            <div class="divide-y rounded-md border">
+              {#each { length: 5 } as _}
+                <div class="flex items-center gap-3 px-4 py-3">
+                  <Skeleton class="h-5 w-16 rounded-full" />
+                  <Skeleton class="h-4 w-48 flex-1" />
+                  <Skeleton class="h-3 w-24 shrink-0" />
+                </div>
+              {/each}
+            </div>
           {:else if auditEntries.length === 0}
             <p class="text-sm text-muted-foreground">
               No activity recorded for this machine.
