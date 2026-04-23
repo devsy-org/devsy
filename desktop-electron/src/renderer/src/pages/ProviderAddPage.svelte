@@ -5,7 +5,7 @@ import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
-import { providerAdd } from "$lib/ipc/commands.js"
+import { providerAdd, providerUse } from "$lib/ipc/commands.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 
@@ -61,6 +61,7 @@ async function doAdd(name: string, source?: string) {
   submitting = true
   try {
     await providerAdd(name, source !== name ? source : undefined)
+    await providerUse(name)
     toasts.success(`Added provider ${name}`)
     goto(`/providers?setup=${name}`)
   } catch (err) {
