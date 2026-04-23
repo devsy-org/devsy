@@ -10,10 +10,11 @@ export class CliRunner {
   private prefixArgs: string[]
 
   constructor(private binaryPath: string) {
-    // If the binary is a Node.js script, run it through node directly
-    // (supports DEVPOD_CLI_PATH pointing to a .cjs/.js file for testing)
+    // If the binary is a Node.js script, run it through node directly.
+    // Uses "node" from PATH rather than process.execPath because in Electron
+    // process.execPath is the Electron binary, not Node.js.
     if (/\.[cm]?js$/.test(binaryPath)) {
-      this.execPath = process.execPath
+      this.execPath = "node"
       this.prefixArgs = [binaryPath]
     } else {
       this.execPath = binaryPath

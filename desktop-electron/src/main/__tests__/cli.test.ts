@@ -63,6 +63,23 @@ describe("CliRunner", () => {
     })
   })
 
+  describe("constructor with .cjs binary", () => {
+    it("runs .cjs files through node from PATH", async () => {
+      const jsCli = new CliRunner("/tmp/mock.cjs")
+      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], callback: Function) => {
+        callback(null, { stdout: '[]', stderr: "" })
+      })
+
+      await jsCli.run(["list"])
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "node",
+        ["/tmp/mock.cjs", "list", "--output", "json"],
+        expect.any(Function),
+      )
+    })
+  })
+
   describe("stripAnsi", () => {
     it("removes ANSI escape sequences", () => {
       const result = CliRunner.stripAnsi("\x1b[31mred\x1b[0m normal \x1b[1mbold\x1b[m")
