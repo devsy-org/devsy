@@ -3,34 +3,52 @@
 // Mock devpod binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
 // Handles --output json, --skip-pro, and other flags the app sends
+// Persists state to a JSON file so provider/workspace CRUD works across calls
 
-const args = process.argv.slice(2)
+const fs = require("fs")
+const path = require("path")
+const os = require("os")
 
-// Collect positional args, skipping flags
-const positional = []
-let i = 0
-while (i < args.length) {
-  const arg = args[i]
-  if (arg === "--output") { i += 2; continue }
-  if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) { i++; continue }
-  if (arg === "-o" || arg === "--option") { i += 2; continue }
-  if (["--id", "--provider", "--ide", "--name", "--version", "--timeout"].includes(arg)) { i += 2; continue }
-  if (arg === "--recreate" || arg === "--reset" || arg === "--dry-run") { i++; continue }
-  if (arg.startsWith("-")) { i++; continue }
-  positional.push(arg)
-  i++
-}
+const STATE_FILE = path.join(os.tmpdir(), "devsy-mock-state.json")
 
-const cmd = positional[0] || ""
-const sub = positional[1] || ""
-
-function out(data) {
-  process.stdout.write(typeof data === "string" ? data + "\n" : JSON.stringify(data, null, 2) + "\n")
-}
-
-switch (cmd) {
-  case "list":
-    out([
+function defaultState() {
+  return {
+    providers: {
+      docker: {
+        config: {
+          name: "docker",
+          version: "v0.5.0",
+          icon: "https://devsy.sh/icons/docker.svg",
+          description: "Devsy on Docker",
+          source: { github: "devsy-org/devpod-provider-docker" },
+          options: {
+            DOCKER_HOST: {
+              displayName: "Docker Host",
+              description: "Docker daemon socket to connect to",
+              default: "unix:///var/run/docker.sock",
+              type: "string",
+            },
+          },
+          optionGroups: [],
+        },
+        state: { initialized: true },
+        default: true,
+      },
+      kubernetes: {
+        config: {
+          name: "kubernetes",
+          version: "v0.3.0",
+          icon: "https://devsy.sh/icons/k8s.svg",
+          description: "Devsy on Kubernetes",
+          source: { github: "devsy-org/devpod-provider-kubernetes" },
+          options: {},
+          optionGroups: [],
+        },
+        state: { initialized: false },
+        default: false,
+      },
+    },
+    workspaces: [
       {
         id: "test-workspace",
         uid: "ws-001",
@@ -53,47 +71,67 @@ switch (cmd) {
         creationTimestamp: "2026-04-19T09:00:00Z",
         context: "default",
       },
-    ])
+    ],
+  }
+}
+
+function loadState() {
+  try {
+    const data = fs.readFileSync(STATE_FILE, "utf8")
+    return JSON.parse(data)
+  } catch {
+    return defaultState()
+  }
+}
+
+function saveState(state) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8")
+}
+
+const state = loadState()
+
+const args = process.argv.slice(2)
+
+// Collect positional args and named flag values
+const positional = []
+let idFlag = ""
+let providerFlag = ""
+let ideFlag = ""
+let nameFlag = ""
+let i = 0
+while (i < args.length) {
+  const arg = args[i]
+  if (arg === "--output") { i += 2; continue }
+  if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) { i++; continue }
+  if (arg === "-o" || arg === "--option") { i += 2; continue }
+  if (arg === "--id") { idFlag = args[i + 1] || ""; i += 2; continue }
+  if (arg === "--provider") { providerFlag = args[i + 1] || ""; i += 2; continue }
+  if (arg === "--ide") { ideFlag = args[i + 1] || ""; i += 2; continue }
+  if (arg === "--name") { nameFlag = args[i + 1] || ""; i += 2; continue }
+  if (["--version", "--timeout"].includes(arg)) { i += 2; continue }
+  if (arg === "--recreate" || arg === "--reset" || arg === "--dry-run") { i++; continue }
+  if (arg.startsWith("-")) { i++; continue }
+  positional.push(arg)
+  i++
+}
+
+const cmd = positional[0] || ""
+const sub = positional[1] || ""
+const extra = positional[2] || ""
+
+function out(data) {
+  process.stdout.write(typeof data === "string" ? data + "\n" : JSON.stringify(data, null, 2) + "\n")
+}
+
+switch (cmd) {
+  case "list":
+    out(state.workspaces)
     break
 
   case "provider":
     switch (sub) {
       case "list":
-        out({
-          docker: {
-            config: {
-              name: "docker",
-              version: "v0.5.0",
-              icon: "https://devsy.sh/icons/docker.svg",
-              description: "Devsy on Docker",
-              source: { github: "devsy-org/devpod-provider-docker" },
-              options: {
-                DOCKER_HOST: {
-                  displayName: "Docker Host",
-                  description: "Docker daemon socket to connect to",
-                  default: "unix:///var/run/docker.sock",
-                  type: "string",
-                },
-              },
-              optionGroups: [],
-            },
-            state: { initialized: true },
-            default: true,
-          },
-          kubernetes: {
-            config: {
-              name: "kubernetes",
-              version: "v0.3.0",
-              icon: "https://devsy.sh/icons/k8s.svg",
-              description: "Devsy on Kubernetes",
-              source: { github: "devsy-org/devpod-provider-kubernetes" },
-              options: {},
-              optionGroups: [],
-            },
-            state: { initialized: false },
-            default: false,
-          },
-        })
+        out(state.providers)
         break
       case "options":
         out({
@@ -115,12 +153,64 @@ switch (cmd) {
           },
         })
         break
-      case "add":
-      case "delete":
-      case "use":
-      case "update":
+      case "add": {
+        const provName = extra
+        if (provName) {
+          state.providers[provName] = {
+            config: {
+              name: provName,
+              version: "v0.1.0",
+              icon: "",
+              description: "",
+              source: {},
+              options: {},
+              optionGroups: [],
+            },
+            state: { initialized: false },
+            default: false,
+          }
+          saveState(state)
+        }
+        out("")
+        break
+      }
+      case "delete": {
+        const provName = extra
+        if (provName && state.providers[provName]) {
+          delete state.providers[provName]
+          saveState(state)
+        }
+        out("")
+        break
+      }
+      case "rename": {
+        const oldName = extra
+        const newName = nameFlag
+        if (oldName && newName && state.providers[oldName]) {
+          const entry = state.providers[oldName]
+          entry.config.name = newName
+          state.providers[newName] = entry
+          delete state.providers[oldName]
+          saveState(state)
+        }
+        out("")
+        break
+      }
+      case "use": {
+        const provName = extra
+        if (provName && state.providers[provName]) {
+          for (const key of Object.keys(state.providers)) {
+            state.providers[key].default = false
+          }
+          state.providers[provName].state.initialized = true
+          state.providers[provName].default = true
+          saveState(state)
+        }
+        out("")
+        break
+      }
       case "set-options":
-      case "rename":
+      case "update":
         out("")
         break
       default:
@@ -189,17 +279,15 @@ switch (cmd) {
     }
     break
 
-  case "status":
-    // Return per-workspace status based on workspace ID
-    switch (sub) {
-      case "dev-env":
-        out({ state: "Stopped" })
-        break
-      default:
-        out({ state: "Running" })
-        break
+  case "status": {
+    const ws = state.workspaces.find((w) => w.id === sub)
+    if (ws) {
+      out({ state: ws.status })
+    } else {
+      out({ state: "NotFound" })
     }
     break
+  }
 
   case "version":
     out("v0.1.0-test")
@@ -210,25 +298,54 @@ switch (cmd) {
     process.exit(0)
     break
 
-  case "up":
+  case "up": {
+    const source = sub
     out("Resolving source...")
     out("Pulling image...")
     out("Starting workspace...")
     out("Workspace ready.")
+    const wsId = idFlag || (source ? source.split("/").pop().replace(".git", "") : "") || "workspace"
+    state.workspaces.push({
+      id: wsId,
+      uid: "ws-" + Date.now(),
+      source: { gitRepository: source },
+      provider: { name: providerFlag || "docker" },
+      ide: { name: ideFlag || "none" },
+      status: "Running",
+      lastUsedTimestamp: new Date().toISOString(),
+      creationTimestamp: new Date().toISOString(),
+      context: "default",
+    })
+    saveState(state)
     process.exit(0)
     break
+  }
 
-  case "stop":
+  case "stop": {
+    const wsId = sub
     out("Stopping workspace...")
     out("Workspace stopped.")
+    const ws = state.workspaces.find((w) => w.id === wsId)
+    if (ws) {
+      ws.status = "Stopped"
+      saveState(state)
+    }
     process.exit(0)
     break
+  }
 
-  case "delete":
+  case "delete": {
+    const wsId = sub
     out("Deleting workspace...")
     out("Workspace deleted.")
+    const idx = state.workspaces.findIndex((w) => w.id === wsId)
+    if (idx !== -1) {
+      state.workspaces.splice(idx, 1)
+      saveState(state)
+    }
     process.exit(0)
     break
+  }
 
   case "upgrade":
     out("Already up to date.")
