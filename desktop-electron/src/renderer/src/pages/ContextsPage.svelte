@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Layers, Plus, Settings2 } from "@lucide/svelte"
+import { Layers, Plus, Settings2, Search } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
@@ -23,6 +23,15 @@ let sheetOpen = $state(false)
 let createDialogOpen = $state(false)
 let newContextName = $state("")
 let creating = $state(false)
+
+let searchTerm = $state("")
+let filteredContexts = $derived(
+  searchTerm.trim()
+    ? $contexts.filter((c) =>
+        c.name.toLowerCase().includes(searchTerm.trim().toLowerCase()),
+      )
+    : $contexts,
+)
 
 let selectedCtx = $derived(
   selectedContext
@@ -113,8 +122,23 @@ async function handleCreate() {
       <p class="text-muted-foreground">No contexts found.</p>
     </div>
   {:else}
+    <div class="relative">
+      <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder="Filter contexts..."
+        class="pl-9"
+        value={searchTerm}
+        oninput={(e) => (searchTerm = e.currentTarget.value)}
+      />
+    </div>
+    {#if filteredContexts.length === 0}
+      <div class="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Search class="h-10 w-10 text-muted-foreground" />
+        <p class="text-muted-foreground">No contexts matching "{searchTerm}"</p>
+      </div>
+    {:else}
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {#each $contexts as ctx (ctx.name)}
+      {#each filteredContexts as ctx (ctx.name)}
         <button
           type="button"
           class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full {ctx.name === $activeContext ? 'ring-2 ring-primary' : ''}"
@@ -156,6 +180,7 @@ async function handleCreate() {
         </button>
       {/each}
     </div>
+    {/if}
   {/if}
 </div>
 

@@ -21,46 +21,68 @@ import type { Component } from "svelte"
 
 let { terminalCount = 0 }: { terminalCount?: number } = $props()
 
+// Matches NAV_KEYS in App.svelte — maps shortcut number to route
+const SHORTCUT_BY_HREF: Record<string, string> = {
+  "/": "1",
+  "/workspaces": "2",
+  "/providers": "3",
+  "/machines": "4",
+  "/terminals": "5",
+  "/ssh-keys": "6",
+  "/settings": "7",
+}
+
+const isMac =
+  typeof navigator !== "undefined" &&
+  /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+const modKey = isMac ? "⌘" : "Ctrl+"
+
 interface NavItem {
   href: string
   label: string
   icon: Component
   badge?: number
+  shortcut?: string
 }
 
 let mainNav: NavItem[] = $derived([
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: SHORTCUT_BY_HREF["/"] },
   {
     href: "/workspaces",
     label: "Workspaces",
     icon: Box,
     badge: $workspaces.length,
+    shortcut: SHORTCUT_BY_HREF["/workspaces"],
   },
   {
     href: "/providers",
     label: "Providers",
     icon: Plug,
     badge: $providers.length,
+    shortcut: SHORTCUT_BY_HREF["/providers"],
   },
   {
     href: "/machines",
     label: "Machines",
     icon: Server,
     badge: $machines.length,
+    shortcut: SHORTCUT_BY_HREF["/machines"],
   },
   {
     href: "/contexts",
     label: "Contexts",
     icon: Layers,
     badge: $contexts.length,
+    shortcut: SHORTCUT_BY_HREF["/contexts"],
   },
   {
     href: "/terminals",
     label: "Terminals",
     icon: SquareTerminal,
     badge: terminalCount,
+    shortcut: SHORTCUT_BY_HREF["/terminals"],
   },
-  { href: "/ssh-keys", label: "SSH Keys", icon: KeyRound },
+  { href: "/ssh-keys", label: "SSH Keys", icon: KeyRound, shortcut: SHORTCUT_BY_HREF["/ssh-keys"] },
 ])
 
 function isActive(href: string): boolean {
@@ -100,6 +122,9 @@ function isActive(href: string): boolean {
                   <a href="#/{item.href === '/' ? '' : item.href.slice(1)}" {...props}>
                     <Icon />
                     <span>{item.label}</span>
+                    {#if item.shortcut}
+                      <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{item.shortcut}</kbd>
+                    {/if}
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
@@ -121,15 +146,16 @@ function isActive(href: string): boolean {
             <a href="#/settings" {...props}>
               <Settings />
               <span>Settings</span>
+              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}7</kbd>
             </a>
           {/snippet}
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
       <Sidebar.MenuItem>
-        <Sidebar.MenuButton tooltipContent="Search (⌘K)" onclick={togglePalette}>
+        <Sidebar.MenuButton tooltipContent="Search ({modKey}K)" onclick={togglePalette}>
           <Search />
           <span>Search</span>
-          <kbd class="ml-auto rounded border bg-muted px-1.5 py-0.5 text-xs font-mono group-data-[collapsible=icon]:hidden">⌘K</kbd>
+          <kbd class="ml-auto rounded border bg-muted px-1.5 py-0.5 text-xs font-mono group-data-[collapsible=icon]:hidden">{modKey}K</kbd>
         </Sidebar.MenuButton>
       </Sidebar.MenuItem>
     </Sidebar.Menu>
