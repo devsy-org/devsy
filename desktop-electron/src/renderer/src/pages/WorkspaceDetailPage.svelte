@@ -5,6 +5,7 @@ import { Check, ChevronsUpDown, ClipboardCopy, Ellipsis, Monitor, Play, RefreshC
 import * as Tooltip from "$lib/components/ui/tooltip/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import { Button } from "$lib/components/ui/button/index.js"
+import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
@@ -351,14 +352,14 @@ async function handleDelete() {
   </div>
 
   {#if workspace}
-    <div class="flex items-center gap-2">
+    <ButtonGroup.Root>
       {#if isRunning || isBusy}
-        <Button size="sm" onclick={handleStop} disabled={operationRunning}>
+        <Button variant="outline" size="sm" onclick={handleStop} disabled={operationRunning}>
           {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
           Stop
         </Button>
       {:else}
-        <Button size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
+        <Button variant="outline" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
           {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
           Start
         </Button>
@@ -383,7 +384,7 @@ async function handleDelete() {
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
           {#snippet child({ props })}
-            <Button {...props} variant="outline" size="icon" class="h-8 w-8">
+            <Button {...props} variant="outline" size="icon-sm">
               <Ellipsis class="h-4 w-4" />
               <span class="sr-only">More actions</span>
             </Button>
@@ -409,7 +410,7 @@ async function handleDelete() {
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Root>
-    </div>
+    </ButtonGroup.Root>
   {/if}
 
   <Separator />
