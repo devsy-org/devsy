@@ -25,6 +25,7 @@ let providerSource = $state("")
 let error = $state("")
 let submitting = $state(false)
 let addingPreset = $state<string | null>(null)
+let initializingPreset = $state<string | null>(null)
 
 let pendingSource = $state<string | null>(null)
 let pendingName = $state("")
@@ -79,6 +80,10 @@ async function doAdd(name: string, source?: string) {
     return
   }
 
+  // Switch to init phase — show 'Initializing...' on the card
+  initializingPreset = addingPreset
+  addingPreset = null
+
   try {
     if (isFirstProvider) {
       await providerUse(name)
@@ -93,7 +98,7 @@ async function doAdd(name: string, source?: string) {
     goto("/providers")
   } finally {
     submitting = false
-    addingPreset = null
+    initializingPreset = null
   }
 }
 
@@ -181,13 +186,21 @@ async function handleSubmit() {
           disabled={submitting}
           onclick={() => handlePresetClick(p.name)}
         >
-          {#if addingPreset === p.name}
+          {#if addingPreset === p.name || initializingPreset === p.name}
             <Spinner class="size-8 shrink-0" />
           {:else}
             <ProviderIcon name={p.name} class="size-8 shrink-0" />
           {/if}
           <div>
-            <div class="font-semibold">{addingPreset === p.name ? "Adding..." : p.name}</div>
+            <div class="font-semibold">
+              {#if addingPreset === p.name}
+                Adding...
+              {:else if initializingPreset === p.name}
+                Initializing...
+              {:else}
+                {p.name}
+              {/if}
+            </div>
             <div class="text-sm text-muted-foreground">{p.description}</div>
           </div>
         </button>
