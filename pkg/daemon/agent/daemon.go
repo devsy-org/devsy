@@ -25,9 +25,10 @@ type SshConfig struct {
 }
 
 type DaemonConfig struct {
-	Platform devsy.PlatformOptions `json:"platform"`
-	Ssh      SshConfig             `json:"ssh"`
-	Timeout  string                `json:"timeout"`
+	Platform       devsy.PlatformOptions `json:"platform"`
+	Ssh            SshConfig             `json:"ssh"`
+	Timeout        string                `json:"timeout"`
+	ShutdownAction string                `json:"shutdownAction,omitempty"`
 }
 
 func BuildWorkspaceDaemonConfig(
@@ -60,12 +61,18 @@ func BuildWorkspaceDaemonConfig(
 	// build info isn't required in the workspace and can be omitted
 	platformOptions.Build = nil
 
+	shutdownAction := "stopContainer"
+	if mergedConfig.ShutdownAction != "" {
+		shutdownAction = mergedConfig.ShutdownAction
+	}
+
 	daemonConfig := &DaemonConfig{
 		Platform: platformOptions,
 		Ssh: SshConfig{
 			Workdir: workdir,
 			User:    user,
 		},
+		ShutdownAction: shutdownAction,
 	}
 
 	return daemonConfig, nil
