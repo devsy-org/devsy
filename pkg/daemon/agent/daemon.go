@@ -329,7 +329,10 @@ func RemoveDaemon() error {
 // identity via /proc/{pid}/exe to avoid killing an unrelated process that
 // reused the PID after a reboot.
 func stopFallbackDaemon() error {
-	pidFile := filepath.Join(os.TempDir(), pkgconfig.DaemonProcessName+".pid")
+	pidFile, err := pkgconfig.DefaultPathManager().DaemonPIDFile()
+	if err != nil {
+		return fmt.Errorf("daemon pid file: %w", err)
+	}
 	pidData, err := os.ReadFile(pidFile) // #nosec G304: not user input
 	if err != nil {
 		if os.IsNotExist(err) {

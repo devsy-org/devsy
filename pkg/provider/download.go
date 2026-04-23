@@ -32,7 +32,6 @@ const (
 	tarSuffix   = ".tar"
 	tgzSuffix   = ".tgz"
 	zipSuffix   = ".zip"
-	cacheDir    = config.BinaryName + "-binaries"
 )
 
 var (
@@ -246,7 +245,12 @@ func toCache(binary *ProviderBinary, binaryPath string) {
 		return
 	}
 
-	cachedBinaryPath := getCachedBinaryPath(binary.Path)
+	cachedBinaryPath, err := getCachedBinaryPath(binary.Path)
+	if err != nil {
+		log.Warnf("error resolving cache path: %v", err)
+		return
+	}
+
 	if err := os.MkdirAll(filepath.Dir(cachedBinaryPath), dirPerms); err != nil {
 		log.Warnf("error creating cache directory: %v", err)
 		return
@@ -263,7 +267,12 @@ func fromCache(binary *ProviderBinary, targetFolder string) bool {
 	}
 
 	binaryPath := getBinaryPath(binary, targetFolder)
-	cachedBinaryPath := getCachedBinaryPath(binary.Path)
+	cachedBinaryPath, err := getCachedBinaryPath(binary.Path)
+	if err != nil {
+		log.Warnf("error resolving cache path: %v", err)
+		return false
+	}
+
 	if !verifyOrRemoveBinary(cachedBinaryPath, binary.Checksum) {
 		return false
 	}
@@ -286,13 +295,15 @@ func fromCache(binary *ProviderBinary, targetFolder string) bool {
 	return true
 }
 
-func getCachedBinaryPath(url string) string {
-	h := hash.String(url)
-	cacheBase := os.TempDir()
-	if userCache, err := os.UserCacheDir(); err == nil {
-		cacheBase = userCache
+func getCachedBinaryPath(url string) (string, error) {
+	cacheDir, err := config.DefaultPathManager().ProviderDownloadCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("provider download cache dir: %w", err)
 	}
-	return filepath.Join(cacheBase, cacheDir, h)
+
+	h := hash.String(url)
+
+	return filepath.Join(cacheDir, h), nil
 }
 
 func verifyOrRemoveBinary(binaryPath, checksum string) bool {
