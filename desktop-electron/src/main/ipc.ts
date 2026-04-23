@@ -133,13 +133,13 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
 
   ipcMain.handle("context_options", async (_event, args: { context?: string }) => {
     const cliArgs = ["context", "options"]
-    if (args.context) cliArgs.push("--name", args.context)
+    if (args.context) cliArgs.push("--context", args.context)
     return cli.run(cliArgs)
   })
 
   ipcMain.handle("context_set_options", async (_event, args: { options: string[]; context?: string }) => {
     const cliArgs: string[] = ["context", "set-options"]
-    if (args.context) cliArgs.push("--name", args.context)
+    if (args.context) cliArgs.push(args.context)
     for (const opt of args.options) {
       cliArgs.push("-o", opt)
     }
