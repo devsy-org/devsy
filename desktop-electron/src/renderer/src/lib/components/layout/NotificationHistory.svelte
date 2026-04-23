@@ -3,13 +3,9 @@ import { Bell, CircleCheck, CircleX, Info, Trash2, X } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { notificationHistory } from "$lib/stores/toasts.js"
+import { timeAgoMs } from "$lib/utils/time.js"
 
 const unreadCount = notificationHistory.unreadCount
-
-function formatTime(ts: number): string {
-  const d = new Date(ts)
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-}
 </script>
 
 <DropdownMenu.Root>
@@ -54,7 +50,7 @@ function formatTime(ts: number): string {
             {/if}
             <div class="min-w-0 flex-1">
               <p class="text-sm break-words {item.variant === 'error' ? 'text-destructive' : ''}">{item.message}</p>
-              <p class="text-xs text-muted-foreground">{formatTime(item.timestamp)}</p>
+              <p class="text-xs text-muted-foreground">{timeAgoMs(item.timestamp)}</p>
             </div>
             <button
               type="button"

@@ -5,6 +5,7 @@ import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
+import { Spinner } from "$lib/components/ui/spinner/index.js"
 import { providerAdd, providerUse } from "$lib/ipc/commands.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -23,6 +24,7 @@ const PROVIDERS = [
 let providerSource = $state("")
 let error = $state("")
 let submitting = $state(false)
+let addingPreset = $state<string | null>(null)
 
 let pendingSource = $state<string | null>(null)
 let pendingName = $state("")
@@ -37,6 +39,7 @@ function handlePresetClick(source: string) {
     pendingSource = source
     pendingName = ""
   } else {
+    addingPreset = source
     doAdd(source, source)
   }
 }
@@ -71,6 +74,7 @@ async function doAdd(name: string, source?: string) {
       toasts.error(`Failed to add provider: ${extractErrorMessage(msg)}`)
     }
     submitting = false
+    addingPreset = null
     return
   }
 
@@ -84,6 +88,7 @@ async function doAdd(name: string, source?: string) {
     goto("/providers")
   } finally {
     submitting = false
+    addingPreset = null
   }
 }
 
@@ -111,12 +116,16 @@ async function handleSubmit() {
   </div>
 
   <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit() }}>
+    {#if error}
+      <div class="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+    {/if}
+
     <div class="space-y-2">
       <Label>Provider Source</Label>
       <Input
         placeholder="e.g. docker, or github.com/org/provider"
         value={providerSource}
-        oninput={(e) => (providerSource = e.currentTarget.value)}
+        oninput={(e) => { providerSource = e.currentTarget.value; error = "" }}
       />
     </div>
     <div class="space-y-2">
@@ -167,9 +176,13 @@ async function handleSubmit() {
           disabled={submitting}
           onclick={() => handlePresetClick(p.name)}
         >
-          <ProviderIcon name={p.name} class="size-8 shrink-0" />
+          {#if addingPreset === p.name}
+            <Spinner class="size-8 shrink-0" />
+          {:else}
+            <ProviderIcon name={p.name} class="size-8 shrink-0" />
+          {/if}
           <div>
-            <div class="font-semibold">{p.name}</div>
+            <div class="font-semibold">{addingPreset === p.name ? "Adding..." : p.name}</div>
             <div class="text-sm text-muted-foreground">{p.description}</div>
           </div>
         </button>
