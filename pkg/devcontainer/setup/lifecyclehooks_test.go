@@ -101,6 +101,36 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 }
 
+func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
+	t := s.T()
+
+	// Set one secret in the environment, leave another absent.
+	t.Setenv("SECRET_PRESENT", "s3cret")
+
+	result := &config.Result{
+		MergedConfig: &config.MergedDevContainerConfig{
+			DevContainerConfigBase: config.DevContainerConfigBase{
+				Secrets: map[string]config.SecretConfig{
+					"SECRET_PRESENT": {Description: "a present secret"},
+					"SECRET_ABSENT":  {Description: "a missing secret"},
+				},
+			},
+		},
+		ContainerDetails: &config.ContainerDetails{
+			State: config.ContainerDetailsState{},
+		},
+		SubstitutionContext: &config.SubstitutionContext{
+			ContainerWorkspaceFolder: "/workspaces/test",
+		},
+	}
+
+	env := resolveLifecycleEnv(context.Background(), result)
+
+	assert.Equal(t, "s3cret", env.remoteEnv["SECRET_PRESENT"])
+	_, found := env.remoteEnv["SECRET_ABSENT"]
+	assert.False(t, found, "SECRET_ABSENT should not be in remoteEnv when not set in environment")
+}
+
 func TestLifecycleHookTestSuite(t *testing.T) {
 	suite.Run(t, new(LifecycleHookTestSuite))
 }

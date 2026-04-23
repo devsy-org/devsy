@@ -41,10 +41,19 @@ func resolveLifecycleEnv(
 		)
 	}
 
+	env := mergeRemoteEnv(mergedConfig.RemoteEnv, probedEnv, remoteUser)
+
+	// Resolve declared secrets from the host environment.
+	for name := range mergedConfig.Secrets {
+		if val := os.Getenv(name); val != "" {
+			env[name] = val
+		}
+	}
+
 	return lifecycleEnv{
 		remoteUser:      remoteUser,
 		workspaceFolder: setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-		remoteEnv:       mergeRemoteEnv(mergedConfig.RemoteEnv, probedEnv, remoteUser),
+		remoteEnv:       env,
 	}
 }
 
