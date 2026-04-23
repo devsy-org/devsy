@@ -143,8 +143,13 @@ let filteredIdes = $derived(
 )
 
 $effect(() => {
-  if (!selectedProvider && $providers.length === 1) {
-    selectedProvider = $providers[0].name
+  if (!selectedProvider && $providers.length > 0) {
+    const initialized = $providers.filter(p => p.state?.initialized === true)
+    if (initialized.length === 1) {
+      selectedProvider = initialized[0].name
+    } else if (initialized.length === 0 && $providers.length === 1) {
+      selectedProvider = $providers[0].name
+    }
   }
 })
 
@@ -365,7 +370,7 @@ async function handleSubmit() {
                       >
                         <Check class="mr-2 h-4 w-4 {selectedProvider === p.name ? 'opacity-100' : 'opacity-0'}" />
                         {p.name}
-                        {#if p.state?.initialized === false}
+                        {#if p.state?.initialized !== true}
                           <span class="ml-auto text-xs text-destructive">(not initialized)</span>
                         {/if}
                       </Command.Item>
@@ -383,6 +388,25 @@ async function handleSubmit() {
               </Command.Root>
             </Popover.Content>
           </Popover.Root>
+
+          {#if selectedProvider && $providers.find(p => p.name === selectedProvider)?.state?.initialized !== true}
+            <div class="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p class="font-medium text-amber-700 dark:text-amber-400">Provider not initialized</p>
+                <p class="text-amber-600 dark:text-amber-400/80">
+                  This provider needs to be initialized before creating workspaces.
+                  <button
+                    type="button"
+                    class="underline hover:no-underline"
+                    onclick={() => { open = false; goto("/providers/" + selectedProvider + "?setup=true") }}
+                  >
+                    Initialize it now
+                  </button>
+                </p>
+              </div>
+            </div>
+          {/if}
         </div>
 
         <div class="space-y-1.5">

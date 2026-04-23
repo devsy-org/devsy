@@ -31,6 +31,8 @@ function sourceDisplay(p: Provider): string {
     <div class="flex gap-1.5 shrink-0">
       {#if provider.state?.initialized}
         <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
+      {:else}
+        <span class={badgeVariants({ variant: "destructive" })}>not initialized</span>
       {/if}
       {#if provider.version}
         <span class={badgeVariants({ variant: "outline" })}>{provider.version}</span>
