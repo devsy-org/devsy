@@ -217,6 +217,9 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		BoolVar(&cmd.Reconfigure, "reconfigure", false,
 			"Reconfigure the options for this workspace. Only supported in Devsy Pro right now.")
 	upCmd.Flags().
+		BoolVar(&cmd.Prebuild, "prebuild", false,
+			"If true will only run the prebuild lifecycle (onCreateCommand + updateContentCommand) then stop")
+	upCmd.Flags().
 		BoolVar(&cmd.Recreate, "recreate", false, "If true will remove any existing containers and recreate them")
 	upCmd.Flags().
 		BoolVar(&cmd.Reset, "reset", false,
@@ -261,6 +264,10 @@ func (cmd *UpCmd) Run(
 	}
 	if wctx == nil {
 		return nil // Platform mode
+	}
+
+	if cmd.Prebuild {
+		return nil
 	}
 
 	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {

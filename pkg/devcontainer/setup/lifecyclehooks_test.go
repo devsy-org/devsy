@@ -94,7 +94,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	err := RunPreAttachHooks(ctx, result)
+	err := RunPreAttachHooks(ctx, result, false)
 	assert.NoError(s.T(), err)
 
 	err = RunPostAttachHooks(ctx, result)

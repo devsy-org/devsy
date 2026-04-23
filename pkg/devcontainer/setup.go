@@ -189,6 +189,7 @@ func (r *runner) addSetupFlags(args *[]string) {
 	r.addChownFlag(args, isDockerDriver)
 	r.addDriverFlags(args, isDockerDriver)
 	r.addPlatformFlags(args)
+	r.addPrebuildFlag(args)
 	r.addDebugFlag(args)
 }
 
@@ -217,6 +218,12 @@ func (r *runner) addPlatformFlags(args *[]string) {
 	}
 	if platform.PlatformHost != "" {
 		*args = append(*args, "--platform-host", shellescape.Quote(platform.PlatformHost))
+	}
+}
+
+func (r *runner) addPrebuildFlag(args *[]string) {
+	if r.WorkspaceConfig.CLIOptions.Prebuild {
+		*args = append(*args, "--prebuild")
 	}
 }
 
