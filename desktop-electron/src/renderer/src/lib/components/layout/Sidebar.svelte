@@ -122,15 +122,15 @@ function isActive(href: string): boolean {
                   <a href="#/{item.href === '/' ? '' : item.href.slice(1)}" {...props}>
                     <Icon />
                     <span>{item.label}</span>
+                    {#if item.badge != null && item.badge > 0}
+                      <span class="ml-auto rounded-md bg-sidebar-accent px-1.5 text-xs font-medium tabular-nums text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">{item.badge}</span>
+                    {/if}
                     {#if item.shortcut}
-                      <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{item.shortcut}</kbd>
+                      <kbd class="{item.badge ? '' : 'ml-auto '}text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{item.shortcut}</kbd>
                     {/if}
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
-              {#if item.badge != null && item.badge > 0}
-                <Sidebar.MenuBadge>{item.badge}</Sidebar.MenuBadge>
-              {/if}
             </Sidebar.MenuItem>
           {/each}
         </Sidebar.Menu>

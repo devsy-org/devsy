@@ -25,13 +25,22 @@ let newContextName = $state("")
 let creating = $state(false)
 
 let searchTerm = $state("")
-let filteredContexts = $derived(
-  searchTerm.trim()
-    ? $contexts.filter((c) =>
-        c.name.toLowerCase().includes(searchTerm.trim().toLowerCase()),
-      )
-    : $contexts,
-)
+let filteredContexts = $derived.by(() => {
+  const q = searchTerm.trim().toLowerCase()
+  let list = q
+    ? $contexts.filter((c) => c.name.toLowerCase().includes(q))
+    : [...$contexts]
+
+  // Stable sort: active context first, then alphabetical by name
+  const active = $activeContext
+  list.sort((a, b) => {
+    if (a.name === active && b.name !== active) return -1
+    if (b.name === active && a.name !== active) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  return list
+})
 
 let selectedCtx = $derived(
   selectedContext
@@ -111,7 +120,7 @@ async function handleCreate() {
   </div>
 
   {#if $contextsLoading}
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each Array(2) as _}
         <CardSkeleton />
       {/each}
@@ -137,37 +146,34 @@ async function handleCreate() {
         <p class="text-muted-foreground">No contexts matching "{searchTerm}"</p>
       </div>
     {:else}
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each filteredContexts as ctx (ctx.name)}
         <button
           type="button"
-          class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full {ctx.name === $activeContext ? 'ring-2 ring-primary' : ''}"
+          class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full"
           onclick={() => openSheet(ctx.name)}
         >
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <Layers class="size-8 shrink-0 text-muted-foreground" />
               <h3 class="text-lg font-semibold truncate">{ctx.name}</h3>
+            </div>
+            <div class="flex gap-1.5 shrink-0">
               {#if ctx.name === $activeContext}
                 <span class={badgeVariants({ variant: "default" })}>active</span>
               {/if}
+              {#if ctx.options && Object.keys(ctx.options).length > 0}
+                <span class={badgeVariants({ variant: "outline" })}>{Object.keys(ctx.options).length} options</span>
+              {/if}
             </div>
-            <Settings2 class="h-4 w-4 shrink-0 text-muted-foreground mt-1" />
           </div>
 
           {#if ctx.options && Object.keys(ctx.options).length > 0}
-            <div class="mt-3 space-y-1">
-              {#each Object.entries(ctx.options).slice(0, 4) as [key, value]}
-                <div class="text-xs text-muted-foreground truncate">
-                  <span class="font-medium">{key}:</span>
-                  {value}
-                </div>
-              {/each}
-              {#if Object.keys(ctx.options).length > 4}
-                <p class="text-xs text-muted-foreground">+{Object.keys(ctx.options).length - 4} more</p>
-              {/if}
-            </div>
+            <p class="mt-2 text-sm text-muted-foreground truncate">
+              {Object.entries(ctx.options).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(", ")}
+            </p>
           {:else}
-            <p class="mt-3 text-sm text-muted-foreground">Click to configure options</p>
+            <p class="mt-2 text-sm text-muted-foreground">No options configured</p>
           {/if}
 
           {#if ctx.name !== $activeContext}
