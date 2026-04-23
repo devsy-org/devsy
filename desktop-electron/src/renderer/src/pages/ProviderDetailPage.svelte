@@ -7,6 +7,8 @@ import { Label } from "$lib/components/ui/label/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import * as Alert from "$lib/components/ui/alert/index.js"
+import { TriangleAlert } from "@lucide/svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { providers } from "$lib/stores/providers.js"
@@ -39,6 +41,7 @@ let saving = $state(false)
 let loading = $state(true)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
+let initializing = $state(false)
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -112,6 +115,18 @@ async function handleSetDefault() {
   }
 }
 
+async function handleInitialize() {
+  initializing = true
+  try {
+    await providerUse(id)
+    toasts.success(`Initialized ${id}`)
+  } catch (err) {
+    toasts.error(`Failed to initialize: ${extractErrorMessage(err)}`)
+  } finally {
+    initializing = false
+  }
+}
+
 async function handleUpdate() {
   try {
     await providerUpdate(id)
@@ -175,7 +190,13 @@ async function handleSaveOptions() {
 
   {#if provider}
     <div class="flex gap-2">
-      <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+      {#if !isInitialized}
+        <Button size="sm" onclick={handleInitialize} disabled={initializing}>
+          {initializing ? 'Initializing...' : 'Initialize'}
+        </Button>
+      {:else}
+        <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+      {/if}
       <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
     </div>
@@ -193,9 +214,16 @@ async function handleSaveOptions() {
         </p>
       </div>
     {:else if !isInitialized && !loading}
-      <div class="rounded-md border border-muted bg-muted/50 p-3 text-sm text-muted-foreground">
-        This provider has not been initialized yet. Configure its options to get started.
-      </div>
+      <Alert.Root class="border-amber-500/50 bg-amber-500/10">
+        <TriangleAlert class="text-amber-600" />
+        <Alert.Title>Provider not initialized</Alert.Title>
+        <Alert.Description>
+          This provider needs to be initialized before it can create workspaces.
+          <Button size="sm" class="mt-2" onclick={handleInitialize} disabled={initializing}>
+            {initializing ? 'Initializing...' : 'Initialize Provider'}
+          </Button>
+        </Alert.Description>
+      </Alert.Root>
     {/if}
 
     {#if provider.description}
