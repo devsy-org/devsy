@@ -27,6 +27,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/util"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -480,74 +481,62 @@ func (cmd *UpCmd) devsyUpProxy(
 	ctx context.Context,
 	client client2.ProxyClient,
 ) (*config2.Result, error) {
-	// create pipes
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	pb, err := tunnel.NewPipeBridge()
 	if err != nil {
 		return nil, err
 	}
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = stdoutWriter.Close() }()
-	defer func() { _ = stdinWriter.Close() }()
+	defer pb.Close()
 
-	// start machine on stdio
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var result *config2.Result
+	err = pb.RunPair(ctx,
+		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
+			defer log.Debug("done executing up command")
 
-	// create up command
-	errChan := make(chan error, 1)
-	go func() {
-		defer log.Debug("done executing up command")
-		defer cancel()
+			// build devsy up options
+			workspace := client.WorkspaceConfig()
+			baseOptions := cmd.CLIOptions
+			baseOptions.ID = workspace.ID
+			baseOptions.DevContainerPath = workspace.DevContainerPath
+			baseOptions.DevContainerImage = workspace.DevContainerImage
+			baseOptions.IDE = workspace.IDE.Name
+			baseOptions.IDEOptions = nil
+			baseOptions.Source = workspace.Source.String()
+			for optionName, optionValue := range workspace.IDE.Options {
+				baseOptions.IDEOptions = append(
+					baseOptions.IDEOptions,
+					optionName+"="+optionValue.Value,
+				)
+			}
 
-		// build devsy up options
-		workspace := client.WorkspaceConfig()
-		baseOptions := cmd.CLIOptions
-		baseOptions.ID = workspace.ID
-		baseOptions.DevContainerPath = workspace.DevContainerPath
-		baseOptions.DevContainerImage = workspace.DevContainerImage
-		baseOptions.IDE = workspace.IDE.Name
-		baseOptions.IDEOptions = nil
-		baseOptions.Source = workspace.Source.String()
-		for optionName, optionValue := range workspace.IDE.Options {
-			baseOptions.IDEOptions = append(
-				baseOptions.IDEOptions,
-				optionName+"="+optionValue.Value,
+			// run devsy up elsewhere
+			if err := client.Up(ctx, client2.UpOptions{
+				CLIOptions: baseOptions,
+				Debug:      cmd.Debug,
+
+				Stdin:  stdin,
+				Stdout: stdout,
+			}); err != nil {
+				return fmt.Errorf("executing up proxy command: %w", err)
+			}
+			return nil
+		},
+		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
+			var handlerErr error
+			result, handlerErr = tunnelserver.RunUpServer(
+				ctx,
+				stdout,
+				stdin,
+				true,
+				true,
+				client.WorkspaceConfig(),
 			)
-		}
-
-		// run devsy up elsewhere
-		err = client.Up(ctx, client2.UpOptions{
-			CLIOptions: baseOptions,
-			Debug:      cmd.Debug,
-
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-		})
-		if err != nil {
-			errChan <- fmt.Errorf("executing up proxy command: %w", err)
-		} else {
-			errChan <- nil
-		}
-	}()
-
-	// create container etc.
-	result, err := tunnelserver.RunUpServer(
-		cancelCtx,
-		stdoutReader,
-		stdinWriter,
-		true,
-		true,
-		client.WorkspaceConfig(),
+			if handlerErr != nil {
+				return fmt.Errorf("run tunnel machine: %w", handlerErr)
+			}
+			return nil
+		},
 	)
-	if err != nil {
-		return nil, fmt.Errorf("run tunnel machine: %w", err)
-	}
-
-	// wait until command finished
-	return result, <-errChan
+	return result, err
 }
 
 func (cmd *UpCmd) devsyUpDaemon(
