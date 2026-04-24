@@ -42,7 +42,7 @@ let parsed = $derived(lines.map(parseLogLine))
             </span>
           {/if}
         </Table.Cell>
-        <Table.Cell class="text-sm max-w-0 break-words" title={line.message}>{line.message}</Table.Cell>
+        <Table.Cell class="text-sm max-w-0 whitespace-normal break-words" title={line.message}>{line.message}</Table.Cell>
       </Table.Row>
     {/each}
   </Table.Body>
