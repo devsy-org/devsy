@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -67,101 +67,155 @@ func Extract(origReader io.Reader, destFolder string, options ...Option) error {
 	}
 }
 
-func extractNext(tarReader *tar.Reader, destFolder string, options *Options) (bool, error) {
+// withinDir checks that resolved stays inside the destFolder boundary.
+func withinDir(resolved, destFolder string) bool {
+	cleanDest := filepath.Clean(destFolder) + string(os.PathSeparator)
+	return strings.HasPrefix(
+		filepath.Clean(resolved)+string(os.PathSeparator),
+		cleanDest,
+	)
+}
+
+// resolveRelativePath strips levels and builds the output path.
+func resolveRelativePath(header *tar.Header, opts *Options) string {
+	rel := getRelativeFromFullPath("/"+header.Name, "")
+	for i := 0; i < opts.StripLevels; i++ {
+		rel = strings.TrimPrefix(rel, "/")
+		idx := strings.Index(rel, "/")
+		if idx == -1 {
+			break
+		}
+		rel = rel[idx+1:]
+	}
+	if opts.StripLevels > 0 {
+		rel = "/" + rel
+	}
+	return rel
+}
+
+func extractNext(
+	tarReader *tar.Reader, destFolder string, options *Options,
+) (bool, error) {
 	header, err := tarReader.Next()
 	if err != nil {
-		if !errors.Is(err, io.EOF) {
-			return false, fmt.Errorf("tar reader next: %w", err)
+		if errors.Is(err, io.EOF) {
+			return false, nil
 		}
-
-		return false, nil
+		return false, fmt.Errorf("tar reader next: %w", err)
 	}
 
-	relativePath := getRelativeFromFullPath("/"+header.Name, "")
-	if options.StripLevels > 0 {
-		for i := 0; i < options.StripLevels; i++ {
-			relativePath = strings.TrimPrefix(relativePath, "/")
-			index := strings.Index(relativePath, "/")
-			if index == -1 {
-				break
-			}
+	rel := resolveRelativePath(header, options)
+	outFileName := filepath.Join(destFolder, rel)
 
-			relativePath = relativePath[index+1:]
-		}
-
-		relativePath = "/" + relativePath
+	if !withinDir(outFileName, destFolder) {
+		return false, fmt.Errorf(
+			"path traversal detected: %s resolves outside destination",
+			header.Name,
+		)
 	}
-	outFileName := path.Join(destFolder, relativePath)
-	baseName := path.Dir(outFileName)
 
+	switch header.Typeflag {
+	case tar.TypeSymlink, tar.TypeLink:
+		if err := validateLinkTarget(header, outFileName, destFolder); err != nil {
+			return false, err
+		}
+	}
+
+	if err := extractEntry(tarReader, header, outFileName, options); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// validateLinkTarget ensures a symlink or hard link target stays within destFolder.
+func validateLinkTarget(header *tar.Header, outFileName, destFolder string) error {
+	linkTarget := resolveLinkTarget(header.Linkname, outFileName)
+	if !withinDir(linkTarget, destFolder) {
+		kind := "symlink"
+		if header.Typeflag == tar.TypeLink {
+			kind = "hard link"
+		}
+		return fmt.Errorf(
+			"%s traversal detected: %s -> %s",
+			kind, header.Name, header.Linkname,
+		)
+	}
+	return nil
+}
+
+// resolveLinkTarget resolves a link target to an absolute path.
+func resolveLinkTarget(linkname, outFileName string) string {
+	if filepath.IsAbs(linkname) {
+		return filepath.Clean(linkname)
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(outFileName), linkname))
+}
+
+func extractEntry(
+	tarReader *tar.Reader, header *tar.Header,
+	outFileName string, options *Options,
+) error {
 	dirPerm := os.ModePerm
 	if options.Perm != nil {
 		dirPerm = *options.Perm
 	}
-
-	// Check if newer file is there and then don't override?
-	if err := os.MkdirAll(baseName, dirPerm); err != nil {
-		return false, err
+	if err := os.MkdirAll(filepath.Dir(outFileName), dirPerm); err != nil {
+		return err
 	}
 
-	// whats the file perm?
+	switch header.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(outFileName, dirPerm)
+	case tar.TypeSymlink:
+		return os.Symlink(header.Linkname, outFileName)
+	case tar.TypeLink:
+		return os.Link(header.Linkname, outFileName)
+	default:
+		return extractRegularFile(tarReader, header, outFileName, options)
+	}
+}
+
+func extractRegularFile(
+	tarReader *tar.Reader,
+	header *tar.Header,
+	outFileName string,
+	options *Options,
+) error {
 	filePerm := os.FileMode(0o644)
 	if options.Perm != nil {
 		filePerm = *options.Perm
 	}
-
-	// Is dir?
-	switch header.Typeflag {
-	case tar.TypeDir:
-		if err := os.MkdirAll(outFileName, dirPerm); err != nil {
-			return false, err
-		}
-
-		return true, nil
-	case tar.TypeSymlink:
-		err := os.Symlink(header.Linkname, outFileName)
-		if err != nil {
-			return false, err
-		}
-
-		return true, nil
-	case tar.TypeLink:
-		err := os.Link(header.Linkname, outFileName)
-		if err != nil {
-			return false, err
-		}
-
-		return true, nil
-	}
-
-	// Create / Override file
-	outFile, err := os.OpenFile(outFileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerm)
+	outFile, err := openFileWithRetry(outFileName, filePerm)
 	if err != nil {
-		// Try again after 5 seconds
-		time.Sleep(time.Second * 5)
-		outFile, err = os.OpenFile(outFileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerm)
-		if err != nil {
-			return false, fmt.Errorf("create %s: %w", outFileName, err)
-		}
+		return err
 	}
 	defer func() { _ = outFile.Close() }()
 
 	if _, err := io.Copy(outFile, tarReader); err != nil {
-		return false, fmt.Errorf("io copy tar reader %s: %w", outFileName, err)
+		return fmt.Errorf("io copy tar reader %s: %w", outFileName, err)
 	}
 	if err := outFile.Close(); err != nil {
-		return false, fmt.Errorf("out file close %s: %w", outFileName, err)
+		return fmt.Errorf("out file close %s: %w", outFileName, err)
 	}
 
-	// Set permissions
 	if options.Perm == nil {
-		_ = os.Chmod(outFileName, header.FileInfo().Mode()|0o600) // #nosec G703
+		_ = os.Chmod(outFileName, header.FileInfo().Mode()|0o600)
 	}
-
-	// Set mod time from tar header
 	_ = os.Chtimes(outFileName, time.Now(), header.FileInfo().ModTime())
+	return nil
+}
 
-	return true, nil
+func openFileWithRetry(name string, perm os.FileMode) (*os.File, error) {
+	flags := os.O_RDWR | os.O_CREATE | os.O_TRUNC
+	f, err := os.OpenFile(filepath.Clean(name), flags, perm)
+	if err != nil {
+		time.Sleep(time.Second * 5)
+		f, err = os.OpenFile(filepath.Clean(name), flags, perm)
+		if err != nil {
+			return nil, fmt.Errorf("create %s: %w", name, err)
+		}
+	}
+	return f, nil
 }
 
 func getRelativeFromFullPath(fullpath string, prefix string) string {
