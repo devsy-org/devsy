@@ -59,6 +59,50 @@ func TestLookupValue(t *testing.T) {
 	}
 }
 
+func TestReplaceWithContextUnknownVarPreservedAsLiteral(t *testing.T) {
+	ctx := &SubstitutionContext{
+		Env: map[string]string{"HOME": "/root"},
+	}
+	match := "${unknownVar}"
+	result := replaceWithContext(
+		false, ctx, match, "unknownVar", nil,
+	)
+	if result != match {
+		t.Errorf(
+			"expected unknown var preserved as %q, got %q",
+			match, result,
+		)
+	}
+}
+
+func TestReplaceWithContextPreservesContainerEnv(t *testing.T) {
+	ctx := &SubstitutionContext{}
+	match := "${containerEnv:PATH}"
+	result := replaceWithContext(
+		false, ctx, match, "containerEnv", []string{"PATH"},
+	)
+	if result != match {
+		t.Errorf(
+			"expected containerEnv preserved as %q, got %q",
+			match, result,
+		)
+	}
+}
+
+func TestReplaceWithContainerEnvUnknownPreservedAsLiteral(t *testing.T) {
+	env := map[string]string{"PATH": "/usr/bin"}
+	match := "${unknownVar}"
+	result := replaceWithContainerEnv(
+		env, match, "unknownVar", nil,
+	)
+	if result != match {
+		t.Errorf(
+			"expected unknown var preserved as %q, got %q",
+			match, result,
+		)
+	}
+}
+
 func TestResolveStringDefaultWithColons(t *testing.T) {
 	replace := func(_, variable string, args []string) string {
 		env := map[string]string{}

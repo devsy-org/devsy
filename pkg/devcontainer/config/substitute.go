@@ -137,6 +137,8 @@ func replaceWithContext(
 			return filepath.Base(substitutionCtx.ContainerWorkspaceFolder)
 		}
 		return match
+	case "containerEnv":
+		return match
 	default:
 		return match
 	}
