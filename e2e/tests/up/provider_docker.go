@@ -476,6 +476,25 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.GetTimeout()),
 		)
 
+		ginkgo.It(
+			"initializeCommand with object syntax runs named sub-commands in parallel",
+			func(ctx context.Context) {
+				tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-initcmd-parallel")
+				framework.ExpectNoError(err)
+
+				// Both initializeCommand sub-commands run on the host and write
+				// marker files into the workspace folder.
+				one, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-one.out"))
+				framework.ExpectNoError(err)
+				gomega.Expect(string(one)).To(gomega.Equal("initCmdOne"))
+
+				two, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-two.out"))
+				framework.ExpectNoError(err)
+				gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
+			},
+			ginkgo.SpecTimeout(framework.GetTimeout()),
+		)
+
 		ginkgo.It("IDE accessible before postAttachCommand completes", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-post-attach-nonblocking",
