@@ -1,0 +1,15 @@
+{
+  "name": "remote-env-null-test",
+  "dockerComposeFile": "./docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "remoteEnv": {
+    "SET_VAR": "hello",
+    "UNSET_VAR": null
+  },
+  "postCreateCommand": [
+    "sh",
+    "-c",
+    "echo SET=$SET_VAR > $HOME/remote-env-null.out && if [ -z \"${UNSET_VAR+x}\" ]; then echo UNSET=true >> $HOME/remote-env-null.out; else echo UNSET=false >> $HOME/remote-env-null.out; fi"
+  ]
+}

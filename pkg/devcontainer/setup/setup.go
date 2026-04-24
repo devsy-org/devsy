@@ -280,24 +280,54 @@ func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {
 		return nil
 	}
 
-	// build remote env
-	remoteEnvs := []string{}
-	for k, v := range mergedConfig.RemoteEnv {
-		remoteEnvs = append(remoteEnvs, k+"=\""+v+"\"")
-	}
-	sort.Strings(remoteEnvs)
+	setEnvs, unsetKeys := splitRemoteEnv(mergedConfig.RemoteEnv)
+	marker := buildEnvMarker(setEnvs, unsetKeys)
 
-	// check if we need to update env
-	exists, err := markerFileExists("patchEtcEnvironment", strings.Join(remoteEnvs, "\n"))
+	exists, err := markerFileExists("patchEtcEnvironment", marker)
 	if err != nil {
 		return err
 	} else if exists {
 		return nil
 	}
 
-	// update env
-	envfile.MergeAndApply(mergedConfig.RemoteEnv)
+	envfile.MergeAndApply(setEnvs)
+	for _, k := range unsetKeys {
+		if err := os.Unsetenv(k); err != nil {
+			return fmt.Errorf("unset env %s: %w", k, err)
+		}
+	}
+
 	return nil
+}
+
+func splitRemoteEnv(
+	remoteEnv map[string]*string,
+) (map[string]string, []string) {
+	setEnvs := map[string]string{}
+	unsetKeys := []string{}
+	for k, v := range remoteEnv {
+		if v == nil {
+			unsetKeys = append(unsetKeys, k)
+		} else {
+			setEnvs[k] = *v
+		}
+	}
+	return setEnvs, unsetKeys
+}
+
+func buildEnvMarker(
+	setEnvs map[string]string,
+	unsetKeys []string,
+) string {
+	lines := make([]string, 0, len(setEnvs))
+	for k, v := range setEnvs {
+		lines = append(lines, k+"=\""+v+"\"")
+	}
+	sort.Strings(lines)
+	sort.Strings(unsetKeys)
+	return strings.Join(lines, "\n") +
+		"\n---unset---\n" +
+		strings.Join(unsetKeys, "\n")
 }
 
 func chownAgentSock(setupInfo *config.Result) error {

@@ -66,7 +66,7 @@ type DevContainerConfigBase struct {
 	UpdateRemoteUserUID *bool `json:"updateRemoteUserUID,omitempty"`
 
 	// Remote environment variables to set for processes spawned in the container including lifecycle scripts and any remote editor/IDE server process.
-	RemoteEnv map[string]string `json:"remoteEnv,omitempty"`
+	RemoteEnv map[string]*string `json:"remoteEnv,omitempty"`
 
 	// The username to use for spawning processes in the container including lifecycle scripts and any remote editor/IDE server process. The default is the same user as the container.
 	RemoteUser string `json:"remoteUser,omitempty"`

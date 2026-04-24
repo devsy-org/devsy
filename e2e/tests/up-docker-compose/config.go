@@ -407,6 +407,55 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("remote env null unsets variable", func(ctx context.Context) {
+			_, workspace, err := tc.setupAndStartWorkspace(
+				ctx,
+				"tests/up-docker-compose/testdata/docker-compose-remote-env-null",
+			)
+			framework.ExpectNoError(err)
+
+			ids, err := findComposeContainer(
+				ctx,
+				tc.dockerHelper,
+				tc.composeHelper,
+				workspace.UID,
+				"app",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(
+				gomega.HaveLen(1),
+				"1 compose container to be created",
+			)
+
+			// Verify SET_VAR is set
+			err = tc.f.ExecCommand(
+				ctx,
+				true,
+				true,
+				"SET=hello",
+				[]string{
+					"ssh", "--command",
+					"head -1 $HOME/remote-env-null.out",
+					workspace.ID,
+				},
+			)
+			framework.ExpectNoError(err)
+
+			// Verify UNSET_VAR was unset (not just empty)
+			err = tc.f.ExecCommand(
+				ctx,
+				true,
+				true,
+				"UNSET=true",
+				[]string{
+					"ssh", "--command",
+					"tail -1 $HOME/remote-env-null.out",
+					workspace.ID,
+				},
+			)
+			framework.ExpectNoError(err)
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("remote user", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
