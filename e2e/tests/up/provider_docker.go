@@ -484,11 +484,13 @@ var _ = ginkgo.Describe(
 
 				// Both initializeCommand sub-commands run on the host and write
 				// marker files into the workspace folder.
-				one, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-one.out")) // #nosec G304 -- test path from setupAndUp
+				// #nosec G304 -- test path from setupAndUp
+				one, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-one.out"))
 				framework.ExpectNoError(err)
 				gomega.Expect(string(one)).To(gomega.Equal("initCmdOne"))
 
-				two, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-two.out")) // #nosec G304 -- test path from setupAndUp
+				// #nosec G304 -- test path from setupAndUp
+				two, err := os.ReadFile(filepath.Join(tempDir, "init-cmd-two.out"))
 				framework.ExpectNoError(err)
 				gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
 			},
