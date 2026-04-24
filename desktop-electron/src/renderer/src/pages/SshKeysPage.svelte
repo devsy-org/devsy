@@ -168,7 +168,7 @@ async function copyPublicKey(key: SshKeyInfo) {
     <ScrollArea class="rounded-md border">
       <div class="divide-y">
         {#each keys as key (key.name)}
-          <div class="flex items-start gap-4 p-4">
+          <div class="flex items-start gap-4 p-4 transition-colors hover:bg-accent/50">
             <KeyRound class="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">

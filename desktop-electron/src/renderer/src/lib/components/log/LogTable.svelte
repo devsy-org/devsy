@@ -13,7 +13,7 @@ let parsed = $derived(lines.map(parseLogLine))
   <Table.Header class="sticky top-0 z-10 bg-background">
     <Table.Row>
       <Table.Head class="w-20">Time</Table.Head>
-      <Table.Head class="w-16">Level</Table.Head>
+      <Table.Head class="w-24">Level</Table.Head>
       <Table.Head>Message</Table.Head>
     </Table.Row>
   </Table.Header>
@@ -46,7 +46,7 @@ let parsed = $derived(lines.map(parseLogLine))
             {/if}
           {/if}
         </Table.Cell>
-        <Table.Cell class="text-sm truncate" title={line.message}>{line.message}</Table.Cell>
+        <Table.Cell class="text-sm break-all" title={line.message}>{line.message}</Table.Cell>
       </Table.Row>
     {/each}
   </Table.Body>
