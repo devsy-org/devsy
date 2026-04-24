@@ -134,7 +134,8 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 
 			for _, dir := range []string{tempDir1, tempDir2} {
-				devContainerFileBuf, err := os.ReadFile(path.Join(dir, ".devcontainer.json"))
+				devContainerFile := filepath.Clean(path.Join(dir, ".devcontainer.json"))
+				devContainerFileBuf, err := os.ReadFile(devContainerFile)
 				framework.ExpectNoError(err)
 
 				output := strings.ReplaceAll(
@@ -153,7 +154,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 				"attachment; filename=devcontainer-feature-hello.tgz",
 			)
 
-			featureArchiveFileBuf, err := os.ReadFile(featureArchiveFilePath)
+			featureArchiveFileBuf, err := os.ReadFile(filepath.Clean(featureArchiveFilePath))
 			framework.ExpectNoError(err)
 
 			server.AppendHandlers(
