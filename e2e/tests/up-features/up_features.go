@@ -119,6 +119,10 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir1)
 
+			// CopyToTempDir changes cwd; restore so the second copy resolves its relative path.
+			err = os.Chdir(initialDir)
+			framework.ExpectNoError(err)
+
 			tempDir2, err := framework.CopyToTempDir(
 				"tests/up-features/testdata/docker-features-http-headers",
 			)
