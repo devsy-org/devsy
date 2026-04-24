@@ -303,7 +303,7 @@ func (c *initCmdContext) runSingle(
 	defer func() { _ = writer.Close() }()
 	defer func() { _ = errwriter.Close() }()
 
-	execCmd := exec.Command(args[0], args[1:]...)
+	execCmd := exec.Command(args[0], args[1:]...) // #nosec G204 -- args come from devcontainer.json initializeCommand
 	env := execCmd.Environ()
 	env = append(env, c.extraEnvVars...)
 

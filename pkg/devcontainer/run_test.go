@@ -68,7 +68,7 @@ func TestRunInitializeCommand_SingleKey(t *testing.T) {
 	err := runInitializeCommand(dir, cfg, nil)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(outFile)
+	data, err := os.ReadFile(outFile) // #nosec G304 -- test path from t.TempDir
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "hello")
 }
@@ -85,7 +85,7 @@ func TestRunInitializeCommand_StringFormat(t *testing.T) {
 	err := runInitializeCommand(dir, cfg, nil)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(outFile)
+	data, err := os.ReadFile(outFile) // #nosec G304 -- test path from t.TempDir
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "hello")
 }
