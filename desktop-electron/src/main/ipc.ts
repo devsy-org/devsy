@@ -73,13 +73,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   })
 
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
-    // Initialize a provider without changing the default.
-    // Save the current default, run `provider use` to initialize, then restore.
-    const currentDefault = state.providerList().find((p) => p["isDefault"] === true)
-    await cli.runRaw(["provider", "use", args.name])
-    if (currentDefault) {
-      await cli.runRaw(["provider", "use", currentDefault.name])
-    }
+    await cli.runRaw(["provider", "update", args.name])
   })
 
   ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
