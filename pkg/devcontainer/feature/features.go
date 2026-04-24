@@ -283,6 +283,70 @@ func downloadLayer(img v1.Image, id, destFile string) error {
 	return writeLayerToFile(data, destFile)
 }
 
+// verifyCacheIntegrity checks a cached tarball against its stored
+// SHA-256 sidecar. Returns true when the cache is safe to use.
+func verifyCacheIntegrity(featureFolder, id string) bool {
+	hashFile := filepath.Join(featureFolder, "feature.sha256")
+	storedBytes, err := os.ReadFile(filepath.Clean(hashFile))
+	if err != nil {
+		log.Warnf(
+			"No integrity hash for cached feature (backward compat): featureId=%s",
+			id,
+		)
+		return true
+	}
+
+	tarball := filepath.Join(featureFolder, "feature.tgz")
+	computed, err := hash.File(tarball)
+	if err != nil {
+		log.Errorf("Failed to hash cached tarball: error=%v, featureId=%s", err, id)
+		return false
+	}
+
+	if computed != strings.TrimSpace(string(storedBytes)) {
+		log.Errorf(
+			"Integrity check failed for cached feature: featureId=%s",
+			id,
+		)
+		return false
+	}
+
+	log.Debugf("Integrity check passed for cached feature: featureId=%s", id)
+	return true
+}
+
+// storeIntegrityHash computes and persists the SHA-256 of a downloaded tarball.
+func storeIntegrityHash(featureFolder, tarballPath, id string) {
+	computed, err := hash.File(tarballPath)
+	if err != nil {
+		log.Errorf("Failed to compute tarball hash: error=%v, featureId=%s", err, id)
+		return
+	}
+
+	hashFile := filepath.Join(featureFolder, "feature.sha256")
+	if err := os.WriteFile(hashFile, []byte(computed), 0o600); err != nil {
+		log.Errorf("Failed to write hash sidecar: error=%v, featureId=%s", err, id)
+		return
+	}
+
+	log.Infof("Feature tarball integrity: featureId=%s, sha256=%s", id, computed)
+}
+
+func extractTarball(downloadFile, dest string) error {
+	file, err := os.Open(filepath.Clean(downloadFile))
+	if err != nil {
+		return fmt.Errorf("open tarball: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	if err := extract.Extract(file, dest); err != nil {
+		_ = os.RemoveAll(dest)
+		return fmt.Errorf("extract folder: %w", err)
+	}
+
+	return nil
+}
+
 func processDirectTarFeature(
 	id string,
 	httpHeaders map[string]string,
@@ -299,20 +363,24 @@ func processDirectTarFeature(
 		)
 	}
 
-	// feature already exists?
 	featureFolder, err := getFeaturesTempFolder(id)
 	if err != nil {
 		return "", fmt.Errorf("resolve feature cache dir: %w", err)
 	}
 
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
-	_, err = os.Stat(featureExtractedFolder)
-	if err == nil && !forceDownload {
-		log.Debugf("direct tar feature already cached: folder=%s", featureExtractedFolder)
-		return featureExtractedFolder, nil
+
+	// Check cache — verify integrity if present.
+	_, statErr := os.Stat(featureExtractedFolder)
+	if statErr == nil && !forceDownload {
+		if verifyCacheIntegrity(featureFolder, id) {
+			log.Debugf("direct tar feature already cached: folder=%s", featureExtractedFolder)
+			return featureExtractedFolder, nil
+		}
+		_ = os.RemoveAll(featureFolder)
 	}
 
-	// download feature tarball
+	// Download feature tarball.
 	downloadFile := filepath.Join(featureFolder, "feature.tgz")
 	err = downloadFeatureFromURL(id, downloadFile, httpHeaders)
 	if err != nil {
@@ -320,24 +388,11 @@ func processDirectTarFeature(
 		return "", err
 	}
 
-	// extract file
-	file, err := os.Open(downloadFile)
-	if err != nil {
-		log.Errorf("failed to open downloaded tarball: error=%v, file=%s", err, downloadFile)
-		return "", err
-	}
-	defer func() { _ = file.Close() }()
+	storeIntegrityHash(featureFolder, downloadFile, id)
 
-	// extract tar.gz
-	err = extract.Extract(file, featureExtractedFolder)
-	if err != nil {
-		log.Errorf(
-			"failed to extract tarball: error=%v, destination=%s",
-			err,
-			featureExtractedFolder,
-		)
-		_ = os.RemoveAll(featureExtractedFolder)
-		return "", fmt.Errorf("extract folder: %w", err)
+	if err := extractTarball(downloadFile, featureExtractedFolder); err != nil {
+		log.Errorf("failed to extract tarball: error=%v, featureId=%s", err, id)
+		return "", err
 	}
 
 	log.Infof(
