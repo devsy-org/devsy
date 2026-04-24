@@ -236,7 +236,6 @@ async function handleSaveOptions() {
           </form>
         {:else}
           {provider.name}
-          <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" onclick={startRename}>Rename</Button>
         {/if}
         {#if provider.version}
           <span class={badgeVariants({ variant: "outline" })}>{provider.version}</span>
@@ -263,10 +262,11 @@ async function handleSaveOptions() {
         </Button>
       {/if}
       <ButtonGroup.Root>
+        <Button variant="outline" size="sm" onclick={startRename}>Rename</Button>
         <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
         <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
-        <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
       </ButtonGroup.Root>
+      <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
     </div>
 
     <Separator />
