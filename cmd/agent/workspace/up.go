@@ -709,10 +709,17 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo) error {
 		return nil
 	}
 
+	var shutdownAction string
+	if workspaceInfo.LastDevContainerConfig != nil &&
+		workspaceInfo.LastDevContainerConfig.Config != nil {
+		shutdownAction = workspaceInfo.LastDevContainerConfig.Config.ShutdownAction
+	}
+
 	log.Debugf("installing Devsy daemon into server")
 	return agentdaemon.InstallDaemon(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.CLIOptions.DaemonInterval,
+		shutdownAction,
 	)
 }
 

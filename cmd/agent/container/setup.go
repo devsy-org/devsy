@@ -210,7 +210,8 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return err
 	}
 
-	if err := cmd.startContainerDaemon(sctx.workspaceInfo); err != nil {
+	shutdownAction := sctx.setupInfo.MergedConfig.ShutdownAction
+	if err := cmd.startContainerDaemon(sctx.workspaceInfo, shutdownAction); err != nil {
 		return err
 	}
 
@@ -400,6 +401,7 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 
 func (cmd *SetupContainerCmd) startContainerDaemon(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
+	shutdownAction string,
 ) error {
 	if workspaceInfo.CLIOptions.Platform.Enabled ||
 		workspaceInfo.CLIOptions.DisableDaemon ||
@@ -418,15 +420,19 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 			return nil, err
 		}
 
-		//nolint:gosec // binaryPath is from os.Executable(), not user input
-		return exec.Command(
-			binaryPath,
-			"agent",
-			"container",
-			"daemon",
-			"--timeout",
-			workspaceInfo.ContainerTimeout,
-		), nil
+		args := []string{
+			"agent", "container", "daemon",
+			"--timeout", workspaceInfo.ContainerTimeout,
+		}
+		if shutdownAction != "" {
+			args = append(args, "--shutdown-action", shutdownAction)
+		}
+
+		daemonCmd := &exec.Cmd{
+			Path: binaryPath,
+			Args: append([]string{binaryPath}, args...),
+		}
+		return daemonCmd, nil
 	})
 }
 

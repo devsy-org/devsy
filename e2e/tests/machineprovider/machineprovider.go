@@ -169,5 +169,61 @@ var _ = ginkgo.Describe(
 					"machine did not shutdown in time",
 				)
 			})
+
+		ginkgo.It("test shutdownAction none suppresses inactivity timeout",
+			ginkgo.SpecTimeout(framework.GetTimeout()*5),
+			func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				// copy test dir — uses devcontainer.json with shutdownAction: "none"
+				tempDir, err := framework.CopyToTempDirWithoutChdir(
+					initialDir + "/tests/machineprovider/testdata/machineprovider3",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+				// create provider (same 5s inactivity timeout as machineprovider2)
+				_ = f.DevsyProviderDelete(ctx, "docker123")
+				err = f.DevsyProviderAdd(ctx, filepath.Join(tempDir, "provider.yaml"))
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					err = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+					framework.ExpectNoError(err)
+					err = f.DevsyProviderDelete(cleanupCtx, "docker123")
+					framework.ExpectNoError(err)
+				})
+
+				// wait for devsy workspace to come online
+				err = f.DevsyUp(ctx, tempDir, "--debug", "--daemon-interval=3s")
+				framework.ExpectNoError(err)
+
+				// check initial status
+				status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(
+					strings.ToUpper(status.State),
+					"RUNNING",
+					"workspace status did not match",
+				)
+
+				// stop and restart to trigger timeout monitor path
+				err = f.DevsyStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				err = f.DevsyUp(ctx, tempDir, "--daemon-interval=3s")
+				framework.ExpectNoError(err)
+
+				// verify workspace stays running well past the 5s timeout.
+				// The timeout would fire within ~15s (5s timeout + 10s ticker).
+				// We assert RUNNING for 30s to give ample margin.
+				gomega.Consistently(func() string {
+					status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
+					framework.ExpectNoError(err)
+					return strings.ToUpper(status.State)
+				}, 30*time.Second, 2*time.Second).Should(
+					gomega.Equal("RUNNING"),
+					"workspace should stay running when shutdownAction is none",
+				)
+			})
 	},
 )
