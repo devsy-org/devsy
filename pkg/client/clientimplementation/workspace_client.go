@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/gofrs/flock"
 )
@@ -953,33 +954,48 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 	}
 
 	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo)
-	stdoutReader, stdoutWriter, stdinReader, stdinWriter, err := createPipes()
+
+	pb, err := tunnel.NewPipeBridge()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = stdoutWriter.Close() }()
-	defer func() { _ = stdoutReader.Close() }()
-	defer func() { _ = stdinReader.Close() }()
-	defer func() { _ = stdinWriter.Close() }()
+	defer pb.Close()
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var result *config2.Result
+	err = pb.RunPair(ctx,
+		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
+			defer log.Debugf("up command completed")
 
-	errChan := runAgentInjection(agentInjectionOptions{
-		ctx:             cancelCtx,
-		workspaceClient: opts.WorkspaceClient,
-		command:         command,
-		stdin:           stdinReader,
-		stdout:          stdoutWriter,
-		timeout:         wInfo.InjectTimeout,
-		cancel:          cancel,
-	})
-	result, err := runTunnelServer(cancelCtx, opts, stdoutReader, stdinWriter)
-	if err != nil {
-		return nil, err
-	}
+			writer := log.Writer(log.LevelInfo)
+			defer func() { _ = writer.Close() }()
 
-	return result, <-errChan
+			return agent.InjectAgent(&agent.InjectOptions{
+				Ctx: ctx,
+				Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+					return opts.WorkspaceClient.Command(ctx, client.CommandOptions{
+						Command: command,
+						Stdin:   stdin,
+						Stdout:  stdout,
+						Stderr:  stderr,
+					})
+				},
+				IsLocal:         opts.WorkspaceClient.AgentLocal(),
+				RemoteAgentPath: opts.WorkspaceClient.AgentPath(),
+				DownloadURL:     opts.WorkspaceClient.AgentURL(),
+				Command:         command,
+				Stdin:           stdin,
+				Stdout:          stdout,
+				Stderr:          writer,
+				Timeout:         wInfo.InjectTimeout,
+			})
+		},
+		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
+			var handlerErr error
+			result, handlerErr = runTunnelServer(ctx, opts, stdout, stdin)
+			return handlerErr
+		},
+	)
+	return result, err
 }
 
 func buildAgentCommand(
@@ -996,62 +1012,6 @@ func buildAgentCommand(
 		command += " --debug"
 	}
 	return command
-}
-
-func createPipes() (stdoutReader, stdoutWriter, stdinReader, stdinWriter *os.File, err error) {
-	stdoutReader, stdoutWriter, err = os.Pipe()
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	stdinReader, stdinWriter, err = os.Pipe()
-	if err != nil {
-		func() { _ = stdoutReader.Close() }()
-		func() { _ = stdoutWriter.Close() }()
-		return nil, nil, nil, nil, err
-	}
-	return stdoutReader, stdoutWriter, stdinReader, stdinWriter, nil
-}
-
-type agentInjectionOptions struct {
-	ctx             context.Context
-	workspaceClient client.WorkspaceClient
-	command         string
-	stdin           *os.File
-	stdout          *os.File
-	timeout         time.Duration
-	cancel          context.CancelFunc
-}
-
-func runAgentInjection(opts agentInjectionOptions) chan error {
-	errChan := make(chan error, 1)
-	go func() {
-		defer log.Debugf("up command completed")
-		defer opts.cancel()
-
-		writer := log.Writer(log.LevelInfo)
-		defer func() { _ = writer.Close() }()
-
-		errChan <- agent.InjectAgent(&agent.InjectOptions{
-			Ctx: opts.ctx,
-			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-				return opts.workspaceClient.Command(ctx, client.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
-				})
-			},
-			IsLocal:         opts.workspaceClient.AgentLocal(),
-			RemoteAgentPath: opts.workspaceClient.AgentPath(),
-			DownloadURL:     opts.workspaceClient.AgentURL(),
-			Command:         opts.command,
-			Stdin:           opts.stdin,
-			Stdout:          opts.stdout,
-			Stderr:          writer,
-			Timeout:         opts.timeout,
-		})
-	}()
-	return errChan
 }
 
 func runTunnelServer(
