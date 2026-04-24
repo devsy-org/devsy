@@ -56,6 +56,8 @@ type SetupContainerCmd struct {
 	AccessKey              string
 	PlatformHost           string
 	WorkspaceHost          string
+	DotfilesRepo           string
+	DotfilesScript         string
 }
 
 // NewSetupContainerCmd creates a new command.
@@ -89,6 +91,10 @@ func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	setupContainerCmd.Flags().
 		StringVar(&cmd.WorkspaceHost, "workspace-host", "", "Workspace hostname to use")
 	setupContainerCmd.Flags().StringVar(&cmd.PlatformHost, "platform-host", "", "Platform host")
+	setupContainerCmd.Flags().
+		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
+	setupContainerCmd.Flags().
+		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
 	_ = setupContainerCmd.MarkFlagRequired("setup-info")
 	return setupContainerCmd
 }
@@ -186,6 +192,10 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
 		Prebuild:          cmd.Prebuild,
+		Dotfiles: setup.DotfilesConfig{
+			Repository:    cmd.DotfilesRepo,
+			InstallScript: cmd.DotfilesScript,
+		},
 	}
 
 	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)
@@ -225,7 +235,10 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	}
 
 	if !deferred.Empty() {
-		if err := cmd.startDeferredHooks(resolvedSetupInfo); err != nil {
+		err = cmd.startDeferredHooks(
+			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
+		)
+		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
@@ -247,14 +260,18 @@ func compressSetupInfo(setupInfo *config.Result) (string, error) {
 	return compress.Compress(string(raw))
 }
 
-func (cmd *SetupContainerCmd) startDeferredHooks(setupInfo string) error {
+func (cmd *SetupContainerCmd) startDeferredHooks(
+	setupInfo, dotfilesRepo, dotfilesScript string,
+) error {
 	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
 		log.Debugf("starting deferred lifecycle hooks as background process")
-		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild)
+		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild, dotfilesRepo, dotfilesScript)
 	})
 }
 
-func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
+func buildDeferredHooksCmd(
+	setupInfo string, prebuild bool, dotfilesRepo, dotfilesScript string,
+) (*exec.Cmd, error) {
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -266,6 +283,12 @@ func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
 	}
 	if prebuild {
 		args = append(args, "--prebuild")
+	}
+	if dotfilesRepo != "" {
+		args = append(args, "--dotfiles-repo", dotfilesRepo)
+	}
+	if dotfilesScript != "" {
+		args = append(args, "--dotfiles-script", dotfilesScript)
 	}
 
 	return &exec.Cmd{
