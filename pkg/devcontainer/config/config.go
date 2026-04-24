@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -311,22 +312,63 @@ type HostRequirements struct {
 	// Amount of required disk space in bytes. Supports units tb, gb, mb and kb.
 	Storage string `json:"storage,omitempty"`
 
-	// If GPU support should be enabled
-	GPU types.StrBool `json:"gpu,omitempty"`
+	// If GPU support should be enabled. Accepts bool, "optional", or an object
+	// like {"cores": 2, "memory": "8gb"} (object format enables GPU; resource
+	// constraints are advisory).
+	GPU *GPURequirement `json:"gpu,omitempty"`
+}
+
+// GPURequirement represents the gpu field in hostRequirements. It can be
+// unmarshalled from a boolean (true/false), a string ("optional"), or an object
+// ({"cores": N, "memory": "Xgb"}). The object format enables GPU; specific
+// resource constraints are informational/advisory per the devcontainer spec.
+type GPURequirement struct {
+	// Value is "true", "false", or "optional" for simple formats.
+	Value string
+	// Cores is the requested number of GPU cores (object format, advisory).
+	Cores int
+	// Memory is the requested GPU memory (object format, advisory).
+	GPUMemory string
+}
+
+func (g *GPURequirement) UnmarshalJSON(data []byte) error {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("unmarshal gpu requirement: %w", err)
+	}
+
+	switch v := raw.(type) {
+	case bool:
+		g.Value = strconv.FormatBool(v)
+		return nil
+	case string:
+		g.Value = v
+		return nil
+	case map[string]any:
+		// Object format — GPU is enabled; fields are advisory.
+		g.Value = "true"
+		if cores, ok := v["cores"].(float64); ok {
+			g.Cores = int(cores)
+		}
+		if mem, ok := v["memory"].(string); ok {
+			g.GPUMemory = mem
+		}
+		return nil
+	}
+	return fmt.Errorf("unmarshal gpu requirement: %w", types.ErrUnsupportedType)
 }
 
 // ShouldEnableGPU determines if GPU should be enabled based on requirements and availability.
 func (h *HostRequirements) ShouldEnableGPU(gpuAvailable bool) (enable bool, warnIfMissing bool) {
-	if h == nil || h.GPU == "" {
+	if h == nil || h.GPU == nil {
 		return false, false
 	}
 
-	gpuValue := string(h.GPU)
-	if gpuValue == "optional" {
+	if h.GPU.Value == "optional" {
 		return gpuAvailable, false
 	}
 
-	required, err := h.GPU.Bool()
+	required, err := strconv.ParseBool(h.GPU.Value)
 	if err != nil {
 		return false, false
 	}
