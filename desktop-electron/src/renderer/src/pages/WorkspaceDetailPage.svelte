@@ -221,6 +221,7 @@ async function deleteLog(entry: LogEntry) {
 
 async function handleConnect() {
   connecting = true
+  sshSessionId = null
   sshExited = false
   sshConnectionFailed = false
   try {
