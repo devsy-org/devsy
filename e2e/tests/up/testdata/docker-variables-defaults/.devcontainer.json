@@ -1,0 +1,14 @@
+{
+  "name": "variable-defaults-test",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "remoteEnv": {
+    "WITH_DEFAULT": "${localEnv:VARSUB_NONEXISTENT:my_default_value}",
+    "COLON_DEFAULT": "${localEnv:VARSUB_NONEXISTENT2:http://proxy:8080}",
+    "SET_VAR_IGNORES_DEFAULT": "${localEnv:HOME:fallback}"
+  },
+  "postCreateCommand": [
+    "sh",
+    "-c",
+    "echo -n $WITH_DEFAULT > $HOME/with-default.out && echo -n $COLON_DEFAULT > $HOME/colon-default.out && echo -n $SET_VAR_IGNORES_DEFAULT > $HOME/set-var.out"
+  ]
+}

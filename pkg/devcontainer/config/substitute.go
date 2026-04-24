@@ -155,7 +155,7 @@ func lookupValue(isWindows bool, env map[string]string, args []string, match str
 		}
 
 		if len(args) > 1 {
-			defaultValue := args[1]
+			defaultValue := strings.Join(args[1:], ":")
 			return defaultValue
 		}
 

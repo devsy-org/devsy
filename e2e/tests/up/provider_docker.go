@@ -175,6 +175,50 @@ var _ = ginkgo.Describe(
 			gomega.Expect(customImage).To(gomega.Equal("alpine:latest"))
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("variable substitution with defaults", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(
+				ctx, "tests/up/testdata/docker-variables-defaults",
+			)
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			// Unset var uses simple default
+			withDefault, err := dtc.execSSHCapture(
+				ctx, workspace.ID,
+				"cat $HOME/with-default.out",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(withDefault).To(
+				gomega.Equal("my_default_value"),
+			)
+
+			// Unset var uses default containing colons
+			colonDefault, err := dtc.execSSHCapture(
+				ctx, workspace.ID,
+				"cat $HOME/colon-default.out",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(colonDefault).To(
+				gomega.Equal("http://proxy:8080"),
+			)
+
+			// Set var ignores default
+			setVar, err := dtc.execSSHCapture(
+				ctx, workspace.ID,
+				"cat $HOME/set-var.out",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(setVar).To(
+				gomega.Equal(os.Getenv("HOME")),
+			)
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
 			framework.ExpectNoError(err)
