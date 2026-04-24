@@ -329,5 +329,8 @@ func pipe(
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
+	// Drain the second result so neither goroutine outlives the caller.
+	<-errChan
+
 	return first
 }
