@@ -13,15 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func ptr(s string) *string { return &s }
+
 func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 	// Simulate post-substitution state: PATH is a real value, not a
 	// ${containerEnv:PATH} literal.
 	info := &config.Result{
 		MergedConfig: &config.MergedDevContainerConfig{
 			DevContainerConfigBase: config.DevContainerConfigBase{
-				RemoteEnv: map[string]string{
-					"PATH": "/usr/local/bin:/usr/bin:/bin",
-					"HOME": "/home/testuser",
+				RemoteEnv: map[string]*string{
+					"PATH": ptr("/usr/local/bin:/usr/bin:/bin"),
+					"HOME": ptr("/home/testuser"),
 				},
 			},
 		},
@@ -46,8 +48,11 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 
 	// The resolved PATH must come through, not a literal variable reference.
 	gotPath := roundTripped.MergedConfig.RemoteEnv["PATH"]
-	assert.Equal(t, "/usr/local/bin:/usr/bin:/bin", gotPath)
-	assert.False(t, strings.Contains(gotPath, "${containerEnv:"),
+	require.NotNil(t, gotPath)
+	assert.Equal(t, "/usr/local/bin:/usr/bin:/bin", *gotPath)
+	assert.False(t, strings.Contains(*gotPath, "${containerEnv:"),
 		"PATH should be resolved, not contain ${containerEnv:} literals")
-	assert.Equal(t, "/home/testuser", roundTripped.MergedConfig.RemoteEnv["HOME"])
+	gotHome := roundTripped.MergedConfig.RemoteEnv["HOME"]
+	require.NotNil(t, gotHome)
+	assert.Equal(t, "/home/testuser", *gotHome)
 }

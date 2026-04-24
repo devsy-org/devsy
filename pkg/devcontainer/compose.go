@@ -288,10 +288,12 @@ func (r *runner) runDockerCompose(
 
 	// expose the compose project name inside the container
 	if mergedConfig.RemoteEnv == nil {
-		mergedConfig.RemoteEnv = map[string]string{}
+		mergedConfig.RemoteEnv = map[string]*string{}
 	}
-	mergedConfig.RemoteEnv["DEVSY_COMPOSE_PROJECT_NAME"] = project.Name
-	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = project.Name
+	composeName := project.Name
+	mergedConfig.RemoteEnv["DEVSY_COMPOSE_PROJECT_NAME"] = &composeName
+	composeAlias := project.Name
+	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = &composeAlias
 
 	// setup container
 	return r.setupContainer(ctx, &setupContainerParams{

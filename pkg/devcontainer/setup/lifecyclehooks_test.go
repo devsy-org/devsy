@@ -242,6 +242,53 @@ func makeTestPhaseHooks() []phaseHook {
 	}
 }
 
+func ptr(s string) *string { return &s }
+
+func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilUnsetsKey() {
+	probedEnv := map[string]string{"KEEP": "yes", "DROP": "bye"}
+	remoteEnv := map[string]*string{"DROP": nil}
+
+	result := mergeRemoteEnv(remoteEnv, probedEnv, "vscode")
+
+	assert.Equal(s.T(), "yes", result["KEEP"])
+	_, found := result["DROP"]
+	assert.False(s.T(), found, "nil value should unset key")
+}
+
+func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNonNilOverrides() {
+	probedEnv := map[string]string{"VAR": "old"}
+	remoteEnv := map[string]*string{"VAR": ptr("new")}
+
+	result := mergeRemoteEnv(remoteEnv, probedEnv, "vscode")
+
+	assert.Equal(s.T(), "new", result["VAR"])
+}
+
+func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilMissingKeyNoop() {
+	probedEnv := map[string]string{"OTHER": "val"}
+	remoteEnv := map[string]*string{"ABSENT": nil}
+
+	result := mergeRemoteEnv(remoteEnv, probedEnv, "vscode")
+
+	assert.Equal(s.T(), "val", result["OTHER"])
+	_, found := result["ABSENT"]
+	assert.False(s.T(), found)
+}
+
+func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilPATHRemoves() {
+	probedEnv := map[string]string{
+		"PATH": "/usr/bin:/bin",
+		"HOME": "/home/dev",
+	}
+	remoteEnv := map[string]*string{"PATH": nil}
+
+	result := mergeRemoteEnv(remoteEnv, probedEnv, "vscode")
+
+	_, found := result["PATH"]
+	assert.False(s.T(), found, "nil PATH should remove PATH")
+	assert.Equal(s.T(), "/home/dev", result["HOME"])
+}
+
 func TestLifecycleHookTestSuite(t *testing.T) {
 	suite.Run(t, new(LifecycleHookTestSuite))
 }

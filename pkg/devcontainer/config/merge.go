@@ -90,7 +90,7 @@ func MergeConfiguration(
 	)
 	mergedConfig.RemoteEnv = mergeMaps(
 		reversed,
-		func(entry *ImageMetadata) map[string]string { return entry.RemoteEnv },
+		func(entry *ImageMetadata) map[string]*string { return entry.RemoteEnv },
 	)
 	mergedConfig.ContainerEnv = mergeMaps(
 		reversed,

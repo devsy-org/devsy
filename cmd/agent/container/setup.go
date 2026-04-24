@@ -480,11 +480,12 @@ func (cmd *SetupContainerCmd) sendSetupResult(
 func fillContainerEnv(setupInfo *config.Result) error {
 	// set remote-env
 	if setupInfo.MergedConfig.RemoteEnv == nil {
-		setupInfo.MergedConfig.RemoteEnv = make(map[string]string)
+		setupInfo.MergedConfig.RemoteEnv = make(map[string]*string)
 	}
 
 	if _, ok := setupInfo.MergedConfig.RemoteEnv["PATH"]; !ok {
-		setupInfo.MergedConfig.RemoteEnv["PATH"] = "${containerEnv:PATH}"
+		pathVal := "${containerEnv:PATH}"
+		setupInfo.MergedConfig.RemoteEnv["PATH"] = &pathVal
 	}
 
 	// merge config

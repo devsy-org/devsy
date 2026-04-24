@@ -390,40 +390,59 @@ func containsError(line string) bool {
 }
 
 func mergeRemoteEnv(
-	remoteEnv map[string]string,
+	remoteEnv map[string]*string,
 	probedEnv map[string]string,
 	remoteUser string,
 ) map[string]string {
 	retEnv := map[string]string{}
-
-	// Order matters here
-	// remoteEnv should always override probedEnv as it has been specified explicitly by the devcontainer author
 	maps.Copy(retEnv, probedEnv)
-	maps.Copy(retEnv, remoteEnv)
-	probedPath, probeOk := probedEnv["PATH"]
-	remotePath, remoteOk := remoteEnv["PATH"]
-	if probeOk && remoteOk {
-		// merge probed PATH and remote PATH
-		sbinRegex := regexp.MustCompile(`/sbin(/|$)`)
-		probedTokens := strings.Split(probedPath, ":")
-		insertAt := 0
-		for e := range strings.SplitSeq(remotePath, ":") {
-			// check if remotePath entry is in probed tokens
-			i := slices.Index(probedTokens, e)
-			if i == -1 {
-				// only include /sbin paths for root users
-				if remoteUser == "root" || !sbinRegex.MatchString(e) {
-					probedTokens = slices.Insert(probedTokens, insertAt, e)
-				}
-			} else {
-				insertAt = i + 1
-			}
-		}
 
-		retEnv["PATH"] = strings.Join(probedTokens, ":")
+	// Apply remoteEnv: nil means unset, non-nil means override.
+	for k, v := range remoteEnv {
+		if v == nil {
+			delete(retEnv, k)
+		} else {
+			retEnv[k] = *v
+		}
 	}
 
+	mergePATH(retEnv, remoteEnv, probedEnv, remoteUser)
+
 	return retEnv
+}
+
+func mergePATH(
+	retEnv map[string]string,
+	remoteEnv map[string]*string,
+	probedEnv map[string]string,
+	remoteUser string,
+) {
+	remotePath, remoteOk := remoteEnv["PATH"]
+	if !remoteOk {
+		return
+	}
+	// nil PATH means unset — already handled by the delete above.
+	if remotePath == nil {
+		return
+	}
+	probedPath, probeOk := probedEnv["PATH"]
+	if !probeOk {
+		return
+	}
+	sbinRegex := regexp.MustCompile(`/sbin(/|$)`)
+	probedTokens := strings.Split(probedPath, ":")
+	insertAt := 0
+	for e := range strings.SplitSeq(*remotePath, ":") {
+		i := slices.Index(probedTokens, e)
+		if i == -1 {
+			if remoteUser == "root" || !sbinRegex.MatchString(e) {
+				probedTokens = slices.Insert(probedTokens, insertAt, e)
+			}
+		} else {
+			insertAt = i + 1
+		}
+	}
+	retEnv["PATH"] = strings.Join(probedTokens, ":")
 }
 
 func buildCommandArgs(c []string, remoteUser, currentUsername string) []string {

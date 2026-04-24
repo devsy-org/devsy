@@ -130,8 +130,8 @@ func (s *SubstituteTestSuite) TestSubstitute_InitEnvInRemoteEnv() {
 			Image: "alpine:latest",
 		},
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteEnv: map[string]string{
-				"MY_VAR": "${localEnv:CUSTOM_VAR}",
+			RemoteEnv: map[string]*string{
+				"MY_VAR": ptr("${localEnv:CUSTOM_VAR}"),
 			},
 		},
 	}
@@ -142,7 +142,8 @@ func (s *SubstituteTestSuite) TestSubstitute_InitEnvInRemoteEnv() {
 	result, ctx, err := s.runner.substitute(options, rawConfig)
 
 	s.NoError(err)
-	s.Equal("test_value", result.Config.RemoteEnv["MY_VAR"])
+	s.Require().NotNil(result.Config.RemoteEnv["MY_VAR"])
+	s.Equal("test_value", *result.Config.RemoteEnv["MY_VAR"])
 	s.Equal("test_value", ctx.Env["CUSTOM_VAR"])
 }
 
@@ -245,3 +246,5 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 	s.NoError(err)
 	s.Nil(result.Config.Features)
 }
+
+func ptr(s string) *string { return &s }
