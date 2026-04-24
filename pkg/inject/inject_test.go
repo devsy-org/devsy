@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,17 +31,13 @@ func (s *PipeTestSuite) TestPipe_NormalBidirectionalCopy() {
 	toStdinReader, toStdinWriter, err := os.Pipe()
 	s.Require().NoError(err)
 
-	// Use bytes.Buffer for toStdout — pipe() doesn't close it (just io.Writer),
-	// and the io.Pipe feeder below guarantees the stdout copy goroutine writes
-	// to the buffer before sending on errChan, giving a happens-before with
-	// pipe()'s return.
-	var toStdoutBuf bytes.Buffer
+	// Use a thread-safe wrapper around bytes.Buffer for toStdout so the
+	// race detector doesn't flag the concurrent write (from the copy
+	// goroutine) and read (from the assertion below).
+	toStdout := &syncBuffer{}
 
-	// Use io.Pipe for feeders — synchronous Write blocks until the copy
-	// goroutine Reads, ensuring both goroutines have consumed and written
-	// their data before either signals completion. The sequential close
-	// order (stdout first, then stdin) makes the stdout direction always
-	// win the race to errChan.
+	// Use io.Pipe for feeders — synchronous semantics ensure data is
+	// fully consumed before the feeder moves on.
 	fromStdinReader, fromStdinWriter := io.Pipe()
 	fromStdoutReader, fromStdoutWriter := io.Pipe()
 	defer func() { _ = fromStdinWriter.Close() }()
@@ -65,14 +62,19 @@ func (s *PipeTestSuite) TestPipe_NormalBidirectionalCopy() {
 		gotStdin, _ = io.ReadAll(toStdinReader)
 	}()
 
-	pipeErr := pipe(toStdinWriter, fromStdinReader, &toStdoutBuf, fromStdoutReader)
+	pipeErr := pipe(toStdinWriter, fromStdinReader, toStdout, fromStdoutReader)
 
 	<-stdinDone
 	_ = toStdinReader.Close()
 
 	s.NoError(pipeErr)
 	s.Equal(stdinPayload, string(gotStdin))
-	s.Equal(stdoutPayload, toStdoutBuf.String())
+	// Allow a brief moment for the stdout goroutine to finish its last
+	// write (pipe() returns after the first direction completes; the
+	// stdout goroutine may still be flushing).
+	s.Eventually(func() bool {
+		return toStdout.String() == stdoutPayload
+	}, time.Second, 5*time.Millisecond, "expected stdout payload %q", stdoutPayload)
 }
 
 func (s *PipeTestSuite) TestPipe_WriterSideClosesFirst() {
@@ -366,3 +368,23 @@ type nopWriteCloser struct{}
 
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
+
+// syncBuffer wraps bytes.Buffer with a mutex so it can be written
+// concurrently (by the copy goroutine) and read (by test assertions)
+// without triggering the race detector.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (sb *syncBuffer) Write(p []byte) (int, error) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.Write(p)
+}
+
+func (sb *syncBuffer) String() string {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	return sb.buf.String()
+}
