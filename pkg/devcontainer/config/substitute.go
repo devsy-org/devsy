@@ -97,7 +97,7 @@ func replaceWithContainerEnv(
 	case "containerEnv":
 		return lookupValue(false, containerEnv, args, match)
 	default:
-		return ""
+		return match
 	}
 }
 
@@ -140,7 +140,7 @@ func replaceWithContext(
 	case "containerEnv":
 		return match
 	default:
-		return ""
+		return match
 	}
 }
 
