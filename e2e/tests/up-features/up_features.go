@@ -107,6 +107,95 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		framework.ExpectNoError(err)
 	}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+	ginkgo.It(
+		"direct tar feature uses cached download with integrity verification",
+		func(ctx context.Context) {
+			server := ghttp.NewServer()
+			ginkgo.DeferCleanup(server.Close)
+
+			tempDir1, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-http-headers",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir1)
+
+			tempDir2, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-http-headers",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir2)
+
+			featureArchiveFilePath := path.Join(tempDir1, "devcontainer-feature-hello.tgz")
+			featureFiles := []string{
+				path.Join(tempDir1, "devcontainer-feature.json"),
+				path.Join(tempDir1, "install.sh"),
+			}
+			err = createTarGzArchive(featureArchiveFilePath, featureFiles)
+			framework.ExpectNoError(err)
+
+			for _, dir := range []string{tempDir1, tempDir2} {
+				devContainerFileBuf, err := os.ReadFile(path.Join(dir, ".devcontainer.json"))
+				framework.ExpectNoError(err)
+
+				output := strings.ReplaceAll(
+					string(devContainerFileBuf),
+					"#{server_url}",
+					server.URL(),
+				)
+				// #nosec G306 -- test file, permissive mode is acceptable.
+				err = os.WriteFile(path.Join(dir, ".devcontainer.json"), []byte(output), 0o644)
+				framework.ExpectNoError(err)
+			}
+
+			respHeader := http.Header{}
+			respHeader.Set(
+				"Content-Disposition",
+				"attachment; filename=devcontainer-feature-hello.tgz",
+			)
+
+			featureArchiveFileBuf, err := os.ReadFile(featureArchiveFilePath)
+			framework.ExpectNoError(err)
+
+			server.AppendHandlers(
+				ghttp.CombineHandlers(
+					ghttp.VerifyRequest("GET", "/devcontainer-feature-hello.tgz"),
+					ghttp.RespondWith(http.StatusOK, featureArchiveFileBuf, respHeader),
+				),
+			)
+
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+
+			err = f.DevsyProviderAdd(ctx, "docker")
+			framework.ExpectNoError(err)
+
+			err = f.DevsyProviderUse(ctx, "docker")
+			framework.ExpectNoError(err)
+
+			// First workspace: downloads feature, stores .sha256 sidecar
+			wsName1 := filepath.Base(tempDir1)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName1)
+
+			err = f.DevsyUp(ctx, tempDir1)
+			framework.ExpectNoError(err)
+
+			// Delete first workspace; feature cache persists across deletions
+			err = f.DevsyWorkspaceDelete(ctx, wsName1)
+			framework.ExpectNoError(err)
+
+			// Second workspace: cache hit, integrity verification passes, no download
+			wsName2 := filepath.Base(tempDir2)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName2)
+
+			err = f.DevsyUp(ctx, tempDir2)
+			framework.ExpectNoError(err)
+
+			// Only one HTTP request was made — proves cache was reused with passing integrity
+			gomega.Expect(server.ReceivedRequests()).To(gomega.HaveLen(1))
+		},
+		ginkgo.SpecTimeout(framework.GetTimeout()),
+	)
+
 	ginkgo.It("should install with lifecycle hooks", func(ctx context.Context) {
 		f, err := setupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
