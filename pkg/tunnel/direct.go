@@ -11,9 +11,10 @@ import (
 // Tunnel defines the function to create an "outer" tunnel.
 type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
-// NewTunnel creates a tunnel to the devcontainer using generic functions to establish the "outer" and "inner" tunnel, used by proxy clients
-// Here the tunnel will be an SSH connection with it's STDIO as arguments and the handler will be the function to execute the command
-// using the connected SSH client.
+// NewTunnel creates a tunnel to the devcontainer using generic functions
+// to establish the "outer" and "inner" tunnel, used by proxy clients.
+// The tunnel is an SSH connection with stdio as arguments and the handler
+// executes the command using the connected SSH client.
 func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
 	pb, err := NewPipeBridge()
 	if err != nil {
