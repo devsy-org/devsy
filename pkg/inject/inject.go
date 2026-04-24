@@ -325,6 +325,9 @@ func pipe(
 	// The first goroutine to finish holds the real error. The second was
 	// force-stopped by the close above, so its error is a side effect.
 	first := <-errChan
-	<-errChan
+	select {
+	case <-errChan:
+	case <-time.After(10 * time.Second):
+	}
 	return first
 }
