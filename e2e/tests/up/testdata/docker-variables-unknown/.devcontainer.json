@@ -1,0 +1,13 @@
+{
+  "name": "unknown-vars-test",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "remoteEnv": {
+    "UNKNOWN_VAR_RESULT": "${totallyUnknownVar}",
+    "KNOWN_VAR": "hello"
+  },
+  "postCreateCommand": [
+    "sh",
+    "-c",
+    "echo -n \"UNKNOWN=$UNKNOWN_VAR_RESULT\" > $HOME/unknown-var.out && echo -n \"KNOWN=$KNOWN_VAR\" >> $HOME/unknown-var.out"
+  ]
+}

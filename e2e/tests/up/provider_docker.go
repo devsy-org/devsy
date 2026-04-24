@@ -219,6 +219,29 @@ var _ = ginkgo.Describe(
 			)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("unknown variables resolve to empty string", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(
+				ctx, "tests/up/testdata/docker-variables-unknown",
+			)
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			output, err := dtc.execSSHCapture(
+				ctx, workspace.ID,
+				"cat $HOME/unknown-var.out",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(output).To(
+				gomega.Equal("UNKNOWN=KNOWN=hello"),
+			)
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
 			framework.ExpectNoError(err)

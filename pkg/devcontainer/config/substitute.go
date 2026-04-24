@@ -97,7 +97,7 @@ func replaceWithContainerEnv(
 	case "containerEnv":
 		return lookupValue(false, containerEnv, args, match)
 	default:
-		return match
+		return ""
 	}
 }
 
@@ -137,8 +137,10 @@ func replaceWithContext(
 			return filepath.Base(substitutionCtx.ContainerWorkspaceFolder)
 		}
 		return match
-	default:
+	case "containerEnv":
 		return match
+	default:
+		return ""
 	}
 }
 
