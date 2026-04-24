@@ -73,11 +73,11 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   })
 
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "update", args.name])
+    await cli.runRaw(["provider", "update", args.name, "--use=false"])
   })
 
   ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "update", args.name])
+    await cli.runRaw(["provider", "update", args.name, "--use=false"])
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
