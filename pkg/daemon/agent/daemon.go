@@ -162,7 +162,7 @@ func quoteSystemdArg(arg string) string {
 	return arg
 }
 
-func InstallDaemon(agentDir string, interval string) error {
+func InstallDaemon(agentDir, interval, shutdownAction string) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
 	}
@@ -172,7 +172,7 @@ func InstallDaemon(agentDir string, interval string) error {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	args := buildDaemonArgs(executable, agentDir, interval)
+	args := buildDaemonArgs(executable, agentDir, interval, shutdownAction)
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
@@ -193,13 +193,16 @@ func InstallDaemon(agentDir string, interval string) error {
 	return ensureServiceRunning(needsReload, executable, args)
 }
 
-func buildDaemonArgs(executable, agentDir, interval string) []string {
+func buildDaemonArgs(executable, agentDir, interval, shutdownAction string) []string {
 	args := []string{executable, "agent", "daemon"}
 	if agentDir != "" {
 		args = append(args, "--agent-dir", agentDir)
 	}
 	if interval != "" {
 		args = append(args, "--interval", interval)
+	}
+	if shutdownAction != "" {
+		args = append(args, "--shutdown-action", shutdownAction)
 	}
 	return args
 }
