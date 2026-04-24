@@ -71,36 +71,6 @@ func createForwarder(opts RunServicesOptions, forwardedPorts []string) netstat.F
 	return newForwarder(opts.ContainerClient, ports)
 }
 
-// tunnelServerParams contains parameters for running the tunnel server.
-type tunnelServerParams struct {
-	opts         RunServicesOptions
-	stdoutReader *os.File
-	stdinWriter  *os.File
-	forwarder    netstat.Forwarder
-	errChan      chan error
-}
-
-// runTunnelServer runs the tunnel server in a goroutine.
-func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelServerParams) {
-	defer cancel()
-	defer func() { _ = p.stdoutReader.Close() }()
-	defer func() { _ = p.stdinWriter.Close() }()
-	err := tunnelserver.RunServicesServer(
-		ctx,
-		p.stdoutReader,
-		p.stdinWriter,
-		p.opts.ConfigureGitCredentials,
-		p.opts.ConfigureDockerCredentials,
-		p.forwarder,
-		p.opts.Workspace,
-		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
-	)
-	if err != nil {
-		p.errChan <- fmt.Errorf("run tunnel server: %w", err)
-	}
-	close(p.errChan)
-}
-
 // addGitSSHSigningKey adds SSH signing key to command if configured.
 // When explicitKey is set (from --git-ssh-signing-key flag), it takes
 // precedence over the host's .gitconfig. This ensures signing works
@@ -154,54 +124,45 @@ func runServicesIteration(
 	opts RunServicesOptions,
 	forwardedPorts []string,
 ) error {
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	pb, err := NewPipeBridge()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = stdoutWriter.Close() }()
-
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		_ = stdoutReader.Close()
-		return err
-	}
-	defer func() { _ = stdinReader.Close() }()
-
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer pb.Close()
 
 	forwarder := createForwarder(opts, forwardedPorts)
-
-	errChan := make(chan error, 1)
-	go runTunnelServer(cancelCtx, cancel, tunnelServerParams{
-		opts:         opts,
-		stdoutReader: stdoutReader,
-		stdinWriter:  stdinWriter,
-		forwarder:    forwarder,
-		errChan:      errChan,
-	})
-
-	writer := log.Writer(log.LevelDebug)
-	defer func() { _ = writer.Close() }()
-
 	command := buildCredentialsCommand(opts)
 
-	err = devssh.Run(cancelCtx, devssh.RunOptions{
-		Client:  opts.ContainerClient,
-		Command: command,
-		Stdin:   stdinReader,
-		Stdout:  stdoutWriter,
-		Stderr:  writer,
-	})
-	if err != nil {
-		// Drain errChan to allow goroutine to exit cleanly
-		select {
-		case <-errChan:
-		default:
-		}
-		return err
-	}
-	return <-errChan
+	return pb.RunPair(ctx,
+		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
+			err := tunnelserver.RunServicesServer(
+				ctx,
+				stdin,
+				stdout,
+				opts.ConfigureGitCredentials,
+				opts.ConfigureDockerCredentials,
+				forwarder,
+				opts.Workspace,
+				tunnelserver.WithPlatformOptions(opts.PlatformOptions),
+			)
+			if err != nil {
+				return fmt.Errorf("run tunnel server: %w", err)
+			}
+			return nil
+		},
+		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
+			writer := log.Writer(log.LevelDebug)
+			defer func() { _ = writer.Close() }()
+
+			return devssh.Run(ctx, devssh.RunOptions{
+				Client:  opts.ContainerClient,
+				Command: command,
+				Stdin:   stdout,
+				Stdout:  stdin,
+				Stderr:  writer,
+			})
+		},
+	)
 }
 
 // RunServices forwards the ports for a given workspace and uses its SSH client

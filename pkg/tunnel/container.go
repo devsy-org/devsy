@@ -187,32 +187,27 @@ func (c *ContainerTunnel) runInContainer(
 	}
 	defer pb.Close()
 
-	tunnelDone := make(chan error, 1)
-	go func() {
-		tunnelDone <- c.runContainerTunnel(ctx, containerTunnelOpts{
-			sshClient:     sshClient,
-			workspaceInfo: workspaceInfo,
-			stdinReader:   pb.StdinReader,
-			stdoutWriter:  pb.StdoutWriter,
-			envVars:       envVars,
-		})
-	}()
-
-	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter, false)
-	if err != nil {
-		select {
-		case tunnelErr := <-tunnelDone:
-			if tunnelErr != nil {
-				return tunnelErr
+	return pb.RunPair(ctx,
+		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
+			return c.runContainerTunnel(ctx, containerTunnelOpts{
+				sshClient:     sshClient,
+				workspaceInfo: workspaceInfo,
+				stdinReader:   stdin,
+				stdoutWriter:  stdout,
+				envVars:       envVars,
+			})
+		},
+		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
+			containerClient, err := devssh.StdioClient(stdout, stdin, false)
+			if err != nil {
+				return fmt.Errorf("ssh client: %w", err)
 			}
-		default:
-		}
-		return fmt.Errorf("ssh client: %w", err)
-	}
-	defer func() { _ = containerClient.Close() }()
-	log.Debugf("connected to container")
+			defer func() { _ = containerClient.Close() }()
+			log.Debugf("connected to container")
 
-	return handler(ctx, containerClient)
+			return handler(ctx, containerClient)
+		},
+	)
 }
 
 type containerTunnelOpts struct {
@@ -229,7 +224,6 @@ type containerTunnelOpts struct {
 func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	defer func() { _ = opts.stdoutWriter.Close() }()
 
 	log.Debugf("Run container tunnel")
 	defer log.Debugf("Container tunnel exited")
