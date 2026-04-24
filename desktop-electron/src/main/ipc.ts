@@ -10,6 +10,7 @@ import type { CliRunner } from "./cli.js"
 import type { DaemonState } from "./state.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
+import { parseProviderEntries, type ProviderEntry } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -47,7 +48,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   })
 
   // ── Providers ──
-  ipcMain.handle("provider_list", () => state.providerList())
+  ipcMain.handle("provider_list", async () => {
+    const raw = await cli.run<Record<string, ProviderEntry>>(["provider", "list"])
+    const providers = parseProviderEntries(raw)
+    state.updateProviders(providers as any[])
+    return state.providerList()
+  })
 
   ipcMain.handle("provider_add", async (_event, args: { name: string; source?: string }) => {
     const src = args.source ?? args.name

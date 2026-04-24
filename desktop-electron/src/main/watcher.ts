@@ -17,7 +17,7 @@ interface ContextEntry {
   default?: boolean
 }
 
-interface ProviderEntry {
+export interface ProviderEntry {
   config: {
     name?: string
     version?: string
@@ -29,6 +29,23 @@ interface ProviderEntry {
   }
   state?: { initialized?: boolean }
   default?: boolean
+}
+
+export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
+  return Object.values(raw).map((entry) => ({
+    name: entry.config.name ?? "",
+    version: entry.config.version ?? "",
+    icon: entry.config.icon ?? "",
+    description: entry.config.description ?? "",
+    source: entry.config.source ?? {},
+    options: entry.config.options ?? {},
+    optionGroups: entry.config.optionGroups ?? [],
+    isDefault: entry.default ?? false,
+    state: {
+      initialized: entry.state?.initialized ?? false,
+      singleMachine: false,
+    },
+  }))
 }
 
 export class Watcher {
@@ -90,20 +107,7 @@ export class Watcher {
   private async pollProviders(): Promise<void> {
     try {
       const raw = await this.deps.cli.run<Record<string, ProviderEntry>>(["provider", "list"])
-      const providers = Object.values(raw).map((entry) => ({
-        name: entry.config.name ?? "",
-        version: entry.config.version ?? "",
-        icon: entry.config.icon ?? "",
-        description: entry.config.description ?? "",
-        source: entry.config.source ?? {},
-        options: entry.config.options ?? {},
-        optionGroups: entry.config.optionGroups ?? [],
-        isDefault: entry.default ?? false,
-        state: {
-          initialized: entry.state?.initialized ?? false,
-          singleMachine: false,
-        },
-      }))
+      const providers = parseProviderEntries(raw)
       const changed = this.deps.state.updateProviders(providers as any[])
       if (changed) {
         this.send("providers-changed", { providers: this.deps.state.providerList() })
