@@ -3,6 +3,7 @@ package setup
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -282,13 +283,47 @@ func executeHookCommands(p hookRunParams, envArr []string) error {
 		if len(cmd) == 0 {
 			continue
 		}
-		for k, c := range cmd {
-			if err := runSingleHookCommand(p, envArr, k, c); err != nil {
-				return err
-			}
+		if err := executeLifecycleHook(p, envArr, cmd); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// executeLifecycleHook runs the sub-commands within a single LifecycleHook.
+// When the hook has multiple named keys (object syntax), the sub-commands run
+// concurrently per the devcontainer spec. Single-key hooks run directly.
+func executeLifecycleHook(
+	p hookRunParams,
+	envArr []string,
+	hook types.LifecycleHook,
+) error {
+	if len(hook) <= 1 {
+		for k, c := range hook {
+			return runSingleHookCommand(p, envArr, k, c)
+		}
+	}
+
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+
+	wg.Add(len(hook))
+	for k, c := range hook {
+		go func() {
+			defer wg.Done()
+			if err := runSingleHookCommand(p, envArr, k, c); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("named command %q failed: %w", k, err))
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 func runSingleHookCommand(
