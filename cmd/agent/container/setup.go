@@ -56,6 +56,8 @@ type SetupContainerCmd struct {
 	AccessKey              string
 	PlatformHost           string
 	WorkspaceHost          string
+	DotfilesRepo           string
+	DotfilesScript         string
 }
 
 // NewSetupContainerCmd creates a new command.
@@ -89,6 +91,10 @@ func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	setupContainerCmd.Flags().
 		StringVar(&cmd.WorkspaceHost, "workspace-host", "", "Workspace hostname to use")
 	setupContainerCmd.Flags().StringVar(&cmd.PlatformHost, "platform-host", "", "Platform host")
+	setupContainerCmd.Flags().
+		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
+	setupContainerCmd.Flags().
+		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
 	_ = setupContainerCmd.MarkFlagRequired("setup-info")
 	return setupContainerCmd
 }
@@ -186,6 +192,10 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
 		Prebuild:          cmd.Prebuild,
+		Dotfiles: setup.DotfilesConfig{
+			Repository:    cmd.DotfilesRepo,
+			InstallScript: cmd.DotfilesScript,
+		},
 	}
 
 	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)

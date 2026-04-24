@@ -78,6 +78,8 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 		cmd.StrictHostKeyChecking = true
 	}
 
+	cmd.resolveDotfilesOptions(devsyConfig)
+
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()
 
@@ -284,6 +286,22 @@ type workspaceContext struct {
 	workdir string
 }
 
+// resolveDotfilesOptions populates CLIOptions.DotfilesRepo and DotfilesScript
+// from the CLI flags and config context options so they flow to the container.
+func (cmd *UpCmd) resolveDotfilesOptions(devsyConfig *config.Config) {
+	repo := devsyConfig.ContextOption(config.ContextOptionDotfilesURL)
+	if cmd.DotfilesSource != "" {
+		repo = cmd.DotfilesSource
+	}
+	cmd.CLIOptions.DotfilesRepo = repo
+
+	script := devsyConfig.ContextOption(config.ContextOptionDotfilesScript)
+	if cmd.DotfilesScript != "" {
+		script = cmd.DotfilesScript
+	}
+	cmd.CLIOptions.DotfilesScript = script
+}
+
 // prepareWorkspace handles initial setup and validation.
 func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 	if cmd.Reset {
@@ -367,15 +385,21 @@ func (cmd *UpCmd) configureWorkspace(
 		log.Info("SSH configuration completed in workspace")
 	}
 
-	if err := dotfiles.Setup(dotfiles.SetupParams{
-		Source:       cmd.DotfilesSource,
-		Script:       cmd.DotfilesScript,
-		EnvFiles:     cmd.DotfilesScriptEnvFile,
-		EnvKeyValues: cmd.DotfilesScriptEnv,
-		Client:       client,
-		DevsyConfig:  devsyConfig,
-	}); err != nil {
-		return err
+	// Dotfiles are now installed in-container during the lifecycle
+	// (between postCreateCommand and postStartCommand). The host-side
+	// SSH-based installation is only used as a fallback when the
+	// container-side path was not configured.
+	if cmd.CLIOptions.DotfilesRepo == "" {
+		if err := dotfiles.Setup(dotfiles.SetupParams{
+			Source:       cmd.DotfilesSource,
+			Script:       cmd.DotfilesScript,
+			EnvFiles:     cmd.DotfilesScriptEnvFile,
+			EnvKeyValues: cmd.DotfilesScriptEnv,
+			Client:       client,
+			DevsyConfig:  devsyConfig,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

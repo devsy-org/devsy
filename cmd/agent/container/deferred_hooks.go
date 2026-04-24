@@ -55,7 +55,7 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 	}
 
 	log.Debugf("running deferred lifecycle hooks")
-	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, cmd.Prebuild)
+	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, cmd.Prebuild, setup.DotfilesConfig{})
 	if err != nil {
 		log.Errorf("deferred hooks setup failed: %v", err)
 		return nil
