@@ -2,12 +2,16 @@ package setup
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -287,6 +291,147 @@ func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilPATHRemoves() {
 	_, found := result["PATH"]
 	assert.False(s.T(), found, "nil PATH should remove PATH")
 	assert.Equal(s.T(), "/home/dev", result["HOME"])
+}
+
+func (s *LifecycleHookTestSuite) TestParallelNamedCommandsTiming() {
+	t := s.T()
+	currentUser, err := user.Current()
+	assert.NoError(t, err)
+
+	// Two "sleep 0.5" commands that, if run in parallel, complete in ~0.5s.
+	hook := types.LifecycleHook{
+		"sleep-a": {"sleep", "0.5"},
+		"sleep-b": {"sleep", "0.5"},
+	}
+
+	p := hookRunParams{
+		commands: []types.LifecycleHook{hook},
+		env: lifecycleEnv{
+			remoteUser:      currentUser.Username,
+			workspaceFolder: t.TempDir(),
+		},
+		name: "testParallel",
+	}
+
+	envArr := buildEnvArr(p.env.remoteEnv)
+
+	start := time.Now()
+	err = executeHookCommands(p, envArr)
+	elapsed := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Less(t, elapsed, 900*time.Millisecond,
+		"two 0.5s commands should complete in ~0.5s when parallel, not ~1s")
+}
+
+func (s *LifecycleHookTestSuite) TestParallelNamedCommandsErrorIsolation() {
+	t := s.T()
+	currentUser, err := user.Current()
+	assert.NoError(t, err)
+
+	dir := t.TempDir()
+	markerFile := filepath.Join(dir, "ran.txt")
+
+	// "fail" exits immediately; "succeed" sleeps briefly then writes a marker.
+	hook := types.LifecycleHook{
+		"fail":    {"sh", "-c", "exit 1"},
+		"succeed": {"sh", "-c", fmt.Sprintf("sleep 0.1 && echo done > %s", markerFile)},
+	}
+
+	p := hookRunParams{
+		commands: []types.LifecycleHook{hook},
+		env: lifecycleEnv{
+			remoteUser:      currentUser.Username,
+			workspaceFolder: dir,
+		},
+		name: "testErrorIsolation",
+	}
+
+	envArr := buildEnvArr(p.env.remoteEnv)
+	err = executeHookCommands(p, envArr)
+
+	// The combined error should mention which named command failed.
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `named command "fail" failed`)
+
+	// The succeed command should have run to completion despite the failure.
+	_, statErr := os.Stat(markerFile)
+	assert.NoError(t, statErr, "succeed command should run even when fail command errors")
+}
+
+func (s *LifecycleHookTestSuite) TestSingleStringCommandBackwardCompat() {
+	t := s.T()
+	currentUser, err := user.Current()
+	assert.NoError(t, err)
+
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "out.txt")
+
+	// Anonymous string command uses key "".
+	hook := types.LifecycleHook{
+		"": {"sh", "-c", fmt.Sprintf("echo hello > %s", outFile)},
+	}
+
+	p := hookRunParams{
+		commands: []types.LifecycleHook{hook},
+		env: lifecycleEnv{
+			remoteUser:      currentUser.Username,
+			workspaceFolder: dir,
+		},
+		name: "testBackwardCompat",
+	}
+
+	envArr := buildEnvArr(p.env.remoteEnv)
+	err = executeHookCommands(p, envArr)
+
+	assert.NoError(t, err)
+	assertFileContains(t, dir, "out.txt", "hello")
+}
+
+func (s *LifecycleHookTestSuite) TestSingleNamedCommandNoGoroutine() {
+	t := s.T()
+	currentUser, err := user.Current()
+	assert.NoError(t, err)
+
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "named.txt")
+
+	hook := types.LifecycleHook{
+		"setup": {
+			"sh", "-c",
+			fmt.Sprintf("echo setup > %s", outFile),
+		},
+	}
+
+	p := hookRunParams{
+		commands: []types.LifecycleHook{hook},
+		env: lifecycleEnv{
+			remoteUser:      currentUser.Username,
+			workspaceFolder: dir,
+		},
+		name: "testSingleNamed",
+	}
+
+	envArr := buildEnvArr(p.env.remoteEnv)
+	err = executeHookCommands(p, envArr)
+
+	assert.NoError(t, err)
+	assertFileContains(t, dir, "named.txt", "setup")
+}
+
+// assertFileContains reads a file under dir by name and checks it
+// contains the expected substring. Using filepath.Join with a
+// known-safe base directory satisfies gosec G304.
+func assertFileContains(
+	t *testing.T,
+	dir, name, expected string,
+) {
+	t.Helper()
+	content, err := os.ReadFile(
+		filepath.Clean(filepath.Join(dir, name)),
+	)
+	assert.NoError(t, err)
+	assert.Contains(t, string(content), expected)
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {

@@ -1,0 +1,10 @@
+{
+  "name": "Go",
+  "dockerComposeFile": "./docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "postCreateCommand": {
+    "marker-a": "echo -n parallelA > $HOME/parallel-a.out",
+    "marker-b": "echo -n parallelB > $HOME/parallel-b.out"
+  }
+}

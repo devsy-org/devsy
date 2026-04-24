@@ -348,6 +348,40 @@ var _ = ginkgo.Describe(
 			gomega.Expect(postAttachCommand).To(gomega.Equal("postAttachCommand"))
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("parallel object based commands", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up-docker-compose/testdata/docker-compose-lifecycle-parallel-object",
+				tc.initialDir,
+				tc.f,
+			)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := tc.dockerHelper.FindContainer(ctx, []string{
+				fmt.Sprintf(
+					"%s=%s",
+					compose.ProjectLabel,
+					tc.composeHelper.GetProjectName(workspace.UID),
+				),
+				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+
+			parallelA, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-a.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(parallelA).To(gomega.Equal("parallelA"))
+
+			parallelB, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-b.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(parallelB).To(gomega.Equal("parallelB"))
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("commands with quotes", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up-docker-compose/testdata/docker-compose-lifecycle-quotes",
