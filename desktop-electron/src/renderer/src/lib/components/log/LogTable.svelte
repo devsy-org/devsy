@@ -20,11 +20,11 @@ let parsed = $derived(lines.map(parseLogLine))
   <Table.Body>
     {#each parsed as line, i (i)}
       <Table.Row
-        class={line.level === "fatal" || line.level === "error"
-          ? "bg-destructive/5"
-          : line.level === "warn"
-            ? "bg-amber-500/5"
-            : ""}
+        class={[
+          line.level === "fatal" || line.level === "error" ? "bg-destructive/5" : "",
+          line.level === "warn" ? "bg-amber-500/5" : "",
+          line.origin === "tunnel" ? "border-l-2 border-l-blue-500/30" : "",
+        ].filter(Boolean).join(" ")}
       >
         <Table.Cell class="font-mono text-xs text-muted-foreground">{line.time}</Table.Cell>
         <Table.Cell>
@@ -41,6 +41,9 @@ let parsed = $derived(lines.map(parseLogLine))
             >
               {line.level}
             </span>
+            {#if line.origin === "tunnel"}
+              <span class="text-[10px] text-blue-500/60 ml-1">tunnel</span>
+            {/if}
           {/if}
         </Table.Cell>
         <Table.Cell class="text-sm truncate" title={line.message}>{line.message}</Table.Cell>
