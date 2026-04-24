@@ -6,11 +6,9 @@ package tunnel
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -22,22 +20,20 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// ContainerTunnel manages the state of the tunnel to the container.
+type ContainerTunnel struct {
+	client               client.WorkspaceClient
+	updateConfigInterval time.Duration
+}
+
 // NewContainerTunnel constructs a ContainerTunnel using the workspace client, if proxy is True then
 // the workspace's agent config is not periodically updated.
-//
-//nolint:funcorder
 func NewContainerTunnel(client client.WorkspaceClient) *ContainerTunnel {
 	updateConfigInterval := time.Second * 30
 	return &ContainerTunnel{
 		client:               client,
 		updateConfigInterval: updateConfigInterval,
 	}
-}
-
-// ContainerTunnel manages the state of the tunnel to the container.
-type ContainerTunnel struct {
-	client               client.WorkspaceClient
-	updateConfigInterval time.Duration
 }
 
 // Handler defines what to do once the tunnel has a client established.
@@ -55,56 +51,36 @@ func (c *ContainerTunnel) Run(
 		return nil
 	}
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	pb, err := NewPipeBridge()
 	if err != nil {
 		return err
 	}
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stdoutWriter.Close() }()
-	defer func() { _ = stdinWriter.Close() }()
+	defer pb.Close()
 
 	timeout := config.ParseTimeOption(cfg, config.ContextOptionAgentInjectTimeout)
 
-	// tunnel to host
-	tunnelChan := make(chan error, 1)
-	go func() {
-		tunnelChan <- c.runHostTunnel(cancelCtx, stdinReader, stdoutWriter, timeout)
-	}()
+	return pb.RunPair(ctx,
+		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
+			return c.runHostTunnel(ctx, stdin, stdout, timeout)
+		},
+		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
+			sshClient, err := devssh.StdioClient(stdout, stdin, false)
+			if err != nil {
+				return fmt.Errorf("create ssh client: %w", err)
+			}
+			defer func() { _ = sshClient.Close() }()
+			log.Debugf("connected to host")
 
-	// connect to container
-	containerChan := make(chan error, 1)
-	go func() {
-		sshClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
-		if err != nil {
-			containerChan <- fmt.Errorf("create ssh client: %w", err)
-			return
-		}
+			if c.updateConfigInterval > 0 {
+				go func() { c.updateConfig(ctx, sshClient) }()
+			}
 
-		defer func() { _ = sshClient.Close() }()
-		defer cancel()
-		defer log.Debugf("connection to container closed")
-		log.Debugf("connected to host")
-
-		if c.updateConfigInterval > 0 {
-			go func() {
-				c.updateConfig(cancelCtx, sshClient)
-			}()
-		}
-
-		if err := c.runInContainer(cancelCtx, sshClient, handler, envVars); err != nil {
-			containerChan <- fmt.Errorf("run in container: %w", err)
-		} else {
-			containerChan <- nil
-		}
-	}()
-
-	return awaitGoroutines(tunnelChan, containerChan, stdoutWriter, stdinWriter)
+			if err := c.runInContainer(ctx, sshClient, handler, envVars); err != nil {
+				return fmt.Errorf("run in container: %w", err)
+			}
+			return nil
+		},
+	)
 }
 
 // runHostTunnel injects the devsy agent onto the host and starts the SSH server,
@@ -141,54 +117,6 @@ func (c *ContainerTunnel) runHostTunnel(
 		Stderr:          writer,
 		Timeout:         timeout,
 	})
-}
-
-// awaitGoroutines waits for both the container and tunnel goroutines to report
-// and returns the appropriate error. The container result is the primary result;
-// the tunnel result provides root-cause context when the container gets EOF.
-func awaitGoroutines(
-	tunnelChan, containerChan <-chan error,
-	stdoutWriter, stdinWriter *os.File,
-) error {
-	var tunnelErr, containerErr error
-
-	select {
-	case containerErr = <-containerChan:
-		select {
-		case tunnelErr = <-tunnelChan:
-		default:
-		}
-	case tunnelErr = <-tunnelChan:
-		// Host tunnel exited before container finished. Close pipes to unblock
-		// the container goroutine (may be blocked in SSH handshake).
-		_ = stdoutWriter.Close()
-		_ = stdinWriter.Close()
-		containerErr = <-containerChan
-	}
-
-	return classifyTunnelErrors(tunnelErr, containerErr)
-}
-
-// classifyTunnelErrors determines which error to report when the tunnel and/or
-// container goroutines fail. EOF errors from the container are suppressed when
-// the tunnel error is the root cause.
-func classifyTunnelErrors(tunnelErr, containerErr error) error {
-	if containerErr == nil {
-		return nil
-	}
-	if isEOFError(containerErr) {
-		if tunnelErr != nil {
-			return fmt.Errorf("connect to server: %w", tunnelErr)
-		}
-		return nil
-	}
-	return fmt.Errorf("tunnel to container: %w", containerErr)
-}
-
-// isEOFError reports whether an error is caused by an EOF condition,
-// including wrapped SSH handshake failures from closed pipes.
-func isEOFError(err error) bool {
-	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), ": EOF")
 }
 
 // updateConfig is called periodically to keep the workspace agent config up to date.
@@ -253,36 +181,25 @@ func (c *ContainerTunnel) runInContainer(
 		return err
 	}
 
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	pb, err := NewPipeBridge()
 	if err != nil {
 		return err
 	}
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stdoutWriter.Close() }()
-	defer func() { _ = stdinWriter.Close() }()
+	defer pb.Close()
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// tunnel to container
 	tunnelDone := make(chan error, 1)
 	go func() {
-		tunnelDone <- c.runContainerTunnel(cancelCtx, containerTunnelOpts{
+		tunnelDone <- c.runContainerTunnel(ctx, containerTunnelOpts{
 			sshClient:     sshClient,
 			workspaceInfo: workspaceInfo,
-			stdinReader:   stdinReader,
-			stdoutWriter:  stdoutWriter,
+			stdinReader:   pb.StdinReader,
+			stdoutWriter:  pb.StdoutWriter,
 			envVars:       envVars,
 		})
 	}()
 
-	containerClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
+	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter, false)
 	if err != nil {
-		// StdioClient failed — check if the tunnel goroutine already exited
-		// with an error. If so, the tunnel error is the root cause.
 		select {
 		case tunnelErr := <-tunnelDone:
 			if tunnelErr != nil {
@@ -295,7 +212,7 @@ func (c *ContainerTunnel) runInContainer(
 	defer func() { _ = containerClient.Close() }()
 	log.Debugf("connected to container")
 
-	return handler(cancelCtx, containerClient)
+	return handler(ctx, containerClient)
 }
 
 type containerTunnelOpts struct {
