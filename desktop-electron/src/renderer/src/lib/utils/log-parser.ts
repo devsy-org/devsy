@@ -17,6 +17,17 @@ export interface ParsedLogLine {
 
 /** Try to extract an inner structured log embedded in the message field. */
 function tryParseInnerLog(message: string): { level: ParsedLogLine["level"]; msg: string } | null {
+  // Handle raw JSON messages like {"level":"debug","msg":"..."}
+  if (message.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(message)
+      if (parsed.msg) {
+        const level = (parsed.level?.toLowerCase() ?? "") as ParsedLogLine["level"]
+        return { level: ["info", "warn", "fatal", "debug", "error"].includes(level) ? level : "info", msg: parsed.msg }
+      }
+    } catch { /* not valid JSON */ }
+  }
+
   // Pattern: ISO8601 timestamp, then DEBUG/INFO/WARN/ERROR, then source.go:NNN, then optional JSON
   const match = message.match(
     /^\d{4}-\d{2}-\d{2}T[^\s]+\s+(DEBUG|INFO|WARN|ERROR)\s+\S+\.\w+:\d+\s*(.*)$/,
