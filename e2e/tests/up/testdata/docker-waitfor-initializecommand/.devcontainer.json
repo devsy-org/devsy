@@ -1,0 +1,8 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "initializeCommand",
+  "onCreateCommand": "echo onCreateDone > $HOME/on-create.out",
+  "updateContentCommand": "echo updateContentDone > $HOME/update-content.out",
+  "postCreateCommand": "echo postCreateDone > $HOME/deferred.marker",
+  "postStartCommand": "echo postStartDone > $HOME/post-start-deferred.out"
+}
