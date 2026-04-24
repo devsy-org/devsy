@@ -189,6 +189,7 @@ func (r *runner) addSetupFlags(args *[]string) {
 	r.addChownFlag(args, isDockerDriver)
 	r.addDriverFlags(args, isDockerDriver)
 	r.addPlatformFlags(args)
+	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
 	r.addDebugFlag(args)
 }
@@ -218,6 +219,16 @@ func (r *runner) addPlatformFlags(args *[]string) {
 	}
 	if platform.PlatformHost != "" {
 		*args = append(*args, "--platform-host", shellescape.Quote(platform.PlatformHost))
+	}
+}
+
+func (r *runner) addDotfilesFlags(args *[]string) {
+	cli := r.WorkspaceConfig.CLIOptions
+	if cli.DotfilesRepo != "" {
+		*args = append(*args, "--dotfiles-repo", shellescape.Quote(cli.DotfilesRepo))
+	}
+	if cli.DotfilesScript != "" {
+		*args = append(*args, "--dotfiles-script", shellescape.Quote(cli.DotfilesScript))
 	}
 }
 
