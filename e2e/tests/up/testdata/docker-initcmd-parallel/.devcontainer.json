@@ -1,0 +1,7 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "initializeCommand": {
+    "write-one": "echo -n initCmdOne > ./init-cmd-one.out",
+    "write-two": ["sh", "-c", "echo -n initCmdTwo > ./init-cmd-two.out"]
+  }
+}

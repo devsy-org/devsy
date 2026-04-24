@@ -325,9 +325,17 @@ func pipe(
 	// Wait for the first copy to complete — its error is the meaningful one.
 	first := <-errChan
 
-	// Close both endpoints so the remaining goroutine unblocks promptly.
+	// Close all closable endpoints so the remaining goroutine unblocks
+	// promptly instead of leaking.
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
+	if c, ok := fromStdin.(io.Closer); ok {
+		_ = c.Close()
+	}
+
+	// Drain the second goroutine so callers can safely read toStdout after
+	// pipe returns without a data race.
+	<-errChan
 
 	return first
 }
