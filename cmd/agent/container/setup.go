@@ -235,7 +235,10 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	}
 
 	if !deferred.Empty() {
-		if err := cmd.startDeferredHooks(resolvedSetupInfo); err != nil {
+		err = cmd.startDeferredHooks(
+			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
+		)
+		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
@@ -257,14 +260,18 @@ func compressSetupInfo(setupInfo *config.Result) (string, error) {
 	return compress.Compress(string(raw))
 }
 
-func (cmd *SetupContainerCmd) startDeferredHooks(setupInfo string) error {
+func (cmd *SetupContainerCmd) startDeferredHooks(
+	setupInfo, dotfilesRepo, dotfilesScript string,
+) error {
 	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
 		log.Debugf("starting deferred lifecycle hooks as background process")
-		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild)
+		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild, dotfilesRepo, dotfilesScript)
 	})
 }
 
-func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
+func buildDeferredHooksCmd(
+	setupInfo string, prebuild bool, dotfilesRepo, dotfilesScript string,
+) (*exec.Cmd, error) {
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -276,6 +283,12 @@ func buildDeferredHooksCmd(setupInfo string, prebuild bool) (*exec.Cmd, error) {
 	}
 	if prebuild {
 		args = append(args, "--prebuild")
+	}
+	if dotfilesRepo != "" {
+		args = append(args, "--dotfiles-repo", dotfilesRepo)
+	}
+	if dotfilesScript != "" {
+		args = append(args, "--dotfiles-script", dotfilesScript)
 	}
 
 	return &exec.Cmd{

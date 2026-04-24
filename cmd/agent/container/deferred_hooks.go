@@ -17,8 +17,10 @@ import (
 // DeferredHooksCmd runs deferred lifecycle hooks as a detached background process.
 type DeferredHooksCmd struct {
 	*flags.GlobalFlags
-	SetupInfo string
-	Prebuild  bool
+	SetupInfo      string
+	Prebuild       bool
+	DotfilesRepo   string
+	DotfilesScript string
 }
 
 // NewDeferredHooksCmd creates a new command.
@@ -38,6 +40,10 @@ func NewDeferredHooksCmd(flags *flags.GlobalFlags) *cobra.Command {
 		StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
 	deferredCmd.Flags().
 		BoolVar(&cmd.Prebuild, "prebuild", false, "If true, prebuild lifecycle mode")
+	deferredCmd.Flags().
+		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
+	deferredCmd.Flags().
+		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
 	_ = deferredCmd.MarkFlagRequired("setup-info")
 	return deferredCmd
 }
@@ -55,7 +61,10 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 	}
 
 	log.Debugf("running deferred lifecycle hooks")
-	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, cmd.Prebuild, setup.DotfilesConfig{})
+	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, cmd.Prebuild, setup.DotfilesConfig{
+		Repository:    cmd.DotfilesRepo,
+		InstallScript: cmd.DotfilesScript,
+	})
 	if err != nil {
 		log.Errorf("deferred hooks setup failed: %v", err)
 		return nil
