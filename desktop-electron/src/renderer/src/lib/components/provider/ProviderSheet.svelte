@@ -15,10 +15,12 @@ import {
   providerUpdate,
   providerDelete,
   providerInit,
+  providerList,
   providerOptions,
   providerSetOptions,
   providerRename,
 } from "$lib/ipc/commands.js"
+import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Provider, ProviderOption } from "$lib/types/index.js"
@@ -136,6 +138,8 @@ async function handleInitialize() {
   initializing = true
   try {
     await providerInit(provider.name)
+    const updated = await providerList()
+    providers.set(updated)
     toasts.success(`Initialized ${provider.name}`)
   } catch (err) {
     toasts.error(`Failed to initialize: ${extractErrorMessage(err)}`)
