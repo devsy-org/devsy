@@ -25,11 +25,12 @@ import (
 type LifecyclePhase string
 
 const (
-	PhaseOnCreate      LifecyclePhase = "onCreateCommand"
-	PhaseUpdateContent LifecyclePhase = "updateContentCommand"
-	PhasePostCreate    LifecyclePhase = "postCreateCommand"
-	PhasePostStart     LifecyclePhase = "postStartCommand"
-	PhasePostAttach    LifecyclePhase = "postAttachCommand"
+	PhaseInitializeCommand LifecyclePhase = "initializeCommand"
+	PhaseOnCreate          LifecyclePhase = "onCreateCommand"
+	PhaseUpdateContent     LifecyclePhase = "updateContentCommand"
+	PhasePostCreate        LifecyclePhase = "postCreateCommand"
+	PhasePostStart         LifecyclePhase = "postStartCommand"
+	PhasePostAttach        LifecyclePhase = "postAttachCommand"
 )
 
 // DefaultWaitFor is the spec-defined default for the waitFor property.
@@ -45,8 +46,10 @@ var phaseOrder = []LifecyclePhase{
 }
 
 // validWaitForPhase returns true when phase is an allowed waitFor value.
+// initializeCommand is a valid waitFor value (host-side phase) even though
+// it is not in phaseOrder (which lists only container-side phases).
 func validWaitForPhase(phase LifecyclePhase) bool {
-	return slices.Contains(phaseOrder, phase)
+	return phase == PhaseInitializeCommand || slices.Contains(phaseOrder, phase)
 }
 
 // resolveWaitFor normalises the raw waitFor string from the config,
@@ -188,10 +191,17 @@ func runPrebuildHooks(all []phaseHook) error {
 
 // runWithWaitFor runs hooks up to and including waitFor synchronously
 // and returns the remaining hooks as deferred.
+//
+// When waitFor is initializeCommand (a host-side phase that precedes all
+// container lifecycle phases), every container phase is deferred.
 func runWithWaitFor(
 	all []phaseHook,
 	waitFor LifecyclePhase,
 ) ([]phaseHook, error) {
+	if waitFor == PhaseInitializeCommand {
+		return append([]phaseHook(nil), all...), nil
+	}
+
 	pastWaitFor := false
 	var deferred []phaseHook
 
