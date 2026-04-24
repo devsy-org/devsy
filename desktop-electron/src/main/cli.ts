@@ -12,7 +12,7 @@ const execFile = promisify(execFileCb)
  * We augment PATH so all spawned CLI processes can find these tools.
  */
 function buildEnv(): NodeJS.ProcessEnv {
-  if (process.platform !== "darwin") return process.env
+  if (process.platform !== "darwin") return { ...process.env, DEVSY_UI: "true" }
 
   const currentPath = process.env.PATH ?? ""
   const extraDirs = [
@@ -21,9 +21,9 @@ function buildEnv(): NodeJS.ProcessEnv {
     "/opt/homebrew/sbin",
   ]
   const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
-  if (missing.length === 0) return process.env
+  if (missing.length === 0) return { ...process.env, DEVSY_UI: "true" }
 
-  return { ...process.env, PATH: `${missing.join(":")}:${currentPath}` }
+  return { ...process.env, DEVSY_UI: "true", PATH: `${missing.join(":")}:${currentPath}` }
 }
 
 export class CliRunner {
