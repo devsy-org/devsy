@@ -333,7 +333,7 @@ func storeIntegrityHash(featureFolder, tarballPath, id string) {
 }
 
 func extractTarball(downloadFile, dest string) error {
-	file, err := os.Open(downloadFile)
+	file, err := os.Open(filepath.Clean(downloadFile))
 	if err != nil {
 		return fmt.Errorf("open tarball: %w", err)
 	}

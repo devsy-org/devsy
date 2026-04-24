@@ -31,7 +31,7 @@ func (s *IntegrityTestSuite) TestStoreIntegrityHash_WritesCorrectSidecar() {
 	storeIntegrityHash(dir, tarball, "test-feature")
 
 	hashFile := filepath.Join(dir, "feature.sha256")
-	stored, err := os.ReadFile(hashFile)
+	stored, err := os.ReadFile(filepath.Clean(hashFile))
 	s.Require().NoError(err)
 
 	expected, err := hash.File(tarball)
