@@ -146,11 +146,11 @@ func (s *LifecycleHookTestSuite) TestResolveWaitForValid() {
 	assert.Equal(s.T(), PhaseOnCreate, resolveWaitFor("onCreateCommand"))
 	assert.Equal(s.T(), PhasePostAttach, resolveWaitFor("postAttachCommand"))
 	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand"))
+	assert.Equal(s.T(), PhaseInitializeCommand, resolveWaitFor("initializeCommand"))
 }
 
 func (s *LifecycleHookTestSuite) TestResolveWaitForInvalid() {
 	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("bogus"))
-	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("initializeCommand"))
 	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("POSTCREATECOMMAND"))
 }
 
@@ -203,6 +203,21 @@ func (s *LifecycleHookTestSuite) TestRunWithWaitForOnCreate() {
 	assert.Equal(t, PhaseUpdateContent, deferred[0].phase)
 	assert.Equal(t, PhasePostCreate, deferred[1].phase)
 	assert.Equal(t, PhasePostStart, deferred[2].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForInitializeCommand() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+
+	deferred, err := runWithWaitFor(all, PhaseInitializeCommand)
+	assert.NoError(t, err)
+
+	// initializeCommand is a host-side phase; all container phases are deferred.
+	assert.Len(t, deferred, len(all))
+	assert.Equal(t, PhaseOnCreate, deferred[0].phase)
+	assert.Equal(t, PhaseUpdateContent, deferred[1].phase)
+	assert.Equal(t, PhasePostCreate, deferred[2].phase)
+	assert.Equal(t, PhasePostStart, deferred[3].phase)
 }
 
 func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
