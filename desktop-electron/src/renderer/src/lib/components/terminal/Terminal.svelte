@@ -51,6 +51,43 @@ function isDark(): boolean {
   return current === "dark"
 }
 
+function getAppTheme(): import("@xterm/xterm").ITheme {
+  const probe = document.createElement("div")
+  probe.className = "bg-background text-foreground"
+  probe.style.display = "none"
+  document.body.appendChild(probe)
+  const computed = getComputedStyle(probe)
+  const background = computed.backgroundColor
+  const foreground = computed.color
+  document.body.removeChild(probe)
+
+  const selProbe = document.createElement("div")
+  selProbe.className = "bg-muted"
+  selProbe.style.display = "none"
+  document.body.appendChild(selProbe)
+  const selComputed = getComputedStyle(selProbe)
+  const selectionBackground = selComputed.backgroundColor
+  document.body.removeChild(selProbe)
+
+  return {
+    background: background || undefined,
+    foreground: foreground || undefined,
+    cursor: foreground || undefined,
+    selectionBackground: selectionBackground || undefined,
+  }
+}
+
+function resolveTheme(): import("@xterm/xterm").ITheme {
+  const appTheme = getAppTheme()
+  const fallback = isDark() ? darkTheme : lightTheme
+  return {
+    background: appTheme.background || fallback.background,
+    foreground: appTheme.foreground || fallback.foreground,
+    cursor: appTheme.cursor || fallback.cursor,
+    selectionBackground: appTheme.selectionBackground || fallback.selectionBackground,
+  }
+}
+
 onMount(async () => {
   if (!containerEl) return
 
@@ -111,7 +148,7 @@ onMount(async () => {
       cursorBlink: true,
       fontSize: 14,
       fontFamily: "monospace",
-      theme: isDark() ? darkTheme : lightTheme,
+      theme: resolveTheme(),
     })
 
     fitAddon = new XFitAddon()
@@ -131,7 +168,7 @@ onMount(async () => {
 
     const unsubscribeTheme = theme.subscribe(() => {
       if (term) {
-        term.options.theme = isDark() ? darkTheme : lightTheme
+        term.options.theme = resolveTheme()
       }
     })
 

@@ -189,7 +189,7 @@ function handleExit() {
 
   <!-- Terminal content -->
   {#if $terminals.length > 0}
-    <div class="relative min-h-0 flex-1">
+    <div class="relative min-h-0 flex-1 m-2 rounded-lg border border-border overflow-hidden">
       {#each $terminals as session (session.id)}
         <div class="absolute inset-0" class:hidden={session.id !== activeSessionId}>
           <TerminalComponent sessionId={session.id} active={session.id === activeSessionId} onExit={handleExit} />
@@ -198,13 +198,13 @@ function handleExit() {
     </div>
   {:else}
     <div class="flex flex-1 items-center justify-center">
-      <div class="flex flex-col items-center gap-4 text-center">
-        <div class="rounded-full bg-muted p-4">
-          <SquareTerminal class="h-8 w-8 text-muted-foreground" />
+      <div class="flex flex-col items-center gap-5 text-center">
+        <div class="rounded-xl bg-muted/50 p-5">
+          <SquareTerminal class="h-10 w-10 text-muted-foreground/70" />
         </div>
         <div>
           <p class="text-lg font-medium">No active terminals</p>
-          <p class="mt-1 text-sm text-muted-foreground">Create a local shell or SSH into a running workspace</p>
+          <p class="mt-1.5 max-w-xs text-sm text-muted-foreground">Open a local shell or SSH into a running workspace to get started</p>
         </div>
         <div class="flex gap-2">
           <Button onclick={createShell}>
