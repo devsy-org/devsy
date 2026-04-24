@@ -231,7 +231,7 @@ func runPrebuildHooks(all []phaseHook) error {
 		if ph.phase != PhaseOnCreate && ph.phase != PhaseUpdateContent {
 			continue
 		}
-		if err := runHook(ph.params); err != nil {
+		if err := runPhaseHook(ph); err != nil {
 			return err
 		}
 	}

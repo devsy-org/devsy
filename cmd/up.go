@@ -299,7 +299,7 @@ func (cmd *UpCmd) resolveDotfilesOptions(devsyConfig *config.Config) {
 	if cmd.DotfilesScript != "" {
 		script = cmd.DotfilesScript
 	}
-	cmd.DotfilesScript = script
+	cmd.CLIOptions.DotfilesScript = script
 }
 
 // prepareWorkspace handles initial setup and validation.
