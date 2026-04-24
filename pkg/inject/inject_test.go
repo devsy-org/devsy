@@ -28,53 +28,71 @@ func TestPipeSuite(t *testing.T) {
 }
 
 func (s *PipeTestSuite) TestPipe_NormalBidirectionalCopy() {
-	toStdinReader, toStdinWriter, err := os.Pipe()
-	s.Require().NoError(err)
+	// Test that pipe() copies data in both directions. pipe() returns after
+	// the first direction completes and closes both endpoints, so we test
+	// each direction independently to avoid non-deterministic races.
 
-	// Use a thread-safe wrapper around bytes.Buffer for toStdout so the
-	// race detector doesn't flag the concurrent write (from the copy
-	// goroutine) and read (from the assertion below).
-	toStdout := &syncBuffer{}
+	// --- Test stdout direction (fromStdout → toStdout) ---
+	s.Run("stdout direction", func() {
+		toStdinWriter := nopWriteCloser{}
+		toStdout := &syncBuffer{}
 
-	// Use io.Pipe for feeders — synchronous semantics ensure data is
-	// fully consumed before the feeder moves on.
-	fromStdinReader, fromStdinWriter := io.Pipe()
-	fromStdoutReader, fromStdoutWriter := io.Pipe()
-	defer func() { _ = fromStdinWriter.Close() }()
-	defer func() { _ = fromStdoutWriter.Close() }()
+		// fromStdin: keep open so stdin direction doesn't finish first.
+		fromStdinReader, fromStdinWriter, err := os.Pipe()
+		s.Require().NoError(err)
 
-	stdinPayload := "hello from stdin"
-	stdoutPayload := "hello from stdout"
+		fromStdoutReader, fromStdoutWriter, err := os.Pipe()
+		s.Require().NoError(err)
 
-	go func() {
-		_, _ = fromStdoutWriter.Write([]byte(stdoutPayload))
-		_, _ = fromStdinWriter.Write([]byte(stdinPayload))
+		stdoutPayload := "hello from stdout"
+		_, err = fromStdoutWriter.Write([]byte(stdoutPayload))
+		s.Require().NoError(err)
 		_ = fromStdoutWriter.Close()
+
+		pipeErr := pipe(toStdinWriter, fromStdinReader, toStdout, fromStdoutReader)
+		s.NoError(pipeErr)
+		s.Equal(stdoutPayload, toStdout.String())
+
 		_ = fromStdinWriter.Close()
-	}()
+	})
 
-	// Read from toStdin consumer in the background — unblocks when pipe()
-	// closes toStdinWriter.
-	var gotStdin []byte
-	stdinDone := make(chan struct{})
-	go func() {
-		defer close(stdinDone)
-		gotStdin, _ = io.ReadAll(toStdinReader)
-	}()
+	// --- Test stdin direction (fromStdin → toStdin) ---
+	s.Run("stdin direction", func() {
+		toStdinReader, toStdinWriter, err := os.Pipe()
+		s.Require().NoError(err)
 
-	pipeErr := pipe(toStdinWriter, fromStdinReader, toStdout, fromStdoutReader)
+		var toStdoutBuf bytes.Buffer
 
-	<-stdinDone
-	_ = toStdinReader.Close()
+		fromStdinReader, fromStdinWriter, err := os.Pipe()
+		s.Require().NoError(err)
 
-	s.NoError(pipeErr)
-	s.Equal(stdinPayload, string(gotStdin))
-	// Allow a brief moment for the stdout goroutine to finish its last
-	// write (pipe() returns after the first direction completes; the
-	// stdout goroutine may still be flushing).
-	s.Eventually(func() bool {
-		return toStdout.String() == stdoutPayload
-	}, time.Second, 5*time.Millisecond, "expected stdout payload %q", stdoutPayload)
+		// fromStdout: keep open so stdout direction doesn't finish first.
+		fromStdoutReader, fromStdoutWriter, err := os.Pipe()
+		s.Require().NoError(err)
+
+		stdinPayload := "hello from stdin"
+		_, err = fromStdinWriter.Write([]byte(stdinPayload))
+		s.Require().NoError(err)
+		_ = fromStdinWriter.Close()
+
+		// Read toStdin in background.
+		var gotStdin []byte
+		stdinDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			gotStdin, _ = io.ReadAll(toStdinReader)
+		}()
+
+		pipeErr := pipe(toStdinWriter, fromStdinReader, &toStdoutBuf, fromStdoutReader)
+
+		<-stdinDone
+		_ = toStdinReader.Close()
+
+		s.NoError(pipeErr)
+		s.Equal(stdinPayload, string(gotStdin))
+
+		_ = fromStdoutWriter.Close()
+	})
 }
 
 func (s *PipeTestSuite) TestPipe_WriterSideClosesFirst() {
