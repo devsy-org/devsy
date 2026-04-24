@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -42,10 +43,14 @@ var retryableDockerPatterns = []string{
 }
 
 // isRetryableSSHError returns true when the error indicates a transient SSH
-// failure (exit status 1) typically caused by the devsy agent not yet being
+// failure (exit code 1) typically caused by the devsy agent not yet being
 // ready inside the container.
 func isRetryableSSHError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "exit status 1")
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == 1
+	}
+	return false
 }
 
 // isRetryableDockerError returns true if stderr contains a transient Docker
