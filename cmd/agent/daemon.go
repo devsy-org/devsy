@@ -21,7 +21,8 @@ import (
 type DaemonCmd struct {
 	*flags.GlobalFlags
 
-	Interval string
+	Interval       string
+	ShutdownAction string
 }
 
 // NewDaemonCmd creates a new command.
@@ -39,6 +40,8 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	daemonCmd.Flags().
 		StringVar(&cmd.Interval, "interval", "", "The interval how to poll workspaces")
+	daemonCmd.Flags().
+		StringVar(&cmd.ShutdownAction, "shutdown-action", "", "The shutdown action (none or stopContainer)")
 	return daemonCmd
 }
 
@@ -126,6 +129,10 @@ func (cmd *DaemonCmd) checkAndShutdown(
 	latestActivity *time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
+	if cmd.ShutdownAction == "none" {
+		return
+	}
+
 	// check timeout
 	timeout := agent.DefaultInactivityTimeout
 	if workspace.Agent.Timeout != "" {

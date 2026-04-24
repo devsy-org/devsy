@@ -45,6 +45,8 @@ func NewDaemonCmd() *cobra.Command {
 	}
 	daemonCmd.Flags().
 		StringVar(&cmd.Config.Timeout, "timeout", "", "The timeout to stop the container after")
+	daemonCmd.Flags().
+		StringVar(&cmd.Config.ShutdownAction, "shutdown-action", "", "The shutdown action (none or stopContainer)")
 	return daemonCmd
 }
 
@@ -96,8 +98,8 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 		})
 	}
 
-	// Start timeout monitor.
-	if timeoutDuration > 0 {
+	// Start timeout monitor unless shutdownAction is "none".
+	if timeoutDuration > 0 && cmd.Config.ShutdownAction != "none" {
 		tasksStarted = true
 		g.Go(func() error {
 			return runTimeoutMonitor(ctx, timeoutDuration)
@@ -157,6 +159,9 @@ func (cmd *DaemonCmd) loadConfig() error {
 		}
 		if cmd.Config.Timeout != "" {
 			cfg.Timeout = cmd.Config.Timeout
+		}
+		if cmd.Config.ShutdownAction != "" {
+			cfg.ShutdownAction = cmd.Config.ShutdownAction
 		}
 		cmd.Config = &cfg
 	}
