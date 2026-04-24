@@ -286,20 +286,20 @@ type workspaceContext struct {
 	workdir string
 }
 
-// resolveDotfilesOptions populates CLIOptions.DotfilesRepo and DotfilesScript
+// resolveDotfilesOptions populates DotfilesRepo and DotfilesScript
 // from the CLI flags and config context options so they flow to the container.
 func (cmd *UpCmd) resolveDotfilesOptions(devsyConfig *config.Config) {
 	repo := devsyConfig.ContextOption(config.ContextOptionDotfilesURL)
 	if cmd.DotfilesSource != "" {
 		repo = cmd.DotfilesSource
 	}
-	cmd.CLIOptions.DotfilesRepo = repo
+	cmd.DotfilesRepo = repo
 
 	script := devsyConfig.ContextOption(config.ContextOptionDotfilesScript)
 	if cmd.DotfilesScript != "" {
 		script = cmd.DotfilesScript
 	}
-	cmd.CLIOptions.DotfilesScript = script
+	cmd.DotfilesScript = script
 }
 
 // prepareWorkspace handles initial setup and validation.
@@ -389,7 +389,7 @@ func (cmd *UpCmd) configureWorkspace(
 	// (between postCreateCommand and postStartCommand). The host-side
 	// SSH-based installation is only used as a fallback when the
 	// container-side path was not configured.
-	if cmd.CLIOptions.DotfilesRepo == "" {
+	if cmd.DotfilesRepo == "" {
 		if err := dotfiles.Setup(dotfiles.SetupParams{
 			Source:       cmd.DotfilesSource,
 			Script:       cmd.DotfilesScript,
