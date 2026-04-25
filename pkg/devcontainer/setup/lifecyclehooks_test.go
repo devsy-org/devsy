@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap/zapcore"
 )
 
 type LifecycleHookTestSuite struct {
@@ -594,6 +596,51 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForNoDotfiles() {
 	// No dotfiles configured — no promotion regardless of waitFor.
 	result := promoteDotfilesWaitFor(DefaultWaitFor, DotfilesConfig{})
 	assert.Equal(t, DefaultWaitFor, result)
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrue() {
+	all := []phaseHook{
+		{
+			phase:  PhaseOnCreate,
+			params: hookRunParams{commands: []types.LifecycleHook{{"": {"echo", "hi"}}}},
+		},
+	}
+	assert.True(s.T(), phaseHasCommands(all, PhaseOnCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsFalseEmpty() {
+	all := makeTestPhaseHooks()
+	assert.False(s.T(), phaseHasCommands(all, PhaseOnCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrueRunFunc() {
+	all := []phaseHook{
+		{
+			phase:   PhasePostCreate,
+			runFunc: func() error { return nil },
+		},
+	}
+	assert.True(s.T(), phaseHasCommands(all, PhasePostCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
+	t := s.T()
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	all := makeTestPhaseHooks()
+	phase := PhaseUpdateContent
+
+	if !phaseHasCommands(all, phase) {
+		log.Debugf(
+			"waitFor phase %q has no commands configured; the split point is a no-op",
+			phase,
+		)
+	}
+
+	entries := logs.All()
+	assert.NotEmpty(t, entries, "expected at least one log entry")
+	assert.Contains(t, entries[0].Message,
+		`waitFor phase "updateContentCommand" has no commands configured`)
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {
