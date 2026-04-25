@@ -35,8 +35,20 @@ func TestIsRetryableSSHError_ConnectionReset(t *testing.T) {
 	assert.True(t, isRetryableSSHError(exitError(t, "1"), "Connection reset by peer"))
 }
 
-func TestIsRetryableSSHError_TunnelToContainer(t *testing.T) {
-	assert.True(t, isRetryableSSHError(exitError(t, "1"), "error: tunnel to container failed"))
+func TestIsRetryableSSHError_TunnelToContainer_NotRetryable(t *testing.T) {
+	assert.False(t, isRetryableSSHError(exitError(t, "1"), "error: tunnel to container failed"))
+}
+
+func TestIsRetryableSSHError_RemoteCommandFailure(t *testing.T) {
+	// The devsy CLI wraps all command failures with "tunnel to container:" in stderr.
+	// This must NOT be treated as a transient SSH error.
+	assert.False(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"tunnel to container: run in container: ssh session: Process exited with status 1",
+		),
+	)
 }
 
 func TestIsRetryableSSHError_ConnectionTimedOut(t *testing.T) {

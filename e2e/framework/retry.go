@@ -48,7 +48,6 @@ var retryableSSHPatterns = []string{
 	"connection refused",
 	"connection reset",
 	"ssh: connect to host",
-	"tunnel to container",
 	"no such container",
 	"connection timed out",
 	"broken pipe",
