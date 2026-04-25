@@ -464,6 +464,26 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.GetTimeout()),
 		)
 
+		ginkgo.It(
+			"postCreateCommand with object syntax runs named sub-commands in parallel",
+			func(ctx context.Context) {
+				tempDir, err := dtc.setupAndUp(
+					ctx,
+					"tests/up/testdata/docker-postcreate-parallel",
+				)
+				framework.ExpectNoError(err)
+
+				one, err := dtc.execSSH(ctx, tempDir, "cat /tmp/post-create-one.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(one)).To(gomega.Equal("postCreateOne"))
+
+				two, err := dtc.execSSH(ctx, tempDir, "cat /tmp/post-create-two.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
+			},
+			ginkgo.SpecTimeout(framework.GetTimeout()),
+		)
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",
