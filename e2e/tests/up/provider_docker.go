@@ -219,6 +219,30 @@ var _ = ginkgo.Describe(
 			)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It("remoteEnv null unsets variable", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-remote-env-null")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			setLine, err := dtc.execSSHCapture(
+				ctx,
+				workspace.ID,
+				`head -1 $HOME/remote-env-null.out`,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(setLine).To(gomega.Equal("SET=hello"))
+
+			unsetLine, err := dtc.execSSHCapture(
+				ctx,
+				workspace.ID,
+				`tail -1 $HOME/remote-env-null.out`,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(unsetLine).To(gomega.Equal("UNSET=true"))
+		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
 			framework.ExpectNoError(err)
