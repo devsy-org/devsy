@@ -182,7 +182,10 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 		return getWorkspaceClient(opts.DevsyConfig, provider, workspace, machine)
 	}
 
-	workspace := findWorkspaceByArgs(ctx, opts)
+	workspace, err := findWorkspaceByArgs(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
 	if workspace == nil {
 		return nil, fmt.Errorf("workspace not found for args: %v", opts.Args)
 	}
@@ -202,9 +205,9 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 func findWorkspaceByArgs(
 	ctx context.Context,
 	opts GetOptions,
-) *providerpkg.Workspace {
+) (*providerpkg.Workspace, error) {
 	if opts.LocalOnly {
-		return findLocalWorkspace(opts.DevsyConfig, opts.Args, "")
+		return findLocalWorkspace(opts.DevsyConfig, opts.Args, ""), nil
 	}
 	return findWorkspace(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
 }
@@ -217,7 +220,7 @@ func Exists(
 	workspaceID string,
 	owner platform.OwnerFilter,
 ) string {
-	workspace := findWorkspace(ctx, devsyConfig, args, workspaceID, owner)
+	workspace, _ := findWorkspace(ctx, devsyConfig, args, workspaceID, owner)
 	if workspace == nil {
 		return ""
 	}
@@ -233,7 +236,7 @@ func resolveWorkspace(
 	// check if we have no args
 	if len(params.Args) == 0 {
 		if params.DesiredID != "" {
-			workspace := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
+			workspace, _ := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
 			if workspace == nil {
 				return nil, nil, nil, fmt.Errorf("workspace %s doesn't exist", params.DesiredID)
 			}
@@ -642,16 +645,15 @@ func findWorkspace(
 	args []string,
 	workspaceID string,
 	owner platform.OwnerFilter,
-) *providerpkg.Workspace {
+) (*providerpkg.Workspace, error) {
 	workspaceID = ensureWorkspaceID(args, workspaceID)
 	if workspaceID == "" {
-		return nil
+		return nil, nil
 	}
 
 	allWorkspaces, err := List(ctx, devsyConfig, false, owner)
 	if err != nil {
-		log.Debugf("failed to list workspaces: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to list workspaces: %w", err)
 	}
 
 	var retWorkspace *providerpkg.Workspace
@@ -665,13 +667,7 @@ func findWorkspace(
 			workspace.Imported = true
 			err = providerpkg.SaveWorkspaceConfig(workspace)
 			if err != nil {
-				log.Debugf(
-					"failed to save workspace config for workspace \"%s\" with provider \"%s\": %v",
-					workspace.ID,
-					workspace.Provider.Name,
-					err,
-				)
-				return nil
+				return nil, fmt.Errorf("failed to save workspace config: %w", err)
 			}
 		}
 
@@ -679,7 +675,7 @@ func findWorkspace(
 		break
 	}
 
-	return retWorkspace
+	return retWorkspace, nil
 }
 
 type selectWorkspaceParams struct {
