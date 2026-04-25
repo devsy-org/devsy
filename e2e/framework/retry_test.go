@@ -61,6 +61,16 @@ func TestIsRetryableSSHError_ConnectionTimedOut(t *testing.T) {
 	)
 }
 
+func TestIsRetryableSSHError_WorkspaceNotFound(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"workspace not found for args: [/tmp/temp-XXXXXXX]",
+		),
+	)
+}
+
 func TestIsRetryableSSHError_ExitCode1_NoSSHPattern(t *testing.T) {
 	// Remote command failure (e.g. cat on missing file) — should NOT be retried.
 	assert.False(

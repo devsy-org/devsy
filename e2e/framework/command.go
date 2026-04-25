@@ -401,10 +401,8 @@ func (f *Framework) DevsySSHGpgTestKey(ctx context.Context, workspace string) er
 }
 
 func (f *Framework) DevsyPortTest(ctx context.Context, port string, workspace string) error {
-	// First run to trigger the first forwarding
-	_, _, err := f.ExecCommandCapture(ctx, []string{
-		"ssh",
-		"--forward-ports", port, workspace,
+	_, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, string, error) {
+		return f.ExecCommandCapture(ctx, []string{"ssh", "--forward-ports", port, workspace})
 	})
 	return err
 }
