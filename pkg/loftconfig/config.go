@@ -21,7 +21,7 @@ func AuthDevsyCliToPlatform(config *client.Config) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Debugf(
-			"Failed executing `%s pro login`: %w, output: %s",
+			"Failed executing `%s pro login`: %v, output: %s",
 			pkgconfig.BinaryName,
 			err,
 			out,
@@ -47,7 +47,7 @@ func AuthVClusterCliToPlatform(config *client.Config) error {
 	cmd := exec.Command("vcluster", "login", "--access-key", config.AccessKey, config.Host)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Debugf("Failed executing `vcluster login` : %w, output: %s", err, out)
+		log.Debugf("Failed executing `vcluster login` : %v, output: %s", err, out)
 		return fmt.Errorf("error executing 'vcluster login' command: %w", err)
 	}
 
