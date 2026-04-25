@@ -624,7 +624,7 @@ func resolveMergedWorkspaceFolder(
 
 	result, err := provider.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
 	if err != nil {
-		log.Debugf("Error loading workspace result for workdir resolution: %v", err)
+		log.Warnf("Error loading workspace result for workdir resolution: %v", err)
 		return ""
 	}
 	if result == nil || result.MergedConfig == nil {
