@@ -3,6 +3,8 @@ package config
 import (
 	"maps"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/devsy-org/devsy/pkg/types"
 )
@@ -152,14 +154,87 @@ func firstString(entries []*ImageMetadata, m func(entry *ImageMetadata) string) 
 }
 
 func mergeHostRequirements(entries []*ImageMetadata) *HostRequirements {
-	// TODO: union requirements here
+	var merged *HostRequirements
 	for _, entry := range entries {
-		if entry.HostRequirements != nil {
-			return entry.HostRequirements
+		if entry.HostRequirements == nil {
+			continue
 		}
+		if merged == nil {
+			merged = &HostRequirements{}
+		}
+		if entry.HostRequirements.CPUs > merged.CPUs {
+			merged.CPUs = entry.HostRequirements.CPUs
+		}
+		merged.Memory = maxByteString(merged.Memory, entry.HostRequirements.Memory)
+		merged.Storage = maxByteString(merged.Storage, entry.HostRequirements.Storage)
+		merged.GPU = mergeGPU(merged.GPU, entry.HostRequirements.GPU)
+	}
+	return merged
+}
+
+var byteSizeMultipliers = map[string]uint64{
+	"":   1,
+	"kb": 1024,
+	"mb": 1024 * 1024,
+	"gb": 1024 * 1024 * 1024,
+	"tb": 1024 * 1024 * 1024 * 1024,
+}
+
+// parseByteSize parses a size string like "8gb", "512mb", "1tb" into bytes.
+// Returns 0 for empty or unparseable input so comparisons degrade gracefully.
+func parseByteSize(s string) uint64 {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0
 	}
 
-	return nil
+	i := 0
+	for i < len(s) && (unicode.IsDigit(rune(s[i])) || s[i] == '.') {
+		i++
+	}
+
+	num, err := strconv.ParseFloat(s[:i], 64)
+	if err != nil {
+		return 0
+	}
+
+	return uint64(num * float64(byteSizeMultipliers[strings.TrimSpace(s[i:])]))
+}
+
+// maxByteString returns whichever of a or b represents more bytes.
+func maxByteString(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	if parseByteSize(b) > parseByteSize(a) {
+		return b
+	}
+	return a
+}
+
+// gpuStrBoolPriority ranks GPU StrBool values: true > optional > false > empty.
+func gpuStrBoolPriority(g types.StrBool) int {
+	switch string(g) {
+	case "":
+		return 0
+	case "false":
+		return 1
+	case "optional":
+		return 2
+	default: // "true"
+		return 3
+	}
+}
+
+// mergeGPU returns the stronger of two GPU StrBool values.
+func mergeGPU(a, b types.StrBool) types.StrBool {
+	if gpuStrBoolPriority(b) > gpuStrBoolPriority(a) {
+		return b
+	}
+	return a
 }
 
 func mergeForwardPorts(entries []*ImageMetadata) types.StrIntArray {
