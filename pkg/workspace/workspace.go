@@ -236,7 +236,10 @@ func resolveWorkspace(
 	// check if we have no args
 	if len(params.Args) == 0 {
 		if params.DesiredID != "" {
-			workspace, _ := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
+			workspace, err := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("find workspace: %w", err)
+			}
 			if workspace == nil {
 				return nil, nil, nil, fmt.Errorf("workspace %s doesn't exist", params.DesiredID)
 			}
