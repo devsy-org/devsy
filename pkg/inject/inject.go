@@ -324,5 +324,7 @@ func pipe(
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
+	<-errChan
+
 	return first
 }
