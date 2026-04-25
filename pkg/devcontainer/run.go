@@ -2,12 +2,14 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -201,18 +203,26 @@ func isDockerFileConfig(config *config.DevContainerConfig) bool {
 	return config.GetDockerfile() != ""
 }
 
+// initCmdContext groups shared execution state for initializeCommand sub-commands.
+type initCmdContext struct {
+	shellArgs       []string
+	workspaceFolder string
+	extraEnvVars    []string
+}
+
 func runInitializeCommand(
 	workspaceFolder string,
-	config *config.DevContainerConfig,
+	conf *config.DevContainerConfig,
 	extraEnvVars []string,
 ) error {
-	if len(config.InitializeCommand) == 0 {
+	if len(conf.InitializeCommand) == 0 {
 		return nil
 	}
 
 	shellArgs := []string{"sh", "-c"}
 	// According to the devcontainer spec, `initializeCommand` needs to be run on the host.
-	// On Windows we can't assume everyone has `sh` added to their PATH so we need to use Windows default shell (usually cmd.exe)
+	// On Windows we can't assume everyone has `sh` added to their PATH so we need to use
+	// Windows default shell (usually cmd.exe).
 	if runtime.GOOS == "windows" {
 		comSpec := os.Getenv("COMSPEC")
 		if comSpec != "" {
@@ -222,38 +232,80 @@ func runInitializeCommand(
 		}
 	}
 
-	for _, cmd := range config.InitializeCommand {
-		// should run in shell?
-		var args []string
-		if len(cmd) == 1 {
-			args = []string{shellArgs[0], shellArgs[1], cmd[0]}
-		} else {
-			args = cmd
-		}
+	ctx := &initCmdContext{
+		shellArgs:       shellArgs,
+		workspaceFolder: workspaceFolder,
+		extraEnvVars:    extraEnvVars,
+	}
 
-		// run the command
-		log.Infof("Running initializeCommand from devcontainer.json: '%s'", strings.Join(args, " "))
-		writer := log.Writer(log.LevelInfo)
-		errwriter := log.Writer(log.LevelError)
-		defer func() { _ = writer.Close() }()
-		defer func() { _ = errwriter.Close() }()
+	if len(conf.InitializeCommand) > 1 {
+		return ctx.runParallel(conf.InitializeCommand)
+	}
 
-		// args come from devcontainer.json initializeCommand, a trusted local config.
-		cmd := exec.Command(args[0], args[1:]...) //nolint:gosec // G204
-		env := cmd.Environ()
-		env = append(env, extraEnvVars...)
-
-		cmd.Stdout = writer
-		cmd.Stderr = errwriter
-		cmd.Dir = workspaceFolder
-		cmd.Env = env
-		err := cmd.Run()
-		if err != nil {
+	for name, cmd := range conf.InitializeCommand {
+		if err := ctx.runSingle(name, cmd); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// runParallel executes all named sub-commands concurrently, collects errors, and returns them joined.
+func (c *initCmdContext) runParallel(hook map[string][]string) error {
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+
+	wg.Add(len(hook))
+	for name, cmd := range hook {
+		go func() {
+			defer wg.Done()
+			if err := c.runSingle(name, cmd); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("named command %q failed: %w", name, err))
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// runSingle executes a single initializeCommand sub-command.
+func (c *initCmdContext) runSingle(name string, cmd []string) error {
+	var args []string
+	if len(cmd) == 1 {
+		args = make([]string, len(c.shellArgs)+1)
+		copy(args, c.shellArgs)
+		args[len(c.shellArgs)] = cmd[0]
+	} else {
+		args = cmd
+	}
+
+	log.Infof(
+		"Running initializeCommand %q from devcontainer.json: '%s'",
+		name,
+		strings.Join(args, " "),
+	)
+
+	writer := log.Writer(log.LevelInfo)
+	errwriter := log.Writer(log.LevelError)
+	defer func() { _ = writer.Close() }()
+	defer func() { _ = errwriter.Close() }()
+
+	// args come from devcontainer.json initializeCommand, a trusted local config.
+	c2 := exec.Command(args[0], args[1:]...) //nolint:gosec // G204
+	env := c2.Environ()
+	env = append(env, c.extraEnvVars...)
+
+	c2.Stdout = writer
+	c2.Stderr = errwriter
+	c2.Dir = c.workspaceFolder
+	c2.Env = env
+	return c2.Run()
 }
 
 func getWorkspace(
