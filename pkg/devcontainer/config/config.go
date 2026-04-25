@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -311,27 +312,69 @@ type HostRequirements struct {
 	// Amount of required disk space in bytes. Supports units tb, gb, mb and kb.
 	Storage string `json:"storage,omitempty"`
 
-	// If GPU support should be enabled
-	GPU types.StrBool `json:"gpu,omitempty"`
+	// If GPU support should be enabled. Accepts bool, string ("optional"), or object with cores/memory.
+	GPU *GPURequirement `json:"gpu,omitempty"`
+}
+
+// GPURequirement represents the gpu field in hostRequirements.
+// It supports bool, string, and object formats per the devcontainer spec.
+type GPURequirement struct {
+	Value     string // "true", "false", or "optional"
+	Cores     int    // Object format, advisory
+	GPUMemory string // Object format, advisory
+}
+
+// UnmarshalJSON handles bool, string, and object formats for the gpu field.
+func (g *GPURequirement) UnmarshalJSON(data []byte) error {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	switch v := raw.(type) {
+	case bool:
+		g.Value = strconv.FormatBool(v)
+	case string:
+		g.Value = v
+	case map[string]any:
+		g.parseObject(v)
+	default:
+		return fmt.Errorf("gpu: %w", types.ErrUnsupportedType)
+	}
+	return nil
+}
+
+func (g *GPURequirement) parseObject(obj map[string]any) {
+	g.Value = "true"
+	if f, ok := obj["cores"].(float64); ok {
+		g.Cores = int(f)
+	}
+	if s, ok := obj["memory"].(string); ok {
+		g.GPUMemory = s
+	}
 }
 
 // ShouldEnableGPU determines if GPU should be enabled based on requirements and availability.
 func (h *HostRequirements) ShouldEnableGPU(gpuAvailable bool) (enable bool, warnIfMissing bool) {
-	if h == nil || h.GPU == "" {
+	if h == nil || h.GPU == nil {
 		return false, false
 	}
 
-	gpuValue := string(h.GPU)
-	if gpuValue == "optional" {
+	if h.GPU.Value == "optional" {
 		return gpuAvailable, false
 	}
 
-	required, err := h.GPU.Bool()
+	required, err := strconv.ParseBool(h.GPU.Value)
 	if err != nil {
 		return false, false
 	}
 
-	return required && gpuAvailable, required && !gpuAvailable
+	if required && !gpuAvailable {
+		return false, true
+	}
+	if !required {
+		return false, false
+	}
+	return true, false
 }
 
 type PortAttribute struct {
