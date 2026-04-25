@@ -525,6 +525,41 @@ func (s *LifecycleHookTestSuite) TestDeferredHooksNotEmptyWithDotfiles() {
 	assert.False(t, d.Empty(), "should not be empty when dotfiles runFunc is set")
 }
 
+func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForDefault() {
+	t := s.T()
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+
+	// Default waitFor (updateContentCommand) should be promoted to PhaseDotfiles.
+	result := promoteDotfilesWaitFor(DefaultWaitFor, cfg)
+	assert.Equal(t, PhaseDotfiles, result)
+}
+
+func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostCreate() {
+	t := s.T()
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+
+	// postCreateCommand is before dotfiles, so it should be promoted.
+	result := promoteDotfilesWaitFor(PhasePostCreate, cfg)
+	assert.Equal(t, PhaseDotfiles, result)
+}
+
+func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostStartNotPromoted() {
+	t := s.T()
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+
+	// postStartCommand is after dotfiles, no promotion needed.
+	result := promoteDotfilesWaitFor(PhasePostStart, cfg)
+	assert.Equal(t, PhasePostStart, result)
+}
+
+func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForNoDotfiles() {
+	t := s.T()
+
+	// No dotfiles configured — no promotion regardless of waitFor.
+	result := promoteDotfilesWaitFor(DefaultWaitFor, DotfilesConfig{})
+	assert.Equal(t, DefaultWaitFor, result)
+}
+
 func TestLifecycleHookTestSuite(t *testing.T) {
 	suite.Run(t, new(LifecycleHookTestSuite))
 }
