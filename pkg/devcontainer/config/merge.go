@@ -3,8 +3,16 @@ package config
 import (
 	"maps"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/devsy-org/devsy/pkg/types"
+)
+
+const (
+	gpuTrue     = "true"
+	gpuFalse    = "false"
+	gpuOptional = "optional"
 )
 
 func MergeConfiguration(
@@ -152,14 +160,83 @@ func firstString(entries []*ImageMetadata, m func(entry *ImageMetadata) string) 
 }
 
 func mergeHostRequirements(entries []*ImageMetadata) *HostRequirements {
-	// TODO: union requirements here
+	var merged *HostRequirements
 	for _, entry := range entries {
-		if entry.HostRequirements != nil {
-			return entry.HostRequirements
+		if entry.HostRequirements == nil {
+			continue
 		}
+		if merged == nil {
+			merged = &HostRequirements{}
+		}
+		if entry.HostRequirements.CPUs > merged.CPUs {
+			merged.CPUs = entry.HostRequirements.CPUs
+		}
+		merged.Memory = maxByteString(merged.Memory, entry.HostRequirements.Memory)
+		merged.Storage = maxByteString(merged.Storage, entry.HostRequirements.Storage)
+		merged.GPU = mergeGPU(merged.GPU, entry.HostRequirements.GPU)
 	}
+	return merged
+}
 
-	return nil
+var byteSizeMultipliers = map[string]uint64{
+	"kb": 1024,
+	"mb": 1024 * 1024,
+	"gb": 1024 * 1024 * 1024,
+	"tb": 1024 * 1024 * 1024 * 1024,
+}
+
+func parseByteSize(s string) uint64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	i := 0
+	for i < len(s) && (s[i] == '.' || (s[i] >= '0' && s[i] <= '9')) {
+		i++
+	}
+	numStr := s[:i]
+	unit := strings.TrimSpace(s[i:])
+	unit = strings.Map(unicode.ToLower, unit)
+
+	val, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0
+	}
+	if mult, ok := byteSizeMultipliers[unit]; ok {
+		return uint64(val * float64(mult))
+	}
+	return uint64(val)
+}
+
+func maxByteString(a, b string) string {
+	if parseByteSize(b) > parseByteSize(a) {
+		return b
+	}
+	if a == "" {
+		return b
+	}
+	return a
+}
+
+func gpuPriority(g *GPURequirement) int {
+	if g == nil {
+		return 0
+	}
+	switch strings.ToLower(g.Value) {
+	case gpuFalse:
+		return 1
+	case gpuOptional:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func mergeGPU(a, b *GPURequirement) *GPURequirement {
+	if gpuPriority(b) > gpuPriority(a) {
+		return b
+	}
+	return a
 }
 
 func mergeForwardPorts(entries []*ImageMetadata) types.StrIntArray {
