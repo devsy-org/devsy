@@ -333,9 +333,5 @@ func pipe(
 		_ = c.Close()
 	}
 
-	// Drain the second goroutine so callers can safely read toStdout after
-	// pipe returns without a data race.
-	<-errChan
-
 	return first
 }
