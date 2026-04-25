@@ -163,7 +163,7 @@ func processOCIFeature(id string) (string, error) {
 
 	ref, err := name.ParseReference(id)
 	if err != nil {
-		log.Errorf("failed to parse OCI reference: error=%v, featureId=%s", err, id)
+		log.Debugf("failed to parse OCI reference: error=%v, featureId=%s", err, id)
 		return "", err
 	}
 
@@ -171,20 +171,19 @@ func processOCIFeature(id string) (string, error) {
 	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		err = image.SanitizeRegistryError(err)
-		log.Errorf("failed to fetch OCI image: error=%v, reference=%s", err, ref.String())
+		log.Debugf("failed to fetch OCI image: error=%v, reference=%s", err, ref.String())
 		return "", err
 	}
 
 	destFile := filepath.Join(featureFolder, "feature.tgz")
 	err = downloadLayer(img, id, destFile)
 	if err != nil {
-		log.Errorf("failed to download feature layer: error=%v, featureId=%s", err, id)
+		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
 		return "", err
 	}
 
 	file, err := os.Open(destFile)
 	if err != nil {
-		log.Errorf("failed to open downloaded feature file: error=%v, file=%s", err, destFile)
 		return "", err
 	}
 	defer func() { _ = file.Close() }()
@@ -192,7 +191,7 @@ func processOCIFeature(id string) (string, error) {
 	log.Debugf("extract feature: destination=%s", featureExtractedFolder)
 	err = extract.Extract(file, featureExtractedFolder)
 	if err != nil {
-		log.Errorf(
+		log.Debugf(
 			"failed to extract feature: error=%v, destination=%s",
 			err,
 			featureExtractedFolder,
@@ -358,7 +357,6 @@ func processDirectTarFeature(
 
 	downloadBase := id[strings.LastIndex(id, "/"):]
 	if !directTarballRegEx.MatchString(downloadBase) {
-		log.Errorf("invalid tarball filename format: filename=%s", downloadBase)
 		return "", fmt.Errorf(
 			"expected tarball name to follow 'devcontainer-feature-<feature-id>.tgz' format.  Received '%s' ",
 			downloadBase,
@@ -386,14 +384,14 @@ func processDirectTarFeature(
 	downloadFile := filepath.Join(featureFolder, "feature.tgz")
 	err = downloadFeatureFromURL(id, downloadFile, httpHeaders)
 	if err != nil {
-		log.Errorf("failed to download feature tarball: error=%v, url=%s", err, id)
+		log.Debugf("failed to download feature tarball: error=%v, url=%s", err, id)
 		return "", err
 	}
 
 	storeIntegrityHash(featureFolder, downloadFile, id)
 
 	if err := extractTarball(downloadFile, featureExtractedFolder); err != nil {
-		log.Errorf("failed to extract tarball: error=%v, featureId=%s", err, id)
+		log.Debugf("failed to extract tarball: error=%v, featureId=%s", err, id)
 		return "", err
 	}
 
@@ -415,7 +413,6 @@ func downloadFeatureFromURL(
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 	err := os.MkdirAll(filepath.Dir(destFile), 0o755)
 	if err != nil {
-		log.Errorf("failed to create feature folder: error=%v, dir=%s", err, filepath.Dir(destFile))
 		return fmt.Errorf("create feature folder: %w", err)
 	}
 
@@ -430,7 +427,6 @@ func downloadFeatureFromURL(
 		log.Debugf("download feature: url=%s", url)
 		if err := tryDownload(url, destFile, httpHeaders); err != nil {
 			if attempt == 2 {
-				log.Errorf("all download attempts failed: error=%v, url=%s", err, url)
 				return err
 			}
 			log.Debugf("download attempt failed: error=%v, attempt=%v", err, attempt)
