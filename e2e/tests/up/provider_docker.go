@@ -443,6 +443,27 @@ var _ = ginkgo.Describe(
 			)
 		}, ginkgo.SpecTimeout(framework.GetTimeout()))
 
+		ginkgo.It(
+			"initializeCommand with object syntax runs named sub-commands in parallel",
+			func(ctx context.Context) {
+				tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-initcmd-parallel")
+				framework.ExpectNoError(err)
+
+				one, err := os.ReadFile( //nolint:gosec // G304
+					filepath.Join(tempDir, "init-cmd-one.out"),
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(string(one)).To(gomega.Equal("initCmdOne"))
+
+				two, err := os.ReadFile( //nolint:gosec // G304
+					filepath.Join(tempDir, "init-cmd-two.out"),
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
+			},
+			ginkgo.SpecTimeout(framework.GetTimeout()),
+		)
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",
