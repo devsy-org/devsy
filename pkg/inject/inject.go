@@ -324,7 +324,17 @@ func pipe(
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
-	<-errChan
+	second := <-errChan
 
-	return first
+	if first != nil {
+		return first
+	}
+	if second != nil && !isClosedErr(second) {
+		return second
+	}
+	return nil
+}
+
+func isClosedErr(err error) bool {
+	return errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe)
 }
