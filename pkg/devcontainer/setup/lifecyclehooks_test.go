@@ -98,7 +98,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	deferred, err := RunPreAttachHooks(ctx, result, false)
+	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
@@ -223,7 +223,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 	}
 
 	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
-	deferred, err := RunPreAttachHooks(ctx, result, true)
+	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 }
@@ -432,6 +432,97 @@ func assertFileContains(
 	)
 	assert.NoError(t, err)
 	assert.Contains(t, string(content), expected)
+}
+
+func (s *LifecycleHookTestSuite) TestInsertDotfilesPhaseOrdering() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+	ctx := context.Background()
+
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	result := insertDotfilesPhase(ctx, all, cfg, "test-created")
+
+	// Should have 5 phases: onCreate, updateContent, postCreate, dotfiles, postStart
+	assert.Len(t, result, 5)
+	assert.Equal(t, PhaseOnCreate, result[0].phase)
+	assert.Equal(t, PhaseUpdateContent, result[1].phase)
+	assert.Equal(t, PhasePostCreate, result[2].phase)
+	assert.Equal(t, PhaseDotfiles, result[3].phase)
+	assert.Equal(t, PhasePostStart, result[4].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestInsertDotfilesPhaseSkippedWhenEmpty() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+	ctx := context.Background()
+
+	result := insertDotfilesPhase(ctx, all, DotfilesConfig{}, "test-created")
+
+	// No dotfiles repo — phase list unchanged.
+	assert.Len(t, result, 4)
+	for i, ph := range result {
+		assert.Equal(t, all[i].phase, ph.phase)
+	}
+}
+
+func (s *LifecycleHookTestSuite) TestDotfilesPhaseHasRunFunc() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+	ctx := context.Background()
+
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	result := insertDotfilesPhase(ctx, all, cfg, "")
+
+	dotfilesHook := result[3]
+	assert.Equal(t, PhaseDotfiles, dotfilesHook.phase)
+	assert.NotNil(t, dotfilesHook.runFunc, "dotfiles phase should have a runFunc")
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForDefaultSplitWithDotfiles() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+	ctx := context.Background()
+
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	all = insertDotfilesPhase(ctx, all, cfg, "")
+
+	deferred, err := runWithWaitFor(all, DefaultWaitFor)
+	assert.NoError(t, err)
+
+	// Default waitFor is updateContentCommand.
+	// Deferred: postCreate, dotfiles, postStart.
+	assert.Len(t, deferred, 3)
+	assert.Equal(t, PhasePostCreate, deferred[0].phase)
+	assert.Equal(t, PhaseDotfiles, deferred[1].phase)
+	assert.Equal(t, PhasePostStart, deferred[2].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestRunWithWaitForPostCreateWithDotfiles() {
+	t := s.T()
+	all := makeTestPhaseHooks()
+	ctx := context.Background()
+
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	all = insertDotfilesPhase(ctx, all, cfg, "")
+
+	deferred, err := runWithWaitFor(all, PhasePostCreate)
+	assert.NoError(t, err)
+
+	// Deferred: dotfiles, postStart.
+	assert.Len(t, deferred, 2)
+	assert.Equal(t, PhaseDotfiles, deferred[0].phase)
+	assert.Equal(t, PhasePostStart, deferred[1].phase)
+}
+
+func (s *LifecycleHookTestSuite) TestDeferredHooksNotEmptyWithDotfiles() {
+	t := s.T()
+	ctx := context.Background()
+
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	all := insertDotfilesPhase(ctx, nil, cfg, "")
+
+	d := DeferredHooks{hooks: all}
+	assert.False(t, d.Empty(), "should not be empty when dotfiles runFunc is set")
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {
