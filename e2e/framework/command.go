@@ -145,8 +145,8 @@ func (f *Framework) DevsySSH(
 	workspace string,
 	command string,
 ) (string, error) {
-	out, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, error) {
-		return f.ExecCommandOutput(ctx, []string{"ssh", workspace, "--command", command})
+	out, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, string, error) {
+		return f.ExecCommandCapture(ctx, []string{"ssh", workspace, "--command", command})
 	})
 	if err != nil {
 		return "", fmt.Errorf("devsy ssh failed: %s", err.Error())

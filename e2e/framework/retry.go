@@ -42,13 +42,35 @@ var retryableDockerPatterns = []string{
 	"503 Service Unavailable",
 }
 
+// retryableSSHPatterns are stderr substrings indicating a transient SSH
+// connection error (as opposed to a remote command that legitimately failed).
+var retryableSSHPatterns = []string{
+	"connection refused",
+	"connection reset",
+	"ssh: connect to host",
+	"tunnel to container",
+	"no such container",
+	"connection timed out",
+	"broken pipe",
+}
+
 // isRetryableSSHError returns true when the error indicates a transient SSH
-// failure (exit code 1) typically caused by the devsy agent not yet being
-// ready inside the container.
-func isRetryableSSHError(err error) bool {
+// connection failure. Both exit code 1 AND an SSH-specific pattern in stderr
+// are required so that remote command failures (e.g. cat on a missing file)
+// are not mistakenly retried.
+func isRetryableSSHError(err error, stderr string) bool {
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode() == 1
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	if exitErr.ExitCode() != 1 {
+		return false
+	}
+	lower := strings.ToLower(stderr)
+	for _, pattern := range retryableSSHPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
 	}
 	return false
 }
@@ -102,25 +124,26 @@ func execWithDockerRetry(
 }
 
 // execWithSSHRetry runs fn and retries if the error indicates a transient SSH
-// failure (exit status 1). This handles the case where the devsy agent binary
-// injection into a WSL container has not completed yet.
+// connection failure. The fn callback must return stdout, stderr, and error so
+// that stderr can be inspected for SSH-specific patterns.
 func execWithSSHRetry(
 	ctx context.Context,
 	workspace string,
-	fn func(ctx context.Context) (string, error),
+	fn func(ctx context.Context) (stdout, stderr string, err error),
 ) (string, error) {
 	var lastOut string
+	var lastStderr string
 	var lastErr error
 	attempt := 0
 
 	err := wait.ExponentialBackoffWithContext(ctx, sshBackoff,
 		func(ctx context.Context) (bool, error) {
 			attempt++
-			lastOut, lastErr = fn(ctx)
+			lastOut, lastStderr, lastErr = fn(ctx)
 			if lastErr == nil {
 				return true, nil // success
 			}
-			if isRetryableSSHError(lastErr) {
+			if isRetryableSSHError(lastErr, lastStderr) {
 				ginkgo.GinkgoWriter.Printf(
 					"[retry] ssh %s: attempt %d failed with transient error, retrying: %s\n",
 					workspace, attempt, lastErr,

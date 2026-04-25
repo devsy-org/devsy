@@ -21,24 +21,63 @@ func exitError(t *testing.T, code string) *exec.ExitError {
 	return exitErr
 }
 
-func TestIsRetryableSSHError_ExitStatus1(t *testing.T) {
-	assert.True(t, isRetryableSSHError(exitError(t, "1")))
+func TestIsRetryableSSHError_ConnectionRefused(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"ssh: connect to host 127.0.0.1 port 22: Connection refused",
+		),
+	)
+}
+
+func TestIsRetryableSSHError_ConnectionReset(t *testing.T) {
+	assert.True(t, isRetryableSSHError(exitError(t, "1"), "Connection reset by peer"))
+}
+
+func TestIsRetryableSSHError_TunnelToContainer(t *testing.T) {
+	assert.True(t, isRetryableSSHError(exitError(t, "1"), "error: tunnel to container failed"))
+}
+
+func TestIsRetryableSSHError_ConnectionTimedOut(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"ssh: connect to host 10.0.0.1 port 22: Connection timed out",
+		),
+	)
+}
+
+func TestIsRetryableSSHError_ExitCode1_NoSSHPattern(t *testing.T) {
+	// Remote command failure (e.g. cat on missing file) — should NOT be retried.
+	assert.False(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"cat: /home/user/post-attach.out: No such file or directory",
+		),
+	)
+}
+
+func TestIsRetryableSSHError_ExitCode1_EmptyStderr(t *testing.T) {
+	assert.False(t, isRetryableSSHError(exitError(t, "1"), ""))
 }
 
 func TestIsRetryableSSHError_ExitStatus10(t *testing.T) {
-	assert.False(t, isRetryableSSHError(exitError(t, "10")))
+	assert.False(t, isRetryableSSHError(exitError(t, "10"), "connection refused"))
 }
 
 func TestIsRetryableSSHError_ExitStatus127(t *testing.T) {
-	assert.False(t, isRetryableSSHError(exitError(t, "127")))
+	assert.False(t, isRetryableSSHError(exitError(t, "127"), "connection refused"))
 }
 
 func TestIsRetryableSSHError_Nil(t *testing.T) {
-	assert.False(t, isRetryableSSHError(nil))
+	assert.False(t, isRetryableSSHError(nil, "connection refused"))
 }
 
 func TestIsRetryableSSHError_NonExitError(t *testing.T) {
-	assert.False(t, isRetryableSSHError(fmt.Errorf("some other error")))
+	assert.False(t, isRetryableSSHError(fmt.Errorf("some other error"), "connection refused"))
 }
 
 func TestIsRetryableDockerError_RateLimit(t *testing.T) {
