@@ -188,7 +188,8 @@ var _ = ginkgo.Describe(
 			"does not retag shared image when applying features to image backed services",
 			func(ctx context.Context) {
 				const (
-					sourceImage = "ghcr.io/devsy-org/test-images/base:ubuntu"
+					sourceImage = "ghcr.io/devsy-org/test-images/base:ubuntu" +
+						"@sha256:4bcb1b466771b1ba1ea110e2a27daea2f6093f9527fb75ee59703ec89b5561cb"
 					sharedImage = "devsy-e2e-compose-shared-base:latest"
 				)
 				const (
