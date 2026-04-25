@@ -238,7 +238,8 @@ func runInitializeCommand(
 		defer func() { _ = writer.Close() }()
 		defer func() { _ = errwriter.Close() }()
 
-		cmd := exec.Command(args[0], args[1:]...)
+		// args come from devcontainer.json initializeCommand, a trusted local config.
+		cmd := exec.Command(args[0], args[1:]...) //nolint:gosec // G204
 		env := cmd.Environ()
 		env = append(env, extraEnvVars...)
 
