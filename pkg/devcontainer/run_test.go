@@ -37,7 +37,7 @@ func TestRunInitializeCommand_ParallelErrorCollection(t *testing.T) {
 	conf := &config.DevContainerConfig{}
 	conf.InitializeCommand = types.LifecycleHook{
 		"will-fail":    {"sh", "-c", "exit 1"},
-		"will-succeed": {"sh", "-c", "echo -n ok > " + markerFile},
+		"will-succeed": {"sh", "-c", "printf ok > " + markerFile},
 	}
 
 	err := runInitializeCommand(tmpDir, conf, nil)
@@ -63,7 +63,7 @@ func TestRunInitializeCommand_SingleKey(t *testing.T) {
 
 	conf := &config.DevContainerConfig{}
 	conf.InitializeCommand = types.LifecycleHook{
-		"write-file": {"sh", "-c", "echo -n single > " + outFile},
+		"write-file": {"sh", "-c", "printf single > " + outFile},
 	}
 
 	err := runInitializeCommand(tmpDir, conf, nil)
@@ -87,7 +87,7 @@ func TestRunInitializeCommand_StringFormat(t *testing.T) {
 	conf := &config.DevContainerConfig{}
 	// String format produces a single anonymous key with one-element slice.
 	conf.InitializeCommand = types.LifecycleHook{
-		"": {"echo -n stringfmt > " + outFile},
+		"": {"printf stringfmt > " + outFile},
 	}
 
 	err := runInitializeCommand(tmpDir, conf, nil)
