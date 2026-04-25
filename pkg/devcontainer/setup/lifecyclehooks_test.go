@@ -579,6 +579,15 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostStartNotPromoted(
 	assert.Equal(t, PhasePostStart, result)
 }
 
+func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForInitializeCommandNotPromoted() {
+	t := s.T()
+	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+
+	// initializeCommand defers everything; dotfiles promotion must not override it.
+	result := promoteDotfilesWaitFor(PhaseInitializeCommand, cfg)
+	assert.Equal(t, PhaseInitializeCommand, result)
+}
+
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForNoDotfiles() {
 	t := s.T()
 

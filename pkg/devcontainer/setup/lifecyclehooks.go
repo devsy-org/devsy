@@ -74,6 +74,12 @@ func promoteDotfilesWaitFor(waitFor LifecyclePhase, dotfiles DotfilesConfig) Lif
 	if dotfiles.Repository == "" {
 		return waitFor
 	}
+	// initializeCommand is a host-side phase that precedes all container
+	// lifecycle phases. The user explicitly wants everything deferred, so
+	// dotfiles promotion must not override that.
+	if waitFor == PhaseInitializeCommand {
+		return waitFor
+	}
 	// PhaseDotfiles sits between PostCreate and PostStart in the hook list.
 	// If waitFor is already at or past that position, no promotion needed.
 	if phaseIndex(waitFor) >= phaseIndex(PhaseDotfiles) {
