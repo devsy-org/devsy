@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/command"
+	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -26,9 +29,9 @@ func RunDotfiles(ctx context.Context, cfg DotfilesConfig) error {
 		return nil
 	}
 
-	log.Infof("Installing dotfiles from %s", cfg.Repository)
+	log.Infof("Installing dotfiles from %s (user=%s)", cfg.Repository, cfg.RemoteUser)
 
-	targetDir, err := dotfilesTargetDir()
+	targetDir, err := dotfilesTargetDir(cfg.RemoteUser)
 	if err != nil {
 		return err
 	}
@@ -37,13 +40,21 @@ func RunDotfiles(ctx context.Context, cfg DotfilesConfig) error {
 		return err
 	}
 
-	return installDotfiles(ctx, cfg.InstallScript, targetDir)
+	// Chown the cloned dotfiles to the remote user so they are accessible
+	// when the user SSHes into the container.
+	if cfg.RemoteUser != "" {
+		if err := copy2.ChownR(targetDir, cfg.RemoteUser); err != nil {
+			log.Warnf("chown dotfiles dir: %v", err)
+		}
+	}
+
+	return installDotfiles(ctx, cfg, targetDir)
 }
 
-func dotfilesTargetDir() (string, error) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		return "", fmt.Errorf("HOME environment variable not set")
+func dotfilesTargetDir(remoteUser string) (string, error) {
+	home, err := command.GetHome(remoteUser)
+	if err != nil {
+		return "", fmt.Errorf("resolve home for user %q: %w", remoteUser, err)
 	}
 	return filepath.Join(home, "dotfiles"), nil
 }
@@ -61,20 +72,21 @@ func cloneDotfiles(ctx context.Context, repo, targetDir string) error {
 
 func installDotfiles(
 	ctx context.Context,
-	script, targetDir string,
+	cfg DotfilesConfig,
+	targetDir string,
 ) error {
 	if err := os.Chdir(targetDir); err != nil {
 		return fmt.Errorf("enter dotfiles directory: %w", err)
 	}
 
-	if script != "" {
-		return runDotfilesScript(ctx, script)
+	if cfg.InstallScript != "" {
+		return runDotfilesScript(ctx, cfg.InstallScript, cfg.RemoteUser)
 	}
 
-	return runKnownDotfilesScripts(ctx)
+	return runKnownDotfilesScripts(ctx, cfg.RemoteUser)
 }
 
-func runDotfilesScript(ctx context.Context, script string) error {
+func runDotfilesScript(ctx context.Context, script, remoteUser string) error {
 	log.Infof("Executing dotfiles install script %s", script)
 	p := "./" + strings.TrimPrefix(script, "./")
 
@@ -82,7 +94,7 @@ func runDotfilesScript(ctx context.Context, script string) error {
 		return err
 	}
 
-	return execDotfilesCmd(ctx, p)
+	return execDotfilesCmd(ctx, p, remoteUser)
 }
 
 var knownInstallScripts = []string{
@@ -96,7 +108,7 @@ var knownInstallScripts = []string{
 	"./setup/setup",
 }
 
-func runKnownDotfilesScripts(ctx context.Context) error {
+func runKnownDotfilesScripts(ctx context.Context, remoteUser string) error {
 	scripts := slices.DeleteFunc(
 		slices.Clone(knownInstallScripts),
 		func(p string) bool {
@@ -112,7 +124,7 @@ func runKnownDotfilesScripts(ctx context.Context) error {
 			}
 			continue
 		}
-		if err := execDotfilesCmd(ctx, s); err != nil {
+		if err := execDotfilesCmd(ctx, s, remoteUser); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -123,10 +135,10 @@ func runKnownDotfilesScripts(ctx context.Context) error {
 	}
 
 	log.Info("No install script found, linking dotfiles")
-	return linkAllDotfiles()
+	return linkAllDotfiles(remoteUser)
 }
 
-func linkAllDotfiles() error {
+func linkAllDotfiles(remoteUser string) error {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -137,7 +149,10 @@ func linkAllDotfiles() error {
 		return err
 	}
 
-	home := os.Getenv("HOME")
+	home, err := command.GetHome(remoteUser)
+	if err != nil {
+		return fmt.Errorf("resolve home for user %q: %w", remoteUser, err)
+	}
 	for _, f := range files {
 		if !strings.HasPrefix(f.Name(), ".") || f.IsDir() {
 			continue
@@ -175,9 +190,23 @@ func ensureDotfileExecutable(ctx context.Context, path string) error {
 	return nil
 }
 
-func execDotfilesCmd(ctx context.Context, script string) error {
+func execDotfilesCmd(ctx context.Context, script, remoteUser string) error {
 	writer := log.Writer(log.LevelInfo)
-	cmd := exec.CommandContext(ctx, script)
+
+	currentUser, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("get current user: %w", err)
+	}
+
+	var cmd *exec.Cmd
+	if remoteUser != "" && remoteUser != currentUser.Username {
+		// Run the install script as the remote user, matching the official
+		// devcontainer CLI behaviour.
+		// #nosec G204 -- user-provided dotfile install script path
+		cmd = exec.CommandContext(ctx, "su", remoteUser, "-c", script)
+	} else {
+		cmd = exec.CommandContext(ctx, script)
+	}
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()

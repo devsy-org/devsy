@@ -33,6 +33,7 @@ import (
 type DotfilesConfig struct {
 	Repository    string
 	InstallScript string
+	RemoteUser    string
 }
 
 type ContainerSetupConfig struct {

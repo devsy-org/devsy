@@ -62,6 +62,39 @@ func resolveWaitFor(raw string) LifecyclePhase {
 	return p
 }
 
+// promoteDotfilesWaitFor ensures that when dotfiles are configured, the
+// effective waitFor phase is at least PhaseDotfiles. This guarantees dotfiles
+// are installed synchronously before "devsy up" returns, matching the behavior
+// of the official devcontainer CLI (devcontainers/cli) where dotfiles always
+// complete before the command exits.
+func promoteDotfilesWaitFor(waitFor LifecyclePhase, dotfiles DotfilesConfig) LifecyclePhase {
+	if dotfiles.Repository == "" {
+		return waitFor
+	}
+	// PhaseDotfiles sits between PostCreate and PostStart in the hook list.
+	// If waitFor is already at or past that position, no promotion needed.
+	if phaseIndex(waitFor) >= phaseIndex(PhaseDotfiles) {
+		return waitFor
+	}
+	return PhaseDotfiles
+}
+
+// phaseIndex returns the position of a phase in the canonical lifecycle order.
+// PhaseDotfiles is treated as sitting between PostCreate and PostStart.
+// Unknown phases return -1.
+func phaseIndex(p LifecyclePhase) int {
+	// Canonical phases plus the synthetic dotfiles phase.
+	order := []LifecyclePhase{
+		PhaseOnCreate,
+		PhaseUpdateContent,
+		PhasePostCreate,
+		PhaseDotfiles,
+		PhasePostStart,
+		PhasePostAttach,
+	}
+	return slices.Index(order, p)
+}
+
 // hookRunParams groups the arguments for running a single lifecycle phase.
 type hookRunParams struct {
 	commands []types.LifecycleHook
@@ -179,6 +212,7 @@ func RunPreAttachHooks(
 	}
 
 	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor)
+	waitFor = promoteDotfilesWaitFor(waitFor, dotfiles)
 	deferred, err := runWithWaitFor(all, waitFor)
 	return DeferredHooks{hooks: deferred}, err
 }
