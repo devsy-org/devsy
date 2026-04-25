@@ -512,7 +512,7 @@ func logAtLevel(level, msg string) {
 	case "error":
 		log.Error(msg)
 	case "fatal":
-		log.Fatal(msg)
+		log.Error(msg)
 	default:
 		log.Debug(msg)
 	}
