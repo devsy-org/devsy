@@ -14,17 +14,17 @@ func ForUser(cmd *exec.Cmd, userName string) error {
 	// Look up the user's UID and GID
 	u, err := user.Lookup(userName)
 	if err != nil {
-		return fmt.Errorf("failed to look up user %s: %v", userName, err)
+		return fmt.Errorf("failed to look up user %s: %w", userName, err)
 	}
 
 	uid, err := strconv.Atoi(u.Uid)
 	if err != nil {
-		return fmt.Errorf("invalid UID %s: %v", u.Uid, err)
+		return fmt.Errorf("invalid UID %s: %w", u.Uid, err)
 	}
 
 	gid, err := strconv.Atoi(u.Gid)
 	if err != nil {
-		return fmt.Errorf("invalid GID %s: %v", u.Gid, err)
+		return fmt.Errorf("invalid GID %s: %w", u.Gid, err)
 	}
 
 	// Set the user cmd should run as

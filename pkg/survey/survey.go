@@ -122,7 +122,7 @@ func buildValidator(params *QuestionOptions, compiledRegex *regexp.Regexp) func(
 					return errors.New(params.ValidationMessage)
 				}
 
-				return fmt.Errorf("%v", err)
+				return err
 			}
 		}
 
