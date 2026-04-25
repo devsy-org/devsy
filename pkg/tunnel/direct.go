@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -13,26 +14,52 @@ type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
 // NewTunnel creates a tunnel to the devcontainer using generic functions
 // to establish the "outer" and "inner" tunnel, used by proxy clients.
-// The tunnel is an SSH connection with stdio as arguments and the handler
-// executes the command using the connected SSH client.
+// The tunnel will be an SSH connection with its STDIO as arguments and
+// the handler will be the function to execute the command using the
+// connected SSH client.
 func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
-	pb, err := NewPipeBridge()
+	// create context
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// create readers
+	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	defer pb.Close()
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stdoutWriter.Close() }()
+	defer func() { _ = stdinWriter.Close() }()
 
-	return pb.RunPair(ctx,
-		func(ctx context.Context, stdin *os.File, stdout *os.File) error {
-			return tunnel(ctx, stdin, stdout)
-		},
-		func(ctx context.Context, stdout *os.File, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin, false)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = sshClient.Close() }()
-			return handler(ctx, sshClient)
-		},
-	)
+	// start ssh proxy
+	outerTunnelChan := make(chan error, 1)
+	go func() {
+		outerTunnelChan <- tunnel(ctx, stdinReader, stdoutWriter)
+	}()
+
+	// start ssh client as root / default user
+	innerTunnelChan := make(chan error, 1)
+	go func() {
+		sshClient, err := devssh.StdioClient(stdoutReader, stdinWriter, false)
+		if err != nil {
+			innerTunnelChan <- err
+			return
+		}
+		defer func() { _ = sshClient.Close() }()
+		defer cancel()
+
+		// start ssh tunnel
+		innerTunnelChan <- handler(cancelCtx, sshClient)
+	}()
+
+	// wait for result
+	select {
+	case err := <-innerTunnelChan:
+		return fmt.Errorf("inner tunnel: %w", err)
+	case err := <-outerTunnelChan:
+		return fmt.Errorf("outer tunnel: %w", err)
+	}
 }

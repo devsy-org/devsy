@@ -305,13 +305,7 @@ func readLine(reader io.Reader) (string, error) {
 	}
 }
 
-// pipe copies bidirectionally between stdin/stdout pairs. After the first
-// copy finishes it closes both closable endpoints so the remaining goroutine
-// unblocks and exits rather than leaking.
-func pipe(
-	toStdin io.WriteCloser, fromStdin io.Reader,
-	toStdout io.Writer, fromStdout io.ReadCloser,
-) error {
+func pipe(toStdin io.Writer, fromStdin io.Reader, toStdout io.Writer, fromStdout io.Reader) error {
 	errChan := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(toStdout, fromStdout)
@@ -321,21 +315,5 @@ func pipe(
 		_, err := io.Copy(toStdin, fromStdin)
 		errChan <- err
 	}()
-
-	// Wait for the first copy to complete — its error is the meaningful one.
-	first := <-errChan
-
-	// Close all closable endpoints so the remaining goroutine unblocks
-	// promptly instead of leaking.
-	_ = toStdin.Close()
-	_ = fromStdout.Close()
-	if c, ok := fromStdin.(io.Closer); ok {
-		_ = c.Close()
-	}
-
-	// Drain the second goroutine so callers can safely read toStdout after
-	// pipe returns without a data race.
-	<-errChan
-
-	return first
+	return <-errChan
 }

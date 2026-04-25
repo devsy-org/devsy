@@ -1,5 +1,0 @@
-{
-  "image": "ghcr.io/devsy-org/test-images/go:1",
-  "postCreateCommand": "if [ -f /tmp/worked ]; then echo dotfiles-before-postCreate >> /tmp/lifecycle-order.log; fi && echo postCreate >> /tmp/lifecycle-order.log",
-  "postStartCommand": "if [ -f /tmp/worked ]; then echo dotfiles-before-postStart >> /tmp/lifecycle-order.log; fi && echo postStart >> /tmp/lifecycle-order.log"
-}

@@ -235,10 +235,6 @@ type CLIOptions struct {
 	UidMap                      []string          `json:"uidMap,omitempty"`
 	GidMap                      []string          `json:"gidMap,omitempty"`
 
-	// dotfiles options
-	DotfilesRepo   string `json:"dotfilesRepo,omitempty"`
-	DotfilesScript string `json:"dotfilesScript,omitempty"`
-
 	// build options
 	// Repository specifies the container registry repository to push the built image to (e.g., ghcr.io/user/image).
 	// When set, the image will be tagged and pushed to this repository after building.
