@@ -195,6 +195,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		Dotfiles: setup.DotfilesConfig{
 			Repository:    cmd.DotfilesRepo,
 			InstallScript: cmd.DotfilesScript,
+			RemoteUser:    config.GetRemoteUser(sctx.setupInfo),
 		},
 	}
 
