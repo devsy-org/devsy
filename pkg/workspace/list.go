@@ -76,7 +76,7 @@ func List(
 				}
 			}
 
-			cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspaces...)
+			cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspace)
 		}
 		localWorkspaces = cleanedLocalWorkspaces
 	}
