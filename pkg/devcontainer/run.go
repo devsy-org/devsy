@@ -305,7 +305,10 @@ func (c *initCmdContext) runSingle(name string, cmd []string) error {
 	c2.Stderr = errwriter
 	c2.Dir = c.workspaceFolder
 	c2.Env = env
-	return c2.Run()
+	if err := c2.Run(); err != nil {
+		return fmt.Errorf("initializeCommand %q failed: %w", name, err)
+	}
+	return nil
 }
 
 func getWorkspace(

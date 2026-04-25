@@ -488,10 +488,10 @@ func runSingleHookCommand(
 		Env:  append(os.Environ(), remoteEnvArr...),
 	}
 
-	return executeAndLog(cmd, key, c)
+	return executeAndLog(cmd, p.name, key, c)
 }
 
-func executeAndLog(cmd *exec.Cmd, key string, c []string) error {
+func executeAndLog(cmd *exec.Cmd, phaseName string, key string, c []string) error {
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to get stdout pipe: %w", err)
@@ -526,7 +526,7 @@ func executeAndLog(cmd *exec.Cmd, key string, c []string) error {
 			cmd.Args,
 			err,
 		)
-		return fmt.Errorf("failed to run: %s, error: %w", strings.Join(c, " "), err)
+		return fmt.Errorf("%s: command %q failed: %w", phaseName, strings.Join(c, " "), err)
 	}
 
 	log.Infof("ran command: command=%s, args=%s", key, strings.Join(c, " "))
