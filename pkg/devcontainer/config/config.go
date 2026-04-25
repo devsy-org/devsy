@@ -322,7 +322,7 @@ func (h *HostRequirements) ShouldEnableGPU(gpuAvailable bool) (enable bool, warn
 	}
 
 	gpuValue := string(h.GPU)
-	if gpuValue == "optional" {
+	if gpuValue == gpuOptional {
 		return gpuAvailable, false
 	}
 

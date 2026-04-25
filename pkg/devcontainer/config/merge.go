@@ -9,6 +9,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
+const gpuOptional = "optional"
+
 func MergeConfiguration(
 	config *DevContainerConfig,
 	imageMetadataEntries []*ImageMetadata,
@@ -222,7 +224,7 @@ func gpuStrBoolPriority(g types.StrBool) int {
 		return 0
 	case "false":
 		return 1
-	case "optional":
+	case gpuOptional:
 		return 2
 	default: // "true"
 		return 3
