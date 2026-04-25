@@ -217,7 +217,7 @@ func (w *fileWalker) shouldSkipPath(relFilePath string) (bool, error) {
 
 	skip, err := w.pm.MatchesOrParentMatches(relFilePath)
 	if err != nil {
-		return false, fmt.Errorf("failed to match %s: %v", relFilePath, err)
+		return false, fmt.Errorf("failed to match %s: %w", relFilePath, err)
 	}
 
 	return skip, nil
