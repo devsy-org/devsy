@@ -63,7 +63,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		Owner:       cmd.Owner,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("get workspace for logs: %w", err)
 	}
 
 	client, ok := baseClient.(clientpkg.WorkspaceClient)

@@ -72,7 +72,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	}
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
-		return err
+		return fmt.Errorf("load devsy config: %w", err)
 	}
 	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
 		cmd.StrictHostKeyChecking = true
@@ -331,7 +331,7 @@ func (cmd *UpCmd) executeDevsyUp(
 ) (*workspaceContext, error) {
 	result, err := cmd.devsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start workspace: %w", err)
 	}
 	if result == nil {
 		return nil, fmt.Errorf("did not receive a result back from agent")
@@ -439,7 +439,7 @@ func (cmd *UpCmd) devsyUp(
 	if !cmd.Platform.Enabled {
 		err := client.Lock(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("lock workspace: %w", err)
 		}
 		defer client.Unlock()
 	}
@@ -584,13 +584,13 @@ func (cmd *UpCmd) devsyUpMachine(
 ) (*config2.Result, error) {
 	err := clientimplementation.StartWait(ctx, client, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("wait for machine: %w", err)
 	}
 
 	// compress info
 	workspaceInfo, wInfo, err := client.AgentInfo(cmd.CLIOptions)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
 	// create container etc.
