@@ -603,7 +603,7 @@ func (l *localServer) watchWorkspaces(
 			fmt.Errorf("failed to watch workspaces: %w", err).Error(),
 			http.StatusInternalServerError,
 		)
-		log.Errorf("watch workspaces: %w", err)
+		log.Errorf("watch workspaces: %v", err)
 		return
 	}
 }

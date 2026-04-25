@@ -18,7 +18,7 @@ func GetDevsyConfig(context, provider string, port int) (*client.Config, error) 
 
 	rawJson, err := json.Marshal(request)
 	if err != nil {
-		log.Errorf("Error parsing request: %w", err)
+		log.Errorf("Error parsing request: %v", err)
 		return nil, err
 	}
 

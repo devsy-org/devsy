@@ -798,7 +798,7 @@ func startSSHKeepAlive(
 		case <-ticker.C:
 			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
 			if err != nil {
-				log.Errorf("Failed to send keepalive: %w", err)
+				log.Errorf("Failed to send keepalive: %v", err)
 			}
 		}
 	}
