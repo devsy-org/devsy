@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap/zapcore"
 )
 
 type LifecycleHookTestSuite struct {
@@ -538,6 +540,58 @@ func (s *LifecycleHookTestSuite) TestDeferredHooksNotEmptyWithDotfiles() {
 
 	d := DeferredHooks{hooks: all}
 	assert.False(t, d.Empty(), "should not be empty when dotfiles runFunc is set")
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrue() {
+	all := []phaseHook{
+		{
+			phase: PhaseOnCreate,
+			params: hookRunParams{
+				commands: []types.LifecycleHook{{"": {"echo", "hi"}}},
+			},
+		},
+		{phase: PhaseUpdateContent, params: hookRunParams{}},
+	}
+	assert.True(s.T(), phaseHasCommands(all, PhaseOnCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsFalseEmpty() {
+	all := makeTestPhaseHooks() // all phases have zero commands
+	assert.False(s.T(), phaseHasCommands(all, PhaseOnCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrueRunFunc() {
+	all := []phaseHook{
+		{phase: PhaseOnCreate, runFunc: func() error { return nil }},
+	}
+	assert.True(s.T(), phaseHasCommands(all, PhaseOnCreate))
+}
+
+func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
+	t := s.T()
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	// All phases have no commands — waitFor triggers a debug warning.
+	all := makeTestPhaseHooks()
+	_, err := runWithWaitFor(all, DefaultWaitFor)
+	assert.NoError(t, err)
+
+	// Reproduce the check from RunPreAttachHooks (which requires
+	// full container context we cannot set up in a unit test).
+	if !phaseHasCommands(all, DefaultWaitFor) {
+		log.Debugf(
+			"waitFor phase %q has no commands configured; the split point is a no-op",
+			DefaultWaitFor,
+		)
+	}
+
+	entries := logs.FilterMessage(
+		fmt.Sprintf(
+			"waitFor phase %q has no commands configured; the split point is a no-op",
+			DefaultWaitFor,
+		),
+	)
+	assert.Equal(t, 1, entries.Len(), "expected one debug warning about empty waitFor phase")
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {

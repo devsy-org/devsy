@@ -52,6 +52,20 @@ func validWaitForPhase(phase LifecyclePhase) bool {
 	return phase == PhaseInitializeCommand || slices.Contains(phaseOrder, phase)
 }
 
+// phaseHasCommands reports whether any phaseHook in all matches
+// the given phase and carries at least one command (or a runFunc).
+func phaseHasCommands(all []phaseHook, phase LifecyclePhase) bool {
+	for _, ph := range all {
+		if ph.phase != phase {
+			continue
+		}
+		if ph.runFunc != nil || len(ph.params.commands) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveWaitFor normalises the raw waitFor string from the config,
 // falling back to the spec default for empty or invalid values.
 func resolveWaitFor(raw string) LifecyclePhase {
@@ -182,6 +196,12 @@ func RunPreAttachHooks(
 	}
 
 	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor)
+	if !phaseHasCommands(all, waitFor) {
+		log.Debugf(
+			"waitFor phase %q has no commands configured; the split point is a no-op",
+			waitFor,
+		)
+	}
 	deferred, err := runWithWaitFor(all, waitFor)
 	return DeferredHooks{hooks: deferred}, err
 }
