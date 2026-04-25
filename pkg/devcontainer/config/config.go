@@ -343,6 +343,26 @@ func (g *GPURequirement) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON produces the canonical JSON format so that round-tripping
+// through json.Marshal/Unmarshal (used by Convert for deep copies) is lossless.
+func (g GPURequirement) MarshalJSON() ([]byte, error) {
+	if g.Cores > 0 || g.GPUMemory != "" {
+		obj := map[string]any{}
+		if g.Cores > 0 {
+			obj["cores"] = g.Cores
+		}
+		if g.GPUMemory != "" {
+			obj["memory"] = g.GPUMemory
+		}
+		return json.Marshal(obj)
+	}
+	b, err := strconv.ParseBool(g.Value)
+	if err == nil {
+		return json.Marshal(b)
+	}
+	return json.Marshal(g.Value)
+}
+
 func (g *GPURequirement) parseObject(obj map[string]any) {
 	g.Value = "true"
 	if f, ok := obj["cores"].(float64); ok {

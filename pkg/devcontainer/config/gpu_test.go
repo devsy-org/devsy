@@ -147,3 +147,38 @@ func TestShouldEnableGPU_NilReceiver(t *testing.T) {
 		t.Errorf("got (%v, %v), want (false, false)", enable, warn)
 	}
 }
+
+func TestGPURequirement_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"bool true", `{"gpu":true}`},
+		{"bool false", `{"gpu":false}`},
+		{"string optional", `{"gpu":"optional"}`},
+		{"object", `{"gpu":{"cores":4,"memory":"8gb"}}`},
+		{"empty object", `{"gpu":{}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hr1 HostRequirements
+			if err := json.Unmarshal([]byte(tt.input), &hr1); err != nil {
+				t.Fatalf("first unmarshal: %v", err)
+			}
+			data, err := json.Marshal(&hr1)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var hr2 HostRequirements
+			if err := json.Unmarshal(data, &hr2); err != nil {
+				t.Fatalf("second unmarshal: %v", err)
+			}
+			if hr1.GPU == nil || hr2.GPU == nil {
+				t.Fatal("GPU is nil after round-trip")
+			}
+			if *hr1.GPU != *hr2.GPU {
+				t.Errorf("round-trip mismatch: %+v != %+v", *hr1.GPU, *hr2.GPU)
+			}
+		})
+	}
+}
