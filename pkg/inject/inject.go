@@ -305,7 +305,10 @@ func readLine(reader io.Reader) (string, error) {
 	}
 }
 
-func pipe(toStdin io.Writer, fromStdin io.Reader, toStdout io.Writer, fromStdout io.Reader) error {
+func pipe(
+	toStdin io.WriteCloser, fromStdin io.Reader,
+	toStdout io.Writer, fromStdout io.ReadCloser,
+) error {
 	errChan := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(toStdout, fromStdout)
@@ -315,5 +318,11 @@ func pipe(toStdin io.Writer, fromStdin io.Reader, toStdout io.Writer, fromStdout
 		_, err := io.Copy(toStdin, fromStdin)
 		errChan <- err
 	}()
-	return <-errChan
+
+	first := <-errChan
+
+	_ = toStdin.Close()
+	_ = fromStdout.Close()
+
+	return first
 }

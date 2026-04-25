@@ -153,9 +153,11 @@ func Run(ctx context.Context, opts RunOptions) error {
 		_ = sess.Setenv(k, v) // Ignore errors - command should work without env vars
 	}
 
-	if err := setupContextCancellation(ctx, sess); err != nil {
+	cleanup, err := setupContextCancellation(ctx, sess)
+	if err != nil {
 		return err
 	}
+	defer cleanup()
 
 	sess.Stdin = opts.Stdin
 	sess.Stdout = opts.Stdout
@@ -169,20 +171,19 @@ func Run(ctx context.Context, opts RunOptions) error {
 	return nil
 }
 
-func setupContextCancellation(ctx context.Context, sess *ssh.Session) error {
+func setupContextCancellation(ctx context.Context, sess *ssh.Session) (func(), error) {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context already cancelled: %w", err)
+		return nil, fmt.Errorf("context already cancelled: %w", err)
 	}
-	exit := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer close(exit)
 		select {
 		case <-ctx.Done():
-			_ = sess.Signal(ssh.SIGINT) // Send interrupt, let defer handle close
-		case <-exit:
+			_ = sess.Signal(ssh.SIGINT)
+		case <-done:
 		}
 	}()
-	return nil
+	return func() { close(done) }, nil
 }
 
 func handleRunError(ctx context.Context, err error, command string) error {
