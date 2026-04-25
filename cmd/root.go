@@ -74,23 +74,26 @@ func Execute() {
 	if err != nil {
 		//nolint:all
 		if sshExitErr, ok := err.(*ssh.ExitError); ok {
+			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
 			os.Exit(sshExitErr.ExitStatus())
 		}
 
 		//nolint:all
 		if execExitErr, ok := err.(*exec.ExitError); ok {
+			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
 			os.Exit(execExitErr.ExitCode())
 		}
 
 		if globalFlags.Debug {
-			log.Fatalf("%+v", err)
+			log.Errorf("%+v", err)
 		} else {
 			if rootCmd.Annotations == nil ||
 				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
 				log.Error("Try using -v or --debug flag to see more verbose output")
 			}
-			log.Fatal(err)
+			log.Errorf("%v", err)
 		}
+		os.Exit(1)
 	}
 }
 
