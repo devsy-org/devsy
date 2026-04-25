@@ -36,7 +36,7 @@ func (btc *baseTestContext) execSSHCapture(
 		ctx,
 		[]string{"ssh", "--command", command, projectName},
 	)
-	return output, err
+	return strings.TrimSpace(output), err
 }
 
 func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
