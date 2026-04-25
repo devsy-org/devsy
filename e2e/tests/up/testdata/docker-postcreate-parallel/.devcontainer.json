@@ -1,0 +1,7 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": {
+    "write-one": "printf postCreateOne > /tmp/post-create-one.out",
+    "write-two": "printf postCreateTwo > /tmp/post-create-two.out"
+  }
+}
