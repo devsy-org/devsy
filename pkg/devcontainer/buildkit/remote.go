@@ -444,7 +444,7 @@ func getImageDetails(
 		remote.WithContext(ctx),
 	)
 	if err != nil {
-		return nil, err
+		return nil, image.SanitizeRegistryError(err)
 	}
 	imageConfig, err := remoteImage.ConfigFile()
 	if err != nil {

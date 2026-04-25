@@ -30,7 +30,7 @@ func GetImage(ctx context.Context, image string) (v1.Image, error) {
 
 	img, err := remote.Image(ref, remote.WithAuthFromKeychain(keychain))
 	if err != nil {
-		return nil, fmt.Errorf("retrieve image %s: %w", image, err)
+		return nil, fmt.Errorf("retrieve image %s: %w", image, SanitizeRegistryError(err))
 	}
 
 	return img, err
@@ -54,7 +54,7 @@ func GetImageForArch(ctx context.Context, image, arch string) (v1.Image, error) 
 
 	img, err := remote.Image(ref, remoteOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("retrieve image %s: %w", image, err)
+		return nil, fmt.Errorf("retrieve image %s: %w", image, SanitizeRegistryError(err))
 	}
 
 	return img, err

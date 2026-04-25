@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/hash"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -169,6 +170,7 @@ func processOCIFeature(id string) (string, error) {
 	log.Debugf("fetching OCI image: reference=%s", ref.String())
 	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
+		err = image.SanitizeRegistryError(err)
 		log.Errorf("failed to fetch OCI image: error=%v, reference=%s", err, ref.String())
 		return "", err
 	}
