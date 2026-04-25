@@ -25,12 +25,11 @@ import (
 type LifecyclePhase string
 
 const (
-	PhaseInitializeCommand LifecyclePhase = "initializeCommand"
-	PhaseOnCreate          LifecyclePhase = "onCreateCommand"
-	PhaseUpdateContent     LifecyclePhase = "updateContentCommand"
-	PhasePostCreate        LifecyclePhase = "postCreateCommand"
-	PhasePostStart         LifecyclePhase = "postStartCommand"
-	PhasePostAttach        LifecyclePhase = "postAttachCommand"
+	PhaseOnCreate      LifecyclePhase = "onCreateCommand"
+	PhaseUpdateContent LifecyclePhase = "updateContentCommand"
+	PhasePostCreate    LifecyclePhase = "postCreateCommand"
+	PhasePostStart     LifecyclePhase = "postStartCommand"
+	PhasePostAttach    LifecyclePhase = "postAttachCommand"
 )
 
 // DefaultWaitFor is the spec-defined default for the waitFor property.
@@ -46,10 +45,8 @@ var phaseOrder = []LifecyclePhase{
 }
 
 // validWaitForPhase returns true when phase is an allowed waitFor value.
-// initializeCommand is a valid waitFor value (host-side phase) even though
-// it is not in phaseOrder (which lists only container-side phases).
 func validWaitForPhase(phase LifecyclePhase) bool {
-	return phase == PhaseInitializeCommand || slices.Contains(phaseOrder, phase)
+	return slices.Contains(phaseOrder, phase)
 }
 
 // resolveWaitFor normalises the raw waitFor string from the config,
@@ -126,41 +123,36 @@ func preAttachPhaseParams(
 	}
 
 	return []phaseHook{
+		{PhaseOnCreate, hookRunParams{mc.OnCreateCommands, env, "onCreateCommands", cd.Created}},
 		{
-			phase:  PhaseOnCreate,
-			params: hookRunParams{mc.OnCreateCommands, env, "onCreateCommands", cd.Created},
-		},
-		{
-			phase: PhaseUpdateContent,
-			params: hookRunParams{
-				mc.UpdateContentCommands, env, "updateContentCommands", updateContentMarker,
+			PhaseUpdateContent,
+			hookRunParams{
+				mc.UpdateContentCommands,
+				env,
+				"updateContentCommands",
+				updateContentMarker,
 			},
 		},
 		{
-			phase:  PhasePostCreate,
-			params: hookRunParams{mc.PostCreateCommands, env, "postCreateCommands", cd.Created},
+			PhasePostCreate,
+			hookRunParams{mc.PostCreateCommands, env, "postCreateCommands", cd.Created},
 		},
 		{
-			phase: PhasePostStart,
-			params: hookRunParams{
-				mc.PostStartCommands, env, "postStartCommands", cd.State.StartedAt,
-			},
+			PhasePostStart,
+			hookRunParams{mc.PostStartCommands, env, "postStartCommands", cd.State.StartedAt},
 		},
 	}
 }
 
 // phaseHook pairs a lifecycle phase with the parameters needed to run it.
-// When runFunc is set it is called instead of runHook (used for dotfiles).
 type phaseHook struct {
-	phase   LifecyclePhase
-	params  hookRunParams
-	runFunc func() error
+	phase  LifecyclePhase
+	params hookRunParams
 }
 
 // RunPreAttachHooks runs lifecycle hooks up to and including the waitFor phase
 // synchronously and returns a slice of deferred phases that should run in the
-// background. Dotfiles are installed between postCreateCommand and
-// postStartCommand per the devcontainer spec.
+// background.
 //
 // When prebuild is true, only onCreateCommand and updateContentCommand are
 // executed and waitFor is ignored.
@@ -168,14 +160,9 @@ func RunPreAttachHooks(
 	ctx context.Context,
 	setupInfo *config.Result,
 	prebuild bool,
-	dotfiles DotfilesConfig,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	all := preAttachPhaseParams(setupInfo, env, prebuild)
-
-	// Insert the dotfiles phase between postCreate and postStart.
-	created := setupInfo.ContainerDetails.Created
-	all = insertDotfilesPhase(ctx, all, dotfiles, created)
 
 	if prebuild {
 		return DeferredHooks{}, runPrebuildHooks(all)
@@ -186,55 +173,13 @@ func RunPreAttachHooks(
 	return DeferredHooks{hooks: deferred}, err
 }
 
-// insertDotfilesPhase splices a dotfiles phaseHook after postCreateCommand
-// when a dotfiles repository is configured.
-func insertDotfilesPhase(
-	ctx context.Context,
-	all []phaseHook,
-	dotfiles DotfilesConfig,
-	created string,
-) []phaseHook {
-	if dotfiles.Repository == "" {
-		return all
-	}
-
-	idx := -1
-	for i, ph := range all {
-		if ph.phase == PhasePostCreate {
-			idx = i + 1
-			break
-		}
-	}
-	if idx == -1 {
-		idx = len(all)
-	}
-
-	cfg := dotfiles
-	dotfilesHook := phaseHook{
-		phase: PhaseDotfiles,
-		params: hookRunParams{
-			name:    "dotfilesInstall",
-			content: created,
-		},
-		runFunc: func() error {
-			skip, err := shouldSkipHook("dotfilesInstall", created)
-			if err != nil || skip {
-				return err
-			}
-			return RunDotfiles(ctx, cfg)
-		},
-	}
-
-	return slices.Insert(all, idx, dotfilesHook)
-}
-
 // runPrebuildHooks runs only onCreateCommand and updateContentCommand.
 func runPrebuildHooks(all []phaseHook) error {
 	for _, ph := range all {
 		if ph.phase != PhaseOnCreate && ph.phase != PhaseUpdateContent {
 			continue
 		}
-		if err := runPhaseHook(ph); err != nil {
+		if err := runHook(ph.params); err != nil {
 			return err
 		}
 	}
@@ -243,17 +188,10 @@ func runPrebuildHooks(all []phaseHook) error {
 
 // runWithWaitFor runs hooks up to and including waitFor synchronously
 // and returns the remaining hooks as deferred.
-//
-// When waitFor is initializeCommand (a host-side phase that precedes all
-// container lifecycle phases), every container phase is deferred.
 func runWithWaitFor(
 	all []phaseHook,
 	waitFor LifecyclePhase,
 ) ([]phaseHook, error) {
-	if waitFor == PhaseInitializeCommand {
-		return append([]phaseHook(nil), all...), nil
-	}
-
 	pastWaitFor := false
 	var deferred []phaseHook
 
@@ -262,7 +200,7 @@ func runWithWaitFor(
 			deferred = append(deferred, ph)
 			continue
 		}
-		if err := runPhaseHook(ph); err != nil {
+		if err := runHook(ph.params); err != nil {
 			return nil, err
 		}
 		if ph.phase == waitFor {
@@ -273,25 +211,16 @@ func runWithWaitFor(
 	return deferred, nil
 }
 
-// runPhaseHook dispatches to either the custom runFunc or the standard
-// runHook depending on the phaseHook configuration.
-func runPhaseHook(ph phaseHook) error {
-	if ph.runFunc != nil {
-		return ph.runFunc()
-	}
-	return runHook(ph.params)
-}
-
 // DeferredHooks holds lifecycle hooks that should run in the background
 // after the foreground (waitFor) hooks have completed.
 type DeferredHooks struct {
 	hooks []phaseHook
 }
 
-// Empty returns true when there are no deferred hooks with work to run.
+// Empty returns true when there are no deferred hooks with commands to run.
 func (d DeferredHooks) Empty() bool {
 	for _, ph := range d.hooks {
-		if ph.runFunc != nil || len(ph.params.commands) > 0 {
+		if len(ph.params.commands) > 0 {
 			return false
 		}
 	}
@@ -301,7 +230,7 @@ func (d DeferredHooks) Empty() bool {
 // Run executes all deferred hooks sequentially.
 func (d DeferredHooks) Run() error {
 	for _, ph := range d.hooks {
-		if err := runPhaseHook(ph); err != nil {
+		if err := runHook(ph.params); err != nil {
 			return err
 		}
 	}

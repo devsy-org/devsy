@@ -28,13 +28,6 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-// DotfilesConfig holds the parameters needed to install dotfiles inside
-// the container as part of the lifecycle.
-type DotfilesConfig struct {
-	Repository    string
-	InstallScript string
-}
-
 type ContainerSetupConfig struct {
 	SetupInfo         *config.Result
 	ExtraWorkspaceEnv []string
@@ -42,7 +35,6 @@ type ContainerSetupConfig struct {
 	Prebuild          bool
 	PlatformOptions   *devsy.PlatformOptions
 	TunnelClient      tunnel.TunnelClient
-	Dotfiles          DotfilesConfig
 }
 
 // SetupContainerPreAttach runs container setup up to and including the waitFor
@@ -69,7 +61,7 @@ func SetupContainerPreAttach(
 	setupOptionalFeatures(ctx, cfg)
 
 	log.Debugf("running pre-attach lifecycle hooks")
-	deferred, err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Prebuild, cfg.Dotfiles)
+	deferred, err := RunPreAttachHooks(ctx, cfg.SetupInfo, cfg.Prebuild)
 	if err != nil {
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}
