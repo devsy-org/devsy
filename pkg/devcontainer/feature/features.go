@@ -191,7 +191,11 @@ func processOCIFeature(id string) (string, error) {
 	log.Debugf("extract feature: destination=%s", featureExtractedFolder)
 	err = extract.Extract(file, featureExtractedFolder)
 	if err != nil {
-		log.Debugf("failed to extract feature: error=%v, destination=%s", err, featureExtractedFolder)
+		log.Debugf(
+			"failed to extract feature: error=%v, destination=%s",
+			err,
+			featureExtractedFolder,
+		)
 		_ = os.RemoveAll(featureExtractedFolder)
 		return "", err
 	}
