@@ -51,6 +51,7 @@ var retryableSSHPatterns = []string{
 	"no such container",
 	"connection timed out",
 	"broken pipe",
+	"workspace not found",
 }
 
 // isRetryableSSHError returns true when the error indicates a transient SSH
