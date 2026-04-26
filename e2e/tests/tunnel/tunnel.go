@@ -100,7 +100,7 @@ var _ = ginkgo.Describe(
 					"SSH command should produce output",
 				)
 
-				// Verify workspace stays running after stdin pipe closes (regression for PR #139 deadlock).
+				// Verify workspace stays running after stdin pipe closes.
 				gomega.Consistently(func() string {
 					status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
 					framework.ExpectNoError(err)
