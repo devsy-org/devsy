@@ -273,6 +273,10 @@ func runSSHTunnel(
 ) sshTunnelResult {
 	defer cancel()
 
+	start := time.Now()
+	log.Infof("tunnel: setup start")
+	defer func() { log.Infof("tunnel: setup complete elapsed=%s", time.Since(start)) }()
+
 	log.Debug("creating SSH client")
 	sshClient, err := devssh.StdioClient(ts.sshPipes.stdoutReader, ts.sshPipes.stdinWriter, false)
 	if err != nil {
@@ -281,7 +285,7 @@ func runSSHTunnel(
 			err:    fmt.Errorf("failed to create SSH client: %w", err),
 		}
 	}
-	log.Debug("SSH client created")
+	log.Debugf("tunnel: ssh client created elapsed=%s", time.Since(start))
 	defer func() {
 		_ = sshClient.Close()
 		log.Debug("SSH client closed")
@@ -291,6 +295,7 @@ func runSSHTunnel(
 	if err != nil {
 		return sshTunnelResult{source: "tunnel", err: err}
 	}
+	log.Debugf("tunnel: ssh session established elapsed=%s", time.Since(start))
 	defer func() {
 		_ = sess.Close()
 		log.Debug("SSH session closed")

@@ -1,6 +1,8 @@
 package sshtunnel
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -177,6 +179,41 @@ func TestExtractLogLevel(t *testing.T) {
 			assert.Equal(t, tt.wantLevel, level)
 		})
 	}
+}
+
+func TestRunSSHTunnel_TimingLogs(t *testing.T) {
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	pipes, err := createPipes()
+	require.NoError(t, err)
+	// Close the read side so StdioClient fails immediately.
+	_ = pipes.stdoutReader.Close()
+
+	ts := &sshSessionTunnel{
+		sshPipes:  pipes,
+		grpcPipes: &pipePair{},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := runSSHTunnel(ctx, cancel, ts)
+	require.Error(t, result.err)
+
+	messages := make([]string, 0, len(logs.All()))
+	for _, entry := range logs.All() {
+		messages = append(messages, entry.Message)
+	}
+	assert.Contains(t, messages, "tunnel: setup start")
+
+	foundComplete := false
+	for _, msg := range messages {
+		if strings.HasPrefix(msg, "tunnel: setup complete elapsed=") {
+			foundComplete = true
+			break
+		}
+	}
+	assert.True(t, foundComplete, "missing 'tunnel: setup complete' log: %v", messages)
 }
 
 func TestNormalizeLevel(t *testing.T) {
