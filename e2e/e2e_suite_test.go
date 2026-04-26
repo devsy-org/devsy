@@ -13,6 +13,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
 	_ "github.com/devsy-org/devsy/e2e/tests/ide"
 	_ "github.com/devsy-org/devsy/e2e/tests/integration"
+	_ "github.com/devsy-org/devsy/e2e/tests/logs"
 	_ "github.com/devsy-org/devsy/e2e/tests/machine"
 	_ "github.com/devsy-org/devsy/e2e/tests/machineprovider"
 	_ "github.com/devsy-org/devsy/e2e/tests/provider"

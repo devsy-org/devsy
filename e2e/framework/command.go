@@ -465,6 +465,15 @@ func (f *Framework) DevsyIDEUse(ctx context.Context, ide string, extraArgs ...st
 	return nil
 }
 
+func (f *Framework) DevsyLogs(ctx context.Context, workspace string) (string, error) {
+	args := []string{"logs", workspace}
+	stdout, _, err := f.ExecCommandCapture(ctx, args)
+	if err != nil {
+		return "", fmt.Errorf("devsy logs failed: %s", err.Error())
+	}
+	return stdout, nil
+}
+
 func (f *Framework) DevsyIDEList(ctx context.Context, extraArgs ...string) (string, error) {
 	baseArgs := []string{"ide", "list"}
 	return f.ExecCommandOutput(ctx, append(baseArgs, extraArgs...))
