@@ -14,13 +14,13 @@ const (
 
 // DebugEnabled reports whether debug-level messages are currently logged.
 func DebugEnabled() bool {
-	return sugar.Desugar().Core().Enabled(zapcore.DebugLevel)
+	return sugar.Load().Desugar().Core().Enabled(zapcore.DebugLevel)
 }
 
 // LevelString returns the lowest enabled log level as a lowercase string
 // (e.g. "debug", "info", "warn", "error", "fatal").
 func LevelString() string {
-	core := sugar.Desugar().Core()
+	core := sugar.Load().Desugar().Core()
 	for _, l := range []zapcore.Level{
 		zapcore.DebugLevel,
 		zapcore.InfoLevel,

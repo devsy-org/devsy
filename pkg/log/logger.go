@@ -2,18 +2,17 @@ package log
 
 import (
 	"os"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
 )
 
-// sugar is the package-level sugared logger. All package functions delegate to it.
-var sugar *zap.SugaredLogger
+var sugar atomic.Pointer[zap.SugaredLogger]
 
 func init() {
-	// Default: silent until Init() is called.
-	sugar = zap.NewNop().Sugar()
+	sugar.Store(zap.NewNop().Sugar())
 }
 
 // Config holds logger configuration parsed from CLI flags.
@@ -35,7 +34,7 @@ func Init(cfg Config) {
 		zap.AddStacktrace(zapcore.FatalLevel),
 	}
 	logger := zap.New(core, opts...)
-	sugar = logger.Sugar()
+	sugar.Store(logger.Sugar())
 }
 
 func resolveLevel(cfg Config) zapcore.Level {
@@ -86,30 +85,29 @@ func plainEncoderConfig() zapcore.EncoderConfig {
 
 // Underlying returns the raw *zap.Logger for advanced use cases.
 func Underlying() *zap.Logger {
-	return sugar.Desugar()
+	return sugar.Load().Desugar()
 }
 
 // Sync flushes any buffered log entries. Call before process exit.
 func Sync() error {
-	return sugar.Desugar().Sync()
+	return sugar.Load().Desugar().Sync()
 }
 
 // --- Package-level logging functions ---
 
-func Debugf(format string, args ...any) { sugar.Debugf(format, args...) }
-func Infof(format string, args ...any)  { sugar.Infof(format, args...) }
-func Warnf(format string, args ...any)  { sugar.Warnf(format, args...) }
-func Errorf(format string, args ...any) { sugar.Errorf(format, args...) }
-func Fatalf(format string, args ...any) { sugar.Fatalf(format, args...) }
+func Debugf(format string, args ...any) { sugar.Load().Debugf(format, args...) }
+func Infof(format string, args ...any)  { sugar.Load().Infof(format, args...) }
+func Warnf(format string, args ...any)  { sugar.Load().Warnf(format, args...) }
+func Errorf(format string, args ...any) { sugar.Load().Errorf(format, args...) }
+func Fatalf(format string, args ...any) { sugar.Load().Fatalf(format, args...) }
 
-func Debug(args ...any) { sugar.Debug(args...) }
-func Info(args ...any)  { sugar.Info(args...) }
-func Warn(args ...any)  { sugar.Warn(args...) }
-func Error(args ...any) { sugar.Error(args...) }
-func Fatal(args ...any) { sugar.Fatal(args...) }
+func Debug(args ...any) { sugar.Load().Debug(args...) }
+func Info(args ...any)  { sugar.Load().Info(args...) }
+func Warn(args ...any)  { sugar.Load().Warn(args...) }
+func Error(args ...any) { sugar.Load().Error(args...) }
+func Fatal(args ...any) { sugar.Load().Fatal(args...) }
 
-// Structured logging.
-func Debugw(msg string, keysAndValues ...any) { sugar.Debugw(msg, keysAndValues...) }
-func Infow(msg string, keysAndValues ...any)  { sugar.Infow(msg, keysAndValues...) }
-func Warnw(msg string, keysAndValues ...any)  { sugar.Warnw(msg, keysAndValues...) }
-func Errorw(msg string, keysAndValues ...any) { sugar.Errorw(msg, keysAndValues...) }
+func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
+func Infow(msg string, keysAndValues ...any)  { sugar.Load().Infow(msg, keysAndValues...) }
+func Warnw(msg string, keysAndValues ...any)  { sugar.Load().Warnw(msg, keysAndValues...) }
+func Errorw(msg string, keysAndValues ...any) { sugar.Load().Errorw(msg, keysAndValues...) }

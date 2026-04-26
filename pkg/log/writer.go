@@ -16,7 +16,7 @@ func Writer(level int) io.WriteCloser {
 	return &levelWriter{
 		sink:  w,
 		level: zapLevel,
-		core:  sugar.Desugar().Core(),
+		core:  sugar.Load().Desugar().Core(),
 	}
 }
 
