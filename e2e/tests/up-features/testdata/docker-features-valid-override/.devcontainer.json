@@ -5,5 +5,9 @@
     "./features/alpha": {},
     "./features/consumer": {}
   },
-  "overrideFeatureInstallOrder": ["./features/alpha", "./features/base", "./features/consumer"]
+  "overrideFeatureInstallOrder": [
+    "./features/alpha",
+    "./features/base",
+    "./features/consumer"
+  ]
 }
