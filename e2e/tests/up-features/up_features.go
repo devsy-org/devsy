@@ -550,4 +550,52 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(strings.TrimSpace(out), "ubuntu")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It(
+		"should reject overrideFeatureInstallOrder that violates dependsOn",
+		ginkgo.Label("features", "override"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-override-violates-depends-on",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectError(err)
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
+
+	ginkgo.It(
+		"should respect overrideFeatureInstallOrder when it satisfies dependsOn",
+		ginkgo.Label("features", "override"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-valid-override",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			out, err := f.DevsySSH(ctx, wsName, "cat /tmp/feature-install-order.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("alpha\nbase\nconsumer"))
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
 })

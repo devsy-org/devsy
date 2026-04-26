@@ -1,0 +1,8 @@
+{
+  "id": "consumer",
+  "version": "0.1.0",
+  "name": "Consumer feature",
+  "dependsOn": {
+    "./features/base": {}
+  }
+}
