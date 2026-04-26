@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/pty"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
+	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -170,38 +171,31 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 type ExecFunc func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
 func StartSSHSession(ctx context.Context, options StartSSHSessionOptions) error {
-	// create readers
-	stdoutReader, stdoutWriter, err := os.Pipe()
+	pb, err := tunnel.NewPipeBridge()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = stdoutReader.Close() }()
-	defer func() { _ = stdoutWriter.Close() }()
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stdinWriter.Close() }()
-	defer func() { _ = stdinReader.Close() }()
+	defer pb.Close()
 
-	// start ssh machine
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- options.Exec(ctx, stdinReader, stdoutWriter, options.Stderr)
-	}()
+	return pb.RunPair(ctx,
+		func(ctx context.Context, stdin, stdout *os.File) error {
+			return options.Exec(ctx, stdin, stdout, options.Stderr)
+		},
+		func(ctx context.Context, stdout, stdin *os.File) error {
+			sshClient, err := devssh.StdioClientWithUser(stdout, stdin, options.User, false)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = sshClient.Close() }()
 
-	sshClient, err := devssh.StdioClientWithUser(stdoutReader, stdinWriter, options.User, false)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = sshClient.Close() }()
-
-	return RunSSHSession(ctx, sshClient, RunSSHSessionOptions{
-		Command:         options.Command,
-		AgentForwarding: options.AgentForwarding,
-		SessionOptions:  options.SessionOptions,
-		Stderr:          options.Stderr,
-	})
+			return RunSSHSession(ctx, sshClient, RunSSHSessionOptions{
+				Command:         options.Command,
+				AgentForwarding: options.AgentForwarding,
+				SessionOptions:  options.SessionOptions,
+				Stderr:          options.Stderr,
+			})
+		},
+	)
 }
 
 func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSessionOptions) error {
