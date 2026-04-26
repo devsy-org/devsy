@@ -31,7 +31,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should start a new workspace with a docker provider (default) and SSH into it",
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 			framework.ExpectNoError(err)
@@ -64,7 +64,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 	ginkgo.It(
 		"should start workspace with GPG forwarding when host uses SSH signing format",
 		ginkgo.Label("gpg"),
-		ginkgo.SpecTimeout(5*time.Minute),
+		ginkgo.SpecTimeout(framework.TimeoutModerate()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
@@ -113,7 +113,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should set up git SSH signature helper and sign a commit",
-		ginkgo.SpecTimeout(7*time.Minute),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
@@ -276,7 +276,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should not install git SSH signature helper when signing key is not provided",
-		ginkgo.SpecTimeout(5*time.Minute),
+		ginkgo.SpecTimeout(framework.TimeoutModerate()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
@@ -323,7 +323,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should surface clear error when SSH signing fails",
-		ginkgo.SpecTimeout(7*time.Minute),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
@@ -398,7 +398,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should start a new workspace with a docker provider (default) and forward a port into it",
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")

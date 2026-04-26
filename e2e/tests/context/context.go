@@ -27,7 +27,7 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It(
 			"create a new context, switch to it and delete afterwards",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -47,7 +47,7 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It(
 			"should use shared context in IDE commands",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 

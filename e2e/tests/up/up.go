@@ -140,7 +140,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		out, err = f.DevsySSH(ctx, name, "echo -n $TEST_OTHER_VAR")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(out, value, "should be set now")
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("create workspace without devcontainer.json", func(ctx context.Context) {
 		const providerName = "test-docker"
@@ -187,7 +187,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		err = f.DevsyWorkspaceDelete(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("recreate a local workspace", func(ctx context.Context) {
 		const providerName = "test-docker"
@@ -216,7 +216,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		err = f.DevsyWorkspaceDelete(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("recreate a remote workspace", func(ctx context.Context) {
 		const providerName = "test-docker"
@@ -255,7 +255,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		err = f.DevsyWorkspaceDelete(ctx, id)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("reset a remote workspace", func(ctx context.Context) {
 		const providerName = "test-docker"
@@ -301,5 +301,5 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		err = f.DevsyWorkspaceDelete(ctx, id)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })

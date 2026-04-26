@@ -42,7 +42,7 @@ var _ = ginkgo.Describe(
 
 			err = f.DevsyUp(ctx, tempDir, "--debug")
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()*3))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It(
 			"should resolve localWorkspaceFolder variable in dockerfile path",
@@ -57,7 +57,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(ctx, tempDir, "--debug")
 				framework.ExpectNoError(err)
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()*3),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It(
@@ -103,7 +103,7 @@ var _ = ginkgo.Describe(
 
 				gomega.Expect(image2).ShouldNot(gomega.Equal(image1), "images should be different")
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
@@ -150,7 +150,7 @@ var _ = ginkgo.Describe(
 
 				gomega.Expect(image2).Should(gomega.Equal(image1), "image should be same")
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 	},
 )

@@ -105,6 +105,6 @@ var _ = ginkgo.Describe(
 			// check if ssh works
 			err = f.DevsySSHEchoTestString(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

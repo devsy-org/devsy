@@ -60,7 +60,7 @@ var _ = ginkgo.Describe(
 					),
 				)
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
@@ -82,7 +82,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				framework.ExpectEqual(out, initialList)
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
@@ -106,7 +106,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring("devsy up failed"))
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring("exit status 1"))
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It("ensure workspace cleanup when not a git or folder", func(ctx context.Context) {
@@ -122,6 +122,6 @@ var _ = ginkgo.Describe(
 			out, err := f.DevsyList(ctx)
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, initialList)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

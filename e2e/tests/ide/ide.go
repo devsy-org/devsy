@@ -17,7 +17,7 @@ var _ = ginkgo.Describe("devsy ide test suite", ginkgo.Label("ide"), ginkgo.Orde
 		framework.ExpectNoError(err)
 	})
 
-	ginkgo.It("start ides", ginkgo.SpecTimeout(framework.GetTimeout()), func(ctx context.Context) {
+	ginkgo.It("start ides", ginkgo.SpecTimeout(framework.TimeoutShort()), func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDir("tests/ide/testdata")
 		framework.ExpectNoError(err)

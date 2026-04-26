@@ -50,7 +50,7 @@ var _ = ginkgo.Describe(
 			// Wait for devsy workspace to come online (deadline: 30s)
 			err = f.DevsyUp(ctx, tempDir, "--debug")
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()*3))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("should NOT delete container when rebuild fails", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(

@@ -20,7 +20,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 
 	ginkgo.It(
 		"should add simple machine and then delete it",
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDir("tests/machine/testdata")
 			framework.ExpectNoError(err)
@@ -58,7 +58,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 
 	ginkgo.It(
 		"should delete a non-existing machine and get an error",
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDir("tests/machine/testdata")
 			framework.ExpectNoError(err)

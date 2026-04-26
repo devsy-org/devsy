@@ -27,7 +27,7 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It("test start / stop / status",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -98,7 +98,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("test devsy inactivity timeout",
-			ginkgo.SpecTimeout(framework.GetTimeout()*5),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -171,7 +171,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("test shutdownAction none suppresses inactivity timeout",
-			ginkgo.SpecTimeout(framework.GetTimeout()*5),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 

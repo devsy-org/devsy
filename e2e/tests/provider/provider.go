@@ -35,7 +35,7 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It("should add simple provider and delete it",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -64,7 +64,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("should add simple provider and update it",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -121,7 +121,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("should list all providers",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -154,7 +154,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("should parse options",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -198,7 +198,7 @@ spec:
 
 		// RENAME-1.
 		ginkgo.It("should rename a provider to a new, valid name",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -239,7 +239,7 @@ spec:
 		// RENAME-2.
 		ginkgo.It(
 			"should fail to rename a provider to a name that already exists",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -292,7 +292,7 @@ spec:
 		)
 
 		ginkgo.It("should fail to rename a non-existent provider",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -309,7 +309,7 @@ spec:
 
 		ginkgo.It(
 			"should rename a provider with an associated running workspace",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -387,7 +387,7 @@ spec:
 		)
 
 		ginkgo.It("should fail to rename a provider to an invalid name",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				tempDir, err := framework.CopyToTempDir(
 					"tests/provider/testdata/simple-k8s-provider",
@@ -416,7 +416,7 @@ spec:
 			})
 
 		ginkgo.It("should preserve provider options after rename",
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 

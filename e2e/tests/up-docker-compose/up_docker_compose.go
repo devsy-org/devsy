@@ -93,7 +93,7 @@ var _ = ginkgo.Describe(
 			bar, err := tc.execSSH(ctx, tempDir, "cat $HOME/mnt2/bar.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("port forwarding", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -158,7 +158,7 @@ var _ = ginkgo.Describe(
 				gomega.MatchError("signal: killed"),
 				gomega.MatchError(context.Canceled),
 			))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("features", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -182,7 +182,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It(
 			"does not retag shared image when applying features to image backed services",
@@ -291,7 +291,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(strings.TrimSpace(nodeLookupOutput)).
 					To(gomega.Equal("missing"), "project A should not inherit project B's node feature")
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()*4),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It("array based commands", func(ctx context.Context) {
@@ -346,7 +346,7 @@ var _ = ginkgo.Describe(
 			postAttachCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-attach-command.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(postAttachCommand).To(gomega.Equal("postAttachCommand"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("parallel object based commands", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -380,7 +380,7 @@ var _ = ginkgo.Describe(
 			parallelB, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-b.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(parallelB).To(gomega.Equal("parallelB"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("commands with quotes", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -410,7 +410,7 @@ var _ = ginkgo.Describe(
 			quotedTest, err := tc.execSSH(ctx, tempDir, "cat $HOME/quoted-test.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(quotedTest).To(gomega.Equal("quoted value"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("v2 features", func(ctx context.Context) {
 			_, ws, err := tc.setupAndStartWorkspace(
@@ -427,7 +427,7 @@ var _ = ginkgo.Describe(
 			var containerDetails []container.InspectResponse
 			err = tc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("v1 fallback", func(ctx context.Context) {
 			_, ws, err := tc.setupAndStartWorkspace(
@@ -444,7 +444,7 @@ var _ = ginkgo.Describe(
 			var containerDetails []container.InspectResponse
 			err = tc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("multiple services", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -472,7 +472,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(dbIDs).To(gomega.HaveLen(1), "db container to be created")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("specific services", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -500,7 +500,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(dbIDs).To(gomega.BeEmpty(), "db container not to be created")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("user lookup with no remoteUser", func(ctx context.Context) {
 			_, _, err := tc.setupAndStartWorkspace(
@@ -508,7 +508,7 @@ var _ = ginkgo.Describe(
 				"tests/up-docker-compose/testdata/docker-compose-lookup-user",
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("dockerfile with args", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -532,7 +532,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("multi-stage dockerfile with args", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -556,6 +556,6 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

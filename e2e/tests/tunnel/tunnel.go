@@ -26,7 +26,7 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It("should tunnel to workspace and exchange data bidirectionally",
-			ginkgo.SpecTimeout(framework.GetTimeout()*3),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -70,7 +70,7 @@ var _ = ginkgo.Describe(
 			})
 
 		ginkgo.It("should keep workspace running when stdin closes before stdout",
-			ginkgo.SpecTimeout(framework.GetTimeout()*3),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
