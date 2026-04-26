@@ -61,7 +61,6 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
-	result, err := resolveDockerCommand(nil)
-	assert.NoError(t, err)
+	result := resolveDockerCommand(nil)
 	assert.Equal(t, "docker", result)
 }

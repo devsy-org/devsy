@@ -77,12 +77,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("resolve workspace: %w", err)
 	}
 
-	dockerCommand, err := resolveDockerCommand(
-		client.WorkspaceConfig(),
-	)
-	if err != nil {
-		return err
-	}
+	dockerCommand := resolveDockerCommand(client.WorkspaceConfig())
 
 	containerDetails, err := findRunningContainer(
 		ctx, dockerCommand, client.Workspace(),
@@ -106,9 +101,9 @@ func (cmd *ExecCmd) validateRemoteEnv() error {
 
 func resolveDockerCommand(
 	workspace *provider2.Workspace,
-) (string, error) {
+) string {
 	if workspace == nil || workspace.Context == "" {
-		return "docker", nil
+		return "docker"
 	}
 
 	providerConfig, err := provider2.LoadProviderConfig(
@@ -117,14 +112,14 @@ func resolveDockerCommand(
 	)
 	if err != nil {
 		log.Debugf("Failed to load provider config, defaulting to 'docker': %v", err)
-		return "docker", nil
+		return "docker"
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
-		return providerConfig.Agent.Docker.Path, nil
+		return providerConfig.Agent.Docker.Path
 	}
 
-	return "docker", nil
+	return "docker"
 }
 
 func findRunningContainer(
