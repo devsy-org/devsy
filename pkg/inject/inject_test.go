@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap/zapcore"
 )
 
 // errWriter is an io.Writer that always returns a configured error.
@@ -282,4 +284,88 @@ func (s *PerformMutualHandshakeTestSuite) TestPerformMutualHandshake_InvalidInpu
 
 func TestPerformMutualHandshakeSuite(t *testing.T) {
 	suite.Run(t, new(PerformMutualHandshakeTestSuite))
+}
+
+// --- InjectTimingLogTestSuite ---
+
+type InjectTimingLogTestSuite struct {
+	suite.Suite
+}
+
+func (s *InjectTimingLogTestSuite) TestInject_TimingLogs() {
+	logs := log.InitTestObserved(s.T(), zapcore.DebugLevel)
+
+	ctx := context.Background()
+
+	execFunc := func(_ context.Context, _ string, stdin io.Reader, stdout io.Writer, _ io.Writer) error {
+		// Simulate the inject.sh protocol: send ping, read pong, send done.
+		if _, err := stdout.Write([]byte("ping\n")); err != nil {
+			return err
+		}
+
+		buf := make([]byte, 64)
+		n, err := stdin.Read(buf)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(buf[:n])) != "pong" {
+			return fmt.Errorf("expected pong, got %q", string(buf[:n]))
+		}
+
+		if _, err := stdout.Write([]byte("done\n")); err != nil {
+			return err
+		}
+
+		// Return immediately so stdout pipe closes and pipe() completes quickly.
+		return nil
+	}
+
+	wasExecuted, err := Inject(InjectOptions{
+		Ctx:  ctx,
+		Exec: execFunc,
+		ScriptParams: &Params{
+			Command:         "test-cmd",
+			AgentRemotePath: "/tmp/agent",
+			DownloadURLs:    &DownloadURLs{},
+		},
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Timeout: 5 * time.Second,
+	})
+
+	s.NoError(err)
+	s.True(wasExecuted)
+
+	messages := make([]string, 0, len(logs.All()))
+	for _, entry := range logs.All() {
+		messages = append(messages, entry.Message)
+	}
+
+	s.Contains(messages, "injection: start")
+	s.True(
+		containsPrefix(messages, "injection: payload delivered elapsed="),
+		"missing payload log: %v", messages,
+	)
+	s.True(
+		containsPrefix(messages, "injection: complete elapsed="),
+		"missing complete log: %v", messages,
+	)
+	s.True(
+		containsPrefix(messages, "injection: handshake complete elapsed="),
+		"missing handshake log: %v", messages,
+	)
+}
+
+func TestInjectTimingLogSuite(t *testing.T) {
+	suite.Run(t, new(InjectTimingLogTestSuite))
+}
+
+func containsPrefix(messages []string, prefix string) bool {
+	for _, msg := range messages {
+		if strings.HasPrefix(msg, prefix) {
+			return true
+		}
+	}
+	return false
 }

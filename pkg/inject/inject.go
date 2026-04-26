@@ -50,6 +50,9 @@ func Inject(opts InjectOptions) (bool, error) {
 		return false, fmt.Errorf("script params is required")
 	}
 
+	start := time.Now()
+	log.Infof("injection: start")
+
 	if opts.ScriptParams.PreferAgentDownload {
 		url := ""
 		if opts.ScriptParams.DownloadURLs != nil {
@@ -136,25 +139,31 @@ func Inject(opts InjectOptions) (bool, error) {
 	case result = <-injectChan:
 		// we don't wait for the command termination here and will just retry on error
 	}
+	log.Debugf("injection: payload delivered elapsed=%s", time.Since(start))
 
 	// prefer result error
 	if result.err != nil {
+		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, result.err
 	} else if err != nil {
+		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, err
 	} else if result.wasExecuted || opts.ScriptParams.Command == "" {
+		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, nil
 	}
 
 	log.Debugf("Rerun command as binary was injected")
 	delayedStderr.Start()
-	return true, opts.Exec(
+	rerunErr := opts.Exec(
 		opts.Ctx,
 		opts.ScriptParams.Command,
 		opts.Stdin,
 		opts.Stdout,
 		delayedStderr,
 	)
+	log.Infof("injection: complete elapsed=%s", time.Since(start))
+	return true, rerunErr
 }
 
 func inject(
@@ -166,6 +175,8 @@ func inject(
 	delayedStderr *delayedWriter,
 	timeout time.Duration,
 ) (bool, error) {
+	injectStart := time.Now()
+
 	// wait until we read start
 	var line string
 	errChan := make(chan error)
@@ -185,6 +196,7 @@ func inject(
 	if err != nil {
 		return false, err
 	}
+	log.Debugf("injection: handshake complete elapsed=%s", time.Since(injectStart))
 
 	// wait until we read something
 	line, err = readLine(stdout)
