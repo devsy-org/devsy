@@ -5,10 +5,14 @@ description: |-
 options:
   LOCATION:
     description: The location Devsy should use
+  INACTIVITY_TIMEOUT:
+    description: The timeout until the machine will be stopped
+    default: 30s
 agent:
   local: true
   docker:
     install: false
+  inactivityTimeout: ${INACTIVITY_TIMEOUT}
 exec:
   create: |-
     mkdir -p ${LOCATION}/${MACHINE_ID}
