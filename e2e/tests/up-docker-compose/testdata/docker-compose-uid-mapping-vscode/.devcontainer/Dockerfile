@@ -1,4 +1,4 @@
-FROM ghcr.io/devsy-org/test-images/base:ubuntu
+FROM ubuntu:latest
 
 RUN useradd -m -s /bin/bash vscode && \
     echo 'vscode ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
