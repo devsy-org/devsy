@@ -275,6 +275,7 @@ func runSSHTunnel(
 
 	start := time.Now()
 	log.Infof("tunnel: setup start")
+	defer func() { log.Infof("tunnel: setup complete elapsed=%s", time.Since(start)) }()
 
 	log.Debug("creating SSH client")
 	sshClient, err := devssh.StdioClient(ts.sshPipes.stdoutReader, ts.sshPipes.stdinWriter, false)

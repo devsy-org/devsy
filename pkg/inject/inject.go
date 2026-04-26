@@ -52,6 +52,7 @@ func Inject(opts InjectOptions) (bool, error) {
 
 	start := time.Now()
 	log.Infof("injection: start")
+	defer func() { log.Infof("injection: complete elapsed=%s", time.Since(start)) }()
 
 	if opts.ScriptParams.PreferAgentDownload {
 		url := ""
@@ -143,27 +144,22 @@ func Inject(opts InjectOptions) (bool, error) {
 
 	// prefer result error
 	if result.err != nil {
-		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, result.err
 	} else if err != nil {
-		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, err
 	} else if result.wasExecuted || opts.ScriptParams.Command == "" {
-		log.Infof("injection: complete elapsed=%s", time.Since(start))
 		return result.wasExecuted, nil
 	}
 
 	log.Debugf("Rerun command as binary was injected")
 	delayedStderr.Start()
-	rerunErr := opts.Exec(
+	return true, opts.Exec(
 		opts.Ctx,
 		opts.ScriptParams.Command,
 		opts.Stdin,
 		opts.Stdout,
 		delayedStderr,
 	)
-	log.Infof("injection: complete elapsed=%s", time.Since(start))
-	return true, rerunErr
 }
 
 func inject(

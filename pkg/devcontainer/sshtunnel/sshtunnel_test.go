@@ -2,6 +2,7 @@ package sshtunnel
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -204,6 +205,15 @@ func TestRunSSHTunnel_TimingLogs(t *testing.T) {
 		messages = append(messages, entry.Message)
 	}
 	assert.Contains(t, messages, "tunnel: setup start")
+
+	foundComplete := false
+	for _, msg := range messages {
+		if strings.HasPrefix(msg, "tunnel: setup complete elapsed=") {
+			foundComplete = true
+			break
+		}
+	}
+	assert.True(t, foundComplete, "missing 'tunnel: setup complete' log: %v", messages)
 }
 
 func TestNormalizeLevel(t *testing.T) {
