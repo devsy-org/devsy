@@ -1,4 +1,4 @@
-FROM ubuntu AS base
+FROM ghcr.io/devsy-org/test-images/base:ubuntu AS base
 
 RUN apt update
 RUN apt install vim -y

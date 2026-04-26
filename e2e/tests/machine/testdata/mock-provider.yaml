@@ -31,7 +31,7 @@ exec:
   init: docker ps -a
   command: docker exec -ti ${MACHINE_ID} ${COMMAND}
   create: |-
-    docker create --name ${MACHINE_ID} ubuntu:latest sleep infinity
+    docker create --name ${MACHINE_ID} ghcr.io/devsy-org/test-images/base:ubuntu sleep infinity
     docker start ${MACHINE_ID}
   delete: docker rm --force ${MACHINE_ID}
   start: docker start ${MACHINE_ID}

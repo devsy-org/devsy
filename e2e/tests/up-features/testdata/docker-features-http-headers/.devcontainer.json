@@ -1,6 +1,6 @@
 {
   "name": "Test hello",
-  "image": "ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "features": {
     "#{server_url}/devcontainer-feature-hello.tgz": {}
   },

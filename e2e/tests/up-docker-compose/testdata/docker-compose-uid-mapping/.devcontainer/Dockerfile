@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM ghcr.io/devsy-org/test-images/base:ubuntu
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y \
     curl apache2 git openssh-server \

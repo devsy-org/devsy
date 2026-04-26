@@ -1,6 +1,6 @@
 {
   "name": "Extra DevContainer Test",
-  "image": "ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "remoteEnv": {
     "BASE_VAR": "base_value"
   }

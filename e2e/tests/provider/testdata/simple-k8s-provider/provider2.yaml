@@ -31,7 +31,7 @@ exec:
           emptyDir: {}
       containers:
         - name: devsy-container
-          image: docker:dind
+          image: ghcr.io/devsy-org/test-images/docker:dind
           volumeMounts:
           - mountPath: /var/lib/docker
             name: devsy-storage

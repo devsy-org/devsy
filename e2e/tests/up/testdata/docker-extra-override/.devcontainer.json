@@ -1,6 +1,6 @@
 {
   "name": "Override Test",
-  "image": "ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "remoteEnv": {
     "TEST_VAR": "base_value"
   },
