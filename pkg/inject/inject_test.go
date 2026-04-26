@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -151,6 +152,39 @@ func (s *PipeTestSuite) TestPipe_NoGoroutineLeak() {
 	time.Sleep(50 * time.Millisecond)
 	after := runtime.NumGoroutine()
 	s.LessOrEqual(after, before+5, "goroutine leak detected: before=%d after=%d", before, after)
+}
+
+func (s *PipeTestSuite) TestPipe_ConcurrentCopyRaceRegression() {
+	for i := range 100 {
+		func() {
+			fromStdinReader, fromStdinWriter := io.Pipe()
+			toStdoutBuf := &bytes.Buffer{}
+
+			fromStdoutReader, fromStdoutWriter := io.Pipe()
+			toStdinPipeReader, toStdinPipeWriter := io.Pipe()
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- pipe(toStdinPipeWriter, fromStdinReader, toStdoutBuf, fromStdoutReader)
+			}()
+
+			msg := fmt.Sprintf("iteration-%d", i)
+			_, err := fromStdinWriter.Write([]byte(msg))
+			s.Require().NoError(err)
+			_ = fromStdinWriter.Close()
+
+			_, err = fromStdoutWriter.Write([]byte(msg))
+			s.Require().NoError(err)
+			_ = fromStdoutWriter.Close()
+
+			received, err := io.ReadAll(toStdinPipeReader)
+			s.Require().NoError(err)
+
+			s.NoError(<-errCh)
+			s.Equal(msg, string(received), "stdin data lost at iteration %d", i)
+			s.Equal(msg, toStdoutBuf.String(), "stdout data lost at iteration %d", i)
+		}()
+	}
 }
 
 func TestPipeSuite(t *testing.T) {
