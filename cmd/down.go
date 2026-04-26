@@ -59,6 +59,13 @@ func (cmd *DownCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	if _, err := clientimplementation.DecodeOptionsFromEnv(
+		config.EnvFlagsDelete,
+		&cmd.DeleteOptions,
+	); err != nil {
+		return fmt.Errorf("decode delete options: %w", err)
+	}
+
 	if err := clientimplementation.DecodePlatformOptionsFromEnv(&cmd.Platform); err != nil {
 		return fmt.Errorf("decode platform options: %w", err)
 	}
@@ -107,10 +114,15 @@ func (cmd *DownCmd) stop(
 		return err
 	}
 
-	if status == client2.StatusRunning {
-		if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
-			return fmt.Errorf("stop workspace: %w", err)
-		}
+	if status != client2.StatusRunning {
+		log.Infof("workspace is %s, skipping stop", status)
+		return nil
+	}
+
+	// Single-machine stop is not needed here: workspace.Delete handles
+	// single-machine cleanup via deleteSingleMachine.
+	if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
+		return fmt.Errorf("stop workspace: %w", err)
 	}
 
 	return nil
