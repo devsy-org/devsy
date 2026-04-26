@@ -37,7 +37,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("existing image", func(ctx context.Context) {
 			_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker")
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("existing running container", func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
@@ -93,7 +93,7 @@ var _ = ginkgo.Describe(
 				fmt.Sprintf("container:%s", containerDetails[0].ID),
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("variables substitution", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-variables",
@@ -173,7 +173,7 @@ var _ = ginkgo.Describe(
 			customImage, err := dtc.execSSHCapture(ctx, workspace.ID, "cat $HOME/custom-image.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(customImage).To(gomega.Equal("alpine:latest"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("variable substitution with defaults", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -217,7 +217,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(setVar).To(
 				gomega.Equal(os.Getenv("HOME")),
 			)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("remoteEnv null unsets variable", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-remote-env-null")
@@ -241,7 +241,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(unsetLine).To(gomega.Equal("UNSET=true"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
@@ -261,7 +261,7 @@ var _ = ginkgo.Describe(
 			bar, err := dtc.execSSHCapture(ctx, workspace.ID, "cat $HOME/mnt2/bar.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("custom image", func(ctx context.Context) {
 			if runtime.GOOS == "windows" {
@@ -279,7 +279,7 @@ var _ = ginkgo.Describe(
 			out, err := dtc.execSSH(ctx, tempDir, "grep ^ID= /etc/os-release")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "ID=alpine\n")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("custom image skip build", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -293,7 +293,7 @@ var _ = ginkgo.Describe(
 			out, err := dtc.execSSH(ctx, tempDir, "grep ^ID= /etc/os-release")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "ID=alpine\n")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("extra devcontainer merge", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -317,7 +317,7 @@ var _ = ginkgo.Describe(
 
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("extra devcontainer override", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -337,7 +337,7 @@ var _ = ginkgo.Describe(
 
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("postStartCommand runs after restart", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -370,7 +370,7 @@ var _ = ginkgo.Describe(
 			lines = strings.Count(strings.TrimSpace(out), "\n") + 1
 			gomega.Expect(lines).To(gomega.Equal(2),
 				"postStartCommand should have run again after restart")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("waitFor defers postCreateCommand to background", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -428,7 +428,7 @@ var _ = ginkgo.Describe(
 				gomega.Equal("postStartDone"),
 				"deferred postStartCommand should eventually complete in background",
 			)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("IDE accessible before postAttachCommand completes", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -465,7 +465,7 @@ var _ = ginkgo.Describe(
 				gomega.Equal("postAttachDone"),
 				"postAttachCommand should eventually complete in the background",
 			)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It(
 			"initializeCommand with object syntax runs named sub-commands in parallel",
@@ -485,7 +485,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
@@ -505,7 +505,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
@@ -535,6 +535,6 @@ var _ = ginkgo.Describe(
 
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

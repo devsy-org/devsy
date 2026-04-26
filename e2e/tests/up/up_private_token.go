@@ -66,6 +66,6 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			ginkgo.By(out)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

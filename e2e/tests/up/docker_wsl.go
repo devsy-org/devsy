@@ -34,7 +34,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 
 		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should start a new workspace with mounts", func(ctx context.Context) {
 		tempDir, err := setupWorkspace("tests/up/testdata/docker-mounts", initialDir, f)
@@ -60,7 +60,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 		bar, err := f.DevsySSH(ctx, projectName, "cat $HOME/mnt2/bar.txt")
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
 		"should start a new workspace with dotfiles - no install script",
@@ -86,7 +86,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 `
 			framework.ExpectEqual(out, expectedOutput, "should match")
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -112,7 +112,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 
 			framework.ExpectEqual(out, expectedOutput, "should match")
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -138,7 +138,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 `
 			framework.ExpectEqual(out, expectedOutput, "should match")
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -161,7 +161,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 			expectedOutput := "test\n"
 			framework.ExpectEqual(out, expectedOutput, "should match")
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It("should start a new workspace with custom image", func(ctx context.Context) {
@@ -179,7 +179,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 
 		framework.ExpectEqual(out, expectedOutput, "should match")
 		framework.ExpectNotEqual(out, unexpectedOutput, "should NOT match")
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
 		"should start a new workspace with custom image and skip building",
@@ -203,6 +203,6 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 			framework.ExpectEqual(out, expectedOutput, "should match")
 			framework.ExpectNotEqual(out, unexpectedOutput, "should NOT match")
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 })

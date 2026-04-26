@@ -43,7 +43,7 @@ var _ = ginkgo.Describe(
 				out,
 				"/home/vscode/.file1\n/home/vscode/.file2\n/home/vscode/.file3\n",
 			)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("with install script", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -59,7 +59,7 @@ var _ = ginkgo.Describe(
 			out, err := dtc.execSSH(ctx, tempDir, "ls /tmp/worked")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "/tmp/worked\n")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("specific commit", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -76,7 +76,7 @@ var _ = ginkgo.Describe(
 				out,
 				"/home/vscode/.file1\n/home/vscode/.file2\n/home/vscode/.file3\n",
 			)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("specific branch", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -90,7 +90,7 @@ var _ = ginkgo.Describe(
 			out, err := dtc.execSSH(ctx, tempDir, "cat ~/.branch_test")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "test\n")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("dotfiles installed between postCreate and postStart", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(
@@ -123,6 +123,6 @@ var _ = ginkgo.Describe(
 				"dotfiles-before-postStart",
 				"postStart",
 			}), "lifecycle ordering should be: postCreate → dotfiles → postStart")
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

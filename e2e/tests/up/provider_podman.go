@@ -39,7 +39,7 @@ var _ = ginkgo.Describe(
 					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 				},
-				ginkgo.SpecTimeout(framework.GetTimeout()),
+				ginkgo.SpecTimeout(framework.TimeoutShort()),
 			)
 		})
 
@@ -83,7 +83,7 @@ var _ = ginkgo.Describe(
 					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 				},
-				ginkgo.SpecTimeout(framework.GetTimeout()),
+				ginkgo.SpecTimeout(framework.TimeoutShort()),
 			)
 		})
 	},

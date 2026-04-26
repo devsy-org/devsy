@@ -37,7 +37,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()),
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
@@ -52,7 +52,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(ctx, "github.com/devsy-org/devsy@pull/1/head")
 				framework.ExpectNoError(err)
 			},
-			ginkgo.SpecTimeout(framework.GetTimeout()*3),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It("create workspace in a subpath", func(ctx context.Context) {
@@ -83,6 +83,6 @@ var _ = ginkgo.Describe(
 
 			err = f.DevsyWorkspaceDelete(ctx, id)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.GetTimeout()))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

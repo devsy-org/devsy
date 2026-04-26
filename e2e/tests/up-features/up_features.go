@@ -50,7 +50,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		out, err = f.DevsySSH(ctx, wsName, "cat /tmp/feature-postStart.txt")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(strings.TrimSpace(out), "feature-postStart")
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("http headers download", func(ctx context.Context) {
 		server := ghttp.NewServer()
@@ -105,7 +105,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
 		"direct tar feature uses cached download with integrity verification",
@@ -198,7 +198,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			// Only one HTTP request was made — proves cache was reused with passing integrity
 			gomega.Expect(server.ReceivedRequests()).To(gomega.HaveLen(1))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It("should install with lifecycle hooks", func(ctx context.Context) {
@@ -216,7 +216,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
 		"should automatically install dependsOn features",
@@ -242,7 +242,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			gomega.Expect(out).To(gomega.ContainSubstring("SUCCESS: hello command is available"))
 			gomega.Expect(out).To(gomega.ContainSubstring("hey, vscode"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -269,7 +269,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			gomega.Expect(out).To(gomega.ContainSubstring("SUCCESS: hello command is available"))
 			gomega.Expect(out).To(gomega.ContainSubstring("hey, vscode"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -296,7 +296,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("All dependencies available"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -320,7 +320,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			// The logs show "circular dependency detected" in the debug output
 			framework.ExpectError(err)
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -347,7 +347,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("custom greeting"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -374,7 +374,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("Correct order"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -397,7 +397,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectError(err)
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -420,7 +420,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectError(err)
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -448,7 +448,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			// Should contain greeting from one of the features (last one wins)
 			gomega.Expect(out).To(gomega.ContainSubstring("from"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It(
@@ -476,7 +476,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("Python 3.11"))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()*5),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	) // This test compiles Python
 
 	ginkgo.It(
@@ -506,7 +506,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.MatchRegexp(`v\d+\.\d+\.\d+`))
 		},
-		ginkgo.SpecTimeout(framework.GetTimeout()),
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
 	ginkgo.It("resolves user variable in dockerfile", func(ctx context.Context) {
@@ -528,7 +528,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		out, err := f.DevsySSH(ctx, wsName, "whoami")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(strings.TrimSpace(out), "testuser")
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("preserves user when feature is present with variable", func(ctx context.Context) {
 		f, err := setupDockerProvider(initialDir+"/bin", "docker")
@@ -549,5 +549,5 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		out, err := f.DevsySSH(ctx, wsName, "whoami")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(strings.TrimSpace(out), "ubuntu")
-	}, ginkgo.SpecTimeout(framework.GetTimeout()))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
