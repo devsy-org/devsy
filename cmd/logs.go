@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -70,84 +71,71 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	if !ok {
 		return fmt.Errorf("this command is not supported for proxy providers")
 	}
-	// create readers
-	stdoutReader, stdoutWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stdoutWriter.Close() }()
-	defer func() { _ = stdinWriter.Close() }()
-	// ssh tunnel command
+
 	sshServerCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
 	if log.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
 
-	// Get the timeout from the context options
 	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
 
-	// start ssh server in background
-	errChan := make(chan error, 1)
-	go func() {
-		stderr := log.Writer(log.LevelDebug)
-		defer func() { _ = stderr.Close() }()
+	pb, err := tunnel.NewPipeBridge()
+	if err != nil {
+		return err
+	}
+	defer pb.Close()
 
-		errChan <- agent.InjectAgent(&agent.InjectOptions{
-			Ctx: ctx,
-			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-				return client.Command(ctx, clientpkg.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
-				})
-			},
-			IsLocal:         client.AgentLocal(),
-			RemoteAgentPath: client.AgentPath(),
-			DownloadURL:     client.AgentURL(),
-			Command:         sshServerCmd,
-			Stdin:           stdinReader,
-			Stdout:          stdoutWriter,
-			Stderr:          stderr,
-			Timeout:         timeout,
-		})
-	}()
+	return pb.RunPair(ctx,
+		func(ctx context.Context, stdin, stdout *os.File) error {
+			stderr := log.Writer(log.LevelDebug)
+			defer func() { _ = stderr.Close() }()
 
-	// create agent command
-	agentCommand := fmt.Sprintf(
-		"'%s' agent workspace logs --context '%s' --id '%s'",
-		client.AgentPath(),
-		client.Context(),
-		client.Workspace(),
+			return agent.InjectAgent(&agent.InjectOptions{
+				Ctx: ctx,
+				Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
+					return client.Command(ctx, clientpkg.CommandOptions{
+						Command: command,
+						Stdin:   stdinR,
+						Stdout:  stdoutW,
+						Stderr:  stderrW,
+					})
+				},
+				IsLocal:         client.AgentLocal(),
+				RemoteAgentPath: client.AgentPath(),
+				DownloadURL:     client.AgentURL(),
+				Command:         sshServerCmd,
+				Stdin:           stdin,
+				Stdout:          stdout,
+				Stderr:          stderr,
+				Timeout:         timeout,
+			})
+		},
+		func(ctx context.Context, stdout, stdin *os.File) error {
+			sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "", false)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = sshClient.Close() }()
+
+			session, err := sshClient.NewSession()
+			if err != nil {
+				return err
+			}
+			defer func() { _ = session.Close() }()
+
+			agentCommand := fmt.Sprintf(
+				"'%s' agent workspace logs --context '%s' --id '%s'",
+				client.AgentPath(),
+				client.Context(),
+				client.Workspace(),
+			)
+			if log.DebugEnabled() {
+				agentCommand += " --debug"
+			}
+
+			session.Stdout = os.Stdout
+			session.Stderr = os.Stderr
+			return session.Run(agentCommand)
+		},
 	)
-	if log.DebugEnabled() {
-		agentCommand += " --debug"
-	}
-
-	// create new ssh client
-	// start ssh client as root / default user
-	sshClient, err := ssh.StdioClientWithUser(stdoutReader, stdinWriter, "" /* default */, false)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = sshClient.Close() }()
-
-	session, err := sshClient.NewSession()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = session.Close() }()
-
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
-	err = session.Run(agentCommand)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
