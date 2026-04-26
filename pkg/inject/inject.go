@@ -305,6 +305,8 @@ func readLine(reader io.Reader) (string, error) {
 	}
 }
 
+const pipeSecondDirTimeout = 5 * time.Second
+
 func pipe(
 	toStdin io.WriteCloser, fromStdin io.Reader,
 	toStdout io.Writer, fromStdout io.ReadCloser,
@@ -321,14 +323,30 @@ func pipe(
 		stdinErr <- err
 	}()
 
-	err1 := <-stdinErr
-	err2 := <-stdoutErr
+	// Wait for whichever direction completes first.
+	var firstErr error
+	var otherCh <-chan error
+	select {
+	case firstErr = <-stdinErr:
+		otherCh = stdoutErr
+	case firstErr = <-stdoutErr:
+		otherCh = stdinErr
+	}
+
+	// Give the other direction time to finish naturally so we can
+	// capture any real error and avoid interrupting data in flight.
+	// If it doesn't finish in time, close pipes to force completion.
+	var secondErr error
+	select {
+	case secondErr = <-otherCh:
+	case <-time.After(pipeSecondDirTimeout):
+	}
 
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
-	if err1 != nil {
-		return err1
+	if firstErr != nil {
+		return firstErr
 	}
-	return err2
+	return secondErr
 }
