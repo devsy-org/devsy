@@ -337,9 +337,11 @@ func pipe(
 	// capture any real error and avoid interrupting data in flight.
 	// If it doesn't finish in time, close pipes to force completion.
 	var secondErr error
+	timer := time.NewTimer(pipeSecondDirTimeout)
+	defer timer.Stop()
 	select {
 	case secondErr = <-otherCh:
-	case <-time.After(pipeSecondDirTimeout):
+	case <-timer.C:
 	}
 
 	_ = toStdin.Close()
