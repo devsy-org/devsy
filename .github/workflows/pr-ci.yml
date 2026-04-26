@@ -156,6 +156,12 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: tunnel
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: provider
             runner: ubuntu-latest
             free-disk-space: false
