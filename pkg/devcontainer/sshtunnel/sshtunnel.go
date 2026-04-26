@@ -3,6 +3,7 @@ package sshtunnel
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -471,6 +472,19 @@ func (l *TunnelLogStreamer) process(r io.Reader) {
 	}
 }
 
+type jsonLogLine struct {
+	Message string `json:"message,omitempty"`
+	Msg     string `json:"msg,omitempty"`
+	Level   string `json:"level,omitempty"`
+}
+
+func (j *jsonLogLine) text() string {
+	if j.Message != "" {
+		return j.Message
+	}
+	return j.Msg
+}
+
 func (l *TunnelLogStreamer) logLine(line string) {
 	line = strings.TrimSpace(line)
 	// Remove carriage returns to prevent terminal overwriting (e.g. git progress)
@@ -479,10 +493,40 @@ func (l *TunnelLogStreamer) logLine(line string) {
 		return
 	}
 
+	var obj jsonLogLine
+	if json.Unmarshal([]byte(line), &obj) == nil && obj.text() != "" {
+		level := normalizeLevel(obj.Level)
+		logAtLevel(level, obj.text())
+		return
+	}
+
 	if matched, level := extractLogLevel(line); matched {
 		logAtLevel(level, line)
 	} else {
 		log.Debug(line)
+	}
+}
+
+const (
+	levelDebug = "debug"
+	levelInfo  = "info"
+	levelWarn  = "warn"
+	levelError = "error"
+	levelFatal = "fatal"
+)
+
+func normalizeLevel(raw string) string {
+	switch strings.ToLower(raw) {
+	case "trace", levelDebug:
+		return levelDebug
+	case levelInfo:
+		return levelInfo
+	case "warning", levelWarn:
+		return levelWarn
+	case levelError, "panic", levelFatal:
+		return levelError
+	default:
+		return levelDebug
 	}
 }
 
@@ -494,7 +538,7 @@ func extractLogLevel(line string) (bool, string) {
 
 	level := strings.ToLower(parts[1])
 	switch level {
-	case "debug", "info", "warn", "error", "fatal":
+	case levelDebug, levelInfo, levelWarn, levelError, levelFatal:
 		return true, level
 	default:
 		return false, ""
@@ -503,15 +547,15 @@ func extractLogLevel(line string) (bool, string) {
 
 func logAtLevel(level, msg string) {
 	switch level {
-	case "debug":
+	case levelDebug:
 		log.Debug(msg)
-	case "info":
+	case levelInfo:
 		log.Info(msg)
-	case "warn":
+	case levelWarn:
 		log.Warn(msg)
-	case "error":
+	case levelError:
 		log.Error(msg)
-	case "fatal":
+	case levelFatal:
 		log.Error(msg)
 	default:
 		log.Debug(msg)
