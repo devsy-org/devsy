@@ -61,7 +61,7 @@ jobs:
             KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
             PATH="${PATH}" \
             GOROOT="${GOROOT}" \
-            ${{ github.event.inputs.test_focus == '' && 'task cli:test:e2e' || format('task cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }} || true
+            ${{ github.event.inputs.test_focus == '' && 'task cli:test:e2e' || format('task cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }}
 
   build-ui:
     name: Build User Interface
