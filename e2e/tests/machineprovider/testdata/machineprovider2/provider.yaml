@@ -8,7 +8,7 @@ options:
     default: devsy-e2e
   INACTIVITY_TIMEOUT:
     description: The timeout until the pod will be stopped
-    default: 5s
+    default: 30s
 agent:
   path: /usr/local/bin/devsy
   inactivityTimeout: ${INACTIVITY_TIMEOUT}
