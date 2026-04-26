@@ -11,6 +11,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
 	_ "github.com/devsy-org/devsy/e2e/tests/context"
 	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
+	_ "github.com/devsy-org/devsy/e2e/tests/down"
 	_ "github.com/devsy-org/devsy/e2e/tests/ide"
 	_ "github.com/devsy-org/devsy/e2e/tests/integration"
 	_ "github.com/devsy-org/devsy/e2e/tests/machine"
