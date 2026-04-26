@@ -309,22 +309,26 @@ func pipe(
 	toStdin io.WriteCloser, fromStdin io.Reader,
 	toStdout io.Writer, fromStdout io.ReadCloser,
 ) error {
-	errChan := make(chan error, 2)
+	stdinErr := make(chan error, 1)
+	stdoutErr := make(chan error, 1)
+
 	go func() {
 		_, err := io.Copy(toStdout, fromStdout)
-		errChan <- err
+		stdoutErr <- err
 	}()
 	go func() {
 		_, err := io.Copy(toStdin, fromStdin)
-		errChan <- err
+		stdinErr <- err
 	}()
 
-	first := <-errChan
+	err1 := <-stdinErr
+	err2 := <-stdoutErr
 
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
-	<-errChan
-
-	return first
+	if err1 != nil {
+		return err1
+	}
+	return err2
 }
