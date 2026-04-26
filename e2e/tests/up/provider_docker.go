@@ -54,7 +54,7 @@ var _ = ginkgo.Describe(
 					"devsy-e2e-test-container=true",
 					"-w",
 					"/workspaces/e2e",
-					"alpine",
+					"ghcr.io/devsy-org/test-images/base:alpine",
 					"sleep",
 					"infinity",
 				},
@@ -98,7 +98,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("variables substitution", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-variables",
 				"--init-env", "CUSTOM_VAR=custom_value",
-				"--init-env", "CUSTOM_IMAGE=alpine:latest")
+				"--init-env", "CUSTOM_IMAGE=ghcr.io/devsy-org/test-images/base:alpine")
 			framework.ExpectNoError(err)
 
 			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
@@ -172,7 +172,7 @@ var _ = ginkgo.Describe(
 
 			customImage, err := dtc.execSSHCapture(ctx, workspace.ID, "cat $HOME/custom-image.out")
 			framework.ExpectNoError(err)
-			gomega.Expect(customImage).To(gomega.Equal("alpine:latest"))
+			gomega.Expect(customImage).To(gomega.Equal("ghcr.io/devsy-org/test-images/base:alpine"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("variable substitution with defaults", func(ctx context.Context) {
@@ -272,7 +272,7 @@ var _ = ginkgo.Describe(
 				ctx,
 				"tests/up/testdata/docker",
 				"--devcontainer-image",
-				"alpine",
+				"ghcr.io/devsy-org/test-images/base:alpine",
 			)
 			framework.ExpectNoError(err)
 
@@ -286,7 +286,7 @@ var _ = ginkgo.Describe(
 				ctx,
 				"tests/up/testdata/docker-with-multi-stage-build",
 				"--devcontainer-image",
-				"alpine",
+				"ghcr.io/devsy-org/test-images/base:alpine",
 			)
 			framework.ExpectNoError(err)
 

@@ -1,5 +1,5 @@
 {
   "name": "Go",
-  "image": "ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "shutdownAction": "none"
 }

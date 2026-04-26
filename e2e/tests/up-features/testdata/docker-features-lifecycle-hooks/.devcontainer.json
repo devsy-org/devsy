@@ -1,6 +1,6 @@
 {
   "name": "Test Git",
-  "image": "ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {}
   },

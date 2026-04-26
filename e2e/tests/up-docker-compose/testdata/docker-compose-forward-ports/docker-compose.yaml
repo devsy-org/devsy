@@ -7,4 +7,4 @@ services:
     volumes:
       - .:/workspaces:cached
   nginx:
-    image: nginxinc/nginx-unprivileged
+    image: ghcr.io/devsy-org/test-images/nginx-unprivileged:latest

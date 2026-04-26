@@ -168,7 +168,10 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 		tempDir, err := setupWorkspace("tests/up/testdata/docker", initialDir, f)
 		framework.ExpectNoError(err)
 
-		err = f.DevsyUp(ctx, tempDir, "--devcontainer-image", "alpine")
+		err = f.DevsyUp(
+			ctx, tempDir,
+			"--devcontainer-image", "ghcr.io/devsy-org/test-images/base:alpine",
+		)
 		framework.ExpectNoError(err)
 
 		out, err := f.DevsySSH(ctx, tempDir, "grep ^ID= /etc/os-release")
@@ -191,7 +194,10 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 			)
 			framework.ExpectNoError(err)
 
-			err = f.DevsyUp(ctx, tempDir, "--devcontainer-image", "alpine")
+			err = f.DevsyUp(
+				ctx, tempDir,
+				"--devcontainer-image", "ghcr.io/devsy-org/test-images/base:alpine",
+			)
 			framework.ExpectNoError(err)
 
 			out, err := f.DevsySSH(ctx, tempDir, "grep ^ID= /etc/os-release")

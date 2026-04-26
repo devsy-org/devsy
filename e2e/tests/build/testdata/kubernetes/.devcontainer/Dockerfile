@@ -1,4 +1,4 @@
-FROM alpine AS start
+FROM ghcr.io/devsy-org/test-images/base:alpine AS start
 
 ENV MY_TEST=test123
 
