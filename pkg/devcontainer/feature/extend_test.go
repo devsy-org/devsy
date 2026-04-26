@@ -330,7 +330,7 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_NoOverride() {
 	}
 }
 
-func (suite *ExtendTestSuite) TestComputeFeatureOrder_WithOverride() {
+func (suite *ExtendTestSuite) TestComputeFeatureOrder_OverrideViolatesDependsOn() {
 	devContainer := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			OverrideFeatureInstallOrder: []string{"feature-a", "feature-b"},
@@ -347,17 +347,34 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_WithOverride() {
 		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 
+	_, err := getSortedFeatureSets(devContainer, features)
+	suite.Error(err)
+	suite.Contains(err.Error(), "overrideFeatureInstallOrder")
+	suite.Contains(err.Error(), "dependency")
+}
+
+func (suite *ExtendTestSuite) TestComputeFeatureOrder_ValidOverride() {
+	devContainer := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			OverrideFeatureInstallOrder: []string{"feature-b", "feature-a"},
+		},
+	}
+
+	features := []*config.FeatureSet{
+		{
+			ConfigID: "feature-a",
+			Config: &config.FeatureConfig{
+				DependsOn: config.DependsOnField{"feature-b": map[string]any{}},
+			},
+		},
+		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+	}
+
 	order, err := getSortedFeatureSets(devContainer, features)
 	suite.Require().NoError(err)
 	suite.Len(order, 2)
-	if order[0].ConfigID != "feature-a" || order[1].ConfigID != "feature-b" {
-		suite.Failf(
-			"Order mismatch",
-			"Expected [feature-a, feature-b], got [%s, %s]",
-			order[0].ConfigID,
-			order[1].ConfigID,
-		)
-	}
+	suite.Equal("feature-b", order[0].ConfigID)
+	suite.Equal("feature-a", order[1].ConfigID)
 }
 
 func (suite *ExtendTestSuite) TestComputeFeatureOrder_PartialOverride() {
@@ -387,28 +404,42 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_PartialOverride() {
 	}
 }
 
-func (suite *ExtendTestSuite) TestApplyManualOrdering() {
-	automaticOrder := []*config.FeatureSet{
-		{ConfigID: "feature-a"},
-		{ConfigID: "feature-b"},
-		{ConfigID: "feature-c"},
+func (suite *ExtendTestSuite) TestBuildOverridePriority() {
+	features := []*config.FeatureSet{
+		{ConfigID: "feature-a", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: "feature-c", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
+	lookup := buildFeatureLookupMap(features)
 
 	overrideOrder := []string{"feature-c", "feature-a"}
-	result := sortFeaturesByOverride(overrideOrder, automaticOrder)
-	expected := []string{"feature-c", "feature-a", "feature-b"}
-	suite.Len(result, 3)
-	for i, expectedID := range expected {
-		if result[i].ConfigID != expectedID {
-			suite.Failf(
-				"Position mismatch",
-				"Position %d: expected %s, got %s",
-				i,
-				expectedID,
-				result[i].ConfigID,
-			)
-		}
+	priority := buildOverridePriority(overrideOrder, lookup)
+
+	suite.Equal(0, priority["feature-c"])
+	suite.Equal(1, priority["feature-a"])
+	_, hasB := priority["feature-b"]
+	suite.False(hasB)
+}
+
+func (suite *ExtendTestSuite) TestOverridePriorityAffectsSortOrder() {
+	devContainer := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			OverrideFeatureInstallOrder: []string{"feature-c", "feature-a"},
+		},
 	}
+
+	features := []*config.FeatureSet{
+		{ConfigID: "feature-a", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: "feature-c", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+	}
+
+	order, err := getSortedFeatureSets(devContainer, features)
+	suite.Require().NoError(err)
+	suite.Len(order, 3)
+	suite.Equal("feature-c", order[0].ConfigID)
+	suite.Equal("feature-a", order[1].ConfigID)
+	suite.Equal("feature-b", order[2].ConfigID)
 }
 
 func (suite *ExtendTestSuite) TestExtractFeatureByID() {
