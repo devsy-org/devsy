@@ -51,52 +51,52 @@ var MapLanguages = map[ProgrammingLanguage]ProgrammingLanguage{
 var MapConfig = map[ProgrammingLanguage]*config.DevContainerConfig{
 	None: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/base:ubuntu",
+			Image: "ghcr.io/devsy-org/devcontainers/base:ubuntu",
 		},
 	},
 	JavaScript: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/javascript-node",
+			Image: "ghcr.io/devsy-org/devcontainers/javascript-node",
 		},
 	},
 	Python: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/python:3",
+			Image: "ghcr.io/devsy-org/devcontainers/python:3",
 		},
 	},
 	Java: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/java",
+			Image: "ghcr.io/devsy-org/devcontainers/java",
 		},
 	},
 	Go: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/go",
+			Image: "ghcr.io/devsy-org/devcontainers/go",
 		},
 	},
 	Rust: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/rust:latest",
+			Image: "ghcr.io/devsy-org/devcontainers/rust:latest",
 		},
 	},
 	Ruby: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/ruby",
+			Image: "ghcr.io/devsy-org/devcontainers/ruby",
 		},
 	},
 	PHP: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/php",
+			Image: "ghcr.io/devsy-org/devcontainers/php",
 		},
 	},
 	Cpp: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/cpp",
+			Image: "ghcr.io/devsy-org/devcontainers/cpp",
 		},
 	},
 	DotNet: {
 		ImageContainer: config.ImageContainer{
-			Image: "mcr.microsoft.com/devcontainers/dotnet",
+			Image: "ghcr.io/devsy-org/devcontainers/dotnet",
 		},
 	},
 }
