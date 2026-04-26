@@ -49,7 +49,7 @@ set -a && source .env && set +a
 
 ## Running Tests
 
-All targets live in `Taskfile.yml`. The build step (`cli:test:e2e:build`) compiles the devsy binary into `e2e/bin/devsy-linux-amd64` via goreleaser before tests run.
+All targets live in `Taskfile.yml`. The full suite target (`cli:test:e2e`) automatically builds the test binary as a dependency. The focused and suite-filtered targets do **not** — run `task cli:test:e2e:build` first when using those.
 
 ### Run all E2E tests
 
@@ -61,7 +61,10 @@ This builds the test binary (if missing), installs Ginkgo, then runs the full su
 
 ### Run focused tests by pattern
 
+Build the binary first — this target does not auto-build:
+
 ```bash
+task cli:test:e2e:build
 task cli:test:e2e:focus -- "machineprovider"
 ```
 
@@ -69,7 +72,10 @@ Passes `--focus <pattern>` to Ginkgo. Matches against `Describe`/`It` block name
 
 ### Run a labeled test suite
 
+Build the binary first — this target does not auto-build:
+
 ```bash
+task cli:test:e2e:build
 task cli:test:e2e:suite -- "integration"
 ```
 
