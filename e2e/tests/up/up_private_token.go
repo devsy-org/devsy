@@ -54,6 +54,7 @@ var _ = ginkgo.Describe(
 			name := "testprivaterepo"
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
 
+			// test repo must have .devcontainer.json to avoid MCR rate limits
 			err = f.DevsyUp(ctx, "https://github.com/"+username+"/test_private_repo.git")
 			framework.ExpectNoError(err)
 
