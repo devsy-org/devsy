@@ -26,9 +26,8 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	stopCmd := &cobra.Command{
-		Use:     "stop [flags] [workspace-path|workspace-name]",
-		Aliases: []string{"down"},
-		Short:   "Stops an existing workspace",
+		Use:   "stop [flags] [workspace-path|workspace-name]",
+		Short: "Stops an existing workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)

@@ -248,6 +248,22 @@ func (g *Graph[T]) Sort() ([]T, error) {
 	return result, nil
 }
 
+// SortWithPriority performs a topological sort where, within each round of
+// nodes that have zero in-degree, nodes are ordered by the supplied priority
+// map (lower value = installed first). Nodes not in the priority map sort
+// alphabetically after prioritized nodes.
+func (g *Graph[T]) SortWithPriority(priority map[string]int) ([]T, error) {
+	sortedIDs, err := g.sortNodeIDsWithPriority(priority)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]T, len(sortedIDs))
+	for i, id := range sortedIDs {
+		result[i] = g.nodes[id]
+	}
+	return result, nil
+}
+
 func (g *Graph[T]) SortNodeIDs() ([]string, error) {
 	return g.sortNodeIDs()
 }
@@ -349,4 +365,69 @@ func processNeighbors(
 			*queue = slices.Insert(*queue, insertPosition, neighborNode)
 		}
 	}
+}
+
+func (g *Graph[T]) sortNodeIDsWithPriority(priority map[string]int) ([]string, error) {
+	workingInDegree := copyInDegreeMap(g.inDegree)
+	ready := initializeQueue(workingInDegree)
+	sortedResult := make([]string, 0, len(g.nodes))
+
+	for len(ready) > 0 {
+		sortByPriority(ready, priority)
+
+		current := ready[0]
+		ready = ready[1:]
+		sortedResult = append(sortedResult, current)
+
+		processNeighborsUnordered(g.edges, current, workingInDegree, &ready)
+	}
+
+	if len(sortedResult) != len(g.nodes) {
+		return nil, circularDependencyError(workingInDegree)
+	}
+
+	return sortedResult, nil
+}
+
+func sortByPriority(ids []string, priority map[string]int) {
+	sort.Slice(ids, func(i, j int) bool {
+		return comparePriority(ids[i], ids[j], priority)
+	})
+}
+
+func comparePriority(a, b string, priority map[string]int) bool {
+	pa, oka := priority[a]
+	pb, okb := priority[b]
+	if oka != okb {
+		return oka
+	}
+	if oka && pa != pb {
+		return pa < pb
+	}
+	return a < b
+}
+
+func processNeighborsUnordered(
+	edges map[string][]string,
+	currentNode string,
+	inDegree map[string]int,
+	queue *[]string,
+) {
+	for _, neighbor := range edges[currentNode] {
+		inDegree[neighbor]--
+		if inDegree[neighbor] == 0 {
+			*queue = append(*queue, neighbor)
+		}
+	}
+}
+
+func circularDependencyError(inDegree map[string]int) error {
+	remaining := []string{}
+	for id, deg := range inDegree {
+		if deg > 0 {
+			remaining = append(remaining, id)
+		}
+	}
+	sort.Strings(remaining)
+	return fmt.Errorf("circular dependency detected among nodes: %v", remaining)
 }

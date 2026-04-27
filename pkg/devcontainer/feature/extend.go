@@ -441,46 +441,93 @@ func getSortedFeatureSets(
 	devContainer *config.DevContainerConfig,
 	featureSets []*config.FeatureSet,
 ) ([]*config.FeatureSet, error) {
-	orderedFeatureSets, err := getOrderedFeatureSets(featureSets)
-	if err != nil {
+	if len(devContainer.OverrideFeatureInstallOrder) == 0 {
+		return getOrderedFeatureSets(featureSets)
+	}
+
+	featureLookup := buildFeatureLookupMap(featureSets)
+	priority := buildOverridePriority(devContainer.OverrideFeatureInstallOrder, featureLookup)
+
+	if err := validateOverrideOrder(priority, featureSets, featureLookup); err != nil {
 		return nil, err
 	}
 
-	if len(devContainer.OverrideFeatureInstallOrder) == 0 {
-		return orderedFeatureSets, nil
-	}
-
-	return sortFeaturesByOverride(devContainer.OverrideFeatureInstallOrder, orderedFeatureSets), nil
+	return getOrderedFeatureSetsWithPriority(featureSets, priority)
 }
 
-func sortFeaturesByOverride(
+func buildOverridePriority(
 	overrideOrder []string,
+	featureLookup map[string]*config.FeatureSet,
+) map[string]int {
+	priority := make(map[string]int)
+	for i, id := range overrideOrder {
+		if _, exists := featureLookup[id]; exists {
+			priority[id] = i
+			continue
+		}
+		normalizedID := normalizeFeatureID(id)
+		if _, exists := featureLookup[normalizedID]; exists {
+			priority[normalizedID] = i
+		}
+	}
+	return priority
+}
+
+func validateOverrideOrder(
+	priority map[string]int,
 	featureSets []*config.FeatureSet,
-) []*config.FeatureSet {
-	orderedFeatures := make([]*config.FeatureSet, 0, len(featureSets))
-	seen := make(map[string]bool)
-
-	for _, overrideFeatureID := range overrideOrder {
-		feature := extractFeatureByID(featureSets, overrideFeatureID)
-		if feature == nil {
-			normalizedID := normalizeFeatureID(overrideFeatureID)
-			feature = extractFeatureByID(featureSets, normalizedID)
-		}
-
-		if feature != nil && !seen[feature.ConfigID] {
-			orderedFeatures = append(orderedFeatures, feature)
-			seen[feature.ConfigID] = true
-		}
-	}
-
+	featureLookup map[string]*config.FeatureSet,
+) error {
 	for _, feature := range featureSets {
-		if !seen[feature.ConfigID] {
-			orderedFeatures = append(orderedFeatures, feature)
-			seen[feature.ConfigID] = true
+		featurePriority, featureHasPriority := priority[feature.ConfigID]
+		if !featureHasPriority {
+			continue
+		}
+
+		for depID := range feature.Config.DependsOn {
+			depConfigID := resolveDepConfigID(depID, featureLookup)
+			if depConfigID == "" {
+				continue
+			}
+			depPriority, depHasPriority := priority[depConfigID]
+			if !depHasPriority {
+				continue
+			}
+			if featurePriority < depPriority {
+				return fmt.Errorf(
+					"overrideFeatureInstallOrder places %q (position %d)"+
+						" before its dependency %q (position %d)",
+					feature.ConfigID,
+					featurePriority,
+					depConfigID,
+					depPriority,
+				)
+			}
 		}
 	}
+	return nil
+}
 
-	return orderedFeatures
+func resolveDepConfigID(depID string, featureLookup map[string]*config.FeatureSet) string {
+	if _, exists := featureLookup[depID]; exists {
+		return depID
+	}
+	normalizedID := normalizeFeatureID(depID)
+	if _, exists := featureLookup[normalizedID]; exists {
+		return normalizedID
+	}
+	return ""
+}
+
+func getOrderedFeatureSetsWithPriority(
+	features []*config.FeatureSet,
+	priority map[string]int,
+) ([]*config.FeatureSet, error) {
+	dependencyGraph, err := buildFeatureDependencyGraph(features)
+	if err != nil {
+		return nil, err
+	}
+	return dependencyGraph.SortWithPriority(priority)
 }
 
 func extractFeatureByID(features []*config.FeatureSet, featureID string) *config.FeatureSet {
