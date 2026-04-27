@@ -128,8 +128,11 @@ func (t *tunnelServer) RunWithResult(
 	go func() {
 		errChan <- s.Serve(lis)
 	}()
+
+	stopCtx, stopCancel := context.WithCancel(ctx)
+	defer stopCancel()
 	go func() {
-		<-ctx.Done()
+		<-stopCtx.Done()
 		s.Stop()
 	}()
 
