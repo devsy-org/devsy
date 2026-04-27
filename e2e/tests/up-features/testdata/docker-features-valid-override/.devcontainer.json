@@ -1,0 +1,13 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
+  "features": {
+    "./features/base": {},
+    "./features/alpha": {},
+    "./features/consumer": {}
+  },
+  "overrideFeatureInstallOrder": [
+    "./features/alpha",
+    "./features/base",
+    "./features/consumer"
+  ]
+}
