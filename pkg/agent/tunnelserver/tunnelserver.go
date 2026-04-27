@@ -129,8 +129,18 @@ func (t *tunnelServer) RunWithResult(
 		errChan <- s.Serve(lis)
 	}()
 
+	stopCtx, stopCancel := context.WithCancel(ctx)
+	defer stopCancel()
+	go func() {
+		<-stopCtx.Done()
+		s.Stop()
+	}()
+
 	select {
 	case err := <-errChan:
+		if t.result != nil {
+			return t.result, nil
+		}
 		return nil, err
 	case <-ctx.Done():
 		return t.result, nil
