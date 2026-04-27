@@ -118,7 +118,9 @@ func resolveDockerCommand(
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
-		return os.ExpandEnv(providerConfig.Agent.Docker.Path)
+		if expanded := os.ExpandEnv(providerConfig.Agent.Docker.Path); expanded != "" {
+			return expanded
+		}
 	}
 
 	return defaultDockerCommand
