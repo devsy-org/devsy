@@ -24,9 +24,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			tempDir, err := framework.CopyToTempDir("tests/exec/testdata")
 			framework.ExpectNoError(err)
 
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -51,9 +49,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			tempDir, err := framework.CopyToTempDir("tests/exec/testdata")
 			framework.ExpectNoError(err)
 
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
