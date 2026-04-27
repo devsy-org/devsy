@@ -128,9 +128,16 @@ func (t *tunnelServer) RunWithResult(
 	go func() {
 		errChan <- s.Serve(lis)
 	}()
+	go func() {
+		<-ctx.Done()
+		s.Stop()
+	}()
 
 	select {
 	case err := <-errChan:
+		if t.result != nil {
+			return t.result, nil
+		}
 		return nil, err
 	case <-ctx.Done():
 		return t.result, nil
