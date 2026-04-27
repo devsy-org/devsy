@@ -17,6 +17,8 @@ import (
 	"golang.org/x/term"
 )
 
+const defaultDockerCommand = "docker"
+
 // ExecCmd holds the exec cmd flags.
 type ExecCmd struct {
 	*flags.GlobalFlags
@@ -103,7 +105,7 @@ func resolveDockerCommand(
 	workspace *provider2.Workspace,
 ) string {
 	if workspace == nil || workspace.Context == "" {
-		return "docker"
+		return defaultDockerCommand
 	}
 
 	providerConfig, err := provider2.LoadProviderConfig(
@@ -112,14 +114,14 @@ func resolveDockerCommand(
 	)
 	if err != nil {
 		log.Debugf("Failed to load provider config, defaulting to 'docker': %v", err)
-		return "docker"
+		return defaultDockerCommand
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
 		return providerConfig.Agent.Docker.Path
 	}
 
-	return "docker"
+	return defaultDockerCommand
 }
 
 func findRunningContainer(
@@ -174,7 +176,8 @@ func (cmd *ExecCmd) execInContainer(
 	execArgs = append(execArgs, containerID)
 	execArgs = append(execArgs, args...)
 
-	log.Debugf("Executing in container: %s %s", dockerCommand, strings.Join(redactExecArgs(execArgs), " "))
+	redacted := strings.Join(redactExecArgs(execArgs), " ")
+	log.Debugf("Executing in container: %s %s", dockerCommand, redacted)
 	return dockerHelper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
 }
 
