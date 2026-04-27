@@ -174,6 +174,24 @@ func (cmd *ExecCmd) execInContainer(
 	execArgs = append(execArgs, containerID)
 	execArgs = append(execArgs, args...)
 
-	log.Debugf("Executing in container: %s %s", dockerCommand, strings.Join(execArgs, " "))
+	log.Debugf("Executing in container: %s %s", dockerCommand, strings.Join(redactExecArgs(execArgs), " "))
 	return dockerHelper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func redactExecArgs(args []string) []string {
+	redacted := make([]string, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-e" && i+1 < len(args) {
+			redacted[i] = args[i]
+			i++
+			if k, _, ok := strings.Cut(args[i], "="); ok {
+				redacted[i] = k + "=<redacted>"
+			} else {
+				redacted[i] = args[i]
+			}
+		} else {
+			redacted[i] = args[i]
+		}
+	}
+	return redacted
 }
