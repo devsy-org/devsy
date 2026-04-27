@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -82,7 +83,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	dockerCommand := resolveDockerCommand(client.WorkspaceConfig())
 
 	containerDetails, err := findRunningContainer(
-		ctx, dockerCommand, client.Workspace(),
+		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(client.WorkspaceConfig()),
 	)
 	if err != nil {
 		return err
