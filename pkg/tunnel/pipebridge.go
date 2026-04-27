@@ -62,10 +62,11 @@ func (pb *PipeBridge) RunPair(
 		handlerChan <- handlerFn(cancelCtx, pb.StdoutReader, pb.StdinWriter)
 	}()
 
-	return awaitPair(tunnelChan, handlerChan, pb.StdoutWriter, pb.StdinWriter)
+	return awaitPair(cancel, tunnelChan, handlerChan, pb.StdoutWriter, pb.StdinWriter)
 }
 
 func awaitPair(
+	cancel context.CancelFunc,
 	tunnelChan, handlerChan <-chan error,
 	stdoutWriter, stdinWriter *os.File,
 ) error {
@@ -78,6 +79,7 @@ func awaitPair(
 		default:
 		}
 	case tunnelErr = <-tunnelChan:
+		cancel()
 		_ = stdoutWriter.Close()
 		_ = stdinWriter.Close()
 		handlerErr = <-handlerChan
