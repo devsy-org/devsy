@@ -100,6 +100,8 @@ func MergeConfiguration(
 		reversed,
 		func(entry *ImageMetadata) map[string]*string { return entry.RemoteEnv },
 	)
+	// Config-level remoteEnv takes precedence over image metadata remoteEnv.
+	maps.Copy(mergedConfig.RemoteEnv, copiedConfig.RemoteEnv)
 	mergedConfig.ContainerEnv = mergeMaps(
 		reversed,
 		func(entry *ImageMetadata) map[string]string { return entry.ContainerEnv },
