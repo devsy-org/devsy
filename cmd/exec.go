@@ -233,14 +233,8 @@ func buildExecEnv(
 	env := make(map[string]string, len(probedEnv))
 	maps.Copy(env, probedEnv)
 
-	if result != nil && result.MergedConfig != nil {
-		for k, v := range result.MergedConfig.RemoteEnv {
-			if v == nil {
-				delete(env, k)
-			} else {
-				env[k] = *v
-			}
-		}
+	if result != nil {
+		applyRemoteEnv(env, mergedRemoteEnv(result))
 	}
 
 	for _, e := range cliEnv {
@@ -250,6 +244,27 @@ func buildExecEnv(
 	}
 
 	return env
+}
+
+func mergedRemoteEnv(result *devcconfig.Result) map[string]*string {
+	merged := map[string]*string{}
+	if result.MergedConfig != nil {
+		maps.Copy(merged, result.MergedConfig.RemoteEnv)
+	}
+	if result.DevContainerConfigWithPath != nil && result.DevContainerConfigWithPath.Config != nil {
+		maps.Copy(merged, result.DevContainerConfigWithPath.Config.RemoteEnv)
+	}
+	return merged
+}
+
+func applyRemoteEnv(env map[string]string, remoteEnv map[string]*string) {
+	for k, v := range remoteEnv {
+		if v == nil {
+			delete(env, k)
+		} else {
+			env[k] = *v
+		}
+	}
 }
 
 type execOpts struct {
