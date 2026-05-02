@@ -1,0 +1,89 @@
+name: Local Test
+
+# Lightweight workflow for local validation with nektos/act.
+# Combines pre-commit, lint, and e2e tests in a single file.
+#
+# Usage:
+#   act workflow_dispatch -W .github/workflows/local-test.yml                  # run all jobs
+#   act workflow_dispatch -W .github/workflows/local-test.yml -j lint          # lint only
+#   act workflow_dispatch -W .github/workflows/local-test.yml -j pre-commit    # pre-commit only
+#   act workflow_dispatch -W .github/workflows/local-test.yml -j e2e           # e2e tests
+#   act workflow_dispatch -W .github/workflows/local-test.yml -j e2e \
+#     --input test_focus="exec"                                                # focused e2e
+#
+# Taskfile shortcut:
+#   task cli:act:local                   # all jobs
+#   task cli:act:local:focus -- "exec"   # focused e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_focus:
+        description: "Ginkgo --label-filter for e2e tests (e.g. 'exec')"
+        required: false
+        default: ""
+
+jobs:
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: j178/prek-action@v2
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          only-new-issues: true
+
+  e2e:
+    name: E2E Tests
+    runs-on: js-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: install task
+        run: go install github.com/go-task/task/v3/cmd/task@latest
+
+      - name: install goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          install-only: true
+
+      - name: check docker access
+        run: docker version && docker ps -a
+
+      - name: build test binary
+        run: task cli:test:e2e:build
+
+      - name: run tests
+        run: |
+          KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+            PATH="${PATH}" \
+            GOROOT="${GOROOT}" \
+            ${{ github.event.inputs.test_focus == '' && 'task cli:test:e2e' || format('task cli:test:e2e:suite -- "{0}"', github.event.inputs.test_focus) }}
