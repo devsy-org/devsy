@@ -120,6 +120,57 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("vscode"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should inject remoteEnv from devcontainer config",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDir("tests/exec/testdata-remoteenv")
+			framework.ExpectNoError(err)
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"exec",
+				"--workspace-folder", tempDir,
+				"--", "sh", "-c", "echo -n $CONFIG_VAR",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("from_config"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should let CLI remote-env override config remoteEnv",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDir("tests/exec/testdata-remoteenv")
+			framework.ExpectNoError(err)
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"exec",
+				"--workspace-folder", tempDir,
+				"--remote-env", "CONFIG_VAR=from_cli",
+				"--", "sh", "-c", "echo -n $CONFIG_VAR",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("from_cli"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("should fail without --workspace-folder flag",
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")

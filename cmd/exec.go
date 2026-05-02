@@ -104,8 +104,9 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 
 	workdir := resolveExecWorkdir(result, client.Workspace())
 	user := devcconfig.GetRemoteUser(result)
+	envMap := buildExecEnv(result, cmd.RemoteEnv)
 
-	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, user, args)
+	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, user, envMap, args)
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {
@@ -182,12 +183,33 @@ func resolveExecWorkdir(result *devcconfig.Result, workspaceName string) string 
 	return path.Join("/workspaces", workspaceName)
 }
 
+func buildExecEnv(result *devcconfig.Result, cliEnv []string) map[string]string {
+	env := make(map[string]string)
+
+	if result != nil && result.MergedConfig != nil {
+		for k, v := range result.MergedConfig.RemoteEnv {
+			if v != nil {
+				env[k] = *v
+			}
+		}
+	}
+
+	for _, e := range cliEnv {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			env[k] = v
+		}
+	}
+
+	return env
+}
+
 func (cmd *ExecCmd) execInContainer(
 	ctx context.Context,
 	dockerCommand string,
 	containerID string,
 	workdir string,
 	user string,
+	envMap map[string]string,
 	args []string,
 ) error {
 	dockerHelper := &docker.DockerHelper{
@@ -198,8 +220,8 @@ func (cmd *ExecCmd) execInContainer(
 	if term.IsTerminal(int(os.Stdin.Fd())) { // #nosec G115 -- fd is always a valid file descriptor
 		execArgs = append(execArgs, "-t")
 	}
-	for _, env := range cmd.RemoteEnv {
-		execArgs = append(execArgs, "-e", env)
+	for k, v := range envMap {
+		execArgs = append(execArgs, "-e", k+"="+v)
 	}
 	if workdir != "" {
 		execArgs = append(execArgs, "--workdir", workdir)

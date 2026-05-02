@@ -1,0 +1,7 @@
+{
+    "name": "Exec RemoteEnv Test",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "remoteEnv": {
+        "CONFIG_VAR": "from_config"
+    }
+}
