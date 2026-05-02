@@ -1,0 +1,7 @@
+{
+  "name": "Exec RemoteEnv Test",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
+  "remoteEnv": {
+    "CONFIG_VAR": "from_config"
+  }
+}

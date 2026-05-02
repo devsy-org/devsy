@@ -1,0 +1,4 @@
+{
+  "name": "Exec Test",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu"
+}

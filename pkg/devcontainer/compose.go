@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -270,11 +271,12 @@ func (r *runner) runDockerCompose(
 		}
 	}
 
+	var extraConfig *config.DevContainerConfig
 	if options.ExtraDevContainerPath != "" {
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+		extraConfig, err = config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +286,10 @@ func (r *runner) runDockerCompose(
 	mergedConfig, err := config.MergeConfiguration(parsedConfig.Config, imageMetadataConfig.Config)
 	if err != nil {
 		return nil, fmt.Errorf("merge config: %w", err)
+	}
+
+	if extraConfig != nil {
+		maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
 	}
 
 	// expose the compose project name inside the container
@@ -462,11 +468,12 @@ func (r *runner) startContainer(
 			return nil, fmt.Errorf("inspect image: %w", err)
 		}
 
+		var extraConfig *config.DevContainerConfig
 		if options.ExtraDevContainerPath != "" {
 			if extendResult.imageMetadata == nil {
 				extendResult.imageMetadata = &config.ImageMetadataConfig{}
 			}
-			extraConfig, err := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+			extraConfig, err = config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
 			if err != nil {
 				return nil, err
 			}
@@ -479,6 +486,10 @@ func (r *runner) startContainer(
 		)
 		if err != nil {
 			return nil, fmt.Errorf("merge configuration: %w", err)
+		}
+
+		if extraConfig != nil {
+			maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
 		}
 
 		additionalLabels := map[string]string{

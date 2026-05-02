@@ -168,11 +168,12 @@ func (r *runner) mergeExistingContainerConfig(
 		return nil, err
 	}
 
+	var extraConfig *config.DevContainerConfig
 	if p.options.ExtraDevContainerPath != "" {
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(p.options.ExtraDevContainerPath)
+		extraConfig, err = config.ParseDevContainerJSONFile(p.options.ExtraDevContainerPath)
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +187,11 @@ func (r *runner) mergeExistingContainerConfig(
 	if err != nil {
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
+
+	if extraConfig != nil {
+		maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
+	}
+
 	return mergedConfig, nil
 }
 
@@ -240,6 +246,14 @@ func (r *runner) resolveNewContainer(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("merge config: %w", err)
+	}
+
+	if p.options.ExtraDevContainerPath != "" {
+		extraConfig, err := config.ParseDevContainerJSONFile(p.options.ExtraDevContainerPath)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
 	}
 
 	r.injectDaemonEntrypoint(p, mergedConfig)
