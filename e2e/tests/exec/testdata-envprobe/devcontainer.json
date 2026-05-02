@@ -1,5 +1,5 @@
 {
-    "name": "Exec EnvProbe Test",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    "userEnvProbe": "loginInteractiveShell"
+  "name": "Exec EnvProbe Test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "userEnvProbe": "loginInteractiveShell"
 }
