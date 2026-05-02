@@ -1,4 +1,4 @@
 {
   "name": "Exec Test",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu"
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu"
 }
