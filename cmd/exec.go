@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"strings"
@@ -209,11 +210,8 @@ func buildExecEnv(
 	cliEnv []string,
 	probedEnv map[string]string,
 ) map[string]string {
-	env := make(map[string]string)
-
-	for k, v := range probedEnv {
-		env[k] = v
-	}
+	env := make(map[string]string, len(probedEnv))
+	maps.Copy(env, probedEnv)
 
 	if result != nil && result.MergedConfig != nil {
 		for k, v := range result.MergedConfig.RemoteEnv {
@@ -285,11 +283,15 @@ func parseEnvOutput(out []byte, sep byte) map[string]string {
 	return env
 }
 
+type containerTarget struct {
+	helper      *docker.DockerHelper
+	containerID string
+	user        string
+}
+
 func probeContainerEnv(
 	ctx context.Context,
-	dockerHelper *docker.DockerHelper,
-	containerID string,
-	user string,
+	target containerTarget,
 	probe string,
 ) map[string]string {
 	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
@@ -314,22 +316,22 @@ func probeContainerEnv(
 	}
 
 	execArgs := []string{"exec"}
-	if user != "" {
-		execArgs = append(execArgs, "--user", user)
+	if target.user != "" {
+		execArgs = append(execArgs, "--user", target.user)
 	}
-	execArgs = append(execArgs, containerID, "sh", shellFlag, "cat /proc/self/environ")
+	execArgs = append(execArgs, target.containerID, "sh", shellFlag, "cat /proc/self/environ")
 
 	var stdout bytes.Buffer
-	err = dockerHelper.Run(ctx, execArgs, nil, &stdout, io.Discard)
+	err = target.helper.Run(ctx, execArgs, nil, &stdout, io.Discard)
 	if err != nil {
 		log.Debugf("Env probe with /proc/self/environ failed: %v, trying printenv", err)
 		execArgs = []string{"exec"}
-		if user != "" {
-			execArgs = append(execArgs, "--user", user)
+		if target.user != "" {
+			execArgs = append(execArgs, "--user", target.user)
 		}
-		execArgs = append(execArgs, containerID, "sh", shellFlag, "printenv")
+		execArgs = append(execArgs, target.containerID, "sh", shellFlag, "printenv")
 		stdout.Reset()
-		err = dockerHelper.Run(ctx, execArgs, nil, &stdout, io.Discard)
+		err = target.helper.Run(ctx, execArgs, nil, &stdout, io.Discard)
 		if err != nil {
 			log.Warnf("Failed to probe user env: %v", err)
 			return map[string]string{}
