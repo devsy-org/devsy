@@ -120,6 +120,10 @@ GitHub Actions workflows in `.github/workflows/`:
 - `commit.yml` — commit validation
 - `pre-commit.yml` — pre-commit hook validation
 
+## Pull Requests
+
+All PRs must be opened as drafts. Always pass `--draft` to `gh pr create`.
+
 ## Provider Architecture
 
 Providers implement the driver interface in `pkg/driver/`. Current providers:
