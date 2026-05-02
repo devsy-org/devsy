@@ -171,6 +171,56 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("from_cli"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should probe user environment and include PATH",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDir("tests/exec/testdata-envprobe")
+			framework.ExpectNoError(err)
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"exec",
+				"--workspace-folder", tempDir,
+				"--", "sh", "-c", "echo -n $PATH",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.ContainSubstring("/usr/local/bin"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should skip env probe when --default-user-env-probe is none",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDir("tests/exec/testdata-envprobe")
+			framework.ExpectNoError(err)
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			_, _, err = f.ExecCommandCapture(ctx, []string{
+				"exec",
+				"--workspace-folder", tempDir,
+				"--default-user-env-probe", "none",
+				"--", "echo", "-n", "ok",
+			})
+			framework.ExpectNoError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("should fail without --workspace-folder flag",
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")

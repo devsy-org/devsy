@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -25,8 +27,9 @@ const defaultDockerCommand = "docker"
 type ExecCmd struct {
 	*flags.GlobalFlags
 
-	WorkspaceFolder string
-	RemoteEnv       []string
+	WorkspaceFolder     string
+	RemoteEnv           []string
+	DefaultUserEnvProbe string
 }
 
 // NewExecCmd creates a new exec command.
@@ -56,6 +59,13 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			"remote-env",
 			[]string{},
 			"Environment variables to set in the container (KEY=VALUE format)",
+		)
+	execCmd.Flags().
+		StringVar(
+			&cmd.DefaultUserEnvProbe,
+			"default-user-env-probe",
+			"",
+			"Override userEnvProbe from config (loginInteractiveShell, loginShell, interactiveShell, none)",
 		)
 
 	return execCmd
@@ -104,7 +114,18 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 
 	workdir := resolveExecWorkdir(result, client.Workspace())
 	user := devcconfig.GetRemoteUser(result)
-	envMap := buildExecEnv(result, cmd.RemoteEnv)
+
+	userEnvProbe := ""
+	if result != nil && result.MergedConfig != nil {
+		userEnvProbe = result.MergedConfig.UserEnvProbe
+	}
+	if cmd.DefaultUserEnvProbe != "" {
+		userEnvProbe = cmd.DefaultUserEnvProbe
+	}
+
+	dockerHelper := &docker.DockerHelper{DockerCommand: dockerCommand}
+	probedEnv := probeContainerEnv(ctx, dockerHelper, containerDetails.ID, user, userEnvProbe)
+	envMap := buildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
 	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, user, envMap, args)
 }
@@ -183,12 +204,22 @@ func resolveExecWorkdir(result *devcconfig.Result, workspaceName string) string 
 	return path.Join("/workspaces", workspaceName)
 }
 
-func buildExecEnv(result *devcconfig.Result, cliEnv []string) map[string]string {
+func buildExecEnv(
+	result *devcconfig.Result,
+	cliEnv []string,
+	probedEnv map[string]string,
+) map[string]string {
 	env := make(map[string]string)
+
+	for k, v := range probedEnv {
+		env[k] = v
+	}
 
 	if result != nil && result.MergedConfig != nil {
 		for k, v := range result.MergedConfig.RemoteEnv {
-			if v != nil {
+			if v == nil {
+				delete(env, k)
+			} else {
 				env[k] = *v
 			}
 		}
@@ -235,6 +266,78 @@ func (cmd *ExecCmd) execInContainer(
 	redacted := strings.Join(redactExecArgs(execArgs), " ")
 	log.Debugf("Executing in container: %s %s", dockerCommand, redacted)
 	return dockerHelper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func parseEnvOutput(out []byte, sep byte) map[string]string {
+	entries := bytes.Split(out, []byte{sep})
+	env := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if len(e) == 0 {
+			continue
+		}
+		name, value, ok := bytes.Cut(e, []byte{'='})
+		if !ok || len(name) == 0 {
+			continue
+		}
+		env[string(name)] = string(value)
+	}
+	delete(env, "PWD")
+	return env
+}
+
+func probeContainerEnv(
+	ctx context.Context,
+	dockerHelper *docker.DockerHelper,
+	containerID string,
+	user string,
+	probe string,
+) map[string]string {
+	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
+	if err != nil {
+		log.Warnf("Invalid userEnvProbe %q, using default: %v", probe, err)
+		userEnvProbe = devcconfig.DefaultUserEnvProbe
+	}
+	if userEnvProbe == devcconfig.NoneProbe {
+		return map[string]string{}
+	}
+
+	var shellFlag string
+	switch userEnvProbe {
+	case devcconfig.LoginInteractiveShellProbe:
+		shellFlag = "-lic"
+	case devcconfig.LoginShellProbe:
+		shellFlag = "-lc"
+	case devcconfig.InteractiveShellProbe:
+		shellFlag = "-ic"
+	default:
+		shellFlag = "-c"
+	}
+
+	execArgs := []string{"exec"}
+	if user != "" {
+		execArgs = append(execArgs, "--user", user)
+	}
+	execArgs = append(execArgs, containerID, "sh", shellFlag, "cat /proc/self/environ")
+
+	var stdout bytes.Buffer
+	err = dockerHelper.Run(ctx, execArgs, nil, &stdout, io.Discard)
+	if err != nil {
+		log.Debugf("Env probe with /proc/self/environ failed: %v, trying printenv", err)
+		execArgs = []string{"exec"}
+		if user != "" {
+			execArgs = append(execArgs, "--user", user)
+		}
+		execArgs = append(execArgs, containerID, "sh", shellFlag, "printenv")
+		stdout.Reset()
+		err = dockerHelper.Run(ctx, execArgs, nil, &stdout, io.Discard)
+		if err != nil {
+			log.Warnf("Failed to probe user env: %v", err)
+			return map[string]string{}
+		}
+		return parseEnvOutput(stdout.Bytes(), '\n')
+	}
+
+	return parseEnvOutput(stdout.Bytes(), 0)
 }
 
 func redactExecArgs(args []string) []string {
