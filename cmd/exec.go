@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -92,9 +91,21 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	workdir := resolveExecWorkdir(client)
+	var result *devcconfig.Result
+	if workspaceConfig != nil && workspaceConfig.Context != "" && workspaceConfig.ID != "" {
+		result, err = provider2.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
+		if err != nil {
+			log.Warnf("Error loading workspace result: %v", err)
+		}
+	}
+	if result != nil {
+		result.ContainerDetails = containerDetails
+	}
 
-	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, args)
+	workdir := resolveExecWorkdir(result, client.Workspace())
+	user := devcconfig.GetRemoteUser(result)
+
+	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, user, args)
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {
@@ -164,22 +175,11 @@ func findRunningContainer(
 	return container, nil
 }
 
-func resolveExecWorkdir(workspaceClient client2.BaseWorkspaceClient) string {
-	workspaceConfig := workspaceClient.WorkspaceConfig()
-	if workspaceConfig == nil || workspaceConfig.Context == "" || workspaceConfig.ID == "" {
-		return path.Join("/workspaces", workspaceClient.Workspace())
+func resolveExecWorkdir(result *devcconfig.Result, workspaceName string) string {
+	if result != nil && result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
+		return result.MergedConfig.WorkspaceFolder
 	}
-
-	result, err := provider2.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
-	if err != nil {
-		log.Warnf("Error loading workspace result for workdir resolution: %v", err)
-		return path.Join("/workspaces", workspaceClient.Workspace())
-	}
-	if result == nil || result.MergedConfig == nil || result.MergedConfig.WorkspaceFolder == "" {
-		return path.Join("/workspaces", workspaceClient.Workspace())
-	}
-
-	return result.MergedConfig.WorkspaceFolder
+	return path.Join("/workspaces", workspaceName)
 }
 
 func (cmd *ExecCmd) execInContainer(
@@ -187,6 +187,7 @@ func (cmd *ExecCmd) execInContainer(
 	dockerCommand string,
 	containerID string,
 	workdir string,
+	user string,
 	args []string,
 ) error {
 	dockerHelper := &docker.DockerHelper{
@@ -202,6 +203,9 @@ func (cmd *ExecCmd) execInContainer(
 	}
 	if workdir != "" {
 		execArgs = append(execArgs, "--workdir", workdir)
+	}
+	if user != "" {
+		execArgs = append(execArgs, "--user", user)
 	}
 	execArgs = append(execArgs, containerID)
 	execArgs = append(execArgs, args...)
