@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -80,16 +82,19 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("resolve workspace: %w", err)
 	}
 
-	dockerCommand := resolveDockerCommand(client.WorkspaceConfig())
+	workspaceConfig := client.WorkspaceConfig()
+	dockerCommand := resolveDockerCommand(workspaceConfig)
 
 	containerDetails, err := findRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(client.WorkspaceConfig()),
+		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig),
 	)
 	if err != nil {
 		return err
 	}
 
-	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, args)
+	workdir := resolveExecWorkdir(client)
+
+	return cmd.execInContainer(ctx, dockerCommand, containerDetails.ID, workdir, args)
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {
@@ -159,10 +164,29 @@ func findRunningContainer(
 	return container, nil
 }
 
+func resolveExecWorkdir(workspaceClient client2.BaseWorkspaceClient) string {
+	workspaceConfig := workspaceClient.WorkspaceConfig()
+	if workspaceConfig == nil || workspaceConfig.Context == "" || workspaceConfig.ID == "" {
+		return path.Join("/workspaces", workspaceClient.Workspace())
+	}
+
+	result, err := provider2.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
+	if err != nil {
+		log.Warnf("Error loading workspace result for workdir resolution: %v", err)
+		return path.Join("/workspaces", workspaceClient.Workspace())
+	}
+	if result == nil || result.MergedConfig == nil || result.MergedConfig.WorkspaceFolder == "" {
+		return path.Join("/workspaces", workspaceClient.Workspace())
+	}
+
+	return result.MergedConfig.WorkspaceFolder
+}
+
 func (cmd *ExecCmd) execInContainer(
 	ctx context.Context,
 	dockerCommand string,
 	containerID string,
+	workdir string,
 	args []string,
 ) error {
 	dockerHelper := &docker.DockerHelper{
@@ -175,6 +199,9 @@ func (cmd *ExecCmd) execInContainer(
 	}
 	for _, env := range cmd.RemoteEnv {
 		execArgs = append(execArgs, "-e", env)
+	}
+	if workdir != "" {
+		execArgs = append(execArgs, "--workdir", workdir)
 	}
 	execArgs = append(execArgs, containerID)
 	execArgs = append(execArgs, args...)

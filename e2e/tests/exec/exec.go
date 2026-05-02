@@ -70,6 +70,31 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("test_value"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should run commands in the workspace directory",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDir("tests/exec/testdata")
+			framework.ExpectNoError(err)
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"exec",
+				"--workspace-folder", tempDir,
+				"--", "pwd",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.HavePrefix("/workspaces/"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("should fail without --workspace-folder flag",
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
