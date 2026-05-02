@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
+const testCacheImage = "myregistry.io/cache:latest"
+
 func substitutedConfig(cfg *config.DevContainerConfig) *config.SubstitutedConfig {
 	return &config.SubstitutedConfig{Config: cfg, Raw: cfg}
 }
@@ -17,7 +19,7 @@ func TestNewOptions_CacheFrom_ConfigOnly(t *testing.T) {
 		ParsedConfig: substitutedConfig(&config.DevContainerConfig{
 			DockerfileContainer: config.DockerfileContainer{
 				Build: &config.ConfigBuildOptions{
-					CacheFrom: types.StrArray{"myregistry.io/cache:latest", "other:tag"},
+					CacheFrom: types.StrArray{testCacheImage, "other:tag"},
 				},
 			},
 		}),
@@ -30,7 +32,7 @@ func TestNewOptions_CacheFrom_ConfigOnly(t *testing.T) {
 	if len(opts.CacheFrom) != 2 {
 		t.Fatalf("expected 2 CacheFrom entries, got %d: %v", len(opts.CacheFrom), opts.CacheFrom)
 	}
-	if opts.CacheFrom[0] != "myregistry.io/cache:latest" || opts.CacheFrom[1] != "other:tag" {
+	if opts.CacheFrom[0] != testCacheImage || opts.CacheFrom[1] != "other:tag" {
 		t.Fatalf("unexpected CacheFrom: %v", opts.CacheFrom)
 	}
 	if _, ok := opts.BuildArgs["BUILDKIT_INLINE_CACHE"]; ok {
@@ -43,7 +45,7 @@ func TestNewOptions_CacheFrom_CLIAndConfig(t *testing.T) {
 		ParsedConfig: substitutedConfig(&config.DevContainerConfig{
 			DockerfileContainer: config.DockerfileContainer{
 				Build: &config.ConfigBuildOptions{
-					CacheFrom: types.StrArray{"myregistry.io/cache:latest"},
+					CacheFrom: types.StrArray{testCacheImage},
 				},
 			},
 		}),
@@ -61,7 +63,7 @@ func TestNewOptions_CacheFrom_CLIAndConfig(t *testing.T) {
 	if opts.CacheFrom[0] != "type=registry,ref=registry.example.com/cache" {
 		t.Fatalf("expected CLI registry cache first, got: %s", opts.CacheFrom[0])
 	}
-	if opts.CacheFrom[1] != "myregistry.io/cache:latest" {
+	if opts.CacheFrom[1] != testCacheImage {
 		t.Fatalf("expected config cache second, got: %s", opts.CacheFrom[1])
 	}
 }
