@@ -476,7 +476,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 		return nil
 	}
 
-	return command.StartBackgroundOnce("devsy.post-attach", func() (*exec.Cmd, error) {
+	return command.StartBackground("devsy.post-attach", func() (*exec.Cmd, error) {
 		log.Debugf("starting postAttachCommand as background process")
 		binaryPath, err := os.Executable()
 		if err != nil {

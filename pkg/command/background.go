@@ -65,7 +65,28 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 	return startCommand(cmd, pidFile, streamsFile)
 }
 
+// StartBackground starts a background process unconditionally, without any
+// once-guard. Use this for commands that must run on every invocation (e.g.
+// postAttachCommand which runs on every attach per the devcontainer spec).
+func StartBackground(commandName string, createCommand CreateCommand) error {
+	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(commandName)
+	if err != nil {
+		return fmt.Errorf("process streams file: %w", err)
+	}
+
+	cmd, err := createCommand()
+	if err != nil {
+		return err
+	}
+
+	return startDetached(cmd, "", streamsFile)
+}
+
 func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
+	return startDetached(cmd, pidFile, streamsFile)
+}
+
+func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
 	streamsF, err := openStreamsFile(cmd, streamsFile)
 	if err != nil {
 		return err
@@ -75,19 +96,16 @@ func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
 		closeFile(streamsF)
 		return fmt.Errorf("start process: %w", err)
 	}
-	// Close the parent's copy of the streams fd. After Start() forks, the
-	// child has its own copy; the parent no longer needs it.
 	closeFile(streamsF)
 
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
-		// Process is running but untracked. Kill and reap it to prevent orphans/zombies.
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return fmt.Errorf("write pid file (process killed to prevent orphan): %w", err)
+	if pidFile != "" {
+		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return fmt.Errorf("write pid file (process killed to prevent orphan): %w", err)
+		}
 	}
 
-	// Release the process handle so the child runs independently of this
-	// parent process. After release, we cannot wait for or signal it.
 	_ = cmd.Process.Release()
 
 	return nil

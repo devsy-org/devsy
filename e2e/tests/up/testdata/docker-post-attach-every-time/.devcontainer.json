@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postAttachCommand": "count=$(cat $HOME/attach-count.out 2>/dev/null || echo 0); echo $((count+1)) > $HOME/attach-count.out"
+}
