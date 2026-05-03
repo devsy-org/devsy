@@ -508,6 +508,26 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
+		ginkgo.It("security options", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-securityopt")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+			gomega.Expect(details[0].HostConfig.SecurityOpt).
+				To(gomega.ContainElement("seccomp=unconfined"))
+			gomega.Expect(details[0].HostConfig.SecurityOpt).
+				To(gomega.ContainElement("apparmor=unconfined"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",

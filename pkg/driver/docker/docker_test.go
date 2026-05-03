@@ -5,7 +5,13 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	testSeccompUnconfined = "seccomp=unconfined"
+	testSecurityOptFlag   = "--security-opt"
 )
 
 type DockerDriverTestSuite struct {
@@ -136,4 +142,39 @@ func (s *DockerDriverTestSuite) TestGatherUpdateRequirements_WithContainerUser()
 	s.NoError(err)
 	s.NotNil(localUser)
 	s.Equal("container", containerUser)
+}
+
+func (s *DockerDriverTestSuite) TestAddCapabilityArgs_SingleSecurityOpt() {
+	opts := &driver.RunOptions{SecurityOpt: []string{testSeccompUnconfined}}
+	args := s.driver.addCapabilityArgs(nil, opts)
+	s.Equal([]string{testSecurityOptFlag, testSeccompUnconfined}, args)
+}
+
+func (s *DockerDriverTestSuite) TestAddCapabilityArgs_MultipleSecurityOpts() {
+	opts := &driver.RunOptions{
+		SecurityOpt: []string{testSeccompUnconfined, "apparmor=unconfined"},
+	}
+	args := s.driver.addCapabilityArgs(nil, opts)
+	s.Equal([]string{
+		testSecurityOptFlag, testSeccompUnconfined,
+		testSecurityOptFlag, "apparmor=unconfined",
+	}, args)
+}
+
+func (s *DockerDriverTestSuite) TestAddCapabilityArgs_EmptySecurityOpt() {
+	opts := &driver.RunOptions{}
+	args := s.driver.addCapabilityArgs(nil, opts)
+	s.Nil(args)
+}
+
+func (s *DockerDriverTestSuite) TestAddCapabilityArgs_CapAddAndSecurityOpt() {
+	opts := &driver.RunOptions{
+		CapAdd:      []string{"SYS_PTRACE"},
+		SecurityOpt: []string{testSeccompUnconfined},
+	}
+	args := s.driver.addCapabilityArgs(nil, opts)
+	s.Equal([]string{
+		"--cap-add", "SYS_PTRACE",
+		testSecurityOptFlag, testSeccompUnconfined,
+	}, args)
 }
