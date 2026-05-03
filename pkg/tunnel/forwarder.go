@@ -77,11 +77,8 @@ func (f *forwarder) Forward(port string) error {
 		log.Infof("Start port-forwarding on port %s", port)
 	}
 
-	go func(port string, attr config2.PortAttribute) {
+	go func(port string) {
 		network := "tcp"
-		if attr.Protocol == config2.ProtocolHTTPS {
-			network = "tcp"
-		}
 		err := devssh.PortForward(
 			cancelCtx,
 			f.sshClient,
@@ -94,7 +91,7 @@ func (f *forwarder) Forward(port string) error {
 		if err != nil {
 			log.Errorf("Error port forwarding %s: %v", port, err)
 		}
-	}(port, attr)
+	}(port)
 
 	return nil
 }
