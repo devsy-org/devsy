@@ -127,15 +127,6 @@ tasks:
     desc: run e2e tests using act with focus
     cmd: act workflow_dispatch -W .github/workflows/act.yml -j e2e-test --input test_focus={{ .CLI_ARGS }}
 
-  cli:act:local:
-    desc: run pre-commit, lint, and e2e tests locally using act
-    cmd: act workflow_dispatch -W .github/workflows/local-test.yml
-
-  cli:act:local:focus:
-    # usage: task cli:act:local:focus -- "exec"
-    desc: run local act workflow with focused e2e tests
-    cmd: act workflow_dispatch -W .github/workflows/local-test.yml --input test_focus={{ .CLI_ARGS }}
-
   desktop:build:
     desc: build devsy Desktop application
     dir: desktop
