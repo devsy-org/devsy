@@ -1,0 +1,9 @@
+services:
+  app:
+    image: ghcr.io/devsy-org/test-images/go:1
+    command: sleep infinity
+    volumes:
+      - .:/workspaces:cached
+  sidecar:
+    image: alpine:latest
+    command: sleep infinity

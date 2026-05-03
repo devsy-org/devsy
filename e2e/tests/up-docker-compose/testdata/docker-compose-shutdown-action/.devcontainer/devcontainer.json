@@ -1,0 +1,7 @@
+{
+  "name": "shutdown-action-test",
+  "dockerComposeFile": "../docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "shutdownAction": "stopCompose"
+}

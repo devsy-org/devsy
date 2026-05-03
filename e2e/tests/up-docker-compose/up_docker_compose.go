@@ -557,5 +557,55 @@ var _ = ginkgo.Describe(
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It(
+			"shutdownAction stopCompose stops all services",
+			func(ctx context.Context) {
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx,
+					"tests/up-docker-compose/testdata/docker-compose-shutdown-action",
+				)
+				framework.ExpectNoError(err)
+
+				appIDs, sidecarIDs := tc.findAppAndSidecar(ctx, workspace.UID)
+
+				err = tc.f.DevsyStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				appRunning, sidecarRunning := tc.inspectRunningState(
+					ctx, appIDs, sidecarIDs,
+				)
+				gomega.Expect(appRunning).
+					To(gomega.BeFalse(), "app container should be stopped")
+				gomega.Expect(sidecarRunning).
+					To(gomega.BeFalse(), "sidecar container should be stopped")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"shutdownAction stopContainer only stops main service",
+			func(ctx context.Context) {
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx,
+					"tests/up-docker-compose/testdata/docker-compose-shutdown-action-container",
+				)
+				framework.ExpectNoError(err)
+
+				appIDs, sidecarIDs := tc.findAppAndSidecar(ctx, workspace.UID)
+
+				err = tc.f.DevsyStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				appRunning, sidecarRunning := tc.inspectRunningState(
+					ctx, appIDs, sidecarIDs,
+				)
+				gomega.Expect(appRunning).
+					To(gomega.BeFalse(), "app container should be stopped")
+				gomega.Expect(sidecarRunning).
+					To(gomega.BeTrue(), "sidecar container should still be running")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
 	},
 )
