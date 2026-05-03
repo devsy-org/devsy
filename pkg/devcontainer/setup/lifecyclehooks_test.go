@@ -108,6 +108,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 }
 
+
 func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
 	t := s.T()
 
@@ -676,6 +677,109 @@ func (s *LifecycleHookTestSuite) TestMergeSecretsEnvValueWithEquals() {
 	mergeSecretsEnv(env, []string{"CONN=host=db port=5432"})
 
 	assert.Equal(s.T(), "host=db port=5432", env["CONN"])
+}
+
+func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
+	t := s.T()
+	currentUser, err := user.Current()
+	assert.NoError(t, err)
+
+	dir := t.TempDir()
+	counterFile := filepath.Join(dir, "counter.txt")
+
+	result := &config.Result{
+		MergedConfig: &config.MergedDevContainerConfig{
+			DevContainerConfigBase: config.DevContainerConfigBase{
+				RemoteUser: currentUser.Username,
+			},
+			UpdatedConfigProperties: config.UpdatedConfigProperties{
+				PostAttachCommands: []types.LifecycleHook{
+					{"": {"sh", "-c", fmt.Sprintf(
+						`count=$(cat %s 2>/dev/null || echo 0); echo $((count+1)) > %s`,
+						counterFile, counterFile,
+					)}},
+				},
+			},
+		},
+		ContainerDetails: &config.ContainerDetails{
+			State: config.ContainerDetailsState{},
+		},
+		SubstitutionContext: &config.SubstitutionContext{
+			ContainerWorkspaceFolder: dir,
+		},
+	}
+
+	// Run postAttachCommand multiple times — it must execute every time.
+	for i := 1; i <= 3; i++ {
+		err := RunPostAttachHooks(context.Background(), result, nil)
+		assert.NoError(t, err)
+
+		content, readErr := os.ReadFile(counterFile) //nolint:gosec // test file from TempDir
+		assert.NoError(t, readErr)
+		assert.Equal(t, fmt.Sprintf("%d\n", i), string(content),
+			"postAttachCommand should run on call %d", i)
+	}
+}
+
+func (s *LifecycleHookTestSuite) TestPostCreateHookUsesOnceSemantics() {
+	t := s.T()
+
+	// postCreateCommand passes container.Created as content to shouldSkipHook.
+	// When content is non-empty, shouldSkipHook uses a marker file to ensure
+	// the hook runs only once per container creation.
+	skip, err := shouldSkipHook("test-postCreate", "")
+	assert.NoError(t, err)
+	assert.False(t, skip, "empty content should never skip")
+
+	// Verify that preAttachPhaseParams sets content for postCreate and postStart.
+	env := lifecycleEnv{remoteUser: "test", workspaceFolder: "/tmp"}
+	result := &config.Result{
+		MergedConfig: &config.MergedDevContainerConfig{
+			UpdatedConfigProperties: config.UpdatedConfigProperties{
+				PostCreateCommands: []types.LifecycleHook{{"": {"echo", "hi"}}},
+				PostStartCommands:  []types.LifecycleHook{{"": {"echo", "hi"}}},
+			},
+		},
+		ContainerDetails: &config.ContainerDetails{
+			Created: "2024-01-01T00:00:00Z",
+			State:   config.ContainerDetailsState{StartedAt: "2024-01-01T00:00:01Z"},
+		},
+		SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: "/tmp"},
+	}
+
+	hooks := preAttachPhaseParams(result, env, false)
+
+	// postCreateCommand should have content = Created (non-empty → once semantics).
+	var postCreate, postStart hookRunParams
+	for _, h := range hooks {
+		if h.phase == PhasePostCreate {
+			postCreate = h.params
+		}
+		if h.phase == PhasePostStart {
+			postStart = h.params
+		}
+	}
+	assert.NotEmpty(t, postCreate.content,
+		"postCreateCommand must have non-empty content for once-semantics")
+	assert.NotEmpty(t, postStart.content,
+		"postStartCommand must have non-empty content for once-semantics")
+}
+
+func (s *LifecycleHookTestSuite) TestPostAttachHookHasNoOnceGuard() {
+	t := s.T()
+
+	// RunPostAttachHooks passes content="" which means shouldSkipHook always
+	// returns false — the hook runs every time. Verify the contract.
+	skip, err := shouldSkipHook("postAttachCommands", "")
+	assert.NoError(t, err)
+	assert.False(t, skip, "postAttachCommand must never be skipped (content is always empty)")
+
+	// Call shouldSkipHook multiple times with empty content — must never skip.
+	for i := 0; i < 5; i++ {
+		skip, err := shouldSkipHook("postAttachCommands", "")
+		assert.NoError(t, err)
+		assert.False(t, skip, "postAttachCommand must not skip on call %d", i)
+	}
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {

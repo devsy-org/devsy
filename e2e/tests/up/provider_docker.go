@@ -467,6 +467,45 @@ var _ = ginkgo.Describe(
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It("postAttachCommand runs on every attach", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-post-attach-every-time",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			// First attach
+			err = dtc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
+				gomega.Equal("1"),
+				"postAttachCommand should run on first attach",
+			)
+
+			// Second attach (re-up the same workspace)
+			err = dtc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
+				gomega.Equal("2"),
+				"postAttachCommand should run again on second attach",
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It(
 			"initializeCommand with object syntax runs named sub-commands in parallel",
 			func(ctx context.Context) {
