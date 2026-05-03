@@ -130,3 +130,71 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
+
+func TestGetWorkspace_CustomWorkspaceMount(t *testing.T) {
+	customMount := "type=bind,source=/host/src,target=/custom-ws"
+	conf := &config.DevContainerConfig{
+		NonComposeBase: config.NonComposeBase{
+			WorkspaceMount: customMount,
+		},
+	}
+
+	mount, folder := getWorkspace("/ignored", "ws-id", conf)
+
+	if mount != customMount {
+		t.Fatalf("expected raw workspaceMount string, got %q", mount)
+	}
+	if folder != "/custom-ws" {
+		t.Fatalf("expected target /custom-ws, got %q", folder)
+	}
+}
+
+func TestGetWorkspace_DefaultMount(t *testing.T) {
+	conf := &config.DevContainerConfig{}
+
+	mount, folder := getWorkspace("/home/user/project", "abc123", conf)
+
+	if !contains(mount, "type=bind") || !contains(mount, "source=/home/user/project") {
+		t.Fatalf("expected bind mount with source, got %q", mount)
+	}
+	if !contains(mount, "target=/workspaces/abc123") {
+		t.Fatalf("expected target /workspaces/abc123, got %q", mount)
+	}
+	if folder != "/workspaces/abc123" {
+		t.Fatalf("expected /workspaces/abc123, got %q", folder)
+	}
+}
+
+func TestGetWorkspace_DefaultMountWithWorkspaceFolder(t *testing.T) {
+	conf := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			WorkspaceFolder: "/app",
+		},
+	}
+
+	mount, folder := getWorkspace("/home/user/project", "ws-id", conf)
+
+	if !contains(mount, "type=bind") || !contains(mount, "target=/app") {
+		t.Fatalf("expected bind mount with target /app, got %q", mount)
+	}
+	if folder != "/app" {
+		t.Fatalf("expected /app, got %q", folder)
+	}
+}
+
+func TestGetWorkspace_EmptyWorkspaceMount(t *testing.T) {
+	conf := &config.DevContainerConfig{
+		NonComposeBase: config.NonComposeBase{
+			WorkspaceMount: "",
+		},
+	}
+
+	mount, folder := getWorkspace("/home/user/project", "ws-id", conf)
+
+	if folder != "/workspaces/ws-id" {
+		t.Fatalf("expected default folder, got %q", folder)
+	}
+	if !contains(mount, "type=bind") {
+		t.Fatalf("expected default bind mount, got %q", mount)
+	}
+}
