@@ -24,7 +24,6 @@ import (
 
 const defaultDockerCommand = "docker"
 
-// ExecCmd holds the exec cmd flags.
 type ExecCmd struct {
 	*flags.GlobalFlags
 
@@ -33,7 +32,6 @@ type ExecCmd struct {
 	DefaultUserEnvProbe string
 }
 
-// NewExecCmd creates a new exec command.
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ExecCmd{GlobalFlags: f}
 	execCmd := &cobra.Command{
@@ -72,7 +70,6 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 	return execCmd
 }
 
-// Run executes the exec command.
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	if err := cmd.validateRemoteEnv(); err != nil {
 		return err

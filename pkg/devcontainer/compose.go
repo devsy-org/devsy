@@ -3,7 +3,6 @@ package devcontainer
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -271,14 +270,13 @@ func (r *runner) runDockerCompose(
 		}
 	}
 
-	var extraConfig *config.DevContainerConfig
 	if options.ExtraDevContainerPath != "" {
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err = config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
-		if err != nil {
-			return nil, err
+		extraConfig, parseErr := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 		config.AddConfigToImageMetadata(extraConfig, imageMetadataConfig)
 	}
@@ -288,8 +286,8 @@ func (r *runner) runDockerCompose(
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if extraConfig != nil {
-		maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
+	if err := config.MergeExtraRemoteEnv(mergedConfig, options.ExtraDevContainerPath); err != nil {
+		return nil, err
 	}
 
 	// expose the compose project name inside the container
@@ -468,14 +466,13 @@ func (r *runner) startContainer(
 			return nil, fmt.Errorf("inspect image: %w", err)
 		}
 
-		var extraConfig *config.DevContainerConfig
 		if options.ExtraDevContainerPath != "" {
 			if extendResult.imageMetadata == nil {
 				extendResult.imageMetadata = &config.ImageMetadataConfig{}
 			}
-			extraConfig, err = config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
-			if err != nil {
-				return nil, err
+			extraConfig, parseErr := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+			if parseErr != nil {
+				return nil, parseErr
 			}
 			config.AddConfigToImageMetadata(extraConfig, extendResult.imageMetadata)
 		}
@@ -488,8 +485,8 @@ func (r *runner) startContainer(
 			return nil, fmt.Errorf("merge configuration: %w", err)
 		}
 
-		if extraConfig != nil {
-			maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
+		if err := config.MergeExtraRemoteEnv(mergedConfig, options.ExtraDevContainerPath); err != nil {
+			return nil, err
 		}
 
 		additionalLabels := map[string]string{
