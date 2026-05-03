@@ -104,7 +104,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
-	err = RunPostAttachHooks(ctx, result)
+	err = RunPostAttachHooks(ctx, result, nil)
 	assert.NoError(s.T(), err)
 }
 

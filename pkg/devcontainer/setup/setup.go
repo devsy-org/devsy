@@ -90,7 +90,7 @@ func SetupContainerPreAttach(
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
 	log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(ctx, cfg.SetupInfo); err != nil {
+	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, cfg.SecretsEnv); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 

@@ -388,8 +388,9 @@ func (d DeferredHooks) Run() error {
 
 // RunPostAttachHooks runs postAttachCommand only.
 // These run after the IDE has been opened and can be long-running.
-func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result) error {
+func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result, secretsEnv []string) error {
 	env := resolveLifecycleEnv(ctx, setupInfo)
+	mergeSecretsEnv(env.remoteEnv, secretsEnv)
 
 	return runHook(hookRunParams{
 		commands: setupInfo.MergedConfig.PostAttachCommands,
