@@ -369,7 +369,7 @@ func TestMergeExtendsConfigs_Scalars(t *testing.T) {
 
 	child := &DevContainerConfig{
 		DevContainerConfigBase: DevContainerConfigBase{
-			Name: "child",
+			Name: testNameChild,
 		},
 	}
 	child.Origin = testOriginChild
@@ -442,7 +442,7 @@ func TestMergeExtendsConfigs_Maps(t *testing.T) {
 			RemoteEnv: map[string]*string{"B": strPtr("2")},
 		},
 		NonComposeBase: NonComposeBase{
-			ContainerEnv: map[string]string{"X": "child", "Y": "child"},
+			ContainerEnv: map[string]string{"X": testNameChild, "Y": testNameChild},
 		},
 	}
 	child.Origin = testOriginChild
