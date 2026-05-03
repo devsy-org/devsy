@@ -438,8 +438,9 @@ func (r *runner) getDockerlessRunOptions(
 			"--cmd", GetStartScript(mergedConfig),
 			"--user", buildInfo.Dockerless.User,
 		},
-		Env:    env,
-		CapAdd: mergedConfig.CapAdd,
+		Env:         env,
+		CapAdd:      mergedConfig.CapAdd,
+		SecurityOpt: mergedConfig.SecurityOpt,
 		Labels: []string{
 			metadata.ImageMetadataLabel + "=" + string(marshalled),
 			config.UserLabel + "=" + buildInfo.Dockerless.User,
