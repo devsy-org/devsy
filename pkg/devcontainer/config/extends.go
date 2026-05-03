@@ -79,10 +79,6 @@ func parseDevContainerJSONFileWithVisited(
 	return devContainer, nil
 }
 
-// mergeExtendsConfigs merges a parent config into a child config according to extends semantics.
-// The child's values take precedence over the parent's.
-//
-//nolint:cyclop // field-by-field merge is inherently branchy but straightforward
 func mergeExtendsConfigs(parent, child *DevContainerConfig) *DevContainerConfig {
 	result := CloneDevContainerConfig(parent)
 
@@ -100,10 +96,12 @@ func mergeExtendsConfigs(parent, child *DevContainerConfig) *DevContainerConfig 
 	return result
 }
 
-// mergeScalars copies non-zero string scalars from child into result.
-//
-//nolint:cyclop // simple field assignments, not real branching complexity
 func mergeScalars(result, child *DevContainerConfig) {
+	mergeBaseScalars(result, child)
+	mergeContainerScalars(result, child)
+}
+
+func mergeBaseScalars(result, child *DevContainerConfig) {
 	if child.Name != "" {
 		result.Name = child.Name
 	}
@@ -125,6 +123,9 @@ func mergeScalars(result, child *DevContainerConfig) {
 	if child.RemoteUser != "" {
 		result.RemoteUser = child.RemoteUser
 	}
+}
+
+func mergeContainerScalars(result, child *DevContainerConfig) {
 	if child.WorkspaceFolder != "" {
 		result.WorkspaceFolder = child.WorkspaceFolder
 	}
@@ -174,10 +175,12 @@ func mergeMapsInto(result, child *DevContainerConfig) {
 	result.Secrets = deepMergeMap(result.Secrets, child.Secrets)
 }
 
-// mergeArrays replaces array fields entirely when child has them set.
-//
-//nolint:cyclop // simple field assignments, not real branching complexity
 func mergeArrays(result, child *DevContainerConfig) {
+	mergeNonComposeArrays(result, child)
+	mergeComposeArrays(result, child)
+}
+
+func mergeNonComposeArrays(result, child *DevContainerConfig) {
 	if child.ForwardPorts != nil {
 		result.ForwardPorts = child.ForwardPorts
 	}
@@ -196,6 +199,9 @@ func mergeArrays(result, child *DevContainerConfig) {
 	if child.AppPort != nil {
 		result.AppPort = child.AppPort
 	}
+}
+
+func mergeComposeArrays(result, child *DevContainerConfig) {
 	if child.RunServices != nil {
 		result.RunServices = child.RunServices
 	}
