@@ -218,4 +218,32 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			gomega.Expect(opa["onAutoForward"]).To(gomega.Equal("ignore"))
 			gomega.Expect(opa["label"]).To(gomega.Equal("default"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("preserves hostRequirements in configuration output", func(ctx context.Context) {
+		f := framework.NewDefaultFramework(initialDir + "/bin")
+		tempDir, err := framework.CopyToTempDirWithoutChdir(
+			"tests/readconfiguration/testdata-host-requirements",
+		)
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			"read-configuration",
+			"--workspace-folder", tempDir,
+		})
+		framework.ExpectNoError(err)
+
+		var result map[string]any
+		err = json.Unmarshal([]byte(stdout), &result)
+		framework.ExpectNoError(err, "output should be valid JSON")
+
+		config, ok := result["configuration"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
+
+		hr, ok := config["hostRequirements"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "hostRequirements should be an object")
+		gomega.Expect(hr["cpus"]).To(gomega.BeEquivalentTo(4))
+		gomega.Expect(hr["memory"]).To(gomega.Equal("8gb"))
+		gomega.Expect(hr["storage"]).To(gomega.Equal("32gb"))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
