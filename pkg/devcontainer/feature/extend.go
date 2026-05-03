@@ -348,6 +348,10 @@ func (p *featureProcessor) processFeature(
 		return nil, fmt.Errorf("parse feature: %w", err)
 	}
 
+	if err := ValidateFeatureOptions(featureID, featureConfig, featureOptions); err != nil {
+		return nil, err
+	}
+
 	return &config.FeatureSet{
 		ConfigID: normalizeFeatureID(featureID),
 		Folder:   featureFolder,
