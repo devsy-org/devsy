@@ -219,6 +219,63 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			gomega.Expect(opa["label"]).To(gomega.Equal("default"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	// Size-limit warning tested via unit test in metadata_test.go — impractical to generate >100KB metadata in E2E.
+
+	ginkgo.It("preserves containerEnv in configuration output", func(ctx context.Context) {
+		f := framework.NewDefaultFramework(initialDir + "/bin")
+		tempDir, err := framework.CopyToTempDirWithoutChdir(
+			"tests/readconfiguration/testdata-container-env",
+		)
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			"read-configuration",
+			"--workspace-folder", tempDir,
+		})
+		framework.ExpectNoError(err)
+
+		var result map[string]any
+		err = json.Unmarshal([]byte(stdout), &result)
+		framework.ExpectNoError(err, "output should be valid JSON")
+
+		config, ok := result["configuration"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
+
+		cenv, ok := config["containerEnv"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be an object")
+		gomega.Expect(cenv).To(gomega.HaveKeyWithValue("TEST_META_VAR", "meta-test-value"))
+		gomega.Expect(cenv).To(gomega.HaveKeyWithValue("ANOTHER_VAR", "another-value"))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("preserves containerEnv in merged configuration", func(ctx context.Context) {
+		f := framework.NewDefaultFramework(initialDir + "/bin")
+		tempDir, err := framework.CopyToTempDirWithoutChdir(
+			"tests/readconfiguration/testdata-container-env",
+		)
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			"read-configuration",
+			"--workspace-folder", tempDir,
+			"--include-merged-configuration",
+		})
+		framework.ExpectNoError(err)
+
+		var result map[string]any
+		err = json.Unmarshal([]byte(stdout), &result)
+		framework.ExpectNoError(err)
+
+		merged, ok := result["mergedConfiguration"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "mergedConfiguration should be an object")
+
+		cenv, ok := merged["containerEnv"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be present in merged config")
+		gomega.Expect(cenv).To(gomega.HaveKeyWithValue("TEST_META_VAR", "meta-test-value"))
+		gomega.Expect(cenv).To(gomega.HaveKeyWithValue("ANOTHER_VAR", "another-value"))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("preserves hostRequirements in configuration output", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(

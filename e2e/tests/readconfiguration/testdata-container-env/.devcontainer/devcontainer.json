@@ -1,0 +1,7 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "containerEnv": {
+    "TEST_META_VAR": "meta-test-value",
+    "ANOTHER_VAR": "another-value"
+  }
+}
