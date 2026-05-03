@@ -108,7 +108,6 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 }
 
-
 func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
 	t := s.T()
 
@@ -775,7 +774,7 @@ func (s *LifecycleHookTestSuite) TestPostAttachHookHasNoOnceGuard() {
 	assert.False(t, skip, "postAttachCommand must never be skipped (content is always empty)")
 
 	// Call shouldSkipHook multiple times with empty content — must never skip.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		skip, err := shouldSkipHook("postAttachCommands", "")
 		assert.NoError(t, err)
 		assert.False(t, skip, "postAttachCommand must not skip on call %d", i)
