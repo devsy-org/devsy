@@ -1,8 +1,11 @@
 package config
 
 import (
+	"slices"
 	"testing"
 )
+
+const testPortRange = "3000-3002"
 
 func gpu(val string) *GPURequirement {
 	return &GPURequirement{Value: val}
@@ -222,5 +225,120 @@ func TestMaxByteString(t *testing.T) {
 				t.Errorf("maxByteString(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExpandPortRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{"single port", "8080", []string{"8080"}, false},
+		{"host:port passthrough", "localhost:3000", []string{"localhost:3000"}, false},
+		{
+			"range expands", "3000-3005",
+			[]string{"3000", "3001", "3002", "3003", "3004", "3005"},
+			false,
+		},
+		{"single element range", "8080-8080", []string{"8080"}, false},
+		{"start greater than end", "3005-3000", nil, true},
+		{"negative start", "-1-3000", nil, true},
+		{"non-numeric start", "abc-3000", nil, true},
+		{"non-numeric end", "3000-xyz", nil, true},
+		{"non-numeric single port", "abc", nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := expandPortRange(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expandPortRange(%q) expected error, got %v", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expandPortRange(%q) unexpected error: %v", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("expandPortRange(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMergeForwardPorts_RangeExpansion(t *testing.T) {
+	entries := []*ImageMetadata{
+		{DevContainerConfigBase: DevContainerConfigBase{
+			ForwardPorts: []string{"8080", testPortRange},
+		}},
+	}
+	got := mergeForwardPorts(entries)
+	want := []string{"8080", "3000", "3001", "3002"}
+	if len(got) != len(want) {
+		t.Fatalf("mergeForwardPorts = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("mergeForwardPorts[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMergeForwardPorts_MixedRangesAndSinglePorts(t *testing.T) {
+	entries := []*ImageMetadata{
+		{DevContainerConfigBase: DevContainerConfigBase{
+			ForwardPorts: []string{"8080", testPortRange, "localhost:9090"},
+		}},
+	}
+	got := mergeForwardPorts(entries)
+	want := []string{"8080", "3000", "3001", "3002", "localhost:9090"}
+	if len(got) != len(want) {
+		t.Fatalf("mergeForwardPorts = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("mergeForwardPorts[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMergeForwardPorts_DeduplicatesAcrossRanges(t *testing.T) {
+	entries := []*ImageMetadata{
+		{DevContainerConfigBase: DevContainerConfigBase{
+			ForwardPorts: []string{testPortRange},
+		}},
+		{DevContainerConfigBase: DevContainerConfigBase{
+			ForwardPorts: []string{"3001-3003"},
+		}},
+	}
+	got := mergeForwardPorts(entries)
+	want := []string{"3000", "3001", "3002", "3003"}
+	if len(got) != len(want) {
+		t.Fatalf("mergeForwardPorts = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("mergeForwardPorts[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMergeForwardPorts_InvalidRangeSkipped(t *testing.T) {
+	entries := []*ImageMetadata{
+		{DevContainerConfigBase: DevContainerConfigBase{
+			ForwardPorts: []string{"8080", "5000-4000", "9090"},
+		}},
+	}
+	got := mergeForwardPorts(entries)
+	want := []string{"8080", "9090"}
+	if len(got) != len(want) {
+		t.Fatalf("mergeForwardPorts = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("mergeForwardPorts[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }

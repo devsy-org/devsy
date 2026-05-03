@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"maps"
 	"strconv"
 	"strings"
@@ -253,22 +254,72 @@ func mergeGPU(a, b *GPURequirement) *GPURequirement {
 	return a
 }
 
+func parsePortRange(port string) (int, int, error) {
+	startStr, endStr, _ := strings.Cut(port, "-")
+
+	start, err := strconv.Atoi(startStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range start in %q: %w", port, err)
+	}
+	end, err := strconv.Atoi(endStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range end in %q: %w", port, err)
+	}
+	if start < 0 || end < 0 {
+		return 0, 0, fmt.Errorf("negative port in range %q", port)
+	}
+	if start > end {
+		return 0, 0, fmt.Errorf("invalid port range %q: start (%d) > end (%d)", port, start, end)
+	}
+	return start, end, nil
+}
+
+func expandPortRange(port string) ([]string, error) {
+	if strings.Contains(port, ":") {
+		return []string{port}, nil
+	}
+
+	if !strings.Contains(port, "-") {
+		if _, err := strconv.Atoi(port); err != nil {
+			return nil, fmt.Errorf("invalid port %q: %w", port, err)
+		}
+		return []string{port}, nil
+	}
+
+	start, end, err := parsePortRange(port)
+	if err != nil {
+		return nil, err
+	}
+
+	ports := make([]string, 0, end-start+1)
+	for p := start; p <= end; p++ {
+		ports = append(ports, strconv.Itoa(p))
+	}
+	return ports, nil
+}
+
 func mergeForwardPorts(entries []*ImageMetadata) types.StrIntArray {
 	portMap := map[string]bool{}
 	var retPorts types.StrIntArray
 	for _, entry := range entries {
 		for _, port := range entry.ForwardPorts {
-			portString := port
-			_, err := strconv.Atoi(portString)
-			if err == nil {
-				portString = "localhost:" + portString
-			}
-			if portMap[portString] {
+			expanded, err := expandPortRange(port)
+			if err != nil {
 				continue
 			}
+			for _, p := range expanded {
+				portString := p
+				_, err := strconv.Atoi(portString)
+				if err == nil {
+					portString = "localhost:" + portString
+				}
+				if portMap[portString] {
+					continue
+				}
 
-			portMap[portString] = true
-			retPorts = append(retPorts, port)
+				portMap[portString] = true
+				retPorts = append(retPorts, p)
+			}
 		}
 	}
 

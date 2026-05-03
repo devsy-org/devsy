@@ -137,4 +137,46 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		})
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("expands forwardPorts range syntax in merged configuration",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/readconfiguration/testdata-port-range",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--workspace-folder", tempDir,
+				"--include-merged-configuration",
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			err = json.Unmarshal([]byte(stdout), &result)
+			framework.ExpectNoError(err)
+
+			merged, ok := result["mergedConfiguration"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue())
+
+			portsRaw, ok := merged["forwardPorts"].([]any)
+			gomega.Expect(ok).To(
+				gomega.BeTrue(),
+				"forwardPorts should be an array",
+			)
+
+			var ports []string
+			for _, p := range portsRaw {
+				s, ok := p.(string)
+				gomega.Expect(ok).To(gomega.BeTrue())
+				ports = append(ports, s)
+			}
+
+			gomega.Expect(ports).To(gomega.ContainElement("8080"))
+			gomega.Expect(ports).To(gomega.ContainElement("3000"))
+			gomega.Expect(ports).To(gomega.ContainElement("3005"))
+			gomega.Expect(ports).To(gomega.HaveLen(7))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
