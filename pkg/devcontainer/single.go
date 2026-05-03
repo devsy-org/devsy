@@ -187,7 +187,9 @@ func (r *runner) mergeExistingContainerConfig(
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(mergedConfig, p.options.ExtraDevContainerPath); err != nil {
+	if err := config.MergeExtraRemoteEnv(
+		mergedConfig, p.options.ExtraDevContainerPath,
+	); err != nil {
 		return nil, err
 	}
 
@@ -247,7 +249,9 @@ func (r *runner) resolveNewContainer(
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(mergedConfig, p.options.ExtraDevContainerPath); err != nil {
+	if err := config.MergeExtraRemoteEnv(
+		mergedConfig, p.options.ExtraDevContainerPath,
+	); err != nil {
 		return nil, err
 	}
 

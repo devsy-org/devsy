@@ -286,7 +286,9 @@ func (r *runner) runDockerCompose(
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(mergedConfig, options.ExtraDevContainerPath); err != nil {
+	if err := config.MergeExtraRemoteEnv(
+		mergedConfig, options.ExtraDevContainerPath,
+	); err != nil {
 		return nil, err
 	}
 
@@ -485,7 +487,9 @@ func (r *runner) startContainer(
 			return nil, fmt.Errorf("merge configuration: %w", err)
 		}
 
-		if err := config.MergeExtraRemoteEnv(mergedConfig, options.ExtraDevContainerPath); err != nil {
+		if err := config.MergeExtraRemoteEnv(
+			mergedConfig, options.ExtraDevContainerPath,
+		); err != nil {
 			return nil, err
 		}
 

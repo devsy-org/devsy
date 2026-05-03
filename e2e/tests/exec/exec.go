@@ -35,7 +35,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should pass remote-env to the container",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/remote-env", initialDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -50,7 +52,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should run commands in the workspace directory",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/remote-env", initialDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -64,7 +68,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should run commands as the remote user",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/remote-env", initialDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -78,7 +84,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should inject remoteEnv from devcontainer config",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/remote-env", initialDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -92,7 +100,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should let CLI remote-env override config remoteEnv",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/remote-env", initialDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
