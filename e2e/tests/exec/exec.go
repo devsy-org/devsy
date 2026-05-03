@@ -10,6 +10,12 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	execCommand         = "exec"
+	workspaceFolderFlag = "--workspace-folder"
+	echoCommand         = "echo"
+)
+
 var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Ordered, func() {
 	var initialDir string
 
@@ -21,24 +27,13 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should exec a command in a running workspace container",
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/exec/testdata")
-			framework.ExpectNoError(err)
-
-			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
-
-			err = f.DevsyUp(ctx, tempDir)
+			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
-				"--", "echo", "-n", "hello",
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", echoCommand, "-n", "hello",
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(stdout).To(gomega.Equal("hello"))
@@ -46,23 +41,14 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should pass remote-env to the container",
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/exec/testdata")
-			framework.ExpectNoError(err)
-
-			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
-
-			err = f.DevsyUp(ctx, tempDir)
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--remote-env", "MY_TEST_VAR=test_value",
 				"--", "sh", "-c", "echo -n $MY_TEST_VAR",
 			})
@@ -70,13 +56,106 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("test_value"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should run commands in the workspace directory",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", "pwd",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.HavePrefix("/workspaces/"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should run commands as the remote user",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", "whoami",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("vscode"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should inject remoteEnv from devcontainer config",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", "sh", "-c", "echo -n $CONFIG_VAR",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("from_config"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should let CLI remote-env override config remoteEnv",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(
+				ctx, "tests/exec/testdata/remote-env", initialDir,
+			)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--remote-env", "CONFIG_VAR=from_cli",
+				"--", "sh", "-c", "echo -n $CONFIG_VAR",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.Equal("from_cli"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should probe user environment and include PATH",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/envprobe", initialDir)
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", "sh", "-c", "echo -n $PATH",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.ContainSubstring("/usr/local/bin"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should skip env probe when --default-user-env-probe is none",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/envprobe", initialDir)
+			framework.ExpectNoError(err)
+
+			_, _, err = f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--default-user-env-probe", "none",
+				"--", echoCommand, "-n", "ok",
+			})
+			framework.ExpectNoError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("should fail without --workspace-folder flag",
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--", "echo", "hello",
+				execCommand,
+				"--", echoCommand, "hello",
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))

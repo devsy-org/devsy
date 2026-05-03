@@ -15,6 +15,18 @@ const (
 	gpuOptional = "optional"
 )
 
+func MergeExtraRemoteEnv(mergedConfig *MergedDevContainerConfig, extraConfigPath string) error {
+	if extraConfigPath == "" {
+		return nil
+	}
+	extraConfig, err := ParseDevContainerJSONFile(extraConfigPath)
+	if err != nil {
+		return err
+	}
+	maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
+	return nil
+}
+
 func MergeConfiguration(
 	config *DevContainerConfig,
 	imageMetadataEntries []*ImageMetadata,
@@ -100,6 +112,8 @@ func MergeConfiguration(
 		reversed,
 		func(entry *ImageMetadata) map[string]*string { return entry.RemoteEnv },
 	)
+	// Config-level remoteEnv takes precedence over image metadata remoteEnv.
+	maps.Copy(mergedConfig.RemoteEnv, copiedConfig.RemoteEnv)
 	mergedConfig.ContainerEnv = mergeMaps(
 		reversed,
 		func(entry *ImageMetadata) map[string]string { return entry.ContainerEnv },

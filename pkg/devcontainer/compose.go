@@ -274,9 +274,9 @@ func (r *runner) runDockerCompose(
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
-		if err != nil {
-			return nil, err
+		extraConfig, parseErr := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 		config.AddConfigToImageMetadata(extraConfig, imageMetadataConfig)
 	}
@@ -284,6 +284,12 @@ func (r *runner) runDockerCompose(
 	mergedConfig, err := config.MergeConfiguration(parsedConfig.Config, imageMetadataConfig.Config)
 	if err != nil {
 		return nil, fmt.Errorf("merge config: %w", err)
+	}
+
+	if err := config.MergeExtraRemoteEnv(
+		mergedConfig, options.ExtraDevContainerPath,
+	); err != nil {
+		return nil, err
 	}
 
 	// expose the compose project name inside the container
@@ -466,9 +472,9 @@ func (r *runner) startContainer(
 			if extendResult.imageMetadata == nil {
 				extendResult.imageMetadata = &config.ImageMetadataConfig{}
 			}
-			extraConfig, err := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
-			if err != nil {
-				return nil, err
+			extraConfig, parseErr := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+			if parseErr != nil {
+				return nil, parseErr
 			}
 			config.AddConfigToImageMetadata(extraConfig, extendResult.imageMetadata)
 		}
@@ -479,6 +485,12 @@ func (r *runner) startContainer(
 		)
 		if err != nil {
 			return nil, fmt.Errorf("merge configuration: %w", err)
+		}
+
+		if err := config.MergeExtraRemoteEnv(
+			mergedConfig, options.ExtraDevContainerPath,
+		); err != nil {
+			return nil, err
 		}
 
 		additionalLabels := map[string]string{
