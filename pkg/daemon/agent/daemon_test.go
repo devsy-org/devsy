@@ -17,17 +17,22 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 		{
 			name:           "defaults to stopContainer when empty",
 			shutdownAction: "",
-			want:           "stopContainer",
+			want:           config.ShutdownActionStopContainer,
 		},
 		{
 			name:           "preserves none",
-			shutdownAction: "none",
-			want:           "none",
+			shutdownAction: config.ShutdownActionNone,
+			want:           config.ShutdownActionNone,
 		},
 		{
 			name:           "preserves stopContainer",
-			shutdownAction: "stopContainer",
-			want:           "stopContainer",
+			shutdownAction: config.ShutdownActionStopContainer,
+			want:           config.ShutdownActionStopContainer,
+		},
+		{
+			name:           "preserves stopCompose",
+			shutdownAction: config.ShutdownActionStopCompose,
+			want:           config.ShutdownActionStopCompose,
 		},
 	}
 

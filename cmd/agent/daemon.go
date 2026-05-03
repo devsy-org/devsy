@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -41,7 +42,10 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 	daemonCmd.Flags().
 		StringVar(&cmd.Interval, "interval", "", "The interval how to poll workspaces")
 	daemonCmd.Flags().
-		StringVar(&cmd.ShutdownAction, "shutdown-action", "", "The shutdown action (none or stopContainer)")
+		StringVar(
+			&cmd.ShutdownAction, "shutdown-action", "",
+			"The shutdown action (none, stopContainer, or stopCompose)",
+		)
 	return daemonCmd
 }
 
@@ -129,7 +133,7 @@ func (cmd *DaemonCmd) checkAndShutdown(
 	latestActivity *time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
-	if cmd.ShutdownAction == "none" {
+	if cmd.ShutdownAction == config.ShutdownActionNone {
 		return
 	}
 
