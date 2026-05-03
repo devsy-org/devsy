@@ -178,3 +178,17 @@ func (s *DockerDriverTestSuite) TestAddCapabilityArgs_CapAddAndSecurityOpt() {
 		testSecurityOptFlag, testSeccompUnconfined,
 	}, args)
 }
+
+func (s *DockerDriverTestSuite) TestStripMountConsistency() {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"type=bind,src=/a,dst=/b,consistency='consistent'", "type=bind,src=/a,dst=/b"},
+		{"type=bind,src=/a,dst=/b,consistency=delegated", "type=bind,src=/a,dst=/b"},
+		{"type=bind,src=/a,dst=/b", "type=bind,src=/a,dst=/b"},
+	}
+	for _, tt := range tests {
+		s.Equal(tt.want, stripMountConsistency(tt.input))
+	}
+}
