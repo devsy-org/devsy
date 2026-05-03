@@ -10,6 +10,12 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	execCommand         = "exec"
+	workspaceFolderFlag = "--workspace-folder"
+	echoCommand         = "echo"
+)
+
 var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Ordered, func() {
 	var initialDir string
 
@@ -25,9 +31,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
-				"--", "echo", "-n", "hello",
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--", echoCommand, "-n", "hello",
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(stdout).To(gomega.Equal("hello"))
@@ -41,8 +47,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--remote-env", "MY_TEST_VAR=test_value",
 				"--", "sh", "-c", "echo -n $MY_TEST_VAR",
 			})
@@ -58,8 +64,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--", "pwd",
 			})
 			framework.ExpectNoError(err)
@@ -74,8 +80,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--", "whoami",
 			})
 			framework.ExpectNoError(err)
@@ -90,8 +96,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--", "sh", "-c", "echo -n $CONFIG_VAR",
 			})
 			framework.ExpectNoError(err)
@@ -106,8 +112,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--remote-env", "CONFIG_VAR=from_cli",
 				"--", "sh", "-c", "echo -n $CONFIG_VAR",
 			})
@@ -121,8 +127,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--", "sh", "-c", "echo -n $PATH",
 			})
 			framework.ExpectNoError(err)
@@ -135,10 +141,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			framework.ExpectNoError(err)
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--workspace-folder", tempDir,
+				execCommand,
+				workspaceFolderFlag, tempDir,
 				"--default-user-env-probe", "none",
-				"--", "echo", "-n", "ok",
+				"--", echoCommand, "-n", "ok",
 			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -148,8 +154,8 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				"exec",
-				"--", "echo", "hello",
+				execCommand,
+				"--", echoCommand, "hello",
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
