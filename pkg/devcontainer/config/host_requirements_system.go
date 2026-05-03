@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 // SystemHostInfo provides real system resource information.
@@ -27,11 +26,11 @@ func (s SystemHostInfo) AvailableStorageBytes(path string) (uint64, error) {
 	if path == "" {
 		path = "/"
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
+	bytes, err := availableStorageBytes(path)
+	if err != nil {
 		return 0, fmt.Errorf("statfs %q: %w", path, err)
 	}
-	return stat.Bavail * uint64(stat.Bsize), nil //nolint:gosec // Bsize type varies by platform
+	return bytes, nil
 }
 
 func readMemTotalFromProc() (uint64, error) {
