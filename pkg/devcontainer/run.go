@@ -61,6 +61,7 @@ func NewRunner(
 		AgentDownloadURL:     agentDownloadURL,
 		LocalWorkspaceFolder: workspaceConfig.ContentFolder,
 		ID:                   GetRunnerIDFromWorkspace(workspaceConfig.Workspace),
+		IDLabels:             workspaceConfig.CLIOptions.IDLabels,
 		WorkspaceConfig:      workspaceConfig,
 	}, nil
 }
@@ -74,7 +75,8 @@ type runner struct {
 
 	LocalWorkspaceFolder string
 
-	ID string
+	ID       string
+	IDLabels []string
 }
 
 type UpOptions struct {

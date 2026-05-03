@@ -234,6 +234,7 @@ type CLIOptions struct {
 	Userns                      string            `json:"userns,omitempty"`
 	UidMap                      []string          `json:"uidMap,omitempty"`
 	GidMap                      []string          `json:"gidMap,omitempty"`
+	IDLabels                    []string          `json:"idLabels,omitempty"`
 
 	// dotfiles options
 	DotfilesRepo   string `json:"dotfilesRepo,omitempty"`

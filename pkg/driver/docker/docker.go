@@ -57,12 +57,14 @@ func NewDockerDriver(
 			ContainerID:   workspaceInfo.Workspace.Source.Container,
 			Builder:       builder,
 		},
+		IDLabels: workspaceInfo.CLIOptions.IDLabels,
 	}, nil
 }
 
 type dockerDriver struct {
-	Docker  *docker.DockerHelper
-	Compose *compose.ComposeHelper
+	Docker   *docker.DockerHelper
+	Compose  *compose.ComposeHelper
+	IDLabels []string
 }
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
@@ -243,7 +245,7 @@ func (d *dockerDriver) FindDevContainer(
 	} else {
 		containerDetails, err = d.Docker.FindDevContainer(
 			ctx,
-			[]string{config.DockerIDLabel + "=" + workspaceId},
+			config.GetIDLabels(workspaceId, d.IDLabels),
 		)
 	}
 	if err != nil {
@@ -735,7 +737,7 @@ func (d *dockerDriver) addLabelArgs(
 	workspaceId string,
 	options *driver.RunOptions,
 ) []string {
-	labels := append(config.GetDockerLabelForID(workspaceId), options.Labels...)
+	labels := append(config.GetIDLabels(workspaceId, d.IDLabels), options.Labels...)
 	for _, label := range labels {
 		args = append(args, "-l", label)
 	}

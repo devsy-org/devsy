@@ -1091,8 +1091,14 @@ exec "$$@"
 	}
 	entrypoint = append(entrypoint, userEntrypoint...)
 
-	labels := composetypes.Labels{
-		config.DockerIDLabel: r.ID,
+	labels := composetypes.Labels{}
+	if len(r.IDLabels) > 0 {
+		for _, l := range r.IDLabels {
+			k, v, _ := strings.Cut(l, "=")
+			labels[k] = v
+		}
+	} else {
+		labels[config.DockerIDLabel] = r.ID
 	}
 	for k, v := range additionalLabels {
 		// Escape $ and ' to prevent substituting local environment variables!

@@ -99,6 +99,9 @@ func (cmd *UpCmd) validate() error {
 	if err := validatePodmanFlags(cmd); err != nil {
 		return err
 	}
+	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
+		return err
+	}
 	if cmd.ExtraDevContainerPath != "" {
 		absPath, err := filepath.Abs(cmd.ExtraDevContainerPath)
 		if err != nil {
@@ -165,6 +168,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.AdditionalFeatures, "additional-features", "",
 			`Additional features to apply to the dev container (JSON as per "features" section in devcontainer.json)`)
+	upCmd.Flags().
+		StringArrayVar(&cmd.IDLabels, "id-label", []string{},
+			"Override the default container identification labels (format: key=value, can be specified multiple times)")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
