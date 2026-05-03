@@ -1,0 +1,7 @@
+{
+  "extends": "grandparent.json",
+  "containerEnv": {
+    "LEVEL": "parent",
+    "PARENT_ONLY": "parent-value"
+  }
+}

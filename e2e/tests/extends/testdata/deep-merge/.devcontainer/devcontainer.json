@@ -1,0 +1,13 @@
+{
+  "extends": "base.json",
+  "name": "Deep Merge Child",
+  "containerEnv": {
+    "SHARED_KEY": "from-child",
+    "CHILD_ONLY": "child-value"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.21"
+    }
+  }
+}

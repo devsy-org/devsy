@@ -1,0 +1,8 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "LEVEL": "grandparent",
+    "GP_ONLY": "gp-value"
+  }
+}
