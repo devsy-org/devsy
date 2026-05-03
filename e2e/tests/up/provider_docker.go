@@ -684,5 +684,49 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("overrideCommand false preserves image entrypoint", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-override-command-false")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			// With overrideCommand=false the image's Cmd is appended after the
+			// start-script preamble ["-c", <script>, "-"].
+			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("sleep"),
+				"image cmd should be preserved when overrideCommand is false")
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("overrideCommand default overrides image entrypoint", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			// Default behavior (no overrideCommand set): image cmd is NOT appended.
+			// Cmd should be exactly ["-c", <script>, "-"].
+			gomega.Expect(details[0].Config.Cmd).To(gomega.HaveLen(3),
+				"image cmd should be overridden by default")
+			gomega.Expect(details[0].Config.Cmd[0]).To(gomega.Equal("-c"))
+			gomega.Expect(details[0].Config.Cmd[2]).To(gomega.Equal("-"))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 	},
 )

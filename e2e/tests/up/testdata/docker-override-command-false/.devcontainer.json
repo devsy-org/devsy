@@ -1,0 +1,5 @@
+{
+  "name": "OverrideCommandFalse",
+  "build": { "dockerfile": "Dockerfile" },
+  "overrideCommand": false
+}
