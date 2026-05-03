@@ -528,6 +528,31 @@ var _ = ginkgo.Describe(
 				To(gomega.ContainElement("apparmor=unconfined"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It("custom workspace mount", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-workspace-mount")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			hasCustomMount := false
+			for _, m := range details[0].Mounts {
+				if m.Destination == "/custom-workspace" {
+					hasCustomMount = true
+					break
+				}
+			}
+			gomega.Expect(hasCustomMount).To(gomega.BeTrue())
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",
