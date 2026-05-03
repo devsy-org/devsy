@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	testCacheImage    = "myregistry.io/cache:latest"
-	testCLICacheImage = "cli-override:v1"
+	testCacheImage      = "myregistry.io/cache:latest"
+	testCLICacheImage   = "cli-override:v1"
+	testOtherCacheImage = "other:tag"
 )
 
 func substitutedConfig(cfg *config.DevContainerConfig) *config.SubstitutedConfig {
@@ -22,7 +23,7 @@ func TestNewOptions_CacheFrom_ConfigOnly(t *testing.T) {
 		ParsedConfig: substitutedConfig(&config.DevContainerConfig{
 			DockerfileContainer: config.DockerfileContainer{
 				Build: &config.ConfigBuildOptions{
-					CacheFrom: types.StrArray{testCacheImage, "other:tag"},
+					CacheFrom: types.StrArray{testCacheImage, testOtherCacheImage},
 				},
 			},
 		}),
@@ -35,7 +36,7 @@ func TestNewOptions_CacheFrom_ConfigOnly(t *testing.T) {
 	if len(opts.CacheFrom) != 2 {
 		t.Fatalf("expected 2 CacheFrom entries, got %d: %v", len(opts.CacheFrom), opts.CacheFrom)
 	}
-	if opts.CacheFrom[0] != testCacheImage || opts.CacheFrom[1] != "other:tag" {
+	if opts.CacheFrom[0] != testCacheImage || opts.CacheFrom[1] != testOtherCacheImage {
 		t.Fatalf("unexpected CacheFrom: %v", opts.CacheFrom)
 	}
 	if _, ok := opts.BuildArgs["BUILDKIT_INLINE_CACHE"]; ok {
@@ -100,7 +101,7 @@ func TestNewOptions_CacheFrom_CLIOverridesConfig(t *testing.T) {
 		ParsedConfig: substitutedConfig(&config.DevContainerConfig{
 			DockerfileContainer: config.DockerfileContainer{
 				Build: &config.ConfigBuildOptions{
-					CacheFrom: types.StrArray{testCacheImage, "other:tag"},
+					CacheFrom: types.StrArray{testCacheImage, testOtherCacheImage},
 				},
 			},
 		}),

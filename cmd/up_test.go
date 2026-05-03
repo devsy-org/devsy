@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const probeNone = "none"
+
 func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -15,7 +17,7 @@ func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty is valid", value: "", wantErr: false},
-		{name: "none", value: "none", wantErr: false},
+		{name: "none", value: probeNone, wantErr: false},
 		{name: "loginShell", value: "loginShell", wantErr: false},
 		{name: "interactiveShell", value: "interactiveShell", wantErr: false},
 		{name: "loginInteractiveShell", value: "loginInteractiveShell", wantErr: false},
@@ -48,9 +50,9 @@ func TestUpCmd_FlagRegistered(t *testing.T) {
 
 func TestUpCmd_FlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--default-user-env-probe", "none"})
+	err := upCmd.ParseFlags([]string{"--default-user-env-probe", probeNone})
 	require.NoError(t, err)
 
 	flag := upCmd.Flags().Lookup("default-user-env-probe")
-	assert.Equal(t, "none", flag.Value.String())
+	assert.Equal(t, probeNone, flag.Value.String())
 }
