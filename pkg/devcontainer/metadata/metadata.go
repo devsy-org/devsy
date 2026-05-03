@@ -9,6 +9,19 @@ import (
 
 const ImageMetadataLabel = "devcontainer.metadata"
 
+const metadataLabelSizeWarningThreshold = 100 * 1024
+
+func MarshalImageMetadata(raw []*config.ImageMetadata) ([]byte, error) {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > metadataLabelSizeWarningThreshold {
+		log.Warnf("metadata label size (%d bytes) approaching Docker limit", len(data))
+	}
+	return data, nil
+}
+
 func GetDevContainerMetadata(
 	substitutionContext *config.SubstitutionContext,
 	baseImageMetadata *config.ImageMetadataConfig,
