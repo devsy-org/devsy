@@ -1,0 +1,4 @@
+{
+  "extends": "devcontainer.json",
+  "name": "Cycle B"
+}

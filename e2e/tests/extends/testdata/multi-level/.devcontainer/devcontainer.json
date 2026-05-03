@@ -1,0 +1,7 @@
+{
+  "extends": "parent.json",
+  "name": "Multi Level Child",
+  "containerEnv": {
+    "LEVEL": "child"
+  }
+}

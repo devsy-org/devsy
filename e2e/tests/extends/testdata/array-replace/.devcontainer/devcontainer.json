@@ -1,0 +1,5 @@
+{
+  "extends": "base.json",
+  "name": "Array Replace Child",
+  "forwardPorts": [8080]
+}

@@ -45,6 +45,9 @@ func CloneDevContainerConfig(config *DevContainerConfig) *DevContainerConfig {
 }
 
 type DevContainerConfigBase struct {
+	// Path to another devcontainer.json to inherit from.
+	Extends string `json:"extends,omitempty"`
+
 	// A name for the dev container which can be displayed to the user.
 	Name string `json:"name,omitempty"`
 
