@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 )
@@ -15,6 +18,23 @@ const (
 
 func GetDockerLabelForID(id string) []string {
 	return []string{DockerIDLabel + "=" + id}
+}
+
+func GetIDLabels(id string, idLabels []string) []string {
+	if len(idLabels) > 0 {
+		return append([]string(nil), idLabels...)
+	}
+	return GetDockerLabelForID(id)
+}
+
+func ValidateIDLabels(labels []string) error {
+	for _, label := range labels {
+		k, _, ok := strings.Cut(label, "=")
+		if !ok || k == "" {
+			return fmt.Errorf("invalid --id-label %q: must be in key=value format", label)
+		}
+	}
+	return nil
 }
 
 type BuildInfo struct {

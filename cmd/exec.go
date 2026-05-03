@@ -30,6 +30,7 @@ type ExecCmd struct {
 	WorkspaceFolder     string
 	RemoteEnv           []string
 	DefaultUserEnvProbe string
+	IDLabels            []string
 }
 
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
@@ -66,12 +67,22 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Override userEnvProbe from config (loginInteractiveShell, loginShell, interactiveShell, none)",
 		)
+	execCmd.Flags().
+		StringArrayVar(
+			&cmd.IDLabels,
+			"id-label",
+			[]string{},
+			"Override the default container identification labels (format: key=value, can be specified multiple times)",
+		)
 
 	return execCmd
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	if err := cmd.validateRemoteEnv(); err != nil {
+		return err
+	}
+	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
 	}
 
@@ -93,7 +104,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	dockerCommand := resolveDockerCommand(workspaceConfig)
 
 	containerDetails, err := findRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig),
+		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		return err
@@ -158,12 +169,13 @@ func findRunningContainer(
 	ctx context.Context,
 	dockerCommand string,
 	workspaceID string,
+	idLabels []string,
 ) (*devcconfig.ContainerDetails, error) {
 	dockerHelper := &docker.DockerHelper{
 		DockerCommand: dockerCommand,
 	}
 
-	labels := devcconfig.GetDockerLabelForID(workspaceID)
+	labels := devcconfig.GetIDLabels(workspaceID, idLabels)
 	container, err := dockerHelper.FindDevContainer(ctx, labels)
 	if err != nil {
 		return nil, fmt.Errorf("find container: %w", err)

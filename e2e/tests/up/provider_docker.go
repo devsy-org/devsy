@@ -700,8 +700,6 @@ var _ = ginkgo.Describe(
 			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
 			framework.ExpectNoError(err)
 
-			// With overrideCommand=false the image's Cmd is appended after the
-			// start-script preamble ["-c", <script>, "-"].
 			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("sleep"),
 				"image cmd should be preserved when overrideCommand is false")
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
@@ -721,12 +719,38 @@ var _ = ginkgo.Describe(
 			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
 			framework.ExpectNoError(err)
 
-			// Default behavior (no overrideCommand set): image cmd is NOT appended.
-			// Cmd should be exactly ["-c", <script>, "-"].
 			gomega.Expect(details[0].Config.Cmd).To(gomega.HaveLen(3),
 				"image cmd should be overridden by default")
 			gomega.Expect(details[0].Config.Cmd[0]).To(gomega.Equal("-c"))
 			gomega.Expect(details[0].Config.Cmd[2]).To(gomega.Equal("-"))
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("id-label replaces default container label", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
+				"--id-label", "devsy.test.app=myproject",
+				"--id-label", "devsy.test.env=ci")
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.dockerHelper.FindContainer(
+				ctx,
+				[]string{"devsy.test.app=myproject", "devsy.test.env=ci"},
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var containerDetails []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
+			framework.ExpectNoError(err)
+			gomega.Expect(containerDetails[0].Config.Labels).To(gomega.HaveKeyWithValue(
+				"devsy.test.app", "myproject"))
+			gomega.Expect(containerDetails[0].Config.Labels).To(gomega.HaveKeyWithValue(
+				"devsy.test.env", "ci"))
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+			gomega.Expect(containerDetails[0].Config.Labels["dev.containers.id"]).
+				NotTo(gomega.Equal(workspace.UID),
+					"workspace UID should not be used as label when --id-label is specified")
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )
