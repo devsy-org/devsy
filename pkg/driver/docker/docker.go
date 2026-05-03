@@ -576,7 +576,7 @@ func (b *runArgsBuilder) addLabels() *runArgsBuilder {
 }
 
 func (b *runArgsBuilder) addGPU() *runArgsBuilder {
-	b.args = appendGPUOptions(b.params.ParsedConfig, b.driver, b.args)
+	b.args = appendGPUOptions(b.params.ParsedConfig, b.driver, b.args, b.params.GPUAvailability)
 	return b
 }
 
@@ -788,13 +788,26 @@ func (d *dockerDriver) startContainer(
 	return nil
 }
 
+func resolveGPUAvailability(override string, d *dockerDriver) bool {
+	switch override {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		available, _ := d.Docker.GPUSupportEnabled()
+		return available
+	}
+}
+
 func appendGPUOptions(
 	parsedConfig *config.DevContainerConfig,
 	d *dockerDriver,
 	args []string,
+	gpuAvailabilityOverride string,
 ) []string {
 	if parsedConfig.HostRequirements != nil {
-		gpuAvailable, _ := d.Docker.GPUSupportEnabled()
+		gpuAvailable := resolveGPUAvailability(gpuAvailabilityOverride, d)
 		enableGPU, warnIfMissing := parsedConfig.HostRequirements.ShouldEnableGPU(gpuAvailable)
 		if enableGPU {
 			args = append(args, "--gpus", "all")

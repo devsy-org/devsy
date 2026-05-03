@@ -1135,7 +1135,7 @@ exec "$$@"
 		overrideService.Privileged = *mergedConfig.Privileged
 	}
 
-	gpuSupportEnabled, _ := composeHelper.Docker.GPUSupportEnabled()
+	gpuSupportEnabled := r.resolveComposeGPUAvailability(composeHelper)
 	r.configureGPUResources(parsedConfig, gpuSupportEnabled, overrideService)
 
 	for _, mount := range mergedConfig.Mounts {
@@ -1170,6 +1170,18 @@ exec "$$@"
 	}
 
 	return project
+}
+
+func (r *runner) resolveComposeGPUAvailability(composeHelper *compose.ComposeHelper) bool {
+	switch r.WorkspaceConfig.CLIOptions.GPUAvailability {
+	case stringTrue:
+		return true
+	case stringFalse:
+		return false
+	default:
+		available, _ := composeHelper.Docker.GPUSupportEnabled()
+		return available
+	}
 }
 
 func (r *runner) configureGPUResources(

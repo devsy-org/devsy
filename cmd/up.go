@@ -211,6 +211,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.DefaultUserEnvProbe, "default-user-env-probe", "",
 			"Override userEnvProbe from devcontainer.json (loginInteractiveShell, loginShell, interactiveShell, none)")
+	upCmd.Flags().
+		StringVar(&cmd.GPUAvailability, "gpu-availability", "",
+			"Override GPU availability detection (detect, true, false)")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {

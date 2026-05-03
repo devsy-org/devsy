@@ -373,6 +373,7 @@ func (r *runner) runContainer(
 			IDE:                  r.WorkspaceConfig.Workspace.IDE.Name,
 			IDEOptions:           r.WorkspaceConfig.Workspace.IDE.Options,
 			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
+			GPUAvailability:      r.WorkspaceConfig.CLIOptions.GPUAvailability,
 		})
 	}
 
