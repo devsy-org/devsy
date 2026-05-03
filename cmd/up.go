@@ -813,7 +813,7 @@ func (cmd *UpCmd) prepareClient(
 			return nil, err
 		}
 		for k, v := range parsed {
-			cmd.CLIOptions.SecretsEnv = append(cmd.CLIOptions.SecretsEnv, k+"="+v)
+			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
 		}
 	}
 
