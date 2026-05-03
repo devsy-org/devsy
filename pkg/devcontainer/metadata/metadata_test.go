@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-func TestFeatureConfigToImageMetadata_IncludesContainerEnv(t *testing.T) {
+func TestFeatureConfigToImageMetadata_ExcludesContainerEnv(t *testing.T) {
 	feature := &config.FeatureConfig{
 		ContainerEnv: map[string]string{
 			"FOO": "bar",
@@ -18,14 +18,11 @@ func TestFeatureConfigToImageMetadata_IncludesContainerEnv(t *testing.T) {
 
 	got := FeatureConfigToImageMetadata(feature)
 
-	if got.ContainerEnv == nil {
-		t.Fatal("expected ContainerEnv to be set, got nil")
-	}
-	if got.ContainerEnv["FOO"] != "bar" {
-		t.Errorf("ContainerEnv[FOO] = %q, want %q", got.ContainerEnv["FOO"], "bar")
-	}
-	if got.ContainerEnv["BAZ"] != "qux" {
-		t.Errorf("ContainerEnv[BAZ] = %q, want %q", got.ContainerEnv["BAZ"], "qux")
+	if got.ContainerEnv != nil {
+		t.Fatalf(
+			"expected ContainerEnv to be nil in per-feature metadata, got %v",
+			got.ContainerEnv,
+		)
 	}
 }
 

@@ -73,12 +73,11 @@ func FeatureConfigToImageMetadata(feature *config.FeatureConfig) *config.ImageMe
 			Customizations:       feature.Customizations,
 		},
 		NonComposeBase: config.NonComposeBase{
-			ContainerEnv: feature.ContainerEnv,
-			Mounts:       feature.Mounts,
-			Init:         feature.Init,
-			Privileged:   feature.Privileged,
-			CapAdd:       feature.CapAdd,
-			SecurityOpt:  feature.SecurityOpt,
+			Mounts:      feature.Mounts,
+			Init:        feature.Init,
+			Privileged:  feature.Privileged,
+			CapAdd:      feature.CapAdd,
+			SecurityOpt: feature.SecurityOpt,
 		},
 	}
 }
