@@ -121,6 +121,10 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 		ContainerDetails:    params.containerDetails,
 	}
 
+	if r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe != "" {
+		result.MergedConfig.UserEnvProbe = r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe
+	}
+
 	if r.WorkspaceConfig.Agent.Local == stringTrue &&
 		r.WorkspaceConfig.CLIOptions.Platform.Enabled {
 		result.MergedConfig.Mounts = filterWorkspaceMounts(
