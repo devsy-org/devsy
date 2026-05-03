@@ -84,7 +84,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		forwardPorts, ok := config["forwardPorts"].([]any)
 		gomega.Expect(ok).To(gomega.BeTrue(), "forwardPorts should be an array")
 		gomega.Expect(forwardPorts).To(gomega.HaveLen(1))
-		gomega.Expect(forwardPorts[0]).To(gomega.BeNumerically("==", 8080))
+		gomega.Expect(forwardPorts[0]).To(gomega.Equal("8080"))
 
 		// capAdd from parent should remain since child didn't set it
 		capAdd, ok := config["capAdd"].([]any)
