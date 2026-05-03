@@ -416,6 +416,28 @@ type PortAttribute struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
+const onAutoForwardIgnore = "ignore"
+
+// ShouldAutoForward reports whether a port with this attribute should be
+// automatically forwarded. Only onAutoForward=="ignore" suppresses forwarding.
+func (p *PortAttribute) ShouldAutoForward() bool {
+	return p == nil || p.OnAutoForward != onAutoForwardIgnore
+}
+
+// ResolvePortAttribute returns the effective PortAttribute for a port.
+// It checks portsAttributes first (exact port match), then falls back
+// to otherPortsAttributes for unlisted ports.
+func ResolvePortAttribute(
+	port string,
+	portsAttributes map[string]PortAttribute,
+	otherPortsAttributes *PortAttribute,
+) *PortAttribute {
+	if pa, ok := portsAttributes[port]; ok {
+		return &pa
+	}
+	return otherPortsAttributes
+}
+
 type DevsyCustomizations struct {
 	PrebuildRepository         types.StrArray    `json:"prebuildRepository,omitempty"`
 	FeatureDownloadHTTPHeaders map[string]string `json:"featureDownloadHTTPHeaders,omitempty"`

@@ -12,7 +12,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/credentials"
+	devconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
@@ -201,7 +203,31 @@ func configureGitUserLocally(
 }
 
 func forwardPorts(ctx context.Context, client tunnel.TunnelClient) error {
-	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}).Run(ctx)
+	opts := portFilterFromResult()
+	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}, opts...).Run(ctx)
+}
+
+func portFilterFromResult() []netstat.WatcherOption {
+	raw, err := os.ReadFile(config.DevContainerResultPath)
+	if err != nil {
+		log.Debugf("Could not read result for port attributes: %v", err)
+		return nil
+	}
+	result := &devconfig.Result{}
+	if err := json.Unmarshal(raw, result); err != nil {
+		log.Debugf("Could not parse result for port attributes: %v", err)
+		return nil
+	}
+	mc := result.MergedConfig
+	if mc == nil || (len(mc.PortsAttributes) == 0 && mc.OtherPortsAttributes == nil) {
+		return nil
+	}
+	pa, opa := mc.PortsAttributes, mc.OtherPortsAttributes
+	return []netstat.WatcherOption{
+		netstat.WithPortFilter(func(port string) bool {
+			return devconfig.ResolvePortAttribute(port, pa, opa).ShouldAutoForward()
+		}),
+	}
 }
 
 type forwarder struct {
