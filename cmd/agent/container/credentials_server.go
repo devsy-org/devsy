@@ -225,7 +225,11 @@ func portFilterFromResult() []netstat.WatcherOption {
 	pa, opa := mc.PortsAttributes, mc.OtherPortsAttributes
 	return []netstat.WatcherOption{
 		netstat.WithPortFilter(func(port string) bool {
-			return devconfig.ResolvePortAttribute(port, pa, opa).ShouldAutoForward()
+			portNum, err := strconv.Atoi(port)
+			if err != nil {
+				return true
+			}
+			return devconfig.ResolvePortAttribute(portNum, pa, opa).ShouldAutoForward()
 		}),
 	}
 }

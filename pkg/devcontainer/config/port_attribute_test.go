@@ -1,68 +1,101 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
-const testAutoForwardSilent = "silent"
-
-func TestShouldAutoForward_NilReceiver(t *testing.T) {
-	var pa *PortAttribute
-	if !pa.ShouldAutoForward() {
-		t.Fatal("nil PortAttribute must allow forwarding")
+func TestResolvePortAttribute_ExactMatch(t *testing.T) {
+	const wantLabel = "Frontend"
+	attrs := map[string]PortAttribute{
+		"3000": {Label: wantLabel, Protocol: ProtocolHTTPS, OnAutoForward: AutoForwardNotify},
+		"5432": {OnAutoForward: AutoForwardIgnore},
+	}
+	got := ResolvePortAttribute(3000, attrs, nil)
+	if got.Label != wantLabel {
+		t.Errorf("Label = %q, want %q", got.Label, wantLabel)
+	}
+	if got.Protocol != ProtocolHTTPS {
+		t.Errorf("Protocol = %q, want %q", got.Protocol, ProtocolHTTPS)
 	}
 }
 
-func TestShouldAutoForward_Ignore(t *testing.T) {
-	pa := &PortAttribute{OnAutoForward: onAutoForwardIgnore}
-	if pa.ShouldAutoForward() {
-		t.Fatal("onAutoForward=ignore must suppress forwarding")
+func TestResolvePortAttribute_RangeMatch(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"8080-8090": {Label: "Dev servers", OnAutoForward: AutoForwardSilent},
+	}
+	got := ResolvePortAttribute(8085, attrs, nil)
+	if got.Label != "Dev servers" {
+		t.Errorf("Label = %q, want %q", got.Label, "Dev servers")
 	}
 }
 
-func TestShouldAutoForward_Defaults(t *testing.T) {
-	for _, value := range []string{"", "notify", "openBrowser", testAutoForwardSilent} {
-		pa := &PortAttribute{OnAutoForward: value}
-		if !pa.ShouldAutoForward() {
-			t.Errorf("onAutoForward=%q must allow forwarding", value)
+func TestResolvePortAttribute_RangeBoundaries(t *testing.T) {
+	const rangeLabel = "Range"
+	attrs := map[string]PortAttribute{
+		"8080-8090": {Label: rangeLabel},
+	}
+	tests := []struct {
+		port    int
+		wantHit bool
+	}{
+		{8079, false},
+		{8080, true},
+		{8090, true},
+		{8091, false},
+	}
+	for _, tt := range tests {
+		got := ResolvePortAttribute(tt.port, attrs, nil)
+		if (got.Label == rangeLabel) != tt.wantHit {
+			t.Errorf("port %d: hit=%v, want %v", tt.port, got.Label == rangeLabel, tt.wantHit)
 		}
 	}
 }
 
-func TestResolvePortAttribute_ExplicitMatch(t *testing.T) {
-	attrs := map[string]PortAttribute{
-		"8080": {OnAutoForward: onAutoForwardIgnore, Label: "web"},
-	}
-	other := &PortAttribute{OnAutoForward: testAutoForwardSilent}
-
-	got := ResolvePortAttribute("8080", attrs, other)
-	if got.OnAutoForward != onAutoForwardIgnore || got.Label != "web" {
-		t.Fatalf("expected explicit attrs, got %+v", got)
-	}
-}
-
 func TestResolvePortAttribute_FallbackToOther(t *testing.T) {
+	fallback := &PortAttribute{OnAutoForward: AutoForwardIgnore}
+	got := ResolvePortAttribute(9999, nil, fallback)
+	if got.OnAutoForward != AutoForwardIgnore {
+		t.Errorf("OnAutoForward = %q, want %q", got.OnAutoForward, AutoForwardIgnore)
+	}
+}
+
+func TestResolvePortAttribute_ExactTakesPrecedenceOverFallback(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"8080": {OnAutoForward: onAutoForwardIgnore},
+		"3000": {Label: "App", OnAutoForward: AutoForwardNotify},
 	}
-	other := &PortAttribute{OnAutoForward: testAutoForwardSilent, Label: "default"}
-
-	got := ResolvePortAttribute("3000", attrs, other)
-	if got != other {
-		t.Fatalf("expected otherPortsAttributes, got %+v", got)
-	}
-}
-
-func TestResolvePortAttribute_NilOther(t *testing.T) {
-	attrs := map[string]PortAttribute{}
-	got := ResolvePortAttribute("3000", attrs, nil)
-	if got != nil {
-		t.Fatalf("expected nil when no match and no defaults, got %+v", got)
+	fallback := &PortAttribute{OnAutoForward: AutoForwardIgnore}
+	got := ResolvePortAttribute(3000, attrs, fallback)
+	if got.OnAutoForward != AutoForwardNotify {
+		t.Errorf("OnAutoForward = %q, want %q", got.OnAutoForward, AutoForwardNotify)
 	}
 }
 
-func TestResolvePortAttribute_EmptyMap(t *testing.T) {
-	other := &PortAttribute{OnAutoForward: "notify"}
-	got := ResolvePortAttribute("9090", nil, other)
-	if got != other {
-		t.Fatalf("expected otherPortsAttributes with nil map, got %+v", got)
+func TestResolvePortAttribute_NoMatchNoFallback(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"3000": {Label: "App"},
+	}
+	got := ResolvePortAttribute(4000, attrs, nil)
+	if got.Label != "" || got.Protocol != "" || got.OnAutoForward != "" {
+		t.Errorf("expected empty PortAttribute, got %+v", got)
+	}
+}
+
+func TestShouldAutoForward(t *testing.T) {
+	tests := []struct {
+		name string
+		attr PortAttribute
+		want bool
+	}{
+		{"empty defaults to forward", PortAttribute{}, true},
+		{"notify forwards", PortAttribute{OnAutoForward: AutoForwardNotify}, true},
+		{"silent forwards", PortAttribute{OnAutoForward: AutoForwardSilent}, true},
+		{"ignore blocks", PortAttribute{OnAutoForward: AutoForwardIgnore}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.attr.ShouldAutoForward(); got != tt.want {
+				t.Errorf("ShouldAutoForward() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
