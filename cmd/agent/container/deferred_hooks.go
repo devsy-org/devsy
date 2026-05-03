@@ -65,7 +65,7 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 		Repository:    cmd.DotfilesRepo,
 		InstallScript: cmd.DotfilesScript,
 		RemoteUser:    config.GetRemoteUser(setupInfo),
-	})
+	}, nil)
 	if err != nil {
 		log.Errorf("deferred hooks setup failed: %v", err)
 		return nil

@@ -216,6 +216,7 @@ type CLIOptions struct {
 	DevContainerID              string            `json:"devContainerID,omitempty"`
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
+	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
 	InitEnv                     []string          `json:"initEnv,omitempty"`
 	Recreate                    bool              `json:"recreate,omitempty"`
 	Prebuild                    bool              `json:"prebuild,omitempty"`

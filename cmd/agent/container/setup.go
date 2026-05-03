@@ -188,6 +188,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 	cfg := &setup.ContainerSetupConfig{
 		SetupInfo:         sctx.setupInfo,
 		ExtraWorkspaceEnv: sctx.workspaceInfo.CLIOptions.WorkspaceEnv,
+		SecretsEnv:        sctx.workspaceInfo.CLIOptions.SecretsEnv,
 		ChownProjects:     cmd.ChownWorkspace,
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,

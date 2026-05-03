@@ -100,7 +100,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{})
+	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil)
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
@@ -252,7 +252,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 	}
 
 	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
-	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{})
+	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil)
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 }
@@ -641,6 +641,41 @@ func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
 	assert.NotEmpty(t, entries, "expected at least one log entry")
 	assert.Contains(t, entries[0].Message,
 		`waitFor phase "updateContentCommand" has no commands configured`)
+}
+
+func (s *LifecycleHookTestSuite) TestMergeSecretsEnv() {
+	env := map[string]string{"EXISTING": "keep"}
+
+	mergeSecretsEnv(env, []string{"SECRET_KEY=secret_val", "OTHER=data"})
+
+	assert.Equal(s.T(), "keep", env["EXISTING"])
+	assert.Equal(s.T(), "secret_val", env["SECRET_KEY"])
+	assert.Equal(s.T(), "data", env["OTHER"])
+}
+
+func (s *LifecycleHookTestSuite) TestMergeSecretsEnvDoesNotOverride() {
+	env := map[string]string{"MY_VAR": "original"}
+
+	mergeSecretsEnv(env, []string{"MY_VAR=overridden"})
+
+	assert.Equal(s.T(), "original", env["MY_VAR"])
+}
+
+func (s *LifecycleHookTestSuite) TestMergeSecretsEnvNil() {
+	env := map[string]string{"KEY": "val"}
+
+	mergeSecretsEnv(env, nil)
+
+	assert.Equal(s.T(), "val", env["KEY"])
+	assert.Len(s.T(), env, 1)
+}
+
+func (s *LifecycleHookTestSuite) TestMergeSecretsEnvValueWithEquals() {
+	env := map[string]string{}
+
+	mergeSecretsEnv(env, []string{"CONN=host=db port=5432"})
+
+	assert.Equal(s.T(), "host=db port=5432", env["CONN"])
 }
 
 func TestLifecycleHookTestSuite(t *testing.T) {
