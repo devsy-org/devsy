@@ -1,0 +1,17 @@
+{
+  "name": "PortsAttributes Test",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "portsAttributes": {
+    "9500": {
+      "label": "TestService",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    },
+    "9501": {
+      "onAutoForward": "ignore"
+    }
+  },
+  "otherPortsAttributes": {
+    "onAutoForward": "notify"
+  }
+}

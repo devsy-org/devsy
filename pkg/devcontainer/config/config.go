@@ -416,26 +416,57 @@ type PortAttribute struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
-const onAutoForwardIgnore = "ignore"
+const (
+	AutoForwardIgnore = "ignore"
+	AutoForwardNotify = "notify"
+	AutoForwardSilent = "silent"
+	ProtocolHTTPS     = "https"
+)
 
-// ShouldAutoForward reports whether a port with this attribute should be
-// automatically forwarded. Only onAutoForward=="ignore" suppresses forwarding.
-func (p *PortAttribute) ShouldAutoForward() bool {
-	return p == nil || p.OnAutoForward != onAutoForwardIgnore
+// ResolvePortAttribute returns the PortAttribute for a given port number.
+// It checks portsAttributes (including range keys like "8080-8090") first,
+// then falls back to otherPortsAttributes.
+func ResolvePortAttribute(
+	port int,
+	portsAttrs map[string]PortAttribute,
+	fallback *PortAttribute,
+) PortAttribute {
+	if portsAttrs != nil {
+		portStr := strconv.Itoa(port)
+		if attr, ok := portsAttrs[portStr]; ok {
+			return attr
+		}
+		for key, attr := range portsAttrs {
+			if matchPortRange(key, port) {
+				return attr
+			}
+		}
+	}
+	if fallback != nil {
+		return *fallback
+	}
+	return PortAttribute{}
 }
 
-// ResolvePortAttribute returns the effective PortAttribute for a port.
-// It checks portsAttributes first (exact port match), then falls back
-// to otherPortsAttributes for unlisted ports.
-func ResolvePortAttribute(
-	port string,
-	portsAttributes map[string]PortAttribute,
-	otherPortsAttributes *PortAttribute,
-) *PortAttribute {
-	if pa, ok := portsAttributes[port]; ok {
-		return &pa
+// ShouldAutoForward returns true if the port attribute allows auto-forwarding.
+func (p PortAttribute) ShouldAutoForward() bool {
+	return p.OnAutoForward != AutoForwardIgnore
+}
+
+func matchPortRange(key string, port int) bool {
+	parts := strings.SplitN(key, "-", 2)
+	if len(parts) != 2 {
+		return false
 	}
-	return otherPortsAttributes
+	lo, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	hi, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	return port >= lo && port <= hi
 }
 
 type DevsyCustomizations struct {

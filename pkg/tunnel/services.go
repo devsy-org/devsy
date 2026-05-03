@@ -62,13 +62,17 @@ func getExitAfterTimeout(devsyConfig *config.Config) time.Duration {
 }
 
 // createForwarder creates a port forwarder if port forwarding is enabled.
-func createForwarder(opts RunServicesOptions, forwardedPorts []string) netstat.Forwarder {
+func createForwarder(
+	opts RunServicesOptions,
+	forwardedPorts []string,
+	resolver PortAttributeResolver,
+) netstat.Forwarder {
 	if !opts.ForwardPorts {
 		return nil
 	}
 	ports := append([]string{}, forwardedPorts...)
 	ports = append(ports, fmt.Sprintf("%d", openvscode.DefaultVSCodePort))
-	return newForwarder(opts.ContainerClient, ports)
+	return newForwarder(opts.ContainerClient, ports, resolver)
 }
 
 // tunnelServerParams contains parameters for running the tunnel server.
@@ -153,6 +157,7 @@ func runServicesIteration(
 	ctx context.Context,
 	opts RunServicesOptions,
 	forwardedPorts []string,
+	resolver PortAttributeResolver,
 ) error {
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
@@ -170,7 +175,7 @@ func runServicesIteration(
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	forwarder := createForwarder(opts, forwardedPorts)
+	forwarder := createForwarder(opts, forwardedPorts, resolver)
 
 	errChan := make(chan error, 1)
 	go runTunnelServer(cancelCtx, cancel, tunnelServerParams{
@@ -210,14 +215,18 @@ func runServicesIteration(
 func RunServices(ctx context.Context, opts RunServicesOptions) error {
 	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig)
 
-	forwardedPorts, err := forwardDevContainerPorts(ctx, portForwardParams{
+	fp := portForwardParams{
 		containerClient:  opts.ContainerClient,
 		extraPorts:       opts.ExtraPorts,
 		exitAfterTimeout: exitAfterTimeout,
-	})
+	}
+
+	forwardedPorts, err := forwardDevContainerPorts(ctx, fp)
 	if err != nil {
 		return fmt.Errorf("forward ports: %w", err)
 	}
+
+	resolver := buildPortAttributeResolver(ctx, fp)
 
 	return retry.OnError(wait.Backoff{
 		Steps:    maxRetrySteps,
@@ -225,14 +234,26 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 		Factor:   retryFactor,
 		Jitter:   retryJitter,
 	}, func(err error) bool {
-		// Do not retry on context cancellation or deadline exceeded
 		if ctx.Err() != nil {
 			return false
 		}
 		return true
 	}, func() error {
-		return runServicesIteration(ctx, opts, forwardedPorts)
+		return runServicesIteration(ctx, opts, forwardedPorts, resolver)
 	})
+}
+
+// buildPortAttributeResolver loads port attributes from the container result.
+func buildPortAttributeResolver(ctx context.Context, p portForwardParams) PortAttributeResolver {
+	result, err := getContainerResult(ctx, p)
+	if err != nil || result == nil || result.MergedConfig == nil {
+		return nil
+	}
+	mc := result.MergedConfig
+	if len(mc.PortsAttributes) == 0 && mc.OtherPortsAttributes == nil {
+		return nil
+	}
+	return NewPortAttributeResolver(mc.PortsAttributes, mc.OtherPortsAttributes)
 }
 
 // portForwardParams contains parameters for port forwarding.
