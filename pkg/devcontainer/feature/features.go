@@ -184,34 +184,7 @@ func processOCIFeature(id string) (string, error) {
 		return "", err
 	}
 
-	img, err := pullOCIImage(ref)
-	if err != nil {
-		return "", err
-	}
-
-	destFile := filepath.Join(featureFolder, "feature.tgz")
-	registry := sanitizeURL(ref.Context().RegistryStr())
-	err = downloadLayer(img, id, destFile)
-	if err != nil {
-		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
-		return "", fmt.Errorf("download layer from %s: %w", registry, err)
-	}
-
-	file, err := os.Open(destFile)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = file.Close() }()
-
-	log.Debugf("extract feature: destination=%s", featureExtractedFolder)
-	err = extract.Extract(file, featureExtractedFolder)
-	if err != nil {
-		log.Debugf(
-			"failed to extract feature: error=%v, destination=%s",
-			err,
-			featureExtractedFolder,
-		)
-		_ = os.RemoveAll(featureExtractedFolder)
+	if err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder); err != nil {
 		return "", err
 	}
 
@@ -221,6 +194,37 @@ func processOCIFeature(id string) (string, error) {
 		featureExtractedFolder,
 	)
 	return featureExtractedFolder, nil
+}
+
+func pullAndExtractOCIFeature(ref name.Reference, id, featureFolder, destDir string) error {
+	img, err := pullOCIImage(ref)
+	if err != nil {
+		return err
+	}
+
+	destFile := filepath.Join(featureFolder, "feature.tgz")
+	registry := sanitizeURL(ref.Context().RegistryStr())
+	err = downloadLayer(img, id, destFile)
+	if err != nil {
+		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
+		return fmt.Errorf("download layer from %s: %w", registry, err)
+	}
+
+	file, err := os.Open(destFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	log.Debugf("extract feature: destination=%s", destDir)
+	err = extract.Extract(file, destDir)
+	if err != nil {
+		log.Debugf("failed to extract feature: error=%v, destination=%s", err, destDir)
+		_ = os.RemoveAll(destDir)
+		return err
+	}
+
+	return nil
 }
 
 func validateImageManifest(img v1.Image) (*v1.Manifest, error) {

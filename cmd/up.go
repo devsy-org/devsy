@@ -66,6 +66,34 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 	return upCmd
 }
 
+// Run runs the command logic.
+func (cmd *UpCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	args []string,
+) error {
+	cmd.prepareWorkspace(client)
+
+	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
+	if err != nil {
+		return err
+	}
+	if wctx == nil {
+		return nil // Platform mode
+	}
+
+	if cmd.Prebuild {
+		return nil
+	}
+
+	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
+		return err
+	}
+
+	return cmd.openIDE(ctx, devsyConfig, client, wctx)
+}
+
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
@@ -253,34 +281,6 @@ func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
 	_ = upCmd.Flags().MarkHidden("daemon-interval")
 	upCmd.Flags().BoolVar(&cmd.ForceDockerless, "force-dockerless", false, "TESTING ONLY")
 	_ = upCmd.Flags().MarkHidden("force-dockerless")
-}
-
-// Run runs the command logic.
-func (cmd *UpCmd) Run(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	client client2.BaseWorkspaceClient,
-	args []string,
-) error {
-	cmd.prepareWorkspace(client)
-
-	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
-	if err != nil {
-		return err
-	}
-	if wctx == nil {
-		return nil // Platform mode
-	}
-
-	if cmd.Prebuild {
-		return nil
-	}
-
-	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
-		return err
-	}
-
-	return cmd.openIDE(ctx, devsyConfig, client, wctx)
 }
 
 // workspaceContext holds the result of workspace preparation.
