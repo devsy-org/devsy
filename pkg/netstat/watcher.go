@@ -14,17 +14,36 @@ type Forwarder interface {
 	StopForward(port string) error
 }
 
+// PortFilter decides whether a discovered port should be auto-forwarded.
+// Return true to forward, false to skip.
+type PortFilter func(port string) bool
+
 //nolint:funcorder
-func NewWatcher(forwarder Forwarder) *Watcher {
-	return &Watcher{
+func NewWatcher(forwarder Forwarder, opts ...WatcherOption) *Watcher {
+	w := &Watcher{
 		forwarder:      forwarder,
 		forwardedPorts: map[string]bool{},
 	}
+	for _, o := range opts {
+		o(w)
+	}
+	return w
+}
+
+// WatcherOption configures a Watcher.
+type WatcherOption func(*Watcher)
+
+// WithPortFilter sets a filter that is consulted before forwarding
+// each auto-discovered port. Ports for which the filter returns false
+// are silently skipped.
+func WithPortFilter(f PortFilter) WatcherOption {
+	return func(w *Watcher) { w.portFilter = f }
 }
 
 type Watcher struct {
 	forwarder      Forwarder
 	forwardedPorts map[string]bool
+	portFilter     PortFilter
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
@@ -61,6 +80,10 @@ func (w *Watcher) runOnce() error {
 	// start ports that were not there before
 	for port := range newPorts {
 		if !w.forwardedPorts[port] {
+			if w.portFilter != nil && !w.portFilter(port) {
+				log.Debugf("Skipping port %s (filtered)", port)
+				continue
+			}
 			log.Debugf("Found open port %s ready to forward", port)
 			err = w.forwarder.Forward(port)
 			if err != nil {

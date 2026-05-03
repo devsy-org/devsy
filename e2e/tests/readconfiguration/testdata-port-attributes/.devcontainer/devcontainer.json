@@ -1,0 +1,15 @@
+{
+  "name": "Port Attributes Test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "forwardPorts": [8080, 9090],
+  "portsAttributes": {
+    "8080": {
+      "label": "web",
+      "onAutoForward": "silent"
+    }
+  },
+  "otherPortsAttributes": {
+    "onAutoForward": "ignore",
+    "label": "default"
+  }
+}
