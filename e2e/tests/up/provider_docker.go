@@ -668,9 +668,9 @@ var _ = ginkgo.Describe(
 			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
 			framework.ExpectNoError(err)
 
-			// With overrideCommand=false the image's Cmd ("bash") is appended
-			// after the start-script preamble ["-c", <script>, "-"].
-			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("bash"),
+			// With overrideCommand=false the image's Cmd is appended after the
+			// start-script preamble ["-c", <script>, "-"].
+			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("sleep"),
 				"image cmd should be preserved when overrideCommand is false")
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 

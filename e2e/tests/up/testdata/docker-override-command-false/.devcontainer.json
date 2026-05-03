@@ -1,5 +1,5 @@
 {
-  "name": "Go",
-  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "name": "OverrideCommandFalse",
+  "build": { "dockerfile": "Dockerfile" },
   "overrideCommand": false
 }
