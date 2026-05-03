@@ -1,0 +1,6 @@
+{
+  "name": "Go",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "workspaceMount": "type=bind,source=${localWorkspaceFolder},target=/custom-workspace",
+  "workspaceFolder": "/custom-workspace"
+}

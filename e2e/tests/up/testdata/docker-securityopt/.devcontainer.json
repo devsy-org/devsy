@@ -1,0 +1,5 @@
+{
+  "name": "Go",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "securityOpt": ["seccomp=unconfined", "apparmor=unconfined"]
+}

@@ -216,6 +216,7 @@ type CLIOptions struct {
 	DevContainerID              string            `json:"devContainerID,omitempty"`
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
+	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
 	InitEnv                     []string          `json:"initEnv,omitempty"`
 	Recreate                    bool              `json:"recreate,omitempty"`
 	Prebuild                    bool              `json:"prebuild,omitempty"`
@@ -231,6 +232,7 @@ type CLIOptions struct {
 	AdditionalFeatures          string            `json:"additionalFeatures,omitempty"`
 	ExtraDevContainerPath       string            `json:"extraDevContainerPath,omitempty"`
 	User                        string            `json:"user,omitempty"`
+	DefaultUserEnvProbe         string            `json:"defaultUserEnvProbe,omitempty"`
 	Userns                      string            `json:"userns,omitempty"`
 	UidMap                      []string          `json:"uidMap,omitempty"`
 	GidMap                      []string          `json:"gidMap,omitempty"`
@@ -257,6 +259,9 @@ type CLIOptions struct {
 	Platforms []string `json:"platform,omitempty"`
 	// Tag specifies additional image tags to apply to the built image beyond the default prebuild hash tag.
 	Tag []string `json:"tag,omitempty"`
+	// CacheFrom specifies images to use as cache sources. When set, these take priority over
+	// devcontainer.json build.cacheFrom values.
+	CacheFrom []string `json:"cacheFrom,omitempty"`
 
 	// ForceBuild forces a rebuild even if a cached image exists.
 	ForceBuild bool `json:"forceBuild,omitempty"`

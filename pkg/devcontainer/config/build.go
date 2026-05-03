@@ -22,7 +22,7 @@ func GetDockerLabelForID(id string) []string {
 
 func GetIDLabels(id string, idLabels []string) []string {
 	if len(idLabels) > 0 {
-		return idLabels
+		return append([]string(nil), idLabels...)
 	}
 	return GetDockerLabelForID(id)
 }

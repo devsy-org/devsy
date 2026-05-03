@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,7 +73,7 @@ func GetExtendedBuildInfo(
 		return nil, fmt.Errorf("get dev container metadata: %w", err)
 	}
 
-	marshalled, err := json.Marshal(mergedImageMetadataConfig.Raw)
+	marshalled, err := metadata.MarshalImageMetadata(mergedImageMetadataConfig.Raw)
 	if err != nil {
 		return nil, err
 	}

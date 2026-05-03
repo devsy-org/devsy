@@ -133,6 +133,20 @@ type lifecycleEnv struct {
 	remoteEnv       map[string]string
 }
 
+// mergeSecretsEnv merges KEY=VALUE pairs from the --secrets-file flag into the
+// lifecycle env map. Existing keys are NOT overridden (config takes precedence).
+func mergeSecretsEnv(env map[string]string, secretsEnv []string) {
+	for _, entry := range secretsEnv {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := env[key]; !exists {
+			env[key] = value
+		}
+	}
+}
+
 func resolveLifecycleEnv(
 	ctx context.Context,
 	setupInfo *config.Result,
@@ -222,8 +236,10 @@ func RunPreAttachHooks(
 	setupInfo *config.Result,
 	prebuild bool,
 	dotfiles DotfilesConfig,
+	secretsEnv []string,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
+	mergeSecretsEnv(env.remoteEnv, secretsEnv)
 	all := preAttachPhaseParams(setupInfo, env, prebuild)
 
 	// Insert the dotfiles phase between postCreate and postStart.
@@ -372,8 +388,9 @@ func (d DeferredHooks) Run() error {
 
 // RunPostAttachHooks runs postAttachCommand only.
 // These run after the IDE has been opened and can be long-running.
-func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result) error {
+func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result, secretsEnv []string) error {
 	env := resolveLifecycleEnv(ctx, setupInfo)
+	mergeSecretsEnv(env.remoteEnv, secretsEnv)
 
 	return runHook(hookRunParams{
 		commands: setupInfo.MergedConfig.PostAttachCommands,

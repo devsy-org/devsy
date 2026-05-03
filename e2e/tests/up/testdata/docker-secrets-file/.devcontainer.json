@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "echo -n $MY_SECRET > /tmp/secret-check.out && echo -n $ANOTHER_SECRET > /tmp/another-secret-check.out"
+}

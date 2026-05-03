@@ -155,7 +155,9 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 			}
 		}
 	}
-	if configCacheFrom := params.ParsedConfig.Config.GetCacheFrom(); len(configCacheFrom) > 0 {
+	if len(params.Options.CacheFrom) > 0 {
+		buildOptions.CacheFrom = append(buildOptions.CacheFrom, params.Options.CacheFrom...)
+	} else if configCacheFrom := params.ParsedConfig.Config.GetCacheFrom(); len(configCacheFrom) > 0 {
 		buildOptions.CacheFrom = append(buildOptions.CacheFrom, configCacheFrom...)
 	}
 	if len(buildOptions.CacheFrom) == 0 {

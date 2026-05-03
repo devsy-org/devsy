@@ -416,6 +416,59 @@ type PortAttribute struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
+const (
+	AutoForwardIgnore = "ignore"
+	AutoForwardNotify = "notify"
+	AutoForwardSilent = "silent"
+	ProtocolHTTPS     = "https"
+)
+
+// ResolvePortAttribute returns the PortAttribute for a given port number.
+// It checks portsAttributes (including range keys like "8080-8090") first,
+// then falls back to otherPortsAttributes.
+func ResolvePortAttribute(
+	port int,
+	portsAttrs map[string]PortAttribute,
+	fallback *PortAttribute,
+) PortAttribute {
+	if portsAttrs != nil {
+		portStr := strconv.Itoa(port)
+		if attr, ok := portsAttrs[portStr]; ok {
+			return attr
+		}
+		for key, attr := range portsAttrs {
+			if matchPortRange(key, port) {
+				return attr
+			}
+		}
+	}
+	if fallback != nil {
+		return *fallback
+	}
+	return PortAttribute{}
+}
+
+// ShouldAutoForward returns true if the port attribute allows auto-forwarding.
+func (p PortAttribute) ShouldAutoForward() bool {
+	return p.OnAutoForward != AutoForwardIgnore
+}
+
+func matchPortRange(key string, port int) bool {
+	parts := strings.SplitN(key, "-", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	lo, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	hi, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	return port >= lo && port <= hi
+}
+
 type DevsyCustomizations struct {
 	PrebuildRepository         types.StrArray    `json:"prebuildRepository,omitempty"`
 	FeatureDownloadHTTPHeaders map[string]string `json:"featureDownloadHTTPHeaders,omitempty"`

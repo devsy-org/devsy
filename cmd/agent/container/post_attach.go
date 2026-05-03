@@ -17,7 +17,8 @@ import (
 // PostAttachCmd runs postAttachCommand hooks as a detached background process.
 type PostAttachCmd struct {
 	*flags.GlobalFlags
-	SetupInfo string
+	SetupInfo  string
+	SecretsEnv []string
 }
 
 // NewPostAttachCmd creates a new command.
@@ -34,6 +35,8 @@ func NewPostAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 	postAttachCmd.Flags().StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
+	postAttachCmd.Flags().
+		StringSliceVar(&cmd.SecretsEnv, "secrets-env", []string{}, "Secrets to inject into lifecycle commands (KEY=VALUE)")
 	_ = postAttachCmd.MarkFlagRequired("setup-info")
 	return postAttachCmd
 }
@@ -51,7 +54,7 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 	}
 
 	log.Debugf("running postAttachCommand hooks")
-	if err := setup.RunPostAttachHooks(ctx, setupInfo); err != nil {
+	if err := setup.RunPostAttachHooks(ctx, setupInfo, cmd.SecretsEnv); err != nil {
 		log.Errorf("postAttachCommand failed: %v", err)
 	}
 

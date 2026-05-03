@@ -313,13 +313,30 @@ func (c *initCmdContext) runSingle(name string, cmd []string) error {
 	return nil
 }
 
+func mountHasConsistency(mount string) bool {
+	for part := range strings.SplitSeq(mount, ",") {
+		if strings.HasPrefix(part, "consistency=") {
+			return true
+		}
+	}
+	return false
+}
+
+func needsDefaultConsistency() bool {
+	return runtime.GOOS != "linux"
+}
+
 func getWorkspace(
 	workspaceFolder, workspaceID string,
 	conf *config.DevContainerConfig,
 ) (string, string) {
 	if conf.WorkspaceMount != "" {
 		mount := config.ParseMount(conf.WorkspaceMount)
-		return conf.WorkspaceMount, mount.Target
+		ws := conf.WorkspaceMount
+		if needsDefaultConsistency() && !mountHasConsistency(ws) {
+			ws += ",consistency='consistent'"
+		}
+		return ws, mount.Target
 	}
 
 	containerMountFolder := conf.WorkspaceFolder
@@ -328,7 +345,7 @@ func getWorkspace(
 	}
 
 	consistency := ""
-	if runtime.GOOS != "linux" {
+	if needsDefaultConsistency() {
 		consistency = ",consistency='consistent'"
 	}
 

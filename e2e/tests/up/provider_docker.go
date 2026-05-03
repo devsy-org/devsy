@@ -467,6 +467,45 @@ var _ = ginkgo.Describe(
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It("postAttachCommand runs on every attach", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-post-attach-every-time",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			// First attach
+			err = dtc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
+				gomega.Equal("1"),
+				"postAttachCommand should run on first attach",
+			)
+
+			// Second attach (re-up the same workspace)
+			err = dtc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			gomega.Eventually(func() string {
+				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(out)
+			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
+				gomega.Equal("2"),
+				"postAttachCommand should run again on second attach",
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It(
 			"initializeCommand with object syntax runs named sub-commands in parallel",
 			func(ctx context.Context) {
@@ -508,6 +547,115 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
+		ginkgo.It("security options", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-securityopt")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+			gomega.Expect(details[0].HostConfig.SecurityOpt).
+				To(gomega.ContainElement("seccomp=unconfined"))
+			gomega.Expect(details[0].HostConfig.SecurityOpt).
+				To(gomega.ContainElement("apparmor=unconfined"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("custom workspace mount", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-workspace-mount")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			hasCustomMount := false
+			for _, m := range details[0].Mounts {
+				if m.Destination == "/custom-workspace" {
+					hasCustomMount = true
+					break
+				}
+			}
+			gomega.Expect(hasCustomMount).To(gomega.BeTrue())
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It(
+			"custom workspace mount with user-specified consistency",
+			func(ctx context.Context) {
+				tempDir, err := dtc.setupAndUp(
+					ctx,
+					"tests/up/testdata/docker-workspace-mount-consistency",
+				)
+				framework.ExpectNoError(err)
+
+				workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+
+				var details []container.InspectResponse
+				err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+				framework.ExpectNoError(err)
+
+				hasCustomMount := false
+				for _, m := range details[0].Mounts {
+					if m.Destination == "/custom-workspace" {
+						hasCustomMount = true
+						break
+					}
+				}
+				gomega.Expect(hasCustomMount).To(gomega.BeTrue())
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It("secrets-file injects env into lifecycle commands", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-secrets-file",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			secretsDir, err := framework.CreateTempDir()
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
+
+			secretsFile := filepath.Join(secretsDir, "secrets.env")
+			err = os.WriteFile(
+				secretsFile,
+				[]byte("MY_SECRET=test-value-12345\nANOTHER_SECRET=second-secret-42\n"),
+				0o600,
+			)
+			framework.ExpectNoError(err)
+
+			err = dtc.f.DevsyUp(ctx, tempDir, "--secrets-file", secretsFile)
+			framework.ExpectNoError(err)
+
+			out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/secret-check.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("test-value-12345"))
+
+			out, err = dtc.execSSH(ctx, tempDir, "cat /tmp/another-secret-check.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("second-secret-42"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",
@@ -536,6 +684,46 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("overrideCommand false preserves image entrypoint", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-override-command-false")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("sleep"),
+				"image cmd should be preserved when overrideCommand is false")
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("overrideCommand default overrides image entrypoint", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker")
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			gomega.Expect(details[0].Config.Cmd).To(gomega.HaveLen(3),
+				"image cmd should be overridden by default")
+			gomega.Expect(details[0].Config.Cmd[0]).To(gomega.Equal("-c"))
+			gomega.Expect(details[0].Config.Cmd[2]).To(gomega.Equal("-"))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 		ginkgo.It("id-label replaces default container label", func(ctx context.Context) {
 			_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",

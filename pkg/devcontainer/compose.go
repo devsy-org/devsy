@@ -1095,6 +1095,8 @@ exec "$$@"
 	if len(r.IDLabels) > 0 {
 		for _, l := range r.IDLabels {
 			k, v, _ := strings.Cut(l, "=")
+			v = regexp.MustCompile(`\$`).ReplaceAllString(v, "$$$$")
+			v = regexp.MustCompile(`'`).ReplaceAllString(v, `\'\'`)
 			labels[k] = v
 		}
 	} else {

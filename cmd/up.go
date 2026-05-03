@@ -25,6 +25,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -47,6 +48,7 @@ type UpCmd struct {
 	Reconfigure        bool
 
 	SSHConfigPath string
+	SecretsFile   string
 
 	DotfilesSource        string
 	DotfilesScript        string
@@ -64,6 +66,34 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	cmd.registerFlags(upCmd)
 	return upCmd
+}
+
+// Run runs the command logic.
+func (cmd *UpCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	args []string,
+) error {
+	cmd.prepareWorkspace(client)
+
+	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
+	if err != nil {
+		return err
+	}
+	if wctx == nil {
+		return nil // Platform mode
+	}
+
+	if cmd.Prebuild {
+		return nil
+	}
+
+	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
+		return err
+	}
+
+	return cmd.openIDE(ctx, devsyConfig, client, wctx)
 }
 
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
@@ -101,6 +131,11 @@ func (cmd *UpCmd) validate() error {
 	}
 	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
+	}
+	if cmd.DefaultUserEnvProbe != "" {
+		if _, err := config2.NewUserEnvProbe(cmd.DefaultUserEnvProbe); err != nil {
+			return err
+		}
 	}
 	if cmd.ExtraDevContainerPath != "" {
 		absPath, err := filepath.Abs(cmd.ExtraDevContainerPath)
@@ -155,6 +190,8 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 			"The container image to use, this will override the devcontainer.json value in the project")
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
+	upCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
+	_ = upCmd.Flags().MarkHidden("config")
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerID, "devcontainer-id", "",
 			"The ID of the devcontainer to use when multiple exist "+
@@ -171,6 +208,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringArrayVar(&cmd.IDLabels, "id-label", []string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)")
+	upCmd.Flags().
+		StringVar(&cmd.DefaultUserEnvProbe, "default-user-env-probe", "",
+			"Override userEnvProbe from devcontainer.json (loginInteractiveShell, loginShell, interactiveShell, none)")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
@@ -243,11 +283,18 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 			"The path to files containing a list of extra env variables to put into the workspace, "+
 				"e.g. MY_ENV_VAR=MY_VALUE")
 	upCmd.Flags().
+		StringVar(&cmd.SecretsFile, "secrets-file", "",
+			"Path to a dotenv-style file containing KEY=VALUE secrets injected into lifecycle commands")
+	upCmd.Flags().
 		StringArrayVar(&cmd.InitEnv, "init-env", []string{},
 			"Extra env variables to inject during the initialization of the workspace, e.g. MY_ENV_VAR=MY_VALUE")
 	upCmd.Flags().
 		BoolVar(&cmd.DisableDaemon, "disable-daemon", false,
 			"If enabled, will not install a daemon into the target machine to track activity")
+	upCmd.Flags().
+		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
+			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
+				"Takes priority over devcontainer.json build.cacheFrom")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
@@ -255,34 +302,6 @@ func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
 	_ = upCmd.Flags().MarkHidden("daemon-interval")
 	upCmd.Flags().BoolVar(&cmd.ForceDockerless, "force-dockerless", false, "TESTING ONLY")
 	_ = upCmd.Flags().MarkHidden("force-dockerless")
-}
-
-// Run runs the command logic.
-func (cmd *UpCmd) Run(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	client client2.BaseWorkspaceClient,
-	args []string,
-) error {
-	cmd.prepareWorkspace(client)
-
-	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
-	if err != nil {
-		return err
-	}
-	if wctx == nil {
-		return nil // Platform mode
-	}
-
-	if cmd.Prebuild {
-		return nil
-	}
-
-	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
-		return err
-	}
-
-	return cmd.openIDE(ctx, devsyConfig, client, wctx)
 }
 
 // workspaceContext holds the result of workspace preparation.
@@ -792,6 +811,16 @@ func (cmd *UpCmd) prepareClient(
 
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return nil, err
+	}
+
+	if cmd.SecretsFile != "" {
+		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range parsed {
+			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
+		}
 	}
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(

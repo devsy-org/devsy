@@ -220,6 +220,12 @@ func (r *runner) resolveNewContainer(
 	ctx context.Context,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
+	config.ValidateHostRequirements(
+		p.parsedConfig.Config.HostRequirements,
+		config.SystemHostInfo{},
+		p.substitutionContext.LocalWorkspaceFolder,
+	)
+
 	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
 		CLIOptions: provider2.CLIOptions{
 			PrebuildRepositories:  p.options.PrebuildRepositories,
@@ -383,7 +389,7 @@ func (r *runner) getDockerlessRunOptions(
 	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
 
 	// add metadata as label here
-	marshalled, err := json.Marshal(buildInfo.ImageMetadata.Raw)
+	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
@@ -438,8 +444,9 @@ func (r *runner) getDockerlessRunOptions(
 			"--cmd", GetStartScript(mergedConfig),
 			"--user", buildInfo.Dockerless.User,
 		},
-		Env:    env,
-		CapAdd: mergedConfig.CapAdd,
+		Env:         env,
+		CapAdd:      mergedConfig.CapAdd,
+		SecurityOpt: mergedConfig.SecurityOpt,
 		Labels: []string{
 			metadata.ImageMetadataLabel + "=" + string(marshalled),
 			config.UserLabel + "=" + buildInfo.Dockerless.User,
@@ -463,7 +470,7 @@ func (r *runner) getRunOptions(
 	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
 
 	// add metadata as label here
-	marshalled, err := json.Marshal(buildInfo.ImageMetadata.Raw)
+	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}

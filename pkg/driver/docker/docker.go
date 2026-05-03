@@ -624,12 +624,22 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 	if options.WorkspaceMount != nil {
 		workspacePath := d.EnsurePath(options.WorkspaceMount)
 		mountPath := workspacePath.String()
-		if helper.IsNerdctl() && strings.Contains(mountPath, ",consistency='consistent'") {
-			mountPath = strings.Replace(mountPath, ",consistency='consistent'", "", 1)
+		if helper.IsNerdctl() {
+			mountPath = stripMountConsistency(mountPath)
 		}
 		args = append(args, "--mount", mountPath)
 	}
 	return args
+}
+
+func stripMountConsistency(mount string) string {
+	var parts []string
+	for part := range strings.SplitSeq(mount, ",") {
+		if !strings.HasPrefix(part, "consistency=") {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 func (d *dockerDriver) addUserArgs(args []string, options *driver.RunOptions) []string {

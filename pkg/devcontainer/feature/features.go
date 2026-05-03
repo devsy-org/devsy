@@ -147,6 +147,23 @@ func checkFeatureCache(id string) (string, bool) {
 	return "", false
 }
 
+func pullOCIImage(ref name.Reference) (v1.Image, error) {
+	var img v1.Image
+	err := retryOCIPull(func() error {
+		log.Debugf("fetching OCI image: reference=%s", ref.String())
+		var fetchErr error
+		img, fetchErr = remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		return fetchErr
+	})
+	if err != nil {
+		err = image.SanitizeRegistryError(err)
+		registry := sanitizeURL(ref.Context().RegistryStr())
+		log.Debugf("failed to fetch OCI image: error=%v, registry=%s", err, registry)
+		return nil, fmt.Errorf("pull from %s: %w", registry, err)
+	}
+	return img, nil
+}
+
 func processOCIFeature(id string) (string, error) {
 	log.Debugf("processing OCI feature: featureId=%s", id)
 
@@ -167,36 +184,7 @@ func processOCIFeature(id string) (string, error) {
 		return "", err
 	}
 
-	log.Debugf("fetching OCI image: reference=%s", ref.String())
-	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
-	if err != nil {
-		err = image.SanitizeRegistryError(err)
-		log.Debugf("failed to fetch OCI image: error=%v, reference=%s", err, ref.String())
-		return "", err
-	}
-
-	destFile := filepath.Join(featureFolder, "feature.tgz")
-	err = downloadLayer(img, id, destFile)
-	if err != nil {
-		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
-		return "", err
-	}
-
-	file, err := os.Open(destFile)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = file.Close() }()
-
-	log.Debugf("extract feature: destination=%s", featureExtractedFolder)
-	err = extract.Extract(file, featureExtractedFolder)
-	if err != nil {
-		log.Debugf(
-			"failed to extract feature: error=%v, destination=%s",
-			err,
-			featureExtractedFolder,
-		)
-		_ = os.RemoveAll(featureExtractedFolder)
+	if err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder); err != nil {
 		return "", err
 	}
 
@@ -206,6 +194,37 @@ func processOCIFeature(id string) (string, error) {
 		featureExtractedFolder,
 	)
 	return featureExtractedFolder, nil
+}
+
+func pullAndExtractOCIFeature(ref name.Reference, id, featureFolder, destDir string) error {
+	img, err := pullOCIImage(ref)
+	if err != nil {
+		return err
+	}
+
+	destFile := filepath.Join(featureFolder, "feature.tgz")
+	registry := sanitizeURL(ref.Context().RegistryStr())
+	err = downloadLayer(img, id, destFile)
+	if err != nil {
+		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
+		return fmt.Errorf("download layer from %s: %w", registry, err)
+	}
+
+	file, err := os.Open(destFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	log.Debugf("extract feature: destination=%s", destDir)
+	err = extract.Extract(file, destDir)
+	if err != nil {
+		log.Debugf("failed to extract feature: error=%v, destination=%s", err, destDir)
+		_ = os.RemoveAll(destDir)
+		return err
+	}
+
+	return nil
 }
 
 func validateImageManifest(img v1.Image) (*v1.Manifest, error) {
