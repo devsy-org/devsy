@@ -536,5 +536,29 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("id-label replaces default container label", func(ctx context.Context) {
+			_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
+				"--id-label", "devsy.test.app=myproject",
+				"--id-label", "devsy.test.env=ci")
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.dockerHelper.FindContainer(
+				ctx,
+				[]string{"devsy.test.app=myproject", "devsy.test.env=ci"},
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var containerDetails []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
+			framework.ExpectNoError(err)
+			gomega.Expect(containerDetails[0].Config.Labels).To(gomega.HaveKeyWithValue(
+				"devsy.test.app", "myproject"))
+			gomega.Expect(containerDetails[0].Config.Labels).To(gomega.HaveKeyWithValue(
+				"devsy.test.env", "ci"))
+			gomega.Expect(containerDetails[0].Config.Labels).NotTo(gomega.HaveKey(
+				"dev.containers.id"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )

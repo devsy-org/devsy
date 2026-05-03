@@ -159,4 +159,23 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should find container by custom id-label",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspace("tests/exec/testdata/exec", initialDir)
+			framework.ExpectNoError(err)
+
+			err = f.DevsyUp(ctx, tempDir,
+				"--id-label", "devsy.exec.test=idlabel")
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				workspaceFolderFlag, tempDir,
+				"--id-label", "devsy.exec.test=idlabel",
+				"--", echoCommand, "-n", "found",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.Equal("found"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
