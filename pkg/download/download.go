@@ -21,19 +21,40 @@ type HTTPStatusError struct {
 }
 
 func (e *HTTPStatusError) Error() string {
+	safeURL := sanitizeURL(e.URL)
 	if e.Body != "" {
 		return fmt.Sprintf(
 			"received status code %d when trying to download %s: %s",
 			e.StatusCode,
-			e.URL,
+			safeURL,
 			e.Body,
 		)
 	}
 	return fmt.Sprintf(
 		"received status code %d when trying to download %s",
 		e.StatusCode,
-		e.URL,
+		safeURL,
 	)
+}
+
+func sanitizeURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err == nil {
+		if parsed.User != nil {
+			parsed.User = nil
+			return parsed.String()
+		}
+		return raw
+	}
+	scheme, rest, ok := strings.Cut(raw, "://")
+	if !ok {
+		return raw
+	}
+	_, afterAt, found := strings.Cut(rest, "@")
+	if !found {
+		return raw
+	}
+	return scheme + "://" + afterAt
 }
 
 func Head(rawURL string) (int, error) {

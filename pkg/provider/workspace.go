@@ -231,6 +231,7 @@ type CLIOptions struct {
 	AdditionalFeatures          string            `json:"additionalFeatures,omitempty"`
 	ExtraDevContainerPath       string            `json:"extraDevContainerPath,omitempty"`
 	User                        string            `json:"user,omitempty"`
+	DefaultUserEnvProbe         string            `json:"defaultUserEnvProbe,omitempty"`
 	Userns                      string            `json:"userns,omitempty"`
 	UidMap                      []string          `json:"uidMap,omitempty"`
 	GidMap                      []string          `json:"gidMap,omitempty"`

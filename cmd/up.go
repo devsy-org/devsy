@@ -127,6 +127,11 @@ func (cmd *UpCmd) validate() error {
 	if err := validatePodmanFlags(cmd); err != nil {
 		return err
 	}
+	if cmd.DefaultUserEnvProbe != "" {
+		if _, err := config2.NewUserEnvProbe(cmd.DefaultUserEnvProbe); err != nil {
+			return err
+		}
+	}
 	if cmd.ExtraDevContainerPath != "" {
 		absPath, err := filepath.Abs(cmd.ExtraDevContainerPath)
 		if err != nil {
@@ -195,6 +200,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.AdditionalFeatures, "additional-features", "",
 			`Additional features to apply to the dev container (JSON as per "features" section in devcontainer.json)`)
+	upCmd.Flags().
+		StringVar(&cmd.DefaultUserEnvProbe, "default-user-env-probe", "",
+			"Override userEnvProbe from devcontainer.json (loginInteractiveShell, loginShell, interactiveShell, none)")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
