@@ -1,0 +1,7 @@
+{
+  "extends": ["base.json", "middleware.json"],
+  "name": "Array Extends Child",
+  "containerEnv": {
+    "FROM_CHILD": "child-value"
+  }
+}

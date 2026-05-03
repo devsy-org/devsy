@@ -15,6 +15,7 @@ const (
 	testUserRoot     = "root"
 	testOriginParent = "/tmp/parent.json"
 	testOriginChild  = "/tmp/child.json"
+	testFileBase     = "base.json"
 )
 
 func writeJSON(t *testing.T, dir, filename, content string) string {
@@ -54,8 +55,8 @@ func TestExtends_BasicScalarOverride(t *testing.T) {
 	if cfg.RemoteUser != "vscode" {
 		t.Errorf("expected remoteUser 'vscode', got %q", cfg.RemoteUser)
 	}
-	if cfg.Extends != "" {
-		t.Errorf("expected extends to be cleared, got %q", cfg.Extends)
+	if !cfg.Extends.IsEmpty() {
+		t.Errorf("expected extends to be cleared, got %v", cfg.Extends)
 	}
 }
 
@@ -388,8 +389,8 @@ func TestMergeExtendsConfigs_Scalars(t *testing.T) {
 	if result.Origin != testOriginChild {
 		t.Errorf("Origin: got %q, want %q", result.Origin, testOriginChild)
 	}
-	if result.Extends != "" {
-		t.Errorf("Extends: should be cleared, got %q", result.Extends)
+	if !result.Extends.IsEmpty() {
+		t.Errorf("Extends: should be cleared, got %v", result.Extends)
 	}
 }
 
@@ -496,6 +497,183 @@ func TestMergeExtendsConfigs_ArraysAndHooks(t *testing.T) {
 	}
 	if len(result.OnCreateCommand) == 0 {
 		t.Error("OnCreateCommand: expected parent value")
+	}
+}
+
+func TestExtends_ArraySingleRef(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, testFileBase, `{
+		"name": "base",
+		"image": "ubuntu:20.04",
+		"remoteUser": "vscode"
+	}`)
+	childPath := writeJSON(t, tmpDir, "devcontainer.json", `{
+		"extends": ["base.json"],
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != testImageUbuntu {
+		t.Errorf("expected image 'ubuntu:20.04', got %q", cfg.Image)
+	}
+}
+
+func TestExtends_ArrayMultipleRefs_Scalars(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, testFileBase, `{
+		"image": "ubuntu:20.04",
+		"containerEnv": {"FROM_BASE": "base-val", "SHARED": "from-base"}
+	}`)
+	writeJSON(t, tmpDir, "middle.json", `{
+		"remoteUser": "vscode",
+		"containerEnv": {"FROM_MIDDLE": "mid-val", "SHARED": "from-middle"}
+	}`)
+	childPath := writeJSON(t, tmpDir, "devcontainer.json", `{
+		"extends": ["base.json", "middle.json"],
+		"name": "child",
+		"containerEnv": {"FROM_CHILD": "child-val"}
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != testImageUbuntu {
+		t.Errorf("expected image from base, got %q", cfg.Image)
+	}
+	if cfg.RemoteUser != "vscode" {
+		t.Errorf("expected remoteUser from middle, got %q", cfg.RemoteUser)
+	}
+}
+
+func TestExtends_ArrayMultipleRefs_EnvMerge(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, testFileBase, `{
+		"image": "ubuntu:20.04",
+		"containerEnv": {"FROM_BASE": "base-val", "SHARED": "from-base"}
+	}`)
+	writeJSON(t, tmpDir, "middle.json", `{
+		"remoteUser": "vscode",
+		"containerEnv": {"FROM_MIDDLE": "mid-val", "SHARED": "from-middle"}
+	}`)
+	childPath := writeJSON(t, tmpDir, "devcontainer.json", `{
+		"extends": ["base.json", "middle.json"],
+		"name": "child",
+		"containerEnv": {"FROM_CHILD": "child-val"}
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ContainerEnv["FROM_BASE"] != "base-val" {
+		t.Error("missing FROM_BASE from base")
+	}
+	if cfg.ContainerEnv["FROM_MIDDLE"] != "mid-val" {
+		t.Error("missing FROM_MIDDLE from middle")
+	}
+	if cfg.ContainerEnv["FROM_CHILD"] != "child-val" {
+		t.Error("missing FROM_CHILD from child")
+	}
+	if cfg.ContainerEnv["SHARED"] != "from-middle" {
+		t.Errorf("SHARED: got %q, want from-middle", cfg.ContainerEnv["SHARED"])
+	}
+}
+
+func TestExtends_ArrayOrderMatters(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, "a.json", `{"remoteUser": "a-user", "image": "img-a"}`)
+	writeJSON(t, tmpDir, "b.json", `{"remoteUser": "b-user"}`)
+	childPath := writeJSON(t, tmpDir, "devcontainer.json", `{
+		"extends": ["a.json", "b.json"],
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RemoteUser != "b-user" {
+		t.Errorf("later ref should override: got %q, want 'b-user'", cfg.RemoteUser)
+	}
+	if cfg.Image != "img-a" {
+		t.Errorf("image from a should remain: got %q", cfg.Image)
+	}
+}
+
+func TestExtends_ArrayCycleDetection(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, "a.json", `{"extends": "b.json", "name": "a"}`)
+	writeJSON(t, tmpDir, "b.json", `{"extends": "a.json", "name": "b"}`)
+	childPath := writeJSON(t, tmpDir, "devcontainer.json", `{
+		"extends": ["a.json"]
+	}`)
+
+	_, err := ParseDevContainerJSONFile(childPath)
+	if err == nil {
+		t.Fatal("expected cycle error")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("expected 'cycle' in error, got: %v", err)
+	}
+}
+
+func TestExtendsRef_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  ExtendsRef
+	}{
+		{"single string", `"base.json"`, ExtendsRef{testFileBase}},
+		{"array single", `["base.json"]`, ExtendsRef{testFileBase}},
+		{"array multi", `["a.json","b.json"]`, ExtendsRef{"a.json", "b.json"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got ExtendsRef
+			if err := got.UnmarshalJSON([]byte(tc.input)); err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("len: got %d, want %d", len(got), len(tc.want))
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("[%d]: got %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestExtendsRef_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		input ExtendsRef
+		want  string
+	}{
+		{"single", ExtendsRef{testFileBase}, `"base.json"`},
+		{"multi", ExtendsRef{"a.json", "b.json"}, `["a.json","b.json"]`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.input.MarshalJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("got %q, want %q", string(got), tc.want)
+			}
+		})
 	}
 }
 
