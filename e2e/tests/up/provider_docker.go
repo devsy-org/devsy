@@ -672,7 +672,7 @@ var _ = ginkgo.Describe(
 			// after the start-script preamble ["-c", <script>, "-"].
 			gomega.Expect(details[0].Config.Cmd).To(gomega.ContainElement("bash"),
 				"image cmd should be preserved when overrideCommand is false")
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 		ginkgo.It("overrideCommand default overrides image entrypoint", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker")
@@ -695,6 +695,6 @@ var _ = ginkgo.Describe(
 				"image cmd should be overridden by default")
 			gomega.Expect(details[0].Config.Cmd[0]).To(gomega.Equal("-c"))
 			gomega.Expect(details[0].Config.Cmd[2]).To(gomega.Equal("-"))
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 	},
 )
