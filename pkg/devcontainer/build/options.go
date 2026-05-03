@@ -154,7 +154,11 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 				),
 			}
 		}
-	} else {
+	}
+	if configCacheFrom := params.ParsedConfig.Config.GetCacheFrom(); len(configCacheFrom) > 0 {
+		buildOptions.CacheFrom = append(buildOptions.CacheFrom, configCacheFrom...)
+	}
+	if len(buildOptions.CacheFrom) == 0 {
 		buildOptions.BuildArgs["BUILDKIT_INLINE_CACHE"] = "1"
 	}
 
