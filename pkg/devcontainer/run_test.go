@@ -141,8 +141,8 @@ func TestGetWorkspace_CustomWorkspaceMount(t *testing.T) {
 
 	mount, folder := getWorkspace("/ignored", "ws-id", conf)
 
-	if mount != customMount {
-		t.Fatalf("expected raw workspaceMount string, got %q", mount)
+	if !contains(mount, customMount) {
+		t.Fatalf("expected workspaceMount string to contain original, got %q", mount)
 	}
 	if folder != "/custom-ws" {
 		t.Fatalf("expected target /custom-ws, got %q", folder)
@@ -196,5 +196,42 @@ func TestGetWorkspace_EmptyWorkspaceMount(t *testing.T) {
 	}
 	if !contains(mount, "type=bind") {
 		t.Fatalf("expected default bind mount, got %q", mount)
+	}
+}
+
+func TestGetWorkspace_UserConsistencyPreserved(t *testing.T) {
+	customMount := "type=bind,source=/src,target=/ws,consistency=delegated"
+	conf := &config.DevContainerConfig{
+		NonComposeBase: config.NonComposeBase{
+			WorkspaceMount: customMount,
+		},
+	}
+
+	mount, _ := getWorkspace("/ignored", "ws-id", conf)
+
+	if !contains(mount, "consistency=delegated") {
+		t.Fatalf("expected user consistency=delegated preserved, got %q", mount)
+	}
+	if contains(mount, "consistency='consistent'") {
+		t.Fatalf(
+			"default consistency should not be appended when user specifies one, got %q",
+			mount,
+		)
+	}
+}
+
+func TestMountHasConsistency(t *testing.T) {
+	tests := []struct {
+		mount string
+		want  bool
+	}{
+		{"type=bind,source=/s,target=/t,consistency=cached", true},
+		{"type=bind,source=/s,target=/t,consistency='consistent'", true},
+		{"type=bind,source=/s,target=/t", false},
+	}
+	for _, tt := range tests {
+		if got := mountHasConsistency(tt.mount); got != tt.want {
+			t.Errorf("mountHasConsistency(%q) = %v, want %v", tt.mount, got, tt.want)
+		}
 	}
 }

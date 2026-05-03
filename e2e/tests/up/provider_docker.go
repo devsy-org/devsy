@@ -592,6 +592,38 @@ var _ = ginkgo.Describe(
 			gomega.Expect(hasCustomMount).To(gomega.BeTrue())
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It(
+			"custom workspace mount with user-specified consistency",
+			func(ctx context.Context) {
+				tempDir, err := dtc.setupAndUp(
+					ctx,
+					"tests/up/testdata/docker-workspace-mount-consistency",
+				)
+				framework.ExpectNoError(err)
+
+				workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+
+				var details []container.InspectResponse
+				err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+				framework.ExpectNoError(err)
+
+				hasCustomMount := false
+				for _, m := range details[0].Mounts {
+					if m.Destination == "/custom-workspace" {
+						hasCustomMount = true
+						break
+					}
+				}
+				gomega.Expect(hasCustomMount).To(gomega.BeTrue())
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
 		ginkgo.It("secrets-file injects env into lifecycle commands", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-secrets-file",
