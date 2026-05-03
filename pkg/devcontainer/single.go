@@ -389,7 +389,7 @@ func (r *runner) getDockerlessRunOptions(
 	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
 
 	// add metadata as label here
-	marshalled, err := json.Marshal(buildInfo.ImageMetadata.Raw)
+	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
@@ -470,7 +470,7 @@ func (r *runner) getRunOptions(
 	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
 
 	// add metadata as label here
-	marshalled, err := json.Marshal(buildInfo.ImageMetadata.Raw)
+	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config: %w", err)
 	}
