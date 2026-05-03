@@ -220,6 +220,12 @@ func (r *runner) resolveNewContainer(
 	ctx context.Context,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
+	config.ValidateHostRequirements(
+		p.parsedConfig.Config.HostRequirements,
+		config.SystemHostInfo{},
+		p.substitutionContext.LocalWorkspaceFolder,
+	)
+
 	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
 		CLIOptions: provider2.CLIOptions{
 			PrebuildRepositories:  p.options.PrebuildRepositories,
