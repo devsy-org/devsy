@@ -201,7 +201,7 @@ jobs:
           - label: extends-up
             runner: ubuntu-latest
             free-disk-space: false
-            install-kind: true
+            install-kind: false
             requires-secret: false
 
           - label: down
