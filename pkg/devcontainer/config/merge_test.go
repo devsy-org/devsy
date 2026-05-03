@@ -1,8 +1,11 @@
 package config
 
 import (
+	"slices"
 	"testing"
 )
+
+const testPortRange = "3000-3002"
 
 func gpu(val string) *GPURequirement {
 	return &GPURequirement{Value: val}
@@ -232,51 +235,19 @@ func TestExpandPortRange(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
+		{"single port", "8080", []string{"8080"}, false},
+		{"host:port passthrough", "localhost:3000", []string{"localhost:3000"}, false},
 		{
-			name:  "single port",
-			input: "8080",
-			want:  []string{"8080"},
+			"range expands", "3000-3005",
+			[]string{"3000", "3001", "3002", "3003", "3004", "3005"},
+			false,
 		},
-		{
-			name:  "host:port passthrough",
-			input: "localhost:3000",
-			want:  []string{"localhost:3000"},
-		},
-		{
-			name:  "range expands",
-			input: "3000-3005",
-			want:  []string{"3000", "3001", "3002", "3003", "3004", "3005"},
-		},
-		{
-			name:  "single element range",
-			input: "8080-8080",
-			want:  []string{"8080"},
-		},
-		{
-			name:    "start greater than end",
-			input:   "3005-3000",
-			wantErr: true,
-		},
-		{
-			name:    "negative start",
-			input:   "-1-3000",
-			wantErr: true,
-		},
-		{
-			name:    "non-numeric start",
-			input:   "abc-3000",
-			wantErr: true,
-		},
-		{
-			name:    "non-numeric end",
-			input:   "3000-xyz",
-			wantErr: true,
-		},
-		{
-			name:    "non-numeric single port",
-			input:   "abc",
-			wantErr: true,
-		},
+		{"single element range", "8080-8080", []string{"8080"}, false},
+		{"start greater than end", "3005-3000", nil, true},
+		{"negative start", "-1-3000", nil, true},
+		{"non-numeric start", "abc-3000", nil, true},
+		{"non-numeric end", "3000-xyz", nil, true},
+		{"non-numeric single port", "abc", nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -290,15 +261,8 @@ func TestExpandPortRange(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expandPortRange(%q) unexpected error: %v", tt.input, err)
 			}
-			if len(got) != len(tt.want) {
-				t.Fatalf("expandPortRange(%q) = %v (len %d), want %v (len %d)",
-					tt.input, got, len(got), tt.want, len(tt.want))
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("expandPortRange(%q)[%d] = %q, want %q",
-					tt.input, i, got[i], tt.want[i])
-				}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("expandPortRange(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -307,7 +271,7 @@ func TestExpandPortRange(t *testing.T) {
 func TestMergeForwardPorts_RangeExpansion(t *testing.T) {
 	entries := []*ImageMetadata{
 		{DevContainerConfigBase: DevContainerConfigBase{
-			ForwardPorts: []string{"8080", "3000-3002"},
+			ForwardPorts: []string{"8080", testPortRange},
 		}},
 	}
 	got := mergeForwardPorts(entries)
@@ -325,7 +289,7 @@ func TestMergeForwardPorts_RangeExpansion(t *testing.T) {
 func TestMergeForwardPorts_MixedRangesAndSinglePorts(t *testing.T) {
 	entries := []*ImageMetadata{
 		{DevContainerConfigBase: DevContainerConfigBase{
-			ForwardPorts: []string{"8080", "3000-3002", "localhost:9090"},
+			ForwardPorts: []string{"8080", testPortRange, "localhost:9090"},
 		}},
 	}
 	got := mergeForwardPorts(entries)
@@ -343,7 +307,7 @@ func TestMergeForwardPorts_MixedRangesAndSinglePorts(t *testing.T) {
 func TestMergeForwardPorts_DeduplicatesAcrossRanges(t *testing.T) {
 	entries := []*ImageMetadata{
 		{DevContainerConfigBase: DevContainerConfigBase{
-			ForwardPorts: []string{"3000-3002"},
+			ForwardPorts: []string{testPortRange},
 		}},
 		{DevContainerConfigBase: DevContainerConfigBase{
 			ForwardPorts: []string{"3001-3003"},

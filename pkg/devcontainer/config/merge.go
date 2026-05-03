@@ -254,32 +254,41 @@ func mergeGPU(a, b *GPURequirement) *GPURequirement {
 	return a
 }
 
+func parsePortRange(port string) (int, int, error) {
+	startStr, endStr, _ := strings.Cut(port, "-")
+
+	start, err := strconv.Atoi(startStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range start in %q: %w", port, err)
+	}
+	end, err := strconv.Atoi(endStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range end in %q: %w", port, err)
+	}
+	if start < 0 || end < 0 {
+		return 0, 0, fmt.Errorf("negative port in range %q", port)
+	}
+	if start > end {
+		return 0, 0, fmt.Errorf("invalid port range %q: start (%d) > end (%d)", port, start, end)
+	}
+	return start, end, nil
+}
+
 func expandPortRange(port string) ([]string, error) {
 	if strings.Contains(port, ":") {
 		return []string{port}, nil
 	}
 
-	startStr, endStr, hasRange := strings.Cut(port, "-")
-	if !hasRange {
+	if !strings.Contains(port, "-") {
 		if _, err := strconv.Atoi(port); err != nil {
 			return nil, fmt.Errorf("invalid port %q: %w", port, err)
 		}
 		return []string{port}, nil
 	}
 
-	start, err := strconv.Atoi(startStr)
+	start, end, err := parsePortRange(port)
 	if err != nil {
-		return nil, fmt.Errorf("invalid range start in %q: %w", port, err)
-	}
-	end, err := strconv.Atoi(endStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid range end in %q: %w", port, err)
-	}
-	if start < 0 || end < 0 {
-		return nil, fmt.Errorf("negative port in range %q", port)
-	}
-	if start > end {
-		return nil, fmt.Errorf("invalid port range %q: start (%d) > end (%d)", port, start, end)
+		return nil, err
 	}
 
 	ports := make([]string, 0, end-start+1)
