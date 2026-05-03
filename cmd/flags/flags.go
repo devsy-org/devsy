@@ -36,6 +36,8 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		"text",
 		"The log format to use. Can be text, json, or logfmt",
 	)
+	flags.StringVar(&globalFlags.LogOutput, "log-format", "text", "Alias for --log-output")
+	_ = flags.MarkHidden("log-format")
 	flags.StringVar(&globalFlags.Context, "context", "", "The context to use")
 	flags.StringVar(
 		&globalFlags.Provider,

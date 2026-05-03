@@ -152,6 +152,8 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 			"The container image to use, this will override the devcontainer.json value in the project")
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
+	upCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
+	_ = upCmd.Flags().MarkHidden("config")
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerID, "devcontainer-id", "",
 			"The ID of the devcontainer to use when multiple exist "+
