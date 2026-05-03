@@ -12,6 +12,7 @@ import (
 const (
 	testSeccompUnconfined = "seccomp=unconfined"
 	testSecurityOptFlag   = "--security-opt"
+	testBindMount         = "type=bind,src=/a,dst=/b"
 )
 
 type DockerDriverTestSuite struct {
@@ -184,9 +185,9 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 		input string
 		want  string
 	}{
-		{"type=bind,src=/a,dst=/b,consistency='consistent'", "type=bind,src=/a,dst=/b"},
-		{"type=bind,src=/a,dst=/b,consistency=delegated", "type=bind,src=/a,dst=/b"},
-		{"type=bind,src=/a,dst=/b", "type=bind,src=/a,dst=/b"},
+		{testBindMount + ",consistency='consistent'", testBindMount},
+		{testBindMount + ",consistency=delegated", testBindMount},
+		{testBindMount, testBindMount},
 	}
 	for _, tt := range tests {
 		s.Equal(tt.want, stripMountConsistency(tt.input))
