@@ -8,51 +8,58 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	flagConfig           = "--config"
+	flagDevcontainerPath = "devcontainer-path"
+	flagLogFormat        = "--log-format"
+	formatJSON           = "json"
+)
+
 func TestUpCmd_ConfigAlias(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--config", ".devcontainer/custom.json"})
+	err := upCmd.ParseFlags([]string{flagConfig, ".devcontainer/custom.json"})
 	require.NoError(t, err)
 
-	val, err := upCmd.Flags().GetString("devcontainer-path")
+	val, err := upCmd.Flags().GetString(flagDevcontainerPath)
 	require.NoError(t, err)
 	assert.Equal(t, ".devcontainer/custom.json", val)
 }
 
 func TestBuildCmd_ConfigAlias(t *testing.T) {
 	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
-	err := buildCmd.ParseFlags([]string{"--config", "path/to/devcontainer.json"})
+	err := buildCmd.ParseFlags([]string{flagConfig, "path/to/devcontainer.json"})
 	require.NoError(t, err)
 
-	val, err := buildCmd.Flags().GetString("devcontainer-path")
+	val, err := buildCmd.Flags().GetString(flagDevcontainerPath)
 	require.NoError(t, err)
 	assert.Equal(t, "path/to/devcontainer.json", val)
 }
 
 func TestGlobalFlags_LogFormatAlias(t *testing.T) {
 	rootCmd := BuildRoot()
-	rootCmd.SetArgs([]string{"--log-format", "json", "version"})
+	rootCmd.SetArgs([]string{flagLogFormat, formatJSON, "version"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
-	assert.Equal(t, "json", globalFlags.LogOutput)
+	assert.Equal(t, formatJSON, globalFlags.LogOutput)
 }
 
 func TestConfigAlias_IsHidden(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	f := upCmd.Flags().Lookup("config")
 	require.NotNil(t, f)
-	assert.True(t, f.Hidden, "--config alias should be hidden")
+	assert.True(t, f.Hidden, flagConfig+" alias should be hidden")
 }
 
 func TestLogFormatAlias_IsHidden(t *testing.T) {
 	rootCmd := BuildRoot()
 	f := rootCmd.PersistentFlags().Lookup("log-format")
 	require.NotNil(t, f)
-	assert.True(t, f.Hidden, "--log-format alias should be hidden")
+	assert.True(t, f.Hidden, flagLogFormat+" alias should be hidden")
 }
 
 func TestConfigAlias_E2E(t *testing.T) {
 	rootCmd := BuildRoot()
-	rootCmd.SetArgs([]string{"up", "--config", "/tmp/test.json", "--help"})
+	rootCmd.SetArgs([]string{"up", flagConfig, "/tmp/test.json", "--help"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
 }
