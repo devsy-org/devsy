@@ -161,7 +161,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		"Push image directly to registry during build, skipping load to local daemon.",
 	)
 	buildCmd.Flags().
-		StringSliceVar(&cmd.CacheFrom, "cache-from", []string{},
+		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
 				"Takes priority over devcontainer.json build.cacheFrom")
 	buildCmd.Flags().

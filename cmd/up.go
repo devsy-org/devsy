@@ -243,7 +243,7 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		BoolVar(&cmd.DisableDaemon, "disable-daemon", false,
 			"If enabled, will not install a daemon into the target machine to track activity")
 	upCmd.Flags().
-		StringSliceVar(&cmd.CacheFrom, "cache-from", []string{},
+		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
 				"Takes priority over devcontainer.json build.cacheFrom")
 }
