@@ -1,0 +1,7 @@
+{
+  "extends": "base.json",
+  "name": "extends-up-test",
+  "containerEnv": {
+    "FROM_CHILD": "child-value"
+  }
+}

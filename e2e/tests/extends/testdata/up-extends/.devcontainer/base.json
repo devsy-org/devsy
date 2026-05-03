@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "containerEnv": {
+    "FROM_BASE": "base-value"
+  }
+}

@@ -192,6 +192,18 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: extends
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: extends-up
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+
           - label: down
             runner: ubuntu-latest
             free-disk-space: false
