@@ -726,7 +726,7 @@ var _ = ginkgo.Describe(
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 		ginkgo.It("id-label replaces default container label", func(ctx context.Context) {
-			_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
 				"--id-label", "devsy.test.app=myproject",
 				"--id-label", "devsy.test.env=ci")
 			framework.ExpectNoError(err)
@@ -745,8 +745,12 @@ var _ = ginkgo.Describe(
 				"devsy.test.app", "myproject"))
 			gomega.Expect(containerDetails[0].Config.Labels).To(gomega.HaveKeyWithValue(
 				"devsy.test.env", "ci"))
-			gomega.Expect(containerDetails[0].Config.Labels).NotTo(gomega.HaveKey(
-				"dev.containers.id"))
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+			gomega.Expect(containerDetails[0].Config.Labels["dev.containers.id"]).
+				NotTo(gomega.Equal(workspace.UID),
+					"workspace UID should not be used as label when --id-label is specified")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	},
 )
