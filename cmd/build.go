@@ -137,6 +137,8 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 			"The container image to use, this will override the devcontainer.json value in the project")
 	buildCmd.Flags().
 		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
+	buildCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
+	_ = buildCmd.Flags().MarkHidden("config")
 	buildCmd.Flags().
 		StringVar(&cmd.AdditionalFeatures, "additional-features", "",
 			`Additional features to apply to the dev container (JSON as per "features" section in devcontainer.json)`)
