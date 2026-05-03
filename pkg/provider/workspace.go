@@ -256,6 +256,9 @@ type CLIOptions struct {
 	Platforms []string `json:"platform,omitempty"`
 	// Tag specifies additional image tags to apply to the built image beyond the default prebuild hash tag.
 	Tag []string `json:"tag,omitempty"`
+	// CacheFrom specifies images to use as cache sources. When set, these take priority over
+	// devcontainer.json build.cacheFrom values.
+	CacheFrom []string `json:"cacheFrom,omitempty"`
 
 	// ForceBuild forces a rebuild even if a cached image exists.
 	ForceBuild bool `json:"forceBuild,omitempty"`

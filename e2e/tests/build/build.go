@@ -242,6 +242,32 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		},
 	)
 
+	ginkgo.It("should build with --cache-from flag",
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			err = f.DevsyProviderAdd(ctx, "docker")
+			framework.ExpectNoError(err)
+			err = f.DevsyProviderUse(ctx, "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+
+			err = f.DevsyBuild(
+				ctx,
+				tempDir,
+				"--skip-push",
+				"--cache-from",
+				"ghcr.io/devsy-org/test-images/base:alpine",
+			)
+			framework.ExpectNoError(err)
+		})
+
 	ginkgo.It("build docker internal buildkit",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {

@@ -161,6 +161,10 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		"Push image directly to registry during build, skipping load to local daemon.",
 	)
 	buildCmd.Flags().
+		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
+			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
+				"Takes priority over devcontainer.json build.cacheFrom")
+	buildCmd.Flags().
 		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
 			"The git clone strategy Devsy uses to checkout git based workspaces. "+
 				"Can be full (default), blobless, treeless or shallow")
