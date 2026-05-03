@@ -40,7 +40,7 @@ func (s *OCIRetryTestSuite) TestRetryGivesUpAfterMaxAttempts() {
 	})
 
 	s.Error(err)
-	s.Equal(ociMaxRetries, attempts)
+	s.Equal(ociBackoff.Steps, attempts)
 	s.Contains(err.Error(), "persistent network error")
 }
 
