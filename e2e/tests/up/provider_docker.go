@@ -553,6 +553,38 @@ var _ = ginkgo.Describe(
 			gomega.Expect(hasCustomMount).To(gomega.BeTrue())
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It("secrets-file injects env into lifecycle commands", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-secrets-file",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			secretsDir, err := framework.CreateTempDir()
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
+
+			secretsFile := filepath.Join(secretsDir, "secrets.env")
+			err = os.WriteFile(
+				secretsFile,
+				[]byte("MY_SECRET=test-value-12345\nANOTHER_SECRET=second-secret-42\n"),
+				0o600,
+			)
+			framework.ExpectNoError(err)
+
+			err = dtc.f.DevsyUp(ctx, tempDir, "--secrets-file", secretsFile)
+			framework.ExpectNoError(err)
+
+			out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/secret-check.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("test-value-12345"))
+
+			out, err = dtc.execSSH(ctx, tempDir, "cat /tmp/another-secret-check.out")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("second-secret-42"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",

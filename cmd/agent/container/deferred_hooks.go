@@ -21,6 +21,7 @@ type DeferredHooksCmd struct {
 	Prebuild       bool
 	DotfilesRepo   string
 	DotfilesScript string
+	SecretsEnv     []string
 }
 
 // NewDeferredHooksCmd creates a new command.
@@ -44,6 +45,8 @@ func NewDeferredHooksCmd(flags *flags.GlobalFlags) *cobra.Command {
 		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
 	deferredCmd.Flags().
 		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
+	deferredCmd.Flags().
+		StringSliceVar(&cmd.SecretsEnv, "secrets-env", []string{}, "Secrets to inject into lifecycle commands (KEY=VALUE)")
 	_ = deferredCmd.MarkFlagRequired("setup-info")
 	return deferredCmd
 }
@@ -65,7 +68,7 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 		Repository:    cmd.DotfilesRepo,
 		InstallScript: cmd.DotfilesScript,
 		RemoteUser:    config.GetRemoteUser(setupInfo),
-	})
+	}, cmd.SecretsEnv)
 	if err != nil {
 		log.Errorf("deferred hooks setup failed: %v", err)
 		return nil

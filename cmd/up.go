@@ -25,6 +25,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -47,6 +48,7 @@ type UpCmd struct {
 	Reconfigure        bool
 
 	SSHConfigPath string
+	SecretsFile   string
 
 	DotfilesSource        string
 	DotfilesScript        string
@@ -274,6 +276,9 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringSliceVar(&cmd.WorkspaceEnvFile, "workspace-env-file", []string{},
 			"The path to files containing a list of extra env variables to put into the workspace, "+
 				"e.g. MY_ENV_VAR=MY_VALUE")
+	upCmd.Flags().
+		StringVar(&cmd.SecretsFile, "secrets-file", "",
+			"Path to a dotenv-style file containing KEY=VALUE secrets injected into lifecycle commands")
 	upCmd.Flags().
 		StringArrayVar(&cmd.InitEnv, "init-env", []string{},
 			"Extra env variables to inject during the initialization of the workspace, e.g. MY_ENV_VAR=MY_VALUE")
@@ -800,6 +805,16 @@ func (cmd *UpCmd) prepareClient(
 
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return nil, err
+	}
+
+	if cmd.SecretsFile != "" {
+		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range parsed {
+			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
+		}
 	}
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(

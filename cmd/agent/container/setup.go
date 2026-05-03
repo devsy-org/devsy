@@ -188,6 +188,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 	cfg := &setup.ContainerSetupConfig{
 		SetupInfo:         sctx.setupInfo,
 		ExtraWorkspaceEnv: sctx.workspaceInfo.CLIOptions.WorkspaceEnv,
+		SecretsEnv:        sctx.workspaceInfo.CLIOptions.SecretsEnv,
 		ChownProjects:     cmd.ChownWorkspace,
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
@@ -238,6 +239,7 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	if !deferred.Empty() {
 		err = cmd.startDeferredHooks(
 			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
+			sctx.workspaceInfo.CLIOptions.SecretsEnv,
 		)
 		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
@@ -262,16 +264,22 @@ func compressSetupInfo(setupInfo *config.Result) (string, error) {
 }
 
 func (cmd *SetupContainerCmd) startDeferredHooks(
-	setupInfo, dotfilesRepo, dotfilesScript string,
+	setupInfo, dotfilesRepo, dotfilesScript string, secretsEnv []string,
 ) error {
 	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
 		log.Debugf("starting deferred lifecycle hooks as background process")
-		return buildDeferredHooksCmd(setupInfo, cmd.Prebuild, dotfilesRepo, dotfilesScript)
+		return buildDeferredHooksCmd(
+			setupInfo,
+			cmd.Prebuild,
+			dotfilesRepo,
+			dotfilesScript,
+			secretsEnv,
+		)
 	})
 }
 
 func buildDeferredHooksCmd(
-	setupInfo string, prebuild bool, dotfilesRepo, dotfilesScript string,
+	setupInfo string, prebuild bool, dotfilesRepo, dotfilesScript string, secretsEnv []string,
 ) (*exec.Cmd, error) {
 	binaryPath, err := os.Executable()
 	if err != nil {
@@ -290,6 +298,9 @@ func buildDeferredHooksCmd(
 	}
 	if dotfilesScript != "" {
 		args = append(args, "--dotfiles-script", dotfilesScript)
+	}
+	if len(secretsEnv) > 0 {
+		args = append(args, "--secrets-env", strings.Join(secretsEnv, ","))
 	}
 
 	return &exec.Cmd{
@@ -472,15 +483,22 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 			return nil, err
 		}
 
-		//nolint:gosec // binaryPath is from os.Executable(), not user input
-		return exec.Command(
-			binaryPath,
-			"agent",
-			"container",
-			"post-attach",
-			"--setup-info",
-			cmd.SetupInfo,
-		), nil
+		args := []string{
+			"agent", "container", "post-attach",
+			"--setup-info", cmd.SetupInfo,
+		}
+		if len(sctx.workspaceInfo.CLIOptions.SecretsEnv) > 0 {
+			args = append(
+				args,
+				"--secrets-env",
+				strings.Join(sctx.workspaceInfo.CLIOptions.SecretsEnv, ","),
+			)
+		}
+
+		return &exec.Cmd{
+			Path: binaryPath,
+			Args: append([]string{binaryPath}, args...),
+		}, nil
 	})
 }
 
