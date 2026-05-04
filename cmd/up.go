@@ -85,6 +85,7 @@ func (cmd *UpCmd) Run(
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
 		return err
 	}
 	if wctx == nil {
@@ -96,10 +97,21 @@ func (cmd *UpCmd) Run(
 	}
 
 	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
 		return err
 	}
 
-	return cmd.openIDE(ctx, devsyConfig, client, wctx)
+	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		return err
+	}
+
+	containerID := ""
+	if wctx.result != nil && wctx.result.ContainerDetails != nil {
+		containerID = wctx.result.ContainerDetails.ID
+	}
+	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir)
+	return nil
 }
 
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {

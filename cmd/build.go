@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -207,7 +208,7 @@ func (cmd *BuildCmd) build(
 		log.Debugf("done building devcontainer")
 		log.Infof("cleaning up temporary workspace")
 	}()
-	_, err = clientimplementation.BuildAgentClient(
+	result, err := clientimplementation.BuildAgentClient(
 		ctx,
 		clientimplementation.BuildAgentClientOptions{
 			WorkspaceClient: workspaceClient,
@@ -215,5 +216,22 @@ func (cmd *BuildCmd) build(
 			AgentCommand:    "build",
 		},
 	)
-	return err
+	if err != nil {
+		_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		return err
+	}
+
+	containerID := ""
+	workdir := "" // uses substituted path directly; build doesn't support git subpath overrides
+	if result != nil {
+		if result.ContainerDetails != nil {
+			containerID = result.ContainerDetails.ID
+		}
+		if result.SubstitutionContext != nil {
+			workdir = result.SubstitutionContext.ContainerWorkspaceFolder
+		}
+	}
+	user := devcconfig.GetRemoteUser(result)
+	_ = devcconfig.WriteResultJSON(os.Stdout, containerID, user, workdir)
+	return nil
 }
