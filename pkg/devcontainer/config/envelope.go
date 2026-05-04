@@ -7,10 +7,11 @@ import (
 )
 
 type ResultEnvelope struct {
-	Outcome               string `json:"outcome"`
-	ContainerID           string `json:"containerId"`
-	RemoteUser            string `json:"remoteUser"`
-	RemoteWorkspaceFolder string `json:"remoteWorkspaceFolder"`
+	Outcome               string   `json:"outcome"`
+	ContainerID           string   `json:"containerId"`
+	RemoteUser            string   `json:"remoteUser"`
+	RemoteWorkspaceFolder string   `json:"remoteWorkspaceFolder"`
+	Warnings              []string `json:"warnings,omitempty"`
 }
 
 type ErrorEnvelope struct {
@@ -18,12 +19,14 @@ type ErrorEnvelope struct {
 	Message string `json:"message"`
 }
 
-func WriteResultJSON(w io.Writer, containerID, user, workdir string) error {
+//nolint:revive
+func WriteResultJSON(w io.Writer, containerID, user, workdir string, warnings []string) error {
 	env := ResultEnvelope{
 		Outcome:               "success",
 		ContainerID:           containerID,
 		RemoteUser:            user,
 		RemoteWorkspaceFolder: workdir,
+		Warnings:              warnings,
 	}
 	data, err := json.Marshal(env)
 	if err != nil {

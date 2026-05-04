@@ -232,6 +232,6 @@ func (cmd *BuildCmd) build(
 		}
 	}
 	user := devcconfig.GetRemoteUser(result)
-	_ = devcconfig.WriteResultJSON(os.Stdout, containerID, user, workdir)
+	_ = devcconfig.WriteResultJSON(os.Stdout, containerID, user, workdir, nil)
 	return nil
 }

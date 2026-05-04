@@ -1,0 +1,7 @@
+{
+  "name": "HostRequirements",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "hostRequirements": {
+    "cpus": 128
+  }
+}

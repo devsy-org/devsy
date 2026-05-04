@@ -107,10 +107,14 @@ func (cmd *UpCmd) Run(
 	}
 
 	containerID := ""
-	if wctx.result != nil && wctx.result.ContainerDetails != nil {
-		containerID = wctx.result.ContainerDetails.ID
+	var warnings []string
+	if wctx.result != nil {
+		if wctx.result.ContainerDetails != nil {
+			containerID = wctx.result.ContainerDetails.ID
+		}
+		warnings = wctx.result.HostWarnings
 	}
-	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir)
+	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	return nil
 }
 
