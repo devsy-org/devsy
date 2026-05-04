@@ -241,10 +241,17 @@ type CLIOptions struct {
 	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
 	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
 	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
+	ContainerDataFolder         string            `json:"containerDataFolder,omitempty"`
+	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`
+	TerminalColumns             int               `json:"terminalColumns,omitempty"`
+	TerminalRows                int               `json:"terminalRows,omitempty"`
+	SkipPostCreate              bool              `json:"skipPostCreate,omitempty"`
+	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
 
 	// dotfiles options
-	DotfilesRepo   string `json:"dotfilesRepo,omitempty"`
-	DotfilesScript string `json:"dotfilesScript,omitempty"`
+	DotfilesRepo       string `json:"dotfilesRepo,omitempty"`
+	DotfilesScript     string `json:"dotfilesScript,omitempty"`
+	DotfilesTargetPath string `json:"dotfilesTargetPath,omitempty"`
 
 	// build options
 	// Repository specifies the container registry repository to push the built image to (e.g., ghcr.io/user/image).
@@ -265,7 +272,11 @@ type CLIOptions struct {
 	Tag []string `json:"tag,omitempty"`
 	// CacheFrom specifies images to use as cache sources. When set, these take priority over
 	// devcontainer.json build.cacheFrom values.
-	CacheFrom []string `json:"cacheFrom,omitempty"`
+	CacheFrom            []string `json:"cacheFrom,omitempty"`
+	NoCache              bool     `json:"noCache,omitempty"`
+	Labels               []string `json:"labels,omitempty"`
+	Output               string   `json:"output,omitempty"`
+	ExperimentalLockfile string   `json:"experimentalLockfile,omitempty"`
 
 	// ForceBuild forces a rebuild even if a cached image exists.
 	ForceBuild bool `json:"forceBuild,omitempty"`

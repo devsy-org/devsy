@@ -62,6 +62,7 @@ type UpCmd struct {
 
 	DotfilesSource        string
 	DotfilesScript        string
+	DotfilesTargetPath    string
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 }
@@ -226,6 +227,9 @@ func (cmd *UpCmd) registerDotfilesFlags(upCmd *cobra.Command) {
 		StringVar(&cmd.DotfilesScript, "dotfiles-script", "",
 			"The path in dotfiles directory to use to install the dotfiles, if empty will try to guess")
 	upCmd.Flags().
+		StringVar(&cmd.DotfilesTargetPath, "dotfiles-target-path", "",
+			"The target path inside the container to install dotfiles to (e.g., ~/dotfiles)")
+	upCmd.Flags().
 		StringSliceVar(&cmd.DotfilesScriptEnv, "dotfiles-script-env", []string{},
 			"Extra environment variables to put into the dotfiles install script, e.g. MY_ENV_VAR=MY_VALUE")
 	upCmd.Flags().
@@ -269,6 +273,26 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.UpdateRemoteUserUIDDefault, "update-remote-user-uid-default", "",
 			"Default for updateRemoteUserUID when not set in devcontainer.json (on, off)")
+	upCmd.Flags().
+		StringVar(&cmd.ContainerDataFolder, "container-data-folder", "",
+			"Custom path for container-specific data")
+	defaultMountGitRoot := true
+	cmd.MountWorkspaceGitRoot = &defaultMountGitRoot
+	upCmd.Flags().
+		BoolVar(cmd.MountWorkspaceGitRoot, "mount-workspace-git-root", true,
+			"Mount the workspace git root as the workspace folder")
+	upCmd.Flags().
+		IntVar(&cmd.TerminalColumns, "terminal-columns", 0,
+			"Terminal column count for lifecycle scripts")
+	upCmd.Flags().
+		IntVar(&cmd.TerminalRows, "terminal-rows", 0,
+			"Terminal row count for lifecycle scripts")
+	upCmd.Flags().
+		BoolVar(&cmd.SkipPostCreate, "skip-post-create", false,
+			"Skip the postCreateCommand lifecycle hook")
+	upCmd.Flags().
+		BoolVar(&cmd.SkipNonBlockingCommands, "skip-non-blocking-commands", false,
+			"Skip non-blocking lifecycle commands")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
@@ -392,6 +416,10 @@ func (cmd *UpCmd) resolveDotfilesOptions(devsyConfig *config.Config) {
 		script = cmd.DotfilesScript
 	}
 	cmd.CLIOptions.DotfilesScript = script
+
+	if cmd.DotfilesTargetPath != "" {
+		cmd.CLIOptions.DotfilesTargetPath = cmd.DotfilesTargetPath
+	}
 }
 
 // prepareWorkspace handles initial setup and validation.

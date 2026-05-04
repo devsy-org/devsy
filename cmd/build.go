@@ -168,6 +168,18 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
 				"Takes priority over devcontainer.json build.cacheFrom")
 	buildCmd.Flags().
+		BoolVar(&cmd.NoCache, "no-cache", false,
+			"Disable Docker build cache")
+	buildCmd.Flags().
+		StringArrayVar(&cmd.Labels, "label", []string{},
+			"Add labels to the built image (format: key=value, can be specified multiple times)")
+	buildCmd.Flags().
+		StringVar(&cmd.Output, "output", "",
+			"Build output type (docker or oci)")
+	buildCmd.Flags().
+		StringVar(&cmd.ExperimentalLockfile, "experimental-lockfile", "",
+			"Lockfile path for reproducible builds")
+	buildCmd.Flags().
 		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
 			"The git clone strategy Devsy uses to checkout git based workspaces. "+
 				"Can be full (default), blobless, treeless or shallow")

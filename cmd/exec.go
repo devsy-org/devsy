@@ -28,6 +28,8 @@ type ExecCmd struct {
 	*flags.GlobalFlags
 
 	WorkspaceFolder     string
+	ContainerID         string
+	DockerPath          string
 	RemoteEnv           []string
 	DefaultUserEnvProbe string
 	IDLabels            []string
@@ -52,7 +54,20 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Path to the workspace folder",
 		)
-	_ = execCmd.MarkFlagRequired("workspace-folder")
+	execCmd.Flags().
+		StringVar(
+			&cmd.ContainerID,
+			"container-id",
+			"",
+			"Target a specific container by ID",
+		)
+	execCmd.Flags().
+		StringVar(
+			&cmd.DockerPath,
+			"docker-path",
+			"",
+			"Path to the docker/podman executable (defaults to 'docker')",
+		)
 	execCmd.Flags().
 		StringSliceVar(
 			&cmd.RemoteEnv,
@@ -79,11 +94,19 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
+	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
+		return fmt.Errorf("either --workspace-folder or --container-id must be provided")
+	}
+
 	if err := cmd.validateRemoteEnv(); err != nil {
 		return err
 	}
 	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
+	}
+
+	if cmd.ContainerID != "" {
+		return cmd.runWithContainerID(ctx, args)
 	}
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
@@ -134,6 +157,55 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+	return nil
+}
+
+func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error {
+	dockerCommand := defaultDockerCommand
+	if cmd.DockerPath != "" {
+		dockerCommand = cmd.DockerPath
+	}
+	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
+
+	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
+	if err != nil {
+		return fmt.Errorf("inspect container %s: %w", cmd.ContainerID, err)
+	}
+	if len(details) == 0 {
+		return fmt.Errorf("container %s not found", cmd.ContainerID)
+	}
+
+	containerDetails := &details[0]
+	if strings.ToLower(containerDetails.State.Status) != "running" {
+		return fmt.Errorf(
+			"container %s is not running (status: %s)",
+			cmd.ContainerID,
+			containerDetails.State.Status,
+		)
+	}
+
+	userEnvProbe := cmd.DefaultUserEnvProbe
+	target := containerTarget{
+		helper:      helper,
+		containerID: containerDetails.ID,
+		user:        "",
+	}
+	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
+	envMap := buildExecEnv(nil, cmd.RemoteEnv, probedEnv)
+
+	workdir := containerDetails.Config.WorkingDir
+
+	err = cmd.execInContainer(ctx, execOpts{
+		target:  target,
+		workdir: workdir,
+		envMap:  envMap,
+	}, args)
+	if err != nil {
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		return err
+	}
+
+	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, "", workdir, nil)
 	return nil
 }
 
