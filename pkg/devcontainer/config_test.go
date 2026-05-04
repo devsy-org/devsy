@@ -258,14 +258,14 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() 
 	_, ctx, err := s.runner.substitute(options, rawConfig)
 
 	s.NoError(err)
-	s.Contains(ctx.WorkspaceMount, "consistency=delegated")
+	s.Contains(ctx.WorkspaceMount, "consistency='delegated'")
 }
 
-func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyNotOverrideExisting() {
+func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesExisting() {
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: "type=bind,source=/src,target=/ws,consistency=cached",
+			WorkspaceMount: "type=bind,source=/src,target=/ws,consistency='consistent'",
 		},
 	}
 	options := provider2.CLIOptions{
@@ -275,8 +275,8 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyNotOverrid
 	_, ctx, err := s.runner.substitute(options, rawConfig)
 
 	s.NoError(err)
-	s.Contains(ctx.WorkspaceMount, "consistency=cached")
-	s.NotContains(ctx.WorkspaceMount, "consistency=delegated")
+	s.Contains(ctx.WorkspaceMount, "consistency='delegated'")
+	s.NotContains(ctx.WorkspaceMount, "consistency='consistent'")
 }
 
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {

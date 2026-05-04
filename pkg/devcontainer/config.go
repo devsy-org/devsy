@@ -189,9 +189,11 @@ func (r *runner) substitute(
 		substitutionContext.WorkspaceMount = parsedConfig.WorkspaceMount
 	}
 
-	if options.WorkspaceMountConsistency != "" &&
-		!mountHasConsistency(substitutionContext.WorkspaceMount) {
-		substitutionContext.WorkspaceMount += ",consistency=" + options.WorkspaceMountConsistency
+	if options.WorkspaceMountConsistency != "" {
+		substitutionContext.WorkspaceMount = mountSetConsistency(
+			substitutionContext.WorkspaceMount,
+			options.WorkspaceMountConsistency,
+		)
 	}
 
 	if options.DevContainerImage != "" {

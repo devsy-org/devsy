@@ -322,6 +322,22 @@ func mountHasConsistency(mount string) bool {
 	return false
 }
 
+func mountSetConsistency(mount, value string) string {
+	quoted := "consistency='" + value + "'"
+	var parts []string
+	for part := range strings.SplitSeq(mount, ",") {
+		if strings.HasPrefix(part, "consistency=") {
+			parts = append(parts, quoted)
+		} else {
+			parts = append(parts, part)
+		}
+	}
+	if !mountHasConsistency(mount) {
+		parts = append(parts, quoted)
+	}
+	return strings.Join(parts, ",")
+}
+
 func needsDefaultConsistency() bool {
 	return runtime.GOOS != "linux"
 }
