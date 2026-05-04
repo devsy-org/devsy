@@ -62,10 +62,15 @@ func resolveExtendsArray(
 }
 
 // resolveExtendsSingle resolves a single extends reference.
+// It dispatches to OCI resolution for registry refs or local file resolution otherwise.
 func resolveExtendsSingle(
 	extendsRef, declaringDir string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
+	if isOCIRef(extendsRef) {
+		return resolveOCIExtends(extendsRef, visited)
+	}
+
 	refPath := extendsRef
 	if !filepath.IsAbs(refPath) {
 		refPath = filepath.Join(declaringDir, refPath)

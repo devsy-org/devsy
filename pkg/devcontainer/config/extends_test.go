@@ -13,6 +13,7 @@ const (
 	testNameChild    = "child"
 	testImageUbuntu  = "ubuntu:20.04"
 	testUserRoot     = "root"
+	testUserVscode   = "vscode"
 	testOriginParent = "/tmp/parent.json"
 	testOriginChild  = "/tmp/child.json"
 	testFileBase     = "base.json"
@@ -52,7 +53,7 @@ func TestExtends_BasicScalarOverride(t *testing.T) {
 	if cfg.Image != testImageUbuntu {
 		t.Errorf("expected image 'ubuntu:20.04', got %q", cfg.Image)
 	}
-	if cfg.RemoteUser != "vscode" {
+	if cfg.RemoteUser != testUserVscode {
 		t.Errorf("expected remoteUser 'vscode', got %q", cfg.RemoteUser)
 	}
 	if !cfg.Extends.IsEmpty() {
@@ -550,7 +551,7 @@ func TestExtends_ArrayMultipleRefs_Scalars(t *testing.T) {
 	if cfg.Image != testImageUbuntu {
 		t.Errorf("expected image from base, got %q", cfg.Image)
 	}
-	if cfg.RemoteUser != "vscode" {
+	if cfg.RemoteUser != testUserVscode {
 		t.Errorf("expected remoteUser from middle, got %q", cfg.RemoteUser)
 	}
 }
