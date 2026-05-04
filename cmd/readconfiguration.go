@@ -86,10 +86,10 @@ type readConfigurationWorkspace struct {
 
 // Run executes the read-configuration command.
 func (cmd *ReadConfigurationCmd) Run(
-	_ *cobra.Command,
+	c *cobra.Command,
 	_ []string,
 ) error {
-	parsedConfig, workspaceFolder, err := cmd.resolve()
+	parsedConfig, workspaceFolder, err := cmd.resolve(c.Context())
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (cmd *ReadConfigurationCmd) Run(
 	return nil
 }
 
-func (cmd *ReadConfigurationCmd) resolve() (
+func (cmd *ReadConfigurationCmd) resolve(ctx context.Context) (
 	*config2.DevContainerConfig,
 	string,
 	error,
@@ -135,7 +135,7 @@ func (cmd *ReadConfigurationCmd) resolve() (
 		)
 	}
 	if cmd.ContainerID != "" {
-		return cmd.resolveConfigFromContainer()
+		return cmd.resolveConfigFromContainer(ctx)
 	}
 	return cmd.resolveConfig()
 }
@@ -187,13 +187,12 @@ func (cmd *ReadConfigurationCmd) resolveConfig() (
 	return parsedConfig, workspaceFolder, nil
 }
 
-func (cmd *ReadConfigurationCmd) resolveConfigFromContainer() (
+func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context) (
 	*config2.DevContainerConfig,
 	string,
 	error,
 ) {
-	ctx := context.TODO()
-	helper := &docker.DockerHelper{DockerCommand: "docker"}
+	helper := &docker.DockerHelper{DockerCommand: defaultDockerCommand}
 
 	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
 	if err != nil {
