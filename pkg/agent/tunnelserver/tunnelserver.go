@@ -160,7 +160,7 @@ func (t *tunnelServer) ForwardPort(
 		return nil, fmt.Errorf("cannot forward ports")
 	}
 
-	err := t.forwarder.Forward(portRequest.Port)
+	err := t.forwarder.Forward(portRequest.Port, netstat.PortForwardAttribute{})
 	if err != nil {
 		return nil, fmt.Errorf("error forwarding port %s: %w", portRequest.Port, err)
 	}
