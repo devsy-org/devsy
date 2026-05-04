@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"path/filepath"
@@ -10,6 +12,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/hash"
 )
+
+const devContainerIDLength = 20
 
 type ReplaceFunction func(match, variable string, args []string) string
 
@@ -226,10 +230,19 @@ func ListToObject(list []string) map[string]string {
 	return ret
 }
 
-func GetDevContainerID(labels map[string]string) string {
+func DeriveDevContainerID(localWorkspaceFolder string) string {
+	h := sha256.Sum256([]byte(localWorkspaceFolder))
+	return hex.EncodeToString(h[:])[:devContainerIDLength]
+}
+
+func GetLegacyDevContainerID(labels map[string]string) string {
 	labelsBytes, _ := json.Marshal(labels)
 	hashedLabels := hash.String(string(labelsBytes))
 	bigInt := big.Int{}
 	bigInt.SetString(hashedLabels, 16)
 	return bigInt.Text(32)
+}
+
+func ResolveDevContainerID(localWorkspaceFolder string, legacyLabels map[string]string) string {
+	return DeriveDevContainerID(localWorkspaceFolder)
 }
