@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testFeatureNode = "node"
+
 type CollectionTestSuite struct {
 	suite.Suite
 	server  *httptest.Server
@@ -46,7 +48,7 @@ func (s *CollectionTestSuite) TestFetchCollection_HappyPath() {
 				Description: "Installs Go and common tools",
 			},
 			{
-				ID:          "node",
+				ID:          testFeatureNode,
 				Version:     "2.0.0",
 				Name:        "Node.js",
 				Description: "Installs Node.js and npm",
@@ -69,7 +71,7 @@ func (s *CollectionTestSuite) TestFetchCollection_HappyPath() {
 	s.Equal("go", result.Features[0].ID)
 	s.Equal("1.2.3", result.Features[0].Version)
 	s.Equal("Go", result.Features[0].Name)
-	s.Equal("node", result.Features[1].ID)
+	s.Equal(testFeatureNode, result.Features[1].ID)
 	s.Equal("2.0.0", result.Features[1].Version)
 	s.NotNil(result.Features[1].Options)
 }
