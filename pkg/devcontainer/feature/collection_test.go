@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testFeatureNode = "node"
+
 type CollectionTestSuite struct {
 	suite.Suite
 }
@@ -35,7 +37,7 @@ func (s *CollectionTestSuite) TestParseCollection_HappyPath() {
 				Description: "Installs Go and common Go tools",
 			},
 			{
-				ID:          "node",
+				ID:          testFeatureNode,
 				Version:     "1.5.0",
 				Name:        "Node.js",
 				Description: "Installs Node.js, nvm, and yarn",
@@ -57,7 +59,7 @@ func (s *CollectionTestSuite) TestParseCollection_HappyPath() {
 	s.Equal("Go", parsed.Features[0].Name)
 	s.Equal("Installs Go and common Go tools", parsed.Features[0].Description)
 	s.False(parsed.Features[0].Deprecated)
-	s.Equal("node", parsed.Features[1].ID)
+	s.Equal(testFeatureNode, parsed.Features[1].ID)
 	s.True(parsed.Features[1].Deprecated)
 }
 
@@ -166,7 +168,7 @@ func (s *CollectionTestSuite) TestListCollectionFeatures_FromImage() {
 	col := Collection{
 		Features: []CollectionFeature{
 			{ID: "go", Version: "1.2.0", Name: "Go", Description: "Go language"},
-			{ID: "node", Version: "1.5.0", Name: "Node.js", Description: "Node runtime"},
+			{ID: testFeatureNode, Version: "1.5.0", Name: "Node.js", Description: "Node runtime"},
 		},
 	}
 	raw, err := json.Marshal(col)
@@ -180,7 +182,7 @@ func (s *CollectionTestSuite) TestListCollectionFeatures_FromImage() {
 	s.Require().NoError(err)
 	s.Len(parsed.Features, 2)
 	s.Equal("go", parsed.Features[0].ID)
-	s.Equal("node", parsed.Features[1].ID)
+	s.Equal(testFeatureNode, parsed.Features[1].ID)
 }
 
 func (s *CollectionTestSuite) TestFindCollectionLayer_PrefersTypedLayer() {
