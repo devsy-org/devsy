@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -177,9 +178,12 @@ func (cmd *InfoCmd) printDependencies(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nDependencies:")
+	headers := []string{"Dependency"}
+	var rows [][]string
 	for dep := range info.Dependencies {
-		_, _ = fmt.Fprintf(w, "  - %s\n", dep)
+		rows = append(rows, []string{dep})
 	}
+	table.Print(headers, rows)
 }
 
 func (cmd *InfoCmd) printTags(w *os.File, info *featureInfo) {
@@ -195,13 +199,12 @@ func (cmd *InfoCmd) printOptions(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOptions:")
+	headers := []string{"Name", "Type", "Description", "Default"}
+	var rows [][]string
 	for optName, opt := range info.Options {
-		_, _ = fmt.Fprintf(w, "  %s (%s): %s", optName, opt.Type, opt.Description)
-		if string(opt.Default) != "" {
-			_, _ = fmt.Fprintf(w, " [default: %s]", string(opt.Default))
-		}
-		_, _ = fmt.Fprintln(w)
+		rows = append(rows, []string{optName, opt.Type, opt.Description, string(opt.Default)})
 	}
+	table.Print(headers, rows)
 }
 
 func (cmd *InfoCmd) printAnnotations(w *os.File, info *featureInfo) {
@@ -209,7 +212,10 @@ func (cmd *InfoCmd) printAnnotations(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOCI Annotations:")
+	headers := []string{"Key", "Value"}
+	var rows [][]string
 	for k, v := range info.Annotations {
-		_, _ = fmt.Fprintf(w, "  %s: %s\n", k, v)
+		rows = append(rows, []string{k, v})
 	}
+	table.Print(headers, rows)
 }

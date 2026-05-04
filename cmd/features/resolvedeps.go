@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -127,20 +129,18 @@ func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
 }
 
 func (cmd *ResolveDepsCmd) printText(resolved []resolvedFeature) error {
-	w := os.Stdout
-	_, _ = fmt.Fprintf(w, "Feature install order (%d features):\n\n", len(resolved))
+	_, _ = fmt.Fprintf(os.Stdout, "Feature install order (%d features):\n\n", len(resolved))
+	headers := []string{"#", "Feature", "Depends On", "Installs After"}
+	var rows [][]string
 	for i, rf := range resolved {
-		versionSuffix := ""
+		version := rf.ID
 		if rf.Version != "" {
-			versionSuffix = ":" + rf.Version
+			version = rf.ID + ":" + rf.Version
 		}
-		_, _ = fmt.Fprintf(w, "  %d. %s%s\n", i+1, rf.ID, versionSuffix)
-		if len(rf.Dependencies) > 0 {
-			_, _ = fmt.Fprintf(w, "     depends on: %v\n", rf.Dependencies)
-		}
-		if len(rf.InstallsAfter) > 0 {
-			_, _ = fmt.Fprintf(w, "     installs after: %v\n", rf.InstallsAfter)
-		}
+		deps := strings.Join(rf.Dependencies, ", ")
+		after := strings.Join(rf.InstallsAfter, ", ")
+		rows = append(rows, []string{fmt.Sprintf("%d", i+1), version, deps, after})
 	}
+	table.Print(headers, rows)
 	return nil
 }
