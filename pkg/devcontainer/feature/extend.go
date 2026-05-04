@@ -365,6 +365,7 @@ type featureDependencyResolver struct {
 	resolved  map[string]*config.FeatureSet
 	visiting  map[string]bool
 	processor *featureProcessor
+	legacyMap map[string]string
 }
 
 func (r *featureDependencyResolver) resolveFeatureDependency(
@@ -386,6 +387,13 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 		normalizedDepID := normalizeFeatureID(depID)
 		depFeatureSet, exists := r.features[normalizedDepID]
 		if !exists {
+			if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
+				log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
+				depFeatureSet = r.features[currentID]
+				normalizedDepID = currentID
+			}
+		}
+		if depFeatureSet == nil {
 			log.Debugf("installing dependency feature %s", depID)
 			var err error
 			depFeatureSet, err = r.processor.processFeature(depID, depOptions)
@@ -393,6 +401,7 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 				return fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
 			}
 			r.features[normalizedDepID] = depFeatureSet
+			r.rebuildLegacyMap()
 		}
 
 		err := r.resolveFeatureDependency(normalizedDepID, depFeatureSet)
@@ -405,6 +414,10 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 	return nil
 }
 
+func (r *featureDependencyResolver) rebuildLegacyMap() {
+	r.legacyMap = buildLegacyIDMap(r.features)
+}
+
 func resolveDependencies(
 	processor *featureProcessor,
 	features map[string]*config.FeatureSet,
@@ -414,6 +427,7 @@ func resolveDependencies(
 		resolved:  make(map[string]*config.FeatureSet),
 		visiting:  make(map[string]bool),
 		processor: processor,
+		legacyMap: buildLegacyIDMap(features),
 	}
 
 	for featureID, featureSet := range features {
@@ -424,6 +438,19 @@ func resolveDependencies(
 	}
 
 	return resolver.resolved, nil
+}
+
+func buildLegacyIDMap(features map[string]*config.FeatureSet) map[string]string {
+	legacyMap := make(map[string]string)
+	for configID, featureSet := range features {
+		if featureSet.Config == nil {
+			continue
+		}
+		for _, legacyID := range featureSet.Config.LegacyIds {
+			legacyMap[normalizeFeatureID(legacyID)] = configID
+		}
+	}
+	return legacyMap
 }
 
 func normalizeFeatureID(featureID string) string {
