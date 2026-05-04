@@ -523,6 +523,39 @@ func (suite *GraphTestSuite) TestLargeGraph() {
 	suite.Len(result, nodeCount)
 }
 
+func (suite *GraphTestSuite) TestSortNodeIDsRoundBased() {
+	// A→B edge means B depends on A.
+	// Round 1: A and C both have in-degree 0 → sorted alpha → [A, C]
+	// Round 2: B (now in-degree 0 after A processed) → [B]
+	// Final: [A, C, B]
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "B"))
+
+	result, err := suite.graph.SortNodeIDs()
+	suite.NoError(err)
+	suite.Equal([]string{"A", "C", "B"}, result)
+}
+
+func (suite *GraphTestSuite) TestSortNodeIDsRoundBasedMultiLevel() {
+	// A→B→D, C→D (independent chains with shared sink)
+	// Round 1: A, C (in-degree 0) → [A, C]
+	// Round 2: B (depends on A only) → [B]
+	// Round 3: D (depends on B and C, but C was processed in round 1) → [D]
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddNode("D", "dataD"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "B"))
+	suite.Require().NoError(suite.graph.AddEdge("B", "D"))
+	suite.Require().NoError(suite.graph.AddEdge("C", "D"))
+
+	result, err := suite.graph.SortNodeIDs()
+	suite.NoError(err)
+	suite.Equal([]string{"A", "C", "B", "D"}, result)
+}
+
 func (suite *GraphTestSuite) TestTopologicalSortAdvanced() {
 	testCases := []struct {
 		name    string

@@ -284,27 +284,47 @@ func (g *Graph[T]) HasCircularDependency() bool {
 
 func (g *Graph[T]) sortNodeIDs() ([]string, error) {
 	workingInDegree := copyInDegreeMap(g.inDegree)
-	zeroInDegreeQueue := initializeQueue(workingInDegree)
 	sortedResult := make([]string, 0, len(g.nodes))
 
-	for len(zeroInDegreeQueue) > 0 {
-		currentNode := dequeue(&zeroInDegreeQueue)
-		sortedResult = append(sortedResult, currentNode)
-		processNeighbors(g.edges, currentNode, workingInDegree, &zeroInDegreeQueue)
+	for {
+		round := collectZeroInDegree(workingInDegree)
+		if len(round) == 0 {
+			break
+		}
+		sort.Strings(round)
+		sortedResult = append(sortedResult, round...)
+		advanceRound(round, g.edges, workingInDegree)
 	}
 
 	if len(sortedResult) != len(g.nodes) {
-		remainingNodes := []string{}
-		for nodeID, degree := range workingInDegree {
-			if degree > 0 {
-				remainingNodes = append(remainingNodes, nodeID)
-			}
+		remainingNodes := make([]string, 0, len(workingInDegree))
+		for nodeID := range workingInDegree {
+			remainingNodes = append(remainingNodes, nodeID)
 		}
 		sort.Strings(remainingNodes)
 		return nil, fmt.Errorf("circular dependency detected among nodes: %v", remainingNodes)
 	}
 
 	return sortedResult, nil
+}
+
+func collectZeroInDegree(inDegree map[string]int) []string {
+	round := make([]string, 0)
+	for nodeID, degree := range inDegree {
+		if degree == 0 {
+			round = append(round, nodeID)
+		}
+	}
+	return round
+}
+
+func advanceRound(round []string, edges map[string][]string, inDegree map[string]int) {
+	for _, nodeID := range round {
+		delete(inDegree, nodeID)
+		for _, neighbor := range edges[nodeID] {
+			inDegree[neighbor]--
+		}
+	}
 }
 
 func (g *Graph[T]) collectChildren(id string, nodesToRemove *[]string) {
