@@ -79,10 +79,18 @@ func TestResolveDepsCmd_WithOptions(t *testing.T) {
 	devcontainerDir := filepath.Join(workspaceDir, ".devcontainer")
 	require.NoError(t, os.MkdirAll(devcontainerDir, 0o750))
 
+	goFeatureDir := filepath.Join(devcontainerDir, "local-features", "go")
+	require.NoError(t, os.MkdirAll(goFeatureDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(goFeatureDir, "devcontainer-feature.json"),
+		[]byte(`{"id":"go","version":"1.0.0","name":"Go"}`),
+		0o600,
+	))
+
 	devcontainerJSON := `{
 		"image": "ubuntu:22.04",
 		"features": {
-			"ghcr.io/devcontainers/features/go:1": {
+			"./local-features/go": {
 				"version": "1.21"
 			}
 		}

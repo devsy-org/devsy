@@ -21,15 +21,11 @@ func TestInfoCmd_FlagDefaults(t *testing.T) {
 	showDepsFlag := cmd.Flags().Lookup("show-dependencies")
 	require.NotNil(t, showDepsFlag)
 	assert.Equal(t, "false", showDepsFlag.DefValue)
-
-	verboseFlag := cmd.Flags().Lookup("verbose")
-	require.NotNil(t, verboseFlag)
-	assert.Equal(t, "false", verboseFlag.DefValue)
 }
 
 func TestInfoCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := NewInfoCmd(nil)
-	expected := []string{"output", "show-tags", "show-dependencies", "verbose"}
+	expected := []string{"output", "show-tags", "show-dependencies"}
 	for _, name := range expected {
 		assert.NotNil(t, cmd.Flags().Lookup(name), "flag %q should be registered", name)
 	}

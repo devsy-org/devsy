@@ -21,7 +21,6 @@ type InfoCmd struct {
 	Output           string
 	ShowTags         bool
 	ShowDependencies bool
-	Verbose          bool
 }
 
 type featureInfo struct {
@@ -63,9 +62,6 @@ to display metadata.`,
 	)
 	infoCmd.Flags().BoolVar(
 		&cmd.ShowDependencies, "show-dependencies", false, "Show declared dependencies",
-	)
-	infoCmd.Flags().BoolVar(
-		&cmd.Verbose, "verbose", false, "Show full manifest and config details",
 	)
 
 	return infoCmd
@@ -134,9 +130,7 @@ func (cmd *InfoCmd) fetchInfo(
 		info.Dependencies = featureCfg.DependsOn
 	}
 
-	if cmd.Verbose {
-		info.Options = featureCfg.Options
-	}
+	info.Options = featureCfg.Options
 
 	return info, nil
 }
@@ -199,7 +193,7 @@ func (cmd *InfoCmd) printTags(w *os.File, info *featureInfo) {
 }
 
 func (cmd *InfoCmd) printOptions(w *os.File, info *featureInfo) {
-	if !cmd.Verbose || len(info.Options) == 0 {
+	if len(info.Options) == 0 {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOptions:")
@@ -212,7 +206,7 @@ func (cmd *InfoCmd) printOptions(w *os.File, info *featureInfo) {
 }
 
 func (cmd *InfoCmd) printAnnotations(w *os.File, info *featureInfo) {
-	if !cmd.Verbose || len(info.Annotations) == 0 {
+	if len(info.Annotations) == 0 {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOCI Annotations:")

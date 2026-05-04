@@ -44,6 +44,22 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			devcontainerDir := workspaceDir + "/.devcontainer"
 			framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
 
+			goFeatureDir := devcontainerDir + "/local-features/go"
+			framework.ExpectNoError(os.MkdirAll(goFeatureDir, 0o750))
+			framework.ExpectNoError(os.WriteFile(
+				goFeatureDir+"/devcontainer-feature.json",
+				[]byte(`{"id":"go","version":"1.0.0","name":"Go"}`),
+				0o600,
+			))
+
+			nodeFeatureDir := devcontainerDir + "/local-features/node"
+			framework.ExpectNoError(os.MkdirAll(nodeFeatureDir, 0o750))
+			framework.ExpectNoError(os.WriteFile(
+				nodeFeatureDir+"/devcontainer-feature.json",
+				[]byte(`{"id":"node","version":"1.0.0","name":"Node.js"}`),
+				0o600,
+			))
+
 			devcontainerJSON := `{
 				"image": "ubuntu:22.04",
 				"features": {
@@ -77,6 +93,14 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 
 			devcontainerDir := workspaceDir + "/.devcontainer"
 			framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
+
+			goFeatureDir := devcontainerDir + "/local-features/go"
+			framework.ExpectNoError(os.MkdirAll(goFeatureDir, 0o750))
+			framework.ExpectNoError(os.WriteFile(
+				goFeatureDir+"/devcontainer-feature.json",
+				[]byte(`{"id":"go","version":"1.0.0","name":"Go"}`),
+				0o600,
+			))
 
 			devcontainerJSON := `{
 				"image": "ubuntu:22.04",

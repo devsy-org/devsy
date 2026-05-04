@@ -40,6 +40,7 @@ func TestGenerateDocsCmd_Run(t *testing.T) {
 		ProjectFolder: projectDir,
 		OutputFolder:  outputDir,
 		Namespace:     "ghcr.io/test/features",
+		Output:        "text",
 	}
 
 	err := cmd.Run()
@@ -77,6 +78,7 @@ func TestGenerateDocsCmd_NoFeatures(t *testing.T) {
 
 	cmd := &GenerateDocsCmd{
 		ProjectFolder: projectDir,
+		Output:        "text",
 	}
 
 	err := cmd.Run()
@@ -108,6 +110,7 @@ func TestGenerateDocsCmd_MultipleFeatures(t *testing.T) {
 	cmd := &GenerateDocsCmd{
 		ProjectFolder: projectDir,
 		OutputFolder:  outputDir,
+		Output:        "text",
 	}
 
 	err := cmd.Run()

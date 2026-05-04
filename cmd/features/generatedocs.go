@@ -1,6 +1,7 @@
 package features
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ type GenerateDocsCmd struct {
 	ProjectFolder string
 	OutputFolder  string
 	Namespace     string
+	Output        string
 }
 
 func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -42,12 +44,19 @@ documentation for each feature based on its devcontainer-feature.json.`,
 	generateDocsCmd.Flags().StringVar(
 		&cmd.Namespace, "namespace", "", "Registry namespace for linking (e.g. ghcr.io/myorg/features)",
 	)
+	generateDocsCmd.Flags().StringVar(
+		&cmd.Output, "output", "text", "Output format (text or json)",
+	)
 	_ = generateDocsCmd.MarkFlagRequired("project-folder")
 
 	return generateDocsCmd
 }
 
 func (cmd *GenerateDocsCmd) Run() error {
+	if err := validateOutputFormat(cmd.Output); err != nil {
+		return err
+	}
+
 	projectFolder, err := filepath.Abs(cmd.ProjectFolder)
 	if err != nil {
 		return fmt.Errorf("resolve project folder: %w", err)
@@ -61,6 +70,10 @@ func (cmd *GenerateDocsCmd) Run() error {
 	features, err := scanFeatures(filepath.Join(projectFolder, "src"))
 	if err != nil {
 		return err
+	}
+
+	if cmd.Output == outputJSON {
+		return cmd.writeJSON(features)
 	}
 
 	return cmd.writeDocs(features, outputFolder)
@@ -141,6 +154,37 @@ func (cmd *GenerateDocsCmd) writeDocs(
 type featureDoc struct {
 	dir    string
 	config *config.FeatureConfig
+}
+
+type featureDocJSON struct {
+	ID          string                                `json:"id"`
+	Name        string                                `json:"name,omitempty"`
+	Version     string                                `json:"version,omitempty"`
+	Description string                                `json:"description,omitempty"`
+	Dir         string                                `json:"dir"`
+	Namespace   string                                `json:"namespace,omitempty"`
+	Options     map[string]config.FeatureConfigOption `json:"options,omitempty"`
+}
+
+func (cmd *GenerateDocsCmd) writeJSON(features []*featureDoc) error {
+	docs := make([]featureDocJSON, 0, len(features))
+	for _, f := range features {
+		docs = append(docs, featureDocJSON{
+			ID:          f.config.ID,
+			Name:        f.config.Name,
+			Version:     f.config.Version,
+			Description: f.config.Description,
+			Dir:         f.dir,
+			Namespace:   cmd.Namespace,
+			Options:     f.config.Options,
+		})
+	}
+	data, err := json.MarshalIndent(docs, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(os.Stdout, string(data))
+	return err
 }
 
 func (cmd *GenerateDocsCmd) generateFeatureDoc(f *featureDoc) string {
