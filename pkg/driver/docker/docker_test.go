@@ -2,6 +2,7 @@ package docker
 
 import (
 	"os/user"
+	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -10,9 +11,13 @@ import (
 )
 
 const (
-	testSeccompUnconfined = "seccomp=unconfined"
-	testSecurityOptFlag   = "--security-opt"
-	testBindMount         = "type=bind,src=/a,dst=/b"
+	testSeccompUnconfined   = "seccomp=unconfined"
+	testSecurityOptFlag     = "--security-opt"
+	testBindMount           = "type=bind,src=/a,dst=/b"
+	testUpdateUIDDefaultOff = "off"
+	testUpdateUIDDefaultOn  = "on"
+	testOSLinux             = "linux"
+	testRemoteUser          = "vscode"
 )
 
 type DockerDriverTestSuite struct {
@@ -80,6 +85,71 @@ func (s *DockerDriverTestSuite) TestShouldSkipUpdate_RootWithDifferentGID() {
 	result := shouldSkipUpdate(localUser, info)
 
 	s.True(result, "should skip when container user is root regardless of GID")
+}
+
+func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_DefaultTrue_WhenConfigNil() {
+	cfg := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			RemoteUser: testRemoteUser,
+		},
+	}
+	s.driver.UpdateRemoteUserUIDDefault = ""
+	result := s.driver.shouldUpdateUserUID(cfg)
+	if runtime.GOOS == testOSLinux {
+		s.True(result)
+	}
+}
+
+func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOff_WhenConfigNil() {
+	cfg := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			RemoteUser: testRemoteUser,
+		},
+	}
+	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOff
+	result := s.driver.shouldUpdateUserUID(cfg)
+	s.False(result)
+}
+
+func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOn_WhenConfigNil() {
+	cfg := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			RemoteUser: testRemoteUser,
+		},
+	}
+	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOn
+	result := s.driver.shouldUpdateUserUID(cfg)
+	if runtime.GOOS == testOSLinux {
+		s.True(result)
+	}
+}
+
+func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_ConfigTakesPrecedence_True() {
+	t := true
+	cfg := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			RemoteUser:          testRemoteUser,
+			UpdateRemoteUserUID: &t,
+		},
+	}
+	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOff
+	result := s.driver.shouldUpdateUserUID(cfg)
+	if runtime.GOOS == testOSLinux {
+		s.True(result, "devcontainer.json true should override CLI default off")
+	}
+}
+
+func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_ConfigTakesPrecedence_False() {
+	f := false
+	cfg := &config.DevContainerConfig{
+		DevContainerConfigBase: config.DevContainerConfigBase{
+			RemoteUser:          testRemoteUser,
+			UpdateRemoteUserUID: &f,
+		},
+	}
+	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOn
+	result := s.driver.shouldUpdateUserUID(cfg)
+	s.False(result, "devcontainer.json false should override CLI default on")
 }
 
 func (s *DockerDriverTestSuite) TestGetContainerUser_RemoteUserPriority() {

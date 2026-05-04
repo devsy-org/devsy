@@ -49,6 +49,8 @@ func NewDownCmd(flags *flags.GlobalFlags) *cobra.Command {
 		BoolVar(&cmd.Force, "force", false, "Delete workspace even if it is not found remotely anymore")
 	downCmd.Flags().
 		StringVar(&cmd.GracePeriod, "grace-period", "", "The amount of time to give the command to delete the workspace")
+	downCmd.Flags().
+		BoolVar(&cmd.RemoveVolumes, "remove-volumes", false, "Remove named volumes associated with the workspace")
 	return downCmd
 }
 

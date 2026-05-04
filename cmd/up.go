@@ -37,6 +37,9 @@ const (
 	MountConsistencyConsistent = "consistent"
 	MountConsistencyCached     = "cached"
 	MountConsistencyDelegated  = "delegated"
+
+	UpdateRemoteUserUIDOn  = "on"
+	UpdateRemoteUserUIDOff = "off"
 )
 
 // UpCmd holds the up cmd flags.
@@ -177,6 +180,16 @@ func (cmd *UpCmd) validate() error {
 			)
 		}
 	}
+	if cmd.UpdateRemoteUserUIDDefault != "" {
+		switch cmd.UpdateRemoteUserUIDDefault {
+		case UpdateRemoteUserUIDOn, UpdateRemoteUserUIDOff:
+		default:
+			return fmt.Errorf(
+				"invalid --update-remote-user-uid-default value %q: must be \"on\" or \"off\"",
+				cmd.UpdateRemoteUserUIDDefault,
+			)
+		}
+	}
 	return nil
 }
 
@@ -252,6 +265,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.GPUAvailability, "gpu-availability", "",
 			"Override GPU availability detection (detect, true, false)")
+	upCmd.Flags().
+		StringVar(&cmd.UpdateRemoteUserUIDDefault, "update-remote-user-uid-default", "",
+			"Default for updateRemoteUserUID when not set in devcontainer.json (on, off)")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {

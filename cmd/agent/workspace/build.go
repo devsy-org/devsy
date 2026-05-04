@@ -113,7 +113,7 @@ func deleteWorkspace(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 ) error {
-	err := removeContainer(ctx, workspaceInfo)
+	err := removeContainer(ctx, workspaceInfo, false)
 	if err != nil {
 		log.Errorf("Removing container: %v", err)
 	}
