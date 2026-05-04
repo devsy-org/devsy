@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -349,10 +350,10 @@ func mergeLifestyleHooks(
 	m func(entry *ImageMetadata) types.LifecycleHook,
 ) []types.LifecycleHook {
 	var out []types.LifecycleHook
-	for _, entry := range entries {
+	for _, entry := range slices.Backward(entries) {
 		val := m(entry)
 		if len(val) > 0 {
-			out = append(out, m(entry))
+			out = append(out, val)
 		}
 	}
 	return out

@@ -52,6 +52,31 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		framework.ExpectEqual(strings.TrimSpace(out), "feature-postStart")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("lifecycle hooks order feature before image", func(ctx context.Context) {
+		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir(
+			"tests/up-features/testdata/docker-features-hooks-order",
+		)
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+		wsName := filepath.Base(tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+		err = f.DevsyUp(ctx, tempDir)
+		framework.ExpectNoError(err)
+
+		out, err := f.DevsySSH(ctx, wsName, "cat /tmp/hook-order.txt")
+		framework.ExpectNoError(err)
+
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		gomega.Expect(lines).To(gomega.HaveLen(2))
+		gomega.Expect(lines[0]).To(gomega.Equal("feature"))
+		gomega.Expect(lines[1]).To(gomega.Equal("image"))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("http headers download", func(ctx context.Context) {
 		server := ghttp.NewServer()
 		ginkgo.DeferCleanup(server.Close)

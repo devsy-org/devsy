@@ -3,6 +3,8 @@ package config
 import (
 	"slices"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 const testPortRange = "3000-3002"
@@ -340,5 +342,143 @@ func TestMergeForwardPorts_InvalidRangeSkipped(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("mergeForwardPorts[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestMergeLifestyleHooks_FeatureBeforeImage(t *testing.T) {
+	featureHook := types.LifecycleHook{"feature-cmd": {"echo feature"}}
+	imageHook := types.LifecycleHook{"image-cmd": {"echo image"}}
+
+	// Simulate reversed entries as passed to mergeLifestyleHooks:
+	// [base_image_entry, feature_entry]
+	entries := []*ImageMetadata{
+		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: featureHook}},
+	}
+
+	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 hooks, got %d", len(got))
+	}
+	if _, ok := got[0]["feature-cmd"]; !ok {
+		t.Errorf("expected feature hook first, got %v", got[0])
+	}
+	if _, ok := got[1]["image-cmd"]; !ok {
+		t.Errorf("expected image hook second, got %v", got[1])
+	}
+}
+
+func TestMergeLifestyleHooks_AllHookTypes(t *testing.T) {
+	featureHook := types.LifecycleHook{"feat": {"echo feat"}}
+	imageHook := types.LifecycleHook{"img": {"echo img"}}
+
+	entries := []*ImageMetadata{
+		{DevContainerActions: DevContainerActions{
+			OnCreateCommand:      imageHook,
+			UpdateContentCommand: imageHook,
+			PostCreateCommand:    imageHook,
+			PostStartCommand:     imageHook,
+			PostAttachCommand:    imageHook,
+		}},
+		{DevContainerActions: DevContainerActions{
+			OnCreateCommand:      featureHook,
+			UpdateContentCommand: featureHook,
+			PostCreateCommand:    featureHook,
+			PostStartCommand:     featureHook,
+			PostAttachCommand:    featureHook,
+		}},
+	}
+
+	hookExtractors := []struct {
+		name string
+		fn   func(e *ImageMetadata) types.LifecycleHook
+	}{
+		{"onCreateCommand", func(e *ImageMetadata) types.LifecycleHook {
+			return e.OnCreateCommand
+		}},
+		{"updateContentCommand", func(e *ImageMetadata) types.LifecycleHook {
+			return e.UpdateContentCommand
+		}},
+		{"postCreateCommand", func(e *ImageMetadata) types.LifecycleHook {
+			return e.PostCreateCommand
+		}},
+		{"postStartCommand", func(e *ImageMetadata) types.LifecycleHook {
+			return e.PostStartCommand
+		}},
+		{"postAttachCommand", func(e *ImageMetadata) types.LifecycleHook {
+			return e.PostAttachCommand
+		}},
+	}
+
+	for _, tc := range hookExtractors {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeLifestyleHooks(entries, tc.fn)
+			if len(got) != 2 {
+				t.Fatalf("expected 2 hooks, got %d", len(got))
+			}
+			if _, ok := got[0]["feat"]; !ok {
+				t.Errorf("expected feature hook first, got %v", got[0])
+			}
+			if _, ok := got[1]["img"]; !ok {
+				t.Errorf("expected image hook second, got %v", got[1])
+			}
+		})
+	}
+}
+
+func TestMergeLifestyleHooks_SkipsEmpty(t *testing.T) {
+	featureHook := types.LifecycleHook{"feat": {"echo feat"}}
+
+	entries := []*ImageMetadata{
+		{},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: featureHook}},
+		{},
+	}
+
+	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(got))
+	}
+	if _, ok := got[0]["feat"]; !ok {
+		t.Errorf("expected feature hook, got %v", got[0])
+	}
+}
+
+func TestMergeLifestyleHooks_MultipleFeatures(t *testing.T) {
+	imageHook := types.LifecycleHook{"img": {"echo img"}}
+	feature1Hook := types.LifecycleHook{"feat1": {"echo feat1"}}
+	feature2Hook := types.LifecycleHook{"feat2": {"echo feat2"}}
+
+	// After ReverseSlice in MergeConfiguration, entries are:
+	// [base_image, feature2 (last applied), feature1 (first applied), user_config]
+	// mergeLifestyleHooks iterates in reverse producing:
+	// user_config hooks, feature1 hooks, feature2 hooks, base_image hooks
+	entries := []*ImageMetadata{
+		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: feature2Hook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: feature1Hook}},
+	}
+
+	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+
+	if len(got) != 3 {
+		t.Fatalf("expected 3 hooks, got %d", len(got))
+	}
+	if _, ok := got[0]["feat1"]; !ok {
+		t.Errorf("expected feature1 hook first, got %v", got[0])
+	}
+	if _, ok := got[1]["feat2"]; !ok {
+		t.Errorf("expected feature2 hook second, got %v", got[1])
+	}
+	if _, ok := got[2]["img"]; !ok {
+		t.Errorf("expected image hook last, got %v", got[2])
 	}
 }
