@@ -57,8 +57,9 @@ func GetExtendedBuildInfo(
 	target string,
 	devContainerConfig *config.SubstitutedConfig,
 	forceBuild bool,
+	secretOpts *SecretOptions,
 ) (*ExtendedBuildInfo, error) {
-	features, err := fetchFeatures(devContainerConfig.Config, forceBuild)
+	features, err := fetchFeatures(devContainerConfig.Config, forceBuild, secretOpts)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
 	}
@@ -284,10 +285,12 @@ func findContainerUsers(
 func fetchFeatures(
 	devContainerConfig *config.DevContainerConfig,
 	forceBuild bool,
+	secretOpts *SecretOptions,
 ) ([]*config.FeatureSet, error) {
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
 		forceBuild:         forceBuild,
+		secretOpts:         secretOpts,
 	}
 
 	userFeatures, err := getUserFeatures(processor, devContainerConfig)
@@ -332,6 +335,7 @@ func getUserFeatures(
 type featureProcessor struct {
 	devContainerConfig *config.DevContainerConfig
 	forceBuild         bool
+	secretOpts         *SecretOptions
 }
 
 func (p *featureProcessor) processFeature(
@@ -353,13 +357,57 @@ func (p *featureProcessor) processFeature(
 		return nil, err
 	}
 
+	resolvedOptions, err := resolveSecretsForFeature(
+		featureID,
+		featureConfig,
+		featureOptions,
+		p.secretOpts,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &config.FeatureSet{
 		ConfigID: normalizeFeatureID(featureID),
 		Version:  extractVersionFromFeatureID(featureID),
 		Folder:   featureFolder,
 		Config:   featureConfig,
-		Options:  featureOptions,
+		Options:  resolvedOptions,
 	}, nil
+}
+
+func resolveSecretsForFeature(
+	featureID string,
+	featureCfg *config.FeatureConfig,
+	featureOptions any,
+	secretOpts *SecretOptions,
+) (any, error) {
+	if featureCfg == nil || len(featureCfg.Options) == 0 {
+		return featureOptions, nil
+	}
+
+	hasSecrets := false
+	for _, opt := range featureCfg.Options {
+		if opt.Type == optionTypeSecret {
+			hasSecrets = true
+			break
+		}
+	}
+	if !hasSecrets {
+		return featureOptions, nil
+	}
+
+	userMap := toOptionsMap(featureOptions, featureCfg)
+	if userMap == nil {
+		userMap = map[string]any{}
+	}
+
+	resolved, err := ResolveSecretOptions(featureID, featureCfg, userMap, secretOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	return resolved, nil
 }
 
 type featureDependencyResolver struct {

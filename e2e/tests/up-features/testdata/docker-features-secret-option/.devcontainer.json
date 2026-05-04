@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
+  "features": {
+    "./features/secret-test": {}
+  }
+}

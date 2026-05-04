@@ -38,7 +38,8 @@ func getFeatureInstallWrapperScript(
 	description := escapeQuotesForShell(feature.Description)
 	version := escapeQuotesForShell(feature.Version)
 	documentation := escapeQuotesForShell(feature.DocumentationURL)
-	optionsIndented := escapeQuotesForShell("    " + strings.Join(options, "\n    "))
+	maskedOptions := maskSecretOptions(feature, options)
+	optionsIndented := escapeQuotesForShell("    " + strings.Join(maskedOptions, "\n    "))
 
 	warningHeader := ""
 	if feature.Deprecated {
@@ -81,8 +82,6 @@ echo 'Version       : ` + version + `'
 echo 'Documentation : ` + documentation + `'
 echo 'Options       :'
 echo '` + optionsIndented + `'
-echo 'Environment   :'
-printenv
 echo ===========================================================================
 
 chmod +x ./install.sh
@@ -96,6 +95,34 @@ func escapeQuotesForShell(str string) string {
 	// We can do this by ending the first string with a single quote ('), printing an escaped
 	// single quote (\'), and then opening a new string (').
 	return strings.ReplaceAll(str, "'", `'\''`)
+}
+
+func maskSecretOptions(feature *config.FeatureConfig, options []string) []string {
+	if feature.Options == nil {
+		return options
+	}
+
+	secretKeys := make(map[string]bool)
+	for name, opt := range feature.Options {
+		if opt.Type == optionTypeSecret {
+			secretKeys[getFeatureSafeID(name)] = true
+		}
+	}
+
+	if len(secretKeys) == 0 {
+		return options
+	}
+
+	masked := make([]string, len(options))
+	for i, opt := range options {
+		key, _, found := strings.Cut(opt, "=")
+		if found && secretKeys[key] {
+			masked[i] = key + `="****"`
+		} else {
+			masked[i] = opt
+		}
+	}
+	return masked
 }
 
 func ProcessFeatureID(

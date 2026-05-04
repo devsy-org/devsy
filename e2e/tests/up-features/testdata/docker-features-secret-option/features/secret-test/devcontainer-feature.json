@@ -1,0 +1,17 @@
+{
+  "id": "secret-test",
+  "version": "1.0.0",
+  "name": "Secret Test Feature",
+  "description": "Feature for testing secret option handling",
+  "options": {
+    "secretToken": {
+      "type": "secret",
+      "description": "A secret token for testing"
+    },
+    "publicOption": {
+      "type": "string",
+      "default": "hello",
+      "description": "A non-secret option"
+    }
+  }
+}
