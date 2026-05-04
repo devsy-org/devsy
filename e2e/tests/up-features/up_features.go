@@ -650,4 +650,34 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
+
+	ginkgo.It(
+		"should install both versions when same feature has different versions",
+		ginkgo.Label("features", "version-aware"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-different-versions",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			out, err := f.DevsySSH(ctx, wsName, "cat /tmp/versioned-feature-v1.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("v1"))
+
+			out, err = f.DevsySSH(ctx, wsName, "cat /tmp/versioned-feature-v2.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("v2"))
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
 })

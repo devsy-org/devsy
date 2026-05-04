@@ -323,7 +323,8 @@ func getUserFeatures(
 		if err != nil {
 			return nil, fmt.Errorf("process feature %s: %w", featureID, err)
 		}
-		userFeatures[featureSet.ConfigID] = featureSet
+		key := featureDeduplicationKey(featureSet.ConfigID, featureSet.Version)
+		userFeatures[key] = featureSet
 	}
 	return userFeatures, nil
 }
@@ -354,6 +355,7 @@ func (p *featureProcessor) processFeature(
 
 	return &config.FeatureSet{
 		ConfigID: normalizeFeatureID(featureID),
+		Version:  extractVersionFromFeatureID(featureID),
 		Folder:   featureFolder,
 		Config:   featureConfig,
 		Options:  featureOptions,
@@ -366,6 +368,18 @@ type featureDependencyResolver struct {
 	visiting  map[string]bool
 	processor *featureProcessor
 	legacyMap map[string]string
+}
+
+func (r *featureDependencyResolver) findByConfigID(configID string) (string, *config.FeatureSet) {
+	if fs, ok := r.features[configID]; ok {
+		return configID, fs
+	}
+	for key, fs := range r.features {
+		if fs.ConfigID == configID {
+			return key, fs
+		}
+	}
+	return "", nil
 }
 
 func (r *featureDependencyResolver) resolveFeatureDependency(
@@ -385,12 +399,11 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 
 	for depID, depOptions := range featureSet.Config.DependsOn {
 		normalizedDepID := normalizeFeatureID(depID)
-		depFeatureSet, exists := r.features[normalizedDepID]
-		if !exists {
+		resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
+		if depFeatureSet == nil {
 			if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
 				log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
-				depFeatureSet = r.features[currentID]
-				normalizedDepID = currentID
+				resolvedKey, depFeatureSet = r.findByConfigID(currentID)
 			}
 		}
 		if depFeatureSet == nil {
@@ -400,11 +413,12 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 			if err != nil {
 				return fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
 			}
-			r.features[normalizedDepID] = depFeatureSet
+			resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
+			r.features[resolvedKey] = depFeatureSet
 			r.rebuildLegacyMap()
 		}
 
-		err := r.resolveFeatureDependency(normalizedDepID, depFeatureSet)
+		err := r.resolveFeatureDependency(resolvedKey, depFeatureSet)
 		if err != nil {
 			return err
 		}
@@ -467,6 +481,34 @@ func normalizeFeatureID(featureID string) string {
 	return ref.String()
 }
 
+func extractVersionFromFeatureID(featureID string) string {
+	ref, err := name.ParseReference(featureID)
+	if err != nil {
+		return ""
+	}
+
+	tag, ok := ref.(name.Tag)
+	if !ok {
+		return ""
+	}
+
+	return normalizeVersion(tag.TagStr())
+}
+
+func normalizeVersion(version string) string {
+	if version == "latest" || version == "" {
+		return ""
+	}
+	return strings.TrimPrefix(version, "v")
+}
+
+func featureDeduplicationKey(configID, version string) string {
+	if version == "" {
+		return configID
+	}
+	return configID + ":" + version
+}
+
 func getSortedFeatureSets(
 	devContainer *config.DevContainerConfig,
 	featureSets []*config.FeatureSet,
@@ -496,8 +538,9 @@ func buildOverridePriority(
 			continue
 		}
 		normalizedID := normalizeFeatureID(id)
-		if _, exists := featureLookup[normalizedID]; exists {
-			priority[normalizedID] = i
+		key := findKeyInLookupByConfigID(normalizedID, featureLookup)
+		if key != "" {
+			priority[key] = i
 		}
 	}
 	return priority
@@ -509,17 +552,18 @@ func validateOverrideOrder(
 	featureLookup map[string]*config.FeatureSet,
 ) error {
 	for _, feature := range featureSets {
-		featurePriority, featureHasPriority := priority[feature.ConfigID]
+		featureKey := featureDeduplicationKey(feature.ConfigID, feature.Version)
+		featurePriority, featureHasPriority := priority[featureKey]
 		if !featureHasPriority {
 			continue
 		}
 
 		for depID := range feature.Config.DependsOn {
-			depConfigID := resolveDepConfigID(depID, featureLookup)
-			if depConfigID == "" {
+			depKey := resolveDepConfigID(depID, featureLookup)
+			if depKey == "" {
 				continue
 			}
-			depPriority, depHasPriority := priority[depConfigID]
+			depPriority, depHasPriority := priority[depKey]
 			if !depHasPriority {
 				continue
 			}
@@ -527,9 +571,9 @@ func validateOverrideOrder(
 				return fmt.Errorf(
 					"overrideFeatureInstallOrder places %q (position %d)"+
 						" before its dependency %q (position %d)",
-					feature.ConfigID,
+					featureKey,
 					featurePriority,
-					depConfigID,
+					depKey,
 					depPriority,
 				)
 			}
@@ -543,10 +587,7 @@ func resolveDepConfigID(depID string, featureLookup map[string]*config.FeatureSe
 		return depID
 	}
 	normalizedID := normalizeFeatureID(depID)
-	if _, exists := featureLookup[normalizedID]; exists {
-		return normalizedID
-	}
-	return ""
+	return findKeyInLookupByConfigID(normalizedID, featureLookup)
 }
 
 func getOrderedFeatureSetsWithPriority(
@@ -561,8 +602,11 @@ func getOrderedFeatureSetsWithPriority(
 }
 
 func extractFeatureByID(features []*config.FeatureSet, featureID string) *config.FeatureSet {
+	version := extractVersionFromFeatureID(featureID)
+	normalizedID := normalizeFeatureID(featureID)
 	for _, feature := range features {
-		if feature.ConfigID == featureID {
+		if (feature.ConfigID == featureID || feature.ConfigID == normalizedID) &&
+			feature.Version == version {
 			return feature
 		}
 	}
@@ -570,8 +614,11 @@ func extractFeatureByID(features []*config.FeatureSet, featureID string) *config
 }
 
 func containsFeature(features []*config.FeatureSet, featureID string) bool {
+	version := extractVersionFromFeatureID(featureID)
+	normalizedID := normalizeFeatureID(featureID)
 	for _, feature := range features {
-		if feature.ConfigID == featureID {
+		if (feature.ConfigID == featureID || feature.ConfigID == normalizedID) &&
+			feature.Version == version {
 			return true
 		}
 	}
@@ -609,15 +656,32 @@ func buildFeatureDependencyGraph(
 	return g, nil
 }
 
+func findKeyInLookupByConfigID(
+	configID string,
+	featureLookup map[string]*config.FeatureSet,
+) string {
+	if _, exists := featureLookup[configID]; exists {
+		return configID
+	}
+	for key, fs := range featureLookup {
+		if fs.ConfigID == configID {
+			return key
+		}
+	}
+	return ""
+}
+
 func addHardDependencies(
 	g *graph.Graph[*config.FeatureSet],
 	feature *config.FeatureSet,
 	featureLookup map[string]*config.FeatureSet,
 ) error {
+	featureKey := featureDeduplicationKey(feature.ConfigID, feature.Version)
 	for id := range feature.Config.DependsOn {
 		normalizedID := normalizeFeatureID(id)
-		if _, exists := featureLookup[normalizedID]; exists {
-			if err := g.AddEdge(normalizedID, feature.ConfigID); err != nil {
+		depKey := findKeyInLookupByConfigID(normalizedID, featureLookup)
+		if depKey != "" {
+			if err := g.AddEdge(depKey, featureKey); err != nil {
 				return err
 			}
 		}
@@ -630,17 +694,19 @@ func addSoftDependencies(
 	feature *config.FeatureSet,
 	featureLookup map[string]*config.FeatureSet,
 ) error {
+	featureKey := featureDeduplicationKey(feature.ConfigID, feature.Version)
 	for _, id := range feature.Config.InstallsAfter {
 		normalizedID := normalizeFeatureID(id)
-		if _, exists := featureLookup[normalizedID]; !exists {
+		depKey := findKeyInLookupByConfigID(normalizedID, featureLookup)
+		if depKey == "" {
 			continue
 		}
 
 		if hasHardDependency(feature, id, normalizedID) {
-			continue // already added as hard dependency
+			continue
 		}
 
-		if err := g.AddEdge(normalizedID, feature.ConfigID); err != nil {
+		if err := g.AddEdge(depKey, featureKey); err != nil {
 			return err
 		}
 	}
@@ -650,7 +716,8 @@ func addSoftDependencies(
 func buildFeatureLookupMap(features []*config.FeatureSet) map[string]*config.FeatureSet {
 	lookup := make(map[string]*config.FeatureSet, len(features))
 	for _, feature := range features {
-		lookup[feature.ConfigID] = feature
+		key := featureDeduplicationKey(feature.ConfigID, feature.Version)
+		lookup[key] = feature
 	}
 	return lookup
 }

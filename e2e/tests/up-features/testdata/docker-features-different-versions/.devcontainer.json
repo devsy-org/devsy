@@ -1,0 +1,7 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
+  "features": {
+    "./features/versionedFeatureV1": {},
+    "./features/versionedFeatureV2": {}
+  }
+}
