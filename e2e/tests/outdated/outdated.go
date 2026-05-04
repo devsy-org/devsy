@@ -23,6 +23,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	cmdOutdated         = "outdated"
+	flagWorkspaceFolder = "--workspace-folder"
+)
+
 var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 	var initialDir string
 
@@ -52,8 +57,8 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"outdated",
-			"--workspace-folder", tempDir,
+			cmdOutdated,
+			flagWorkspaceFolder, tempDir,
 		})
 		framework.ExpectNoError(err)
 
@@ -82,8 +87,8 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"outdated",
-				"--workspace-folder", tempDir,
+				cmdOutdated,
+				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
 
@@ -103,8 +108,8 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"outdated",
-				"--workspace-folder", tempDir,
+				cmdOutdated,
+				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
 
