@@ -37,6 +37,9 @@ const (
 	MountConsistencyConsistent = "consistent"
 	MountConsistencyCached     = "cached"
 	MountConsistencyDelegated  = "delegated"
+
+	UpdateRemoteUserUIDOn  = "on"
+	UpdateRemoteUserUIDOff = "off"
 )
 
 // UpCmd holds the up cmd flags.
@@ -179,7 +182,7 @@ func (cmd *UpCmd) validate() error {
 	}
 	if cmd.UpdateRemoteUserUIDDefault != "" {
 		switch cmd.UpdateRemoteUserUIDDefault {
-		case "on", "off":
+		case UpdateRemoteUserUIDOn, UpdateRemoteUserUIDOff:
 		default:
 			return fmt.Errorf(
 				"invalid --update-remote-user-uid-default value %q: must be \"on\" or \"off\"",

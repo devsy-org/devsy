@@ -12,6 +12,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const testDockerCommand = "docker"
+
 var _ = ginkgo.Describe(
 	"testing --update-remote-user-uid-default flag",
 	ginkgo.Label("up-update-remote-user-uid"),
@@ -28,8 +30,11 @@ var _ = ginkgo.Describe(
 			dtc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
-			dtc.f, err = setupDockerProvider(filepath.Join(dtc.initialDir, "bin"), "docker")
+			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: testDockerCommand}
+			dtc.f, err = setupDockerProvider(
+				filepath.Join(dtc.initialDir, "bin"),
+				testDockerCommand,
+			)
 			framework.ExpectNoError(err)
 		})
 
