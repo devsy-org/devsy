@@ -286,7 +286,7 @@ func (r *runner) resolveNewContainer(
 // Docker containers are fully deleted; other drivers stop the container.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
 	if _, ok := r.Driver.(driver.DockerDriver); ok {
-		if err := r.Delete(ctx); err != nil {
+		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete devcontainer: %w", err)
 		}
 		return nil

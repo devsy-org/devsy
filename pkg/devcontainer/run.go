@@ -39,9 +39,13 @@ type Runner interface {
 
 	Stop(ctx context.Context) error
 
-	Delete(ctx context.Context) error
+	Delete(ctx context.Context, options DeleteOptions) error
 
 	Logs(ctx context.Context, writer io.Writer) error
+}
+
+type DeleteOptions struct {
+	RemoveVolumes bool
 }
 
 func NewRunner(

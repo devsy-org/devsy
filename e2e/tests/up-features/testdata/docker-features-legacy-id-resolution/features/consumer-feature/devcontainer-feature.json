@@ -1,0 +1,9 @@
+{
+  "id": "consumer-feature",
+  "version": "1.0.0",
+  "name": "Consumer Feature",
+  "description": "A feature that depends on another feature using its legacy ID",
+  "dependsOn": {
+    "old-feature-name": {}
+  }
+}

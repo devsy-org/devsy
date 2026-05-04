@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
@@ -303,4 +305,42 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		gomega.Expect(hr["memory"]).To(gomega.Equal("8gb"))
 		gomega.Expect(hr["storage"]).To(gomega.Equal("32gb"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("reads configuration from a running container via --container-id",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			metadataLabel := `[{"remoteUser":"testuser","customizations":{"vscode":{"extensions":["ms-python.python"]}}}]`
+			out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+				"--label", "devcontainer.metadata="+metadataLabel,
+				"mcr.microsoft.com/devcontainers/base:ubuntu",
+				"sleep", "infinity",
+			).Output()
+			framework.ExpectNoError(err)
+			containerID := strings.TrimSpace(string(out))
+			ginkgo.DeferCleanup(func() {
+				_ = exec.Command("docker", "rm", "-f", containerID).Run() //nolint:gosec // G204
+			})
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--container-id", containerID,
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			err = json.Unmarshal([]byte(stdout), &result)
+			framework.ExpectNoError(err, "output should be valid JSON")
+
+			gomega.Expect(result).To(gomega.HaveKey("configuration"))
+			gomega.Expect(result).To(gomega.HaveKey("workspace"))
+
+			config, ok := result["configuration"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
+			gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "testuser"))
+
+			ws, ok := result["workspace"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "workspace should be an object")
+			gomega.Expect(ws).To(gomega.HaveKey("workspaceFolder"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })

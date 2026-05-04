@@ -218,10 +218,18 @@ func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []str
 	return nil
 }
 
-func (h *ComposeHelper) Remove(ctx context.Context, projectName string, args []string) error {
+func (h *ComposeHelper) Remove(
+	ctx context.Context,
+	projectName string,
+	args []string,
+	removeVolumes bool,
+) error {
 	buildArgs := []string{"--project-name", projectName}
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "down")
+	if removeVolumes {
+		buildArgs = append(buildArgs, "--volumes")
+	}
 
 	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
 	if len(stderr) > 0 {

@@ -387,6 +387,9 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				info.Agent.Path,
 				compressed,
 			)
+			if opt.RemoveVolumes {
+				command += " --remove-volumes"
+			}
 			err = RunCommandWithBinaries(CommandOptions{
 				Ctx:       ctx,
 				Name:      "command",

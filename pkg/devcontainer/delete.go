@@ -9,7 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-func (r *runner) Delete(ctx context.Context) error {
+func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
 	if err != nil {
 		return fmt.Errorf("find dev container: %w", err)
@@ -19,7 +19,7 @@ func (r *runner) Delete(ctx context.Context) error {
 
 	log.Infof("deleting devcontainer: devcontainerID=%s", containerDetails.ID)
 	if isDockerCompose, projectName := getDockerComposeProject(containerDetails); isDockerCompose {
-		err = r.deleteDockerCompose(ctx, projectName)
+		err = r.deleteDockerCompose(ctx, projectName, options.RemoveVolumes)
 		if err != nil {
 			return err
 		}
