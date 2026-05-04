@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"testing"
+)
 
 func TestLookupValue(t *testing.T) {
 	tests := []struct {
@@ -117,5 +121,55 @@ func TestResolveStringDefaultWithColons(t *testing.T) {
 		t.Errorf(
 			"ResolveString() = %q, want %q", got, want,
 		)
+	}
+}
+
+const testWorkspaceFolder = "/home/user/project"
+
+func TestDeriveDevContainerID(t *testing.T) {
+	h := sha256.Sum256([]byte(testWorkspaceFolder))
+	want := hex.EncodeToString(h[:])[:devContainerIDLength]
+
+	got := DeriveDevContainerID(testWorkspaceFolder)
+	if got != want {
+		t.Errorf("DeriveDevContainerID(%q) = %q, want %q", testWorkspaceFolder, got, want)
+	}
+	if len(got) != devContainerIDLength {
+		t.Errorf("expected length %d, got %d", devContainerIDLength, len(got))
+	}
+}
+
+func TestDeriveDevContainerIDDeterministic(t *testing.T) {
+	first := DeriveDevContainerID(testWorkspaceFolder)
+	second := DeriveDevContainerID(testWorkspaceFolder)
+	if first != second {
+		t.Errorf("DeriveDevContainerID is not deterministic: %q != %q", first, second)
+	}
+}
+
+func TestGetLegacyDevContainerID(t *testing.T) {
+	labels := map[string]string{
+		"dev.containers.id": "test-workspace",
+	}
+	got := GetLegacyDevContainerID(labels)
+	if got == "" {
+		t.Error("GetLegacyDevContainerID returned empty string")
+	}
+
+	again := GetLegacyDevContainerID(labels)
+	if got != again {
+		t.Errorf("GetLegacyDevContainerID is not deterministic: %q != %q", got, again)
+	}
+}
+
+func TestResolveDevContainerID(t *testing.T) {
+	labels := map[string]string{
+		"dev.containers.id": "test-workspace",
+	}
+
+	got := ResolveDevContainerID(testWorkspaceFolder, labels)
+	want := DeriveDevContainerID(testWorkspaceFolder)
+	if got != want {
+		t.Errorf("ResolveDevContainerID() = %q, want %q (spec-based ID)", got, want)
 	}
 }
