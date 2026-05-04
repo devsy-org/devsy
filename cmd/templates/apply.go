@@ -335,6 +335,7 @@ func shouldOmit(relPath string, omitPaths []string) bool {
 func addFeaturesToDevcontainer(workspaceFolder string, features []string) error {
 	devcontainerPath := findDevcontainerJSON(workspaceFolder)
 	if devcontainerPath == "" {
+		log.Warnf("no devcontainer.json found in workspace, --features not applied")
 		return nil
 	}
 

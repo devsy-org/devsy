@@ -92,10 +92,12 @@ func runPublish(f *PublishFlags) error {
 	log.Infof("Template published successfully: %s", ref.String())
 
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
-	if err == nil {
-		_, _ = os.Stdout.Write(metadataJSON)
-		_, _ = os.Stdout.WriteString("\n")
+	if err != nil {
+		return fmt.Errorf("marshal published metadata: %w", err)
 	}
+
+	_, _ = os.Stdout.Write(metadataJSON)
+	_, _ = os.Stdout.WriteString("\n")
 
 	return nil
 }

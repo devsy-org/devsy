@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -161,7 +162,15 @@ func writeOptionsTable(sb *strings.Builder, metadata *TemplateMetadata) {
 	sb.WriteString("| Option | Type | Default | Description |\n")
 	sb.WriteString("|--------|------|---------|-------------|\n")
 
-	for key, opt := range metadata.Options {
+	keys := make([]string, 0, len(metadata.Options))
+	for key := range metadata.Options {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		opt := metadata.Options[key]
 		defaultVal := ""
 		if opt.Default != nil {
 			defaultVal = fmt.Sprintf("%v", opt.Default)
