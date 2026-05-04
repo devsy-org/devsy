@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testOptionToken = "token"
+
 type SecretOptionsTestSuite struct {
 	suite.Suite
 }
@@ -21,7 +23,7 @@ func (s *SecretOptionsTestSuite) TestSecretOptionDetected() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
 			"apiKey": {Type: optionTypeSecret},
-			"name":   {Type: "string"},
+			"name":   {Type: optionTypeString},
 		},
 	}
 	s.True(IsSecretOption(cfg.Options["apiKey"]))
@@ -31,31 +33,31 @@ func (s *SecretOptionsTestSuite) TestSecretOptionDetected() {
 func (s *SecretOptionsTestSuite) TestSecretResolvedFromUserOptions() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret},
+			testOptionToken: {Type: optionTypeSecret},
 		},
 	}
-	userOpts := map[string]any{"token": "user-provided-value"}
+	userOpts := map[string]any{testOptionToken: "user-provided-value"}
 
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, userOpts, nil)
 	s.NoError(err)
-	s.Equal("user-provided-value", resolved["token"])
+	s.Equal("user-provided-value", resolved[testOptionToken])
 }
 
 func (s *SecretOptionsTestSuite) TestSecretResolvedFromEnvVar() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret},
+			testOptionToken: {Type: optionTypeSecret},
 		},
 	}
 
 	safeFeatureID := getFeatureSafeID(testFeatureID)
-	safeOptionID := getFeatureSafeID("token")
+	safeOptionID := getFeatureSafeID(testOptionToken)
 	envVar := "DEVCONTAINER_FEATURE_SECRET_" + safeFeatureID + "_" + safeOptionID
 	s.T().Setenv(envVar, "env-secret-value")
 
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, nil)
 	s.NoError(err)
-	s.Equal("env-secret-value", resolved["token"])
+	s.Equal("env-secret-value", resolved[testOptionToken])
 }
 
 func (s *SecretOptionsTestSuite) TestSecretResolvedFromSecretsFile() {
@@ -79,67 +81,67 @@ func (s *SecretOptionsTestSuite) TestSecretResolvedFromSecretsFile() {
 func (s *SecretOptionsTestSuite) TestSecretPrecedenceUserOverEnv() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret},
+			testOptionToken: {Type: optionTypeSecret},
 		},
 	}
 
 	safeFeatureID := getFeatureSafeID(testFeatureID)
-	safeOptionID := getFeatureSafeID("token")
+	safeOptionID := getFeatureSafeID(testOptionToken)
 	envVar := "DEVCONTAINER_FEATURE_SECRET_" + safeFeatureID + "_" + safeOptionID
 	s.T().Setenv(envVar, "env-value")
 
-	userOpts := map[string]any{"token": "user-value"}
+	userOpts := map[string]any{testOptionToken: "user-value"}
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, userOpts, nil)
 	s.NoError(err)
-	s.Equal("user-value", resolved["token"])
+	s.Equal("user-value", resolved[testOptionToken])
 }
 
 func (s *SecretOptionsTestSuite) TestSecretPrecedenceEnvOverFile() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret},
+			testOptionToken: {Type: optionTypeSecret},
 		},
 	}
 
 	safeFeatureID := getFeatureSafeID(testFeatureID)
-	safeOptionID := getFeatureSafeID("token")
+	safeOptionID := getFeatureSafeID(testOptionToken)
 	envVar := "DEVCONTAINER_FEATURE_SECRET_" + safeFeatureID + "_" + safeOptionID
 	s.T().Setenv(envVar, "env-value")
 
 	secretsFile := filepath.Join(s.T().TempDir(), "secrets.json")
-	content := `{"` + testFeatureID + `": {"token": "file-value"}}`
+	content := `{"` + testFeatureID + `": {"` + testOptionToken + `": "file-value"}}`
 	err := os.WriteFile(secretsFile, []byte(content), 0o600)
 	s.Require().NoError(err)
 
 	opts := &SecretOptions{SecretsFile: secretsFile}
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
 	s.NoError(err)
-	s.Equal("env-value", resolved["token"])
+	s.Equal("env-value", resolved[testOptionToken])
 }
 
 func (s *SecretOptionsTestSuite) TestSecretFallsBackToDefault() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret, Default: "default-secret"},
+			testOptionToken: {Type: optionTypeSecret, Default: "default-secret"},
 		},
 	}
 
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, nil)
 	s.NoError(err)
-	s.Equal("default-secret", resolved["token"])
+	s.Equal("default-secret", resolved[testOptionToken])
 }
 
 func (s *SecretOptionsTestSuite) TestSecretMissingReturnsError() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token": {Type: optionTypeSecret},
+			testOptionToken: {Type: optionTypeSecret},
 		},
 	}
 
 	_, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, nil)
 	s.Error(err)
 	s.Contains(err.Error(), "secret option")
-	s.Contains(err.Error(), "token")
+	s.Contains(err.Error(), testOptionToken)
 	s.Contains(err.Error(), "required but no value was provided")
 	s.Contains(err.Error(), "DEVCONTAINER_FEATURE_SECRET_")
 }
@@ -147,8 +149,8 @@ func (s *SecretOptionsTestSuite) TestSecretMissingReturnsError() {
 func (s *SecretOptionsTestSuite) TestSecretMaskingInOptions() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"token":   {Type: optionTypeSecret},
-			"version": {Type: "string"},
+			testOptionToken: {Type: optionTypeSecret},
+			testOptionName:  {Type: optionTypeString},
 		},
 	}
 	options := []string{
@@ -164,7 +166,7 @@ func (s *SecretOptionsTestSuite) TestSecretMaskingInOptions() {
 func (s *SecretOptionsTestSuite) TestSecretMaskingNoSecrets() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"version": {Type: "string"},
+			testOptionName: {Type: optionTypeString},
 		},
 	}
 	options := []string{`VERSION="1.0"`}
@@ -208,15 +210,15 @@ func (s *SecretOptionsTestSuite) TestParseFeatureSecretsFileInvalidJSON() {
 func (s *SecretOptionsTestSuite) TestNonSecretOptionsUnaffected() {
 	cfg := &config.FeatureConfig{
 		Options: map[string]config.FeatureConfigOption{
-			"version": {Type: "string"},
-			"install": {Type: optionTypeBoolean},
+			testOptionName: {Type: optionTypeString},
+			"install":      {Type: optionTypeBoolean},
 		},
 	}
 
-	userOpts := map[string]any{"version": "1.0", "install": "true"}
+	userOpts := map[string]any{testOptionName: "1.0", "install": "true"}
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, userOpts, nil)
 	s.NoError(err)
-	s.Equal("1.0", resolved["version"])
+	s.Equal("1.0", resolved[testOptionName])
 	s.Equal("true", resolved["install"])
 }
 
