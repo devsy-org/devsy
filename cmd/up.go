@@ -79,11 +79,18 @@ func (cmd *UpCmd) Run(
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
 		return err
 	}
 	if wctx == nil {
 		return nil // Platform mode
 	}
+
+	containerID := ""
+	if wctx.result != nil && wctx.result.ContainerDetails != nil {
+		containerID = wctx.result.ContainerDetails.ID
+	}
+	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir)
 
 	if cmd.Prebuild {
 		return nil

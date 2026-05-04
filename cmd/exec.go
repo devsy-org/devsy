@@ -123,11 +123,18 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
 	envMap := buildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
-	return cmd.execInContainer(ctx, execOpts{
+	err = cmd.execInContainer(ctx, execOpts{
 		target:  target,
 		workdir: workdir,
 		envMap:  envMap,
 	}, args)
+	if err != nil {
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		return err
+	}
+
+	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir)
+	return nil
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {
