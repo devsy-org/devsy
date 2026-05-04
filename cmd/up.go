@@ -86,21 +86,26 @@ func (cmd *UpCmd) Run(
 		return nil // Platform mode
 	}
 
-	containerID := ""
-	if wctx.result != nil && wctx.result.ContainerDetails != nil {
-		containerID = wctx.result.ContainerDetails.ID
-	}
-	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir)
-
 	if cmd.Prebuild {
 		return nil
 	}
 
 	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
 		return err
 	}
 
-	return cmd.openIDE(ctx, devsyConfig, client, wctx)
+	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		return err
+	}
+
+	containerID := ""
+	if wctx.result != nil && wctx.result.ContainerDetails != nil {
+		containerID = wctx.result.ContainerDetails.ID
+	}
+	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir)
+	return nil
 }
 
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {

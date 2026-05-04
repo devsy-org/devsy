@@ -222,7 +222,7 @@ func (cmd *BuildCmd) build(
 	}
 
 	containerID := ""
-	workdir := ""
+	workdir := "" // uses substituted path directly; build doesn't support git subpath overrides
 	if result != nil {
 		if result.ContainerDetails != nil {
 			containerID = result.ContainerDetails.ID
