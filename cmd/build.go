@@ -160,9 +160,9 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		StringSliceVar(&cmd.Platforms, "platform", []string{}, "Set target platform for build")
 	buildCmd.Flags().
 		BoolVar(&cmd.SkipPush, "skip-push", false, "If true will not push the image to the repository, useful for testing")
-	buildCmd.Flags().BoolVar(&cmd.PushDuringBuild, "push", false,
-		"Push image directly to registry during build, skipping load to local daemon.",
-	)
+	buildCmd.Flags().
+		BoolVar(&cmd.PushDuringBuild, "push", false,
+			"Push image directly to registry during build, skipping load to local daemon")
 	buildCmd.Flags().
 		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+

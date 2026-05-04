@@ -110,6 +110,13 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
+	if cmd.ContainerDataFolder != "" {
+		log.Warnf("--container-data-folder is accepted but not yet implemented for exec")
+	}
+	if cmd.SkipPostCreate {
+		log.Warnf("--skip-post-create is accepted but not yet implemented for exec")
+	}
+
 	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
 		return fmt.Errorf("either --workspace-folder or --container-id must be provided")
 	}
