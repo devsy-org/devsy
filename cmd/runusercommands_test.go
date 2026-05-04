@@ -14,9 +14,23 @@ func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {
 	assert.Equal(t, "run-user-commands", cmd.Use)
 }
 
-func TestNewRunUserCommandsCmd_HasCamelCaseAlias(t *testing.T) {
-	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	assert.Contains(t, cmd.Aliases, "runUserCommands")
+func TestNewRunUserCommandsCmdAlias_IsHidden(t *testing.T) {
+	cmd := NewRunUserCommandsCmdAlias(&flags.GlobalFlags{})
+	assert.Equal(t, "runUserCommands", cmd.Use)
+	assert.True(t, cmd.Hidden, "camelCase alias should be hidden")
+}
+
+func TestNewRunUserCommandsCmdAlias_RegisteredInRoot(t *testing.T) {
+	rootCmd := BuildRoot()
+	found := false
+	for _, sub := range rootCmd.Commands() {
+		if sub.Use == "runUserCommands" {
+			found = true
+			assert.True(t, sub.Hidden)
+			break
+		}
+	}
+	assert.True(t, found, "runUserCommands alias should be registered in root")
 }
 
 func TestNewRunUserCommandsCmd_WorkspaceFolderRequired(t *testing.T) {

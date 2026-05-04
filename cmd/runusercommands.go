@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -11,7 +12,6 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -28,13 +28,14 @@ type RunUserCommandsCmd struct {
 // NewRunUserCommandsCmd creates a new run-user-commands command.
 func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &RunUserCommandsCmd{GlobalFlags: f}
+	runE := func(cobraCmd *cobra.Command, _ []string) error {
+		return cmd.Run(cobraCmd.Context())
+	}
+
 	runCmd := &cobra.Command{
-		Use:     "run-user-commands",
-		Aliases: []string{"runUserCommands"},
-		Short:   "Executes lifecycle commands in a running workspace container",
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			return cmd.Run(cobraCmd.Context())
-		},
+		Use:   "run-user-commands",
+		Short: "Executes lifecycle commands in a running workspace container",
+		RunE:  runE,
 	}
 
 	runCmd.Flags().
@@ -54,6 +55,14 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 		)
 
 	return runCmd
+}
+
+// NewRunUserCommandsCmdAlias creates the hidden camelCase alias for devcontainer CLI compat.
+func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
+	primary := NewRunUserCommandsCmd(f)
+	primary.Use = "runUserCommands"
+	primary.Hidden = true
+	return primary
 }
 
 type lifecycleExecParams struct {
@@ -80,9 +89,8 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	}
 
 	user := devcconfig.GetRemoteUser(result)
-	workdir := params.workdir
 	log.Infof("lifecycle commands completed for container %s", params.containerID)
-	_ = devcconfig.WriteResultJSON(os.Stdout, params.containerID, user, workdir)
+	_ = devcconfig.WriteResultJSON(os.Stderr, params.containerID, user, params.workdir)
 	return nil
 }
 
@@ -100,7 +108,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		Owner:       cmd.Owner,
 	})
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, nil, fmt.Errorf("resolve workspace: %w", err)
 	}
 
@@ -108,17 +116,17 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	dockerCommand := resolveDockerCommand(workspaceConfig)
 
 	containerDetails, err := findRunningContainer(
-		ctx, dockerCommand, devcontainerGetRunnerID(workspaceConfig), cmd.IDLabels,
+		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, nil, err
 	}
 
 	result := loadExecResult(workspaceConfig, containerDetails)
 	if result == nil || result.MergedConfig == nil {
 		_ = devcconfig.WriteErrorJSON(
-			os.Stdout,
+			os.Stderr,
 			"no workspace result found; lifecycle commands unavailable",
 		)
 		return nil, nil, fmt.Errorf("no workspace result found; lifecycle commands unavailable")
@@ -150,7 +158,7 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	for _, hook := range hooks {
 		for _, h := range hook.cmds {
 			if err := execLifecycleHook(params, hook.name, h); err != nil {
-				_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+				_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
 		}
@@ -188,15 +196,17 @@ func buildLifecycleEnvArgs(result *devcconfig.Result) []string {
 		return nil
 	}
 
-	args := make([]string, 0, len(env)*2)
+	keys := make([]string, 0, len(env))
 	for k, v := range env {
 		if v != nil {
-			args = append(args, "-e", k+"="+*v)
+			keys = append(keys, k)
 		}
 	}
-	return args
-}
+	sort.Strings(keys)
 
-func devcontainerGetRunnerID(ws *provider2.Workspace) string {
-	return devcontainer.GetRunnerIDFromWorkspace(ws)
+	args := make([]string, 0, len(keys)*2)
+	for _, k := range keys {
+		args = append(args, "-e", k+"="+*env[k])
+	}
+	return args
 }
