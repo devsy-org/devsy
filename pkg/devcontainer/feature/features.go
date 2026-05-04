@@ -192,6 +192,29 @@ func pullOCIImage(ref name.Reference) (v1.Image, error) {
 	return img, nil
 }
 
+// PullFeatureToTemp pulls an OCI feature image and extracts it to a temporary folder.
+// Returns the path to the extracted feature folder.
+func PullFeatureToTemp(ref name.Reference, id string) (string, error) {
+	featureFolder, err := getFeaturesTempFolder(id)
+	if err != nil {
+		return "", fmt.Errorf("resolve feature cache dir: %w", err)
+	}
+
+	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
+
+	annotations, err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder)
+	if err != nil {
+		return "", err
+	}
+
+	if len(annotations) > 0 {
+		logOCIAnnotations(id, annotations)
+		saveAnnotations(featureFolder, annotations)
+	}
+
+	return featureExtractedFolder, nil
+}
+
 func processOCIFeature(id string) (string, error) {
 	log.Debugf("processing OCI feature: featureId=%s", id)
 

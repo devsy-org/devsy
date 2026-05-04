@@ -282,6 +282,14 @@ func findContainerUsers(
 	return containerUser, remoteUser
 }
 
+// ResolveFeatureOrder parses the features in a DevContainerConfig, resolves their
+// dependencies, and returns them in topological install order.
+func ResolveFeatureOrder(
+	devContainerConfig *config.DevContainerConfig,
+) ([]*config.FeatureSet, error) {
+	return fetchFeatures(devContainerConfig, false, nil)
+}
+
 func fetchFeatures(
 	devContainerConfig *config.DevContainerConfig,
 	forceBuild bool,
