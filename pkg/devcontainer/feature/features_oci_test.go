@@ -34,3 +34,22 @@ func (s *OCIFeatureTestSuite) TestProcessOCIFeature_HappyPath() {
 	s.DirExists(result)
 	s.FileExists(filepath.Join(result, "devcontainer-feature.json"))
 }
+
+func (s *OCIFeatureTestSuite) TestFetchCollection_GHCR() {
+	collection, err := FetchCollection("ghcr.io", "devcontainers/features")
+	if err != nil {
+		s.T().Skipf("skipping: collection not available from ghcr.io: %v", err)
+	}
+	s.Require().NotNil(collection)
+	s.NotEmpty(collection.Features)
+
+	var foundGo bool
+	for _, f := range collection.Features {
+		s.NotEmpty(f.ID)
+		s.NotEmpty(f.Version)
+		if f.ID == "go" {
+			foundGo = true
+		}
+	}
+	s.True(foundGo, "expected 'go' feature in ghcr.io/devcontainers/features collection")
+}
