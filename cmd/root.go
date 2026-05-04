@@ -131,6 +131,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))
 	rootCmd.AddCommand(NewExecCmd(globalFlags))
 	rootCmd.AddCommand(NewOutdatedCmd(globalFlags))
+	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
 
 	inheritCommandFlagsFromEnvironment(rootCmd)
 
