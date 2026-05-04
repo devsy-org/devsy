@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/cmd/templates"
 	"github.com/devsy-org/devsy/cmd/use"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -136,6 +137,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
 	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
+	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
 
 	inheritCommandFlagsFromEnvironment(rootCmd)
 
