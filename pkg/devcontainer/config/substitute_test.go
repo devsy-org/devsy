@@ -107,6 +107,54 @@ func TestReplaceWithContainerEnvUnknownPreservedAsLiteral(t *testing.T) {
 	}
 }
 
+func TestReplaceWithContextLocalEnvResolves(t *testing.T) {
+	ctx := &SubstitutionContext{
+		Env: map[string]string{"HOME": "/root"},
+	}
+	match := "${localEnv:HOME}"
+	result := replaceWithContext(
+		false, ctx, match, "localEnv", []string{"HOME"},
+	)
+	if result != "/root" {
+		t.Errorf(
+			"expected localEnv to resolve to %q, got %q",
+			"/root", result,
+		)
+	}
+}
+
+func TestReplaceWithContextEnvPreservedAsLiteral(t *testing.T) {
+	ctx := &SubstitutionContext{
+		Env: map[string]string{"HOME": "/root"},
+	}
+	match := "${env:HOME}"
+	result := replaceWithContext(
+		false, ctx, match, "env", []string{"HOME"},
+	)
+	if result != match {
+		t.Errorf(
+			"expected env var preserved as %q, got %q",
+			match, result,
+		)
+	}
+}
+
+func TestReplaceWithContextEnvDefaultPreservedAsLiteral(t *testing.T) {
+	ctx := &SubstitutionContext{
+		Env: map[string]string{},
+	}
+	match := "${env:MISSING:default}"
+	result := replaceWithContext(
+		false, ctx, match, "env", []string{"MISSING", "default"},
+	)
+	if result != match {
+		t.Errorf(
+			"expected env with default preserved as %q, got %q",
+			match, result,
+		)
+	}
+}
+
 func TestResolveStringDefaultWithColons(t *testing.T) {
 	replace := func(_, variable string, args []string) string {
 		env := map[string]string{}
