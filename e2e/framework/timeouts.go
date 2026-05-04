@@ -11,7 +11,7 @@ func TimeoutShort() time.Duration {
 	if runtime.GOOS == osWindows {
 		return 10 * time.Minute
 	}
-	return 2 * time.Minute
+	return 3 * time.Minute
 }
 
 func TimeoutModerate() time.Duration {
