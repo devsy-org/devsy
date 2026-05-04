@@ -14,6 +14,7 @@ type Result struct {
 	MergedConfig               *MergedDevContainerConfig   `json:"MergedConfig"`
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`
 	ContainerDetails           *ContainerDetails           `json:"ContainerDetails"`
+	HostWarnings               []string                    `json:"HostWarnings,omitempty"`
 }
 
 type DevContainerConfigWithPath struct {

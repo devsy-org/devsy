@@ -39,6 +39,7 @@ exec /usr/local/bin/devsy agent container daemon
 type resolvedContainer struct {
 	details      *config.ContainerDetails
 	mergedConfig *config.MergedDevContainerConfig
+	hostWarnings []string
 }
 
 // resolveParams bundles the arguments shared by the container resolution methods.
@@ -101,6 +102,7 @@ func (r *runner) runSingleContainer(
 		mergedConfig:        resolved.mergedConfig,
 		substitutionContext: substitutionContext,
 		timeout:             timeout,
+		hostWarnings:        resolved.hostWarnings,
 	})
 }
 
@@ -220,7 +222,7 @@ func (r *runner) resolveNewContainer(
 	ctx context.Context,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
-	config.ValidateHostRequirements(
+	hostWarnings := config.ValidateHostRequirements(
 		p.parsedConfig.Config.HostRequirements,
 		config.SystemHostInfo{},
 		p.substitutionContext.LocalWorkspaceFolder,
@@ -276,6 +278,7 @@ func (r *runner) resolveNewContainer(
 	return &resolvedContainer{
 		details:      containerDetails,
 		mergedConfig: mergedConfig,
+		hostWarnings: hostWarnings,
 	}, nil
 }
 

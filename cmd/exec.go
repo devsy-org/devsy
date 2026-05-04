@@ -133,7 +133,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir)
+	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
 	return nil
 }
 

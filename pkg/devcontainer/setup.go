@@ -36,6 +36,7 @@ type setupContainerParams struct {
 	mergedConfig        *config.MergedDevContainerConfig
 	substitutionContext *config.SubstitutionContext
 	timeout             time.Duration
+	hostWarnings        []string
 }
 
 type setupInfo struct {
@@ -119,6 +120,7 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 		MergedConfig:        params.mergedConfig,
 		SubstitutionContext: params.substitutionContext,
 		ContainerDetails:    params.containerDetails,
+		HostWarnings:        params.hostWarnings,
 	}
 
 	if r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe != "" {
