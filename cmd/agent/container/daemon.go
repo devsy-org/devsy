@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
@@ -46,7 +47,10 @@ func NewDaemonCmd() *cobra.Command {
 	daemonCmd.Flags().
 		StringVar(&cmd.Config.Timeout, "timeout", "", "The timeout to stop the container after")
 	daemonCmd.Flags().
-		StringVar(&cmd.Config.ShutdownAction, "shutdown-action", "", "The shutdown action (none or stopContainer)")
+		StringVar(
+			&cmd.Config.ShutdownAction, "shutdown-action", "",
+			"The shutdown action (none, stopContainer, or stopCompose)",
+		)
 	return daemonCmd
 }
 
@@ -99,7 +103,7 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 	}
 
 	// Start timeout monitor unless shutdownAction is "none".
-	if timeoutDuration > 0 && cmd.Config.ShutdownAction != "none" {
+	if timeoutDuration > 0 && cmd.Config.ShutdownAction != config.ShutdownActionNone {
 		tasksStarted = true
 		g.Go(func() error {
 			return runTimeoutMonitor(ctx, timeoutDuration)

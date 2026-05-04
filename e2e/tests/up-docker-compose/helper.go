@@ -109,6 +109,40 @@ func (tc *testContext) getAppContainer(
 	return ids, detail, err
 }
 
+func (tc *testContext) findAppAndSidecar(
+	ctx context.Context,
+	workspaceUID string,
+) (appIDs, sidecarIDs []string) {
+	var err error
+	appIDs, err = findComposeContainer(
+		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "app",
+	)
+	framework.ExpectNoError(err)
+	gomega.Expect(appIDs).To(gomega.HaveLen(1))
+
+	sidecarIDs, err = findComposeContainer(
+		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "sidecar",
+	)
+	framework.ExpectNoError(err)
+	gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
+	return appIDs, sidecarIDs
+}
+
+func (tc *testContext) inspectRunningState(
+	ctx context.Context,
+	appIDs, sidecarIDs []string,
+) (appRunning, sidecarRunning bool) {
+	var appDetails []container.InspectResponse
+	err := tc.dockerHelper.Inspect(ctx, appIDs, "container", &appDetails)
+	framework.ExpectNoError(err)
+
+	var sidecarDetails []container.InspectResponse
+	err = tc.dockerHelper.Inspect(ctx, sidecarIDs, "container", &sidecarDetails)
+	framework.ExpectNoError(err)
+
+	return appDetails[0].State.Running, sidecarDetails[0].State.Running
+}
+
 func (tc *testContext) verifyWorkspaceMount(
 	ctx context.Context,
 	workspace *provider2.Workspace,

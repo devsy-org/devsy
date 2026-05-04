@@ -48,23 +48,37 @@ func (r *runner) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	if strings.ToLower(containerDetails.State.Status) == "running" {
-		if isDockerCompose, projectName := getDockerComposeProject(
-			containerDetails,
-		); isDockerCompose {
-			err = r.stopDockerCompose(ctx, projectName)
-			if err != nil {
-				return err
-			}
-		} else {
-			err = r.Driver.StopDevContainer(ctx, r.ID)
-			if err != nil {
-				return err
-			}
-		}
+	if strings.ToLower(containerDetails.State.Status) != "running" {
+		return nil
 	}
 
-	return nil
+	isCompose, projectName := getDockerComposeProject(containerDetails)
+	action := r.getShutdownAction(isCompose)
+
+	switch action {
+	case config.ShutdownActionNone:
+		return nil
+	case config.ShutdownActionStopCompose:
+		if isCompose {
+			return r.stopDockerCompose(ctx, projectName)
+		}
+		return r.Driver.StopDevContainer(ctx, r.ID)
+	default:
+		return r.Driver.StopDevContainer(ctx, r.ID)
+	}
+}
+
+func (r *runner) getShutdownAction(isCompose bool) string {
+	if r.WorkspaceConfig != nil &&
+		r.WorkspaceConfig.LastDevContainerConfig != nil &&
+		r.WorkspaceConfig.LastDevContainerConfig.Config != nil &&
+		r.WorkspaceConfig.LastDevContainerConfig.Config.ShutdownAction != "" {
+		return r.WorkspaceConfig.LastDevContainerConfig.Config.ShutdownAction
+	}
+	if isCompose {
+		return config.ShutdownActionStopCompose
+	}
+	return config.ShutdownActionStopContainer
 }
 
 func getDockerComposeProject(containerDetails *config.ContainerDetails) (bool, string) {

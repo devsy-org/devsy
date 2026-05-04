@@ -420,6 +420,12 @@ type PortAttribute struct {
 }
 
 const (
+	ShutdownActionNone          = "none"
+	ShutdownActionStopContainer = "stopContainer"
+	ShutdownActionStopCompose   = "stopCompose"
+)
+
+const (
 	AutoForwardIgnore = "ignore"
 	AutoForwardNotify = "notify"
 	AutoForwardSilent = "silent"
