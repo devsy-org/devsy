@@ -51,14 +51,22 @@ type BuildInfo struct {
 	BuildArgs               map[string]string
 }
 
-func GetExtendedBuildInfo(
-	ctx *config.SubstitutionContext,
-	imageBuildInfo *config.ImageBuildInfo,
-	target string,
-	devContainerConfig *config.SubstitutedConfig,
-	forceBuild bool,
-	secretOpts *SecretOptions,
-) (*ExtendedBuildInfo, error) {
+type ExtendedBuildParams struct {
+	Ctx                *config.SubstitutionContext
+	ImageBuildInfo     *config.ImageBuildInfo
+	Target             string
+	DevContainerConfig *config.SubstitutedConfig
+	ForceBuild         bool
+	SecretOpts         *SecretOptions
+}
+
+func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, error) {
+	ctx := params.Ctx
+	imageBuildInfo := params.ImageBuildInfo
+	target := params.Target
+	devContainerConfig := params.DevContainerConfig
+	forceBuild := params.ForceBuild
+	secretOpts := params.SecretOpts
 	features, err := fetchFeatures(devContainerConfig.Config, forceBuild, secretOpts)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
@@ -219,22 +227,22 @@ func getFeatureSafeID(featureID string) string {
 }
 
 func getFeatureLayers(containerUser, remoteUser string, features []*config.FeatureSet) string {
-	result := `RUN \
-echo "_CONTAINER_USER_HOME=$(getent passwd ` + containerUser + ` | cut -d: -f6)" >> /tmp/build-features/devcontainer-features.builtin.env && \
-echo "_REMOTE_USER_HOME=$(getent passwd ` + remoteUser + ` | cut -d: -f6)" >> /tmp/build-features/devcontainer-features.builtin.env
+	const envFile = "/tmp/build-features/devcontainer-features.builtin.env"
+	var b strings.Builder
+	b.WriteString("RUN \\\n")
+	b.WriteString(`echo "_CONTAINER_USER_HOME=$(getent passwd ` + containerUser)
+	b.WriteString(` | cut -d: -f6)" >> ` + envFile + " && \\\n")
+	b.WriteString(`echo "_REMOTE_USER_HOME=$(getent passwd ` + remoteUser)
+	b.WriteString(` | cut -d: -f6)" >> ` + envFile + "\n\n")
 
-`
 	for i, feature := range features {
-		result += generateContainerEnvs(feature)
-		result += `
-RUN cd /tmp/build-features/` + strconv.Itoa(i) + ` \
-&& chmod +x ./devcontainer-features-install.sh \
-&& ./devcontainer-features-install.sh
-
-`
+		b.WriteString(generateContainerEnvs(feature))
+		b.WriteString("\nRUN cd /tmp/build-features/" + strconv.Itoa(i) + " \\\n")
+		b.WriteString("&& chmod +x ./devcontainer-features-install.sh \\\n")
+		b.WriteString("&& ./devcontainer-features-install.sh\n\n")
 	}
 
-	return result
+	return b.String()
 }
 
 func generateContainerEnvs(feature *config.FeatureSet) string {
@@ -253,7 +261,14 @@ func findContainerUsers(
 	baseImageMetadata *config.ImageMetadataConfig,
 	composeServiceUser, imageUser string,
 ) (string, string) {
-	reversed := config.ReverseSlice(baseImageMetadata.Config)
+	containerUser, remoteUser := usersFromMetadata(baseImageMetadata)
+	containerUser = applyUserFallback(containerUser, composeServiceUser, imageUser)
+	remoteUser = applyUserFallback(remoteUser, composeServiceUser, imageUser)
+	return containerUser, remoteUser
+}
+
+func usersFromMetadata(meta *config.ImageMetadataConfig) (string, string) {
+	reversed := config.ReverseSlice(meta.Config)
 	containerUser := ""
 	remoteUser := ""
 	for _, imageMetadata := range reversed {
@@ -262,21 +277,6 @@ func findContainerUsers(
 		}
 		if remoteUser == "" && imageMetadata.RemoteUser != "" {
 			remoteUser = imageMetadata.RemoteUser
-		}
-	}
-
-	if containerUser == "" {
-		if composeServiceUser != "" {
-			containerUser = composeServiceUser
-		} else if imageUser != "" {
-			containerUser = imageUser
-		}
-	}
-	if remoteUser == "" {
-		if composeServiceUser != "" {
-			remoteUser = composeServiceUser
-		} else if imageUser != "" {
-			remoteUser = imageUser
 		}
 	}
 	return containerUser, remoteUser
@@ -288,6 +288,16 @@ func ResolveFeatureOrder(
 	devContainerConfig *config.DevContainerConfig,
 ) ([]*config.FeatureSet, error) {
 	return fetchFeatures(devContainerConfig, false, nil)
+}
+
+func applyUserFallback(user, composeServiceUser, imageUser string) string {
+	if user != "" {
+		return user
+	}
+	if composeServiceUser != "" {
+		return composeServiceUser
+	}
+	return imageUser
 }
 
 func fetchFeatures(
@@ -442,7 +452,7 @@ func (r *featureDependencyResolver) findByConfigID(configID string) (string, *co
 	return "", nil
 }
 
-func (r *featureDependencyResolver) resolveFeatureDependency(
+func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
 	featureID string,
 	featureSet *config.FeatureSet,
 ) error {

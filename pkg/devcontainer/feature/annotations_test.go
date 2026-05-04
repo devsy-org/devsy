@@ -10,13 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testAnnotationTitle       = "org.opencontainers.image.title"
+	testAnnotationDescription = "org.opencontainers.image.description"
+	testAnnotationVersion     = "org.opencontainers.image.version"
+)
+
 func TestSaveAnnotations(t *testing.T) {
 	dir := t.TempDir()
 	annotations := map[string]string{
-		"org.opencontainers.image.title":       "Go",
-		"org.opencontainers.image.description": "Installs Go and common Go tools",
-		"org.opencontainers.image.version":     "1.2.3",
-		"org.opencontainers.image.source":      "https://github.com/devcontainers/features",
+		testAnnotationTitle:               "Go",
+		testAnnotationDescription:         "Installs Go and common Go tools",
+		testAnnotationVersion:             "1.2.3",
+		"org.opencontainers.image.source": "https://github.com/devcontainers/features",
 	}
 
 	saveAnnotations(dir, annotations)
@@ -47,8 +53,8 @@ func TestLoadOCIAnnotations_Present(t *testing.T) {
 	require.NoError(t, os.MkdirAll(extractedDir, 0o750))
 
 	annotations := map[string]string{
-		"org.opencontainers.image.title":         "Node.js",
-		"org.opencontainers.image.description":   "Installs Node.js and common npm tools",
+		testAnnotationTitle:                      "Node.js",
+		testAnnotationDescription:                "Installs Node.js and common npm tools",
 		"org.opencontainers.image.authors":       "Dev Containers",
 		"org.opencontainers.image.url":           "https://github.com/devcontainers/features/tree/main/src/node",
 		"org.opencontainers.image.documentation": "https://containers.dev/features",
@@ -94,9 +100,9 @@ func TestLogOCIAnnotations_NoTitle(t *testing.T) {
 
 func TestLogOCIAnnotations_WithTitle(t *testing.T) {
 	annotations := map[string]string{
-		"org.opencontainers.image.title":       "Go",
-		"org.opencontainers.image.description": "Installs Go",
-		"org.opencontainers.image.version":     "1.0.0",
+		testAnnotationTitle:       "Go",
+		testAnnotationDescription: "Installs Go",
+		testAnnotationVersion:     "1.0.0", //nolint:goconst
 	}
 	// Should not panic
 	logOCIAnnotations("ghcr.io/devcontainers/features/go:1", annotations)

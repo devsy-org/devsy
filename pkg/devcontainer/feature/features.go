@@ -321,7 +321,7 @@ func pullAndExtractOCIFeature(
 		return nil, fmt.Errorf("download layer from %s: %w", registry, err)
 	}
 
-	file, err := os.Open(destFile)
+	file, err := os.Open(filepath.Clean(destFile)) //nolint:gosec // path from internal resolution
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +385,7 @@ func writeLayerToFile(data io.Reader, destFile string) error {
 		return fmt.Errorf("create target folder: %w", err)
 	}
 
-	file, err := os.Create(destFile)
+	file, err := os.Create(filepath.Clean(destFile)) //nolint:gosec // path from internal resolution
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
@@ -589,7 +589,7 @@ func tryDownload(url, destFile string, httpHeaders map[string]string) error {
 		return fmt.Errorf("GET request failed, status code is %d", resp.StatusCode)
 	}
 
-	file, err := os.Create(destFile)
+	file, err := os.Create(filepath.Clean(destFile)) //nolint:gosec // path from internal resolution
 	if err != nil {
 		return fmt.Errorf("create download file: %w", err)
 	}
