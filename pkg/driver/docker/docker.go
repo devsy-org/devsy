@@ -57,14 +57,16 @@ func NewDockerDriver(
 			ContainerID:   workspaceInfo.Workspace.Source.Container,
 			Builder:       builder,
 		},
-		IDLabels: workspaceInfo.CLIOptions.IDLabels,
+		IDLabels:                   workspaceInfo.CLIOptions.IDLabels,
+		UpdateRemoteUserUIDDefault: workspaceInfo.CLIOptions.UpdateRemoteUserUIDDefault,
 	}, nil
 }
 
 type dockerDriver struct {
-	Docker   *docker.DockerHelper
-	Compose  *compose.ComposeHelper
-	IDLabels []string
+	Docker                     *docker.DockerHelper
+	Compose                    *compose.ComposeHelper
+	IDLabels                   []string
+	UpdateRemoteUserUIDDefault string
 }
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
@@ -906,7 +908,17 @@ func (d *dockerDriver) getRemoteUser(
 func (d *dockerDriver) shouldUpdateUserUID(parsedConfig *config.DevContainerConfig) bool {
 	isLinux := runtime.GOOS == "linux"
 	hasUser := parsedConfig.ContainerUser != "" || parsedConfig.RemoteUser != ""
-	shouldUpdate := parsedConfig.UpdateRemoteUserUID == nil || *parsedConfig.UpdateRemoteUserUID
+
+	var shouldUpdate bool
+	switch {
+	case parsedConfig.UpdateRemoteUserUID != nil:
+		shouldUpdate = *parsedConfig.UpdateRemoteUserUID
+	case d.UpdateRemoteUserUIDDefault == "off":
+		shouldUpdate = false
+	default:
+		shouldUpdate = true
+	}
+
 	return isLinux && hasUser && shouldUpdate
 }
 
