@@ -590,3 +590,139 @@ func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDNotUsedWhenPrimary
 	suite.Len(resolved, 3)
 	suite.NotNil(resolved["feature-b"])
 }
+
+func (suite *ExtendTestSuite) TestVersionAwareDeduplication_SameConfigSameVersion() {
+	featureID := "ghcr.io/devcontainers/features/node" //nolint:goconst
+	features := map[string]*config.FeatureSet{}
+
+	f1 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "1",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+	f2 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "1",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+
+	key := featureDeduplicationKey(featureID, "1")
+	suite.Equal(featureID+":1", key)
+
+	features[featureDeduplicationKey(f1.ConfigID, f1.Version)] = f1
+	features[featureDeduplicationKey(f2.ConfigID, f2.Version)] = f2
+	suite.Len(features, 1)
+}
+
+func (suite *ExtendTestSuite) TestVersionAwareDeduplication_SameConfigDifferentVersion() {
+	featureID := "ghcr.io/devcontainers/features/node"
+	features := map[string]*config.FeatureSet{}
+
+	v1 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "1",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+	v2 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "2",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+
+	features[featureDeduplicationKey(v1.ConfigID, v1.Version)] = v1
+	features[featureDeduplicationKey(v2.ConfigID, v2.Version)] = v2
+	suite.Len(features, 2)
+}
+
+func (suite *ExtendTestSuite) TestVersionAwareDeduplication_EmptyVersionIsDuplicate() {
+	featureID := "ghcr.io/devcontainers/features/node"
+	features := map[string]*config.FeatureSet{}
+
+	f1 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+	f2 := &config.FeatureSet{
+		ConfigID: featureID,
+		Version:  "",
+		Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
+	}
+
+	features[featureDeduplicationKey(f1.ConfigID, f1.Version)] = f1
+	features[featureDeduplicationKey(f2.ConfigID, f2.Version)] = f2
+	suite.Len(features, 1)
+}
+
+func (suite *ExtendTestSuite) TestExtractVersionFromFeatureID() {
+	nodeFeature := "ghcr.io/devcontainers/features/node" //nolint:goconst
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{nodeFeature + ":1", "1"},
+		{nodeFeature + ":2", "2"},
+		{nodeFeature + ":latest", ""},
+		{nodeFeature, ""},
+		{nodeFeature + ":v1", "1"},
+		{nodeFeature + ":v2.3", "2.3"}, //nolint:goconst
+	}
+
+	for _, tc := range tests {
+		suite.Run(tc.input, func() {
+			suite.Equal(tc.expected, extractVersionFromFeatureID(tc.input))
+		})
+	}
+}
+
+func (suite *ExtendTestSuite) TestNormalizeVersion() {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"latest", ""},
+		{"", ""},
+		{"1", "1"},
+		{"v1", "1"},
+		{"2.3", "2.3"},
+		{"v2.3", "2.3"},
+	}
+
+	for _, tc := range tests {
+		suite.Run(tc.input, func() {
+			suite.Equal(tc.expected, normalizeVersion(tc.input))
+		})
+	}
+}
+
+func (suite *ExtendTestSuite) TestContainsFeature_VersionAware() {
+	featureID := "ghcr.io/devcontainers/features/node" //nolint:goconst
+	features := []*config.FeatureSet{
+		{ConfigID: featureID, Version: "1"},
+		{ConfigID: featureID, Version: "2"},
+	}
+
+	suite.True(containsFeature(features, "ghcr.io/devcontainers/features/node:1"))
+	suite.True(containsFeature(features, "ghcr.io/devcontainers/features/node:2"))
+	suite.False(containsFeature(features, "ghcr.io/devcontainers/features/node:3"))
+	suite.False(containsFeature(features, "ghcr.io/devcontainers/features/node:latest"))
+}
+
+func (suite *ExtendTestSuite) TestExtractFeatureByID_VersionAware() {
+	featureID := "ghcr.io/devcontainers/features/node" //nolint:goconst
+	features := []*config.FeatureSet{
+		{ConfigID: featureID, Version: "1"},
+		{ConfigID: featureID, Version: "2"},
+	}
+
+	found := extractFeatureByID(features, "ghcr.io/devcontainers/features/node:1")
+	suite.NotNil(found)
+	suite.Equal("1", found.Version)
+
+	found = extractFeatureByID(features, "ghcr.io/devcontainers/features/node:2")
+	suite.NotNil(found)
+	suite.Equal("2", found.Version)
+
+	notFound := extractFeatureByID(features, "ghcr.io/devcontainers/features/node:3")
+	suite.Nil(notFound)
+}

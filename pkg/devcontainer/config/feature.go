@@ -9,6 +9,7 @@ import (
 
 type FeatureSet struct {
 	ConfigID string
+	Version  string
 	Folder   string
 	Config   *FeatureConfig
 	Options  any
