@@ -19,6 +19,7 @@ type RunDockerDevContainerParams struct {
 	IDE                  string
 	IDEOptions           map[string]config2.OptionValue
 	LocalWorkspaceFolder string
+	GPUAvailability      string
 }
 
 type BuildRequest struct {
