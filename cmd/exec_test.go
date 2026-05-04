@@ -44,12 +44,12 @@ func TestValidateRemoteEnv_EmptyKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be KEY=VALUE format")
 }
 
-func TestNewExecCmd_RequiresWorkspaceFolder(t *testing.T) {
+func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	execCmd.SetArgs([]string{"--", "echo", "hello"})
 	err := execCmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "workspace-folder")
+	assert.Contains(t, err.Error(), "either --workspace-folder or --container-id must be provided")
 }
 
 func TestNewExecCmd_RequiresArgs(t *testing.T) {
