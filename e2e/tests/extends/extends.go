@@ -47,7 +47,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		config := parseConfigFromOutput(stdout)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Single Level Child"))
 		gomega.Expect(config).To(
-			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+			gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 		)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -92,7 +92,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		config := parseConfigFromOutput(stdout)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Array Replace Child"))
 		gomega.Expect(config).To(
-			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+			gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 		)
 
 		forwardPorts, ok := config["forwardPorts"].([]any)
@@ -120,7 +120,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		config := parseConfigFromOutput(stdout)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Multi Level Child"))
 		gomega.Expect(config).To(
-			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+			gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 		)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
 
@@ -157,7 +157,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		config := parseConfigFromOutput(stdout)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Array Extends Child"))
 		gomega.Expect(config).To(
-			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+			gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 		)
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
 
@@ -242,7 +242,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 			regHost := strings.TrimPrefix(srv.URL, "http://")
 
 			parentJSON := `{
-			"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+			"image": "ghcr.io/devsy-org/test-images/base:ubuntu",
 			"containerEnv": {"PARENT_KEY": "parent-value", "SHARED": "from-parent"},
 			"features": {"ghcr.io/devcontainers/features/node:1": {}}
 		}`
@@ -277,7 +277,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 			gomega.Expect(config).To(
 				gomega.HaveKeyWithValue(
 					"image",
-					"mcr.microsoft.com/devcontainers/base:ubuntu",
+					"ghcr.io/devsy-org/test-images/base:ubuntu",
 				),
 			)
 

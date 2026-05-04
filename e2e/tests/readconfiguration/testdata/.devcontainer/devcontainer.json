@@ -1,6 +1,6 @@
 {
   "name": "Test Read Configuration",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "18"

@@ -46,7 +46,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
 		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Test Read Configuration"))
 		gomega.Expect(config).To(
-			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+			gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 		)
 		gomega.Expect(config).To(gomega.HaveKey("features"))
 		gomega.Expect(config).To(
@@ -117,7 +117,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 				gomega.HaveKeyWithValue("remoteUser", "vscode"),
 			)
 			gomega.Expect(merged).To(
-				gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+				gomega.HaveKeyWithValue("image", "ghcr.io/devsy-org/test-images/base:ubuntu"),
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -313,7 +313,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			metadataLabel := `[{"remoteUser":"testuser","customizations":{"vscode":{"extensions":["ms-python.python"]}}}]`
 			out, err := exec.CommandContext(ctx, "docker", "run", "-d",
 				"--label", "devcontainer.metadata="+metadataLabel,
-				"mcr.microsoft.com/devcontainers/base:ubuntu",
+				"ghcr.io/devsy-org/test-images/base:ubuntu",
 				"sleep", "infinity",
 			).Output()
 			framework.ExpectNoError(err)

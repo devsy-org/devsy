@@ -1,6 +1,6 @@
 {
   "name": "Port Attributes Test",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "forwardPorts": [8080, 9090],
   "portsAttributes": {
     "8080": {
