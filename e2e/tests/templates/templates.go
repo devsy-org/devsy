@@ -12,9 +12,11 @@ import (
 )
 
 const (
+	cmdTemplates        = "templates"
 	flagTemplateID      = "--template-id"
 	flagWorkspaceFolder = "--workspace-folder"
 	subCmdApply         = "apply"
+	testTemplateRef     = "ghcr.io/devcontainers/templates/go:latest"
 )
 
 var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
@@ -34,8 +36,8 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", subCmdApply,
-				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
+				cmdTemplates, subCmdApply,
+				flagTemplateID, testTemplateRef,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
@@ -60,8 +62,8 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", subCmdApply,
-				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
+				cmdTemplates, subCmdApply,
+				flagTemplateID, testTemplateRef,
 				flagWorkspaceFolder, tempDir,
 				"--features", "ghcr.io/devcontainers/features/node:1",
 			})
@@ -89,7 +91,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", subCmdApply,
+				cmdTemplates, subCmdApply,
 				flagTemplateID, "ghcr.io/nonexistent/template-that-does-not-exist:v999",
 				flagWorkspaceFolder, tempDir,
 			})
@@ -102,8 +104,8 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"templates", "metadata",
-				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
+				cmdTemplates, "metadata",
+				flagTemplateID, testTemplateRef,
 			})
 			framework.ExpectNoError(err)
 
@@ -119,7 +121,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				"templates", "metadata",
+				cmdTemplates, "metadata",
 				flagTemplateID, "ghcr.io/nonexistent/template-that-does-not-exist:v999",
 			})
 			framework.ExpectError(err)
