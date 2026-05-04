@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/context"
+	"github.com/devsy-org/devsy/cmd/features"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/helper"
 	"github.com/devsy-org/devsy/cmd/ide"
@@ -105,6 +106,7 @@ func BuildRoot() *cobra.Command {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.AddCommand(agent.NewAgentCmd(globalFlags))
+	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
 	rootCmd.AddCommand(provider.NewProviderCmd(globalFlags))
 	rootCmd.AddCommand(use.NewUseCmd(globalFlags))
 	rootCmd.AddCommand(helper.NewHelperCmd(globalFlags))
