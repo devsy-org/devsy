@@ -33,6 +33,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	MountConsistencyConsistent = "consistent"
+	MountConsistencyCached     = "cached"
+	MountConsistencyDelegated  = "delegated"
+)
+
 // UpCmd holds the up cmd flags.
 type UpCmd struct {
 	provider2.CLIOptions
@@ -146,11 +152,12 @@ func (cmd *UpCmd) validate() error {
 	}
 	if cmd.WorkspaceMountConsistency != "" {
 		switch cmd.WorkspaceMountConsistency {
-		case "consistent", "cached", "delegated":
+		case MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated:
 		default:
 			return fmt.Errorf(
-				"invalid --workspace-mount-consistency value %q: must be one of consistent, cached, delegated",
+				"invalid --workspace-mount-consistency value %q: must be one of %s, %s, %s",
 				cmd.WorkspaceMountConsistency,
+				MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated,
 			)
 		}
 	}

@@ -237,6 +237,8 @@ func TestMountHasConsistency(t *testing.T) {
 }
 
 func TestMountSetConsistency(t *testing.T) {
+	const testConsistency = "delegated"
+	wantSuffix := "consistency='" + testConsistency + "'"
 	tests := []struct {
 		name  string
 		mount string
@@ -246,20 +248,20 @@ func TestMountSetConsistency(t *testing.T) {
 		{
 			name:  "appends when no consistency present",
 			mount: "type=bind,source=/s,target=/t",
-			value: "delegated",
-			want:  "type=bind,source=/s,target=/t,consistency='delegated'",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
 		},
 		{
 			name:  "replaces existing single-quoted default",
 			mount: "type=bind,source=/s,target=/t,consistency='consistent'",
-			value: "delegated",
-			want:  "type=bind,source=/s,target=/t,consistency='delegated'",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
 		},
 		{
 			name:  "replaces existing unquoted value",
 			mount: "type=bind,source=/s,target=/t,consistency=cached",
-			value: "delegated",
-			want:  "type=bind,source=/s,target=/t,consistency='delegated'",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
 		},
 	}
 	for _, tt := range tests {

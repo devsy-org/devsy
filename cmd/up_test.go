@@ -69,9 +69,9 @@ func TestUpCmd_WorkspaceMountConsistencyFlagParsesValue(t *testing.T) {
 		name  string
 		value string
 	}{
-		{name: "consistent", value: "consistent"},
-		{name: "cached", value: "cached"},
-		{name: "delegated", value: "delegated"},
+		{name: "consistent", value: MountConsistencyConsistent},
+		{name: "cached", value: MountConsistencyCached},
+		{name: "delegated", value: MountConsistencyDelegated},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -92,9 +92,9 @@ func TestUpCmd_ValidateWorkspaceMountConsistency(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty is valid", value: "", wantErr: false},
-		{name: "consistent", value: "consistent", wantErr: false},
-		{name: "cached", value: "cached", wantErr: false},
-		{name: "delegated", value: "delegated", wantErr: false},
+		{name: "consistent", value: MountConsistencyConsistent, wantErr: false},
+		{name: "cached", value: MountConsistencyCached, wantErr: false},
+		{name: "delegated", value: MountConsistencyDelegated, wantErr: false},
 		{name: "invalid value", value: "bogus", wantErr: true},
 		{name: "partial match", value: "cache", wantErr: true},
 	}
