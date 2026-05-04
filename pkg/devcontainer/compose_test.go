@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -308,4 +309,44 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextEmptyContext() {
 
 func TestPrepareBuildContextSuite(t *testing.T) {
 	suite.Run(t, new(PrepareBuildContextSuite))
+}
+
+func TestValidateRunServices(t *testing.T) {
+	project := &composetypes.Project{
+		Services: map[string]composetypes.ServiceConfig{
+			"app": {Name: "app"},
+			"db":  {Name: "db"},
+		},
+	}
+	emptyProject := &composetypes.Project{Services: map[string]composetypes.ServiceConfig{}}
+
+	tests := []struct {
+		name        string
+		runServices []string
+		project     *composetypes.Project
+		wantErr     bool
+		errContains string
+	}{
+		{"empty runServices returns nil", nil, project, false, ""},
+		{"valid services returns nil", []string{"app", "db"}, project, false, ""},
+		{"invalid service returns error", []string{"nonexistent"}, project, true, "nonexistent"},
+		{"mix of valid and invalid", []string{"app", "typo-svc", "bad"}, project, true, "typo-svc"},
+		{"project with no services", []string{"app"}, emptyProject, true, "app"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRunServices(tt.runServices, tt.project)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errContains)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
 }

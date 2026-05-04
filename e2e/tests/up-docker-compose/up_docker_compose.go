@@ -502,6 +502,15 @@ var _ = ginkgo.Describe(
 			gomega.Expect(dbIDs).To(gomega.BeEmpty(), "db container not to be created")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It("invalid runServices returns error", func(ctx context.Context) {
+			_, _, err := tc.setupAndStartWorkspace(
+				ctx,
+				"tests/up-docker-compose/testdata/docker-compose-run-services-invalid",
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(err.Error()).To(gomega.ContainSubstring("nonexistent-service"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 		ginkgo.It("user lookup with no remoteUser", func(ctx context.Context) {
 			_, _, err := tc.setupAndStartWorkspace(
 				ctx,

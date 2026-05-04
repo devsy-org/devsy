@@ -176,6 +176,10 @@ func (r *runner) runDockerCompose(
 	project.Name = composeHelper.GetProjectName(r.ID)
 	log.Debugf("Loaded project %s", project.Name)
 
+	if err := validateRunServices(parsedConfig.Config.RunServices, project); err != nil {
+		return nil, err
+	}
+
 	containerDetails, err := composeHelper.FindDevContainer(
 		ctx,
 		project.Name,
@@ -313,6 +317,22 @@ func (r *runner) runDockerCompose(
 		substitutionContext: substitutionContext,
 		timeout:             timeout,
 	})
+}
+
+func validateRunServices(runServices []string, project *composetypes.Project) error {
+	if len(runServices) == 0 {
+		return nil
+	}
+	var invalid []string
+	for _, svc := range runServices {
+		if _, ok := project.Services[svc]; !ok {
+			invalid = append(invalid, svc)
+		}
+	}
+	if len(invalid) > 0 {
+		return fmt.Errorf("runServices: service(s) not found in compose file: %v", invalid)
+	}
+	return nil
 }
 
 // onlyRunServices appends the services defined in .devcontainer.json runServices to the upArgs.
