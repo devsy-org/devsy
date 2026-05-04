@@ -235,3 +235,47 @@ func TestMountHasConsistency(t *testing.T) {
 		}
 	}
 }
+
+func TestMountSetConsistency(t *testing.T) {
+	const testConsistency = "delegated"
+	wantSuffix := "consistency='" + testConsistency + "'"
+	tests := []struct {
+		name  string
+		mount string
+		value string
+		want  string
+	}{
+		{
+			name:  "appends when no consistency present",
+			mount: "type=bind,source=/s,target=/t",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
+		},
+		{
+			name:  "replaces existing single-quoted default",
+			mount: "type=bind,source=/s,target=/t,consistency='consistent'",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
+		},
+		{
+			name:  "replaces existing unquoted value",
+			mount: "type=bind,source=/s,target=/t,consistency=cached",
+			value: testConsistency,
+			want:  "type=bind,source=/s,target=/t," + wantSuffix,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mountSetConsistency(tt.mount, tt.value)
+			if got != tt.want {
+				t.Errorf(
+					"mountSetConsistency(%q, %q) =\n  %q\nwant:\n  %q",
+					tt.mount,
+					tt.value,
+					got,
+					tt.want,
+				)
+			}
+		})
+	}
+}

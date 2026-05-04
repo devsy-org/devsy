@@ -33,6 +33,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	MountConsistencyConsistent = "consistent"
+	MountConsistencyCached     = "cached"
+	MountConsistencyDelegated  = "delegated"
+)
+
 // UpCmd holds the up cmd flags.
 type UpCmd struct {
 	provider2.CLIOptions
@@ -143,6 +149,17 @@ func (cmd *UpCmd) validate() error {
 			return err
 		}
 		cmd.ExtraDevContainerPath = absPath
+	}
+	if cmd.WorkspaceMountConsistency != "" {
+		switch cmd.WorkspaceMountConsistency {
+		case MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated:
+		default:
+			return fmt.Errorf(
+				"invalid --workspace-mount-consistency value %q: must be one of %s, %s, %s",
+				cmd.WorkspaceMountConsistency,
+				MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated,
+			)
+		}
 	}
 	return nil
 }
@@ -298,6 +315,9 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
 				"Takes priority over devcontainer.json build.cacheFrom")
+	upCmd.Flags().
+		StringVar(&cmd.WorkspaceMountConsistency, "workspace-mount-consistency", "",
+			"Consistency mode for the workspace bind mount (consistent, cached, delegated)")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {

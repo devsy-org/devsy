@@ -247,4 +247,52 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 	s.Nil(result.Config.Features)
 }
 
+func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() {
+	const testVal = "delegated"
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+	}
+	options := provider2.CLIOptions{
+		WorkspaceMountConsistency: testVal,
+	}
+
+	_, ctx, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Contains(ctx.WorkspaceMount, "consistency='"+testVal+"'")
+}
+
+func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesExisting() {
+	const testVal = "delegated"
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		NonComposeBase: config.NonComposeBase{
+			WorkspaceMount: "type=bind,source=/src,target=/ws,consistency='consistent'",
+		},
+	}
+	options := provider2.CLIOptions{
+		WorkspaceMountConsistency: testVal,
+	}
+
+	_, ctx, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Contains(ctx.WorkspaceMount, "consistency='"+testVal+"'")
+	s.NotContains(ctx.WorkspaceMount, "consistency='consistent'")
+}
+
+func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+	}
+	options := provider2.CLIOptions{
+		WorkspaceMountConsistency: "",
+	}
+
+	_, ctx, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.NotContains(ctx.WorkspaceMount, "consistency=delegated")
+}
+
 func ptr(s string) *string { return &s }

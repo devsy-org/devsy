@@ -189,6 +189,13 @@ func (r *runner) substitute(
 		substitutionContext.WorkspaceMount = parsedConfig.WorkspaceMount
 	}
 
+	if options.WorkspaceMountConsistency != "" {
+		substitutionContext.WorkspaceMount = mountSetConsistency(
+			substitutionContext.WorkspaceMount,
+			options.WorkspaceMountConsistency,
+		)
+	}
+
 	if options.DevContainerImage != "" {
 		parsedConfig.Build = nil
 		parsedConfig.Dockerfile = ""
