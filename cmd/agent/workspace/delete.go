@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -17,8 +18,9 @@ import (
 type DeleteCmd struct {
 	*flags.GlobalFlags
 
-	Container bool
-	Daemon    bool
+	Container     bool
+	Daemon        bool
+	RemoveVolumes bool
 
 	WorkspaceInfo string
 }
@@ -40,6 +42,9 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		BoolVar(&cmd.Container, "container", true, "If enabled, cleans up the Devsy container")
 	deleteCmd.Flags().
 		BoolVar(&cmd.Daemon, "daemon", false, "If enabled, cleans up the Devsy daemon")
+
+	deleteCmd.Flags().
+		BoolVar(&cmd.RemoveVolumes, "remove-volumes", false, "Remove named volumes associated with the workspace")
 
 	deleteCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
 	_ = deleteCmd.MarkFlagRequired("workspace-info")
@@ -67,7 +72,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 
 	// cleanup docker container
 	if cmd.Container {
-		err = removeContainer(ctx, workspaceInfo)
+		err = removeContainer(ctx, workspaceInfo, cmd.RemoveVolumes)
 		if err != nil {
 			return fmt.Errorf("remove container: %w", err)
 		}
@@ -81,6 +86,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 func removeContainer(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
+	removeVolumes bool,
 ) error {
 	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
 	runner, err := CreateRunner(workspaceInfo)
@@ -91,7 +97,9 @@ func removeContainer(
 	if workspaceInfo.Workspace.Source.Container != "" {
 		log.Info("skipping container deletion, since it was not created by Devsy")
 	} else {
-		err = runner.Delete(ctx)
+		err = runner.Delete(ctx, devcontainer.DeleteOptions{
+			RemoveVolumes: removeVolumes,
+		})
 		if err != nil {
 			return err
 		}

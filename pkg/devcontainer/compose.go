@@ -89,7 +89,11 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 	return nil
 }
 
-func (r *runner) deleteDockerCompose(ctx context.Context, projectName string) error {
+func (r *runner) deleteDockerCompose(
+	ctx context.Context,
+	projectName string,
+	removeVolumes bool,
+) error {
 	composeHelper, err := r.composeHelper()
 	if err != nil {
 		return fmt.Errorf("find docker compose: %w", err)
@@ -105,7 +109,7 @@ func (r *runner) deleteDockerCompose(ctx context.Context, projectName string) er
 		return fmt.Errorf("get compose/env files: %w", err)
 	}
 
-	err = composeHelper.Remove(ctx, projectName, projFiles.composeGlobalArgs)
+	err = composeHelper.Remove(ctx, projectName, projFiles.composeGlobalArgs, removeVolumes)
 	if err != nil {
 		return err
 	}

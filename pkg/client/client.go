@@ -145,6 +145,7 @@ type DeleteOptions struct {
 	IgnoreNotFound bool   `json:"ignoreNotFound,omitempty"`
 	Force          bool   `json:"force,omitempty"`
 	GracePeriod    string `json:"gracePeriod,omitempty"`
+	RemoveVolumes  bool   `json:"removeVolumes,omitempty"`
 }
 
 type StatusOptions struct {
