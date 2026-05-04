@@ -129,6 +129,34 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("resolves array extends with multiple parents", func(ctx context.Context) {
+		f := framework.NewDefaultFramework(initialDir + "/bin")
+		tempDir, err := framework.CopyToTempDirWithoutChdir(
+			"tests/extends/testdata/array-extends",
+		)
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+		stdout, _, err := readConfiguration(ctx, f, tempDir)
+		framework.ExpectNoError(err)
+
+		config := parseConfigFromOutput(stdout)
+		gomega.Expect(config).To(gomega.HaveKeyWithValue("name", "Array Extends Child"))
+		gomega.Expect(config).To(
+			gomega.HaveKeyWithValue("image", "mcr.microsoft.com/devcontainers/base:ubuntu"),
+		)
+		gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
+
+		containerEnv, ok := config["containerEnv"].(map[string]any)
+		gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be an object")
+		gomega.Expect(containerEnv).To(gomega.HaveKeyWithValue("FROM_BASE", "base-value"))
+		gomega.Expect(containerEnv).To(
+			gomega.HaveKeyWithValue("FROM_MIDDLEWARE", "middleware-value"),
+		)
+		gomega.Expect(containerEnv).To(gomega.HaveKeyWithValue("FROM_CHILD", "child-value"))
+		gomega.Expect(containerEnv).To(gomega.HaveKeyWithValue("SHARED", "from-middleware"))
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("returns error when extends references missing file", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(

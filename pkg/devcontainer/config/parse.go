@@ -97,10 +97,10 @@ func ParseDevContainerJSONFile(jsonFilePath string) (*DevContainerConfig, error)
 	devContainer.Origin = path
 
 	// Resolve extends before applying legacy transforms
-	if devContainer.Extends != "" {
+	if !devContainer.Extends.IsEmpty() {
 		visited := map[string]bool{path: true}
 		declaringDir := filepath.Dir(path)
-		parent, err := resolveExtends(devContainer.Extends, declaringDir, visited)
+		parent, err := resolveExtendsArray(devContainer.Extends, declaringDir, visited)
 		if err != nil {
 			return nil, err
 		}

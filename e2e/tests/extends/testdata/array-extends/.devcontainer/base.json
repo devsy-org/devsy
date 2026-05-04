@@ -1,0 +1,7 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "containerEnv": {
+    "FROM_BASE": "base-value",
+    "SHARED": "from-base"
+  }
+}

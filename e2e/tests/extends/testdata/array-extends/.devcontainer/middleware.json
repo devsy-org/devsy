@@ -1,0 +1,7 @@
+{
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "FROM_MIDDLEWARE": "middleware-value",
+    "SHARED": "from-middleware"
+  }
+}

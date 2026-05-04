@@ -10,14 +10,62 @@ import (
 	"github.com/tailscale/hujson"
 )
 
-// resolveExtends resolves the extends chain for a devcontainer.json file.
-// It returns the fully resolved parent config (with its own extends already merged).
-// visited tracks files already in the resolution chain for cycle detection.
-func resolveExtends(
+// ExtendsRef holds one or more paths to parent devcontainer.json files.
+// JSON accepts either a single string or an array of strings.
+type ExtendsRef []string
+
+func (e ExtendsRef) IsEmpty() bool {
+	return len(e) == 0
+}
+
+func (e ExtendsRef) MarshalJSON() ([]byte, error) {
+	if len(e) == 1 {
+		return json.Marshal(e[0])
+	}
+	return json.Marshal([]string(e))
+}
+
+func (e *ExtendsRef) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*e = ExtendsRef{s}
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*e = ExtendsRef(arr)
+		return nil
+	}
+	return fmt.Errorf("extends: must be a string or array of strings")
+}
+
+// resolveExtendsArray resolves multiple extends refs left-to-right,
+// merging each on top of the previous result. The final merged config
+// is returned as the combined parent for the declaring file.
+func resolveExtendsArray(
+	refs ExtendsRef, declaringDir string,
+	visited map[string]bool,
+) (*DevContainerConfig, error) {
+	var merged *DevContainerConfig
+	for _, ref := range refs {
+		resolved, err := resolveExtendsSingle(ref, declaringDir, visited)
+		if err != nil {
+			return nil, err
+		}
+		if merged == nil {
+			merged = resolved
+		} else {
+			merged = mergeExtendsConfigs(merged, resolved)
+		}
+	}
+	return merged, nil
+}
+
+// resolveExtendsSingle resolves a single extends reference.
+func resolveExtendsSingle(
 	extendsRef, declaringDir string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
-	// Resolve relative path against the declaring file's directory
 	refPath := extendsRef
 	if !filepath.IsAbs(refPath) {
 		refPath = filepath.Join(declaringDir, refPath)
@@ -28,7 +76,6 @@ func resolveExtends(
 		return nil, fmt.Errorf("extends: resolve path %q: %w", extendsRef, err)
 	}
 
-	// Cycle detection
 	if visited[absPath] {
 		return nil, fmt.Errorf("extends: cycle detected, %q already in chain", absPath)
 	}
@@ -67,9 +114,9 @@ func parseDevContainerJSONFileWithVisited(
 	devContainer.Origin = absPath
 
 	// Recursively resolve extends
-	if devContainer.Extends != "" {
+	if !devContainer.Extends.IsEmpty() {
 		declaringDir := filepath.Dir(absPath)
-		parent, err := resolveExtends(devContainer.Extends, declaringDir, visited)
+		parent, err := resolveExtendsArray(devContainer.Extends, declaringDir, visited)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +138,7 @@ func mergeExtendsConfigs(parent, child *DevContainerConfig) *DevContainerConfig 
 
 	// Special
 	result.Origin = child.Origin
-	result.Extends = ""
+	result.Extends = nil
 
 	return result
 }
