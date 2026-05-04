@@ -1,0 +1,8 @@
+{
+  "name": "Feature Hook Order Test",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
+  "features": {
+    "./.devcontainer/features/test-order": {}
+  },
+  "onCreateCommand": "echo 'image' >> /tmp/hook-order.txt"
+}

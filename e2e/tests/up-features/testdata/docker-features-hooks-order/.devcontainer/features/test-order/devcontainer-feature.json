@@ -1,0 +1,6 @@
+{
+  "id": "test-order",
+  "version": "1.0.0",
+  "name": "Test Hook Order",
+  "onCreateCommand": "echo 'feature' >> /tmp/hook-order.txt"
+}
