@@ -293,6 +293,18 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(&cmd.SkipNonBlockingCommands, "skip-non-blocking-commands", false,
 			"Skip non-blocking lifecycle commands")
+	upCmd.Flags().
+		BoolVar(&cmd.SkipPostStart, "skip-post-start", false,
+			"Skip running postStartCommand")
+	upCmd.Flags().
+		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false,
+			"Skip running postAttachCommand")
+	upCmd.Flags().
+		StringVar(&cmd.ContainerUser, "container-user", "",
+			"Override the user in the container")
+	upCmd.Flags().
+		StringVar(&cmd.RemoteUser, "remote-user", "",
+			"Override the remoteUser setting")
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {

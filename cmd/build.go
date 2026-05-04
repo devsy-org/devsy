@@ -187,6 +187,11 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
 			"If true will clone git submodule repositories recursively")
 
+	buildCmd.Flags().
+		StringVar(&cmd.ImageName, "image-name", "", "Alternative name for the built image")
+	buildCmd.Flags().
+		BoolVar(&cmd.NoBuild, "no-build", false, "Fail if the image must be built (enforce pre-built images only)")
+
 	// TESTING
 	buildCmd.Flags().BoolVar(&cmd.ForceBuild, "force-build", false, "TESTING ONLY")
 	buildCmd.Flags().

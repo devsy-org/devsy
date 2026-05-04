@@ -112,3 +112,78 @@ func TestUpCmd_ValidateWorkspaceMountConsistency(t *testing.T) {
 		})
 	}
 }
+
+func TestUpCmd_SkipPostCreateFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("skip-post-create")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+func TestUpCmd_SkipPostStartFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("skip-post-start")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+func TestUpCmd_SkipPostAttachFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("skip-post-attach")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	err := upCmd.ParseFlags([]string{
+		"--skip-post-create",
+		"--skip-post-start",
+		"--skip-post-attach",
+	})
+	require.NoError(t, err)
+
+	val, err := upCmd.Flags().GetBool("skip-post-create")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = upCmd.Flags().GetBool("skip-post-start")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = upCmd.Flags().GetBool("skip-post-attach")
+	require.NoError(t, err)
+	assert.True(t, val)
+}
+
+func TestUpCmd_ContainerUserFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("container-user")
+	require.NotNil(t, flag)
+	assert.Equal(t, "", flag.DefValue)
+}
+
+func TestUpCmd_ContainerUserFlagParsesValue(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	err := upCmd.ParseFlags([]string{"--container-user", "devuser"})
+	require.NoError(t, err)
+
+	flag := upCmd.Flags().Lookup("container-user")
+	assert.Equal(t, "devuser", flag.Value.String())
+}
+
+func TestUpCmd_RemoteUserFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("remote-user")
+	require.NotNil(t, flag)
+	assert.Equal(t, "", flag.DefValue)
+}
+
+func TestUpCmd_RemoteUserFlagParsesValue(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	err := upCmd.ParseFlags([]string{"--remote-user", "vscode"})
+	require.NoError(t, err)
+
+	flag := upCmd.Flags().Lookup("remote-user")
+	assert.Equal(t, "vscode", flag.Value.String())
+}

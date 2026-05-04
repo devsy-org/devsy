@@ -224,6 +224,13 @@ type phaseHook struct {
 	runFunc func() error
 }
 
+// SkipPhases controls which lifecycle phases should be skipped.
+type SkipPhases struct {
+	PostCreate bool
+	PostStart  bool
+	PostAttach bool
+}
+
 // RunPreAttachHooks runs lifecycle hooks up to and including the waitFor phase
 // synchronously and returns a slice of deferred phases that should run in the
 // background. Dotfiles are installed between postCreateCommand and
@@ -237,6 +244,7 @@ func RunPreAttachHooks(
 	prebuild bool,
 	dotfiles DotfilesConfig,
 	secretsEnv []string,
+	skip SkipPhases,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	mergeSecretsEnv(env.remoteEnv, secretsEnv)
@@ -245,6 +253,9 @@ func RunPreAttachHooks(
 	// Insert the dotfiles phase between postCreate and postStart.
 	created := setupInfo.ContainerDetails.Created
 	all = insertDotfilesPhase(ctx, all, dotfiles, created)
+
+	// Remove skipped phases.
+	all = filterSkippedPhases(all, skip)
 
 	if prebuild {
 		return DeferredHooks{}, runPrebuildHooks(all)
@@ -262,6 +273,24 @@ func RunPreAttachHooks(
 
 	deferred, err := runWithWaitFor(all, waitFor)
 	return DeferredHooks{hooks: deferred}, err
+}
+
+func filterSkippedPhases(all []phaseHook, skip SkipPhases) []phaseHook {
+	skipped := map[LifecyclePhase]bool{
+		PhasePostCreate: skip.PostCreate,
+		PhasePostStart:  skip.PostStart,
+		PhasePostAttach: skip.PostAttach,
+	}
+
+	filtered := make([]phaseHook, 0, len(all))
+	for _, ph := range all {
+		if skipped[ph.phase] {
+			log.Infof("skipping %s (--skip flag set)", ph.phase)
+			continue
+		}
+		filtered = append(filtered, ph)
+	}
+	return filtered
 }
 
 // insertDotfilesPhase splices a dotfiles phaseHook after postCreateCommand
@@ -388,7 +417,16 @@ func (d DeferredHooks) Run() error {
 
 // RunPostAttachHooks runs postAttachCommand only.
 // These run after the IDE has been opened and can be long-running.
-func RunPostAttachHooks(ctx context.Context, setupInfo *config.Result, secretsEnv []string) error {
+func RunPostAttachHooks(
+	ctx context.Context,
+	setupInfo *config.Result,
+	secretsEnv []string,
+	skipPostAttach ...bool,
+) error {
+	if len(skipPostAttach) > 0 && skipPostAttach[0] {
+		log.Infof("skipping postAttachCommand (--skip-post-attach set)")
+		return nil
+	}
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	mergeSecretsEnv(env.remoteEnv, secretsEnv)
 

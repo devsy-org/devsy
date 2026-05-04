@@ -126,6 +126,12 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 	if r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe != "" {
 		result.MergedConfig.UserEnvProbe = r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe
 	}
+	if r.WorkspaceConfig.CLIOptions.ContainerUser != "" {
+		result.MergedConfig.ContainerUser = r.WorkspaceConfig.CLIOptions.ContainerUser
+	}
+	if r.WorkspaceConfig.CLIOptions.RemoteUser != "" {
+		result.MergedConfig.RemoteUser = r.WorkspaceConfig.CLIOptions.RemoteUser
+	}
 
 	if r.WorkspaceConfig.Agent.Local == stringTrue &&
 		r.WorkspaceConfig.CLIOptions.Platform.Enabled {

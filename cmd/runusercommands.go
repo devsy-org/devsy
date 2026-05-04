@@ -21,8 +21,13 @@ import (
 type RunUserCommandsCmd struct {
 	*flags.GlobalFlags
 
-	WorkspaceFolder string
-	IDLabels        []string
+	WorkspaceFolder   string
+	IDLabels          []string
+	SkipPostCreate    bool
+	SkipPostStart     bool
+	SkipPostAttach    bool
+	SkipOnCreate      bool
+	SkipUpdateContent bool
 }
 
 // NewRunUserCommandsCmd creates a new run-user-commands command.
@@ -53,6 +58,16 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 			[]string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
 		)
+	runCmd.Flags().
+		BoolVar(&cmd.SkipPostCreate, "skip-post-create", false, "Skip running postCreateCommand")
+	runCmd.Flags().
+		BoolVar(&cmd.SkipPostStart, "skip-post-start", false, "Skip running postStartCommand")
+	runCmd.Flags().
+		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false, "Skip running postAttachCommand")
+	runCmd.Flags().
+		BoolVar(&cmd.SkipOnCreate, "skip-on-create", false, "Skip running onCreateCommand")
+	runCmd.Flags().
+		BoolVar(&cmd.SkipUpdateContent, "skip-update-content", false, "Skip running updateContentCommand")
 
 	return runCmd
 }
@@ -149,13 +164,20 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	hooks := []struct {
 		name string
 		cmds []types.LifecycleHook
+		skip bool
 	}{
-		{"postCreateCommand", result.MergedConfig.PostCreateCommands},
-		{"postStartCommand", result.MergedConfig.PostStartCommands},
-		{"postAttachCommand", result.MergedConfig.PostAttachCommands},
+		{"onCreateCommand", result.MergedConfig.OnCreateCommands, cmd.SkipOnCreate},
+		{"updateContentCommand", result.MergedConfig.UpdateContentCommands, cmd.SkipUpdateContent},
+		{"postCreateCommand", result.MergedConfig.PostCreateCommands, cmd.SkipPostCreate},
+		{"postStartCommand", result.MergedConfig.PostStartCommands, cmd.SkipPostStart},
+		{"postAttachCommand", result.MergedConfig.PostAttachCommands, cmd.SkipPostAttach},
 	}
 
 	for _, hook := range hooks {
+		if hook.skip {
+			log.Infof("skipping %s (--skip flag set)", hook.name)
+			continue
+		}
 		for _, h := range hook.cmds {
 			if err := execLifecycleHook(params, hook.name, h); err != nil {
 				_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())

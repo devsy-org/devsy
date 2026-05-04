@@ -33,6 +33,8 @@ type ExecCmd struct {
 	RemoteEnv           []string
 	DefaultUserEnvProbe string
 	IDLabels            []string
+	ContainerDataFolder string
+	SkipPostCreate      bool
 }
 
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
@@ -88,6 +90,20 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			"id-label",
 			[]string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
+		)
+	execCmd.Flags().
+		StringVar(
+			&cmd.ContainerDataFolder,
+			"container-data-folder",
+			"",
+			"Override the default container data folder path",
+		)
+	execCmd.Flags().
+		BoolVar(
+			&cmd.SkipPostCreate,
+			"skip-post-create",
+			false,
+			"Skip running postCreateCommand",
 		)
 
 	return execCmd
