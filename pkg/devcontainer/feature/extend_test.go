@@ -487,3 +487,106 @@ func (suite *ExtendTestSuite) TestFindContainerUsersUsesMetadataAndImageUserFall
 	suite.Equal("nonroot", containerUser)
 	suite.Equal("vscode", remoteUser)
 }
+
+func (suite *ExtendTestSuite) TestBuildLegacyIDMap() {
+	features := map[string]*config.FeatureSet{
+		"ghcr.io/org/features/current-name": {
+			ConfigID: "ghcr.io/org/features/current-name",
+			Config: &config.FeatureConfig{
+				LegacyIds: []string{
+					"ghcr.io/org/features/old-name",
+					"ghcr.io/org/features/ancient-name",
+				},
+			},
+		},
+		"ghcr.io/org/features/other": {
+			ConfigID: "ghcr.io/org/features/other",
+			Config: &config.FeatureConfig{
+				LegacyIds: []string{},
+			},
+		},
+		"feature-no-config": {
+			ConfigID: "feature-no-config",
+			Config:   nil,
+		},
+	}
+
+	legacyMap := buildLegacyIDMap(features)
+
+	suite.Equal("ghcr.io/org/features/current-name", legacyMap["ghcr.io/org/features/old-name"])
+	suite.Equal("ghcr.io/org/features/current-name", legacyMap["ghcr.io/org/features/ancient-name"])
+	_, hasOther := legacyMap["ghcr.io/org/features/other"]
+	suite.False(hasOther)
+}
+
+func (suite *ExtendTestSuite) TestBuildLegacyIDMap_NormalizesVersionTags() {
+	features := map[string]*config.FeatureSet{
+		"ghcr.io/org/features/node": {
+			ConfigID: "ghcr.io/org/features/node",
+			Config: &config.FeatureConfig{
+				LegacyIds: []string{"ghcr.io/org/features/nodejs:1"},
+			},
+		},
+	}
+
+	legacyMap := buildLegacyIDMap(features)
+
+	suite.Equal("ghcr.io/org/features/node", legacyMap["ghcr.io/org/features/nodejs"])
+}
+
+func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDResolution() {
+	features := map[string]*config.FeatureSet{
+		"current-feature": {
+			ConfigID: "current-feature",
+			Config: &config.FeatureConfig{
+				LegacyIds: []string{"old-feature-name"},
+				DependsOn: config.DependsOnField{},
+			},
+		},
+		"consumer-feature": {
+			ConfigID: "consumer-feature",
+			Config: &config.FeatureConfig{
+				DependsOn: config.DependsOnField{
+					"old-feature-name": map[string]any{},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolveDependencies(&featureProcessor{}, features)
+	suite.Require().NoError(err)
+	suite.Len(resolved, 2)
+	suite.NotNil(resolved["current-feature"])
+	suite.NotNil(resolved["consumer-feature"])
+}
+
+func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDNotUsedWhenPrimaryExists() {
+	features := map[string]*config.FeatureSet{
+		"feature-a": {
+			ConfigID: "feature-a",
+			Config: &config.FeatureConfig{
+				LegacyIds: []string{"feature-b"},
+				DependsOn: config.DependsOnField{},
+			},
+		},
+		"feature-b": {
+			ConfigID: "feature-b",
+			Config: &config.FeatureConfig{
+				DependsOn: config.DependsOnField{},
+			},
+		},
+		"consumer": {
+			ConfigID: "consumer",
+			Config: &config.FeatureConfig{
+				DependsOn: config.DependsOnField{
+					"feature-b": map[string]any{},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolveDependencies(&featureProcessor{}, features)
+	suite.Require().NoError(err)
+	suite.Len(resolved, 3)
+	suite.NotNil(resolved["feature-b"])
+}

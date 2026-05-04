@@ -577,6 +577,33 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
+		"should resolve legacy feature IDs in dependsOn",
+		ginkgo.Label("features", "depends-on", "legacy-id"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-legacy-id-resolution",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			out, err := f.DevsySSH(ctx, wsName, "test-legacy-resolution")
+			framework.ExpectNoError(err)
+			gomega.Expect(out).To(gomega.ContainSubstring("SUCCESS: legacy ID resolution worked"))
+			gomega.Expect(out).To(gomega.ContainSubstring("legacy-id-resolved-successfully"))
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
+
+	ginkgo.It(
 		"should reject overrideFeatureInstallOrder that violates dependsOn",
 		ginkgo.Label("features", "override"),
 		func(ctx context.Context) {

@@ -1,0 +1,7 @@
+{
+  "id": "current-feature",
+  "version": "1.0.0",
+  "name": "Current Feature",
+  "description": "A feature with legacy IDs for testing resolution",
+  "legacyIds": ["old-feature-name", "ancient-feature-name"]
+}
