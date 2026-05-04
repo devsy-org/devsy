@@ -17,6 +17,7 @@ const (
 	testUpdateUIDDefaultOff = "off"
 	testUpdateUIDDefaultOn  = "on"
 	testOSLinux             = "linux"
+	testRemoteUser          = "vscode"
 )
 
 type DockerDriverTestSuite struct {
@@ -89,7 +90,7 @@ func (s *DockerDriverTestSuite) TestShouldSkipUpdate_RootWithDifferentGID() {
 func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_DefaultTrue_WhenConfigNil() {
 	cfg := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteUser: "vscode",
+			RemoteUser: testRemoteUser,
 		},
 	}
 	s.driver.UpdateRemoteUserUIDDefault = ""
@@ -102,7 +103,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_DefaultTrue_WhenConfigNi
 func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOff_WhenConfigNil() {
 	cfg := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteUser: "vscode",
+			RemoteUser: testRemoteUser,
 		},
 	}
 	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOff
@@ -113,7 +114,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOff_WhenConfig
 func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOn_WhenConfigNil() {
 	cfg := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteUser: "vscode",
+			RemoteUser: testRemoteUser,
 		},
 	}
 	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOn
@@ -127,7 +128,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_ConfigTakesPrecedence_Tr
 	t := true
 	cfg := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteUser:          "vscode",
+			RemoteUser:          testRemoteUser,
 			UpdateRemoteUserUID: &t,
 		},
 	}
@@ -142,7 +143,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_ConfigTakesPrecedence_Fa
 	f := false
 	cfg := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			RemoteUser:          "vscode",
+			RemoteUser:          testRemoteUser,
 			UpdateRemoteUserUID: &f,
 		},
 	}

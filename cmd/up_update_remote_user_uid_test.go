@@ -10,22 +10,26 @@ import (
 
 func TestUpCmd_UpdateRemoteUserUIDDefault_On(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--update-remote-user-uid-default", "on"})
+	err := upCmd.ParseFlags(
+		[]string{"--update-remote-user-uid-default", UpdateRemoteUserUIDDefaultOn},
+	)
 	require.NoError(t, err)
 
 	val, err := upCmd.Flags().GetString("update-remote-user-uid-default")
 	require.NoError(t, err)
-	assert.Equal(t, "on", val)
+	assert.Equal(t, UpdateRemoteUserUIDDefaultOn, val)
 }
 
 func TestUpCmd_UpdateRemoteUserUIDDefault_Off(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--update-remote-user-uid-default", "off"})
+	err := upCmd.ParseFlags(
+		[]string{"--update-remote-user-uid-default", UpdateRemoteUserUIDDefaultOff},
+	)
 	require.NoError(t, err)
 
 	val, err := upCmd.Flags().GetString("update-remote-user-uid-default")
 	require.NoError(t, err)
-	assert.Equal(t, "off", val)
+	assert.Equal(t, UpdateRemoteUserUIDDefaultOff, val)
 }
 
 func TestUpCmd_UpdateRemoteUserUIDDefault_Validate_Invalid(t *testing.T) {
@@ -45,14 +49,14 @@ func TestUpCmd_UpdateRemoteUserUIDDefault_Validate_Empty(t *testing.T) {
 
 func TestUpCmd_UpdateRemoteUserUIDDefault_Validate_On(t *testing.T) {
 	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
-	cmd.UpdateRemoteUserUIDDefault = "on"
+	cmd.UpdateRemoteUserUIDDefault = UpdateRemoteUserUIDDefaultOn
 	err := cmd.validate()
 	require.NoError(t, err)
 }
 
 func TestUpCmd_UpdateRemoteUserUIDDefault_Validate_Off(t *testing.T) {
 	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
-	cmd.UpdateRemoteUserUIDDefault = "off"
+	cmd.UpdateRemoteUserUIDDefault = UpdateRemoteUserUIDDefaultOff
 	err := cmd.validate()
 	require.NoError(t, err)
 }
