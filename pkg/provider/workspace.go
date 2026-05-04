@@ -238,6 +238,7 @@ type CLIOptions struct {
 	GidMap                      []string          `json:"gidMap,omitempty"`
 	IDLabels                    []string          `json:"idLabels,omitempty"`
 	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
+	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
 
 	// dotfiles options
 	DotfilesRepo   string `json:"dotfilesRepo,omitempty"`

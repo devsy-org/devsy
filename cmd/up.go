@@ -144,6 +144,16 @@ func (cmd *UpCmd) validate() error {
 		}
 		cmd.ExtraDevContainerPath = absPath
 	}
+	if cmd.WorkspaceMountConsistency != "" {
+		switch cmd.WorkspaceMountConsistency {
+		case "consistent", "cached", "delegated":
+		default:
+			return fmt.Errorf(
+				"invalid --workspace-mount-consistency value %q: must be one of consistent, cached, delegated",
+				cmd.WorkspaceMountConsistency,
+			)
+		}
+	}
 	return nil
 }
 
@@ -298,6 +308,9 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
 				"Takes priority over devcontainer.json build.cacheFrom")
+	upCmd.Flags().
+		StringVar(&cmd.WorkspaceMountConsistency, "workspace-mount-consistency", "",
+			"Consistency mode for the workspace bind mount (consistent, cached, delegated)")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
