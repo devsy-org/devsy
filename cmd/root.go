@@ -125,7 +125,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(NewExportCmd(globalFlags))
 	rootCmd.AddCommand(NewImportCmd(globalFlags))
 	rootCmd.AddCommand(NewLogsCmd(globalFlags))
-	rootCmd.AddCommand(NewUpgradeCmd())
+	rootCmd.AddCommand(NewSelfUpdateCmd())
 	rootCmd.AddCommand(NewTroubleshootCmd(globalFlags))
 	rootCmd.AddCommand(NewPingCmd(globalFlags))
 	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))

@@ -22,11 +22,11 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/machineprovider"
 	_ "github.com/devsy-org/devsy/e2e/tests/provider"
 	_ "github.com/devsy-org/devsy/e2e/tests/readconfiguration"
+	_ "github.com/devsy-org/devsy/e2e/tests/selfupdate"
 	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
 	_ "github.com/devsy-org/devsy/e2e/tests/tunnel"
 	_ "github.com/devsy-org/devsy/e2e/tests/up"
 	_ "github.com/devsy-org/devsy/e2e/tests/up-features"
-	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
