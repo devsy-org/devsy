@@ -5,6 +5,7 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/compress"
@@ -70,12 +71,11 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 		RemoteUser:    config.GetRemoteUser(setupInfo),
 	}, cmd.SecretsEnv)
 	if err != nil {
-		log.Errorf("deferred hooks setup failed: %v", err)
-		return nil
+		return fmt.Errorf("deferred hooks setup: %w", err)
 	}
 
 	if err := deferred.Run(); err != nil {
-		log.Errorf("deferred lifecycle hooks failed: %v", err)
+		return fmt.Errorf("deferred lifecycle hooks: %w", err)
 	}
 
 	return nil
