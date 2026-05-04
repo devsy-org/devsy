@@ -45,7 +45,7 @@ type forwarder struct {
 }
 
 // Forward opens an SSH channel in the existing connection with channel type "direct-tcpip" to forward the local port.
-func (f *forwarder) Forward(port string) error {
+func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 	f.Lock()
 	defer f.Unlock()
 

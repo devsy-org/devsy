@@ -203,11 +203,11 @@ func configureGitUserLocally(
 }
 
 func forwardPorts(ctx context.Context, client tunnel.TunnelClient) error {
-	opts := portFilterFromResult()
+	opts := portOptionsFromResult()
 	return netstat.NewWatcher(&forwarder{ctx: ctx, client: client}, opts...).Run(ctx)
 }
 
-func portFilterFromResult() []netstat.WatcherOption {
+func portOptionsFromResult() []netstat.WatcherOption {
 	raw, err := os.ReadFile(config.DevContainerResultPath)
 	if err != nil {
 		log.Debugf("Could not read result for port attributes: %v", err)
@@ -223,14 +223,20 @@ func portFilterFromResult() []netstat.WatcherOption {
 		return nil
 	}
 	pa, opa := mc.PortsAttributes, mc.OtherPortsAttributes
+	resolver := func(port string) netstat.PortForwardAttribute {
+		portNum, err := strconv.Atoi(port)
+		if err != nil {
+			return netstat.PortForwardAttribute{}
+		}
+		attr := devconfig.ResolvePortAttribute(portNum, pa, opa)
+		return netstat.PortForwardAttribute{
+			Label:         attr.Label,
+			Protocol:      attr.Protocol,
+			OnAutoForward: attr.OnAutoForward,
+		}
+	}
 	return []netstat.WatcherOption{
-		netstat.WithPortFilter(func(port string) bool {
-			portNum, err := strconv.Atoi(port)
-			if err != nil {
-				return true
-			}
-			return devconfig.ResolvePortAttribute(portNum, pa, opa).ShouldAutoForward()
-		}),
+		netstat.WithPortAttributes(resolver),
 	}
 }
 
@@ -240,7 +246,10 @@ type forwarder struct {
 	client tunnel.TunnelClient
 }
 
-func (f *forwarder) Forward(port string) error {
+func (f *forwarder) Forward(port string, attr netstat.PortForwardAttribute) error {
+	if attr.Label != "" {
+		log.Debugf("Forwarding port %s (%s, protocol=%s)", port, attr.Label, attr.Protocol)
+	}
 	_, err := f.client.ForwardPort(f.ctx, &tunnel.ForwardPortRequest{Port: port})
 	return err
 }

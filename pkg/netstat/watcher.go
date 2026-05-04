@@ -9,10 +9,24 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
+const AutoForwardIgnore = "ignore"
+
+// PortForwardAttribute carries port metadata resolved from portsAttributes
+// in the devcontainer config. Downstream forwarders use this to apply
+// protocol, label, and forwarding-policy decisions.
+type PortForwardAttribute struct {
+	Label         string
+	Protocol      string
+	OnAutoForward string
+}
+
 type Forwarder interface {
-	Forward(port string) error
+	Forward(port string, attr PortForwardAttribute) error
 	StopForward(port string) error
 }
+
+// PortAttributeResolver resolves port forwarding attributes for a given port.
+type PortAttributeResolver func(port string) PortForwardAttribute
 
 // PortFilter decides whether a discovered port should be auto-forwarded.
 // Return true to forward, false to skip.
@@ -40,10 +54,18 @@ func WithPortFilter(f PortFilter) WatcherOption {
 	return func(w *Watcher) { w.portFilter = f }
 }
 
+// WithPortAttributes configures the watcher with a port attribute resolver.
+// When set, the watcher resolves attributes for each discovered port and
+// passes them to the Forwarder. Ports with onAutoForward=ignore are skipped.
+func WithPortAttributes(resolver PortAttributeResolver) WatcherOption {
+	return func(w *Watcher) { w.attrResolver = resolver }
+}
+
 type Watcher struct {
 	forwarder      Forwarder
 	forwardedPorts map[string]bool
 	portFilter     PortFilter
+	attrResolver   PortAttributeResolver
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
@@ -84,8 +106,20 @@ func (w *Watcher) runOnce() error {
 				log.Debugf("Skipping port %s (filtered)", port)
 				continue
 			}
-			log.Debugf("Found open port %s ready to forward", port)
-			err = w.forwarder.Forward(port)
+
+			attr := w.resolveAttr(port)
+			if attr.OnAutoForward == AutoForwardIgnore {
+				log.Debugf("Skipping port %s (onAutoForward=ignore)", port)
+				continue
+			}
+
+			if attr.Label != "" {
+				log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
+			} else {
+				log.Debugf("Found open port %s ready to forward", port)
+			}
+
+			err = w.forwarder.Forward(port, attr)
 			if err != nil {
 				return fmt.Errorf("error forwarding port %s: %w", port, err)
 			}
@@ -94,6 +128,13 @@ func (w *Watcher) runOnce() error {
 
 	w.forwardedPorts = newPorts
 	return nil
+}
+
+func (w *Watcher) resolveAttr(port string) PortForwardAttribute {
+	if w.attrResolver == nil {
+		return PortForwardAttribute{}
+	}
+	return w.attrResolver(port)
 }
 
 func (w *Watcher) findPorts() (map[string]bool, error) {
