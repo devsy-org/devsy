@@ -239,6 +239,7 @@ type CLIOptions struct {
 	IDLabels                    []string          `json:"idLabels,omitempty"`
 	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
 	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
+	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
 
 	// dotfiles options
 	DotfilesRepo   string `json:"dotfilesRepo,omitempty"`
