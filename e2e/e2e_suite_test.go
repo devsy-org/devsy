@@ -20,6 +20,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/logs"
 	_ "github.com/devsy-org/devsy/e2e/tests/machine"
 	_ "github.com/devsy-org/devsy/e2e/tests/machineprovider"
+	_ "github.com/devsy-org/devsy/e2e/tests/outdated"
 	_ "github.com/devsy-org/devsy/e2e/tests/provider"
 	_ "github.com/devsy-org/devsy/e2e/tests/readconfiguration"
 	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
