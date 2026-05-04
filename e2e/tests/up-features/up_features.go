@@ -680,4 +680,34 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
+
+	ginkgo.It(
+		"should resolve secret options from environment variables",
+		ginkgo.Label("features", "secret-option"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-secret-option",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			ginkgo.GinkgoT().Setenv(
+				"DEVCONTAINER_FEATURE_SECRET__FEATURES_SECRET_TEST_SECRETTOKEN", "e2e-test-secret",
+			)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			out, err := f.DevsySSH(ctx, wsName, "cat /secret-test-result.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("e2e-test-secret"))
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
 })

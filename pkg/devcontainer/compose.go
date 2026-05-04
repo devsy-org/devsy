@@ -473,6 +473,7 @@ func (r *runner) startContainer(
 			composeHelper,
 			&composeService,
 			composeGlobalArgs,
+			options.FeatureSecretsFile,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("build and extend docker-compose: %w", err)
@@ -658,6 +659,7 @@ func (r *runner) buildAndExtendDockerCompose(
 	composeHelper *compose.ComposeHelper,
 	composeService *composetypes.ServiceConfig,
 	globalArgs []string,
+	featureSecretsFile string,
 ) (composeExtendResult, error) {
 	var dockerFilePath, dockerfileContents, dockerComposeFilePath string
 	var imageBuildInfo *config.ImageBuildInfo
@@ -679,12 +681,17 @@ func (r *runner) buildAndExtendDockerCompose(
 	dockerfileContents = buildInfo.dockerfileContents
 	buildTarget = buildInfo.buildTarget
 
+	var secretOpts *feature.SecretOptions
+	if featureSecretsFile != "" {
+		secretOpts = &feature.SecretOptions{SecretsFile: featureSecretsFile}
+	}
 	extendImageBuildInfo, err := feature.GetExtendedBuildInfo(
 		substitutionContext,
 		imageBuildInfo,
 		buildTarget,
 		parsedConfig,
 		false,
+		secretOpts,
 	)
 	if err != nil {
 		return composeExtendResult{}, err

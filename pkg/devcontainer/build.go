@@ -77,6 +77,7 @@ func (r *runner) extendImage(
 		imageBase,
 		parsedConfig,
 		options.ForceBuild,
+		featureSecretOpts(options),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
@@ -158,6 +159,7 @@ func (r *runner) buildAndExtendImage(
 		imageBase,
 		parsedConfig,
 		options.ForceBuild,
+		featureSecretOpts(options),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
@@ -477,6 +479,7 @@ func (r *runner) buildDevImageCompose(
 		composeHelper,
 		&composeService,
 		composeGlobalArgs,
+		options.FeatureSecretsFile,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)
@@ -581,4 +584,11 @@ func getContainerContextAndDockerfile(
 func cleanupBuildInformation(c *config.DevContainerConfig) {
 	contextPath := config.GetContextPath(c)
 	_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
+}
+
+func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {
+	if options.FeatureSecretsFile == "" {
+		return nil
+	}
+	return &feature.SecretOptions{SecretsFile: options.FeatureSecretsFile}
 }

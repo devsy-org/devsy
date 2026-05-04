@@ -28,7 +28,7 @@ const (
 	Tunnel_GitCredentials_FullMethodName    = "/tunnel.Tunnel/GitCredentials"
 	Tunnel_GitSSHSignature_FullMethodName   = "/tunnel.Tunnel/GitSSHSignature"
 	Tunnel_GitUser_FullMethodName           = "/tunnel.Tunnel/GitUser"
-	Tunnel_DevsyConfig_FullMethodName        = "/tunnel.Tunnel/DevsyConfig"
+	Tunnel_DevsyConfig_FullMethodName       = "/tunnel.Tunnel/DevsyConfig"
 	Tunnel_GPGPublicKeys_FullMethodName     = "/tunnel.Tunnel/GPGPublicKeys"
 	Tunnel_KubeConfig_FullMethodName        = "/tunnel.Tunnel/KubeConfig"
 	Tunnel_ForwardPort_FullMethodName       = "/tunnel.Tunnel/ForwardPort"

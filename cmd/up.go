@@ -56,8 +56,9 @@ type UpCmd struct {
 	OpenIDE            bool
 	Reconfigure        bool
 
-	SSHConfigPath string
-	SecretsFile   string
+	SSHConfigPath      string
+	SecretsFile        string
+	FeatureSecretsFile string
 
 	DotfilesSource        string
 	DotfilesScript        string
@@ -344,6 +345,10 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.SecretsFile, "secrets-file", "",
 			"Path to a dotenv-style file containing KEY=VALUE secrets injected into lifecycle commands")
+	upCmd.Flags().
+		StringVar(&cmd.FeatureSecretsFile, "feature-secrets-file", "",
+			"Path to a JSON file containing secret values for features, format: "+
+				`{"featureId": {"optionName": "value"}}`)
 	upCmd.Flags().
 		StringArrayVar(&cmd.InitEnv, "init-env", []string{},
 			"Extra env variables to inject during the initialization of the workspace, e.g. MY_ENV_VAR=MY_VALUE")
@@ -883,6 +888,13 @@ func (cmd *UpCmd) prepareClient(
 		for k, v := range parsed {
 			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
 		}
+	}
+
+	if cmd.FeatureSecretsFile == "" {
+		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
+	}
+	if cmd.FeatureSecretsFile != "" {
+		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
 	}
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
