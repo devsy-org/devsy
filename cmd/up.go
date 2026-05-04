@@ -190,6 +190,8 @@ func (cmd *UpCmd) registerSSHFlags(upCmd *cobra.Command) {
 func (cmd *UpCmd) registerDotfilesFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.DotfilesSource, "dotfiles", "", "The path or url to the dotfiles to use in the container")
+	upCmd.Flags().StringVar(&cmd.DotfilesSource, "dotfiles-repository", "", "Alias for --dotfiles")
+	_ = upCmd.Flags().MarkHidden("dotfiles-repository")
 	upCmd.Flags().
 		StringVar(&cmd.DotfilesScript, "dotfiles-script", "",
 			"The path in dotfiles directory to use to install the dotfiles, if empty will try to guess")
@@ -216,6 +218,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.ExtraDevContainerPath, "extra-devcontainer-path", "",
 			"The path to an additional devcontainer.json file to override original devcontainer.json")
+	upCmd.Flags().
+		StringVar(&cmd.ExtraDevContainerPath, "override-config", "", "Alias for --extra-devcontainer-path")
+	_ = upCmd.Flags().MarkHidden("override-config")
 	upCmd.Flags().
 		StringVar(&cmd.FallbackImage, "fallback-image", "",
 			"The fallback image to use if no devcontainer configuration has been detected")
@@ -289,6 +294,8 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 			"If true will only run the prebuild lifecycle (onCreateCommand + updateContentCommand) then stop")
 	upCmd.Flags().
 		BoolVar(&cmd.Recreate, "recreate", false, "If true will remove any existing containers and recreate them")
+	upCmd.Flags().BoolVar(&cmd.Recreate, "remove-existing-container", false, "Alias for --recreate")
+	_ = upCmd.Flags().MarkHidden("remove-existing-container")
 	upCmd.Flags().
 		BoolVar(&cmd.Reset, "reset", false,
 			"If true will remove any existing containers including sources, and recreate them")
