@@ -11,6 +11,12 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	flagTemplateID      = "--template-id"
+	flagWorkspaceFolder = "--workspace-folder"
+	subCmdApply         = "apply"
+)
+
 var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 	var initialDir string
 
@@ -20,7 +26,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 		framework.ExpectNoError(err)
 	})
 
-	ginkgo.Describe("apply", func() {
+	ginkgo.Describe(subCmdApply, func() {
 		ginkgo.It("applies a template from OCI registry", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := os.MkdirTemp("", "devsy-e2e-templates-apply-*")
@@ -28,9 +34,9 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", "apply",
-				"--template-id", "ghcr.io/devcontainers/templates/go:latest",
-				"--workspace-folder", tempDir,
+				"templates", subCmdApply,
+				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
+				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
 
@@ -54,9 +60,9 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", "apply",
-				"--template-id", "ghcr.io/devcontainers/templates/go:latest",
-				"--workspace-folder", tempDir,
+				"templates", subCmdApply,
+				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
+				flagWorkspaceFolder, tempDir,
 				"--features", "ghcr.io/devcontainers/features/node:1",
 			})
 			framework.ExpectNoError(err)
@@ -83,9 +89,9 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"templates", "apply",
-				"--template-id", "ghcr.io/nonexistent/template-that-does-not-exist:v999",
-				"--workspace-folder", tempDir,
+				"templates", subCmdApply,
+				flagTemplateID, "ghcr.io/nonexistent/template-that-does-not-exist:v999",
+				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -97,7 +103,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				"templates", "metadata",
-				"--template-id", "ghcr.io/devcontainers/templates/go:latest",
+				flagTemplateID, "ghcr.io/devcontainers/templates/go:latest",
 			})
 			framework.ExpectNoError(err)
 
@@ -114,7 +120,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
 				"templates", "metadata",
-				"--template-id", "ghcr.io/nonexistent/template-that-does-not-exist:v999",
+				flagTemplateID, "ghcr.io/nonexistent/template-that-does-not-exist:v999",
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
