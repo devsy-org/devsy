@@ -353,6 +353,10 @@ func (p *featureProcessor) processFeature(
 		return nil, fmt.Errorf("parse feature: %w", err)
 	}
 
+	if annotations := LoadOCIAnnotations(featureFolder); annotations != nil {
+		featureConfig.Annotations = annotations
+	}
+
 	if err := ValidateFeatureOptions(featureID, featureConfig, featureOptions); err != nil {
 		return nil, err
 	}

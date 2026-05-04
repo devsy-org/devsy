@@ -73,6 +73,9 @@ type FeatureConfig struct {
 	// Lifecycle hooks
 	DevContainerActions `json:",inline"`
 
+	// OCI manifest annotations (populated only for OCI-sourced features).
+	Annotations map[string]string `json:"-"`
+
 	// Origin is the path where the feature was loaded from
 	Origin string `json:"-"`
 }

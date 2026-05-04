@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -211,8 +212,14 @@ func processOCIFeature(id string) (string, error) {
 		return "", err
 	}
 
-	if err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder); err != nil {
+	annotations, err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder)
+	if err != nil {
 		return "", err
+	}
+
+	if len(annotations) > 0 {
+		logOCIAnnotations(id, annotations)
+		saveAnnotations(featureFolder, annotations)
 	}
 
 	log.Infof(
@@ -223,10 +230,64 @@ func processOCIFeature(id string) (string, error) {
 	return featureExtractedFolder, nil
 }
 
-func pullAndExtractOCIFeature(ref name.Reference, id, featureFolder, destDir string) error {
+const annotationsFileName = "annotations.json"
+
+func logOCIAnnotations(id string, annotations map[string]string) {
+	title := annotations["org.opencontainers.image.title"]
+	description := annotations["org.opencontainers.image.description"]
+	version := annotations["org.opencontainers.image.version"]
+
+	if title != "" || description != "" {
+		log.Infof(
+			"Feature %q: title=%q, description=%q, version=%q",
+			id, title, description, version,
+		)
+	}
+
+	for key, value := range annotations {
+		log.Debugf("OCI annotation: featureId=%s, %s=%s", id, key, value)
+	}
+}
+
+func saveAnnotations(featureFolder string, annotations map[string]string) {
+	data, err := json.Marshal(annotations)
+	if err != nil {
+		log.Debugf("failed to marshal annotations: %v", err)
+		return
+	}
+	filePath := filepath.Join(featureFolder, annotationsFileName)
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
+		log.Debugf("failed to write annotations sidecar: %v", err)
+	}
+}
+
+func LoadOCIAnnotations(featureFolder string) map[string]string {
+	parentDir := filepath.Dir(featureFolder)
+	filePath := filepath.Join(parentDir, annotationsFileName)
+	data, err := os.ReadFile(filepath.Clean(filePath))
+	if err != nil {
+		return nil
+	}
+	var annotations map[string]string
+	if err := json.Unmarshal(data, &annotations); err != nil {
+		log.Debugf("failed to parse annotations sidecar: %v", err)
+		return nil
+	}
+	return annotations
+}
+
+func pullAndExtractOCIFeature(
+	ref name.Reference,
+	id, featureFolder, destDir string,
+) (map[string]string, error) {
 	img, err := pullOCIImage(ref)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	manifest, err := img.Manifest()
+	if err != nil {
+		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
 	destFile := filepath.Join(featureFolder, "feature.tgz")
@@ -234,12 +295,12 @@ func pullAndExtractOCIFeature(ref name.Reference, id, featureFolder, destDir str
 	err = downloadLayer(img, id, destFile)
 	if err != nil {
 		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
-		return fmt.Errorf("download layer from %s: %w", registry, err)
+		return nil, fmt.Errorf("download layer from %s: %w", registry, err)
 	}
 
 	file, err := os.Open(destFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -248,10 +309,10 @@ func pullAndExtractOCIFeature(ref name.Reference, id, featureFolder, destDir str
 	if err != nil {
 		log.Debugf("failed to extract feature: error=%v, destination=%s", err, destDir)
 		_ = os.RemoveAll(destDir)
-		return err
+		return nil, err
 	}
 
-	return nil
+	return manifest.Annotations, nil
 }
 
 func validateImageManifest(img v1.Image) (*v1.Manifest, error) {
