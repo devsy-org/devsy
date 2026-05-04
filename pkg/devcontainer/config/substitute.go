@@ -113,8 +113,6 @@ func replaceWithContext(
 			return substitutionCtx.DevContainerID
 		}
 		return match
-	case "env":
-		fallthrough
 	case "localEnv":
 		return lookupValue(isWindows, substitutionCtx.Env, args, match)
 	case "localWorkspaceFolder":

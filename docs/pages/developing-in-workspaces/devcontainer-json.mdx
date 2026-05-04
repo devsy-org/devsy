@@ -92,7 +92,7 @@ field of the `devcontainer.json` file as follows:
   "customizations": {
     "devsy": {
       "featureDownloadHTTPHeaders": {
-        "FOO_HEADER": "${env:FOO_ENV_VAR}"
+        "FOO_HEADER": "${localEnv:FOO_ENV_VAR}"
         "BAR_HEADER": "bar"
       }
     }
