@@ -60,6 +60,10 @@ install order based on dependency declarations and install ordering.`,
 }
 
 func (cmd *ResolveDepsCmd) Run() error {
+	if err := validateOutputFormat(cmd.Output); err != nil {
+		return err
+	}
+
 	devContainerConfig, err := cmd.loadConfig()
 	if err != nil {
 		return fmt.Errorf("load devcontainer config: %w", err)
@@ -109,6 +113,9 @@ func buildResolvedList(sorted []*config.FeatureSet) []resolvedFeature {
 				rf.Dependencies = append(rf.Dependencies, dep)
 			}
 			rf.InstallsAfter = fs.Config.InstallsAfter
+		}
+		if opts, ok := fs.Options.(map[string]any); ok {
+			rf.Options = opts
 		}
 		resolved = append(resolved, rf)
 	}

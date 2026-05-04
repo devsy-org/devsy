@@ -72,6 +72,10 @@ to display metadata.`,
 }
 
 func (cmd *InfoCmd) Run(featureID string) error {
+	if err := validateOutputFormat(cmd.Output); err != nil {
+		return err
+	}
+
 	ref, err := name.ParseReference(featureID)
 	if err != nil {
 		return fmt.Errorf("invalid feature reference %q: %w", featureID, err)

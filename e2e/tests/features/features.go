@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -30,6 +31,178 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 		var err error
 		initialDir, err = os.Getwd()
 		framework.ExpectNoError(err)
+	})
+
+	ginkgo.Describe("features resolve-dependencies", func() {
+		ginkgo.It("outputs install order for features", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			workspaceDir, err := os.MkdirTemp("", "e2e-resolve-deps-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(workspaceDir) })
+
+			devcontainerDir := workspaceDir + "/.devcontainer"
+			framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
+
+			devcontainerJSON := `{
+				"image": "ubuntu:22.04",
+				"features": {
+					"./local-features/go": {
+						"version": "1.21"
+					},
+					"./local-features/node": {}
+				}
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				devcontainerDir+"/devcontainer.json",
+				[]byte(devcontainerJSON),
+				0o600,
+			))
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "resolve-dependencies",
+				"--workspace-folder", workspaceDir,
+			})
+			framework.ExpectNoError(err)
+
+			gomega.Expect(stdout).To(gomega.ContainSubstring("Feature install order"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("outputs JSON when --output=json is specified", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			workspaceDir, err := os.MkdirTemp("", "e2e-resolve-deps-json-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(workspaceDir) })
+
+			devcontainerDir := workspaceDir + "/.devcontainer"
+			framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
+
+			devcontainerJSON := `{
+				"image": "ubuntu:22.04",
+				"features": {
+					"./local-features/go": {}
+				}
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				devcontainerDir+"/devcontainer.json",
+				[]byte(devcontainerJSON),
+				0o600,
+			))
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "resolve-dependencies",
+				"--workspace-folder", workspaceDir,
+				"--output", "json",
+			})
+			framework.ExpectNoError(err)
+
+			var result []map[string]any
+			gomega.Expect(json.Unmarshal([]byte(stdout), &result)).To(gomega.Succeed())
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("rejects invalid output format", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			workspaceDir, err := os.MkdirTemp("", "e2e-resolve-deps-invalid-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(workspaceDir) })
+
+			_, stderr, err := f.ExecCommandCapture(ctx, []string{
+				"features", "resolve-dependencies",
+				"--workspace-folder", workspaceDir,
+				"--output", "yaml",
+			})
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(stderr).To(gomega.ContainSubstring("invalid output format"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+	})
+
+	ginkgo.Describe("features generate-docs", func() {
+		ginkgo.It("generates markdown files from feature metadata", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			projectDir, err := os.MkdirTemp("", "e2e-generate-docs-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
+
+			srcDir := projectDir + "/src/my-feature"
+			framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
+
+			featureJSON := `{
+				"id": "my-feature",
+				"version": "1.0.0",
+				"name": "My Feature",
+				"description": "A test feature for E2E"
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				srcDir+"/devcontainer-feature.json",
+				[]byte(featureJSON),
+				0o600,
+			))
+
+			outputDir, err := os.MkdirTemp("", "e2e-generate-docs-output-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "generate-docs",
+				"--project-folder", projectDir,
+				"--output-folder", outputDir,
+			})
+			framework.ExpectNoError(err)
+
+			gomega.Expect(stdout).To(gomega.ContainSubstring("Generated:"))
+
+			docContent, err := os.ReadFile(
+				filepath.Clean(filepath.Join(outputDir, "my-feature.md")),
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(string(docContent)).To(gomega.ContainSubstring("# My Feature"))
+			gomega.Expect(string(docContent)).To(gomega.ContainSubstring("A test feature for E2E"))
+
+			_, err = os.Stat(filepath.Join(outputDir, "README.md"))
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It("generates docs with namespace linking", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			projectDir, err := os.MkdirTemp("", "e2e-generate-docs-ns-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
+
+			srcDir := projectDir + "/src/go"
+			framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
+
+			featureJSON := `{
+				"id": "go",
+				"version": "1.0.0",
+				"name": "Go",
+				"description": "Install Go toolchain"
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				srcDir+"/devcontainer-feature.json",
+				[]byte(featureJSON),
+				0o600,
+			))
+
+			outputDir, err := os.MkdirTemp("", "e2e-generate-docs-ns-output-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
+
+			_, _, err = f.ExecCommandCapture(ctx, []string{
+				"features", "generate-docs",
+				"--project-folder", projectDir,
+				"--output-folder", outputDir,
+				"--namespace", "ghcr.io/test/features",
+			})
+			framework.ExpectNoError(err)
+
+			docContent, err := os.ReadFile(filepath.Clean(filepath.Join(outputDir, "go.md")))
+			framework.ExpectNoError(err)
+			gomega.Expect(string(docContent)).To(gomega.ContainSubstring("ghcr.io/test/features"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	})
 
 	ginkgo.Describe("features info", func() {
