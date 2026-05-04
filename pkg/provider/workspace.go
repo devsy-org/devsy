@@ -242,7 +242,7 @@ type CLIOptions struct {
 	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
 	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
 	ContainerDataFolder         string            `json:"containerDataFolder,omitempty"`
-	MountWorkspaceGitRoot       bool              `json:"mountWorkspaceGitRoot,omitempty"`
+	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`
 	TerminalColumns             int               `json:"terminalColumns,omitempty"`
 	TerminalRows                int               `json:"terminalRows,omitempty"`
 	SkipPostCreate              bool              `json:"skipPostCreate,omitempty"`

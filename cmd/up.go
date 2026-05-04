@@ -276,8 +276,10 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.ContainerDataFolder, "container-data-folder", "",
 			"Custom path for container-specific data")
+	defaultMountGitRoot := true
+	cmd.MountWorkspaceGitRoot = &defaultMountGitRoot
 	upCmd.Flags().
-		BoolVar(&cmd.MountWorkspaceGitRoot, "mount-workspace-git-root", true,
+		BoolVar(cmd.MountWorkspaceGitRoot, "mount-workspace-git-root", true,
 			"Mount the workspace git root as the workspace folder")
 	upCmd.Flags().
 		IntVar(&cmd.TerminalColumns, "terminal-columns", 0,
