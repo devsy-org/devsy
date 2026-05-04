@@ -74,7 +74,7 @@ func TestUpCmd_TerminalRowsFlagParsesValue(t *testing.T) {
 
 func TestUpCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--skip-post-create"})
+	err := upCmd.ParseFlags([]string{flagSkipPostCreate})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("skip-post-create")
 	require.NoError(t, err)

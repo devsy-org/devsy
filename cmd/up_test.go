@@ -137,7 +137,7 @@ func TestUpCmd_SkipPostAttachFlag(t *testing.T) {
 func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{
-		"--skip-post-create",
+		flagSkipPostCreate,
 		"--skip-post-start",
 		"--skip-post-attach",
 	})

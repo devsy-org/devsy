@@ -154,8 +154,8 @@ func TestRunUserCommandsCmd_SkipUpdateContentFlag(t *testing.T) {
 func TestRunUserCommandsCmd_SkipFlagsParseValues(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
 	err := cmd.ParseFlags([]string{
-		"--workspace-folder", "/tmp",
-		"--skip-post-create",
+		flagWorkspaceFolder, testTmpDir,
+		flagSkipPostCreate,
 		"--skip-post-start",
 		"--skip-post-attach",
 		"--skip-on-create",

@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	flagSkipPostCreate  = "--skip-post-create"
+	flagWorkspaceFolder = "--workspace-folder"
+	testTmpDir          = "/tmp"
+)
+
 func TestValidateRemoteEnv_Valid(t *testing.T) {
 	cmd := &ExecCmd{
 		GlobalFlags: &flags.GlobalFlags{},
@@ -54,7 +60,7 @@ func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
 
 func TestNewExecCmd_RequiresArgs(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	execCmd.SetArgs([]string{"--workspace-folder", "/tmp/test"})
+	execCmd.SetArgs([]string{flagWorkspaceFolder, testTmpDir + "/test"})
 	err := execCmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires at least 1 arg")
@@ -106,7 +112,7 @@ func TestExecCmd_ContainerDataFolderFlag(t *testing.T) {
 func TestExecCmd_ContainerDataFolderFlagParsesValue(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	err := execCmd.ParseFlags([]string{
-		"--workspace-folder", "/tmp",
+		flagWorkspaceFolder, testTmpDir,
 		"--container-data-folder", "/custom/data",
 	})
 	require.NoError(t, err)
@@ -125,8 +131,8 @@ func TestExecCmd_SkipPostCreateFlag(t *testing.T) {
 func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	err := execCmd.ParseFlags([]string{
-		"--workspace-folder", "/tmp",
-		"--skip-post-create",
+		flagWorkspaceFolder, testTmpDir,
+		flagSkipPostCreate,
 	})
 	require.NoError(t, err)
 
