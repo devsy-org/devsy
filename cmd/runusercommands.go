@@ -90,7 +90,7 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 
 	user := devcconfig.GetRemoteUser(result)
 	log.Infof("lifecycle commands completed for container %s", params.containerID)
-	_ = devcconfig.WriteResultJSON(os.Stderr, params.containerID, user, params.workdir)
+	_ = devcconfig.WriteResultJSON(os.Stderr, params.containerID, user, params.workdir, nil)
 	return nil
 }
 

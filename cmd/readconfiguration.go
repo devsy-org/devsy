@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +20,7 @@ type ReadConfigurationCmd struct {
 
 	WorkspaceFolder              string
 	Config                       string
+	ContainerID                  string
 	IncludeFeaturesConfiguration bool
 	IncludeMergedConfiguration   bool
 }
@@ -37,7 +41,13 @@ func NewReadConfigurationCmd(f *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Path to the workspace folder",
 		)
-	_ = readConfigCmd.MarkFlagRequired("workspace-folder")
+	readConfigCmd.Flags().
+		StringVar(
+			&cmd.ContainerID,
+			"container-id",
+			"",
+			"Read configuration from a running container with the given ID",
+		)
 	readConfigCmd.Flags().
 		StringVar(
 			&cmd.Config,
@@ -79,7 +89,7 @@ func (cmd *ReadConfigurationCmd) Run(
 	_ *cobra.Command,
 	_ []string,
 ) error {
-	parsedConfig, workspaceFolder, err := cmd.resolveConfig()
+	parsedConfig, workspaceFolder, err := cmd.resolve()
 	if err != nil {
 		return err
 	}
@@ -112,6 +122,22 @@ func (cmd *ReadConfigurationCmd) Run(
 	_, _ = os.Stdout.WriteString("\n")
 
 	return nil
+}
+
+func (cmd *ReadConfigurationCmd) resolve() (
+	*config2.DevContainerConfig,
+	string,
+	error,
+) {
+	if cmd.ContainerID == "" && cmd.WorkspaceFolder == "" {
+		return nil, "", fmt.Errorf(
+			"either --workspace-folder or --container-id must be provided",
+		)
+	}
+	if cmd.ContainerID != "" {
+		return cmd.resolveConfigFromContainer()
+	}
+	return cmd.resolveConfig()
 }
 
 func (cmd *ReadConfigurationCmd) resolveConfig() (
@@ -156,6 +182,49 @@ func (cmd *ReadConfigurationCmd) resolveConfig() (
 			"no devcontainer configuration found in %s",
 			workspaceFolder,
 		)
+	}
+
+	return parsedConfig, workspaceFolder, nil
+}
+
+func (cmd *ReadConfigurationCmd) resolveConfigFromContainer() (
+	*config2.DevContainerConfig,
+	string,
+	error,
+) {
+	ctx := context.TODO()
+	helper := &docker.DockerHelper{DockerCommand: "docker"}
+
+	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
+	if err != nil {
+		return nil, "", fmt.Errorf("inspect container %s: %w", cmd.ContainerID, err)
+	}
+	if len(details) == 0 {
+		return nil, "", fmt.Errorf("container %s not found", cmd.ContainerID)
+	}
+
+	containerDetails := &details[0]
+	subCtx := &config2.SubstitutionContext{}
+
+	imageMetadata, err := metadata.GetImageMetadataFromContainer(
+		containerDetails,
+		subCtx,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("get image metadata from container: %w", err)
+	}
+
+	parsedConfig := &config2.DevContainerConfig{}
+	if len(imageMetadata.Config) > 0 {
+		last := imageMetadata.Config[len(imageMetadata.Config)-1]
+		parsedConfig.DevContainerConfigBase = last.DevContainerConfigBase
+		parsedConfig.DevContainerActions = last.DevContainerActions
+		parsedConfig.NonComposeBase = last.NonComposeBase
+	}
+
+	workspaceFolder := containerDetails.Config.WorkingDir
+	if workspaceFolder == "" {
+		workspaceFolder = "/"
 	}
 
 	return parsedConfig, workspaceFolder, nil
