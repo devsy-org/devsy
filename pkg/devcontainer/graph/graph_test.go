@@ -641,3 +641,86 @@ func (suite *GraphTestSuite) TestTopologicalSortAdvanced() {
 		})
 	}
 }
+
+func (suite *GraphTestSuite) TestSortWithPriorityRoundBased() {
+	testCases := []struct {
+		name     string
+		setup    func()
+		priority map[string]int
+		expected []string
+	}{
+		{
+			name:     "round-based emits all zero-in-degree before advancing",
+			setup:    suite.buildParallelChains,
+			priority: map[string]int{"B": 1, "A": 2},
+			expected: []string{"B", "A", "C", "D"},
+		},
+		{
+			name:     "diamond graph groups siblings in same round",
+			setup:    suite.buildDiamond,
+			priority: map[string]int{"C": 1, "B": 2},
+			expected: []string{"A", "C", "B", "D"},
+		},
+		{
+			name:     "nodes without priority sort alphabetically after prioritized nodes",
+			setup:    suite.buildIndependentXYZ,
+			priority: map[string]int{"Z": 1},
+			expected: []string{"Z", "X", "Y"},
+		},
+		{
+			name:     "circular dependency returns error",
+			setup:    suite.buildCycle,
+			priority: map[string]int{"A": 1},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			suite.SetupTest()
+			tc.setup()
+
+			result, err := suite.graph.sortNodeIDsWithPriority(tc.priority)
+			if tc.expected == nil {
+				suite.Error(err)
+				suite.Contains(err.Error(), "circular dependency")
+			} else {
+				suite.NoError(err)
+				suite.Equal(tc.expected, result)
+			}
+		})
+	}
+}
+
+func (suite *GraphTestSuite) buildParallelChains() {
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddNode("D", "dataD"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "C"))
+	suite.Require().NoError(suite.graph.AddEdge("B", "D"))
+}
+
+func (suite *GraphTestSuite) buildDiamond() {
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddNode("D", "dataD"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "B"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "C"))
+	suite.Require().NoError(suite.graph.AddEdge("B", "D"))
+	suite.Require().NoError(suite.graph.AddEdge("C", "D"))
+}
+
+func (suite *GraphTestSuite) buildIndependentXYZ() {
+	suite.Require().NoError(suite.graph.AddNode("X", "dataX"))
+	suite.Require().NoError(suite.graph.AddNode("Y", "dataY"))
+	suite.Require().NoError(suite.graph.AddNode("Z", "dataZ"))
+}
+
+func (suite *GraphTestSuite) buildCycle() {
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "B"))
+	suite.Require().NoError(suite.graph.AddEdge("B", "A"))
+}
