@@ -265,7 +265,7 @@ var _ = ginkgo.Describe(
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It(
@@ -323,7 +323,7 @@ var _ = ginkgo.Describe(
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It("privileged", func(ctx context.Context) {

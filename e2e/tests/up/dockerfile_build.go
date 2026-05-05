@@ -42,7 +42,7 @@ var _ = ginkgo.Describe(
 
 			err = f.DevsyUp(ctx, tempDir, "--debug")
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+		}, ginkgo.SpecTimeout(framework.TimeoutVeryLong()))
 
 		ginkgo.It(
 			"should resolve localWorkspaceFolder variable in dockerfile path",

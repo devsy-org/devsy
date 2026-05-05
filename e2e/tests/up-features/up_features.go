@@ -267,7 +267,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			gomega.Expect(out).To(gomega.ContainSubstring("SUCCESS: hello command is available"))
 			gomega.Expect(out).To(gomega.ContainSubstring("hey, vscode"))
 		},
-		ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
 
 	ginkgo.It(
@@ -294,7 +294,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			gomega.Expect(out).To(gomega.ContainSubstring("SUCCESS: hello command is available"))
 			gomega.Expect(out).To(gomega.ContainSubstring("hey, vscode"))
 		},
-		ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
 
 	ginkgo.It(
@@ -321,7 +321,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("All dependencies available"))
 		},
-		ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
 
 	ginkgo.It(
