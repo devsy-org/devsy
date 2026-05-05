@@ -11,9 +11,9 @@ import (
 )
 
 var ociBackoff = wait.Backoff{
-	Duration: 1 * time.Second,
+	Duration: 2 * time.Second,
 	Factor:   2.0,
-	Steps:    3,
+	Steps:    4,
 }
 
 func isTransientError(err error) bool {
@@ -23,7 +23,9 @@ func isTransientError(err error) bool {
 
 	var terr *transport.Error
 	if errors.As(err, &terr) {
-		return terr.StatusCode >= http.StatusInternalServerError
+		return terr.StatusCode >= http.StatusInternalServerError ||
+			terr.StatusCode == http.StatusTooManyRequests ||
+			terr.StatusCode == http.StatusRequestTimeout
 	}
 
 	return true

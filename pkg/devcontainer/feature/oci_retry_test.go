@@ -32,6 +32,34 @@ func (s *OCIRetryTestSuite) TestRetrySucceedsOnThirdAttempt() {
 	s.Equal(3, attempts)
 }
 
+func (s *OCIRetryTestSuite) TestRetryOn429() {
+	attempts := 0
+	err := retryOCIPull(func() error {
+		attempts++
+		if attempts < 3 {
+			return &transport.Error{StatusCode: http.StatusTooManyRequests}
+		}
+		return nil
+	})
+
+	s.NoError(err)
+	s.Equal(3, attempts)
+}
+
+func (s *OCIRetryTestSuite) TestRetryOn408() {
+	attempts := 0
+	err := retryOCIPull(func() error {
+		attempts++
+		if attempts < 2 {
+			return &transport.Error{StatusCode: http.StatusRequestTimeout}
+		}
+		return nil
+	})
+
+	s.NoError(err)
+	s.Equal(2, attempts)
+}
+
 func (s *OCIRetryTestSuite) TestRetryGivesUpAfterMaxAttempts() {
 	attempts := 0
 	err := retryOCIPull(func() error {
@@ -109,8 +137,8 @@ func (s *OCIRetryTestSuite) TestExponentialBackoff() {
 	firstGap := timestamps[1].Sub(timestamps[0])
 	secondGap := timestamps[2].Sub(timestamps[1])
 
-	s.GreaterOrEqual(firstGap.Milliseconds(), int64(900))
-	s.GreaterOrEqual(secondGap.Milliseconds(), int64(1800))
+	s.GreaterOrEqual(firstGap.Milliseconds(), int64(1800))
+	s.GreaterOrEqual(secondGap.Milliseconds(), int64(3600))
 }
 
 func (s *OCIRetryTestSuite) TestIsTransientError_Nil() {
