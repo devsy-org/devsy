@@ -20,6 +20,15 @@ import (
 
 const osWindows = "windows"
 
+func skipIfSSHToolsMissing() {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		ginkgo.Skip("skipping: ssh-keygen or ssh-agent not available")
+	}
+	if _, err := exec.LookPath("ssh-agent"); err != nil {
+		ginkgo.Skip("skipping: ssh-keygen or ssh-agent not available")
+	}
+}
+
 var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Ordered, func() {
 	var initialDir string
 
@@ -69,6 +78,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
 			}
+			skipIfSSHToolsMissing()
 
 			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
 			framework.ExpectNoError(err)
@@ -118,6 +128,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
 			}
+			skipIfSSHToolsMissing()
 
 			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
 			framework.ExpectNoError(err)
@@ -281,6 +292,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
 			}
+			skipIfSSHToolsMissing()
 
 			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
 			framework.ExpectNoError(err)
@@ -328,6 +340,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("skipping on windows")
 			}
+			skipIfSSHToolsMissing()
 
 			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
 			framework.ExpectNoError(err)
