@@ -14,7 +14,11 @@ func writeGitConfig(t *testing.T, content string) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
-	err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(content), 0o600)
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	t.Setenv("GIT_DIR", filepath.Join(home, ".git"))
+	err := os.MkdirAll(filepath.Join(home, ".git"), 0o750)
+	assert.NoError(t, err)
+	err = os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(content), 0o600)
 	assert.NoError(t, err)
 }
 
