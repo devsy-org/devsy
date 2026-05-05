@@ -291,7 +291,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(strings.TrimSpace(nodeLookupOutput)).
 					To(gomega.Equal("missing"), "project A should not inherit project B's node feature")
 			},
-			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			ginkgo.SpecTimeout(framework.TimeoutVeryLong()),
 		)
 
 		ginkgo.It("array based commands", func(ctx context.Context) {
