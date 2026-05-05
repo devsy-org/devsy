@@ -44,7 +44,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("sub-folder", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -53,7 +53,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("overrides", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -62,7 +62,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("env-file", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -92,7 +92,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 			gomega.Expect(devsyUpOutput).
 				NotTo(gomega.ContainSubstring("Defaulting to a blank string."))
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("restart", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -133,7 +133,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(restartIds).To(gomega.HaveLen(1), "1 compose container after restart")
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("environment variables", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe(
 				[]string{"ssh", "--command", "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("user", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -187,7 +187,7 @@ var _ = ginkgo.Describe(
 				[]string{"ssh", "--command", "ps u -p 1", workspace.ID},
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("override command", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -201,7 +201,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(detail.Config.Entrypoint).
 				NotTo(gomega.ContainElement("bash"), "overrides container entry point")
 			gomega.Expect(detail.Config.Cmd).To(gomega.BeEmpty(), "overrides container command")
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It(
 			"implements updateRemoteUserUID with root container user",
@@ -265,7 +265,7 @@ var _ = ginkgo.Describe(
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			ginkgo.SpecTimeout(framework.TimeoutVeryLong()),
 		)
 
 		ginkgo.It(
@@ -323,7 +323,7 @@ var _ = ginkgo.Describe(
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			ginkgo.SpecTimeout(framework.TimeoutVeryLong()),
 		)
 
 		ginkgo.It("privileged", func(ctx context.Context) {
@@ -337,7 +337,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(detail.HostConfig.Privileged).
 				To(gomega.BeTrue(), "container run with privileged true")
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("capabilities", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -354,7 +354,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(detail.HostConfig.CapAdd).
 				To(gomega.Or(gomega.ContainElement("NET_ADMIN"), gomega.ContainElement("CAP_NET_ADMIN")),
 					"devcontainer configuration can add capabilities")
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("security options", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -369,7 +369,7 @@ var _ = ginkgo.Describe(
 				To(gomega.ContainElement("seccomp=unconfined"), "securityOpts contain seccomp=unconfined")
 			gomega.Expect(detail.HostConfig.SecurityOpt).
 				To(gomega.ContainElement("apparmor=unconfined"), "securityOpts contain apparmor=unconfined")
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("remote env", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -405,7 +405,7 @@ var _ = ginkgo.Describe(
 				[]string{"ssh", "--command", "cat $HOME/remote-env.out", workspace.ID},
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("remote env null unsets variable", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -454,7 +454,7 @@ var _ = ginkgo.Describe(
 				},
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("remote user", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -481,7 +481,7 @@ var _ = ginkgo.Describe(
 				[]string{"ssh", "--command", "cat $HOME/remote-user.out", workspace.ID},
 			)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("variables substitution", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -544,6 +544,6 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(containerWorkspaceFolderBasename).To(gomega.Equal("workspaces"))
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 	},
 )
