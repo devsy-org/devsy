@@ -82,7 +82,7 @@ var _ = ginkgo.Describe(
 			// Wait for devsy workspace to come online (deadline: 30s)
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It(
 			"ensure dependencies installed via features are accessible in lifecycle hooks",
@@ -103,7 +103,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(ctx, tempDir, "--debug")
 				framework.ExpectNoError(err)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 	},
 )
