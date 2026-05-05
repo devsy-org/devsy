@@ -668,6 +668,12 @@ func (suite *GraphTestSuite) TestSortWithPriorityRoundBased() {
 			expected: []string{"Z", "X", "Y"},
 		},
 		{
+			name:     "mid-round promotion prevented by round boundary",
+			setup:    suite.buildMidRoundPromotion,
+			priority: map[string]int{"A": 1, "C": 2, "B": 3},
+			expected: []string{"A", "B", "C"},
+		},
+		{
 			name:     "circular dependency returns error",
 			setup:    suite.buildCycle,
 			priority: map[string]int{"A": 1},
@@ -716,6 +722,13 @@ func (suite *GraphTestSuite) buildIndependentXYZ() {
 	suite.Require().NoError(suite.graph.AddNode("X", "dataX"))
 	suite.Require().NoError(suite.graph.AddNode("Y", "dataY"))
 	suite.Require().NoError(suite.graph.AddNode("Z", "dataZ"))
+}
+
+func (suite *GraphTestSuite) buildMidRoundPromotion() {
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddEdge("A", "C"))
 }
 
 func (suite *GraphTestSuite) buildCycle() {
