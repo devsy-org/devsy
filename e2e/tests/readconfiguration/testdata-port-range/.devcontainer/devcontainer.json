@@ -1,5 +1,5 @@
 {
   "name": "Port Range Test",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "forwardPorts": [8080, "3000-3005"]
 }
