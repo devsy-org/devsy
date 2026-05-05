@@ -18,7 +18,6 @@ const (
 	UpdateRemoteUserUIDOff = "off"
 )
 
-//nolint:cyclop
 func (cmd *UpCmd) validate() error {
 	if err := validatePodmanFlags(cmd); err != nil {
 		return err
@@ -31,35 +30,58 @@ func (cmd *UpCmd) validate() error {
 			return err
 		}
 	}
-	if cmd.ExtraDevContainerPath != "" {
-		absPath, err := filepath.Abs(cmd.ExtraDevContainerPath)
-		if err != nil {
-			return err
-		}
-		cmd.ExtraDevContainerPath = absPath
+	if err := cmd.resolveExtraDevContainerPath(); err != nil {
+		return err
 	}
-	if cmd.WorkspaceMountConsistency != "" {
-		switch cmd.WorkspaceMountConsistency {
-		case MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated:
-		default:
-			return fmt.Errorf(
-				"invalid --workspace-mount-consistency value %q: must be one of %s, %s, %s",
-				cmd.WorkspaceMountConsistency,
-				MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated,
-			)
-		}
+	if err := validateWorkspaceMountConsistency(cmd.WorkspaceMountConsistency); err != nil {
+		return err
 	}
-	if cmd.UpdateRemoteUserUIDDefault != "" {
-		switch cmd.UpdateRemoteUserUIDDefault {
-		case UpdateRemoteUserUIDOn, UpdateRemoteUserUIDOff:
-		default:
-			return fmt.Errorf(
-				"invalid --update-remote-user-uid-default value %q: must be \"on\" or \"off\"",
-				cmd.UpdateRemoteUserUIDDefault,
-			)
-		}
+
+	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+func (cmd *UpCmd) resolveExtraDevContainerPath() error {
+	if cmd.ExtraDevContainerPath == "" {
+		return nil
 	}
+	absPath, err := filepath.Abs(cmd.ExtraDevContainerPath)
+	if err != nil {
+		return err
+	}
+	cmd.ExtraDevContainerPath = absPath
+
 	return nil
+}
+
+func validateWorkspaceMountConsistency(value string) error {
+	if value == "" {
+		return nil
+	}
+	switch value {
+	case MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid --workspace-mount-consistency value %q: must be one of %s, %s, %s",
+			value,
+			MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated,
+		)
+	}
+}
+
+func validateRemoteUserUID(value string) error {
+	if value == "" {
+		return nil
+	}
+	switch value {
+	case UpdateRemoteUserUIDOn, UpdateRemoteUserUIDOff:
+		return nil
+	default:
+		return fmt.Errorf(
+			"invalid --update-remote-user-uid-default value %q: must be \"on\" or \"off\"",
+			value,
+		)
+	}
 }
 
 func validatePodmanFlags(cmd *UpCmd) error {

@@ -17,14 +17,11 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
-func (cmd *UpCmd) devsyUp( //nolint:cyclop
+func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) (*config2.Result, error) {
-	var err error
-
-	// only lock if we are not in platform mode
 	if !cmd.Platform.Enabled {
 		err := client.Lock(ctx)
 		if err != nil {
@@ -33,30 +30,11 @@ func (cmd *UpCmd) devsyUp( //nolint:cyclop
 		defer client.Unlock()
 	}
 
-	// get result
-	var result *config2.Result
-
-	switch client := client.(type) {
-	case client2.WorkspaceClient:
-		result, err = cmd.devsyUpMachine(ctx, devsyConfig, client)
-		if err != nil {
-			return nil, err
-		}
-	case client2.ProxyClient:
-		result, err = cmd.devsyUpProxy(ctx, client)
-		if err != nil {
-			return nil, err
-		}
-	case client2.DaemonClient:
-		result, err = cmd.devsyUpDaemon(ctx, client)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unsupported client type: %T", client)
+	result, err := cmd.dispatchClient(ctx, devsyConfig, client)
+	if err != nil {
+		return nil, err
 	}
 
-	// save result to file
 	err = provider2.SaveWorkspaceResult(client.WorkspaceConfig(), result)
 	if err != nil {
 		return nil, fmt.Errorf("save workspace result: %w", err)
@@ -65,11 +43,27 @@ func (cmd *UpCmd) devsyUp( //nolint:cyclop
 	return result, nil
 }
 
-func (cmd *UpCmd) devsyUpProxy( //nolint:funlen
+func (cmd *UpCmd) dispatchClient(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) (*config2.Result, error) {
+	switch client := client.(type) {
+	case client2.WorkspaceClient:
+		return cmd.devsyUpMachine(ctx, devsyConfig, client)
+	case client2.ProxyClient:
+		return cmd.devsyUpProxy(ctx, client)
+	case client2.DaemonClient:
+		return cmd.devsyUpDaemon(ctx, client)
+	default:
+		return nil, fmt.Errorf("unsupported client type: %T", client)
+	}
+}
+
+func (cmd *UpCmd) devsyUpProxy(
 	ctx context.Context,
 	client client2.ProxyClient,
 ) (*config2.Result, error) {
-	// create pipes
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -81,48 +75,16 @@ func (cmd *UpCmd) devsyUpProxy( //nolint:funlen
 	defer func() { _ = stdoutWriter.Close() }()
 	defer func() { _ = stdinWriter.Close() }()
 
-	// start machine on stdio
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// create up command
 	errChan := make(chan error, 1)
 	go func() {
 		defer log.Debug("done executing up command")
 		defer cancel()
-
-		// build devsy up options
-		workspace := client.WorkspaceConfig()
-		baseOptions := cmd.CLIOptions
-		baseOptions.ID = workspace.ID
-		baseOptions.DevContainerPath = workspace.DevContainerPath
-		baseOptions.DevContainerImage = workspace.DevContainerImage
-		baseOptions.IDE = workspace.IDE.Name
-		baseOptions.IDEOptions = nil
-		baseOptions.Source = workspace.Source.String()
-		for optionName, optionValue := range workspace.IDE.Options {
-			baseOptions.IDEOptions = append(
-				baseOptions.IDEOptions,
-				optionName+"="+optionValue.Value,
-			)
-		}
-
-		// run devsy up elsewhere
-		err = client.Up(ctx, client2.UpOptions{
-			CLIOptions: baseOptions,
-			Debug:      cmd.Debug,
-
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-		})
-		if err != nil {
-			errChan <- fmt.Errorf("executing up proxy command: %w", err)
-		} else {
-			errChan <- nil
-		}
+		errChan <- cmd.runProxyUpCommand(ctx, client, stdinReader, stdoutWriter)
 	}()
 
-	// create container etc.
 	result, err := tunnelserver.RunUpServer(
 		cancelCtx,
 		stdoutReader,
@@ -135,16 +97,43 @@ func (cmd *UpCmd) devsyUpProxy( //nolint:funlen
 		return nil, fmt.Errorf("run tunnel machine: %w", err)
 	}
 
-	// wait until command finished
 	return result, <-errChan
+}
+
+func (cmd *UpCmd) runProxyUpCommand(
+	ctx context.Context,
+	client client2.ProxyClient,
+	stdin *os.File,
+	stdout *os.File,
+) error {
+	baseOptions := cmd.buildWorkspaceOptions(client.WorkspaceConfig())
+
+	err := client.Up(ctx, client2.UpOptions{
+		CLIOptions: baseOptions,
+		Debug:      cmd.Debug,
+		Stdin:      stdin,
+		Stdout:     stdout,
+	})
+	if err != nil {
+		return fmt.Errorf("executing up proxy command: %w", err)
+	}
+
+	return nil
 }
 
 func (cmd *UpCmd) devsyUpDaemon(
 	ctx context.Context,
 	client client2.DaemonClient,
 ) (*config2.Result, error) {
-	// build devsy up options
-	workspace := client.WorkspaceConfig()
+	baseOptions := cmd.buildWorkspaceOptions(client.WorkspaceConfig())
+
+	return client.Up(ctx, client2.UpOptions{
+		CLIOptions: baseOptions,
+		Debug:      cmd.Debug,
+	})
+}
+
+func (cmd *UpCmd) buildWorkspaceOptions(workspace *provider2.Workspace) provider2.CLIOptions {
 	baseOptions := cmd.CLIOptions
 	baseOptions.ID = workspace.ID
 	baseOptions.DevContainerPath = workspace.DevContainerPath
@@ -159,14 +148,10 @@ func (cmd *UpCmd) devsyUpDaemon(
 		)
 	}
 
-	// run devsy up elsewhere
-	return client.Up(ctx, client2.UpOptions{
-		CLIOptions: baseOptions,
-		Debug:      cmd.Debug,
-	})
+	return baseOptions
 }
 
-func (cmd *UpCmd) devsyUpMachine( //nolint:funlen
+func (cmd *UpCmd) devsyUpMachine(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
@@ -176,17 +161,9 @@ func (cmd *UpCmd) devsyUpMachine( //nolint:funlen
 		return nil, fmt.Errorf("wait for machine: %w", err)
 	}
 
-	// compress info
-	workspaceInfo, wInfo, err := client.AgentInfo(cmd.CLIOptions)
-	if err != nil {
-		return nil, fmt.Errorf("get agent info: %w", err)
-	}
-
-	// create container etc.
 	log.Info("creating devcontainer")
 	defer log.Debug("done creating devcontainer")
 
-	// if we run on a platform, we need to pass the platform options
 	if cmd.Platform.Enabled {
 		return clientimplementation.BuildAgentClient(
 			ctx,
@@ -201,24 +178,59 @@ func (cmd *UpCmd) devsyUpMachine( //nolint:funlen
 		)
 	}
 
-	// ssh tunnel command
+	return cmd.devsyUpMachineSSH(ctx, devsyConfig, client)
+}
+
+func (cmd *UpCmd) devsyUpMachineSSH(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.WorkspaceClient,
+) (*config2.Result, error) {
+	workspaceInfo, wInfo, err := client.AgentInfo(cmd.CLIOptions)
+	if err != nil {
+		return nil, fmt.Errorf("get agent info: %w", err)
+	}
+
 	sshTunnelCmd := fmt.Sprintf("'%s' helper ssh-server --stdio", client.AgentPath())
 	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}
 
-	// create agent command
 	agentCommand := fmt.Sprintf(
 		"'%s' agent workspace up --workspace-info '%s'",
 		client.AgentPath(),
 		workspaceInfo,
 	)
-
 	if log.DebugEnabled() {
 		agentCommand += " --debug"
 	}
 
-	agentInjectFunc := func(
+	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
+		Client: client,
+		AddPrivateKeys: devsyConfig.ContextOption(
+			config.ContextOptionSSHAddPrivateKeys,
+		) == config.BoolTrue,
+		AgentInject: newAgentInjectFunc(client, wInfo),
+		SSHCommand:  sshTunnelCmd,
+		Command:     agentCommand,
+		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
+			return tunnelserver.RunUpServer(
+				ctx,
+				stdout,
+				stdin,
+				client.AgentInjectGitCredentials(cmd.CLIOptions),
+				client.AgentInjectDockerCredentials(cmd.CLIOptions),
+				client.WorkspaceConfig(),
+			)
+		},
+	})
+}
+
+func newAgentInjectFunc(
+	client client2.WorkspaceClient,
+	wInfo *provider2.AgentWorkspaceInfo,
+) sshtunnel.AgentInjectFunc {
+	return func(
 		cancelCtx context.Context, sshCmd string, sshTunnelStdinReader, sshTunnelStdoutWriter *os.File,
 		writer io.WriteCloser,
 	) error {
@@ -242,24 +254,4 @@ func (cmd *UpCmd) devsyUpMachine( //nolint:funlen
 			Timeout:         wInfo.InjectTimeout,
 		})
 	}
-
-	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
-		Client: client,
-		AddPrivateKeys: devsyConfig.ContextOption(
-			config.ContextOptionSSHAddPrivateKeys,
-		) == config.BoolTrue,
-		AgentInject: agentInjectFunc,
-		SSHCommand:  sshTunnelCmd,
-		Command:     agentCommand,
-		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
-			return tunnelserver.RunUpServer(
-				ctx,
-				stdout,
-				stdin,
-				client.AgentInjectGitCredentials(cmd.CLIOptions),
-				client.AgentInjectDockerCredentials(cmd.CLIOptions),
-				client.WorkspaceConfig(),
-			)
-		},
-	})
 }

@@ -64,13 +64,11 @@ var inheritedEnvironmentVariables = []string{
 	"GIT_COMMITTER_DATE",
 }
 
-//nolint:cyclop,funlen
 func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, error) {
-	// try to parse flags from env
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return nil, err
 	}
@@ -78,19 +76,67 @@ func (cmd *UpCmd) prepareClient(
 	if cmd.Platform.Enabled {
 		log.Debug("Running in platform mode")
 		log.Debug("Using error output stream")
-
-		// merge context options from env
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
 
-	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
+	if err := cmd.prepareSecrets(); err != nil {
 		return nil, err
+	}
+
+	source, err := cmd.parseWorkspaceSource()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd.resolveSSHConfig(devsyConfig)
+
+	client, err := workspace2.Resolve(
+		ctx,
+		devsyConfig,
+		workspace2.ResolveParams{
+			IDE:                 cmd.IDE,
+			IDEOptions:          cmd.IDEOptions,
+			Args:                args,
+			DesiredID:           cmd.ID,
+			DesiredMachine:      cmd.Machine,
+			ProviderUserOptions: cmd.ProviderOptions,
+			ReconfigureProvider: cmd.Reconfigure,
+			DevContainerImage:   cmd.DevContainerImage,
+			DevContainerPath:    cmd.DevContainerPath,
+			SSHConfigPath:       cmd.SSHConfigPath,
+			SSHConfigIncludePath: devsyConfig.ContextOption(
+				config.ContextOptionSSHConfigIncludePath,
+			),
+			Source:         source,
+			UID:            cmd.UID,
+			ChangeLastUsed: true,
+			Owner:          cmd.Owner,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if !cmd.Platform.Enabled {
+		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
+		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
+}
+
+func (cmd *UpCmd) prepareSecrets() error {
+	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
+		return err
 	}
 
 	if cmd.SecretsFile != "" {
 		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for k, v := range parsed {
 			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
@@ -110,54 +156,28 @@ func (cmd *UpCmd) prepareClient(
 		"",
 	)
 
-	var source *provider2.WorkspaceSource
-	if cmd.Source != "" {
-		source = provider2.ParseWorkspaceSource(cmd.Source)
-		if source == nil {
-			return nil, fmt.Errorf("workspace source is missing")
-		} else if source.LocalFolder != "" && cmd.Platform.Enabled {
-			return nil, fmt.Errorf("local folder is not supported in platform mode. " +
-				"Please specify a Git repository instead")
-		}
+	return nil
+}
+
+func (cmd *UpCmd) parseWorkspaceSource() (*provider2.WorkspaceSource, error) {
+	if cmd.Source == "" {
+		return nil, nil
 	}
 
+	source := provider2.ParseWorkspaceSource(cmd.Source)
+	if source == nil {
+		return nil, fmt.Errorf("workspace source is missing")
+	}
+	if source.LocalFolder != "" && cmd.Platform.Enabled {
+		return nil, fmt.Errorf("local folder is not supported in platform mode. " +
+			"Please specify a Git repository instead")
+	}
+
+	return source, nil
+}
+
+func (cmd *UpCmd) resolveSSHConfig(devsyConfig *config.Config) {
 	if cmd.SSHConfigPath == "" {
 		cmd.SSHConfigPath = devsyConfig.ContextOption(config.ContextOptionSSHConfigPath)
 	}
-	sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
-
-	client, err := workspace2.Resolve(
-		ctx,
-		devsyConfig,
-		workspace2.ResolveParams{
-			IDE:                  cmd.IDE,
-			IDEOptions:           cmd.IDEOptions,
-			Args:                 args,
-			DesiredID:            cmd.ID,
-			DesiredMachine:       cmd.Machine,
-			ProviderUserOptions:  cmd.ProviderOptions,
-			ReconfigureProvider:  cmd.Reconfigure,
-			DevContainerImage:    cmd.DevContainerImage,
-			DevContainerPath:     cmd.DevContainerPath,
-			SSHConfigPath:        cmd.SSHConfigPath,
-			SSHConfigIncludePath: sshConfigIncludePath,
-			Source:               source,
-			UID:                  cmd.UID,
-			ChangeLastUsed:       true,
-			Owner:                cmd.Owner,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if !cmd.Platform.Enabled {
-		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return client, nil
 }
