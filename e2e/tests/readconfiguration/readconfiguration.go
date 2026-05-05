@@ -319,7 +319,9 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			framework.ExpectNoError(err)
 			containerID := strings.TrimSpace(string(out))
 			ginkgo.DeferCleanup(func() {
-				_ = exec.Command("docker", "rm", "-f", containerID).Run() //nolint:gosec // G204
+				args := []string{"rm", "-f", containerID}
+				cmd := exec.Command("docker", args...) // #nosec G204
+				_ = cmd.Run()
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
