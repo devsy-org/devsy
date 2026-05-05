@@ -73,11 +73,12 @@ func FeatureConfigToImageMetadata(feature *config.FeatureConfig) *config.ImageMe
 			Customizations:       feature.Customizations,
 		},
 		NonComposeBase: config.NonComposeBase{
-			Mounts:      feature.Mounts,
-			Init:        feature.Init,
-			Privileged:  feature.Privileged,
-			CapAdd:      feature.CapAdd,
-			SecurityOpt: feature.SecurityOpt,
+			ContainerEnv: feature.ContainerEnv,
+			Mounts:       feature.Mounts,
+			Init:         feature.Init,
+			Privileged:   feature.Privileged,
+			CapAdd:       feature.CapAdd,
+			SecurityOpt:  feature.SecurityOpt,
 		},
 	}
 }
@@ -133,7 +134,7 @@ func GetImageMetadataFromContainer(
 		single := &config.ImageMetadata{}
 		err = json.Unmarshal([]byte(containerDetails.Config.Labels[ImageMetadataLabel]), single)
 		if err != nil {
-			log.Errorf("Error parsing image metadata: %v", err)
+			log.Warnf("Error parsing image metadata: %v", err)
 			return &config.ImageMetadataConfig{}, nil
 		}
 
@@ -169,7 +170,7 @@ func GetImageMetadata(
 		single := &config.ImageMetadata{}
 		err = json.Unmarshal([]byte(imageDetails.Config.Labels[ImageMetadataLabel]), single)
 		if err != nil {
-			log.Errorf("Error parsing image metadata: %v", err)
+			log.Warnf("Error parsing image metadata: %v", err)
 			return &config.ImageMetadataConfig{}, nil
 		}
 

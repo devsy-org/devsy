@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-func TestFeatureConfigToImageMetadata_ExcludesContainerEnv(t *testing.T) {
+func TestFeatureConfigToImageMetadata_IncludesContainerEnv(t *testing.T) {
 	feature := &config.FeatureConfig{
 		ContainerEnv: map[string]string{
 			"FOO": "bar",
@@ -18,11 +18,29 @@ func TestFeatureConfigToImageMetadata_ExcludesContainerEnv(t *testing.T) {
 
 	got := FeatureConfigToImageMetadata(feature)
 
-	if got.ContainerEnv != nil {
-		t.Fatalf(
-			"expected ContainerEnv to be nil in per-feature metadata, got %v",
-			got.ContainerEnv,
-		)
+	if got.ContainerEnv == nil {
+		t.Fatal("expected ContainerEnv to be included in per-feature metadata, got nil")
+	}
+	if got.ContainerEnv["FOO"] != "bar" || got.ContainerEnv["BAZ"] != "qux" {
+		t.Fatalf("expected ContainerEnv to contain FOO=bar and BAZ=qux, got %v", got.ContainerEnv)
+	}
+}
+
+func TestGetImageMetadataFromContainer_WarnsOnParseFailure(t *testing.T) {
+	details := &config.ContainerDetails{
+		Config: config.ContainerDetailsConfig{
+			Labels: map[string]string{
+				ImageMetadataLabel: "not valid json {{{",
+			},
+		},
+	}
+
+	result, err := GetImageMetadataFromContainer(details, &config.SubstitutionContext{})
+	if err != nil {
+		t.Fatalf("expected no error on corrupt metadata, got: %v", err)
+	}
+	if len(result.Raw) != 0 {
+		t.Fatalf("expected empty Raw slice for corrupt metadata, got %d entries", len(result.Raw))
 	}
 }
 
