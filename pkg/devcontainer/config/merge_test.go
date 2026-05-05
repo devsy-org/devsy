@@ -350,10 +350,10 @@ func TestMergeLifestyleHooks_FeatureBeforeImage(t *testing.T) {
 	imageHook := types.LifecycleHook{"image-cmd": {"echo image"}}
 
 	// Simulate reversed entries as passed to mergeLifestyleHooks:
-	// [base_image_entry, feature_entry]
+	// [feature_entry, base_image_entry]
 	entries := []*ImageMetadata{
-		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
 		{DevContainerActions: DevContainerActions{OnCreateCommand: featureHook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
 	}
 
 	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
@@ -377,18 +377,18 @@ func TestMergeLifestyleHooks_AllHookTypes(t *testing.T) {
 
 	entries := []*ImageMetadata{
 		{DevContainerActions: DevContainerActions{
-			OnCreateCommand:      imageHook,
-			UpdateContentCommand: imageHook,
-			PostCreateCommand:    imageHook,
-			PostStartCommand:     imageHook,
-			PostAttachCommand:    imageHook,
-		}},
-		{DevContainerActions: DevContainerActions{
 			OnCreateCommand:      featureHook,
 			UpdateContentCommand: featureHook,
 			PostCreateCommand:    featureHook,
 			PostStartCommand:     featureHook,
 			PostAttachCommand:    featureHook,
+		}},
+		{DevContainerActions: DevContainerActions{
+			OnCreateCommand:      imageHook,
+			UpdateContentCommand: imageHook,
+			PostCreateCommand:    imageHook,
+			PostStartCommand:     imageHook,
+			PostAttachCommand:    imageHook,
 		}},
 	}
 
@@ -456,13 +456,13 @@ func TestMergeLifestyleHooks_MultipleFeatures(t *testing.T) {
 	feature2Hook := types.LifecycleHook{"feat2": {"echo feat2"}}
 
 	// After ReverseSlice in MergeConfiguration, entries are:
-	// [base_image, feature2 (last applied), feature1 (first applied), user_config]
-	// mergeLifestyleHooks iterates in reverse producing:
-	// user_config hooks, feature1 hooks, feature2 hooks, base_image hooks
+	// [feature1 (first applied), feature2 (last applied), base_image]
+	// mergeLifestyleHooks iterates forward producing:
+	// feature1 hooks, feature2 hooks, base_image hooks
 	entries := []*ImageMetadata{
-		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
-		{DevContainerActions: DevContainerActions{OnCreateCommand: feature2Hook}},
 		{DevContainerActions: DevContainerActions{OnCreateCommand: feature1Hook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: feature2Hook}},
+		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
 	}
 
 	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
