@@ -44,8 +44,13 @@ func (cmd *UpCmd) registerDotfilesFlags(upCmd *cobra.Command) {
 			"The path to files containing environment variables to set for the dotfiles install script")
 }
 
-//nolint:funlen
 func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
+	cmd.registerBuildFlags(upCmd)
+	cmd.registerLifecycleFlags(upCmd)
+	cmd.registerContainerOverrideFlags(upCmd)
+}
+
+func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerImage, "devcontainer-image", "",
 			"The container image to use, this will override the devcontainer.json value in the project")
@@ -89,6 +94,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(cmd.MountWorkspaceGitRoot, "mount-workspace-git-root", true,
 			"Mount the workspace git root as the workspace folder")
+}
+
+func (cmd *UpCmd) registerLifecycleFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		IntVar(&cmd.TerminalColumns, "terminal-columns", 0,
 			"Terminal column count for lifecycle scripts")
@@ -107,6 +115,9 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false,
 			"Skip running postAttachCommand")
+}
+
+func (cmd *UpCmd) registerContainerOverrideFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.ContainerUser, "container-user", "",
 			"Override the user in the container")
