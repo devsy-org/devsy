@@ -4,19 +4,20 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/up"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUpCmd_ContainerDataFolderFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("container-data-folder")
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestUpCmd_ContainerDataFolderFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--container-data-folder", "/tmp/data"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetString("container-data-folder")
@@ -25,14 +26,14 @@ func TestUpCmd_ContainerDataFolderFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_MountWorkspaceGitRootFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("mount-workspace-git-root")
 	require.NotNil(t, flag)
 	assert.Equal(t, "true", flag.DefValue)
 }
 
 func TestUpCmd_MountWorkspaceGitRootFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--mount-workspace-git-root=false"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("mount-workspace-git-root")
@@ -41,14 +42,14 @@ func TestUpCmd_MountWorkspaceGitRootFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_TerminalColumnsFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("terminal-columns")
 	require.NotNil(t, flag)
 	assert.Equal(t, "0", flag.DefValue)
 }
 
 func TestUpCmd_TerminalColumnsFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--terminal-columns", "120"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetInt("terminal-columns")
@@ -57,14 +58,14 @@ func TestUpCmd_TerminalColumnsFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_TerminalRowsFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("terminal-rows")
 	require.NotNil(t, flag)
 	assert.Equal(t, "0", flag.DefValue)
 }
 
 func TestUpCmd_TerminalRowsFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--terminal-rows", "40"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetInt("terminal-rows")
@@ -73,7 +74,7 @@ func TestUpCmd_TerminalRowsFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{flagSkipPostCreate})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("skip-post-create")
@@ -82,14 +83,14 @@ func TestUpCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_SkipNonBlockingCommandsFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("skip-non-blocking-commands")
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
 
 func TestUpCmd_SkipNonBlockingCommandsFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--skip-non-blocking-commands"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("skip-non-blocking-commands")
@@ -98,14 +99,14 @@ func TestUpCmd_SkipNonBlockingCommandsFlagParsesValue(t *testing.T) {
 }
 
 func TestUpCmd_DotfilesTargetPathFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	flag := upCmd.Flags().Lookup("dotfiles-target-path")
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestUpCmd_DotfilesTargetPathFlagParsesValue(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{"--dotfiles-target-path", "~/dotfiles"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetString("dotfiles-target-path")

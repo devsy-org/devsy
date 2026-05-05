@@ -1,4 +1,4 @@
-package cmd
+package up
 
 import (
 	"testing"
@@ -137,7 +137,7 @@ func TestUpCmd_SkipPostAttachFlag(t *testing.T) {
 func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{
-		flagSkipPostCreate,
+		"--skip-post-create",
 		"--skip-post-start",
 		"--skip-post-attach",
 	})
