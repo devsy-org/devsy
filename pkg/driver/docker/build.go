@@ -23,6 +23,9 @@ func (d *dockerDriver) BuildDevContainer(
 	req driver.BuildRequest,
 ) (*config.BuildInfo, error) {
 	imageName := build.GetImageName(req.LocalWorkspaceFolder, req.PrebuildHash)
+	if req.Options.ImageName != "" {
+		imageName = req.Options.ImageName
+	}
 	orchestrator := &buildOrchestrator{
 		driver:   d,
 		resolver: &imageResolver{driver: d},
@@ -95,6 +98,9 @@ func (s *dockerBuildxStrategy) name() string {
 func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []string {
 	args := []string{"buildx", "build", "-f", options.Dockerfile}
 	args = appendBuildFlags(args, options.Load, options.Push)
+	if options.NoCache {
+		args = append(args, "--no-cache")
+	}
 	args = appendImageTags(args, options.Images)
 	args = appendBuildArgsAndContexts(args, options.BuildArgs, options.Contexts)
 	args = appendLabels(args, options.Labels)

@@ -100,7 +100,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil)
+	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil, SkipPhases{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
@@ -252,7 +252,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 	}
 
 	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
-	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil)
+	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil, SkipPhases{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 }

@@ -160,9 +160,9 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		StringSliceVar(&cmd.Platforms, "platform", []string{}, "Set target platform for build")
 	buildCmd.Flags().
 		BoolVar(&cmd.SkipPush, "skip-push", false, "If true will not push the image to the repository, useful for testing")
-	buildCmd.Flags().BoolVar(&cmd.PushDuringBuild, "push", false,
-		"Push image directly to registry during build, skipping load to local daemon.",
-	)
+	buildCmd.Flags().
+		BoolVar(&cmd.PushDuringBuild, "push", false,
+			"Push image directly to registry during build, skipping load to local daemon")
 	buildCmd.Flags().
 		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
 			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
@@ -186,6 +186,11 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 	buildCmd.Flags().
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
 			"If true will clone git submodule repositories recursively")
+
+	buildCmd.Flags().
+		StringVar(&cmd.ImageName, "image-name", "", "Alternative name for the built image")
+	buildCmd.Flags().
+		BoolVar(&cmd.NoBuild, "no-build", false, "Fail if the image must be built (enforce pre-built images only)")
 
 	// TESTING
 	buildCmd.Flags().BoolVar(&cmd.ForceBuild, "force-build", false, "TESTING ONLY")

@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	flagSkipPostCreate  = "--skip-post-create"
+	flagWorkspaceFolder = "--workspace-folder"
+	testTmpDir          = "/tmp"
+)
+
 func TestValidateRemoteEnv_Valid(t *testing.T) {
 	cmd := &ExecCmd{
 		GlobalFlags: &flags.GlobalFlags{},
@@ -54,7 +60,7 @@ func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
 
 func TestNewExecCmd_RequiresArgs(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	execCmd.SetArgs([]string{"--workspace-folder", "/tmp/test"})
+	execCmd.SetArgs([]string{flagWorkspaceFolder, testTmpDir + "/test"})
 	err := execCmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires at least 1 arg")
@@ -94,4 +100,43 @@ func TestExecCmd_NonExistentContainerID(t *testing.T) {
 	err := cmd.runWithContainerID(t.Context(), []string{"echo", "hello"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent-container-id-12345")
+}
+
+func TestExecCmd_ContainerDataFolderFlag(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	flag := execCmd.Flags().Lookup("container-data-folder")
+	require.NotNil(t, flag)
+	assert.Equal(t, "", flag.DefValue)
+}
+
+func TestExecCmd_ContainerDataFolderFlagParsesValue(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	err := execCmd.ParseFlags([]string{
+		flagWorkspaceFolder, testTmpDir,
+		"--container-data-folder", "/custom/data",
+	})
+	require.NoError(t, err)
+
+	flag := execCmd.Flags().Lookup("container-data-folder")
+	assert.Equal(t, "/custom/data", flag.Value.String())
+}
+
+func TestExecCmd_SkipPostCreateFlag(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	flag := execCmd.Flags().Lookup("skip-post-create")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	err := execCmd.ParseFlags([]string{
+		flagWorkspaceFolder, testTmpDir,
+		flagSkipPostCreate,
+	})
+	require.NoError(t, err)
+
+	val, err := execCmd.Flags().GetBool("skip-post-create")
+	require.NoError(t, err)
+	assert.True(t, val)
 }

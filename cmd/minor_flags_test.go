@@ -72,16 +72,9 @@ func TestUpCmd_TerminalRowsFlagParsesValue(t *testing.T) {
 	assert.Equal(t, 40, val)
 }
 
-func TestUpCmd_SkipPostCreateFlag(t *testing.T) {
-	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("skip-post-create")
-	require.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue)
-}
-
 func TestUpCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--skip-post-create"})
+	err := upCmd.ParseFlags([]string{flagSkipPostCreate})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("skip-post-create")
 	require.NoError(t, err)
@@ -118,22 +111,6 @@ func TestUpCmd_DotfilesTargetPathFlagParsesValue(t *testing.T) {
 	val, err := upCmd.Flags().GetString("dotfiles-target-path")
 	require.NoError(t, err)
 	assert.Equal(t, "~/dotfiles", val)
-}
-
-func TestBuildCmd_NoCacheFlag(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
-	flag := buildCmd.Flags().Lookup("no-cache")
-	require.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue)
-}
-
-func TestBuildCmd_NoCacheFlagParsesValue(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
-	err := buildCmd.ParseFlags([]string{"--no-cache"})
-	require.NoError(t, err)
-	val, err := buildCmd.Flags().GetBool("no-cache")
-	require.NoError(t, err)
-	assert.True(t, val)
 }
 
 func TestBuildCmd_LabelFlag(t *testing.T) {

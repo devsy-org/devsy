@@ -245,8 +245,14 @@ type CLIOptions struct {
 	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`
 	TerminalColumns             int               `json:"terminalColumns,omitempty"`
 	TerminalRows                int               `json:"terminalRows,omitempty"`
-	SkipPostCreate              bool              `json:"skipPostCreate,omitempty"`
 	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
+	ContainerUser               string            `json:"containerUser,omitempty"`
+	RemoteUser                  string            `json:"remoteUser,omitempty"`
+
+	// skip lifecycle hook options
+	SkipPostCreate bool `json:"skipPostCreate,omitempty"`
+	SkipPostStart  bool `json:"skipPostStart,omitempty"`
+	SkipPostAttach bool `json:"skipPostAttach,omitempty"`
 
 	// dotfiles options
 	DotfilesRepo       string `json:"dotfilesRepo,omitempty"`
@@ -277,6 +283,10 @@ type CLIOptions struct {
 	Labels               []string `json:"labels,omitempty"`
 	Output               string   `json:"output,omitempty"`
 	ExperimentalLockfile string   `json:"experimentalLockfile,omitempty"`
+	// ImageName specifies an alternative name for the built image.
+	ImageName string `json:"imageName,omitempty"`
+	// NoBuild prevents building; the command will fail if the image does not exist.
+	NoBuild bool `json:"noBuild,omitempty"`
 
 	// ForceBuild forces a rebuild even if a cached image exists.
 	ForceBuild bool `json:"forceBuild,omitempty"`

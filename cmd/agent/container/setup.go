@@ -193,6 +193,9 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
 		Prebuild:          cmd.Prebuild,
+		SkipPostCreate:    sctx.workspaceInfo.CLIOptions.SkipPostCreate,
+		SkipPostStart:     sctx.workspaceInfo.CLIOptions.SkipPostStart,
+		SkipPostAttach:    sctx.workspaceInfo.CLIOptions.SkipPostAttach,
 		Dotfiles: setup.DotfilesConfig{
 			Repository:    cmd.DotfilesRepo,
 			InstallScript: cmd.DotfilesScript,

@@ -45,6 +45,9 @@ type ContainerSetupConfig struct {
 	PlatformOptions   *devsy.PlatformOptions
 	TunnelClient      tunnel.TunnelClient
 	Dotfiles          DotfilesConfig
+	SkipPostCreate    bool
+	SkipPostStart     bool
+	SkipPostAttach    bool
 }
 
 // SetupContainerPreAttach runs container setup up to and including the waitFor
@@ -77,6 +80,11 @@ func SetupContainerPreAttach(
 		cfg.Prebuild,
 		cfg.Dotfiles,
 		cfg.SecretsEnv,
+		SkipPhases{
+			PostCreate: cfg.SkipPostCreate,
+			PostStart:  cfg.SkipPostStart,
+			PostAttach: cfg.SkipPostAttach,
+		},
 	)
 	if err != nil {
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
@@ -90,7 +98,12 @@ func SetupContainerPreAttach(
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
 	log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, cfg.SecretsEnv); err != nil {
+	if err := RunPostAttachHooks(
+		ctx,
+		cfg.SetupInfo,
+		cfg.SecretsEnv,
+		cfg.SkipPostAttach,
+	); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 

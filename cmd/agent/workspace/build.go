@@ -89,10 +89,12 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	for _, platform := range platforms {
 		// build the image
 		imageName, err := runner.Build(ctx, provider2.BuildOptions{
-			CLIOptions:    workspaceInfo.CLIOptions,
-			RegistryCache: workspaceInfo.RegistryCache,
-			Platform:      platform,
-			ExportCache:   true,
+			CLIOptions:      workspaceInfo.CLIOptions,
+			RegistryCache:   workspaceInfo.RegistryCache,
+			Platform:        platform,
+			ExportCache:     true,
+			NoBuild:         workspaceInfo.CLIOptions.NoBuild,
+			PushDuringBuild: workspaceInfo.CLIOptions.PushDuringBuild,
 		})
 		if err != nil {
 			log.Errorf("Error building image: %v", err)

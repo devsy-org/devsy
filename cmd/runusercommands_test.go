@@ -115,3 +115,71 @@ func TestRunUserCommandsCmd_RegisteredInRoot(t *testing.T) {
 	}
 	assert.True(t, found, "run-user-commands should be registered in root")
 }
+
+func TestRunUserCommandsCmd_SkipPostCreateFlag(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup("skip-post-create")
+	require.NotNil(t, f)
+	assert.Equal(t, "false", f.DefValue)
+}
+
+func TestRunUserCommandsCmd_SkipPostStartFlag(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup("skip-post-start")
+	require.NotNil(t, f)
+	assert.Equal(t, "false", f.DefValue)
+}
+
+func TestRunUserCommandsCmd_SkipPostAttachFlag(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup("skip-post-attach")
+	require.NotNil(t, f)
+	assert.Equal(t, "false", f.DefValue)
+}
+
+func TestRunUserCommandsCmd_SkipOnCreateFlag(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup("skip-on-create")
+	require.NotNil(t, f)
+	assert.Equal(t, "false", f.DefValue)
+}
+
+func TestRunUserCommandsCmd_SkipUpdateContentFlag(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup("skip-update-content")
+	require.NotNil(t, f)
+	assert.Equal(t, "false", f.DefValue)
+}
+
+func TestRunUserCommandsCmd_SkipFlagsParseValues(t *testing.T) {
+	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
+	err := cmd.ParseFlags([]string{
+		flagWorkspaceFolder, testTmpDir,
+		flagSkipPostCreate,
+		"--skip-post-start",
+		"--skip-post-attach",
+		"--skip-on-create",
+		"--skip-update-content",
+	})
+	require.NoError(t, err)
+
+	val, err := cmd.Flags().GetBool("skip-post-create")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = cmd.Flags().GetBool("skip-post-start")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = cmd.Flags().GetBool("skip-post-attach")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = cmd.Flags().GetBool("skip-on-create")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = cmd.Flags().GetBool("skip-update-content")
+	require.NoError(t, err)
+	assert.True(t, val)
+}

@@ -33,6 +33,8 @@ type ExecCmd struct {
 	RemoteEnv           []string
 	DefaultUserEnvProbe string
 	IDLabels            []string
+	ContainerDataFolder string
+	SkipPostCreate      bool
 }
 
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
@@ -89,11 +91,32 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			[]string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
 		)
+	execCmd.Flags().
+		StringVar(
+			&cmd.ContainerDataFolder,
+			"container-data-folder",
+			"",
+			"Override the default container data folder path",
+		)
+	execCmd.Flags().
+		BoolVar(
+			&cmd.SkipPostCreate,
+			"skip-post-create",
+			false,
+			"Skip running postCreateCommand",
+		)
 
 	return execCmd
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
+	if cmd.ContainerDataFolder != "" {
+		log.Warnf("--container-data-folder is accepted but not yet implemented for exec")
+	}
+	if cmd.SkipPostCreate {
+		log.Warnf("--skip-post-create is accepted but not yet implemented for exec")
+	}
+
 	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
 		return fmt.Errorf("either --workspace-folder or --container-id must be provided")
 	}
