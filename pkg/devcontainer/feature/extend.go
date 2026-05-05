@@ -51,14 +51,22 @@ type BuildInfo struct {
 	BuildArgs               map[string]string
 }
 
-func GetExtendedBuildInfo(
-	ctx *config.SubstitutionContext,
-	imageBuildInfo *config.ImageBuildInfo,
-	target string,
-	devContainerConfig *config.SubstitutedConfig,
-	forceBuild bool,
-	secretOpts *SecretOptions,
-) (*ExtendedBuildInfo, error) {
+type ExtendedBuildInfoOptions struct {
+	Ctx                *config.SubstitutionContext
+	ImageBuildInfo     *config.ImageBuildInfo
+	Target             string
+	DevContainerConfig *config.SubstitutedConfig
+	ForceBuild         bool
+	SecretOpts         *SecretOptions
+}
+
+func GetExtendedBuildInfo(opts *ExtendedBuildInfoOptions) (*ExtendedBuildInfo, error) {
+	ctx := opts.Ctx
+	imageBuildInfo := opts.ImageBuildInfo
+	target := opts.Target
+	devContainerConfig := opts.DevContainerConfig
+	forceBuild := opts.ForceBuild
+	secretOpts := opts.SecretOpts
 	features, err := fetchFeatures(devContainerConfig.Config, forceBuild, secretOpts)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
@@ -219,22 +227,23 @@ func getFeatureSafeID(featureID string) string {
 }
 
 func getFeatureLayers(containerUser, remoteUser string, features []*config.FeatureSet) string {
-	result := `RUN \
-echo "_CONTAINER_USER_HOME=$(getent passwd ` + containerUser + ` | cut -d: -f6)" >> /tmp/build-features/devcontainer-features.builtin.env && \
-echo "_REMOTE_USER_HOME=$(getent passwd ` + remoteUser + ` | cut -d: -f6)" >> /tmp/build-features/devcontainer-features.builtin.env
+	var b strings.Builder
+	b.WriteString("RUN \\\n")
+	b.WriteString(`echo "_CONTAINER_USER_HOME=$(getent passwd ` + containerUser)
+	b.WriteString(` | cut -d: -f6)" >> ` +
+		`/tmp/build-features/devcontainer-features.builtin.env && \` + "\n")
+	b.WriteString(`echo "_REMOTE_USER_HOME=$(getent passwd ` + remoteUser)
+	b.WriteString(` | cut -d: -f6)" >> ` +
+		`/tmp/build-features/devcontainer-features.builtin.env` + "\n\n")
 
-`
 	for i, feature := range features {
-		result += generateContainerEnvs(feature)
-		result += `
-RUN cd /tmp/build-features/` + strconv.Itoa(i) + ` \
-&& chmod +x ./devcontainer-features-install.sh \
-&& ./devcontainer-features-install.sh
-
-`
+		b.WriteString(generateContainerEnvs(feature))
+		b.WriteString("\nRUN cd /tmp/build-features/" + strconv.Itoa(i) + ` \` + "\n")
+		b.WriteString("&& chmod +x ./devcontainer-features-install.sh \\\n")
+		b.WriteString("&& ./devcontainer-features-install.sh\n\n")
 	}
 
-	return result
+	return b.String()
 }
 
 func generateContainerEnvs(feature *config.FeatureSet) string {
@@ -254,32 +263,34 @@ func findContainerUsers(
 	composeServiceUser, imageUser string,
 ) (string, string) {
 	reversed := config.ReverseSlice(baseImageMetadata.Config)
-	containerUser := ""
-	remoteUser := ""
-	for _, imageMetadata := range reversed {
-		if containerUser == "" && imageMetadata.ContainerUser != "" {
-			containerUser = imageMetadata.ContainerUser
-		}
-		if remoteUser == "" && imageMetadata.RemoteUser != "" {
-			remoteUser = imageMetadata.RemoteUser
-		}
-	}
-
-	if containerUser == "" {
-		if composeServiceUser != "" {
-			containerUser = composeServiceUser
-		} else if imageUser != "" {
-			containerUser = imageUser
-		}
-	}
-	if remoteUser == "" {
-		if composeServiceUser != "" {
-			remoteUser = composeServiceUser
-		} else if imageUser != "" {
-			remoteUser = imageUser
-		}
-	}
+	containerUser := resolveUserFromSources(
+		reversed, composeServiceUser, imageUser,
+		func(m *config.ImageMetadata) string { return m.ContainerUser },
+	)
+	remoteUser := resolveUserFromSources(
+		reversed, composeServiceUser, imageUser,
+		func(m *config.ImageMetadata) string { return m.RemoteUser },
+	)
 	return containerUser, remoteUser
+}
+
+func resolveUserFromSources(
+	reversed []*config.ImageMetadata,
+	composeServiceUser, imageUser string,
+	metadataField func(*config.ImageMetadata) string,
+) string {
+	for _, imageMetadata := range reversed {
+		if v := metadataField(imageMetadata); v != "" {
+			return v
+		}
+	}
+	if composeServiceUser != "" {
+		return composeServiceUser
+	}
+	if imageUser != "" {
+		return imageUser
+	}
+	return ""
 }
 
 // ResolveFeatureOrder parses the features in a DevContainerConfig, resolves their
@@ -447,7 +458,7 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 	featureSet *config.FeatureSet,
 ) error {
 	if r.resolved[featureID] != nil {
-		return nil // Already resolved
+		return nil
 	}
 
 	if r.visiting[featureID] {
@@ -458,34 +469,43 @@ func (r *featureDependencyResolver) resolveFeatureDependency(
 	defer func() { r.visiting[featureID] = false }()
 
 	for depID, depOptions := range featureSet.Config.DependsOn {
-		normalizedDepID := normalizeFeatureID(depID)
-		resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
-		if depFeatureSet == nil {
-			if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
-				log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
-				resolvedKey, depFeatureSet = r.findByConfigID(currentID)
-			}
-		}
-		if depFeatureSet == nil {
-			log.Debugf("installing dependency feature %s", depID)
-			var err error
-			depFeatureSet, err = r.processor.processFeature(depID, depOptions)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
-			}
-			resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
-			r.features[resolvedKey] = depFeatureSet
-			r.rebuildLegacyMap()
+		resolvedKey, depFeatureSet, err := r.findOrInstallDependency(depID, depOptions)
+		if err != nil {
+			return err
 		}
 
-		err := r.resolveFeatureDependency(resolvedKey, depFeatureSet)
-		if err != nil {
+		if err := r.resolveFeatureDependency(resolvedKey, depFeatureSet); err != nil {
 			return err
 		}
 	}
 
 	r.resolved[featureID] = featureSet
 	return nil
+}
+
+func (r *featureDependencyResolver) findOrInstallDependency(
+	depID string, depOptions any,
+) (string, *config.FeatureSet, error) {
+	normalizedDepID := normalizeFeatureID(depID)
+	resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
+	if depFeatureSet == nil {
+		if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
+			log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
+			resolvedKey, depFeatureSet = r.findByConfigID(currentID)
+		}
+	}
+	if depFeatureSet == nil {
+		log.Debugf("installing dependency feature %s", depID)
+		var err error
+		depFeatureSet, err = r.processor.processFeature(depID, depOptions)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
+		}
+		resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
+		r.features[resolvedKey] = depFeatureSet
+		r.rebuildLegacyMap()
+	}
+	return resolvedKey, depFeatureSet, nil
 }
 
 func (r *featureDependencyResolver) rebuildLegacyMap() {

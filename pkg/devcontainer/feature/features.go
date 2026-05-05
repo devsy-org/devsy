@@ -27,6 +27,12 @@ import (
 
 const DEVCONTAINER_MANIFEST_MEDIATYPE = "application/vnd.devcontainers"
 
+const (
+	AnnotationTitle       = "org.opencontainers.image.title"
+	AnnotationDescription = "org.opencontainers.image.description"
+	AnnotationVersion     = "org.opencontainers.image.version"
+)
+
 var directTarballRegEx = regexp.MustCompile("devcontainer-feature-([a-zA-Z0-9_-]+).tgz")
 
 func getFeatureInstallWrapperScript(
@@ -256,9 +262,9 @@ func processOCIFeature(id string) (string, error) {
 const annotationsFileName = "annotations.json"
 
 func logOCIAnnotations(id string, annotations map[string]string) {
-	title := annotations["org.opencontainers.image.title"]
-	description := annotations["org.opencontainers.image.description"]
-	version := annotations["org.opencontainers.image.version"]
+	title := annotations[AnnotationTitle]
+	description := annotations[AnnotationDescription]
+	version := annotations[AnnotationVersion]
 
 	if title != "" || description != "" {
 		log.Infof(
@@ -321,7 +327,7 @@ func pullAndExtractOCIFeature(
 		return nil, fmt.Errorf("download layer from %s: %w", registry, err)
 	}
 
-	file, err := os.Open(destFile)
+	file, err := os.Open(filepath.Clean(destFile))
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +391,7 @@ func writeLayerToFile(data io.Reader, destFile string) error {
 		return fmt.Errorf("create target folder: %w", err)
 	}
 
-	file, err := os.Create(destFile)
+	file, err := os.Create(filepath.Clean(destFile))
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
@@ -589,7 +595,7 @@ func tryDownload(url, destFile string, httpHeaders map[string]string) error {
 		return fmt.Errorf("GET request failed, status code is %d", resp.StatusCode)
 	}
 
-	file, err := os.Create(destFile)
+	file, err := os.Create(filepath.Clean(destFile))
 	if err != nil {
 		return fmt.Errorf("create download file: %w", err)
 	}

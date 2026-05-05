@@ -17,7 +17,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testFeatureNode = "node"
+const (
+	testFeatureNode  = "node"
+	testVersion1_0_0 = "1.0.0"
+)
 
 type CollectionTestSuite struct {
 	suite.Suite
@@ -103,7 +106,7 @@ func (s *CollectionTestSuite) TestFetchCollection_InvalidJSON() {
 func (s *CollectionTestSuite) TestListCollectionFeatures() {
 	collection := Collection{
 		Features: []CollectionFeature{
-			{ID: "rust", Version: "1.0.0", Name: "Rust"},
+			{ID: "rust", Version: testVersion1_0_0, Name: "Rust"},
 			{ID: "python", Version: "3.0.0", Name: "Python"},
 			{ID: "java", Version: "1.5.0", Name: "Java"},
 		},
@@ -139,7 +142,7 @@ func (s *CollectionTestSuite) TestFetchCollection_DeprecatedFeature() {
 func (s *CollectionTestSuite) TestFetchCollection_FallbackToFirstLayer() {
 	collection := Collection{
 		Features: []CollectionFeature{
-			{ID: "fallback", Version: "1.0.0", Name: "Fallback"},
+			{ID: "fallback", Version: testVersion1_0_0, Name: "Fallback"},
 		},
 	}
 	data, err := json.Marshal(collection)
