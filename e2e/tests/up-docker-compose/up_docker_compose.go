@@ -503,12 +503,16 @@ var _ = ginkgo.Describe(
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("invalid runServices returns error", func(ctx context.Context) {
-			_, _, err := tc.setupAndStartWorkspace(
-				ctx,
+			tempDir, err := setupWorkspace(
 				"tests/up-docker-compose/testdata/docker-compose-run-services-invalid",
+				tc.initialDir, tc.f,
 			)
+			framework.ExpectNoError(err)
+			_, stderr, err := tc.f.ExecCommandCapture(ctx, []string{
+				"up", "--debug", "--ide", "none", tempDir,
+			})
 			gomega.Expect(err).To(gomega.HaveOccurred())
-			gomega.Expect(err.Error()).To(gomega.ContainSubstring("nonexistent-service"))
+			gomega.Expect(stderr).To(gomega.ContainSubstring("nonexistent-service"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("user lookup with no remoteUser", func(ctx context.Context) {
