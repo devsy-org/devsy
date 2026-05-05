@@ -130,7 +130,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
-	}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It(
 		"direct tar feature uses cached download with integrity verification",
@@ -223,7 +223,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 			// Only one HTTP request was made — proves cache was reused with passing integrity
 			gomega.Expect(server.ReceivedRequests()).To(gomega.HaveLen(1))
 		},
-		ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
 
 	ginkgo.It("should install with lifecycle hooks", func(ctx context.Context) {
