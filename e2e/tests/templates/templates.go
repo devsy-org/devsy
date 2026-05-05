@@ -47,7 +47,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(),
 				"devcontainer.json should exist after apply")
 
-			data, err := os.ReadFile(devcontainerPath) //nolint:gosec // test path from MkdirTemp
+			data, err := os.ReadFile(filepath.Clean(devcontainerPath))
 			framework.ExpectNoError(err)
 
 			var config map[string]any
@@ -70,7 +70,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			framework.ExpectNoError(err)
 
 			devcontainerPath := filepath.Join(tempDir, ".devcontainer", "devcontainer.json")
-			data, err := os.ReadFile(devcontainerPath) //nolint:gosec // test path from MkdirTemp
+			data, err := os.ReadFile(filepath.Clean(devcontainerPath))
 			framework.ExpectNoError(err)
 
 			var config map[string]any

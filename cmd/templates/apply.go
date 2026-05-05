@@ -221,6 +221,12 @@ func parseTemplateArgs(args []string, metadata *TemplateMetadata) map[string]str
 }
 
 func applyTemplateSubstitution(templateDir string, vars map[string]string) error {
+	root, err := os.OpenRoot(templateDir)
+	if err != nil {
+		return fmt.Errorf("open template root: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
 	return filepath.Walk(templateDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -230,12 +236,19 @@ func applyTemplateSubstitution(templateDir string, vars map[string]string) error
 			return nil
 		}
 
-		return substituteFileVars(path, info, vars)
+		relPath, err := filepath.Rel(templateDir, path)
+		if err != nil {
+			return err
+		}
+
+		return substituteFileVars(root, relPath, info, vars)
 	})
 }
 
-func substituteFileVars(path string, info os.FileInfo, vars map[string]string) error {
-	data, err := os.ReadFile(filepath.Clean(path))
+func substituteFileVars(
+	root *os.Root, relPath string, info os.FileInfo, vars map[string]string,
+) error {
+	data, err := root.ReadFile(relPath)
 	if err != nil {
 		return err
 	}
@@ -252,8 +265,7 @@ func substituteFileVars(path string, info os.FileInfo, vars map[string]string) e
 	}
 
 	if modified {
-		//nolint:gosec // path is from filepath.Walk within temp dir
-		return os.WriteFile(path, []byte(content), info.Mode())
+		return root.WriteFile(relPath, []byte(content), info.Mode())
 	}
 
 	return nil
@@ -264,7 +276,13 @@ func copyTemplateFiles(srcDir, destDir string, omitPaths []string) error {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
 
-	copier := &templateCopier{destDir: destDir, omitPaths: omitPaths}
+	destRoot, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open dest root: %w", err)
+	}
+	defer func() { _ = destRoot.Close() }()
+
+	copier := &templateCopier{destDir: destDir, destRoot: destRoot, omitPaths: omitPaths}
 
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -286,6 +304,7 @@ func copyTemplateFiles(srcDir, destDir string, omitPaths []string) error {
 
 type templateCopier struct {
 	destDir   string
+	destRoot  *os.Root
 	omitPaths []string
 }
 
@@ -304,21 +323,23 @@ func (c *templateCopier) copyEntry(path, relPath string, info os.FileInfo) error
 		return os.MkdirAll(destPath, 0o750)
 	}
 
-	return copyFile(path, destPath, info.Mode())
+	return copyFile(path, c.destRoot, relPath, info.Mode())
 }
 
-func copyFile(srcPath, destPath string, mode os.FileMode) error {
+func copyFile(srcPath string, destRoot *os.Root, destRelPath string, mode os.FileMode) error {
 	data, err := os.ReadFile(filepath.Clean(srcPath))
 	if err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
-		return err
+	destDir := filepath.Dir(destRelPath)
+	if destDir != "." {
+		if err := destRoot.Mkdir(destDir, 0o750); err != nil && !os.IsExist(err) {
+			return err
+		}
 	}
 
-	//nolint:gosec // mode from source template, path constructed from destDir+relPath
-	return os.WriteFile(destPath, data, mode)
+	return destRoot.WriteFile(destRelPath, data, mode&0o666)
 }
 
 func shouldOmit(relPath string, omitPaths []string) bool {

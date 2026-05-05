@@ -87,7 +87,13 @@ type discoveredTemplate struct {
 func discoverTemplates(projectFolder string) ([]discoveredTemplate, error) {
 	var templates []discoveredTemplate
 
-	err := filepath.Walk(projectFolder, func(path string, info os.FileInfo, err error) error {
+	root, err := os.OpenRoot(projectFolder)
+	if err != nil {
+		return nil, fmt.Errorf("open project root: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	err = filepath.Walk(projectFolder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -96,8 +102,12 @@ func discoverTemplates(projectFolder string) ([]discoveredTemplate, error) {
 			return nil
 		}
 
-		//nolint:gosec // path from filepath.Walk within project folder
-		data, err := os.ReadFile(filepath.Clean(path))
+		relPath, err := filepath.Rel(projectFolder, path)
+		if err != nil {
+			return err
+		}
+
+		data, err := root.ReadFile(relPath)
 		if err != nil {
 			return err
 		}
