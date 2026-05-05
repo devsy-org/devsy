@@ -71,14 +71,14 @@ func (r *runner) extendImage(
 	}
 
 	// get extend image build info
-	extendedBuildInfo, err := feature.GetExtendedBuildInfo(
-		substitutionContext,
-		imageBuildInfo,
-		imageBase,
-		parsedConfig,
-		options.ForceBuild,
-		featureSecretOpts(options),
-	)
+	extendedBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		Ctx:                substitutionContext,
+		ImageBuildInfo:     imageBuildInfo,
+		Target:             imageBase,
+		DevContainerConfig: parsedConfig,
+		ForceBuild:         options.ForceBuild,
+		SecretOpts:         featureSecretOpts(options),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
 	}
@@ -153,14 +153,14 @@ func (r *runner) buildAndExtendImage(
 	}
 
 	// get extend image build info
-	extendedBuildInfo, err := feature.GetExtendedBuildInfo(
-		substitutionContext,
-		imageBuildInfo,
-		imageBase,
-		parsedConfig,
-		options.ForceBuild,
-		featureSecretOpts(options),
-	)
+	extendedBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		Ctx:                substitutionContext,
+		ImageBuildInfo:     imageBuildInfo,
+		Target:             imageBase,
+		DevContainerConfig: parsedConfig,
+		ForceBuild:         options.ForceBuild,
+		SecretOpts:         featureSecretOpts(options),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
 	}

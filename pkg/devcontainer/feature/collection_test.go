@@ -103,7 +103,7 @@ func (s *CollectionTestSuite) TestFetchCollection_InvalidJSON() {
 func (s *CollectionTestSuite) TestListCollectionFeatures() {
 	collection := Collection{
 		Features: []CollectionFeature{
-			{ID: "rust", Version: "1.0.0", Name: "Rust"},
+			{ID: "rust", Version: "1.0.0", Name: "Rust"}, //nolint:goconst
 			{ID: "python", Version: "3.0.0", Name: "Python"},
 			{ID: "java", Version: "1.5.0", Name: "Java"},
 		},

@@ -685,14 +685,14 @@ func (r *runner) buildAndExtendDockerCompose(
 	if featureSecretsFile != "" {
 		secretOpts = &feature.SecretOptions{SecretsFile: featureSecretsFile}
 	}
-	extendImageBuildInfo, err := feature.GetExtendedBuildInfo(
-		substitutionContext,
-		imageBuildInfo,
-		buildTarget,
-		parsedConfig,
-		false,
-		secretOpts,
-	)
+	extendImageBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		Ctx:                substitutionContext,
+		ImageBuildInfo:     imageBuildInfo,
+		Target:             buildTarget,
+		DevContainerConfig: parsedConfig,
+		ForceBuild:         false,
+		SecretOpts:         secretOpts,
+	})
 	if err != nil {
 		return composeExtendResult{}, err
 	}

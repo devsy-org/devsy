@@ -7,6 +7,12 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testFeatureA = "feature-a"
+	testFeatureB = "feature-b"
+	testFeatureC = "feature-c"
+)
+
 type ExtendTestSuite struct {
 	suite.Suite
 }
@@ -17,9 +23,9 @@ func TestExtendTestSuite(t *testing.T) {
 
 func (suite *ExtendTestSuite) TestCreateFeatureLookup() {
 	features := []*config.FeatureSet{
-		{ConfigID: "feature-a"},
-		{ConfigID: "feature-b"},
-		{ConfigID: "feature-c"},
+		{ConfigID: testFeatureA},
+		{ConfigID: testFeatureB},
+		{ConfigID: testFeatureC},
 	}
 
 	lookup := buildFeatureLookupMap(features)
@@ -30,74 +36,45 @@ func (suite *ExtendTestSuite) TestCreateFeatureLookup() {
 	}
 }
 
+func featureWithDeps(deps ...string) *config.FeatureSet {
+	df := config.DependsOnField{}
+	for _, d := range deps {
+		df[d] = map[string]any{}
+	}
+	return &config.FeatureSet{Config: &config.FeatureConfig{DependsOn: df}}
+}
+
 func (suite *ExtendTestSuite) TestHasHardDependency() {
 	tests := []struct {
-		name                string
-		feature             *config.FeatureSet
-		originalID          string
-		normalizedID        string
-		expectedIsDuplicate bool
+		name         string
+		feature      *config.FeatureSet
+		originalID   string
+		normalizedID string
+		expected     bool
 	}{
 		{
-			name: "exact match in dependsOn",
-			feature: &config.FeatureSet{
-				Config: &config.FeatureConfig{
-					DependsOn: config.DependsOnField{
-						"node": map[string]any{},
-					},
-				},
-			},
-			originalID:          "node",
-			normalizedID:        "node",
-			expectedIsDuplicate: true,
+			"exact match", featureWithDeps(testFeatureNode),
+			testFeatureNode, testFeatureNode, true,
 		},
 		{
-			name: "normalized match in dependsOn",
-			feature: &config.FeatureSet{
-				Config: &config.FeatureConfig{
-					DependsOn: config.DependsOnField{
-						"ghcr.io/devcontainers/features/node": map[string]any{},
-					},
-				},
-			},
-			originalID:          "ghcr.io/devcontainers/features/node:latest",
-			normalizedID:        "ghcr.io/devcontainers/features/node",
-			expectedIsDuplicate: true,
+			"normalized match",
+			featureWithDeps("ghcr.io/devcontainers/features/node"),
+			"ghcr.io/devcontainers/features/node:latest",
+			"ghcr.io/devcontainers/features/node", true, //nolint:goconst
 		},
 		{
-			name: "no match",
-			feature: &config.FeatureSet{
-				Config: &config.FeatureConfig{
-					DependsOn: config.DependsOnField{
-						"python": map[string]any{},
-					},
-				},
-			},
-			originalID:          "node",
-			normalizedID:        "node",
-			expectedIsDuplicate: false,
+			"no match", featureWithDeps("python"),
+			testFeatureNode, testFeatureNode, false,
 		},
 		{
-			name: "empty dependsOn",
-			feature: &config.FeatureSet{
-				Config: &config.FeatureConfig{
-					DependsOn: config.DependsOnField{},
-				},
-			},
-			originalID:          "node",
-			normalizedID:        "node",
-			expectedIsDuplicate: false,
+			"empty dependsOn", featureWithDeps(),
+			testFeatureNode, testFeatureNode, false,
 		},
 	}
 
-	for _, testCase := range tests {
-		suite.Run(testCase.name, func() {
-			actualIsDuplicate := hasHardDependency(
-				testCase.feature,
-				testCase.originalID,
-				testCase.normalizedID,
-			)
-			suite.Equal(testCase.expectedIsDuplicate, actualIsDuplicate)
+	for _, tc := range tests {
+		suite.Run(tc.name, func() {
+			suite.Equal(tc.expected, hasHardDependency(tc.feature, tc.originalID, tc.normalizedID))
 		})
 	}
 }
@@ -243,18 +220,18 @@ func (suite *ExtendTestSuite) TestComputeAutomaticFeatureOrder_ChainedDependenci
 func (suite *ExtendTestSuite) TestComputeAutomaticFeatureOrder_CircularDependency() {
 	features := []*config.FeatureSet{
 		{
-			ConfigID: normalizeFeatureID("feature-a"),
+			ConfigID: normalizeFeatureID(testFeatureA),
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-b": map[string]any{},
+					testFeatureB: map[string]any{},
 				},
 			},
 		},
 		{
-			ConfigID: normalizeFeatureID("feature-b"),
+			ConfigID: normalizeFeatureID(testFeatureB),
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-a": map[string]any{},
+					testFeatureA: map[string]any{},
 				},
 			},
 		},
@@ -301,13 +278,13 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_NoOverride() {
 
 	features := []*config.FeatureSet{
 		{
-			ConfigID: normalizeFeatureID("feature-a"),
+			ConfigID: normalizeFeatureID(testFeatureA),
 			Config: &config.FeatureConfig{
-				DependsOn: config.DependsOnField{"feature-b": map[string]any{}},
+				DependsOn: config.DependsOnField{testFeatureB: map[string]any{}},
 			},
 		},
 		{
-			ConfigID: normalizeFeatureID("feature-b"),
+			ConfigID: normalizeFeatureID(testFeatureB),
 			Config:   &config.FeatureConfig{DependsOn: config.DependsOnField{}},
 		},
 	}
@@ -316,8 +293,8 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_NoOverride() {
 	suite.Require().NoError(err)
 
 	suite.Len(order, 2)
-	expectedFeatureB := normalizeFeatureID("feature-b")
-	expectedFeatureA := normalizeFeatureID("feature-a")
+	expectedFeatureB := normalizeFeatureID(testFeatureB)
+	expectedFeatureA := normalizeFeatureID(testFeatureA)
 	if order[0].ConfigID != expectedFeatureB || order[1].ConfigID != expectedFeatureA {
 		suite.Failf(
 			"Order mismatch",
@@ -333,18 +310,18 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_NoOverride() {
 func (suite *ExtendTestSuite) TestComputeFeatureOrder_OverrideViolatesDependsOn() {
 	devContainer := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			OverrideFeatureInstallOrder: []string{"feature-a", "feature-b"},
+			OverrideFeatureInstallOrder: []string{testFeatureA, testFeatureB},
 		},
 	}
 
 	features := []*config.FeatureSet{
 		{
-			ConfigID: "feature-a",
+			ConfigID: testFeatureA,
 			Config: &config.FeatureConfig{
-				DependsOn: config.DependsOnField{"feature-b": map[string]any{}},
+				DependsOn: config.DependsOnField{testFeatureB: map[string]any{}},
 			},
 		},
-		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureB, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 
 	_, err := getSortedFeatureSets(devContainer, features)
@@ -356,104 +333,104 @@ func (suite *ExtendTestSuite) TestComputeFeatureOrder_OverrideViolatesDependsOn(
 func (suite *ExtendTestSuite) TestComputeFeatureOrder_ValidOverride() {
 	devContainer := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			OverrideFeatureInstallOrder: []string{"feature-b", "feature-a"},
+			OverrideFeatureInstallOrder: []string{testFeatureB, testFeatureA},
 		},
 	}
 
 	features := []*config.FeatureSet{
 		{
-			ConfigID: "feature-a",
+			ConfigID: testFeatureA,
 			Config: &config.FeatureConfig{
-				DependsOn: config.DependsOnField{"feature-b": map[string]any{}},
+				DependsOn: config.DependsOnField{testFeatureB: map[string]any{}},
 			},
 		},
-		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureB, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 
 	order, err := getSortedFeatureSets(devContainer, features)
 	suite.Require().NoError(err)
 	suite.Len(order, 2)
-	suite.Equal("feature-b", order[0].ConfigID)
-	suite.Equal("feature-a", order[1].ConfigID)
+	suite.Equal(testFeatureB, order[0].ConfigID)
+	suite.Equal(testFeatureA, order[1].ConfigID)
 }
 
 func (suite *ExtendTestSuite) TestComputeFeatureOrder_PartialOverride() {
 	devContainer := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			OverrideFeatureInstallOrder: []string{"feature-c"},
+			OverrideFeatureInstallOrder: []string{testFeatureC},
 		},
 	}
 
 	features := []*config.FeatureSet{
 		{
-			ConfigID: "feature-a",
+			ConfigID: testFeatureA,
 			Config: &config.FeatureConfig{
-				DependsOn: config.DependsOnField{"feature-b": map[string]any{}},
+				DependsOn: config.DependsOnField{testFeatureB: map[string]any{}},
 			},
 		},
-		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
-		{ConfigID: "feature-c", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureB, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureC, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 
 	order, err := getSortedFeatureSets(devContainer, features)
 	suite.Require().NoError(err)
 	suite.Len(order, 3)
 
-	if order[0].ConfigID != "feature-c" {
+	if order[0].ConfigID != testFeatureC {
 		suite.Failf("First element mismatch", "Expected feature-c first, got %s", order[0].ConfigID)
 	}
 }
 
 func (suite *ExtendTestSuite) TestBuildOverridePriority() {
 	features := []*config.FeatureSet{
-		{ConfigID: "feature-a", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
-		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
-		{ConfigID: "feature-c", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureA, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureB, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureC, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 	lookup := buildFeatureLookupMap(features)
 
-	overrideOrder := []string{"feature-c", "feature-a"}
+	overrideOrder := []string{testFeatureC, testFeatureA}
 	priority := buildOverridePriority(overrideOrder, lookup)
 
-	suite.Equal(0, priority["feature-c"])
-	suite.Equal(1, priority["feature-a"])
-	_, hasB := priority["feature-b"]
+	suite.Equal(0, priority[testFeatureC])
+	suite.Equal(1, priority[testFeatureA])
+	_, hasB := priority[testFeatureB]
 	suite.False(hasB)
 }
 
 func (suite *ExtendTestSuite) TestOverridePriorityAffectsSortOrder() {
 	devContainer := &config.DevContainerConfig{
 		DevContainerConfigBase: config.DevContainerConfigBase{
-			OverrideFeatureInstallOrder: []string{"feature-c", "feature-a"},
+			OverrideFeatureInstallOrder: []string{testFeatureC, testFeatureA},
 		},
 	}
 
 	features := []*config.FeatureSet{
-		{ConfigID: "feature-a", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
-		{ConfigID: "feature-b", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
-		{ConfigID: "feature-c", Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureA, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureB, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
+		{ConfigID: testFeatureC, Config: &config.FeatureConfig{DependsOn: config.DependsOnField{}}},
 	}
 
 	order, err := getSortedFeatureSets(devContainer, features)
 	suite.Require().NoError(err)
 	suite.Len(order, 3)
-	suite.Equal("feature-c", order[0].ConfigID)
-	suite.Equal("feature-a", order[1].ConfigID)
-	suite.Equal("feature-b", order[2].ConfigID)
+	suite.Equal(testFeatureC, order[0].ConfigID)
+	suite.Equal(testFeatureA, order[1].ConfigID)
+	suite.Equal(testFeatureB, order[2].ConfigID)
 }
 
 func (suite *ExtendTestSuite) TestExtractFeatureByID() {
 	features := []*config.FeatureSet{
-		{ConfigID: "feature-a"},
-		{ConfigID: "feature-b"},
+		{ConfigID: testFeatureA},
+		{ConfigID: testFeatureB},
 	}
 
-	found := extractFeatureByID(features, "feature-b")
-	if found == nil || found.ConfigID != "feature-b" {
+	found := extractFeatureByID(features, testFeatureB)
+	if found == nil || found.ConfigID != testFeatureB {
 		suite.Fail("Expected to find feature-b")
 	}
 
-	notFound := extractFeatureByID(features, "feature-c")
+	notFound := extractFeatureByID(features, testFeatureC)
 	if notFound != nil {
 		suite.Fail("Expected not to find feature-c")
 	}
@@ -461,15 +438,15 @@ func (suite *ExtendTestSuite) TestExtractFeatureByID() {
 
 func (suite *ExtendTestSuite) TestContainsFeature() {
 	features := []*config.FeatureSet{
-		{ConfigID: "feature-a"},
-		{ConfigID: "feature-b"},
+		{ConfigID: testFeatureA},
+		{ConfigID: testFeatureB},
 	}
 
-	if !containsFeature(features, "feature-a") {
+	if !containsFeature(features, testFeatureA) {
 		suite.Fail("Expected to contain feature-a")
 	}
 
-	if containsFeature(features, "feature-c") {
+	if containsFeature(features, testFeatureC) {
 		suite.Fail("Expected not to contain feature-c")
 	}
 }
@@ -562,15 +539,15 @@ func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDResolution() {
 
 func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDNotUsedWhenPrimaryExists() {
 	features := map[string]*config.FeatureSet{
-		"feature-a": {
-			ConfigID: "feature-a",
+		testFeatureA: {
+			ConfigID: testFeatureA,
 			Config: &config.FeatureConfig{
-				LegacyIds: []string{"feature-b"},
+				LegacyIds: []string{testFeatureB},
 				DependsOn: config.DependsOnField{},
 			},
 		},
-		"feature-b": {
-			ConfigID: "feature-b",
+		testFeatureB: {
+			ConfigID: testFeatureB,
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{},
 			},
@@ -579,7 +556,7 @@ func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDNotUsedWhenPrimary
 			ConfigID: "consumer",
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-b": map[string]any{},
+					testFeatureB: map[string]any{},
 				},
 			},
 		},
@@ -588,7 +565,7 @@ func (suite *ExtendTestSuite) TestResolveDependencies_LegacyIDNotUsedWhenPrimary
 	resolved, err := resolveDependencies(&featureProcessor{}, features)
 	suite.Require().NoError(err)
 	suite.Len(resolved, 3)
-	suite.NotNil(resolved["feature-b"])
+	suite.NotNil(resolved[testFeatureB])
 }
 
 func (suite *ExtendTestSuite) TestVersionAwareDeduplication_SameConfigSameVersion() {
