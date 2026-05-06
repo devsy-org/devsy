@@ -21,6 +21,7 @@ type ReadConfigurationCmd struct {
 	WorkspaceFolder              string
 	Config                       string
 	ContainerID                  string
+	IDLabels                     []string
 	IncludeFeaturesConfiguration bool
 	IncludeMergedConfiguration   bool
 }
@@ -56,6 +57,13 @@ func NewReadConfigurationCmd(f *flags.GlobalFlags) *cobra.Command {
 			"Path to a specific devcontainer.json",
 		)
 	readConfigCmd.Flags().
+		StringArrayVar(
+			&cmd.IDLabels,
+			"id-label",
+			nil,
+			"Override the default container identification labels (format: key=value, can be specified multiple times)",
+		)
+	readConfigCmd.Flags().
 		BoolVar(
 			&cmd.IncludeFeaturesConfiguration,
 			"include-features-configuration",
@@ -89,6 +97,10 @@ func (cmd *ReadConfigurationCmd) Run(
 	c *cobra.Command,
 	_ []string,
 ) error {
+	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
+		return err
+	}
+
 	parsedConfig, workspaceFolder, err := cmd.resolve(c.Context())
 	if err != nil {
 		return err
@@ -129,13 +141,16 @@ func (cmd *ReadConfigurationCmd) resolve(ctx context.Context) (
 	string,
 	error,
 ) {
-	if cmd.ContainerID == "" && cmd.WorkspaceFolder == "" {
+	if cmd.ContainerID == "" && cmd.WorkspaceFolder == "" && len(cmd.IDLabels) == 0 {
 		return nil, "", fmt.Errorf(
-			"either --workspace-folder or --container-id must be provided",
+			"either --workspace-folder, --container-id, or --id-label must be provided",
 		)
 	}
 	if cmd.ContainerID != "" {
 		return cmd.resolveConfigFromContainer(ctx)
+	}
+	if len(cmd.IDLabels) > 0 {
+		return cmd.resolveConfigFromIDLabels(ctx)
 	}
 	return cmd.resolveConfig()
 }
@@ -205,6 +220,43 @@ func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context)
 	containerDetails := &details[0]
 	subCtx := &config2.SubstitutionContext{}
 
+	imageMetadata, err := metadata.GetImageMetadataFromContainer(
+		containerDetails,
+		subCtx,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("get image metadata from container: %w", err)
+	}
+
+	parsedConfig := &config2.DevContainerConfig{}
+	if len(imageMetadata.Config) > 0 {
+		last := imageMetadata.Config[len(imageMetadata.Config)-1]
+		parsedConfig.DevContainerConfigBase = last.DevContainerConfigBase
+		parsedConfig.DevContainerActions = last.DevContainerActions
+		parsedConfig.NonComposeBase = last.NonComposeBase
+	}
+
+	workspaceFolder := containerDetails.Config.WorkingDir
+	if workspaceFolder == "" {
+		workspaceFolder = "/"
+	}
+
+	return parsedConfig, workspaceFolder, nil
+}
+
+func (cmd *ReadConfigurationCmd) resolveConfigFromIDLabels(ctx context.Context) (
+	*config2.DevContainerConfig,
+	string,
+	error,
+) {
+	containerDetails, err := findRunningContainer(
+		ctx, defaultDockerCommand, "", cmd.IDLabels,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	subCtx := &config2.SubstitutionContext{}
 	imageMetadata, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		subCtx,
