@@ -26,6 +26,12 @@ const (
 	flagSetUpWorkspaceFolder = "workspace-folder"
 	flagSetUpDockerPath      = "docker-path"
 	dockerExecSubcommand     = "exec"
+
+	hookOnCreateCommand      = "onCreateCommand"
+	hookUpdateContentCommand = "updateContentCommand"
+	hookPostCreateCommand    = "postCreateCommand"
+	hookPostStartCommand     = "postStartCommand"
+	hookPostAttachCommand    = "postAttachCommand"
 )
 
 // SetUpCmd holds the set-up command flags.
@@ -330,11 +336,11 @@ func (cmd *SetUpCmd) runSetUpLifecycleHooks(
 		name string
 		cmds []types.LifecycleHook
 	}{
-		{"onCreateCommand", result.MergedConfig.OnCreateCommands},
-		{"updateContentCommand", result.MergedConfig.UpdateContentCommands},
-		{"postCreateCommand", result.MergedConfig.PostCreateCommands},
-		{"postStartCommand", result.MergedConfig.PostStartCommands},
-		{"postAttachCommand", result.MergedConfig.PostAttachCommands},
+		{hookOnCreateCommand, result.MergedConfig.OnCreateCommands},
+		{hookUpdateContentCommand, result.MergedConfig.UpdateContentCommands},
+		{hookPostCreateCommand, result.MergedConfig.PostCreateCommands},
+		{hookPostStartCommand, result.MergedConfig.PostStartCommands},
+		{hookPostAttachCommand, result.MergedConfig.PostAttachCommands},
 	}
 
 	for _, hook := range hooks {

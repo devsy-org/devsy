@@ -15,6 +15,7 @@ const (
 	testEnvBaz        = "BAZ=qux"
 	testEnvFoo        = "FOO=bar"
 	testWorkdirFlag   = "--workdir"
+	testCmdEcho       = "echo"
 )
 
 func TestNewSetUpCmd_CommandName(t *testing.T) {
@@ -110,11 +111,11 @@ func TestBuildDockerExecArgs_NoWorkdir(t *testing.T) {
 		testContainerName,
 		nil,
 		"",
-		[]string{"echo", "hello"},
+		[]string{testCmdEcho, "hello"},
 	)
 	expected := []string{
 		dockerExecSubcommand,
-		testContainerName, "echo", "hello",
+		testContainerName, testCmdEcho, "hello",
 	}
 	assert.Equal(t, expected, args)
 }
