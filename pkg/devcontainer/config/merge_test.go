@@ -350,7 +350,7 @@ func TestMergeLifestyleHooks_FeatureBeforeImage(t *testing.T) {
 	imageHook := types.LifecycleHook{"image-cmd": {"echo image"}}
 
 	// Simulate reversed entries as passed to mergeLifestyleHooks:
-	// [base_image_entry, feature_entry]
+	// [devcontainer_config_entry, feature_entry]
 	entries := []*ImageMetadata{
 		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
 		{DevContainerActions: DevContainerActions{OnCreateCommand: featureHook}},
@@ -429,6 +429,40 @@ func TestMergeLifestyleHooks_AllHookTypes(t *testing.T) {
 	}
 }
 
+func TestMergeLifestyleHooks_EmptyEntries(t *testing.T) {
+	got := mergeLifestyleHooks(nil, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+	if got != nil {
+		t.Fatalf("expected nil for nil entries, got %v", got)
+	}
+
+	got = mergeLifestyleHooks([]*ImageMetadata{}, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+	if got != nil {
+		t.Fatalf("expected nil for empty entries, got %v", got)
+	}
+}
+
+func TestMergeLifestyleHooks_SingleEntry(t *testing.T) {
+	hook := types.LifecycleHook{"cmd": {"echo hello"}}
+	entries := []*ImageMetadata{
+		{DevContainerActions: DevContainerActions{OnCreateCommand: hook}},
+	}
+
+	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(got))
+	}
+	if _, ok := got[0]["cmd"]; !ok {
+		t.Errorf("expected hook, got %v", got[0])
+	}
+}
+
 func TestMergeLifestyleHooks_SkipsEmpty(t *testing.T) {
 	featureHook := types.LifecycleHook{"feat": {"echo feat"}}
 
@@ -455,10 +489,10 @@ func TestMergeLifestyleHooks_MultipleFeatures(t *testing.T) {
 	feature1Hook := types.LifecycleHook{"feat1": {"echo feat1"}}
 	feature2Hook := types.LifecycleHook{"feat2": {"echo feat2"}}
 
-	// After ReverseSlice in MergeConfiguration, entries are:
-	// [base_image, feature2 (last applied), feature1 (first applied), user_config]
-	// mergeLifestyleHooks iterates in reverse producing:
-	// user_config hooks, feature1 hooks, feature2 hooks, base_image hooks
+	// After ReverseSlice in MergeConfiguration, reversed entries are:
+	// [devcontainer_config, feature2 (last applied), feature1 (first applied)]
+	// mergeLifestyleHooks iterates entries[1:] backward (feat1, feat2),
+	// then appends entries[0] (devcontainer_config)
 	entries := []*ImageMetadata{
 		{DevContainerActions: DevContainerActions{OnCreateCommand: imageHook}},
 		{DevContainerActions: DevContainerActions{OnCreateCommand: feature2Hook}},

@@ -349,12 +349,18 @@ func mergeLifestyleHooks(
 	entries []*ImageMetadata,
 	m func(entry *ImageMetadata) types.LifecycleHook,
 ) []types.LifecycleHook {
+	if len(entries) == 0 {
+		return nil
+	}
 	var out []types.LifecycleHook
-	for _, entry := range slices.Backward(entries) {
+	for _, entry := range slices.Backward(entries[1:]) {
 		val := m(entry)
 		if len(val) > 0 {
 			out = append(out, val)
 		}
+	}
+	if val := m(entries[0]); len(val) > 0 {
+		out = append(out, val)
 	}
 	return out
 }
