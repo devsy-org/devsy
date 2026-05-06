@@ -6,12 +6,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
-	AutoForwardIgnore = "ignore"
-	AutoForwardSilent = "silent"
+	AutoForwardIgnore = config.AutoForwardIgnore
+	AutoForwardSilent = config.AutoForwardSilent
 )
 
 // PortForwardAttribute carries port metadata resolved from portsAttributes
