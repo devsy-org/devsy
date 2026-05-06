@@ -1,0 +1,9 @@
+{
+  "name": "ComposeHostRequirements",
+  "dockerComposeFile": "./docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "hostRequirements": {
+    "cpus": 128
+  }
+}
