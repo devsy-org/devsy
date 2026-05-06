@@ -14,10 +14,11 @@ type GlobalFlags struct {
 	UID       string
 	Owner     platform.OwnerFilter
 
-	LogOutput string
-	Verbosity int
-	Quiet     bool
-	Debug     bool
+	LogOutput    string
+	ResultFormat string
+	Verbosity    int
+	Quiet        bool
+	Debug        bool
 }
 
 // SetGlobalFlags applies the global flags.
@@ -29,6 +30,12 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		config.BinaryName+"-home",
 		"",
 		"If defined will override the default devsy home",
+	)
+	flags.StringVar(
+		&globalFlags.ResultFormat,
+		"result-format",
+		"json",
+		"The result output format. Can be json, plain, or auto",
 	)
 	flags.StringVar(
 		&globalFlags.LogOutput,

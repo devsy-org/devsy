@@ -2,10 +2,12 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -177,5 +179,51 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(stdout).To(gomega.Equal("found"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should emit JSON envelope on stderr with --result-format json",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			framework.ExpectNoError(err)
+
+			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				"--result-format", "json",
+				workspaceFolderFlag, tempDir,
+				"--", echoCommand, "-n", "hello",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.Equal("hello"))
+
+			lines := strings.Split(strings.TrimSpace(stderr), "\n")
+			gomega.Expect(lines).NotTo(gomega.BeEmpty())
+			lastLine := lines[len(lines)-1]
+			var envelope config.ResultEnvelope
+			err = json.Unmarshal([]byte(lastLine), &envelope)
+			framework.ExpectNoError(err)
+			gomega.Expect(envelope.Outcome).To(gomega.Equal("success"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should suppress JSON envelope on stderr with --result-format plain",
+		func(ctx context.Context) {
+			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			framework.ExpectNoError(err)
+
+			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+				execCommand,
+				"--result-format", "plain",
+				workspaceFolderFlag, tempDir,
+				"--", echoCommand, "-n", "hello",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.Equal("hello"))
+
+			for line := range strings.SplitSeq(stderr, "\n") {
+				var envelope config.ResultEnvelope
+				if json.Unmarshal([]byte(line), &envelope) == nil {
+					gomega.Expect(envelope.Outcome).To(gomega.BeEmpty(),
+						"expected no JSON envelope on stderr, but found one: %s", line)
+				}
+			}
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })

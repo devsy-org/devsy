@@ -14,6 +14,7 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -66,9 +67,13 @@ func (cmd *UpCmd) Run(
 ) error {
 	cmd.prepareWorkspace(client)
 
+	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if emitJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 	if wctx == nil {
@@ -80,24 +85,30 @@ func (cmd *UpCmd) Run(
 	}
 
 	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if emitJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
 	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if emitJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
-	containerID := ""
-	var warnings []string
-	if wctx.result != nil {
-		if wctx.result.ContainerDetails != nil {
-			containerID = wctx.result.ContainerDetails.ID
+	if emitJSON {
+		containerID := ""
+		var warnings []string
+		if wctx.result != nil {
+			if wctx.result.ContainerDetails != nil {
+				containerID = wctx.result.ContainerDetails.ID
+			}
+			warnings = wctx.result.HostWarnings
 		}
-		warnings = wctx.result.HostWarnings
+		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	}
-	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	return nil
 }
 
