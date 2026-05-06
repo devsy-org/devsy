@@ -41,3 +41,10 @@ func TestResolveMode_Auto_TTY(t *testing.T) {
 		t.Errorf("ResolveMode(\"auto\") with TTY = %q, want %q", got, ModePlain)
 	}
 }
+
+func TestResolveMode_InvalidValue(t *testing.T) {
+	got := ResolveMode("bogus")
+	if got != ModeJSON {
+		t.Errorf("ResolveMode(\"bogus\") = %q, want %q", got, ModeJSON)
+	}
+}

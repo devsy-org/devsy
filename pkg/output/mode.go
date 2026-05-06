@@ -13,10 +13,12 @@ func ResolveMode(flagValue string) string {
 		return ModeJSON
 	case ModePlain:
 		return ModePlain
-	default:
+	case "auto":
 		if !terminal.IsTerminalOut {
 			return ModeJSON
 		}
 		return ModePlain
+	default:
+		return ModeJSON
 	}
 }
