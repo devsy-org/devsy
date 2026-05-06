@@ -153,7 +153,7 @@ func TestExecCmd_NoEnvelopeWithoutOutputFormat(t *testing.T) {
 
 func TestExecCmd_EnvelopeWithOutputFormatJSON(t *testing.T) {
 	cmd := &ExecCmd{
-		GlobalFlags: &flags.GlobalFlags{OutputFormat: "json"},
+		GlobalFlags: &flags.GlobalFlags{OutputFormat: formatJSON},
 		ContainerID: "nonexistent-container-id-88888",
 	}
 	err := cmd.runWithContainerID(t.Context(), []string{"echo", "hello"})
