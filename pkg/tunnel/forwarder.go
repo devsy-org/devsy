@@ -3,8 +3,10 @@ package tunnel
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -67,12 +69,32 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 		}
 	}
 
+	if attr.ElevateIfNeeded {
+		portNum, _ := strconv.Atoi(port)
+		if portNum < 1024 {
+			if runtime.GOOS == "linux" {
+				log.Warnf(
+					"Port %s requires elevation (elevateIfNeeded=true); privileged port binding not supported in tunnel mode",
+					port,
+				)
+			} else {
+				log.Warnf("Port %s: elevateIfNeeded is only applicable on Linux", port)
+			}
+		}
+	}
+
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	f.portMap[port] = cancel
 
-	label := attr.Label
-	if label != "" {
-		log.Infof("Start port-forwarding on port %s (%s)", port, label)
+	parts := []string{}
+	if attr.Label != "" {
+		parts = append(parts, attr.Label)
+	}
+	if attr.Protocol != "" {
+		parts = append(parts, attr.Protocol)
+	}
+	if len(parts) > 0 {
+		log.Infof("Start port-forwarding on port %s (%s)", port, strings.Join(parts, ", "))
 	} else {
 		log.Infof("Start port-forwarding on port %s", port)
 	}

@@ -204,4 +204,95 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 				)
 			},
 		)
+
+		ginkgo.It(
+			"should skip forwarding when requireLocalPort=true and host port is occupied",
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+			func(ctx context.Context) {
+				if runtime.GOOS == "windows" {
+					ginkgo.Skip("skipping on windows")
+				}
+
+				requirePort := 9503
+
+				// Occupy the host port BEFORE starting the workspace
+				hostListener, err := net.Listen(
+					"tcp",
+					net.JoinHostPort("localhost", strconv.Itoa(requirePort)),
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_ = hostListener.Close()
+				})
+
+				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
+				framework.ExpectNoError(err)
+
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+				_ = f.DevsyProviderAdd(ctx, "docker")
+				err = f.DevsyProviderUse(ctx, "docker")
+				framework.ExpectNoError(err)
+
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+					framework.CleanupTempDir(initialDir, tempDir)
+				})
+
+				err = f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				serverCtx, serverCancel := context.WithCancel(ctx)
+				defer serverCancel()
+
+				workspaceName := filepath.Base(tempDir)
+
+				// Start server inside the container on port 9503
+				// #nosec G204 -- test command with controlled arguments
+				serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
+					"ssh", tempDir, "--command",
+					"go run /workspaces/"+workspaceName+"/server.go "+strconv.Itoa(requirePort),
+				)
+				err = serverCmd.Start()
+				framework.ExpectNoError(err)
+
+				var wg sync.WaitGroup
+				wg.Go(func() { _ = serverCmd.Wait() })
+
+				portForwardCtx, cancelPort := context.WithTimeout(ctx, 60*time.Second)
+				defer cancelPort()
+				wg.Go(func() {
+					_ = f.DevsyPortTest(portForwardCtx, strconv.Itoa(requirePort), tempDir)
+				})
+
+				ginkgo.DeferCleanup(func() {
+					serverCancel()
+					cancelPort()
+					wg.Wait()
+				})
+
+				// Port 9503 should NOT be reachable because the host port is occupied
+				// and requireLocalPort=true prevents fallback to another port
+				requireAddr := net.JoinHostPort("localhost", strconv.Itoa(requirePort))
+				gomega.Consistently(func() bool {
+					conn, dialErr := net.DialTimeout("tcp", requireAddr, 1*time.Second)
+					if dialErr != nil {
+						return false
+					}
+					// If we connect, check if it's the host listener (not the container server)
+					_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+					buf := make([]byte, 1024)
+					n, readErr := conn.Read(buf)
+					_ = conn.Close()
+					// The host listener doesn't write anything, so we should get
+					// a timeout or EOF — not "PONG\n" from the container
+					if readErr == nil && n > 0 && string(buf[:n]) == "PONG\n" {
+						return true
+					}
+					return false
+				}, 5*time.Second, 1*time.Second).Should(
+					gomega.BeFalse(),
+					"Port 9503 (requireLocalPort=true) should NOT be forwarded when host port is occupied",
+				)
+			},
+		)
 	})

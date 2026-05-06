@@ -230,9 +230,11 @@ func portOptionsFromResult() []netstat.WatcherOption {
 		}
 		attr := devconfig.ResolvePortAttribute(portNum, pa, opa)
 		return netstat.PortForwardAttribute{
-			Label:         attr.Label,
-			Protocol:      attr.Protocol,
-			OnAutoForward: attr.OnAutoForward,
+			Label:            attr.Label,
+			Protocol:         attr.Protocol,
+			OnAutoForward:    attr.OnAutoForward,
+			RequireLocalPort: attr.RequireLocalPort,
+			ElevateIfNeeded:  attr.ElevateIfNeeded,
 		}
 	}
 	return []netstat.WatcherOption{

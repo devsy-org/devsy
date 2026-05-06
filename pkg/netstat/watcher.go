@@ -6,18 +6,24 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-const AutoForwardIgnore = "ignore"
+const (
+	AutoForwardIgnore = config.AutoForwardIgnore
+	AutoForwardSilent = config.AutoForwardSilent
+)
 
 // PortForwardAttribute carries port metadata resolved from portsAttributes
 // in the devcontainer config. Downstream forwarders use this to apply
 // protocol, label, and forwarding-policy decisions.
 type PortForwardAttribute struct {
-	Label         string
-	Protocol      string
-	OnAutoForward string
+	Label            string
+	Protocol         string
+	OnAutoForward    string
+	RequireLocalPort bool
+	ElevateIfNeeded  bool
 }
 
 type Forwarder interface {
@@ -113,10 +119,19 @@ func (w *Watcher) runOnce() error {
 				continue
 			}
 
-			if attr.Label != "" {
-				log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
-			} else {
-				log.Debugf("Found open port %s ready to forward", port)
+			switch attr.OnAutoForward {
+			case AutoForwardSilent, "":
+				if attr.Label != "" {
+					log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
+				} else {
+					log.Debugf("Found open port %s ready to forward", port)
+				}
+			default:
+				if attr.Label != "" {
+					log.Infof("Found open port %s (%s) ready to forward", port, attr.Label)
+				} else {
+					log.Infof("Found open port %s ready to forward", port)
+				}
 			}
 
 			err = w.forwarder.Forward(port, attr)

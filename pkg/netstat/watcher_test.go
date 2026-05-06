@@ -67,7 +67,7 @@ func TestWatcher_ResolveAttr_WithResolver(t *testing.T) {
 			return PortForwardAttribute{
 				Label:         "Web App",
 				Protocol:      "https",
-				OnAutoForward: "silent",
+				OnAutoForward: AutoForwardSilent,
 			}
 		}
 		return PortForwardAttribute{OnAutoForward: AutoForwardIgnore}
@@ -77,7 +77,7 @@ func TestWatcher_ResolveAttr_WithResolver(t *testing.T) {
 	attr := w.resolveAttr("3000")
 	assert.Equal(t, "Web App", attr.Label)
 	assert.Equal(t, "https", attr.Protocol)
-	assert.Equal(t, "silent", attr.OnAutoForward)
+	assert.Equal(t, AutoForwardSilent, attr.OnAutoForward)
 
 	attr = w.resolveAttr("9999")
 	assert.Equal(t, "ignore", attr.OnAutoForward)
@@ -88,7 +88,7 @@ func TestWatcher_PortAttributes_IgnoreSkipsForward(t *testing.T) {
 		if port == "9501" {
 			return PortForwardAttribute{OnAutoForward: AutoForwardIgnore}
 		}
-		return PortForwardAttribute{OnAutoForward: "silent", Label: "Allowed"}
+		return PortForwardAttribute{OnAutoForward: AutoForwardSilent, Label: "Allowed"}
 	}
 	w := NewWatcher(&mockForwarder{}, WithPortAttributes(resolver))
 
@@ -97,6 +97,30 @@ func TestWatcher_PortAttributes_IgnoreSkipsForward(t *testing.T) {
 	assert.Equal(t, "ignore", attr.OnAutoForward)
 
 	attr = w.resolveAttr("9500")
-	assert.Equal(t, "silent", attr.OnAutoForward)
+	assert.Equal(t, AutoForwardSilent, attr.OnAutoForward)
 	assert.Equal(t, "Allowed", attr.Label)
+}
+
+func TestWatcher_OnAutoForwardSilent_Forwards(t *testing.T) {
+	mf := &mockForwarder{}
+	resolver := func(port string) PortForwardAttribute {
+		return PortForwardAttribute{OnAutoForward: AutoForwardSilent, Label: "Silent Service"}
+	}
+	w := NewWatcher(mf, WithPortAttributes(resolver))
+
+	attr := w.resolveAttr("8080")
+	assert.Equal(t, AutoForwardSilent, attr.OnAutoForward)
+	assert.NotEqual(t, AutoForwardIgnore, attr.OnAutoForward, "silent should not skip")
+}
+
+func TestWatcher_OnAutoForwardNotify_Forwards(t *testing.T) {
+	mf := &mockForwarder{}
+	resolver := func(port string) PortForwardAttribute {
+		return PortForwardAttribute{OnAutoForward: "notify", Label: "Notify Service"}
+	}
+	w := NewWatcher(mf, WithPortAttributes(resolver))
+
+	attr := w.resolveAttr("8080")
+	assert.Equal(t, "notify", attr.OnAutoForward)
+	assert.NotEqual(t, AutoForwardIgnore, attr.OnAutoForward, "notify should not skip")
 }
