@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -244,7 +245,7 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 	if len(details) == 0 {
 		errMsg := fmt.Sprintf("container %s not found", cmd.ContainerID)
 		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
+		return nil, errors.New(errMsg)
 	}
 
 	containerDetails := &details[0]
@@ -255,7 +256,7 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 			containerDetails.State.Status,
 		)
 		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
+		return nil, errors.New(errMsg)
 	}
 	return containerDetails, nil
 }
@@ -276,7 +277,7 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 	if devContainerConfig == nil {
 		errMsg := "no devcontainer configuration found"
 		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
-		return nil, fmt.Errorf("%s", errMsg)
+		return nil, errors.New(errMsg)
 	}
 
 	mergedConfig, err := devcconfig.MergeConfiguration(devContainerConfig, nil)
@@ -355,6 +356,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 			result.MergedConfig,
 			cmd.OverrideConfig,
 		); err != nil {
+			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 			return nil, nil, fmt.Errorf("apply override config: %w", err)
 		}
 	}

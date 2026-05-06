@@ -50,7 +50,7 @@ func TestNewRunUserCommandsCmd_ContainerIDWithoutConfigFails(t *testing.T) {
 		"--config is required when --container-id is used without --workspace-folder")
 }
 
-func TestNewRunUserCommandsCmd_ContainerIDWithWorkspaceFolderNoConfigOK(t *testing.T) {
+func TestNewRunUserCommandsCmd_ContainerIDFlagExists(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
 	f := cmd.Flags().Lookup("container-id")
 	require.NotNil(t, f)
