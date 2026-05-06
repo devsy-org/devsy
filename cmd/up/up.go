@@ -59,7 +59,7 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *UpCmd) Run(
+func (cmd *UpCmd) Run( //nolint:cyclop
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,

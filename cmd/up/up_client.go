@@ -64,7 +64,7 @@ var inheritedEnvironmentVariables = []string{
 	"GIT_COMMITTER_DATE",
 }
 
-func (cmd *UpCmd) prepareClient(
+func (cmd *UpCmd) prepareClient( //nolint:funlen
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,

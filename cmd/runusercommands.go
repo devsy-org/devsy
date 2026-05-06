@@ -129,6 +129,8 @@ func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
 	return primary
 }
 
+const updateContentCommand = "updateContentCommand"
+
 type lifecycleExecParams struct {
 	ctx         context.Context
 	helper      *docker.DockerHelper
@@ -384,7 +386,7 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 		skip bool
 	}{
 		{"onCreateCommand", result.MergedConfig.OnCreateCommands, cmd.SkipOnCreate},
-		{"updateContentCommand", result.MergedConfig.UpdateContentCommands, cmd.SkipUpdateContent},
+		{updateContentCommand, result.MergedConfig.UpdateContentCommands, cmd.SkipUpdateContent},
 		{"postCreateCommand", result.MergedConfig.PostCreateCommands, cmd.SkipPostCreate},
 		{"postStartCommand", result.MergedConfig.PostStartCommands, cmd.SkipPostStart},
 		{"postAttachCommand", result.MergedConfig.PostAttachCommands, cmd.SkipPostAttach},
@@ -394,7 +396,7 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 
 	for i, hook := range hooks {
 		if cmd.Prebuild && i >= 2 {
-			log.Infof("stopping lifecycle execution (--prebuild: after updateContentCommand)")
+			log.Infof("stopping lifecycle execution (--prebuild: after %s)", updateContentCommand)
 			return nil
 		}
 		if cmd.SkipNonBlockingCommands && i > waitForBoundary {
@@ -424,14 +426,14 @@ func resolveWaitForBoundary(result *devcconfig.Result) int {
 	}
 	hookNames := []string{
 		"onCreateCommand",
-		"updateContentCommand",
+		updateContentCommand,
 		"postCreateCommand",
 		"postStartCommand",
 		"postAttachCommand",
 	}
 	waitFor := result.MergedConfig.WaitFor
 	if waitFor == "" {
-		waitFor = "updateContentCommand"
+		waitFor = updateContentCommand
 	}
 	for i, name := range hookNames {
 		if name == waitFor {
