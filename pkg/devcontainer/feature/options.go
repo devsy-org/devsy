@@ -135,7 +135,7 @@ func parseFeatureSecretsFile(path string) (map[string]map[string]string, error) 
 	return secrets, nil
 }
 
-func getFeatureEnvVariables(feature *config.FeatureConfig, featureOptions any) []string {
+func GetFeatureEnvVariables(feature *config.FeatureConfig, featureOptions any) []string {
 	options := getFeatureValueObject(feature, featureOptions)
 	variables := []string{}
 	for k, v := range options {

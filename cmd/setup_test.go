@@ -15,6 +15,8 @@ const (
 	testEnvBaz        = "BAZ=qux"
 	testEnvFoo        = "FOO=bar"
 	testWorkdirFlag   = "--workdir"
+	testCmdEcho       = "echo"
+	testCmdHello      = "hello"
 )
 
 func TestNewSetUpCmd_CommandName(t *testing.T) {
@@ -41,6 +43,13 @@ func TestNewSetUpCmd_ConfigFlagOptional(t *testing.T) {
 func TestNewSetUpCmd_WorkspaceFolderFlagOptional(t *testing.T) {
 	cmd := NewSetUpCmd(&flags.GlobalFlags{})
 	f := cmd.Flags().Lookup(flagSetUpWorkspaceFolder)
+	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
+}
+
+func TestNewSetUpCmd_DockerPathFlagOptional(t *testing.T) {
+	cmd := NewSetUpCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup(flagSetUpDockerPath)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
@@ -96,4 +105,31 @@ func TestBuildDockerExecArgs_MultipleCommandParts(t *testing.T) {
 		testContainerName, "ls", "-la", "/tmp",
 	}
 	assert.Equal(t, expected, args)
+}
+
+func TestBuildDockerExecArgs_NoWorkdir(t *testing.T) {
+	args := buildDockerExecArgs(
+		testContainerName,
+		nil,
+		"",
+		[]string{testCmdEcho, testCmdHello},
+	)
+	expected := []string{
+		dockerExecSubcommand,
+		testContainerName, testCmdEcho, testCmdHello,
+	}
+	assert.Equal(t, expected, args)
+}
+
+func TestSetUpCmd_ResolveDockerPath_Default(t *testing.T) {
+	cmd := &SetUpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	assert.Equal(t, defaultDockerCommand, cmd.resolveDockerPath())
+}
+
+func TestSetUpCmd_ResolveDockerPath_Custom(t *testing.T) {
+	cmd := &SetUpCmd{
+		GlobalFlags: &flags.GlobalFlags{},
+		DockerPath:  "/usr/local/bin/podman",
+	}
+	assert.Equal(t, "/usr/local/bin/podman", cmd.resolveDockerPath())
 }
