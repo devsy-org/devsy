@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/devsy-org/devsy/pkg/upgrade"
+	"github.com/devsy-org/devsy/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ func NewSelfUpdateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			if err := upgrade.Upgrade(ctx, cmd.Version, cmd.DryRun); err != nil {
+			if err := selfupdate.Upgrade(ctx, cmd.Version, cmd.DryRun); err != nil {
 				return fmt.Errorf("unable to update: %w", err)
 			}
 			return nil
