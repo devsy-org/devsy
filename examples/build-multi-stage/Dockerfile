@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1.22-bullseye AS go
+FROM ghcr.io/devsy-org/test-images/go:1 AS go
 
 ARG TARGETOS
 ARG TARGETARCH

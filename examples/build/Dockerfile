@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/devcontainers/go:1.22-bullseye
+FROM ghcr.io/devsy-org/test-images/go:1
 
 ARG TARGETOS
 ARG TARGETARCH
