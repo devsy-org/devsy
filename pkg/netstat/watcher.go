@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
-	portpkg "github.com/devsy-org/devsy/pkg/port"
 )
 
 const AutoForwardIgnore = "ignore"
@@ -114,13 +113,6 @@ func (w *Watcher) runOnce() error {
 			if attr.OnAutoForward == AutoForwardIgnore {
 				log.Debugf("Skipping port %s (onAutoForward=ignore)", port)
 				continue
-			}
-
-			if attr.RequireLocalPort {
-				if ok, _ := portpkg.IsAvailable("localhost:" + port); !ok {
-					log.Warnf("Port %s required locally but unavailable, skipping forward", port)
-					continue
-				}
 			}
 
 			switch attr.OnAutoForward {
