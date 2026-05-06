@@ -8,7 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-func TestFeatureConfigToImageMetadata_IncludesContainerEnv(t *testing.T) {
+func TestFeatureConfigToImageMetadata_ExcludesContainerEnv(t *testing.T) {
 	feature := &config.FeatureConfig{
 		ContainerEnv: map[string]string{
 			"FOO": "bar",
@@ -18,11 +18,11 @@ func TestFeatureConfigToImageMetadata_IncludesContainerEnv(t *testing.T) {
 
 	got := FeatureConfigToImageMetadata(feature)
 
-	if got.ContainerEnv == nil {
-		t.Fatal("expected ContainerEnv to be included in per-feature metadata, got nil")
-	}
-	if got.ContainerEnv["FOO"] != "bar" || got.ContainerEnv["BAZ"] != "qux" {
-		t.Fatalf("expected ContainerEnv to contain FOO=bar and BAZ=qux, got %v", got.ContainerEnv)
+	if got.ContainerEnv != nil {
+		t.Fatalf(
+			"expected ContainerEnv to NOT be in per-feature metadata (applied via Dockerfile ENV only), got %v",
+			got.ContainerEnv,
+		)
 	}
 }
 

@@ -754,6 +754,7 @@ func addHardDependencies(
 			if err := g.AddEdge(depKey, featureKey); err != nil {
 				return err
 			}
+			g.MarkEdgeHard(depKey, featureKey)
 		}
 	}
 	return nil
@@ -772,8 +773,24 @@ func addSoftDependencies(
 			continue
 		}
 
+		if depKey == featureKey {
+			continue
+		}
+
 		if hasHardDependency(feature, id, normalizedID) {
 			continue
+		}
+
+		if g.IsReachableViaHardEdges(featureKey, depKey) {
+			continue
+		}
+
+		if g.IsReachable(featureKey, depKey) {
+			return fmt.Errorf(
+				"circular dependency detected: feature %q has installsAfter dependency on %q which creates a cycle",
+				feature.ConfigID,
+				normalizedID,
+			)
 		}
 
 		if err := g.AddEdge(depKey, featureKey); err != nil {

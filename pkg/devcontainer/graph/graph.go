@@ -9,16 +9,18 @@ import (
 )
 
 type Graph[T comparable] struct {
-	nodes    map[string]T
-	edges    map[string][]string
-	inDegree map[string]int
+	nodes     map[string]T
+	edges     map[string][]string
+	inDegree  map[string]int
+	hardEdges map[string]map[string]bool
 }
 
 func NewGraph[T comparable]() *Graph[T] {
 	return &Graph[T]{
-		nodes:    make(map[string]T),
-		edges:    make(map[string][]string),
-		inDegree: make(map[string]int),
+		nodes:     make(map[string]T),
+		edges:     make(map[string][]string),
+		inDegree:  make(map[string]int),
+		hardEdges: make(map[string]map[string]bool),
 	}
 }
 
@@ -181,6 +183,60 @@ func (g *Graph[T]) RemoveChildren(id string) error {
 		}
 	}
 	return nil
+}
+
+func (g *Graph[T]) IsReachable(from, to string) bool {
+	if from == to {
+		return true
+	}
+	visited := make(map[string]bool)
+	queue := []string{from}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, neighbor := range g.edges[current] {
+			if neighbor == to {
+				return true
+			}
+			if !visited[neighbor] {
+				visited[neighbor] = true
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+	return false
+}
+
+func (g *Graph[T]) MarkEdgeHard(from, to string) {
+	if g.hardEdges[from] == nil {
+		g.hardEdges[from] = make(map[string]bool)
+	}
+	g.hardEdges[from][to] = true
+}
+
+func (g *Graph[T]) IsReachableViaHardEdges(from, to string) bool {
+	if from == to {
+		return true
+	}
+	visited := make(map[string]bool)
+	queue := []string{from}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, neighbor := range g.edges[current] {
+			if !g.hardEdges[current][neighbor] {
+				continue
+			}
+			if neighbor == to {
+				return true
+			}
+			if !visited[neighbor] {
+				visited[neighbor] = true
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+	return false
 }
 
 func (g *Graph[T]) HasNode(id string) bool {

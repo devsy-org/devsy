@@ -501,6 +501,25 @@ func (suite *GraphTestSuite) TestEdgeCases() {
 	}
 }
 
+func (suite *GraphTestSuite) TestIsReachable() {
+	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
+	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
+	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))
+	suite.Require().NoError(suite.graph.AddNode("D", "dataD"))
+
+	suite.Require().NoError(suite.graph.AddEdge("A", "B"))
+	suite.Require().NoError(suite.graph.AddEdge("B", "C"))
+
+	suite.True(suite.graph.IsReachable("A", "B"))
+	suite.True(suite.graph.IsReachable("A", "C"))
+	suite.True(suite.graph.IsReachable("B", "C"))
+	suite.False(suite.graph.IsReachable("C", "A"))
+	suite.False(suite.graph.IsReachable("C", "B"))
+	suite.False(suite.graph.IsReachable("A", "D"))
+	suite.False(suite.graph.IsReachable("D", "A"))
+	suite.True(suite.graph.IsReachable("A", "A"))
+}
+
 func (suite *GraphTestSuite) TestLargeGraph() {
 	nodeCount := 100
 
