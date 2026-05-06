@@ -23,7 +23,10 @@ import (
 	"golang.org/x/term"
 )
 
-const defaultDockerCommand = "docker"
+const (
+	defaultDockerCommand   = "docker"
+	containerStatusRunning = "running"
+)
 
 type ExecCmd struct {
 	*flags.GlobalFlags
@@ -206,7 +209,7 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	containerDetails := &details[0]
-	if strings.ToLower(containerDetails.State.Status) != "running" {
+	if !strings.EqualFold(containerDetails.State.Status, containerStatusRunning) {
 		return fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.ContainerID,
@@ -302,7 +305,7 @@ func findRunningContainer(
 		)
 	}
 
-	if strings.ToLower(container.State.Status) != "running" {
+	if !strings.EqualFold(container.State.Status, containerStatusRunning) {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			container.ID,
