@@ -1,0 +1,21 @@
+{
+  "name": "VarSubScope",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "containerEnv": {
+    "SHOULD_BE_LITERAL_CWF": "${containerWorkspaceFolder}",
+    "SHOULD_BE_LITERAL_CWFB": "${containerWorkspaceFolderBasename}",
+    "SHOULD_BE_LITERAL_CENV": "${containerEnv:PATH}",
+    "SHOULD_RESOLVE_LOCAL": "${localWorkspaceFolder}"
+  },
+  "remoteEnv": {
+    "REMOTE_CWF": "${containerWorkspaceFolder}",
+    "REMOTE_CWFB": "${containerWorkspaceFolderBasename}",
+    "REMOTE_CENV": "${containerEnv:PATH}",
+    "REMOTE_LOCAL": "${localWorkspaceFolder}"
+  },
+  "postCreateCommand": [
+    "sh",
+    "-c",
+    "echo -n \"${SHOULD_BE_LITERAL_CWF}\" > $HOME/container-env-cwf.out && echo -n \"${SHOULD_BE_LITERAL_CWFB}\" > $HOME/container-env-cwfb.out && echo -n \"${SHOULD_BE_LITERAL_CENV}\" > $HOME/container-env-cenv.out && echo -n \"${SHOULD_RESOLVE_LOCAL}\" > $HOME/container-env-local.out && echo -n \"${REMOTE_CWF}\" > $HOME/remote-env-cwf.out && echo -n \"${REMOTE_CWFB}\" > $HOME/remote-env-cwfb.out && echo -n \"${REMOTE_CENV}\" > $HOME/remote-env-cenv.out && echo -n \"${REMOTE_LOCAL}\" > $HOME/remote-env-local.out"
+  ]
+}

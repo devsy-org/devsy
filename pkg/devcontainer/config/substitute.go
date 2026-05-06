@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"path/filepath"
 	"regexp"
@@ -13,7 +14,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/hash"
 )
 
-const devContainerIDLength = 20
+const (
+	devContainerIDLength = 20
+	containerEnvField    = "containerEnv"
+)
 
 type ReplaceFunction func(match, variable string, args []string) string
 
@@ -34,6 +38,11 @@ type SubstitutionContext struct {
 	UidMap                   []string          `json:"UidMap,omitempty"`
 	GidMap                   []string          `json:"GidMap,omitempty"`
 }
+
+// preContainerFields lists devcontainer.json keys that are evaluated before
+// the container exists. These fields must not resolve container-scoped
+// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename).
+var preContainerFields = []string{containerEnvField}
 
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}
@@ -60,9 +69,27 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 			},
 		)
 	}
-	retVal := substitute0(newVal, func(match, variable string, args []string) string {
+
+	// Two-pass substitution: pre-container fields get a restricted replacer
+	// that preserves container-scoped variables as literals.
+	fullReplace := func(match, variable string, args []string) string {
 		return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-	})
+	}
+	preFieldValues := map[string]any{}
+	for _, key := range preContainerFields {
+		if fieldVal, ok := newVal[key]; ok {
+			preFieldValues[key] = substitute0(fieldVal, restrictedReplace(fullReplace))
+			delete(newVal, key)
+		}
+	}
+
+	// Full substitution for remaining fields.
+	retVal := substitute0(newVal, fullReplace)
+
+	// Merge pre-container fields back into the result.
+	if retMap, ok := retVal.(map[string]any); ok {
+		maps.Copy(retMap, preFieldValues)
+	}
 
 	err = Convert(retVal, out)
 	if err != nil {
@@ -98,7 +125,7 @@ func replaceWithContainerEnv(
 	args []string,
 ) string {
 	switch variable {
-	case "containerEnv":
+	case containerEnvField:
 		return lookupValue(false, containerEnv, args, match)
 	default:
 		return match
@@ -139,10 +166,24 @@ func replaceWithContext(
 			return filepath.Base(substitutionCtx.ContainerWorkspaceFolder)
 		}
 		return match
-	case "containerEnv":
+	case containerEnvField:
 		return match
 	default:
 		return match
+	}
+}
+
+// restrictedReplace wraps a ReplaceFunction to preserve container-scoped
+// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename,
+// containerEnv) as literals for pre-container field substitution.
+func restrictedReplace(fallback ReplaceFunction) ReplaceFunction {
+	return func(match, variable string, args []string) string {
+		switch variable {
+		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", containerEnvField:
+			return match
+		default:
+			return fallback(match, variable, args)
+		}
 	}
 }
 
