@@ -183,6 +183,28 @@ func (g *Graph[T]) RemoveChildren(id string) error {
 	return nil
 }
 
+func (g *Graph[T]) IsReachable(from, to string) bool {
+	if from == to {
+		return true
+	}
+	visited := make(map[string]bool)
+	queue := []string{from}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, neighbor := range g.edges[current] {
+			if neighbor == to {
+				return true
+			}
+			if !visited[neighbor] {
+				visited[neighbor] = true
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+	return false
+}
+
 func (g *Graph[T]) HasNode(id string) bool {
 	_, exists := g.nodes[id]
 	return exists

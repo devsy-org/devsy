@@ -772,7 +772,15 @@ func addSoftDependencies(
 			continue
 		}
 
+		if depKey == featureKey {
+			continue
+		}
+
 		if hasHardDependency(feature, id, normalizedID) {
+			continue
+		}
+
+		if g.IsReachable(featureKey, depKey) {
 			continue
 		}
 
