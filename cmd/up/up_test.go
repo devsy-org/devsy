@@ -187,3 +187,11 @@ func TestUpCmd_RemoteUserFlagParsesValue(t *testing.T) {
 	flag := upCmd.Flags().Lookup("remote-user")
 	assert.Equal(t, "vscode", flag.Value.String())
 }
+
+func TestUpCmd_OutputFormatGatesEnvelope(t *testing.T) {
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{OutputFormat: ""}}
+	assert.Empty(t, cmd.OutputFormat, "default should be empty (no envelope)")
+
+	cmd2 := &UpCmd{GlobalFlags: &flags.GlobalFlags{OutputFormat: "json"}}
+	assert.Equal(t, "json", cmd2.OutputFormat)
+}

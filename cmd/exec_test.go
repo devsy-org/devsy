@@ -140,3 +140,23 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, val)
 }
+
+func TestExecCmd_NoEnvelopeWithoutOutputFormat(t *testing.T) {
+	cmd := &ExecCmd{
+		GlobalFlags: &flags.GlobalFlags{OutputFormat: ""},
+		ContainerID: "nonexistent-container-id-99999",
+	}
+	err := cmd.runWithContainerID(t.Context(), []string{"echo", "hello"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent-container-id-99999")
+}
+
+func TestExecCmd_EnvelopeWithOutputFormatJSON(t *testing.T) {
+	cmd := &ExecCmd{
+		GlobalFlags: &flags.GlobalFlags{OutputFormat: "json"},
+		ContainerID: "nonexistent-container-id-88888",
+	}
+	err := cmd.runWithContainerID(t.Context(), []string{"echo", "hello"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent-container-id-88888")
+}

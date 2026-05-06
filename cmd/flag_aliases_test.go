@@ -121,3 +121,19 @@ func TestRemoveExistingContainerAlias_IsHidden(t *testing.T) {
 	require.NotNil(t, f)
 	assert.True(t, f.Hidden, flagRemoveExistingContainer+" alias should be hidden")
 }
+
+func TestGlobalFlags_OutputFormat(t *testing.T) {
+	rootCmd := BuildRoot()
+	rootCmd.SetArgs([]string{"--output-format", formatJSON, "version"})
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+	assert.Equal(t, formatJSON, globalFlags.OutputFormat)
+}
+
+func TestGlobalFlags_OutputFormatDefault(t *testing.T) {
+	rootCmd := BuildRoot()
+	rootCmd.SetArgs([]string{"version"})
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+	assert.Equal(t, "", globalFlags.OutputFormat)
+}

@@ -175,11 +175,15 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		envMap:  envMap,
 	}, args)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
-	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+	if cmd.OutputFormat == flags.OutputFormatJSON {
+		_ = devcconfig.WriteResultJSON(os.Stdout, containerDetails.ID, user, workdir, nil)
+	}
 	return nil
 }
 
@@ -224,11 +228,15 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 		envMap:  envMap,
 	}, args)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
-	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, "", workdir, nil)
+	if cmd.OutputFormat == flags.OutputFormatJSON {
+		_ = devcconfig.WriteResultJSON(os.Stdout, containerDetails.ID, "", workdir, nil)
+	}
 	return nil
 }
 

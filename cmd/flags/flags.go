@@ -6,6 +6,8 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+const OutputFormatJSON = "json"
+
 type GlobalFlags struct {
 	Context   string
 	Provider  string
@@ -14,10 +16,11 @@ type GlobalFlags struct {
 	UID       string
 	Owner     platform.OwnerFilter
 
-	LogOutput string
-	Verbosity int
-	Quiet     bool
-	Debug     bool
+	LogOutput    string
+	OutputFormat string
+	Verbosity    int
+	Quiet        bool
+	Debug        bool
 }
 
 // SetGlobalFlags applies the global flags.
@@ -59,6 +62,12 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		"Suppress all log output except fatal errors",
 	)
 	flags.BoolVar(&globalFlags.Debug, "debug", false, "Enable debug logging (equivalent to -vv)")
+	flags.StringVar(
+		&globalFlags.OutputFormat,
+		"output-format",
+		"",
+		"Machine-readable output format for command results (json)",
+	)
 
 	flags.Var(&globalFlags.Owner, "owner", "Show pro workspaces for owner")
 	_ = flags.MarkHidden("owner")

@@ -234,19 +234,23 @@ func (cmd *BuildCmd) build(
 		},
 	)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
+	if cmd.OutputFormat != flags.OutputFormatJSON {
+		return nil
+	}
+
 	containerID := ""
-	workdir := "" // uses substituted path directly; build doesn't support git subpath overrides
-	if result != nil {
-		if result.ContainerDetails != nil {
-			containerID = result.ContainerDetails.ID
-		}
-		if result.SubstitutionContext != nil {
-			workdir = result.SubstitutionContext.ContainerWorkspaceFolder
-		}
+	workdir := ""
+	if result != nil && result.ContainerDetails != nil {
+		containerID = result.ContainerDetails.ID
+	}
+	if result != nil && result.SubstitutionContext != nil {
+		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
 	}
 	user := devcconfig.GetRemoteUser(result)
 	_ = devcconfig.WriteResultJSON(os.Stdout, containerID, user, workdir, nil)

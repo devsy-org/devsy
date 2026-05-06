@@ -68,7 +68,9 @@ func (cmd *UpCmd) Run(
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 	if wctx == nil {
@@ -80,24 +82,30 @@ func (cmd *UpCmd) Run(
 	}
 
 	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
 	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		if cmd.OutputFormat == flags.OutputFormatJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
-	containerID := ""
-	var warnings []string
-	if wctx.result != nil {
-		if wctx.result.ContainerDetails != nil {
-			containerID = wctx.result.ContainerDetails.ID
+	if cmd.OutputFormat == flags.OutputFormatJSON {
+		containerID := ""
+		var warnings []string
+		if wctx.result != nil {
+			if wctx.result.ContainerDetails != nil {
+				containerID = wctx.result.ContainerDetails.ID
+			}
+			warnings = wctx.result.HostWarnings
 		}
-		warnings = wctx.result.HostWarnings
+		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	}
-	_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	return nil
 }
 
