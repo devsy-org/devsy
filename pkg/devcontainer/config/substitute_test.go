@@ -186,51 +186,92 @@ const (
 	testPATHKey                              = "PATH"
 )
 
-func TestDeriveDevContainerID(t *testing.T) {
-	h := sha256.Sum256([]byte(testWorkspaceFolder))
-	want := hex.EncodeToString(h[:])[:devContainerIDLength]
-
-	got := DeriveDevContainerID(testWorkspaceFolder)
-	if got != want {
-		t.Errorf("DeriveDevContainerID(%q) = %q, want %q", testWorkspaceFolder, got, want)
+func TestComputeDevContainerID(t *testing.T) {
+	labels := map[string]string{
+		LabelLocalFolder: "/home/user/project",
+		LabelConfigFile:  "/home/user/project/.devcontainer/devcontainer.json",
 	}
-	if len(got) != devContainerIDLength {
-		t.Errorf("expected length %d, got %d", devContainerIDLength, len(got))
+
+	got := ComputeDevContainerID(labels)
+	if len(got) != specDevContainerIDWidth {
+		t.Errorf("ComputeDevContainerID() length = %d, want %d", len(got), specDevContainerIDWidth)
+	}
+
+	for _, c := range got {
+		valid := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'v')
+		if !valid {
+			t.Errorf("ComputeDevContainerID() contains invalid char %q in %q", string(c), got)
+			break
+		}
+	}
+}
+
+func TestComputeDevContainerIDDeterministic(t *testing.T) {
+	labels := map[string]string{
+		LabelLocalFolder: testWorkspaceFolder,
+		LabelConfigFile:  testWorkspaceFolder + "/.devcontainer/devcontainer.json",
+	}
+	first := ComputeDevContainerID(labels)
+	second := ComputeDevContainerID(labels)
+	if first != second {
+		t.Errorf("ComputeDevContainerID is not deterministic: %q != %q", first, second)
+	}
+}
+
+func TestComputeDevContainerIDSortedKeys(t *testing.T) {
+	// Keys must be sorted — order of insertion should not matter.
+	labels1 := map[string]string{
+		"a": "1",
+		"b": "2",
+	}
+	labels2 := map[string]string{
+		"b": "2",
+		"a": "1",
+	}
+	if ComputeDevContainerID(labels1) != ComputeDevContainerID(labels2) {
+		t.Error("ComputeDevContainerID should produce same result regardless of insertion order")
+	}
+}
+
+func TestComputeDevContainerIDKnownValue(t *testing.T) {
+	labels := map[string]string{
+		LabelLocalFolder: "/home/user/project",
+		LabelConfigFile:  "/home/user/project/.devcontainer/devcontainer.json",
+	}
+	got := ComputeDevContainerID(labels)
+	want := "0ns9efvs2cg80a2avksvk7nqv06jrab7n2918j79h49700ucligl"
+	if got != want {
+		t.Errorf("ComputeDevContainerID() = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveDevContainerID(t *testing.T) {
+	configPath := testWorkspaceFolder + "/.devcontainer/devcontainer.json"
+	got := DeriveDevContainerID(testWorkspaceFolder, configPath)
+	if len(got) != specDevContainerIDWidth {
+		t.Errorf("DeriveDevContainerID() length = %d, want %d", len(got), specDevContainerIDWidth)
 	}
 }
 
 func TestDeriveDevContainerIDDeterministic(t *testing.T) {
-	first := DeriveDevContainerID(testWorkspaceFolder)
-	second := DeriveDevContainerID(testWorkspaceFolder)
+	configPath := testWorkspaceFolder + "/.devcontainer/devcontainer.json"
+	first := DeriveDevContainerID(testWorkspaceFolder, configPath)
+	second := DeriveDevContainerID(testWorkspaceFolder, configPath)
 	if first != second {
 		t.Errorf("DeriveDevContainerID is not deterministic: %q != %q", first, second)
 	}
 }
 
-func TestGetLegacyDevContainerID(t *testing.T) {
-	labels := map[string]string{
-		"dev.containers.id": "test-workspace",
-	}
-	got := GetLegacyDevContainerID(labels)
-	if got == "" {
-		t.Error("GetLegacyDevContainerID returned empty string")
-	}
+func TestLegacyDeriveDevContainerID(t *testing.T) {
+	h := sha256.Sum256([]byte(testWorkspaceFolder))
+	want := hex.EncodeToString(h[:])[:devContainerIDLength]
 
-	again := GetLegacyDevContainerID(labels)
-	if got != again {
-		t.Errorf("GetLegacyDevContainerID is not deterministic: %q != %q", got, again)
-	}
-}
-
-func TestResolveDevContainerID(t *testing.T) {
-	labels := map[string]string{
-		"dev.containers.id": "test-workspace",
-	}
-
-	got := ResolveDevContainerID(testWorkspaceFolder, labels)
-	want := DeriveDevContainerID(testWorkspaceFolder)
+	got := LegacyDeriveDevContainerID(testWorkspaceFolder)
 	if got != want {
-		t.Errorf("ResolveDevContainerID() = %q, want %q (spec-based ID)", got, want)
+		t.Errorf("LegacyDeriveDevContainerID(%q) = %q, want %q", testWorkspaceFolder, got, want)
+	}
+	if len(got) != devContainerIDLength {
+		t.Errorf("expected length %d, got %d", devContainerIDLength, len(got))
 	}
 }
 
