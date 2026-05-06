@@ -27,11 +27,11 @@ const (
 	flagSetUpDockerPath      = "docker-path"
 	dockerExecSubcommand     = "exec"
 
-	hookOnCreateCommand      = "onCreateCommand"
-	hookUpdateContentCommand = "updateContentCommand"
-	hookPostCreateCommand    = "postCreateCommand"
-	hookPostStartCommand     = "postStartCommand"
-	hookPostAttachCommand    = "postAttachCommand"
+	hookOnCreate      = "onCreateCommand"
+	hookUpdateContent = "updateContentCommand"
+	hookPostCreate    = "postCreateCommand"
+	hookPostStart     = "postStartCommand"
+	hookPostAttach    = "postAttachCommand"
 )
 
 // SetUpCmd holds the set-up command flags.
@@ -336,11 +336,11 @@ func (cmd *SetUpCmd) runSetUpLifecycleHooks(
 		name string
 		cmds []types.LifecycleHook
 	}{
-		{hookOnCreateCommand, result.MergedConfig.OnCreateCommands},
-		{hookUpdateContentCommand, result.MergedConfig.UpdateContentCommands},
-		{hookPostCreateCommand, result.MergedConfig.PostCreateCommands},
-		{hookPostStartCommand, result.MergedConfig.PostStartCommands},
-		{hookPostAttachCommand, result.MergedConfig.PostAttachCommands},
+		{hookOnCreate, result.MergedConfig.OnCreateCommands},
+		{hookUpdateContent, result.MergedConfig.UpdateContentCommands},
+		{hookPostCreate, result.MergedConfig.PostCreateCommands},
+		{hookPostStart, result.MergedConfig.PostStartCommands},
+		{hookPostAttach, result.MergedConfig.PostAttachCommands},
 	}
 
 	for _, hook := range hooks {

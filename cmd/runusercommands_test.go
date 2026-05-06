@@ -13,11 +13,6 @@ const (
 	flagContainerID    = "--container-id"
 	testContainerID    = "abc"
 	testContainerIDHex = "abc123"
-	hookOnCreate       = "onCreateCommand"
-	hookUpdateContent  = "updateContentCommand"
-	hookPostCreate     = "postCreateCommand"
-	hookPostStart      = "postStartCommand"
-	hookPostAttach     = "postAttachCommand"
 )
 
 func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {

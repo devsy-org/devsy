@@ -52,7 +52,7 @@ func TestValidateRemoteEnv_EmptyKey(t *testing.T) {
 
 func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	execCmd.SetArgs([]string{"--", "echo", "hello"})
+	execCmd.SetArgs([]string{"--", testCmdEcho, "hello"})
 	err := execCmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "either --workspace-folder or --container-id must be provided")
@@ -97,7 +97,7 @@ func TestExecCmd_NonExistentContainerID(t *testing.T) {
 		GlobalFlags: &flags.GlobalFlags{},
 		ContainerID: "nonexistent-container-id-12345",
 	}
-	err := cmd.runWithContainerID(t.Context(), []string{"echo", "hello"})
+	err := cmd.runWithContainerID(t.Context(), []string{testCmdEcho, "hello"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent-container-id-12345")
 }
