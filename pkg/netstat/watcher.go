@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
+	portpkg "github.com/devsy-org/devsy/pkg/port"
 )
 
 const AutoForwardIgnore = "ignore"
@@ -15,9 +16,11 @@ const AutoForwardIgnore = "ignore"
 // in the devcontainer config. Downstream forwarders use this to apply
 // protocol, label, and forwarding-policy decisions.
 type PortForwardAttribute struct {
-	Label         string
-	Protocol      string
-	OnAutoForward string
+	Label            string
+	Protocol         string
+	OnAutoForward    string
+	RequireLocalPort bool
+	ElevateIfNeeded  bool
 }
 
 type Forwarder interface {
@@ -113,10 +116,26 @@ func (w *Watcher) runOnce() error {
 				continue
 			}
 
-			if attr.Label != "" {
-				log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
-			} else {
-				log.Debugf("Found open port %s ready to forward", port)
+			if attr.RequireLocalPort {
+				if ok, _ := portpkg.IsAvailable("localhost:" + port); !ok {
+					log.Warnf("Port %s required locally but unavailable, skipping forward", port)
+					continue
+				}
+			}
+
+			switch attr.OnAutoForward {
+			case "silent", "":
+				if attr.Label != "" {
+					log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
+				} else {
+					log.Debugf("Found open port %s ready to forward", port)
+				}
+			default:
+				if attr.Label != "" {
+					log.Infof("Found open port %s (%s) ready to forward", port, attr.Label)
+				} else {
+					log.Infof("Found open port %s ready to forward", port)
+				}
 			}
 
 			err = w.forwarder.Forward(port, attr)
