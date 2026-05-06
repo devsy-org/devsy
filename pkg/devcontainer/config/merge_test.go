@@ -429,6 +429,40 @@ func TestMergeLifestyleHooks_AllHookTypes(t *testing.T) {
 	}
 }
 
+func TestMergeLifestyleHooks_EmptyEntries(t *testing.T) {
+	got := mergeLifestyleHooks(nil, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+	if got != nil {
+		t.Fatalf("expected nil for nil entries, got %v", got)
+	}
+
+	got = mergeLifestyleHooks([]*ImageMetadata{}, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+	if got != nil {
+		t.Fatalf("expected nil for empty entries, got %v", got)
+	}
+}
+
+func TestMergeLifestyleHooks_SingleEntry(t *testing.T) {
+	hook := types.LifecycleHook{"cmd": {"echo hello"}}
+	entries := []*ImageMetadata{
+		{DevContainerActions: DevContainerActions{OnCreateCommand: hook}},
+	}
+
+	got := mergeLifestyleHooks(entries, func(e *ImageMetadata) types.LifecycleHook {
+		return e.OnCreateCommand
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(got))
+	}
+	if _, ok := got[0]["cmd"]; !ok {
+		t.Errorf("expected hook, got %v", got[0])
+	}
+}
+
 func TestMergeLifestyleHooks_SkipsEmpty(t *testing.T) {
 	featureHook := types.LifecycleHook{"feat": {"echo feat"}}
 
