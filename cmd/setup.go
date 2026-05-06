@@ -25,7 +25,6 @@ const (
 	flagSetUpConfig          = "config"
 	flagSetUpWorkspaceFolder = "workspace-folder"
 	flagSetUpDockerPath      = "docker-path"
-	defaultWorkspaceDir      = "/workspaces"
 	dockerExecSubcommand     = "exec"
 )
 
@@ -192,14 +191,7 @@ func (cmd *SetUpCmd) resolveWorkdir(
 	if result.MergedConfig.WorkspaceFolder != "" {
 		return result.MergedConfig.WorkspaceFolder
 	}
-	if containerDetails.Config.WorkingDir != "" {
-		return containerDetails.Config.WorkingDir
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return defaultWorkspaceDir
-	}
-	return filepath.Join(defaultWorkspaceDir, filepath.Base(cwd))
+	return containerDetails.Config.WorkingDir
 }
 
 func (cmd *SetUpCmd) installFeatures(
@@ -231,7 +223,8 @@ func (cmd *SetUpCmd) installFeatures(
 		return fmt.Errorf("create features staging dir: %w", err)
 	}
 
-	if err := cmd.stageFeatures(featureSets, featureStageDir); err != nil {
+	remoteUser := devcconfig.GetRemoteUser(result)
+	if err := cmd.stageFeatures(featureSets, featureStageDir, remoteUser); err != nil {
 		return err
 	}
 
@@ -289,8 +282,13 @@ func (cmd *SetUpCmd) copyAndExecFeatures(
 func (cmd *SetUpCmd) stageFeatures(
 	featureSets []*devcconfig.FeatureSet,
 	stageDir string,
+	remoteUser string,
 ) error {
-	builtinEnvContent := "_CONTAINER_USER=root\n_REMOTE_USER=root\n"
+	builtinEnvContent := fmt.Sprintf(
+		"_CONTAINER_USER=%s\n_REMOTE_USER=%s\n",
+		remoteUser,
+		remoteUser,
+	)
 	builtinEnvPath := filepath.Join(stageDir, "devcontainer-features.builtin.env")
 	if err := os.WriteFile(builtinEnvPath, []byte(builtinEnvContent), 0o600); err != nil {
 		return fmt.Errorf("write builtin env: %w", err)
