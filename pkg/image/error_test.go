@@ -12,7 +12,7 @@ import (
 )
 
 func makeTransportErrorWithBody(statusCode int, body string) error {
-	req, _ := http.NewRequest("GET", "https://mcr.microsoft.com/v2/", nil)
+	req, _ := http.NewRequest("GET", "https://ghcr.io/v2/devsy-org/test-images/", nil)
 	resp := &http.Response{
 		StatusCode: statusCode,
 		Body:       io.NopCloser(strings.NewReader(body)),
@@ -24,7 +24,7 @@ func makeTransportErrorWithBody(statusCode int, body string) error {
 func TestSanitizeRegistryError_HTMLBody(t *testing.T) {
 	htmlBody := `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"><html><body><h1>403 Forbidden</h1></body></html>`
 	inner := makeTransportErrorWithBody(http.StatusForbidden, htmlBody)
-	wrapped := fmt.Errorf("retrieve image mcr.microsoft.com/devcontainers/base:ubuntu: %w", inner)
+	wrapped := fmt.Errorf("retrieve image ghcr.io/devsy-org/test-images/base:ubuntu: %w", inner)
 
 	sanitized := SanitizeRegistryError(wrapped)
 	if sanitized == wrapped {
