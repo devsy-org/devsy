@@ -16,6 +16,7 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -169,17 +170,23 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
 	envMap := buildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
+	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+
 	err = cmd.execInContainer(ctx, execOpts{
 		target:  target,
 		workdir: workdir,
 		envMap:  envMap,
 	}, args)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		if emitJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		}
 		return err
 	}
 
-	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+	if emitJSON {
+		_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+	}
 	return nil
 }
 
@@ -218,17 +225,23 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 
 	workdir := containerDetails.Config.WorkingDir
 
+	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+
 	err = cmd.execInContainer(ctx, execOpts{
 		target:  target,
 		workdir: workdir,
 		envMap:  envMap,
 	}, args)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		if emitJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		}
 		return err
 	}
 
-	_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, "", workdir, nil)
+	if emitJSON {
+		_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, "", workdir, nil)
+	}
 	return nil
 }
 

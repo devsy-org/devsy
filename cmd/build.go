@@ -12,6 +12,7 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -225,6 +226,8 @@ func (cmd *BuildCmd) build(
 		log.Debugf("done building devcontainer")
 		log.Infof("cleaning up temporary workspace")
 	}()
+	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+
 	result, err := clientimplementation.BuildAgentClient(
 		ctx,
 		clientimplementation.BuildAgentClientOptions{
@@ -234,12 +237,18 @@ func (cmd *BuildCmd) build(
 		},
 	)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		if emitJSON {
+			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
+		}
 		return err
 	}
 
+	if !emitJSON {
+		return nil
+	}
+
 	containerID := ""
-	workdir := "" // uses substituted path directly; build doesn't support git subpath overrides
+	workdir := ""
 	if result != nil {
 		if result.ContainerDetails != nil {
 			containerID = result.ContainerDetails.ID
