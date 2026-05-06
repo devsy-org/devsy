@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -100,7 +101,12 @@ func ParseDevContainerJSONFile(jsonFilePath string) (*DevContainerConfig, error)
 	if !devContainer.Extends.IsEmpty() {
 		visited := map[string]bool{path: true}
 		declaringDir := filepath.Dir(path)
-		parent, err := resolveExtendsArray(devContainer.Extends, declaringDir, visited)
+		parent, err := resolveExtendsArray(
+			context.TODO(),
+			devContainer.Extends,
+			declaringDir,
+			visited,
+		)
 		if err != nil {
 			return nil, err
 		}

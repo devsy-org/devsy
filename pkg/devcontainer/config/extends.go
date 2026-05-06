@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -43,12 +44,13 @@ func (e *ExtendsRef) UnmarshalJSON(data []byte) error {
 // merging each on top of the previous result. The final merged config
 // is returned as the combined parent for the declaring file.
 func resolveExtendsArray(
+	ctx context.Context,
 	refs ExtendsRef, declaringDir string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
 	var merged *DevContainerConfig
 	for _, ref := range refs {
-		resolved, err := resolveExtendsSingle(ref, declaringDir, visited)
+		resolved, err := resolveExtendsSingle(ctx, ref, declaringDir, visited)
 		if err != nil {
 			return nil, err
 		}
@@ -64,11 +66,12 @@ func resolveExtendsArray(
 // resolveExtendsSingle resolves a single extends reference.
 // It dispatches to OCI resolution for registry refs or local file resolution otherwise.
 func resolveExtendsSingle(
+	ctx context.Context,
 	extendsRef, declaringDir string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
 	if isOCIRef(extendsRef) {
-		return resolveOCIExtends(extendsRef, visited)
+		return resolveOCIExtends(ctx, extendsRef, visited)
 	}
 
 	refPath := extendsRef
@@ -85,11 +88,12 @@ func resolveExtendsSingle(
 		return nil, fmt.Errorf("extends: cycle detected, %q already in chain", absPath)
 	}
 
-	return parseDevContainerJSONFileWithVisited(absPath, visited)
+	return parseDevContainerJSONFileWithVisited(ctx, absPath, visited)
 }
 
 // parseDevContainerJSONFileWithVisited parses a devcontainer.json and recursively resolves extends.
 func parseDevContainerJSONFileWithVisited(
+	ctx context.Context,
 	path string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
@@ -121,7 +125,7 @@ func parseDevContainerJSONFileWithVisited(
 	// Recursively resolve extends
 	if !devContainer.Extends.IsEmpty() {
 		declaringDir := filepath.Dir(absPath)
-		parent, err := resolveExtendsArray(devContainer.Extends, declaringDir, visited)
+		parent, err := resolveExtendsArray(ctx, devContainer.Extends, declaringDir, visited)
 		if err != nil {
 			return nil, err
 		}

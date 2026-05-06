@@ -3,14 +3,21 @@ package config
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -27,8 +34,11 @@ var ociExtendsBackoff = wait.Backoff{
 }
 
 // isOCIRef returns true if the extends reference looks like an OCI image ref
-// (e.g. "ghcr.io/owner/repo:tag") rather than a local file path.
+// (e.g. "ghcr.io/owner/repo:tag" or "oci://ghcr.io/owner/repo:tag") rather than a local file path.
 func isOCIRef(ref string) bool {
+	if strings.HasPrefix(ref, "oci://") {
+		return true
+	}
 	if strings.HasPrefix(ref, ".") || strings.HasPrefix(ref, "/") {
 		return false
 	}
@@ -38,34 +48,41 @@ func isOCIRef(ref string) bool {
 	return strings.Contains(ref, "/")
 }
 
+// stripOCIPrefix removes the "oci://" prefix from an OCI reference if present.
+func stripOCIPrefix(ref string) string {
+	return strings.TrimPrefix(ref, "oci://")
+}
+
 // resolveOCIExtends fetches a devcontainer.json from an OCI artifact and
 // recursively resolves any extends within it.
 func resolveOCIExtends(
+	ctx context.Context,
 	ociRef string,
 	visited map[string]bool,
 ) (*DevContainerConfig, error) {
-	if visited[ociRef] {
-		return nil, fmt.Errorf("extends: cycle detected, OCI ref %q already in chain", ociRef)
+	bare := stripOCIPrefix(ociRef)
+	if visited[bare] {
+		return nil, fmt.Errorf("extends: cycle detected, OCI ref %q already in chain", bare)
 	}
-	visited[ociRef] = true
+	visited[bare] = true
 
-	data, err := pullOCIExtendsJSON(ociRef)
+	data, err := pullOCIExtendsJSON(ctx, bare)
 	if err != nil {
-		return nil, fmt.Errorf("extends: fetch OCI %q: %w", ociRef, err)
+		return nil, fmt.Errorf("extends: fetch OCI %q: %w", bare, err)
 	}
 
 	devContainer := &DevContainerConfig{}
 	normalized, err := hujson.Standardize(data)
 	if err != nil {
-		return nil, fmt.Errorf("extends: parse jsonc from OCI %q: %w", ociRef, err)
+		return nil, fmt.Errorf("extends: parse jsonc from OCI %q: %w", bare, err)
 	}
 	if err := json.Unmarshal(normalized, devContainer); err != nil {
-		return nil, fmt.Errorf("extends: unmarshal OCI %q: %w", ociRef, err)
+		return nil, fmt.Errorf("extends: unmarshal OCI %q: %w", bare, err)
 	}
-	devContainer.Origin = "oci://" + ociRef
+	devContainer.Origin = "oci://" + bare
 
 	if !devContainer.Extends.IsEmpty() {
-		parent, err := resolveExtendsArray(devContainer.Extends, "", visited)
+		parent, err := resolveExtendsArray(ctx, devContainer.Extends, "", visited)
 		if err != nil {
 			return nil, err
 		}
@@ -76,24 +93,104 @@ func resolveOCIExtends(
 }
 
 // pullOCIExtendsJSON fetches an OCI image and extracts devcontainer.json
-// from its first layer (expected to be a gzipped tarball).
-func pullOCIExtendsJSON(ociRef string) ([]byte, error) {
+// from its first layer (expected to be a gzipped tarball). Uses digest-based
+// caching to avoid repeated pulls.
+func pullOCIExtendsJSON(ctx context.Context, ociRef string) ([]byte, error) {
 	ref, err := name.ParseReference(ociRef)
 	if err != nil {
 		return nil, fmt.Errorf("parse reference: %w", err)
 	}
 
+	kc := getKeychain(ctx)
+
+	cacheDir, cacheErr := extendsCacheDir(ociRef)
+	if cacheErr == nil {
+		if data, ok := checkExtendsCache(cacheDir, ref, kc); ok {
+			return data, nil
+		}
+	}
+
 	var img v1.Image
 	err = retryOCIExtendsPull(func() error {
 		var fetchErr error
-		img, fetchErr = remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		img, fetchErr = remote.Image(ref, remote.WithAuthFromKeychain(kc))
 		return fetchErr
 	})
 	if err != nil {
 		return nil, fmt.Errorf("pull image: %w", err)
 	}
 
-	return extractDevContainerJSON(img)
+	data, err := extractDevContainerJSON(img)
+	if err != nil {
+		return nil, err
+	}
+
+	if cacheErr == nil {
+		writeExtendsCache(cacheDir, ref, kc, data)
+	}
+
+	return data, nil
+}
+
+func getKeychain(ctx context.Context) authn.Keychain {
+	kc, err := image.GetKeychain(ctx)
+	if err != nil {
+		return authn.DefaultKeychain
+	}
+	return kc
+}
+
+func extendsCacheDir(ociRef string) (string, error) {
+	h := sha256.Sum256([]byte(ociRef))
+	hashed := hex.EncodeToString(h[:])
+
+	base, err := pkgconfig.DefaultPathManager().CacheDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(base, "extends", hashed)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func checkExtendsCache(cacheDir string, ref name.Reference, kc authn.Keychain) ([]byte, bool) {
+	jsonPath := filepath.Join(cacheDir, "devcontainer.json")
+	digestPath := filepath.Join(cacheDir, "digest")
+
+	// #nosec G304 -- paths derived from our own cache directory, not user input
+	storedDigest, err := os.ReadFile(digestPath)
+	if err != nil {
+		return nil, false
+	}
+	// #nosec G304 -- paths derived from our own cache directory, not user input
+	cachedJSON, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, false
+	}
+
+	desc, err := remote.Head(ref, remote.WithAuthFromKeychain(kc))
+	if err != nil {
+		return nil, false
+	}
+
+	if desc.Digest.String() == strings.TrimSpace(string(storedDigest)) {
+		return cachedJSON, true
+	}
+	return nil, false
+}
+
+func writeExtendsCache(cacheDir string, ref name.Reference, kc authn.Keychain, data []byte) {
+	desc, err := remote.Head(ref, remote.WithAuthFromKeychain(kc))
+	if err != nil {
+		return
+	}
+
+	jsonPath := filepath.Join(cacheDir, "devcontainer.json")
+	digestPath := filepath.Join(cacheDir, "digest")
+	_ = os.WriteFile(jsonPath, data, 0o600)
+	_ = os.WriteFile(digestPath, []byte(desc.Digest.String()), 0o600)
 }
 
 // extractDevContainerJSON reads the first layer of an OCI image as a
