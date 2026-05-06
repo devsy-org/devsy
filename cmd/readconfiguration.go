@@ -22,6 +22,7 @@ type ReadConfigurationCmd struct {
 	Config                       string
 	ContainerID                  string
 	IDLabels                     []string
+	DockerPath                   string
 	IncludeFeaturesConfiguration bool
 	IncludeMergedConfiguration   bool
 }
@@ -48,6 +49,13 @@ func NewReadConfigurationCmd(f *flags.GlobalFlags) *cobra.Command {
 			"container-id",
 			"",
 			"Read configuration from a running container with the given ID",
+		)
+	readConfigCmd.Flags().
+		StringVar(
+			&cmd.DockerPath,
+			"docker-path",
+			"",
+			"Path to the docker/podman executable (defaults to 'docker')",
 		)
 	readConfigCmd.Flags().
 		StringVar(
@@ -207,7 +215,11 @@ func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context)
 	string,
 	error,
 ) {
-	helper := &docker.DockerHelper{DockerCommand: defaultDockerCommand}
+	dockerCommand := defaultDockerCommand
+	if cmd.DockerPath != "" {
+		dockerCommand = cmd.DockerPath
+	}
+	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
 
 	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
 	if err != nil {
