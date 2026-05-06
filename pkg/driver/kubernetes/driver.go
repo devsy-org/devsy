@@ -173,7 +173,7 @@ func (k *KubernetesDriver) CommandDevContainer(
 	if user != "" && user != "root" {
 		args = []string{"su", user, "-c", command}
 	} else {
-		args = []string{"sh", "-c", command}
+		args = []string{"/bin/sh", "-c", command}
 	}
 
 	return k.client.Exec(ctx, &ExecStreamOptions{

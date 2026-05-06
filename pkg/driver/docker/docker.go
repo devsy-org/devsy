@@ -114,7 +114,7 @@ func (d *dockerDriver) CommandDevContainer(
 	if stdin != nil {
 		args = append(args, "-i")
 	}
-	args = append(args, "-u", user, container.ID, "sh", "-c", command)
+	args = append(args, "-u", user, container.ID, "/bin/sh", "-c", command)
 	return d.Docker.Run(ctx, args, stdin, stdout, stderr)
 }
 
