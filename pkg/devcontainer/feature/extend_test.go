@@ -295,14 +295,14 @@ func (suite *ExtendTestSuite) TestFeatureOrder_SelfReferenceInInstallsAfter() {
 }
 
 func (suite *ExtendTestSuite) TestFeatureOrder_ForwardReferenceInInstallsAfter() {
-	featureAID := normalizeFeatureID("feature-a")
-	featureBID := normalizeFeatureID("feature-b")
+	featureAID := normalizeFeatureID(testFeatureA)
+	featureBID := normalizeFeatureID(testFeatureB)
 	features := []*config.FeatureSet{
 		{
 			ConfigID: featureAID,
 			Config: &config.FeatureConfig{
 				DependsOn:     config.DependsOnField{},
-				InstallsAfter: []string{"feature-b"},
+				InstallsAfter: []string{testFeatureB},
 			},
 		},
 		{
@@ -322,21 +322,21 @@ func (suite *ExtendTestSuite) TestFeatureOrder_ForwardReferenceInInstallsAfter()
 }
 
 func (suite *ExtendTestSuite) TestFeatureOrder_MutualInstallsAfterDoesNotCycle() {
-	featureAID := normalizeFeatureID("feature-a")
-	featureBID := normalizeFeatureID("feature-b")
+	featureAID := normalizeFeatureID(testFeatureA)
+	featureBID := normalizeFeatureID(testFeatureB)
 	features := []*config.FeatureSet{
 		{
 			ConfigID: featureAID,
 			Config: &config.FeatureConfig{
 				DependsOn:     config.DependsOnField{},
-				InstallsAfter: []string{"feature-b"},
+				InstallsAfter: []string{testFeatureB},
 			},
 		},
 		{
 			ConfigID: featureBID,
 			Config: &config.FeatureConfig{
 				DependsOn:     config.DependsOnField{},
-				InstallsAfter: []string{"feature-a"},
+				InstallsAfter: []string{testFeatureA},
 			},
 		},
 	}
@@ -347,23 +347,23 @@ func (suite *ExtendTestSuite) TestFeatureOrder_MutualInstallsAfterDoesNotCycle()
 }
 
 func (suite *ExtendTestSuite) TestFeatureOrder_InstallsAfterWithHardDepDoesNotCycle() {
-	featureAID := normalizeFeatureID("feature-a")
-	featureBID := normalizeFeatureID("feature-b")
+	featureAID := normalizeFeatureID(testFeatureA)
+	featureBID := normalizeFeatureID(testFeatureB)
 	features := []*config.FeatureSet{
 		{
 			ConfigID: featureAID,
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-b": map[string]any{},
+					testFeatureB: map[string]any{},
 				},
-				InstallsAfter: []string{"feature-b"},
+				InstallsAfter: []string{testFeatureB},
 			},
 		},
 		{
 			ConfigID: featureBID,
 			Config: &config.FeatureConfig{
 				DependsOn:     config.DependsOnField{},
-				InstallsAfter: []string{"feature-a"},
+				InstallsAfter: []string{testFeatureA},
 			},
 		},
 	}
@@ -376,14 +376,14 @@ func (suite *ExtendTestSuite) TestFeatureOrder_InstallsAfterWithHardDepDoesNotCy
 }
 
 func (suite *ExtendTestSuite) TestFeatureOrder_TrueCircularDependencyStillDetected() {
-	featureAID := normalizeFeatureID("feature-a")
-	featureBID := normalizeFeatureID("feature-b")
+	featureAID := normalizeFeatureID(testFeatureA)
+	featureBID := normalizeFeatureID(testFeatureB)
 	features := []*config.FeatureSet{
 		{
 			ConfigID: featureAID,
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-b": map[string]any{},
+					testFeatureB: map[string]any{},
 				},
 			},
 		},
@@ -391,7 +391,7 @@ func (suite *ExtendTestSuite) TestFeatureOrder_TrueCircularDependencyStillDetect
 			ConfigID: featureBID,
 			Config: &config.FeatureConfig{
 				DependsOn: config.DependsOnField{
-					"feature-a": map[string]any{},
+					testFeatureA: map[string]any{},
 				},
 			},
 		},
