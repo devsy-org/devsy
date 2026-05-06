@@ -445,17 +445,16 @@ func processNeighbors(
 
 func (g *Graph[T]) sortNodeIDsWithPriority(priority map[string]int) ([]string, error) {
 	workingInDegree := copyInDegreeMap(g.inDegree)
-	ready := initializeQueue(workingInDegree)
 	sortedResult := make([]string, 0, len(g.nodes))
 
-	for len(ready) > 0 {
-		sortByPriority(ready, priority)
-
-		current := ready[0]
-		ready = ready[1:]
-		sortedResult = append(sortedResult, current)
-
-		processNeighborsUnordered(g.edges, current, workingInDegree, &ready)
+	for {
+		round := collectZeroInDegree(workingInDegree)
+		if len(round) == 0 {
+			break
+		}
+		sortByPriority(round, priority)
+		sortedResult = append(sortedResult, round...)
+		advanceRound(round, g.edges, workingInDegree)
 	}
 
 	if len(sortedResult) != len(g.nodes) {
@@ -481,20 +480,6 @@ func comparePriority(a, b string, priority map[string]int) bool {
 		return pa < pb
 	}
 	return a < b
-}
-
-func processNeighborsUnordered(
-	edges map[string][]string,
-	currentNode string,
-	inDegree map[string]int,
-	queue *[]string,
-) {
-	for _, neighbor := range edges[currentNode] {
-		inDegree[neighbor]--
-		if inDegree[neighbor] == 0 {
-			*queue = append(*queue, neighbor)
-		}
-	}
 }
 
 func circularDependencyError(inDegree map[string]int) error {
