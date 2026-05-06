@@ -306,6 +306,41 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		gomega.Expect(hr["storage"]).To(gomega.Equal("32gb"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should read configuration using custom id-label",
+		func(ctx context.Context) {
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/readconfiguration/testdata",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+
+			err = f.DevsyUp(ctx, tempDir,
+				"--id-label", "devsy.readconfig.test=custom")
+			framework.ExpectNoError(err)
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--id-label", "devsy.readconfig.test=custom",
+				"--include-merged-configuration",
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			err = json.Unmarshal([]byte(stdout), &result)
+			framework.ExpectNoError(err, "output should be valid JSON")
+
+			gomega.Expect(result).To(gomega.HaveKey("configuration"))
+			gomega.Expect(result).To(gomega.HaveKey("mergedConfiguration"))
+
+			ws, ok := result["workspace"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "workspace should be an object")
+			gomega.Expect(ws).To(gomega.HaveKey("workspaceFolder"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("reads configuration from a running container via --container-id",
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
