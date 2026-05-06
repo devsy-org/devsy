@@ -380,4 +380,94 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			gomega.Expect(ok).To(gomega.BeTrue(), "workspace should be an object")
 			gomega.Expect(ws).To(gomega.HaveKey("workspaceFolder"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("fails with --container-id when container does not exist",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			_, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--container-id", "nonexistent-container-id-12345",
+			})
+			framework.ExpectError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("fails with --container-id when container has no metadata label",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+				"ghcr.io/devsy-org/test-images/base:ubuntu",
+				"sleep", "infinity",
+			).Output()
+			framework.ExpectNoError(err)
+			containerID := strings.TrimSpace(string(out))
+			ginkgo.DeferCleanup(func() {
+				args := []string{"rm", "-f", containerID}
+				cmd := exec.Command("docker", args...) // #nosec G204
+				_ = cmd.Run()
+			})
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--container-id", containerID,
+			})
+			if err == nil {
+				var result map[string]any
+				unmarshalErr := json.Unmarshal([]byte(stdout), &result)
+				framework.ExpectNoError(unmarshalErr)
+				config, ok := result["configuration"].(map[string]any)
+				gomega.Expect(ok).To(gomega.BeTrue())
+				gomega.Expect(config).To(gomega.BeEmpty(),
+					"configuration should be empty when no metadata label exists")
+			}
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("respects --docker-path flag with valid docker path",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			metadataLabel := `[{"remoteUser":"dockerpathuser"}]`
+			out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+				"--label", "devcontainer.metadata="+metadataLabel,
+				"ghcr.io/devsy-org/test-images/base:ubuntu",
+				"sleep", "infinity",
+			).Output()
+			framework.ExpectNoError(err)
+			containerID := strings.TrimSpace(string(out))
+			ginkgo.DeferCleanup(func() {
+				args := []string{"rm", "-f", containerID}
+				cmd := exec.Command("docker", args...) // #nosec G204
+				_ = cmd.Run()
+			})
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--container-id", containerID,
+				"--docker-path", "docker",
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			err = json.Unmarshal([]byte(stdout), &result)
+			framework.ExpectNoError(err, "output should be valid JSON")
+
+			config, ok := result["configuration"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue())
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue("remoteUser", "dockerpathuser"),
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("fails with --docker-path pointing to invalid executable",
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			_, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--container-id", "any-container",
+				"--docker-path", "/nonexistent/path/to/docker",
+			})
+			framework.ExpectError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
