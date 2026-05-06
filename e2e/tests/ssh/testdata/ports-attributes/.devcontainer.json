@@ -9,6 +9,10 @@
     },
     "9501": {
       "onAutoForward": "ignore"
+    },
+    "9503": {
+      "requireLocalPort": true,
+      "onAutoForward": "silent"
     }
   },
   "otherPortsAttributes": {
