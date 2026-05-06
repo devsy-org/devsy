@@ -321,7 +321,7 @@ func (suite *ExtendTestSuite) TestFeatureOrder_ForwardReferenceInInstallsAfter()
 	suite.Equal(featureAID, installationOrder[1].ConfigID)
 }
 
-func (suite *ExtendTestSuite) TestFeatureOrder_MutualInstallsAfterDoesNotCycle() {
+func (suite *ExtendTestSuite) TestFeatureOrder_MutualInstallsAfterProducesError() {
 	featureAID := normalizeFeatureID(testFeatureA)
 	featureBID := normalizeFeatureID(testFeatureB)
 	features := []*config.FeatureSet{
@@ -341,9 +341,42 @@ func (suite *ExtendTestSuite) TestFeatureOrder_MutualInstallsAfterDoesNotCycle()
 		},
 	}
 
-	installationOrder, err := getOrderedFeatureSets(features)
-	suite.Require().NoError(err)
-	suite.Len(installationOrder, 2)
+	_, err := getOrderedFeatureSets(features)
+	suite.Error(err)
+	suite.Contains(err.Error(), "circular dependency detected")
+}
+
+func (suite *ExtendTestSuite) TestFeatureOrder_ThreeNodePureSoftCycleProducesError() {
+	featureAID := normalizeFeatureID(testFeatureA)
+	featureBID := normalizeFeatureID(testFeatureB)
+	featureCID := normalizeFeatureID(testFeatureC)
+	features := []*config.FeatureSet{
+		{
+			ConfigID: featureAID,
+			Config: &config.FeatureConfig{
+				DependsOn:     config.DependsOnField{},
+				InstallsAfter: []string{testFeatureB},
+			},
+		},
+		{
+			ConfigID: featureBID,
+			Config: &config.FeatureConfig{
+				DependsOn:     config.DependsOnField{},
+				InstallsAfter: []string{testFeatureC},
+			},
+		},
+		{
+			ConfigID: featureCID,
+			Config: &config.FeatureConfig{
+				DependsOn:     config.DependsOnField{},
+				InstallsAfter: []string{testFeatureA},
+			},
+		},
+	}
+
+	_, err := getOrderedFeatureSets(features)
+	suite.Error(err)
+	suite.Contains(err.Error(), "circular dependency detected")
 }
 
 func (suite *ExtendTestSuite) TestFeatureOrder_InstallsAfterWithHardDepDoesNotCycle() {
