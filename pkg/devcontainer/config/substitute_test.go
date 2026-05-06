@@ -221,3 +221,219 @@ func TestResolveDevContainerID(t *testing.T) {
 		t.Errorf("ResolveDevContainerID() = %q, want %q (spec-based ID)", got, want)
 	}
 }
+
+type scopeTestConfig struct {
+	ContainerEnv map[string]string  `json:"containerEnv,omitempty"`
+	RemoteEnv    map[string]*string `json:"remoteEnv,omitempty"`
+}
+
+func scopeTestCtx() *SubstitutionContext {
+	return &SubstitutionContext{
+		DevContainerID:           "abc123",
+		LocalWorkspaceFolder:     "/home/user/project",
+		ContainerWorkspaceFolder: "/workspaces/project",
+		Env:                      map[string]string{"MY_VAR": "hello"},
+	}
+}
+
+func TestSubstituteContainerEnvScoping(t *testing.T) {
+	ctx := scopeTestCtx()
+	tests := []struct {
+		name  string
+		input map[string]string
+		want  map[string]string
+	}{
+		{
+			name:  "preserves containerWorkspaceFolder",
+			input: map[string]string{"V": "${containerWorkspaceFolder}"},
+			want:  map[string]string{"V": "${containerWorkspaceFolder}"},
+		},
+		{
+			name:  "preserves containerWorkspaceFolderBasename",
+			input: map[string]string{"V": "${containerWorkspaceFolderBasename}"},
+			want:  map[string]string{"V": "${containerWorkspaceFolderBasename}"},
+		},
+		{
+			name:  "preserves containerEnv references",
+			input: map[string]string{"V": "${containerEnv:PATH}"},
+			want:  map[string]string{"V": "${containerEnv:PATH}"},
+		},
+		{
+			name: "resolves local-scoped variables",
+			input: map[string]string{
+				"LOCAL": "${localWorkspaceFolder}",
+				"BASE":  "${localWorkspaceFolderBasename}",
+				"ENV":   "${localEnv:MY_VAR}",
+				"DEVID": "${devcontainerId}",
+			},
+			want: map[string]string{
+				"LOCAL": "/home/user/project",
+				"BASE":  "project",
+				"ENV":   "hello",
+				"DEVID": "abc123",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out scopeTestConfig
+			err := Substitute(ctx, scopeTestConfig{ContainerEnv: tt.input}, &out)
+			if err != nil {
+				t.Fatalf("Substitute() error: %v", err)
+			}
+			assertContainerEnv(t, out.ContainerEnv, tt.want)
+		})
+	}
+}
+
+func TestSubstituteRemoteEnvScoping(t *testing.T) {
+	ctx := scopeTestCtx()
+	tests := []struct {
+		name  string
+		input map[string]*string
+		want  map[string]*string
+	}{
+		{
+			name:  "resolves containerWorkspaceFolder",
+			input: map[string]*string{"V": strPtr("/prefix${containerWorkspaceFolder}")},
+			want:  map[string]*string{"V": strPtr("/prefix/workspaces/project")},
+		},
+		{
+			name:  "resolves containerWorkspaceFolderBasename",
+			input: map[string]*string{"V": strPtr("${containerWorkspaceFolderBasename}")},
+			want:  map[string]*string{"V": strPtr("project")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out scopeTestConfig
+			err := Substitute(ctx, scopeTestConfig{RemoteEnv: tt.input}, &out)
+			if err != nil {
+				t.Fatalf("Substitute() error: %v", err)
+			}
+			assertRemoteEnv(t, out.RemoteEnv, tt.want)
+		})
+	}
+}
+
+func TestSubstituteMixedScoping(t *testing.T) {
+	ctx := scopeTestCtx()
+	input := scopeTestConfig{
+		ContainerEnv: map[string]string{
+			"CWF": "${containerWorkspaceFolder}",
+			"LOC": "${localWorkspaceFolder}",
+		},
+		RemoteEnv: map[string]*string{
+			"CWF": strPtr("${containerWorkspaceFolder}"),
+			"LOC": strPtr("${localWorkspaceFolder}"),
+		},
+	}
+	var out scopeTestConfig
+	err := Substitute(ctx, input, &out)
+	if err != nil {
+		t.Fatalf("Substitute() error: %v", err)
+	}
+	assertContainerEnv(t, out.ContainerEnv, map[string]string{
+		"CWF": "${containerWorkspaceFolder}",
+		"LOC": "/home/user/project",
+	})
+	assertRemoteEnv(t, out.RemoteEnv, map[string]*string{
+		"CWF": strPtr("/workspaces/project"),
+		"LOC": strPtr("/home/user/project"),
+	})
+}
+
+func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
+	ctx := &SubstitutionContext{
+		ContainerWorkspaceFolder: "/workspaces/project",
+		LocalWorkspaceFolder:     "/home/user/project",
+		Env:                      map[string]string{"HOME": "/root"},
+	}
+	fullReplace := func(match, variable string, args []string) string {
+		return replaceWithContext(false, ctx, match, variable, args)
+	}
+	restricted := restrictedReplace(fullReplace)
+
+	tests := []struct {
+		name     string
+		match    string
+		variable string
+		args     []string
+		want     string
+	}{
+		{
+			name:     "preserves containerWorkspaceFolder",
+			match:    "${containerWorkspaceFolder}",
+			variable: "containerWorkspaceFolder",
+			want:     "${containerWorkspaceFolder}",
+		},
+		{
+			name:     "preserves containerWorkspaceFolderBasename",
+			match:    "${containerWorkspaceFolderBasename}",
+			variable: "containerWorkspaceFolderBasename",
+			want:     "${containerWorkspaceFolderBasename}",
+		},
+		{
+			name:     "preserves containerEnv",
+			match:    "${containerEnv:PATH}",
+			variable: "containerEnv",
+			args:     []string{"PATH"},
+			want:     "${containerEnv:PATH}",
+		},
+		{
+			name:     "resolves localWorkspaceFolder",
+			match:    "${localWorkspaceFolder}",
+			variable: "localWorkspaceFolder",
+			want:     "/home/user/project",
+		},
+		{
+			name:     "resolves localEnv",
+			match:    "${localEnv:HOME}",
+			variable: "localEnv",
+			args:     []string{"HOME"},
+			want:     "/root",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := restricted(tt.match, tt.variable, tt.args)
+			if got != tt.want {
+				t.Errorf("restrictedReplace() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func assertContainerEnv(t *testing.T, got, want map[string]string) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	for k, wantVal := range want {
+		gotVal, ok := got[k]
+		if !ok {
+			t.Errorf("containerEnv[%q] missing", k)
+		} else if gotVal != wantVal {
+			t.Errorf("containerEnv[%q] = %q, want %q", k, gotVal, wantVal)
+		}
+	}
+}
+
+func assertRemoteEnv(t *testing.T, got, want map[string]*string) {
+	t.Helper()
+	if want == nil {
+		return
+	}
+	for k, wantVal := range want {
+		gotVal, ok := got[k]
+		switch {
+		case !ok:
+			t.Errorf("remoteEnv[%q] missing", k)
+		case gotVal == nil:
+			t.Errorf("remoteEnv[%q] = nil, want %q", k, *wantVal)
+		case *gotVal != *wantVal:
+			t.Errorf("remoteEnv[%q] = %q, want %q", k, *gotVal, *wantVal)
+		}
+	}
+}

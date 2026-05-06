@@ -176,7 +176,14 @@ func (r *runner) substitute(
 		WorkspaceMount: workspaceMount,
 	}
 
-	// substitute & load
+	// Substitute applies phase-aware variable scoping per the devcontainer spec
+	// (https://containers.dev/implementors/reference/ — "Variables in devcontainer.json"):
+	// - Pre-container fields (containerEnv) only resolve local-scoped variables
+	//   (devcontainerId, localEnv, localWorkspaceFolder, localWorkspaceFolderBasename).
+	// - Post-container fields (remoteEnv, lifecycle commands, etc.) additionally
+	//   resolve containerWorkspaceFolder and containerWorkspaceFolderBasename.
+	// - containerEnv references (${containerEnv:VAR}) are resolved later via
+	//   SubstituteContainerEnv after the container is running.
 	parsedConfig := &config.DevContainerConfig{}
 	err := config.Substitute(substitutionContext, rawParsedConfig, parsedConfig)
 	if err != nil {

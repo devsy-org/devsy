@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"path/filepath"
 	"regexp"
@@ -35,6 +36,11 @@ type SubstitutionContext struct {
 	GidMap                   []string          `json:"GidMap,omitempty"`
 }
 
+// preContainerFields lists devcontainer.json keys that are evaluated before
+// the container exists. These fields must not resolve container-scoped
+// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename).
+var preContainerFields = []string{"containerEnv"}
+
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}
 	err := Convert(config, &newVal)
@@ -60,9 +66,27 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 			},
 		)
 	}
-	retVal := substitute0(newVal, func(match, variable string, args []string) string {
+
+	// Two-pass substitution: pre-container fields get a restricted replacer
+	// that preserves container-scoped variables as literals.
+	fullReplace := func(match, variable string, args []string) string {
 		return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-	})
+	}
+	preFieldValues := map[string]any{}
+	for _, key := range preContainerFields {
+		if fieldVal, ok := newVal[key]; ok {
+			preFieldValues[key] = substitute0(fieldVal, restrictedReplace(fullReplace))
+			delete(newVal, key)
+		}
+	}
+
+	// Full substitution for remaining fields.
+	retVal := substitute0(newVal, fullReplace)
+
+	// Merge pre-container fields back into the result.
+	if retMap, ok := retVal.(map[string]any); ok {
+		maps.Copy(retMap, preFieldValues)
+	}
 
 	err = Convert(retVal, out)
 	if err != nil {
@@ -143,6 +167,20 @@ func replaceWithContext(
 		return match
 	default:
 		return match
+	}
+}
+
+// restrictedReplace wraps a ReplaceFunction to preserve container-scoped
+// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename,
+// containerEnv) as literals for pre-container field substitution.
+func restrictedReplace(fallback ReplaceFunction) ReplaceFunction {
+	return func(match, variable string, args []string) string {
+		switch variable {
+		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", "containerEnv":
+			return match
+		default:
+			return fallback(match, variable, args)
+		}
 	}
 }
 
