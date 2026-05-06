@@ -9,6 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	flagContainerID   = "--container-id"
+	testContainerID   = "abc"
+	hookOnCreate      = "onCreateCommand"
+	hookUpdateContent = "updateContentCommand"
+	hookPostCreate    = "postCreateCommand"
+	hookPostStart     = "postStartCommand"
+	hookPostAttach    = "postAttachCommand"
+)
+
 func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
 	assert.Equal(t, "run-user-commands", cmd.Use)
@@ -43,7 +53,7 @@ func TestNewRunUserCommandsCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T
 
 func TestNewRunUserCommandsCmd_ContainerIDWithoutConfigFails(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	cmd.SetArgs([]string{"--container-id", "abc123"})
+	cmd.SetArgs([]string{flagContainerID, "abc123"})
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(),
@@ -181,11 +191,11 @@ func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 		"--docker-path", "/usr/local/bin/podman",
 		"--config", ".devcontainer/devcontainer.json",
 		"--override-config", "/tmp/override.json",
-		"--remote-env", "FOO=bar",
-		"--remote-env", "BAZ=qux",
+		"--remote-env", testEnvFoo,
+		"--remote-env", testEnvBaz,
 		"--prebuild",
 		"--skip-non-blocking-commands",
-		"--container-id", "abc123",
+		flagContainerID, "abc123",
 	})
 	require.NoError(t, err)
 
@@ -203,7 +213,7 @@ func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 
 	remoteEnv, err := cmd.Flags().GetStringArray("remote-env")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"FOO=bar", "BAZ=qux"}, remoteEnv)
+	assert.Equal(t, []string{testEnvFoo, testEnvBaz}, remoteEnv)
 
 	prebuild, err := cmd.Flags().GetBool("prebuild")
 	require.NoError(t, err)
@@ -225,7 +235,7 @@ func TestRunUserCommandsCmd_ValidateRemoteEnv(t *testing.T) {
 		wantErr   bool
 		errSubstr string
 	}{
-		{"valid", []string{"FOO=bar", "BAZ=qux=extra"}, false, ""},
+		{"valid", []string{testEnvFoo, "BAZ=qux=extra"}, false, ""},
 		{"empty", []string{}, false, ""},
 		{"missing equals", []string{"INVALID"}, true, "must be KEY=VALUE format"},
 		{"empty key", []string{"=value"}, true, "must be KEY=VALUE format"},
@@ -256,14 +266,14 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 	}{
 		{
 			"workspace-folder only",
-			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: "/tmp"},
+			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: testTmpDir},
 			false, "",
 		},
 		{
 			"container-id with config",
 			&RunUserCommandsCmd{
 				GlobalFlags: &flags.GlobalFlags{},
-				ContainerID: "abc",
+				ContainerID: testContainerID,
 				Config:      "path",
 			},
 			false,
@@ -273,8 +283,8 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 			"container-id with workspace-folder",
 			&RunUserCommandsCmd{
 				GlobalFlags:     &flags.GlobalFlags{},
-				ContainerID:     "abc",
-				WorkspaceFolder: "/tmp",
+				ContainerID:     testContainerID,
+				WorkspaceFolder: testTmpDir,
 			},
 			false,
 			"",
@@ -286,7 +296,7 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 		},
 		{
 			"container-id without config or workspace",
-			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, ContainerID: "abc"},
+			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, ContainerID: testContainerID},
 			true, "--config is required",
 		},
 	}
@@ -310,11 +320,11 @@ func TestResolveWaitForBoundary(t *testing.T) {
 		want    int
 	}{
 		{"default (empty)", "", 1},
-		{"onCreateCommand", "onCreateCommand", 0},
-		{"updateContentCommand", "updateContentCommand", 1},
-		{"postCreateCommand", "postCreateCommand", 2},
-		{"postStartCommand", "postStartCommand", 3},
-		{"postAttachCommand", "postAttachCommand", 4},
+		{hookOnCreate, hookOnCreate, 0},
+		{hookUpdateContent, hookUpdateContent, 1},
+		{hookPostCreate, hookPostCreate, 2},
+		{hookPostStart, hookPostStart, 3},
+		{hookPostAttach, hookPostAttach, 4},
 		{"unknown falls back to 1", "unknownHook", 1},
 	}
 	for _, tt := range tests {
@@ -371,7 +381,7 @@ func TestBuildLifecycleEnvArgs_WithValues(t *testing.T) {
 		},
 	}
 	args := buildLifecycleEnvArgs(result)
-	assert.Equal(t, []string{"-e", "FOO=bar"}, args)
+	assert.Equal(t, []string{"-e", testEnvFoo}, args)
 }
 
 func TestBuildLifecycleEnvArgs_NilValueSkipped(t *testing.T) {
@@ -407,10 +417,10 @@ func TestRunUserCommandsCmd_RegisteredInRoot(t *testing.T) {
 func TestRunUserCommandsCmd_BuildCLIRemoteEnvArgs(t *testing.T) {
 	cmd := &RunUserCommandsCmd{
 		GlobalFlags: &flags.GlobalFlags{},
-		RemoteEnv:   []string{"FOO=bar", "BAZ=qux"},
+		RemoteEnv:   []string{testEnvFoo, testEnvBaz},
 	}
 	args := cmd.buildCLIRemoteEnvArgs()
-	assert.Equal(t, []string{"-e", "FOO=bar", "-e", "BAZ=qux"}, args)
+	assert.Equal(t, []string{"-e", testEnvFoo, "-e", testEnvBaz}, args)
 }
 
 func TestRunUserCommandsCmd_BuildCLIRemoteEnvArgs_Empty(t *testing.T) {
