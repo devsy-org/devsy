@@ -9,7 +9,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-const AutoForwardIgnore = "ignore"
+const (
+	AutoForwardIgnore = "ignore"
+	AutoForwardSilent = "silent"
+)
 
 // PortForwardAttribute carries port metadata resolved from portsAttributes
 // in the devcontainer config. Downstream forwarders use this to apply
@@ -116,7 +119,7 @@ func (w *Watcher) runOnce() error {
 			}
 
 			switch attr.OnAutoForward {
-			case "silent", "":
+			case AutoForwardSilent, "":
 				if attr.Label != "" {
 					log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
 				} else {
