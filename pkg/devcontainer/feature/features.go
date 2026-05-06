@@ -29,7 +29,7 @@ const DEVCONTAINER_MANIFEST_MEDIATYPE = "application/vnd.devcontainers"
 
 var directTarballRegEx = regexp.MustCompile("devcontainer-feature-([a-zA-Z0-9_-]+).tgz")
 
-func getFeatureInstallWrapperScript(
+func GetFeatureInstallWrapperScript(
 	idWithoutVersion string,
 	feature *config.FeatureConfig,
 	options []string,

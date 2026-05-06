@@ -45,6 +45,13 @@ func TestNewSetUpCmd_WorkspaceFolderFlagOptional(t *testing.T) {
 	assert.Equal(t, "", f.DefValue)
 }
 
+func TestNewSetUpCmd_DockerPathFlagOptional(t *testing.T) {
+	cmd := NewSetUpCmd(&flags.GlobalFlags{})
+	f := cmd.Flags().Lookup(flagSetUpDockerPath)
+	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
+}
+
 func TestNewSetUpCmd_FailsWithoutContainer(t *testing.T) {
 	cmd := NewSetUpCmd(&flags.GlobalFlags{})
 	cmd.SetArgs([]string{})
@@ -96,4 +103,31 @@ func TestBuildDockerExecArgs_MultipleCommandParts(t *testing.T) {
 		testContainerName, "ls", "-la", "/tmp",
 	}
 	assert.Equal(t, expected, args)
+}
+
+func TestBuildDockerExecArgs_NoWorkdir(t *testing.T) {
+	args := buildDockerExecArgs(
+		testContainerName,
+		nil,
+		"",
+		[]string{"echo", "hello"},
+	)
+	expected := []string{
+		dockerExecSubcommand,
+		testContainerName, "echo", "hello",
+	}
+	assert.Equal(t, expected, args)
+}
+
+func TestSetUpCmd_ResolveDockerPath_Default(t *testing.T) {
+	cmd := &SetUpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	assert.Equal(t, defaultDockerCommand, cmd.resolveDockerPath())
+}
+
+func TestSetUpCmd_ResolveDockerPath_Custom(t *testing.T) {
+	cmd := &SetUpCmd{
+		GlobalFlags: &flags.GlobalFlags{},
+		DockerPath:  "/usr/local/bin/podman",
+	}
+	assert.Equal(t, "/usr/local/bin/podman", cmd.resolveDockerPath())
 }

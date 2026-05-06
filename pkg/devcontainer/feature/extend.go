@@ -192,14 +192,14 @@ func copyFeaturesToDestination(features []*config.FeatureSet, targetDir string) 
 
 		// copy feature folder
 		envPath := filepath.Join(featureDir, "devcontainer-features.env")
-		variables := getFeatureEnvVariables(feature.Config, feature.Options)
+		variables := GetFeatureEnvVariables(feature.Config, feature.Options)
 		err = os.WriteFile(envPath, []byte(strings.Join(variables, "\n")), 0o600)
 		if err != nil {
 			return fmt.Errorf("write variables of feature %s: %w", feature.ConfigID, err)
 		}
 
 		installWrapperPath := filepath.Join(featureDir, "devcontainer-features-install.sh")
-		installWrapperContent := getFeatureInstallWrapperScript(
+		installWrapperContent := GetFeatureInstallWrapperScript(
 			feature.ConfigID,
 			feature.Config,
 			variables,
