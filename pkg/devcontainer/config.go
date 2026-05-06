@@ -168,7 +168,7 @@ func (r *runner) substitute(
 	}
 
 	substitutionContext := &config.SubstitutionContext{
-		DevContainerID:           config.DeriveDevContainerID(r.LocalWorkspaceFolder),
+		DevContainerID:           config.DeriveDevContainerID(r.LocalWorkspaceFolder, configFile),
 		LocalWorkspaceFolder:     r.LocalWorkspaceFolder,
 		ContainerWorkspaceFolder: containerWorkspaceFolder,
 		Env:                      env,

@@ -9,14 +9,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
-
-	"github.com/devsy-org/devsy/pkg/hash"
 )
 
 const (
-	devContainerIDLength = 20
-	containerEnvField    = "containerEnv"
+	devContainerIDLength    = 20
+	specDevContainerIDWidth = 52
+	containerEnvField       = "containerEnv"
+
+	LabelLocalFolder = "devcontainer.local_folder"
+	LabelConfigFile  = "devcontainer.config_file"
 )
 
 type ReplaceFunction func(match, variable string, args []string) string
@@ -269,19 +272,54 @@ func ListToObject(list []string) map[string]string {
 	return ret
 }
 
-func DeriveDevContainerID(localWorkspaceFolder string) string {
+// ComputeDevContainerID implements the official devcontainer CLI algorithm:
+// SHA-256(JSON.stringify(labels, sorted keys)) → BigInt → base-32 (0-9a-v) → left-pad to 52 chars.
+func ComputeDevContainerID(labels map[string]string) string {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	var buf strings.Builder
+	buf.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		keyJSON, _ := json.Marshal(k)
+		valJSON, _ := json.Marshal(labels[k])
+		buf.Write(keyJSON)
+		buf.WriteByte(':')
+		buf.Write(valJSON)
+	}
+	buf.WriteByte('}')
+
+	h := sha256.Sum256([]byte(buf.String()))
+	bigInt := new(big.Int).SetBytes(h[:])
+	encoded := bigInt.Text(32)
+
+	if len(encoded) >= specDevContainerIDWidth {
+		return encoded[:specDevContainerIDWidth]
+	}
+	return strings.Repeat("0", specDevContainerIDWidth-len(encoded)) + encoded
+}
+
+// DefaultIDLabels returns the default labels used for devcontainerId derivation.
+func DefaultIDLabels(localWorkspaceFolder, configFilePath string) map[string]string {
+	return map[string]string{
+		LabelLocalFolder: localWorkspaceFolder,
+		LabelConfigFile:  configFilePath,
+	}
+}
+
+// DeriveDevContainerID computes the spec-compliant devcontainerId from workspace and config paths.
+func DeriveDevContainerID(localWorkspaceFolder, configFilePath string) string {
+	return ComputeDevContainerID(DefaultIDLabels(localWorkspaceFolder, configFilePath))
+}
+
+// LegacyDeriveDevContainerID is the old derivation (SHA-256 hex prefix of folder path).
+func LegacyDeriveDevContainerID(localWorkspaceFolder string) string {
 	h := sha256.Sum256([]byte(localWorkspaceFolder))
 	return hex.EncodeToString(h[:])[:devContainerIDLength]
-}
-
-func GetLegacyDevContainerID(labels map[string]string) string {
-	labelsBytes, _ := json.Marshal(labels)
-	hashedLabels := hash.String(string(labelsBytes))
-	bigInt := big.Int{}
-	bigInt.SetString(hashedLabels, 16)
-	return bigInt.Text(32)
-}
-
-func ResolveDevContainerID(localWorkspaceFolder string, legacyLabels map[string]string) string {
-	return DeriveDevContainerID(localWorkspaceFolder)
 }
