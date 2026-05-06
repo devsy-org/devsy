@@ -14,7 +14,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/hash"
 )
 
-const devContainerIDLength = 20
+const (
+	devContainerIDLength = 20
+	containerEnvField    = "containerEnv"
+)
 
 type ReplaceFunction func(match, variable string, args []string) string
 
@@ -39,7 +42,7 @@ type SubstitutionContext struct {
 // preContainerFields lists devcontainer.json keys that are evaluated before
 // the container exists. These fields must not resolve container-scoped
 // variables (containerWorkspaceFolder, containerWorkspaceFolderBasename).
-var preContainerFields = []string{"containerEnv"}
+var preContainerFields = []string{containerEnvField}
 
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}
@@ -122,7 +125,7 @@ func replaceWithContainerEnv(
 	args []string,
 ) string {
 	switch variable {
-	case "containerEnv":
+	case containerEnvField:
 		return lookupValue(false, containerEnv, args, match)
 	default:
 		return match
@@ -163,7 +166,7 @@ func replaceWithContext(
 			return filepath.Base(substitutionCtx.ContainerWorkspaceFolder)
 		}
 		return match
-	case "containerEnv":
+	case containerEnvField:
 		return match
 	default:
 		return match
@@ -176,7 +179,7 @@ func replaceWithContext(
 func restrictedReplace(fallback ReplaceFunction) ReplaceFunction {
 	return func(match, variable string, args []string) string {
 		switch variable {
-		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", "containerEnv":
+		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", containerEnvField:
 			return match
 		default:
 			return fallback(match, variable, args)

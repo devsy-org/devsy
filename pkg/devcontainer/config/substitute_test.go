@@ -83,7 +83,7 @@ func TestReplaceWithContextPreservesContainerEnv(t *testing.T) {
 	ctx := &SubstitutionContext{}
 	match := "${containerEnv:PATH}"
 	result := replaceWithContext(
-		false, ctx, match, "containerEnv", []string{"PATH"},
+		false, ctx, match, containerEnvField, []string{testPATHKey},
 	)
 	if result != match {
 		t.Errorf(
@@ -172,7 +172,19 @@ func TestResolveStringDefaultWithColons(t *testing.T) {
 	}
 }
 
-const testWorkspaceFolder = "/home/user/project"
+const (
+	testWorkspaceFolder                      = "/home/user/project"
+	testContainerWorkspaceFolder             = "/workspaces/project"
+	testDevContainerID                       = "abc123"
+	testContainerWorkspaceFolderVar          = "${containerWorkspaceFolder}"
+	testContainerWorkspaceFolderBasenameVar  = "${containerWorkspaceFolderBasename}"
+	testLocalWorkspaceFolderVar              = "${localWorkspaceFolder}"
+	testCWFKey                               = "CWF"
+	testLOCKey                               = "LOC"
+	testContainerWorkspaceFolderName         = "containerWorkspaceFolder"
+	testContainerWorkspaceFolderBasenameName = "containerWorkspaceFolderBasename"
+	testPATHKey                              = "PATH"
+)
 
 func TestDeriveDevContainerID(t *testing.T) {
 	h := sha256.Sum256([]byte(testWorkspaceFolder))
@@ -229,9 +241,9 @@ type scopeTestConfig struct {
 
 func scopeTestCtx() *SubstitutionContext {
 	return &SubstitutionContext{
-		DevContainerID:           "abc123",
-		LocalWorkspaceFolder:     "/home/user/project",
-		ContainerWorkspaceFolder: "/workspaces/project",
+		DevContainerID:           testDevContainerID,
+		LocalWorkspaceFolder:     testWorkspaceFolder,
+		ContainerWorkspaceFolder: testContainerWorkspaceFolder,
 		Env:                      map[string]string{"MY_VAR": "hello"},
 	}
 }
@@ -245,13 +257,13 @@ func TestSubstituteContainerEnvScoping(t *testing.T) {
 	}{
 		{
 			name:  "preserves containerWorkspaceFolder",
-			input: map[string]string{"V": "${containerWorkspaceFolder}"},
-			want:  map[string]string{"V": "${containerWorkspaceFolder}"},
+			input: map[string]string{"V": testContainerWorkspaceFolderVar},
+			want:  map[string]string{"V": testContainerWorkspaceFolderVar},
 		},
 		{
 			name:  "preserves containerWorkspaceFolderBasename",
-			input: map[string]string{"V": "${containerWorkspaceFolderBasename}"},
-			want:  map[string]string{"V": "${containerWorkspaceFolderBasename}"},
+			input: map[string]string{"V": testContainerWorkspaceFolderBasenameVar},
+			want:  map[string]string{"V": testContainerWorkspaceFolderBasenameVar},
 		},
 		{
 			name:  "preserves containerEnv references",
@@ -261,16 +273,16 @@ func TestSubstituteContainerEnvScoping(t *testing.T) {
 		{
 			name: "resolves local-scoped variables",
 			input: map[string]string{
-				"LOCAL": "${localWorkspaceFolder}",
+				"LOCAL": testLocalWorkspaceFolderVar,
 				"BASE":  "${localWorkspaceFolderBasename}",
 				"ENV":   "${localEnv:MY_VAR}",
 				"DEVID": "${devcontainerId}",
 			},
 			want: map[string]string{
-				"LOCAL": "/home/user/project",
+				"LOCAL": testWorkspaceFolder,
 				"BASE":  "project",
 				"ENV":   "hello",
-				"DEVID": "abc123",
+				"DEVID": testDevContainerID,
 			},
 		},
 	}
@@ -300,7 +312,7 @@ func TestSubstituteRemoteEnvScoping(t *testing.T) {
 		},
 		{
 			name:  "resolves containerWorkspaceFolderBasename",
-			input: map[string]*string{"V": strPtr("${containerWorkspaceFolderBasename}")},
+			input: map[string]*string{"V": strPtr(testContainerWorkspaceFolderBasenameVar)},
 			want:  map[string]*string{"V": strPtr("project")},
 		},
 	}
@@ -320,12 +332,12 @@ func TestSubstituteMixedScoping(t *testing.T) {
 	ctx := scopeTestCtx()
 	input := scopeTestConfig{
 		ContainerEnv: map[string]string{
-			"CWF": "${containerWorkspaceFolder}",
-			"LOC": "${localWorkspaceFolder}",
+			testCWFKey: testContainerWorkspaceFolderVar,
+			testLOCKey: testLocalWorkspaceFolderVar,
 		},
 		RemoteEnv: map[string]*string{
-			"CWF": strPtr("${containerWorkspaceFolder}"),
-			"LOC": strPtr("${localWorkspaceFolder}"),
+			testCWFKey: strPtr(testContainerWorkspaceFolderVar),
+			testLOCKey: strPtr(testLocalWorkspaceFolderVar),
 		},
 	}
 	var out scopeTestConfig
@@ -334,19 +346,19 @@ func TestSubstituteMixedScoping(t *testing.T) {
 		t.Fatalf("Substitute() error: %v", err)
 	}
 	assertContainerEnv(t, out.ContainerEnv, map[string]string{
-		"CWF": "${containerWorkspaceFolder}",
-		"LOC": "/home/user/project",
+		testCWFKey: testContainerWorkspaceFolderVar,
+		testLOCKey: testWorkspaceFolder,
 	})
 	assertRemoteEnv(t, out.RemoteEnv, map[string]*string{
-		"CWF": strPtr("/workspaces/project"),
-		"LOC": strPtr("/home/user/project"),
+		testCWFKey: strPtr(testContainerWorkspaceFolder),
+		testLOCKey: strPtr(testWorkspaceFolder),
 	})
 }
 
 func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 	ctx := &SubstitutionContext{
-		ContainerWorkspaceFolder: "/workspaces/project",
-		LocalWorkspaceFolder:     "/home/user/project",
+		ContainerWorkspaceFolder: testContainerWorkspaceFolder,
+		LocalWorkspaceFolder:     testWorkspaceFolder,
 		Env:                      map[string]string{"HOME": "/root"},
 	}
 	fullReplace := func(match, variable string, args []string) string {
@@ -363,28 +375,28 @@ func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 	}{
 		{
 			name:     "preserves containerWorkspaceFolder",
-			match:    "${containerWorkspaceFolder}",
-			variable: "containerWorkspaceFolder",
-			want:     "${containerWorkspaceFolder}",
+			match:    testContainerWorkspaceFolderVar,
+			variable: testContainerWorkspaceFolderName,
+			want:     testContainerWorkspaceFolderVar,
 		},
 		{
 			name:     "preserves containerWorkspaceFolderBasename",
-			match:    "${containerWorkspaceFolderBasename}",
-			variable: "containerWorkspaceFolderBasename",
-			want:     "${containerWorkspaceFolderBasename}",
+			match:    testContainerWorkspaceFolderBasenameVar,
+			variable: testContainerWorkspaceFolderBasenameName,
+			want:     testContainerWorkspaceFolderBasenameVar,
 		},
 		{
 			name:     "preserves containerEnv",
 			match:    "${containerEnv:PATH}",
-			variable: "containerEnv",
-			args:     []string{"PATH"},
+			variable: containerEnvField,
+			args:     []string{testPATHKey},
 			want:     "${containerEnv:PATH}",
 		},
 		{
 			name:     "resolves localWorkspaceFolder",
-			match:    "${localWorkspaceFolder}",
+			match:    testLocalWorkspaceFolderVar,
 			variable: "localWorkspaceFolder",
-			want:     "/home/user/project",
+			want:     testWorkspaceFolder,
 		},
 		{
 			name:     "resolves localEnv",
