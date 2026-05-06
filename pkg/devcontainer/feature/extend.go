@@ -245,6 +245,8 @@ func getFeatureLayers(containerUser, remoteUser string, features []*config.Featu
 	return b.String()
 }
 
+var containerEnvVarRegexp = regexp.MustCompile(`\$\{containerEnv:([^}]+)\}`)
+
 func generateContainerEnvs(feature *config.FeatureSet) string {
 	result := []string{}
 	if len(feature.Config.ContainerEnv) == 0 {
@@ -252,6 +254,7 @@ func generateContainerEnvs(feature *config.FeatureSet) string {
 	}
 
 	for k, v := range feature.Config.ContainerEnv {
+		v = containerEnvVarRegexp.ReplaceAllString(v, "${$1}")
 		result = append(result, fmt.Sprintf("ENV %s=%s", k, v))
 	}
 	return strings.Join(result, "\n")
