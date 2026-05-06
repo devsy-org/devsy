@@ -10,13 +10,14 @@ import (
 )
 
 const (
-	flagContainerID   = "--container-id"
-	testContainerID   = "abc"
-	hookOnCreate      = "onCreateCommand"
-	hookUpdateContent = "updateContentCommand"
-	hookPostCreate    = "postCreateCommand"
-	hookPostStart     = "postStartCommand"
-	hookPostAttach    = "postAttachCommand"
+	flagContainerID    = "--container-id"
+	testContainerID    = "abc"
+	testContainerIDHex = "abc123"
+	hookOnCreate       = "onCreateCommand"
+	hookUpdateContent  = "updateContentCommand"
+	hookPostCreate     = "postCreateCommand"
+	hookPostStart      = "postStartCommand"
+	hookPostAttach     = "postAttachCommand"
 )
 
 func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {
@@ -53,7 +54,7 @@ func TestNewRunUserCommandsCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T
 
 func TestNewRunUserCommandsCmd_ContainerIDWithoutConfigFails(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	cmd.SetArgs([]string{flagContainerID, "abc123"})
+	cmd.SetArgs([]string{flagContainerID, testContainerIDHex})
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(),
@@ -195,7 +196,7 @@ func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 		"--remote-env", testEnvBaz,
 		"--prebuild",
 		"--skip-non-blocking-commands",
-		flagContainerID, "abc123",
+		flagContainerID, testContainerIDHex,
 	})
 	require.NoError(t, err)
 
@@ -225,7 +226,7 @@ func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 
 	containerID, err := cmd.Flags().GetString("container-id")
 	require.NoError(t, err)
-	assert.Equal(t, "abc123", containerID)
+	assert.Equal(t, testContainerIDHex, containerID)
 }
 
 func TestRunUserCommandsCmd_ValidateRemoteEnv(t *testing.T) {
