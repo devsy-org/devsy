@@ -402,9 +402,7 @@ jobs:
           $msiPath = "$env:RUNNER_TEMP\podman.msi"
           Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
 
-          $shasumsUrl = "https://github.com/containers/podman/releases/download/v5.8.2/shasums"
-          $shasums = (Invoke-WebRequest -Uri $shasumsUrl).Content
-          $expectedHash = ($shasums -split "`n" | Where-Object { $_ -match "podman-installer-windows-amd64.msi" }) -replace '\s+.*$',''
+          $expectedHash = "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57"
           $actualHash = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash.ToLower()
           if ($actualHash -ne $expectedHash) {
             throw "SHA256 mismatch for podman MSI! Expected: $expectedHash, Got: $actualHash"
