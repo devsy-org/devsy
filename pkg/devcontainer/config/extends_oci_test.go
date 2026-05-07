@@ -4,7 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +30,8 @@ func TestIsOCIRef(t *testing.T) {
 		{"ghcr.io/owner/repo:tag", true},
 		{"docker.io/library/ubuntu:latest", true},
 		{"myregistry.com/org/devcontainer-base:1", true},
+		{"oci://ghcr.io/org/repo:tag", true},
+		{"oci://relative/path", true},
 		{"./base.json", false},
 		{"../shared/base.json", false},
 		{"/absolute/path.json", false},
@@ -95,7 +100,11 @@ func TestResolveOCIExtends_Integration(t *testing.T) {
 	pushTestImage(t, regHost+"/test/devcontainer-base:latest", jsonContent)
 
 	visited := map[string]bool{}
-	cfg, err := resolveOCIExtends(regHost+"/test/devcontainer-base:latest", visited)
+	cfg, err := resolveOCIExtends(
+		context.Background(),
+		regHost+"/test/devcontainer-base:latest",
+		visited,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,16 +122,111 @@ func TestResolveOCIExtends_Integration(t *testing.T) {
 	}
 }
 
+func TestResolveOCIExtends_OCIPrefix(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+
+	regHost := strings.TrimPrefix(srv.URL, "http://")
+
+	jsonContent := `{"name": "oci-prefix-test", "image": "node:20"}`
+	pushTestImage(t, regHost+"/org/config:v1", jsonContent)
+
+	visited := map[string]bool{}
+	cfg, err := resolveOCIExtends(context.Background(), "oci://"+regHost+"/org/config:v1", visited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "oci-prefix-test" {
+		t.Errorf("Name: got %q, want 'oci-prefix-test'", cfg.Name)
+	}
+	if cfg.Image != "node:20" {
+		t.Errorf("Image: got %q, want 'node:20'", cfg.Image)
+	}
+}
+
 func TestResolveOCIExtends_CycleDetection(t *testing.T) {
 	ref := "ghcr.io/fake/cycle:1"
 	visited := map[string]bool{ref: true}
 
-	_, err := resolveOCIExtends(ref, visited)
+	_, err := resolveOCIExtends(context.Background(), ref, visited)
 	if err == nil {
 		t.Fatal("expected cycle error")
 	}
 	if !strings.Contains(err.Error(), "cycle") {
 		t.Errorf("expected 'cycle' in error, got: %v", err)
+	}
+}
+
+func TestResolveOCIExtends_CacheHit(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+
+	regHost := strings.TrimPrefix(srv.URL, "http://")
+	ref := regHost + "/test/cache-hit:latest"
+
+	pushTestImage(t, ref, `{"name": "cached", "image": "alpine:3"}`)
+
+	visited := map[string]bool{}
+	cfg, err := resolveOCIExtends(context.Background(), ref, visited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "cached" {
+		t.Fatalf("first resolve: got name %q", cfg.Name)
+	}
+
+	cacheDir, err := extendsCacheDir(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "devcontainer.json")); err != nil {
+		t.Fatal("cache file not written")
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "digest")); err != nil {
+		t.Fatal("digest file not written")
+	}
+
+	visited2 := map[string]bool{}
+	cfg2, err := resolveOCIExtends(context.Background(), ref, visited2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Name != "cached" {
+		t.Errorf("cache hit: got name %q, want 'cached'", cfg2.Name)
+	}
+}
+
+func TestResolveOCIExtends_CacheInvalidation(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+
+	regHost := strings.TrimPrefix(srv.URL, "http://")
+	ref := regHost + "/test/cache-invalidate:latest"
+
+	pushTestImage(t, ref, `{"name": "version1", "image": "alpine:3"}`)
+
+	visited := map[string]bool{}
+	cfg, err := resolveOCIExtends(context.Background(), ref, visited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "version1" {
+		t.Fatalf("first resolve: got name %q", cfg.Name)
+	}
+
+	pushTestImage(t, ref, `{"name": "version2", "image": "alpine:3.18"}`)
+
+	visited2 := map[string]bool{}
+	cfg2, err := resolveOCIExtends(context.Background(), ref, visited2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Name != "version2" {
+		t.Errorf("after invalidation: got name %q, want 'version2'", cfg2.Name)
 	}
 }
 
