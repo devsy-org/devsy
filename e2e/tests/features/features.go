@@ -301,6 +301,143 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			gomega.Expect(stdout).To(gomega.ContainSubstring("2.0.0"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	})
+
+	ginkgo.Describe("features test", func() {
+		ginkgo.It("tests a feature with a passing test script", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			featureDir, err := os.MkdirTemp("", "e2e-features-test-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(featureDir) })
+
+			// Create feature metadata
+			featureJSON := `{
+				"id": "hello",
+				"version": "1.0.0",
+				"name": "Hello Feature",
+				"description": "A simple feature that creates a hello script"
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				filepath.Join(featureDir, "devcontainer-feature.json"),
+				[]byte(featureJSON),
+				0o600,
+			))
+
+			// Create install script
+			installScript := "#!/bin/sh\nset -e\n" +
+				"echo 'hello-feature' > /usr/local/bin/hello-feature\n" +
+				"chmod +x /usr/local/bin/hello-feature\n"
+			framework.ExpectNoError(os.WriteFile( //nolint:gosec // test needs exec permission
+				filepath.Join(featureDir, "install.sh"),
+				[]byte(installScript),
+				0o755,
+			))
+
+			// Create test directory with a passing test
+			testDir := filepath.Join(featureDir, "test")
+			framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
+			testScript := "#!/bin/bash\nset -e\n" +
+				"test -f /usr/local/bin/hello-feature\n"
+			framework.ExpectNoError(os.WriteFile( //nolint:gosec // test needs exec permission
+				filepath.Join(testDir, "test_hello.sh"),
+				[]byte(testScript),
+				0o755,
+			))
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "test",
+				"--project-folder", featureDir,
+				"--base-image", "ubuntu:22.04",
+			})
+			framework.ExpectNoError(err)
+
+			gomega.Expect(stdout).To(gomega.ContainSubstring("PASS"))
+			gomega.Expect(stdout).To(gomega.ContainSubstring("hello"))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("reports failure for a failing test script", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			featureDir, err := os.MkdirTemp("", "e2e-features-test-fail-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(featureDir) })
+
+			featureJSON := `{
+				"id": "failing",
+				"version": "1.0.0",
+				"name": "Failing Feature"
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				filepath.Join(featureDir, "devcontainer-feature.json"),
+				[]byte(featureJSON),
+				0o600,
+			))
+
+			installScript := "#!/bin/sh\nset -e\necho installed\n"
+			framework.ExpectNoError(os.WriteFile( //nolint:gosec // test needs exec permission
+				filepath.Join(featureDir, "install.sh"),
+				[]byte(installScript),
+				0o755,
+			))
+
+			testDir := filepath.Join(featureDir, "test")
+			framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
+			testScript := "#!/bin/bash\nexit 1\n"
+			framework.ExpectNoError(os.WriteFile( //nolint:gosec // test needs exec permission
+				filepath.Join(testDir, "test_should_fail.sh"),
+				[]byte(testScript),
+				0o755,
+			))
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "test",
+				"--project-folder", featureDir,
+				"--base-image", "ubuntu:22.04",
+			})
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(stdout).To(gomega.ContainSubstring("FAIL"))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("outputs JSON when --output=json is specified", func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+
+			featureDir, err := os.MkdirTemp("", "e2e-features-test-json-*")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(featureDir) })
+
+			featureJSON := `{
+				"id": "json-test",
+				"version": "1.0.0",
+				"name": "JSON Test Feature"
+			}`
+			framework.ExpectNoError(os.WriteFile(
+				filepath.Join(featureDir, "devcontainer-feature.json"),
+				[]byte(featureJSON),
+				0o600,
+			))
+
+			installScript := "#!/bin/sh\necho ok\n"
+			framework.ExpectNoError(os.WriteFile( //nolint:gosec // test needs exec permission
+				filepath.Join(featureDir, "install.sh"),
+				[]byte(installScript),
+				0o755,
+			))
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"features", "test",
+				"--project-folder", featureDir,
+				"--base-image", "ubuntu:22.04",
+				"--skip-scenarios",
+				"--output", "json",
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			gomega.Expect(json.Unmarshal([]byte(stdout), &result)).To(gomega.Succeed())
+			gomega.Expect(result["featureId"]).To(gomega.Equal("json-test"))
+			gomega.Expect(result["passed"]).To(gomega.BeTrue())
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+	})
 })
 
 func pushFeatureWithAnnotations(refStr string, annotations map[string]string) {
