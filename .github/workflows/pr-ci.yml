@@ -409,8 +409,9 @@ jobs:
           export PATH="/c/Program Files/RedHat/Podman:$PATH"
           echo 'C:\Program Files\RedHat\Podman' >> "$GITHUB_PATH"
 
-          # Install kind directly
-          curl -Lo "/c/Program Files/RedHat/Podman/kind.exe" "https://kind.sigs.k8s.io/dl/v0.24.0/kind-windows-amd64"
+          # Install kind directly (download to RUNNER_TEMP first, then move)
+          curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
+          mv "$RUNNER_TEMP/kind.exe" "/c/Program Files/RedHat/Podman/kind.exe"
 
           podman machine init
           podman machine set --rootful
