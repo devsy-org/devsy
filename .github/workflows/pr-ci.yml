@@ -434,6 +434,7 @@ jobs:
         shell: bash
         env:
           KIND_EXPERIMENTAL_PROVIDER: podman
+          DOCKER_HOST: npipe:////./pipe/docker_engine
         run: |
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
           curl -Lo "$RUNNER_TEMP/kind.sha256sum" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64.sha256sum"
@@ -503,7 +504,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
+              DOCKER_HOST="npipe:////./pipe/docker_engine" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
