@@ -687,7 +687,7 @@ func TestExtends_VarSub_LocalEnv(t *testing.T) {
 	}
 
 	writeJSON(t, subDir, "parent.json", `{
-		"image": "ubuntu:22.04",
+		"image": "debian:bookworm",
 		"remoteUser": "dev"
 	}`)
 
@@ -705,7 +705,7 @@ func TestExtends_VarSub_LocalEnv(t *testing.T) {
 	if cfg.Name != "child-with-env" {
 		t.Errorf("expected name 'child-with-env', got %q", cfg.Name)
 	}
-	if cfg.Image != "ubuntu:22.04" {
+	if cfg.Image != "debian:bookworm" {
 		t.Errorf("expected image inherited from parent, got %q", cfg.Image)
 	}
 	if cfg.RemoteUser != "dev" {
