@@ -402,7 +402,8 @@ jobs:
           DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
           wsl --set-default-version 2
-          choco install podman-cli kind -y
+          choco install podman-cli -y
+          curl -Lo /c/ProgramData/chocolatey/bin/kind.exe https://kind.sigs.k8s.io/dl/v0.24.0/kind-windows-amd64
 
           podman machine init
           podman machine set --rootful
