@@ -394,20 +394,12 @@ jobs:
           UUID=$(python -c "import uuid; print(uuid.uuid4().hex)")
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
-      - name: setup podman (Windows)
-        if: matrix.label == 'up-docker-wsl' && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        shell: pwsh
-        run: |
-          $msiPath = "$env:RUNNER_TEMP\podman.msi"
-          Invoke-WebRequest -Uri "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi" -OutFile $msiPath
-          $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /qn /norestart ADDLOCAL=ALL"
-          if ($proc.ExitCode -ne 0) { throw "MSI install failed with exit code $($proc.ExitCode)" }
-          $podmanDir = "C:\Program Files\RedHat\Podman"
-          if (!(Test-Path $podmanDir)) { throw "Podman directory not found after MSI install" }
-          echo "$podmanDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+      - name: install podman (Windows)
+        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        uses: redhat-actions/podman-install@v1
 
       - name: start podman machine (Windows)
-        if: matrix.label == 'up-docker-wsl' && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         run: |
           wsl --set-default-version 2
@@ -419,7 +411,7 @@ jobs:
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: bash
         env:
-          KIND_EXPERIMENTAL_PROVIDER: ${{ matrix.label == 'up-docker-wsl' && 'podman' || 'docker' }}
+          KIND_EXPERIMENTAL_PROVIDER: podman
         run: |
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
           export PATH="$RUNNER_TEMP:$PATH"
@@ -474,17 +466,13 @@ jobs:
               GOROOT="${GOROOT}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
-            DOCKER_HOST_VAL=""
-            if [ "${{ matrix.label }}" == "up-docker-wsl" ]; then
-              DOCKER_HOST_VAL="npipe:////./pipe/podman-machine-default"
-            fi
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              DOCKER_HOST="${DOCKER_HOST_VAL}" \
+              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
