@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -181,6 +182,46 @@ func TestPackageCmd_InvalidOutputFormat(t *testing.T) {
 	err := cmd.Run()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid output format")
+}
+
+func TestPackageCmd_InvalidFeatureID(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{"path traversal", "../../../etc/passwd"},
+		{"contains slash", "bad/id"},
+		{"starts with hyphen", "-invalid"},
+		{"uppercase letters", "MyFeature"},
+		{"contains spaces", "bad id"},
+		{"empty string", ""},
+	}
+
+	cmd := &PackageCmd{}
+	targetDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			feat := featureSource{
+				dir:    "some-dir",
+				config: &config.FeatureConfig{ID: tt.id},
+			}
+			_, err := cmd.packageFeature(feat, targetDir, outputDir)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid feature ID")
+		})
+	}
+}
+
+func TestPackageCmd_ValidFeatureIDs(t *testing.T) {
+	tests := []string{"my-feature", "a", "feature-1", "0cool"}
+
+	for _, id := range tests {
+		t.Run(id, func(t *testing.T) {
+			assert.True(t, validFeatureID.MatchString(id), "ID %q should be valid", id)
+		})
+	}
 }
 
 func readTarGzEntries(t *testing.T, path string) []string {

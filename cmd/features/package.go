@@ -1,14 +1,15 @@
 package features
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
 
@@ -121,6 +122,8 @@ func (cmd *PackageCmd) prepareOutputFolder() (string, error) {
 	return outputFolder, nil
 }
 
+var validFeatureID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 type featureSource struct {
 	dir    string
 	config *config.FeatureConfig
@@ -141,6 +144,7 @@ func (cmd *PackageCmd) discoverFeatures(targetDir string) ([]featureSource, erro
 		featureDir := filepath.Join(targetDir, entry.Name())
 		featureCfg, parseErr := config.ParseDevContainerFeature(featureDir)
 		if parseErr != nil {
+			log.Warnf("skipping %s: %v", entry.Name(), parseErr)
 			continue
 		}
 
@@ -159,23 +163,36 @@ func (cmd *PackageCmd) discoverFeatures(targetDir string) ([]featureSource, erro
 func (cmd *PackageCmd) packageFeature(
 	feat featureSource, targetDir, outputFolder string,
 ) (packageResult, error) {
+	if !validFeatureID.MatchString(feat.config.ID) {
+		return packageResult{}, fmt.Errorf(
+			"invalid feature ID %q: must match [a-z0-9][a-z0-9-]*", feat.config.ID,
+		)
+	}
+
 	featureDir := filepath.Join(targetDir, feat.dir)
 	filename := fmt.Sprintf("devcontainer-feature-%s.tgz", feat.config.ID)
 	outputPath := filepath.Join(outputFolder, filename)
 
-	f, err := os.Create(outputPath) // #nosec G304 -- path constructed from validated inputs
+	tmpFile, err := os.CreateTemp(outputFolder, ".devcontainer-feature-*.tgz.tmp")
 	if err != nil {
-		return packageResult{}, fmt.Errorf("create archive %s: %w", filename, err)
+		return packageResult{}, fmt.Errorf("create temp file for %s: %w", filename, err)
 	}
-	defer func() { _ = f.Close() }()
+	tmpPath := tmpFile.Name()
 
-	var buf bytes.Buffer
-	if err := extract.WriteTar(&buf, featureDir, true); err != nil {
+	if err := extract.WriteTar(tmpFile, featureDir, true); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 		return packageResult{}, fmt.Errorf("create tar for %s: %w", feat.config.ID, err)
 	}
 
-	if _, err := f.Write(buf.Bytes()); err != nil {
-		return packageResult{}, fmt.Errorf("write archive %s: %w", filename, err)
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return packageResult{}, fmt.Errorf("close archive %s: %w", filename, err)
+	}
+
+	if err := os.Rename(tmpPath, outputPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return packageResult{}, fmt.Errorf("finalize archive %s: %w", filename, err)
 	}
 
 	return packageResult{
