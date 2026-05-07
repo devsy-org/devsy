@@ -122,8 +122,9 @@ func parseDevContainerJSONFileWithVisited(
 	}
 	devContainer.Origin = absPath
 
-	// Recursively resolve extends
+	// Recursively resolve extends — substitute variables in refs first
 	if !devContainer.Extends.IsEmpty() {
+		devContainer.Extends = substituteExtendsRefs(devContainer.Extends, absPath)
 		declaringDir := filepath.Dir(absPath)
 		parent, err := resolveExtendsArray(ctx, devContainer.Extends, declaringDir, visited)
 		if err != nil {

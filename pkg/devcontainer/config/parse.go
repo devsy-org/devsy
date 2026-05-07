@@ -8,6 +8,7 @@ import (
 	"os"
 	path2 "path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode/utf8"
 
@@ -97,8 +98,11 @@ func ParseDevContainerJSONFile(jsonFilePath string) (*DevContainerConfig, error)
 	}
 	devContainer.Origin = path
 
-	// Resolve extends before applying legacy transforms
+	// Resolve extends before applying legacy transforms.
+	// Variable substitution must be applied to extends paths first so that
+	// ${localEnv:X}, ${localWorkspaceFolder}, etc. resolve before path lookup.
 	if !devContainer.Extends.IsEmpty() {
+		devContainer.Extends = substituteExtendsRefs(devContainer.Extends, path)
 		visited := map[string]bool{path: true}
 		declaringDir := filepath.Dir(path)
 		parent, err := resolveExtendsArray(
@@ -282,6 +286,35 @@ func Convert(from any, to any) error {
 	}
 
 	return json.Unmarshal(out, to)
+}
+
+// substituteExtendsRefs applies variable substitution to extends path strings
+// so that ${localEnv:X}, ${localWorkspaceFolder}, etc. are resolved before the
+// extends resolver attempts to open the referenced files.
+func substituteExtendsRefs(refs ExtendsRef, configFilePath string) ExtendsRef {
+	localWorkspaceFolder := filepath.Dir(filepath.Dir(configFilePath))
+	env := ListToObject(os.Environ())
+	isWindows := runtime.GOOS == "windows"
+	if isWindows {
+		newEnv := map[string]string{}
+		for k, v := range env {
+			newEnv[strings.ToLower(k)] = v
+		}
+		env = newEnv
+	}
+
+	subCtx := &SubstitutionContext{
+		LocalWorkspaceFolder: localWorkspaceFolder,
+		Env:                  env,
+	}
+
+	result := make(ExtendsRef, len(refs))
+	for i, ref := range refs {
+		result[i] = ResolveString(ref, func(match, variable string, args []string) string {
+			return replaceWithContext(isWindows, subCtx, match, variable, args)
+		})
+	}
+	return result
 }
 
 func ParseKeyValueFile(filename string) ([]string, error) {

@@ -678,6 +678,96 @@ func TestExtendsRef_MarshalJSON(t *testing.T) {
 	}
 }
 
+func TestExtends_VarSub_LocalEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, ".devcontainer")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJSON(t, subDir, "parent.json", `{
+		"image": "ubuntu:22.04",
+		"remoteUser": "dev"
+	}`)
+
+	t.Setenv("DEVSY_TEST_EXTENDS_DIR", subDir)
+
+	childPath := writeJSON(t, subDir, "devcontainer.json", `{
+		"extends": "${localEnv:DEVSY_TEST_EXTENDS_DIR}/parent.json",
+		"name": "child-with-env"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "child-with-env" {
+		t.Errorf("expected name 'child-with-env', got %q", cfg.Name)
+	}
+	if cfg.Image != "ubuntu:22.04" {
+		t.Errorf("expected image inherited from parent, got %q", cfg.Image)
+	}
+	if cfg.RemoteUser != "dev" {
+		t.Errorf("expected remoteUser 'dev', got %q", cfg.RemoteUser)
+	}
+}
+
+func TestExtends_VarSub_LocalWorkspaceFolder(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, ".devcontainer")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJSON(t, tmpDir, "base-config.json", `{
+		"image": "node:20",
+		"remoteUser": "node"
+	}`)
+
+	// ${localWorkspaceFolder} should resolve to the parent of .devcontainer
+	childPath := writeJSON(t, subDir, "devcontainer.json", `{
+		"extends": "${localWorkspaceFolder}/base-config.json",
+		"name": "workspace-ref"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "workspace-ref" {
+		t.Errorf("expected name 'workspace-ref', got %q", cfg.Name)
+	}
+	if cfg.Image != "node:20" {
+		t.Errorf("expected image 'node:20', got %q", cfg.Image)
+	}
+}
+
+func TestExtends_VarSub_MissingEnvResolvesToEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, ".devcontainer")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ensure the env var is unset
+	t.Setenv("DEVSY_TEST_NONEXISTENT_VAR", "")
+	_ = os.Unsetenv("DEVSY_TEST_NONEXISTENT_VAR")
+
+	childPath := writeJSON(t, subDir, "devcontainer.json", `{
+		"extends": "${localEnv:DEVSY_TEST_NONEXISTENT_VAR}/parent.json",
+		"name": "missing-env"
+	}`)
+
+	// Missing env var resolves to empty string, resulting in an invalid path
+	_, err := ParseDevContainerJSONFile(childPath)
+	if err == nil {
+		t.Fatal("expected error when env var resolves to empty and path is invalid")
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }
