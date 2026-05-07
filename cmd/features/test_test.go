@@ -10,6 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testBaseImage = "ubuntu:22.04"
+	testFeatureID = "my-feature"
+)
+
 func TestTestCmd_FlagDefaults(t *testing.T) {
 	cmd := NewTestCmd(nil)
 
@@ -27,7 +32,7 @@ func TestTestCmd_FlagDefaults(t *testing.T) {
 
 	remoteUserFlag := cmd.Flags().Lookup("remote-user")
 	require.NotNil(t, remoteUserFlag)
-	assert.Equal(t, "root", remoteUserFlag.DefValue)
+	assert.Equal(t, defaultRemoteUser, remoteUserFlag.DefValue)
 
 	skipScenariosFlag := cmd.Flags().Lookup("skip-scenarios")
 	require.NotNil(t, skipScenariosFlag)
@@ -156,26 +161,34 @@ func TestTestCmd_FilterFeatures(t *testing.T) {
 
 func TestTestCmd_GenerateDockerfile(t *testing.T) {
 	t.Run("basic dockerfile", func(t *testing.T) {
-		df := GenerateDockerfileForTest("my-feature", "ubuntu:22.04", "root", nil)
-		assert.Contains(t, df, "FROM ubuntu:22.04")
+		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
+		feat := featureEntry{id: testFeatureID}
+		df := cmd.generateDockerfile(feat, nil)
+		assert.Contains(t, df, "FROM "+testBaseImage)
 		assert.Contains(t, df, "COPY src/my-feature /tmp/build-features/my-feature")
 		assert.Contains(t, df, "RUN chmod +x /tmp/build-features/my-feature/install.sh")
 		assert.NotContains(t, df, "USER")
 	})
 
 	t.Run("with remote user", func(t *testing.T) {
-		df := GenerateDockerfileForTest("my-feature", "ubuntu:22.04", "vscode", nil)
+		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: "vscode"}
+		feat := featureEntry{id: testFeatureID}
+		df := cmd.generateDockerfile(feat, nil)
 		assert.Contains(t, df, "USER vscode")
 	})
 
 	t.Run("with options", func(t *testing.T) {
+		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
+		feat := featureEntry{id: "go"}
 		opts := map[string]string{"version": "1.21"}
-		df := GenerateDockerfileForTest("go", "ubuntu:22.04", "root", opts)
-		assert.Contains(t, df, "ENV GO_VERSION=1.21")
+		df := cmd.generateDockerfile(feat, opts)
+		assert.Contains(t, df, "ENV GO_VERSION=\"1.21\"")
 	})
 
 	t.Run("default base image", func(t *testing.T) {
-		df := GenerateDockerfileForTest("feat", defaultBaseImage, "root", nil)
+		cmd := &TestCmd{BaseImage: defaultBaseImage, RemoteUser: defaultRemoteUser}
+		feat := featureEntry{id: "feat"}
+		df := cmd.generateDockerfile(feat, nil)
 		assert.Contains(t, df, "FROM "+defaultBaseImage)
 	})
 }
@@ -219,7 +232,7 @@ func TestTestCmd_LoadScenarioOptions(t *testing.T) {
 func TestTestCmd_TestDiscovery(t *testing.T) {
 	projectDir := t.TempDir()
 
-	srcDir := filepath.Join(projectDir, "src", "my-feature")
+	srcDir := filepath.Join(projectDir, "src", testFeatureID)
 	require.NoError(t, os.MkdirAll(srcDir, 0o700))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(srcDir, "devcontainer-feature.json"),
@@ -232,7 +245,7 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 		0o700,
 	))
 
-	testDir := filepath.Join(projectDir, "test", "my-feature")
+	testDir := filepath.Join(projectDir, "test", testFeatureID)
 	require.NoError(t, os.MkdirAll(testDir, 0o700))
 	require.NoError(t, os.WriteFile( // #nosec G306 -- test scripts need executable permission
 		filepath.Join(testDir, "test.sh"),
@@ -253,10 +266,10 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 		0o600,
 	))
 
-	feat := featureEntry{id: "my-feature", config: nil}
+	feat := featureEntry{id: testFeatureID, config: nil}
 	cmd := &TestCmd{
 		BaseImage:  defaultBaseImage,
-		RemoteUser: "root",
+		RemoteUser: defaultRemoteUser,
 	}
 
 	featureTestDir := filepath.Join(projectDir, "test", feat.id)
@@ -276,5 +289,5 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 
 	df := strings.TrimSpace(cmd.generateDockerfile(feat, opts))
 	assert.Contains(t, df, "FROM "+defaultBaseImage)
-	assert.Contains(t, df, "MY-FEATURE_VERSION=3.11")
+	assert.Contains(t, df, `MY-FEATURE_VERSION="3.11"`)
 }

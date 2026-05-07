@@ -13,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultBaseImage = "mcr.microsoft.com/devcontainers/base:ubuntu"
+const (
+	defaultBaseImage  = "mcr.microsoft.com/devcontainers/base:ubuntu"
+	defaultRemoteUser = "root"
+)
 
 type TestCmd struct {
 	*flags.GlobalFlags
@@ -64,7 +67,7 @@ test scripts from the test/ directory.`,
 		"Base Docker image for test containers",
 	)
 	testCmd.Flags().StringVar(
-		&cmd.RemoteUser, "remote-user", "root",
+		&cmd.RemoteUser, "remote-user", defaultRemoteUser,
 		"User to run tests as",
 	)
 	testCmd.Flags().BoolVar(
@@ -125,31 +128,17 @@ type featureEntry struct {
 }
 
 func (cmd *TestCmd) discoverFeatures(srcDir string) ([]featureEntry, error) {
-	entries, err := os.ReadDir(srcDir)
+	docs, err := scanFeatures(srcDir)
 	if err != nil {
-		return nil, fmt.Errorf("read src/ directory: %w", err)
+		return nil, err
 	}
 
-	var features []featureEntry
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		featureDir := filepath.Join(srcDir, entry.Name())
-		featureCfg, parseErr := config.ParseDevContainerFeature(featureDir)
-		if parseErr != nil {
-			continue
-		}
-
+	features := make([]featureEntry, 0, len(docs))
+	for _, doc := range docs {
 		features = append(features, featureEntry{
-			id:     entry.Name(),
-			config: featureCfg,
+			id:     doc.dir,
+			config: doc.config,
 		})
-	}
-
-	if len(features) == 0 {
-		return nil, fmt.Errorf("no features found in %s", srcDir)
 	}
 	return features, nil
 }
@@ -249,7 +238,14 @@ func (cmd *TestCmd) runTest(
 		Scenario:  tc.scenario,
 	}
 
-	dockerfile := cmd.generateDockerfile(feat, tc.options)
+	testScriptRel, relErr := filepath.Rel(projectFolder, tc.script)
+	if relErr != nil {
+		result.Passed = false
+		result.Error = relErr.Error()
+		return result
+	}
+
+	dockerfile := cmd.generateDockerfileWithTest(feat, tc.options, testScriptRel)
 
 	containerName := fmt.Sprintf("devsy-test-%s", feat.id)
 	if tc.scenario != "" {
@@ -265,7 +261,7 @@ func (cmd *TestCmd) runTest(
 		return result
 	}
 
-	runErr := cmd.dockerRun(imageName, containerName, tc.script)
+	runErr := cmd.dockerRun(imageName, containerName)
 	if runErr != nil {
 		result.Passed = false
 		result.Error = runErr.Error()
@@ -283,6 +279,12 @@ func (cmd *TestCmd) runTest(
 func (cmd *TestCmd) generateDockerfile(
 	feat featureEntry, options map[string]string,
 ) string {
+	return cmd.generateDockerfileWithTest(feat, options, "")
+}
+
+func (cmd *TestCmd) generateDockerfileWithTest(
+	feat featureEntry, options map[string]string, testScriptRelPath string,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "FROM %s\n", cmd.BaseImage)
@@ -292,7 +294,7 @@ func (cmd *TestCmd) generateDockerfile(
 
 	for k, v := range options {
 		envKey := strings.ToUpper(feat.id) + "_" + strings.ToUpper(k)
-		fmt.Fprintf(&b, "ENV %s=%s\n", envKey, v)
+		fmt.Fprintf(&b, "ENV %s=%q\n", envKey, v)
 	}
 
 	fmt.Fprintf(
@@ -301,7 +303,12 @@ func (cmd *TestCmd) generateDockerfile(
 		feat.id, feat.id,
 	)
 
-	if cmd.RemoteUser != "root" {
+	if testScriptRelPath != "" {
+		fmt.Fprintf(&b, "COPY %s /tmp/test.sh\n", testScriptRelPath)
+		b.WriteString("RUN chmod +x /tmp/test.sh\n")
+	}
+
+	if cmd.RemoteUser != defaultRemoteUser {
 		fmt.Fprintf(&b, "USER %s\n", cmd.RemoteUser)
 	}
 
@@ -321,18 +328,13 @@ func (cmd *TestCmd) dockerBuild(dockerfile, contextDir, imageName string) error 
 	return dockerCmd.Run()
 }
 
-func (cmd *TestCmd) dockerRun(imageName, containerName, testScript string) error {
-	testContent, err := os.ReadFile(testScript) // #nosec G304 -- path from project test directory
-	if err != nil {
-		return fmt.Errorf("read test script: %w", err)
+func (cmd *TestCmd) dockerRun(imageName, containerName string) error {
+	args := []string{"run", "--name", containerName}
+	if !cmd.PreserveTestContainers {
+		args = append(args, "--rm")
 	}
+	args = append(args, imageName, "/tmp/test.sh")
 
-	args := []string{
-		"run", "--name", containerName,
-		"--rm",
-		imageName,
-		"bash", "-c", string(testContent),
-	}
 	dockerCmd := exec.Command("docker", args...) // #nosec G204 -- args built from trusted inputs
 
 	if !cmd.Quiet {
@@ -373,20 +375,4 @@ func (cmd *TestCmd) printResults(results []testResult) {
 	}
 
 	_, _ = fmt.Fprintf(w, "\nTotal: %d passed, %d failed\n", passed, failed)
-}
-
-// GenerateDockerfileForTest exposes Dockerfile generation for unit testing.
-func GenerateDockerfileForTest(
-	featureID, baseImage, remoteUser string,
-	options map[string]string,
-) string {
-	cmd := &TestCmd{
-		BaseImage:  baseImage,
-		RemoteUser: remoteUser,
-	}
-	feat := featureEntry{
-		id:     featureID,
-		config: &config.FeatureConfig{ID: featureID},
-	}
-	return cmd.generateDockerfile(feat, options)
 }
