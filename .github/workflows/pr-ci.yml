@@ -394,18 +394,33 @@ jobs:
           UUID=$(python -c "import uuid; print(uuid.uuid4().hex)")
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
-      - name: install podman (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        uses: redhat-actions/podman-install@v1
-
-      - name: start podman machine (Windows)
+      - name: install and start podman (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         run: |
+          $msiUrl = "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
+          $msiPath = "$env:RUNNER_TEMP\podman.msi"
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+
+          $installDir = "C:\Program Files\RedHat\Podman"
+          $logFile = "$env:RUNNER_TEMP\podman-install.log"
+          $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /qn /norestart /l*v `"$logFile`" INSTALLDIR=`"$installDir`""
+          Write-Host "MSI exit code: $($proc.ExitCode)"
+
+          if (!(Test-Path "$installDir\podman.exe")) {
+            Write-Host "--- MSI install log (last 50 lines) ---"
+            Get-Content $logFile -Tail 50
+            Write-Host "--- Searching for podman.exe ---"
+            Get-ChildItem "C:\" -Filter "podman.exe" -Recurse -Depth 4 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+            throw "podman.exe not found at $installDir"
+          }
+
+          echo "$installDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+
           wsl --set-default-version 2
-          podman machine init
-          podman machine set --rootful
-          podman machine start
+          & "$installDir\podman.exe" machine init
+          & "$installDir\podman.exe" machine set --rootful
+          & "$installDir\podman.exe" machine start
 
       - name: setup kind (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
