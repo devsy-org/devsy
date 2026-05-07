@@ -162,7 +162,7 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 		Target:                 targetDir,
 		OutputFolder:           outputDir,
 		ForceCleanOutputFolder: true,
-		Output:                 "text",
+		Output:                 outputText,
 	}
 
 	err := cmd.Run()
@@ -177,7 +177,7 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 func TestPackageCmd_InvalidOutputFormat(t *testing.T) {
 	cmd := &PackageCmd{
 		Target: "/tmp",
-		Output: "yaml",
+		Output: outputYAML,
 	}
 	err := cmd.Run()
 	require.Error(t, err)

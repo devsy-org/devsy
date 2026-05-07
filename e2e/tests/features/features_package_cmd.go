@@ -19,8 +19,11 @@ const (
 	flagTarget           = "--target"
 	flagOutputFolder     = "--output-folder"
 	flagForceCleanOutput = "--force-clean-output-folder"
+	flagOutput           = "--output"
+	outputJSON           = "json"
 	featureNameGo        = "go"
 	featureNameNode      = "node"
+	featureVersion100    = "1.0.0"
 )
 
 var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-package"), func() {
@@ -89,7 +92,7 @@ var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-p
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(targetDir) })
 
 			for _, feat := range []struct{ id, version string }{
-				{featureNameGo, "1.0.0"},
+				{featureNameGo, featureVersion100},
 				{featureNameNode, "2.0.0"},
 			} {
 				dir := filepath.Join(targetDir, feat.id)
@@ -158,7 +161,7 @@ var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-p
 				cmdFeatures, cmdPackage,
 				flagTarget, targetDir,
 				flagOutputFolder, outputDir,
-				"--output", "json",
+				flagOutput, outputJSON,
 			})
 			framework.ExpectNoError(err)
 
@@ -166,7 +169,7 @@ var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-p
 			gomega.Expect(json.Unmarshal([]byte(stdout), &results)).To(gomega.Succeed())
 			gomega.Expect(results).To(gomega.HaveLen(1))
 			gomega.Expect(results[0]["featureId"]).To(gomega.Equal("go"))
-			gomega.Expect(results[0]["version"]).To(gomega.Equal("1.0.0"))
+			gomega.Expect(results[0]["version"]).To(gomega.Equal(featureVersion100))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
