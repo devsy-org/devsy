@@ -758,6 +758,41 @@ func TestExtends_MissingEnvResolvesToEmpty(t *testing.T) {
 	}
 }
 
+func TestExtends_LocalEnvDefaultValue(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	fallbackDir := filepath.Join(tmpDir, "fallback")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(fallbackDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, fallbackDir, "parent.json", `{
+		"name": "parent",
+		"image": "debian:12"
+	}`)
+
+	t.Setenv("UNSET_VAR_FOR_EXTENDS_TEST", "")
+	if err := os.Unsetenv("UNSET_VAR_FOR_EXTENDS_TEST"); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJSON(t, tmpDir, "child.json", `{
+		"extends": "${localEnv:UNSET_VAR_FOR_EXTENDS_TEST:fallback}/parent.json",
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != "debian:12" {
+		t.Errorf("expected image 'debian:12', got %q", cfg.Image)
+	}
+}
+
 func TestExtends_LocalWorkspaceFolderBasenameInPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	basename := filepath.Base(tmpDir)

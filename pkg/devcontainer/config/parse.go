@@ -102,7 +102,6 @@ func ParseDevContainerJSONFile(jsonFilePath string) (*DevContainerConfig, error)
 		visited := map[string]bool{path: true}
 		declaringDir := filepath.Dir(path)
 
-		// Substitute local-scope variables in extends paths before resolution.
 		replacer := extendsVarReplacer(declaringDir)
 		for i, ref := range devContainer.Extends {
 			devContainer.Extends[i] = ResolveString(ref, replacer)
@@ -298,8 +297,8 @@ func extendsVarReplacer(localWorkspaceFolder string) ReplaceFunction {
 		switch variable {
 		case "localEnv":
 			if len(args) > 0 {
-				val := os.Getenv(args[0])
-				if val != "" {
+				val, ok := os.LookupEnv(args[0])
+				if ok {
 					return val
 				}
 				if len(args) > 1 {
