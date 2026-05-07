@@ -402,8 +402,15 @@ jobs:
           DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
           wsl --set-default-version 2
-          choco install podman-cli -y
-          curl -Lo /c/ProgramData/chocolatey/bin/kind.exe https://kind.sigs.k8s.io/dl/v0.24.0/kind-windows-amd64
+
+          # Install podman via MSI (includes gvproxy needed for podman machine)
+          curl -Lo "$RUNNER_TEMP/podman.msi" "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
+          powershell.exe -Command "Start-Process msiexec.exe -Wait -ArgumentList '/i','$(cygpath -w "$RUNNER_TEMP/podman.msi")','/qn','/norestart'"
+          export PATH="/c/Program Files/RedHat/Podman:$PATH"
+          echo 'C:\Program Files\RedHat\Podman' >> "$GITHUB_PATH"
+
+          # Install kind directly
+          curl -Lo "/c/Program Files/RedHat/Podman/kind.exe" "https://kind.sigs.k8s.io/dl/v0.24.0/kind-windows-amd64"
 
           podman machine init
           podman machine set --rootful
