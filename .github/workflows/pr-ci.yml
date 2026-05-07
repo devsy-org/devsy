@@ -394,38 +394,36 @@ jobs:
           UUID=$(python -c "import uuid; print(uuid.uuid4().hex)")
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
+      - name: setup podman (Windows)
+        if: matrix.label == 'up-docker-wsl' && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        shell: pwsh
+        run: |
+          $msiPath = "$env:RUNNER_TEMP\podman.msi"
+          Invoke-WebRequest -Uri "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi" -OutFile $msiPath
+          $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /qn /norestart ADDLOCAL=ALL"
+          if ($proc.ExitCode -ne 0) { throw "MSI install failed with exit code $($proc.ExitCode)" }
+          $podmanDir = "C:\Program Files\RedHat\Podman"
+          if (!(Test-Path $podmanDir)) { throw "Podman directory not found after MSI install" }
+          echo "$podmanDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+
+      - name: start podman machine (Windows)
+        if: matrix.label == 'up-docker-wsl' && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        shell: pwsh
+        run: |
+          wsl --set-default-version 2
+          podman machine init
+          podman machine set --rootful
+          podman machine start
+
       - name: setup kind (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: bash
         env:
-          KIND_EXPERIMENTAL_PROVIDER: podman
-          DOCKER_HOST: npipe:////./pipe/podman-machine-default
+          KIND_EXPERIMENTAL_PROVIDER: ${{ matrix.label == 'up-docker-wsl' && 'podman' || 'docker' }}
         run: |
-          wsl --set-default-version 2
-
-          # Install podman via MSI (includes gvproxy needed for podman machine)
-          curl -Lo "$RUNNER_TEMP/podman.msi" "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
-          powershell.exe -Command "Start-Process msiexec.exe -Wait -ArgumentList '/i','$(cygpath -w "$RUNNER_TEMP/podman.msi")','/qn','/norestart'"
-
-          # Verify podman installed to expected location
-          if [ -d "/c/Program Files/RedHat/Podman" ]; then
-            echo "Podman installed to /c/Program Files/RedHat/Podman"
-          else
-            echo "WARNING: Expected podman directory not found, checking alternatives..."
-            ls "/c/Program Files/RedHat/" 2>/dev/null || true
-            find "/c/Program Files/" -maxdepth 1 -iname "*podman*" -o -iname "*redhat*" 2>/dev/null || true
-          fi
-          export PATH="/c/Program Files/RedHat/Podman:$PATH"
-          echo 'C:\Program Files\RedHat\Podman' >> "$GITHUB_PATH"
-
-          # Install kind to RUNNER_TEMP (avoid depending on podman install dir existing)
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
           export PATH="$RUNNER_TEMP:$PATH"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-
-          podman machine init
-          podman machine set --rootful
-          podman machine start
 
           CLUSTER_NAME=$(python -c "import uuid; print(uuid.uuid4().hex)")
           kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
@@ -476,13 +474,17 @@ jobs:
               GOROOT="${GOROOT}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
+            DOCKER_HOST_VAL=""
+            if [ "${{ matrix.label }}" == "up-docker-wsl" ]; then
+              DOCKER_HOST_VAL="npipe:////./pipe/podman-machine-default"
+            fi
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
+              DOCKER_HOST="${DOCKER_HOST_VAL}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
