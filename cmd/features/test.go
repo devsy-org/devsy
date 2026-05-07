@@ -276,12 +276,6 @@ func (cmd *TestCmd) runTest(
 	return result
 }
 
-func (cmd *TestCmd) generateDockerfile(
-	feat featureEntry, options map[string]string,
-) string {
-	return cmd.generateDockerfileWithTest(feat, options, "")
-}
-
 func (cmd *TestCmd) generateDockerfileWithTest(
 	feat featureEntry, options map[string]string, testScriptRelPath string,
 ) string {
@@ -293,7 +287,7 @@ func (cmd *TestCmd) generateDockerfileWithTest(
 	fmt.Fprintf(&b, "COPY %s /tmp/build-features/%s\n", featureSrcDir, feat.id)
 
 	for k, v := range options {
-		envKey := strings.ToUpper(feat.id) + "_" + strings.ToUpper(k)
+		envKey := strings.ReplaceAll(strings.ToUpper(feat.id), "-", "_") + "_" + strings.ToUpper(k)
 		fmt.Fprintf(&b, "ENV %s=%q\n", envKey, v)
 	}
 

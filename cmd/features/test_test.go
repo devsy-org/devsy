@@ -163,7 +163,7 @@ func TestTestCmd_GenerateDockerfile(t *testing.T) {
 	t.Run("basic dockerfile", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
 		feat := featureEntry{id: testFeatureID}
-		df := cmd.generateDockerfile(feat, nil)
+		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "FROM "+testBaseImage)
 		assert.Contains(t, df, "COPY src/my-feature /tmp/build-features/my-feature")
 		assert.Contains(t, df, "RUN chmod +x /tmp/build-features/my-feature/install.sh")
@@ -173,7 +173,7 @@ func TestTestCmd_GenerateDockerfile(t *testing.T) {
 	t.Run("with remote user", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: "vscode"}
 		feat := featureEntry{id: testFeatureID}
-		df := cmd.generateDockerfile(feat, nil)
+		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "USER vscode")
 	})
 
@@ -181,14 +181,14 @@ func TestTestCmd_GenerateDockerfile(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
 		feat := featureEntry{id: "go"}
 		opts := map[string]string{"version": "1.21"}
-		df := cmd.generateDockerfile(feat, opts)
+		df := generateDockerfileForTest(cmd, feat, opts)
 		assert.Contains(t, df, "ENV GO_VERSION=\"1.21\"")
 	})
 
 	t.Run("default base image", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: defaultBaseImage, RemoteUser: defaultRemoteUser}
 		feat := featureEntry{id: "feat"}
-		df := cmd.generateDockerfile(feat, nil)
+		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "FROM "+defaultBaseImage)
 	})
 }
@@ -287,7 +287,11 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 	opts := cmd.loadScenarioOptions(scenarioDir)
 	assert.Equal(t, "3.11", opts["version"])
 
-	df := strings.TrimSpace(cmd.generateDockerfile(feat, opts))
+	df := strings.TrimSpace(generateDockerfileForTest(cmd, feat, opts))
 	assert.Contains(t, df, "FROM "+defaultBaseImage)
-	assert.Contains(t, df, `MY-FEATURE_VERSION="3.11"`)
+	assert.Contains(t, df, `MY_FEATURE_VERSION="3.11"`)
+}
+
+func generateDockerfileForTest(cmd *TestCmd, feat featureEntry, options map[string]string) string {
+	return cmd.generateDockerfileWithTest(feat, options, "")
 }
