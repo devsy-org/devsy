@@ -11,6 +11,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	cmdFeatures       = "features"
+	flagProjectFolder = "--project-folder"
+)
+
 var _ = ginkgo.Describe("features test", ginkgo.Label("features", "features-test"), func() {
 	var initialDir string
 
@@ -57,8 +62,8 @@ var _ = ginkgo.Describe("features test", ginkgo.Label("features", "features-test
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "test",
-				"--project-folder", projectDir,
+				cmdFeatures, "test",
+				flagProjectFolder, projectDir,
 			})
 			framework.ExpectNoError(err)
 
@@ -104,8 +109,8 @@ var _ = ginkgo.Describe("features test", ginkgo.Label("features", "features-test
 			}
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "test",
-				"--project-folder", projectDir,
+				cmdFeatures, "test",
+				flagProjectFolder, projectDir,
 				"--features", "feat-a",
 			})
 			framework.ExpectNoError(err)
@@ -149,8 +154,8 @@ var _ = ginkgo.Describe("features test", ginkgo.Label("features", "features-test
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "test",
-				"--project-folder", projectDir,
+				cmdFeatures, "test",
+				flagProjectFolder, projectDir,
 			})
 			gomega.Expect(err).To(gomega.HaveOccurred())
 			gomega.Expect(stdout).To(gomega.ContainSubstring("FAIL"))
