@@ -434,12 +434,11 @@ jobs:
         shell: bash
         env:
           KIND_EXPERIMENTAL_PROVIDER: podman
-          DOCKER_HOST: npipe:////./pipe/docker_engine
+          DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
-          curl -Lo "$RUNNER_TEMP/kind.sha256sum" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64.sha256sum"
-          expected=$(awk '{print $1}' "$RUNNER_TEMP/kind.sha256sum")
-          actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}')
+          expected="6f724188289cc79395f45afae0f2b85e0d220c2b84c6ed2f5047d9d0c9a67028"
+          actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{gsub(/^\\\\/, ""); print $1}')
           if [ "$actual" != "$expected" ]; then
             echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
             exit 1
@@ -504,7 +503,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              DOCKER_HOST="npipe:////./pipe/docker_engine" \
+              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
