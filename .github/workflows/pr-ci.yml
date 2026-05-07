@@ -402,6 +402,15 @@ jobs:
           $msiPath = "$env:RUNNER_TEMP\podman.msi"
           Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
 
+          $shasumsUrl = "https://github.com/containers/podman/releases/download/v5.8.2/shasums"
+          $shasums = (Invoke-WebRequest -Uri $shasumsUrl).Content
+          $expectedHash = ($shasums -split "`n" | Where-Object { $_ -match "podman-installer-windows-amd64.msi" }) -replace '\s+.*$',''
+          $actualHash = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) {
+            throw "SHA256 mismatch for podman MSI! Expected: $expectedHash, Got: $actualHash"
+          }
+          Write-Host "Podman MSI checksum verified: $actualHash"
+
           $installDir = "C:\Program Files\RedHat\Podman"
           $logFile = "$env:RUNNER_TEMP\podman-install.log"
           $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /qn /norestart /l*v `"$logFile`" INSTALLDIR=`"$installDir`""
@@ -429,6 +438,15 @@ jobs:
           KIND_EXPERIMENTAL_PROVIDER: podman
         run: |
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
+          curl -Lo "$RUNNER_TEMP/kind.sha256sum" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64.sha256sum"
+          expected=$(awk '{print $1}' "$RUNNER_TEMP/kind.sha256sum")
+          actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}')
+          if [ "$actual" != "$expected" ]; then
+            echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
+            exit 1
+          fi
+          echo "kind.exe checksum verified: $actual"
+
           export PATH="$RUNNER_TEMP:$PATH"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
