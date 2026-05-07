@@ -406,18 +406,29 @@ jobs:
           # Install podman via MSI (includes gvproxy needed for podman machine)
           curl -Lo "$RUNNER_TEMP/podman.msi" "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
           powershell.exe -Command "Start-Process msiexec.exe -Wait -ArgumentList '/i','$(cygpath -w "$RUNNER_TEMP/podman.msi")','/qn','/norestart'"
+
+          # Verify podman installed to expected location
+          if [ -d "/c/Program Files/RedHat/Podman" ]; then
+            echo "Podman installed to /c/Program Files/RedHat/Podman"
+          else
+            echo "WARNING: Expected podman directory not found, checking alternatives..."
+            ls "/c/Program Files/RedHat/" 2>/dev/null || true
+            find "/c/Program Files/" -maxdepth 1 -iname "*podman*" -o -iname "*redhat*" 2>/dev/null || true
+          fi
           export PATH="/c/Program Files/RedHat/Podman:$PATH"
           echo 'C:\Program Files\RedHat\Podman' >> "$GITHUB_PATH"
 
-          # Install kind directly (download to RUNNER_TEMP first, then move)
+          # Install kind to RUNNER_TEMP (avoid depending on podman install dir existing)
           curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
-          mv "$RUNNER_TEMP/kind.exe" "/c/Program Files/RedHat/Podman/kind.exe"
+          export PATH="$RUNNER_TEMP:$PATH"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
           podman machine init
           podman machine set --rootful
           podman machine start
 
-          kind create cluster --name "${{ steps.uuid.outputs.result }}" --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+          CLUSTER_NAME=$(python -c "import uuid; print(uuid.uuid4().hex)")
+          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
 
       # NOTE: skevetter/setup-kind does not work on Windows runners
       - name: setup kind
