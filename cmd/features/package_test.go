@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testFeatureIDPkg = "my-feature"
+
 func TestPackageCmd_FlagDefaults(t *testing.T) {
 	cmd := NewPackageCmd(nil)
 
@@ -104,7 +106,7 @@ func TestPackageCmd_PackageFeature(t *testing.T) {
 	targetDir := t.TempDir()
 	outputDir := t.TempDir()
 
-	featureDir := filepath.Join(targetDir, "my-feature")
+	featureDir := filepath.Join(targetDir, testFeatureIDPkg)
 	require.NoError(t, os.MkdirAll(featureDir, 0o700))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(featureDir, "devcontainer-feature.json"),
@@ -126,7 +128,7 @@ func TestPackageCmd_PackageFeature(t *testing.T) {
 	result, err := cmd.packageFeature(features[0], targetDir, outputDir)
 	require.NoError(t, err)
 
-	assert.Equal(t, "my-feature", result.FeatureID)
+	assert.Equal(t, testFeatureIDPkg, result.FeatureID)
 	assert.Equal(t, "1.2.3", result.Version)
 	assert.Equal(t, "devcontainer-feature-my-feature.tgz", result.Filename)
 
@@ -146,7 +148,7 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 	require.NoError(t, os.MkdirAll(featureDir, 0o700))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(featureDir, "devcontainer-feature.json"),
-		[]byte(`{"id":"feat","version":"1.0.0"}`),
+		[]byte(`{"id":"feat","version":"1.0.0","name":"Feat"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
@@ -214,8 +216,72 @@ func TestPackageCmd_InvalidFeatureID(t *testing.T) {
 	}
 }
 
+func TestPackageCmd_IDMustMatchDirectory(t *testing.T) {
+	cmd := &PackageCmd{}
+	targetDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	feat := featureSource{
+		dir:    "actual-dir",
+		config: &config.FeatureConfig{ID: "different-id", Version: "1.0.0", Name: "Test"},
+	}
+	_, err := cmd.packageFeature(feat, targetDir, outputDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match directory name")
+}
+
+func TestPackageCmd_MissingVersion(t *testing.T) {
+	cmd := &PackageCmd{}
+	targetDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	feat := featureSource{
+		dir:    testFeatureIDPkg,
+		config: &config.FeatureConfig{ID: testFeatureIDPkg, Name: "Test"},
+	}
+	_, err := cmd.packageFeature(feat, targetDir, outputDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required property \"version\"")
+}
+
+func TestPackageCmd_MissingName(t *testing.T) {
+	cmd := &PackageCmd{}
+	targetDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	feat := featureSource{
+		dir:    testFeatureIDPkg,
+		config: &config.FeatureConfig{ID: testFeatureIDPkg, Version: "1.0.0"},
+	}
+	_, err := cmd.packageFeature(feat, targetDir, outputDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required property \"name\"")
+}
+
+func TestPackageCmd_MissingInstallSh(t *testing.T) {
+	targetDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	featureDir := filepath.Join(targetDir, testFeatureIDPkg)
+	require.NoError(t, os.MkdirAll(featureDir, 0o700))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(featureDir, "devcontainer-feature.json"),
+		[]byte(`{"id":"my-feature","version":"1.0.0","name":"My Feature"}`),
+		0o600,
+	))
+
+	cmd := &PackageCmd{}
+	features, err := cmd.discoverFeatures(targetDir)
+	require.NoError(t, err)
+	require.Len(t, features, 1)
+
+	_, err = cmd.packageFeature(features[0], targetDir, outputDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing install.sh")
+}
+
 func TestPackageCmd_ValidFeatureIDs(t *testing.T) {
-	tests := []string{"my-feature", "a", "feature-1", "0cool"}
+	tests := []string{testFeatureIDPkg, "a", "feature-1", "0cool"}
 
 	for _, id := range tests {
 		t.Run(id, func(t *testing.T) {

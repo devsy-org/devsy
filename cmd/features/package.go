@@ -160,16 +160,48 @@ func (cmd *PackageCmd) discoverFeatures(targetDir string) ([]featureSource, erro
 	return features, nil
 }
 
-func (cmd *PackageCmd) packageFeature(
-	feat featureSource, targetDir, outputFolder string,
-) (packageResult, error) {
+func validateFeatureSource(feat featureSource, featureDir string) error {
 	if !validFeatureID.MatchString(feat.config.ID) {
-		return packageResult{}, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid feature ID %q: must match [a-z0-9][a-z0-9-]*", feat.config.ID,
 		)
 	}
 
+	if feat.config.ID != feat.dir {
+		return fmt.Errorf(
+			"feature ID %q does not match directory name %q", feat.config.ID, feat.dir,
+		)
+	}
+
+	if feat.config.Version == "" {
+		return fmt.Errorf(
+			"feature %q is missing required property \"version\"", feat.config.ID,
+		)
+	}
+
+	if feat.config.Name == "" {
+		return fmt.Errorf(
+			"feature %q is missing required property \"name\"", feat.config.ID,
+		)
+	}
+
+	installPath := filepath.Join(featureDir, "install.sh")
+	if _, err := os.Stat(installPath); err != nil {
+		return fmt.Errorf("feature %q is missing install.sh", feat.config.ID)
+	}
+
+	return nil
+}
+
+func (cmd *PackageCmd) packageFeature(
+	feat featureSource, targetDir, outputFolder string,
+) (packageResult, error) {
 	featureDir := filepath.Join(targetDir, feat.dir)
+
+	if err := validateFeatureSource(feat, featureDir); err != nil {
+		return packageResult{}, err
+	}
+
 	filename := fmt.Sprintf("devcontainer-feature-%s.tgz", feat.config.ID)
 	outputPath := filepath.Join(outputFolder, filename)
 
