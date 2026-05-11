@@ -300,6 +300,129 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 				gomega.HaveKey("ghcr.io/devcontainers/features/go:1"),
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It(
+		"resolves ${localEnv:VAR} variable substitution in extends path",
+		ginkgo.Label("extends"),
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/extends/testdata/varsub-localenv",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			gomega.Expect(os.Setenv("TEST_EXTENDS_DIR", tempDir)).To(gomega.Succeed())
+			ginkgo.DeferCleanup(func() {
+				gomega.Expect(os.Unsetenv("TEST_EXTENDS_DIR")).To(gomega.Succeed())
+			})
+
+			stdout, _, err := readConfiguration(ctx, f, tempDir)
+			framework.ExpectNoError(err)
+
+			config := parseConfigFromOutput(stdout)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue("name", "LocalEnv Extends Child"),
+			)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue(
+					"image",
+					"ghcr.io/devsy-org/test-images/base:ubuntu",
+				),
+			)
+			gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
+
+			containerEnv, ok := config["containerEnv"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be an object")
+			gomega.Expect(containerEnv).To(
+				gomega.HaveKeyWithValue("FROM_PARENT", "parent-value"),
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It(
+		"resolves ${localWorkspaceFolder} variable substitution in extends path",
+		ginkgo.Label("extends"),
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/extends/testdata/varsub-workspace-folder",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			stdout, _, err := readConfiguration(ctx, f, tempDir)
+			framework.ExpectNoError(err)
+
+			config := parseConfigFromOutput(stdout)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue("name", "Workspace Folder Extends Child"),
+			)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue(
+					"image",
+					"ghcr.io/devsy-org/test-images/base:ubuntu",
+				),
+			)
+			gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
+
+			containerEnv, ok := config["containerEnv"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be an object")
+			gomega.Expect(containerEnv).To(
+				gomega.HaveKeyWithValue("FROM_PARENT", "workspace-parent-value"),
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It(
+		"resolves ${localEnv:VAR:default} with fallback when env var is unset",
+		ginkgo.Label("extends"),
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/extends/testdata/varsub-localenv-default",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			gomega.Expect(os.Unsetenv("DEVSY_UNSET_VAR")).To(gomega.Succeed())
+
+			stdout, _, err := readConfiguration(ctx, f, tempDir)
+			framework.ExpectNoError(err)
+
+			config := parseConfigFromOutput(stdout)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue("name", "LocalEnv Default Extends Child"),
+			)
+			gomega.Expect(config).To(
+				gomega.HaveKeyWithValue(
+					"image",
+					"ghcr.io/devsy-org/test-images/base:ubuntu",
+				),
+			)
+			gomega.Expect(config).To(gomega.HaveKeyWithValue("remoteUser", "vscode"))
+
+			containerEnv, ok := config["containerEnv"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "containerEnv should be an object")
+			gomega.Expect(containerEnv).To(
+				gomega.HaveKeyWithValue("FROM_FALLBACK", "fallback-value"),
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It(
+		"returns error when ${localEnv:VAR} resolves to empty for missing env var",
+		ginkgo.Label("extends"),
+		func(ctx context.Context) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(
+				"tests/extends/testdata/varsub-localenv-missing",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			gomega.Expect(os.Unsetenv("DEVSY_NONEXISTENT_VAR")).To(gomega.Succeed())
+
+			_, _, err = readConfiguration(ctx, f, tempDir)
+			framework.ExpectError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
 
 func pushOCIImage(refStr, jsonContent string) {
