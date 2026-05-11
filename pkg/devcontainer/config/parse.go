@@ -295,7 +295,7 @@ func Convert(from any, to any) error {
 func extendsVarReplacer(localWorkspaceFolder string) ReplaceFunction {
 	return func(match, variable string, args []string) string {
 		switch variable {
-		case "localEnv":
+		case varLocalEnv:
 			if len(args) > 0 {
 				val, ok := os.LookupEnv(args[0])
 				if ok {
@@ -307,7 +307,7 @@ func extendsVarReplacer(localWorkspaceFolder string) ReplaceFunction {
 				return ""
 			}
 			return match
-		case "localWorkspaceFolder":
+		case varLocalWorkspaceFolder:
 			return localWorkspaceFolder
 		case "localWorkspaceFolderBasename":
 			return filepath.Base(localWorkspaceFolder)
