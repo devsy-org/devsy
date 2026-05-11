@@ -37,6 +37,11 @@
       "prPriority": 3
     },
     {
+      "matchDatasources": ["golang-version"],
+      "enabled": false,
+      "description": "Pin Go toolchain version — do not auto-update or auto-merge"
+    },
+    {
       "matchManagers": ["npm"],
       "automerge": true,
       "prPriority": 2
