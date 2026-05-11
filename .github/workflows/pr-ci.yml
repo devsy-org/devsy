@@ -222,7 +222,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: features
+          - label: features && !up-features
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
