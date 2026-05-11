@@ -1,0 +1,4 @@
+{
+  "extends": "${localEnv:DEVSY_NONEXISTENT_VAR}/devcontainer.json",
+  "name": "Missing Env Var Child"
+}

@@ -1,0 +1,4 @@
+{
+  "extends": "${localEnv:TEST_EXTENDS_DIR}/parent/devcontainer.json",
+  "name": "LocalEnv Extends Child"
+}

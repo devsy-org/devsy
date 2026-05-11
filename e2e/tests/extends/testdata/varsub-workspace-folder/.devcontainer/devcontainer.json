@@ -1,0 +1,4 @@
+{
+  "extends": "${localWorkspaceFolder}/configs/parent/devcontainer.json",
+  "name": "Workspace Folder Extends Child"
+}

@@ -101,6 +101,12 @@ func ParseDevContainerJSONFile(jsonFilePath string) (*DevContainerConfig, error)
 	if !devContainer.Extends.IsEmpty() {
 		visited := map[string]bool{path: true}
 		declaringDir := filepath.Dir(path)
+
+		replacer := extendsVarReplacer(declaringDir)
+		for i, ref := range devContainer.Extends {
+			devContainer.Extends[i] = ResolveString(ref, replacer)
+		}
+
 		parent, err := resolveExtendsArray(
 			context.TODO(),
 			devContainer.Extends,
@@ -282,6 +288,33 @@ func Convert(from any, to any) error {
 	}
 
 	return json.Unmarshal(out, to)
+}
+
+// extendsVarReplacer returns a ReplaceFunction that resolves only local-scope
+// variables suitable for use before the container exists.
+func extendsVarReplacer(localWorkspaceFolder string) ReplaceFunction {
+	return func(match, variable string, args []string) string {
+		switch variable {
+		case varLocalEnv:
+			if len(args) > 0 {
+				val, ok := os.LookupEnv(args[0])
+				if ok {
+					return val
+				}
+				if len(args) > 1 {
+					return strings.Join(args[1:], ":")
+				}
+				return ""
+			}
+			return match
+		case varLocalWorkspaceFolder:
+			return localWorkspaceFolder
+		case "localWorkspaceFolderBasename":
+			return filepath.Base(localWorkspaceFolder)
+		default:
+			return match
+		}
+	}
 }
 
 func ParseKeyValueFile(filename string) ([]string, error) {

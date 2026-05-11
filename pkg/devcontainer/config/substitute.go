@@ -20,6 +20,9 @@ const (
 
 	LabelLocalFolder = "devcontainer.local_folder"
 	LabelConfigFile  = "devcontainer.config_file"
+
+	varLocalEnv             = "localEnv"
+	varLocalWorkspaceFolder = "localWorkspaceFolder"
 )
 
 type ReplaceFunction func(match, variable string, args []string) string
@@ -147,9 +150,9 @@ func replaceWithContext(
 			return substitutionCtx.DevContainerID
 		}
 		return match
-	case "localEnv":
+	case varLocalEnv:
 		return lookupValue(isWindows, substitutionCtx.Env, args, match)
-	case "localWorkspaceFolder":
+	case varLocalWorkspaceFolder:
 		if substitutionCtx.LocalWorkspaceFolder != "" {
 			return substitutionCtx.LocalWorkspaceFolder
 		}

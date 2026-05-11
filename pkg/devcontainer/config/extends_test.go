@@ -678,6 +678,152 @@ func TestExtendsRef_MarshalJSON(t *testing.T) {
 	}
 }
 
+func TestExtends_LocalEnvInPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, "parent.json", `{
+		"name": "parent",
+		"image": "ubuntu:20.04"
+	}`)
+
+	childDir := filepath.Join(tmpDir, "child")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(childDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TEST_EXTENDS_DIR", tmpDir)
+	writeJSON(t, childDir, "child.json", `{
+		"extends": "${localEnv:TEST_EXTENDS_DIR}/parent.json",
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(filepath.Join(childDir, "child.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != testImageUbuntu {
+		t.Errorf("expected image 'ubuntu:20.04', got %q", cfg.Image)
+	}
+}
+
+func TestExtends_LocalWorkspaceFolderInPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	configsDir := filepath.Join(tmpDir, "configs")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(configsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, configsDir, "parent.json", `{
+		"name": "parent",
+		"image": "node:18"
+	}`)
+
+	writeJSON(t, tmpDir, "child.json", `{
+		"extends": "${localWorkspaceFolder}/configs/parent.json",
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != "node:18" {
+		t.Errorf("expected image 'node:18', got %q", cfg.Image)
+	}
+}
+
+func TestExtends_MissingEnvResolvesToEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeJSON(t, tmpDir, "child.json", `{
+		"extends": "${localEnv:NONEXISTENT_VAR_FOR_TEST}/parent.json",
+		"name": "child"
+	}`)
+
+	_, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	if err == nil {
+		t.Fatal("expected error due to invalid path from empty env var")
+	}
+	if strings.Contains(err.Error(), "${localEnv:") {
+		t.Errorf(
+			"variable should have been substituted (resolved to empty), but got literal: %v",
+			err,
+		)
+	}
+}
+
+func TestExtends_LocalEnvDefaultValue(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	fallbackDir := filepath.Join(tmpDir, "fallback")
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(fallbackDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, fallbackDir, "parent.json", `{
+		"name": "parent",
+		"image": "debian:12"
+	}`)
+
+	t.Setenv("UNSET_VAR_FOR_EXTENDS_TEST", "")
+	if err := os.Unsetenv("UNSET_VAR_FOR_EXTENDS_TEST"); err != nil {
+		t.Fatal(err)
+	}
+
+	writeJSON(t, tmpDir, "child.json", `{
+		"extends": "${localEnv:UNSET_VAR_FOR_EXTENDS_TEST:fallback}/parent.json",
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != "debian:12" {
+		t.Errorf("expected image 'debian:12', got %q", cfg.Image)
+	}
+}
+
+func TestExtends_LocalWorkspaceFolderBasenameInPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	basename := filepath.Base(tmpDir)
+
+	parentDir := filepath.Join(tmpDir, basename)
+	// #nosec G301 -- test directory
+	if err := os.MkdirAll(parentDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, parentDir, "parent.json", `{
+		"name": "parent",
+		"image": "alpine:3"
+	}`)
+
+	writeJSON(t, tmpDir, "child.json", `{
+		"extends": "${localWorkspaceFolder}/${localWorkspaceFolderBasename}/parent.json",
+		"name": "child"
+	}`)
+
+	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != testNameChild {
+		t.Errorf("expected name 'child', got %q", cfg.Name)
+	}
+	if cfg.Image != "alpine:3" {
+		t.Errorf("expected image 'alpine:3', got %q", cfg.Image)
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }
