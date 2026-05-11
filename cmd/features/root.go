@@ -19,6 +19,7 @@ func NewFeaturesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	featuresCmd.AddCommand(NewGenerateDocsCmd(globalFlags))
 	featuresCmd.AddCommand(NewTestCmd(globalFlags))
 	featuresCmd.AddCommand(NewPackageCmd(globalFlags))
+	featuresCmd.AddCommand(NewPublishCmd(globalFlags))
 
 	return featuresCmd
 }
