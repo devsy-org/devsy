@@ -470,4 +470,46 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			})
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.DescribeTable("resolves shutdownAction per devcontainer spec",
+		ginkgo.Label("read-configuration"),
+		func(ctx context.Context, testdataDir, expected string) {
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDirWithoutChdir(testdataDir)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				"read-configuration",
+				"--workspace-folder", tempDir,
+				"--include-merged-configuration",
+			})
+			framework.ExpectNoError(err)
+
+			var result map[string]any
+			err = json.Unmarshal([]byte(stdout), &result)
+			framework.ExpectNoError(err)
+
+			merged, ok := result["mergedConfiguration"].(map[string]any)
+			gomega.Expect(ok).To(gomega.BeTrue(), "mergedConfiguration should be an object")
+			gomega.Expect(merged).To(
+				gomega.HaveKeyWithValue("shutdownAction", expected),
+			)
+		},
+		ginkgo.Entry("defaults to stopContainer for image-based config",
+			"tests/readconfiguration/testdata-shutdown-action",
+			"stopContainer",
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		),
+		ginkgo.Entry("defaults to stopCompose for docker-compose config",
+			"tests/readconfiguration/testdata-shutdown-action-compose",
+			"stopCompose",
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		),
+		ginkgo.Entry("preserves explicit none",
+			"tests/readconfiguration/testdata-shutdown-action-explicit",
+			"none",
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		),
+	)
 })

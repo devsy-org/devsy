@@ -516,3 +516,51 @@ func TestMergeLifestyleHooks_MultipleFeatures(t *testing.T) {
 		t.Errorf("expected image hook last, got %v", got[2])
 	}
 }
+
+func TestMergeConfiguration_ShutdownActionDefault_ImageConfig(t *testing.T) {
+	cfg := &DevContainerConfig{
+		ImageContainer: ImageContainer{Image: "ubuntu:latest"},
+	}
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if merged.ShutdownAction != ShutdownActionStopContainer {
+		t.Errorf("ShutdownAction = %q, want %q", merged.ShutdownAction, ShutdownActionStopContainer)
+	}
+}
+
+func TestMergeConfiguration_ShutdownActionDefault_ComposeConfig(t *testing.T) {
+	cfg := &DevContainerConfig{
+		ComposeContainer: ComposeContainer{
+			DockerComposeFile: []string{"docker-compose.yml"},
+			Service:           "app",
+		},
+	}
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if merged.ShutdownAction != ShutdownActionStopCompose {
+		t.Errorf("ShutdownAction = %q, want %q", merged.ShutdownAction, ShutdownActionStopCompose)
+	}
+}
+
+func TestMergeConfiguration_ShutdownActionExplicit_NotOverridden(t *testing.T) {
+	cfg := &DevContainerConfig{
+		DevContainerConfigBase: DevContainerConfigBase{
+			ShutdownAction: ShutdownActionNone,
+		},
+		ComposeContainer: ComposeContainer{
+			DockerComposeFile: []string{"docker-compose.yml"},
+			Service:           "app",
+		},
+	}
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if merged.ShutdownAction != ShutdownActionNone {
+		t.Errorf("ShutdownAction = %q, want %q", merged.ShutdownAction, ShutdownActionNone)
+	}
+}

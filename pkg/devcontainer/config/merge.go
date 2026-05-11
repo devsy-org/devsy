@@ -140,6 +140,17 @@ func MergeConfiguration(
 	)
 	mergedConfig.HostRequirements = mergeHostRequirements(reversed)
 
+	if mergedConfig.ShutdownAction == "" {
+		switch {
+		case copiedConfig.ShutdownAction != "":
+			mergedConfig.ShutdownAction = copiedConfig.ShutdownAction
+		case len(copiedConfig.DockerComposeFile) > 0:
+			mergedConfig.ShutdownAction = ShutdownActionStopCompose
+		default:
+			mergedConfig.ShutdownAction = ShutdownActionStopContainer
+		}
+	}
+
 	return mergedConfig, nil
 }
 
