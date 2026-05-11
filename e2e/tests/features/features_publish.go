@@ -16,7 +16,6 @@ import (
 
 const (
 	cmdPublish       = "publish"
-	flagTarget       = "--target"
 	flagRegistry     = "--registry"
 	flagNamespace    = "--namespace"
 	fileFeatureJSON  = "devcontainer-feature.json"
