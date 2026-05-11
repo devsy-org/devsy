@@ -99,7 +99,9 @@ var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-p
 				framework.ExpectNoError(os.MkdirAll(dir, 0o750))
 				framework.ExpectNoError(os.WriteFile(
 					filepath.Join(dir, fileDevcontainerJSON),
-					[]byte(`{"id":"`+feat.id+`","version":"`+feat.version+`"}`),
+					[]byte(
+						`{"id":"`+feat.id+`","version":"`+feat.version+`","name":"`+feat.id+`"}`,
+					),
 					0o600,
 				))
 				framework.ExpectNoError(os.WriteFile(
@@ -187,7 +189,7 @@ var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-p
 			framework.ExpectNoError(os.MkdirAll(goDir, 0o750))
 			framework.ExpectNoError(os.WriteFile(
 				filepath.Join(goDir, fileDevcontainerJSON),
-				[]byte(`{"id":"go","version":"1.0.0"}`),
+				[]byte(`{"id":"go","version":"1.0.0","name":"Go"}`),
 				0o600,
 			))
 			framework.ExpectNoError(os.WriteFile(
