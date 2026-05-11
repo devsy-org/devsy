@@ -9,6 +9,7 @@ import (
 const (
 	outputJSON = "json"
 	outputText = "text"
+	outputYAML = "yaml"
 )
 
 func validateOutputFormat(format string) error {

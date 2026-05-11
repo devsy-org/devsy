@@ -245,7 +245,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should automatically install dependsOn features",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -272,7 +272,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should not fail if same feature exists in dependsOn and installsAfter",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -299,7 +299,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle nested dependencies",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -326,7 +326,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should detect circular dependencies",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -350,7 +350,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle dependsOn with options",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -377,7 +377,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle mixed dependsOn and installsAfter",
-		ginkgo.Label("features", "mixed"),
+		ginkgo.Label("up-features", "mixed"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -404,7 +404,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should detect self-dependency",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -427,7 +427,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle non-existent dependency gracefully",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -450,7 +450,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle shared dependencies correctly",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -478,7 +478,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle forward reference dependencies",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -506,7 +506,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should handle same feature in dependsOn and installsAfter",
-		ginkgo.Label("features", "depends-on"),
+		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -578,7 +578,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should resolve legacy feature IDs in dependsOn",
-		ginkgo.Label("features", "depends-on", "legacy-id"),
+		ginkgo.Label("up-features", "depends-on", "legacy-id"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -605,7 +605,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should reject overrideFeatureInstallOrder that violates dependsOn",
-		ginkgo.Label("features", "override"),
+		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -627,7 +627,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should respect overrideFeatureInstallOrder when it satisfies dependsOn",
-		ginkgo.Label("features", "override"),
+		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -653,7 +653,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should install both versions when same feature has different versions",
-		ginkgo.Label("features", "version-aware"),
+		ginkgo.Label("up-features", "version-aware"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
@@ -683,7 +683,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite
 
 	ginkgo.It(
 		"should resolve secret options from environment variables",
-		ginkgo.Label("features", "secret-option"),
+		ginkgo.Label("up-features", "secret-option"),
 		func(ctx context.Context) {
 			f, err := setupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
