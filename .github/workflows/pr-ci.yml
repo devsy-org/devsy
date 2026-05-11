@@ -223,7 +223,6 @@ jobs:
             requires-secret: false
 
           - label: features
-            label-filter: features && !up-features
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -502,7 +501,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label-filter || matrix.label }}"
+              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
@@ -511,7 +510,7 @@ jobs:
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
               DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
-              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label-filter || matrix.label }}"
+              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
       - name: verify docker is installed
