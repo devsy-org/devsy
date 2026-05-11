@@ -9,6 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testRegistry    = "ghcr.io"
+	testVersion     = "1.0.0"
+	testFeatureNode = "node"
+)
+
 func TestPublishCmd_FlagDefaults(t *testing.T) {
 	cmd := NewPublishCmd(nil)
 
@@ -18,7 +24,7 @@ func TestPublishCmd_FlagDefaults(t *testing.T) {
 
 	registryFlag := cmd.Flags().Lookup("registry")
 	require.NotNil(t, registryFlag)
-	assert.Equal(t, "ghcr.io", registryFlag.DefValue)
+	assert.Equal(t, testRegistry, registryFlag.DefValue)
 
 	namespaceFlag := cmd.Flags().Lookup("namespace")
 	require.NotNil(t, namespaceFlag)
@@ -53,34 +59,34 @@ func TestBuildPublishReference(t *testing.T) {
 	}{
 		{
 			name:      "with namespace",
-			registry:  "ghcr.io",
+			registry:  testRegistry,
 			namespace: "devcontainers/features",
 			id:        "go",
-			version:   "1.0.0",
-			want:      "ghcr.io/devcontainers/features/go:1.0.0",
+			version:   testVersion,
+			want:      testRegistry + "/devcontainers/features/go:" + testVersion,
 		},
 		{
 			name:     "without namespace",
-			registry: "ghcr.io",
+			registry: testRegistry,
 			id:       "go",
-			version:  "1.0.0",
-			want:     "ghcr.io/go:1.0.0",
+			version:  testVersion,
+			want:     testRegistry + "/go:" + testVersion,
 		},
 		{
 			name:      "custom registry",
 			registry:  "registry.example.com",
 			namespace: "my-org/features",
-			id:        "node",
+			id:        testFeatureNode,
 			version:   "2.0.0",
-			want:      "registry.example.com/my-org/features/node:2.0.0",
+			want:      "registry.example.com/my-org/features/" + testFeatureNode + ":2.0.0",
 		},
 		{
 			name:      "latest version",
-			registry:  "ghcr.io",
+			registry:  testRegistry,
 			namespace: "test",
 			id:        "python",
 			version:   "latest",
-			want:      "ghcr.io/test/python:latest",
+			want:      testRegistry + "/test/python:latest",
 		},
 	}
 
@@ -133,7 +139,7 @@ func TestValidatePublishTarget_Valid(t *testing.T) {
 	cfg, err := validatePublishTarget(tmpDir)
 	require.NoError(t, err)
 	assert.Equal(t, "go", cfg.ID)
-	assert.Equal(t, "1.0.0", cfg.Version)
+	assert.Equal(t, testVersion, cfg.Version)
 }
 
 func TestValidatePublishTarget_NonexistentPath(t *testing.T) {
@@ -166,9 +172,9 @@ func TestBuildFeatureImage(t *testing.T) {
 }
 
 func TestParsePublishRef_Valid(t *testing.T) {
-	ref, err := parsePublishRef("ghcr.io", "devcontainers/features", "go", "1.0.0")
+	ref, err := parsePublishRef(testRegistry, "devcontainers/features", "go", testVersion)
 	require.NoError(t, err)
-	assert.Contains(t, ref.String(), "ghcr.io/devcontainers/features/go:1.0.0")
+	assert.Contains(t, ref.String(), testRegistry+"/devcontainers/features/go:"+testVersion)
 }
 
 func TestParsePublishRef_Invalid(t *testing.T) {
