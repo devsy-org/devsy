@@ -13,6 +13,7 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -66,6 +67,50 @@ func (r *runner) setupContainer(
 }
 
 func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Duration) error {
+	strategy := r.newAgentDelivery()
+
+	if strategy.Phase() == delivery.PhasePostStart {
+		return r.deliverPostStart(ctx, strategy)
+	}
+
+	return r.legacyInject(ctx, timeout)
+}
+
+func (r *runner) newAgentDelivery() delivery.AgentDelivery {
+	dockerCmd := "docker"
+	var dockerEnv []string
+	if r.WorkspaceConfig.Agent.Docker.Path != "" {
+		dockerCmd = r.WorkspaceConfig.Agent.Docker.Path
+	}
+	for k, v := range r.WorkspaceConfig.Agent.Docker.Env {
+		dockerEnv = append(dockerEnv, k+"="+v)
+	}
+
+	execFn := delivery.CommandFunc(r.Driver.CommandDevContainer, r.ID)
+
+	return delivery.NewAgentDelivery(delivery.FactoryOptions{
+		WorkspaceConfig: r.WorkspaceConfig,
+		WorkspaceID:     r.ID,
+		DockerCommand:   dockerCmd,
+		DockerEnv:       dockerEnv,
+		ContainerID:     r.ID,
+		ExecFunc:        execFn,
+	})
+}
+
+func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
+	err := strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
+		WorkspaceID: r.ID,
+		BinaryPath:  r.AgentPath,
+		Arch:        runtime.GOARCH,
+	})
+	if err != nil {
+		return fmt.Errorf("deliver agent (post-start): %w", err)
+	}
+	return nil
+}
+
+func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error {
 	err := agent.InjectAgent(&agent.InjectOptions{
 		Ctx: ctx,
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
