@@ -33,18 +33,18 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 			DownloadURL: "",
 		}
 
+	case driverType == provider.KubernetesDriver:
+		log.Debugf("using kubernetes delivery (exec)")
+		return &KubernetesDelivery{
+			ExecFunc: opts.ExecFunc,
+		}
+
 	case opts.IsRemoteDocker:
 		log.Debugf("using remote docker delivery (docker cp)")
 		return &RemoteDockerDelivery{
 			DockerCommand: opts.DockerCommand,
 			Environment:   opts.DockerEnv,
 			ContainerID:   opts.ContainerID,
-		}
-
-	case driverType == provider.KubernetesDriver:
-		log.Debugf("using kubernetes delivery (exec)")
-		return &KubernetesDelivery{
-			ExecFunc: opts.ExecFunc,
 		}
 
 	case driverType == "" || driverType == provider.DockerDriver:
