@@ -60,7 +60,7 @@ func TestNewAgentDelivery_LocalDocker_ThreadsHelperImage(t *testing.T) {
 				Driver: provider.DockerDriver,
 			},
 		},
-		DockerCommand: "docker",
+		DockerCommand: defaultDockerCmd,
 		HelperImage:   "my-registry/busybox:1.35",
 	}
 
@@ -77,7 +77,7 @@ func TestNewAgentDelivery_LocalDocker_EmptyHelperImage(t *testing.T) {
 				Driver: provider.DockerDriver,
 			},
 		},
-		DockerCommand: "docker",
+		DockerCommand: defaultDockerCmd,
 	}
 
 	d := NewAgentDelivery(opts)
