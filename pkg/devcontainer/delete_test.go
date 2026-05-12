@@ -11,6 +11,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
+const (
+	testContainerID   = "container-abc"
+	testStatusRunning = "running"
+)
+
 type mockDriver struct {
 	findResult   *config.ContainerDetails
 	findErr      error
@@ -107,8 +112,8 @@ func TestDelete_FindError_ReturnsError(t *testing.T) {
 func TestDelete_RunningContainer_StopsDeletesAndCleansUp(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
-			ID:     "container-abc",
-			State:  config.ContainerDetailsState{Status: "running"},
+			ID:     testContainerID,
+			State:  config.ContainerDetailsState{Status: testStatusRunning},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
 	}
@@ -129,7 +134,7 @@ func TestDelete_RunningContainer_StopsDeletesAndCleansUp(t *testing.T) {
 func TestDelete_StoppedContainer_SkipsStopAndDeletes(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
-			ID:     "container-abc",
+			ID:     testContainerID,
 			State:  config.ContainerDetailsState{Status: "exited"},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
@@ -151,7 +156,7 @@ func TestDelete_StoppedContainer_SkipsStopAndDeletes(t *testing.T) {
 func TestDelete_DeleteError_ReturnsError(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
-			ID:     "container-abc",
+			ID:     testContainerID,
 			State:  config.ContainerDetailsState{Status: "exited"},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
