@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -26,17 +27,19 @@ func (p DeliveryPhase) String() string {
 	}
 }
 
+type BinarySourceFunc func(ctx context.Context, arch string) (io.ReadCloser, error)
+
 type PreStartOptions struct {
-	WorkspaceID string
-	RunOptions  *driver.RunOptions
-	BinaryPath  string
-	Arch        string
+	WorkspaceID  string
+	RunOptions   *driver.RunOptions
+	BinarySource BinarySourceFunc
+	Arch         string
 }
 
 type PostStartOptions struct {
 	WorkspaceID      string
 	ContainerDetails *config.ContainerDetails
-	BinaryPath       string
+	BinarySource     BinarySourceFunc
 	Arch             string
 }
 

@@ -3,12 +3,15 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/log"
 )
+
+var _ AgentDelivery = (*RemoteDockerDelivery)(nil)
 
 type RemoteDockerDelivery struct {
 	DockerCommand string
@@ -25,6 +28,9 @@ func (d *RemoteDockerDelivery) DeliverPreStart(_ context.Context, _ PreStartOpti
 }
 
 func (d *RemoteDockerDelivery) DeliverPostStart(ctx context.Context, opts PostStartOptions) error {
+	if opts.BinarySource == nil {
+		return fmt.Errorf("binary source is required for remote docker delivery")
+	}
 	if d.ContainerID == "" && opts.ContainerDetails != nil {
 		d.ContainerID = opts.ContainerDetails.ID
 	}
@@ -34,7 +40,7 @@ func (d *RemoteDockerDelivery) DeliverPostStart(ctx context.Context, opts PostSt
 
 	destPath := agent.ContainerDevsyHelperLocation
 
-	if err := d.copyBinary(ctx, opts.BinaryPath, destPath); err != nil {
+	if err := d.copyBinaryFromSource(ctx, opts.BinarySource, opts.Arch, destPath); err != nil {
 		return fmt.Errorf("copy binary to container: %w", err)
 	}
 
@@ -50,11 +56,34 @@ func (d *RemoteDockerDelivery) Cleanup(_ context.Context, _ string) error {
 	return nil
 }
 
-func (d *RemoteDockerDelivery) copyBinary(ctx context.Context, srcPath, destPath string) error {
-	src := srcPath
-	dest := fmt.Sprintf("%s:%s", d.ContainerID, destPath)
+func (d *RemoteDockerDelivery) copyBinaryFromSource(
+	ctx context.Context,
+	binarySource BinarySourceFunc,
+	arch, destPath string,
+) error {
+	binary, err := binarySource(ctx, arch)
+	if err != nil {
+		return fmt.Errorf("acquire binary: %w", err)
+	}
+	defer func() { _ = binary.Close() }()
 
-	out, err := d.cmd(ctx, "cp", src, dest).CombinedOutput()
+	tmpFile, err := os.CreateTemp("", "devsy-agent-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := io.Copy(tmpFile, binary); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("write temp binary: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	dest := fmt.Sprintf("%s:%s", d.ContainerID, destPath)
+	out, err := d.cmd(ctx, "cp", tmpPath, dest).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}

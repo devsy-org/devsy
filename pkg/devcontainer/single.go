@@ -366,11 +366,16 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 		return fmt.Errorf("strategy phase is %s, not pre-start", strategy.Phase())
 	}
 
+	binarySource, err := r.newBinarySource()
+	if err != nil {
+		return fmt.Errorf("create binary source: %w", err)
+	}
+
 	return strategy.DeliverPreStart(ctx, delivery.PreStartOptions{
-		WorkspaceID: r.ID,
-		RunOptions:  runOptions,
-		BinaryPath:  r.AgentPath,
-		Arch:        runtime.GOARCH,
+		WorkspaceID:  r.ID,
+		RunOptions:   runOptions,
+		BinarySource: binarySource,
+		Arch:         runtime.GOARCH,
 	})
 }
 

@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
+var _ AgentDelivery = (*LocalDockerDelivery)(nil)
+
 const (
 	defaultDockerCmd = "docker"
 	volumePrefix     = "devsy-agent-"
@@ -28,13 +30,17 @@ func (d *LocalDockerDelivery) Phase() DeliveryPhase {
 }
 
 func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStartOptions) error {
+	if opts.BinarySource == nil {
+		return fmt.Errorf("binary source is required for local docker delivery")
+	}
+
 	volumeName := volumePrefix + opts.WorkspaceID
 
 	if err := d.createVolume(ctx, volumeName); err != nil {
 		return fmt.Errorf("create agent volume: %w", err)
 	}
 
-	if err := d.populateVolume(ctx, volumeName, opts.BinaryPath); err != nil {
+	if err := d.populateVolume(ctx, volumeName, opts.BinarySource, opts.Arch); err != nil {
 		if removeErr := d.removeVolume(ctx, volumeName); removeErr != nil {
 			log.Debugf("failed to clean up volume after populate failure: %v", removeErr)
 		}
@@ -72,14 +78,16 @@ func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) err
 }
 
 func (d *LocalDockerDelivery) populateVolume(
-	ctx context.Context, volumeName, binaryPath string,
+	ctx context.Context,
+	volumeName string,
+	binarySource BinarySourceFunc,
+	arch string,
 ) error {
-	// #nosec G304 -- binaryPath is controlled by the caller (agent binary location)
-	f, err := os.Open(binaryPath)
+	binary, err := binarySource(ctx, arch)
 	if err != nil {
-		return fmt.Errorf("open binary: %w", err)
+		return fmt.Errorf("acquire binary: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = binary.Close() }()
 
 	containerName := "devsy-agent-init-" + volumeName
 	script := fmt.Sprintf(
@@ -96,7 +104,7 @@ func (d *LocalDockerDelivery) populateVolume(
 	}
 
 	cmd := d.cmd(ctx, args...)
-	cmd.Stdin = f
+	cmd.Stdin = binary
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {

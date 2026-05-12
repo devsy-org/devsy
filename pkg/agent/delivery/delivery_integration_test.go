@@ -4,7 +4,9 @@ package delivery
 
 import (
 	"context"
+	"io"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -12,6 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func testBinarySource(_ context.Context, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("#!/bin/sh\necho hello\n")), nil
+}
 
 func dockerAvailable() bool {
 	cmd := exec.Command("docker", "info")
@@ -32,10 +38,10 @@ func TestLocalDockerDelivery_Integration(t *testing.T) {
 		Env:    map[string]string{},
 	}
 	opts := PreStartOptions{
-		WorkspaceID: workspaceID,
-		RunOptions:  runOpts,
-		BinaryPath:  "/bin/sh",
-		Arch:        "amd64",
+		WorkspaceID:  workspaceID,
+		RunOptions:   runOpts,
+		BinarySource: testBinarySource,
+		Arch:         "amd64",
 	}
 
 	err := d.DeliverPreStart(ctx, opts)
@@ -93,9 +99,9 @@ func TestRemoteDockerDelivery_Integration(t *testing.T) {
 	}
 
 	err = d.DeliverPostStart(ctx, PostStartOptions{
-		WorkspaceID: "test-workspace",
-		BinaryPath:  "/bin/sh",
-		Arch:        "amd64",
+		WorkspaceID:  "test-workspace",
+		BinarySource: testBinarySource,
+		Arch:         "amd64",
 	})
 	require.NoError(t, err)
 

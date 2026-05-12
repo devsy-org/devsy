@@ -103,15 +103,32 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
-	err := strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID: r.ID,
-		BinaryPath:  r.AgentPath,
-		Arch:        runtime.GOARCH,
+	binarySource, err := r.newBinarySource()
+	if err != nil {
+		return fmt.Errorf("create binary source: %w", err)
+	}
+
+	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
+		WorkspaceID:  r.ID,
+		BinarySource: binarySource,
+		Arch:         runtime.GOARCH,
 	})
 	if err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
 	}
 	return nil
+}
+
+func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
+	downloadURL := r.AgentDownloadURL
+	if downloadURL == "" {
+		downloadURL = agent.DefaultAgentDownloadURL()
+	}
+	mgr, err := agent.NewBinaryManager(downloadURL)
+	if err != nil {
+		return nil, err
+	}
+	return mgr.AcquireBinary, nil
 }
 
 func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error {

@@ -13,6 +13,13 @@ func TestLocalDockerDelivery_Phase(t *testing.T) {
 	assert.Equal(t, PhasePreStart, d.Phase())
 }
 
+func TestLocalDockerDelivery_DeliverPreStart_RequiresBinarySource(t *testing.T) {
+	d := &LocalDockerDelivery{}
+	err := d.DeliverPreStart(context.Background(), PreStartOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "binary source is required")
+}
+
 func TestLocalDockerDelivery_DeliverPostStart_ReturnsError(t *testing.T) {
 	d := &LocalDockerDelivery{}
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{})
