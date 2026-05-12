@@ -142,12 +142,19 @@ func Inject(opts InjectOptions) (bool, error) {
 	}
 	log.Debugf("injection: payload delivered elapsed=%s", time.Since(start))
 
-	// prefer result error
 	if result.err != nil {
 		return result.wasExecuted, result.err
-	} else if err != nil && result.wasExecuted {
+	}
+
+	// Exec EOF during binary injection is expected: the container entrypoint
+	// may exec the daemon (killing the docker exec process) before inject.sh
+	// prints its final response. Only surface exec errors when a command was
+	// actually executed through the script.
+	if err != nil && result.wasExecuted {
 		return result.wasExecuted, err
-	} else if result.wasExecuted || opts.ScriptParams.Command == "" {
+	}
+
+	if result.wasExecuted || opts.ScriptParams.Command == "" {
 		return result.wasExecuted, nil
 	}
 
