@@ -88,7 +88,7 @@ func TestNewAgentDelivery_KubernetesDriver(t *testing.T) {
 	}
 
 	d := NewAgentDelivery(opts)
-	assert.IsType(t, &KubernetesDelivery{}, d)
+	assert.IsType(t, &LegacyShellDelivery{}, d)
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
