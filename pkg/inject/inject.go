@@ -26,6 +26,8 @@ var Script string
 // implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type ExecFunc func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
+// Deprecated: LocalFile is part of the legacy shell injection path. Platform-native AgentDelivery
+// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type LocalFile func(arm bool) (io.ReadCloser, error)
 
 type injectResult struct {

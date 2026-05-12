@@ -70,10 +70,12 @@ func (d *LegacyShellDelivery) downloadURL() string {
 	return agent.DefaultAgentDownloadURL()
 }
 
-// Deprecated: ExecFuncFromDriver creates an inject.ExecFunc that routes commands through
+// ExecFuncFromDriver creates an inject.ExecFunc that routes commands through
 // the provided driver command function. This adapts the driver's
 // CommandDevContainer signature for use with the legacy injection path.
-// Platform-native AgentDelivery implementations are the replacements.
+//
+// Deprecated: Platform-native AgentDelivery implementations
+// (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 func ExecFuncFromDriver(
 	cmdFn func(ctx context.Context, user, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error,
 	user string,
