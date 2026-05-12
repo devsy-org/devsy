@@ -16,9 +16,14 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
+// Deprecated: Script embeds inject.sh which is deprecated. Platform-native AgentDelivery
+// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
+//
 //go:embed inject.sh
 var Script string
 
+// Deprecated: ExecFunc is part of the legacy shell injection path. Platform-native AgentDelivery
+// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type ExecFunc func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
 type LocalFile func(arm bool) (io.ReadCloser, error)
@@ -28,6 +33,8 @@ type injectResult struct {
 	err         error
 }
 
+// Deprecated: InjectOptions is part of the legacy shell injection path. Platform-native AgentDelivery
+// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type InjectOptions struct {
 	Ctx          context.Context
 	Exec         ExecFunc
@@ -39,6 +46,8 @@ type InjectOptions struct {
 	Timeout      time.Duration
 }
 
+// Deprecated: Inject is part of the legacy shell injection path. Platform-native AgentDelivery
+// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 func Inject(opts InjectOptions) (bool, error) {
 	if opts.Ctx == nil {
 		return false, fmt.Errorf("context is required")
