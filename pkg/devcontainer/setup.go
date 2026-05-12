@@ -97,6 +97,7 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		WorkspaceID:     r.ID,
 		DockerCommand:   dockerCmd,
 		DockerEnv:       dockerEnv,
+		HelperImage:     r.WorkspaceConfig.Agent.Docker.HelperImage,
 		ContainerID:     r.ID,
 		ExecFunc:        execFn,
 	})

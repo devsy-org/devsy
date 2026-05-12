@@ -16,6 +16,7 @@ type FactoryOptions struct {
 	WorkspaceID     string
 	DockerCommand   string
 	DockerEnv       []string
+	HelperImage     string
 	IsRemoteDocker  bool
 	ContainerID     string
 	ExecFunc        inject.ExecFunc
@@ -46,6 +47,7 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 			return &LocalDockerDelivery{
 				DockerCommand: opts.DockerCommand,
 				Environment:   opts.DockerEnv,
+				HelperImage:   opts.HelperImage,
 			}
 		}
 		log.Debugf("using remote docker delivery for non-local docker daemon")

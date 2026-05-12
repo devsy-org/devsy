@@ -194,6 +194,10 @@ type ProviderDockerDriverConfig struct {
 
 	// Environment variables to set when running docker commands
 	Env map[string]string `json:"env,omitempty"`
+
+	// HelperImage is used by LocalDockerDelivery for volume population.
+	// When empty, defaults to busybox:latest with automatic fallback to direct copy.
+	HelperImage string `json:"helperImage,omitempty"`
 }
 
 type ProviderKubernetesDriverConfig struct {
