@@ -37,7 +37,16 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 		}
 	}
 
+	r.cleanupDeliveryVolume(ctx)
+
 	return nil
+}
+
+func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
+	strategy := r.newAgentDelivery()
+	if err := strategy.Cleanup(ctx, r.ID); err != nil {
+		log.Debugf("best-effort agent delivery volume cleanup: %v", err)
+	}
 }
 
 func (r *runner) Stop(ctx context.Context) error {
