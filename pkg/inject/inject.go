@@ -145,7 +145,7 @@ func Inject(opts InjectOptions) (bool, error) {
 	// prefer result error
 	if result.err != nil {
 		return result.wasExecuted, result.err
-	} else if err != nil {
+	} else if err != nil && result.wasExecuted {
 		return result.wasExecuted, err
 	} else if result.wasExecuted || opts.ScriptParams.Command == "" {
 		return result.wasExecuted, nil
