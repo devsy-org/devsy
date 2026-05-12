@@ -1,10 +1,14 @@
 package delivery
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -14,15 +18,16 @@ import (
 var _ AgentDelivery = (*LocalDockerDelivery)(nil)
 
 const (
-	defaultDockerCmd = "docker"
-	volumePrefix     = "devsy-agent-"
-	volumeMountPath  = "/opt/devsy"
-	helperImage      = "busybox:latest"
+	defaultDockerCmd   = "docker"
+	volumePrefix       = "devsy-agent-"
+	volumeMountPath    = "/opt/devsy"
+	defaultHelperImage = "busybox:latest"
 )
 
 type LocalDockerDelivery struct {
 	DockerCommand string
 	Environment   []string
+	HelperImage   string
 }
 
 func (d *LocalDockerDelivery) Phase() DeliveryPhase {
@@ -77,6 +82,13 @@ func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) err
 	return nil
 }
 
+func (d *LocalDockerDelivery) helperImageName() string {
+	if d.HelperImage != "" {
+		return d.HelperImage
+	}
+	return defaultHelperImage
+}
+
 func (d *LocalDockerDelivery) populateVolume(
 	ctx context.Context,
 	volumeName string,
@@ -89,6 +101,25 @@ func (d *LocalDockerDelivery) populateVolume(
 	}
 	defer func() { _ = binary.Close() }()
 
+	data, err := io.ReadAll(binary)
+	if err != nil {
+		return fmt.Errorf("read binary: %w", err)
+	}
+
+	err = d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
+	if err == nil {
+		return nil
+	}
+	log.Debugf("helper container populate failed, trying direct copy: %v", err)
+
+	return d.populateVolumeDirectCopy(ctx, volumeName, data)
+}
+
+func (d *LocalDockerDelivery) populateVolumeWithHelper(
+	ctx context.Context,
+	volumeName string,
+	binary io.Reader,
+) error {
 	containerName := "devsy-agent-init-" + volumeName
 	script := fmt.Sprintf(
 		"cat > %s/%s && chmod 755 %s/%s",
@@ -99,7 +130,7 @@ func (d *LocalDockerDelivery) populateVolume(
 		"--name", containerName,
 		"-v", volumeName + ":" + volumeMountPath,
 		"-i",
-		helperImage,
+		d.helperImageName(),
 		"sh", "-c", script,
 	}
 
@@ -111,6 +142,44 @@ func (d *LocalDockerDelivery) populateVolume(
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
 	return nil
+}
+
+func (d *LocalDockerDelivery) populateVolumeDirectCopy(
+	ctx context.Context,
+	volumeName string,
+	data []byte,
+) error {
+	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
+	if err != nil {
+		return fmt.Errorf("inspect volume mountpoint: %w", err)
+	}
+
+	destPath := filepath.Join(mountpoint, binaryName())
+
+	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+		return fmt.Errorf("write binary to volume: %w", err)
+	}
+	// #nosec G302 -- agent binary must be executable
+	if err := os.Chmod(destPath, 0o755); err != nil {
+		return fmt.Errorf("chmod binary: %w", err)
+	}
+
+	return nil
+}
+
+func (d *LocalDockerDelivery) volumeMountpoint(
+	ctx context.Context,
+	volumeName string,
+) (string, error) {
+	out, err := d.cmd(
+		ctx, "volume", "inspect",
+		"--format", "{{.Mountpoint}}",
+		volumeName,
+	).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", string(out), err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (d *LocalDockerDelivery) removeVolume(ctx context.Context, workspaceID string) error {

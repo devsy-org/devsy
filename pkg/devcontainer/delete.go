@@ -13,7 +13,9 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
 	if err != nil {
 		return fmt.Errorf("find dev container: %w", err)
-	} else if containerDetails == nil {
+	}
+	defer r.cleanupDeliveryVolume(ctx)
+	if containerDetails == nil {
 		return nil
 	}
 
@@ -38,6 +40,13 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	}
 
 	return nil
+}
+
+func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
+	strategy := r.newAgentDelivery()
+	if err := strategy.Cleanup(ctx, r.ID); err != nil {
+		log.Debugf("best-effort agent delivery volume cleanup: %v", err)
+	}
 }
 
 func (r *runner) Stop(ctx context.Context) error {

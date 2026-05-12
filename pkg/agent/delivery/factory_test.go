@@ -17,7 +17,7 @@ func TestNewAgentDelivery_LocalDocker(t *testing.T) {
 				Driver: provider.DockerDriver,
 			},
 		},
-		DockerCommand: "docker",
+		DockerCommand: defaultDockerCmd,
 	}
 
 	d := NewAgentDelivery(opts)
