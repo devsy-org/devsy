@@ -70,10 +70,13 @@ func isDockerLocal(_ string) bool {
 }
 
 func isLocalDockerHost(host string) bool {
-	return host == "" ||
-		host == "unix:///var/run/docker.sock" ||
-		host == "npipe:////./pipe/docker_engine" ||
-		len(host) > 7 && host[:7] == "unix://"
+	if host == "" {
+		return true
+	}
+	hasPrefix := func(s, prefix string) bool {
+		return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+	}
+	return hasPrefix(host, "unix://") || hasPrefix(host, "npipe://")
 }
 
 // CommandFunc adapts a driver's command function to inject.ExecFunc.

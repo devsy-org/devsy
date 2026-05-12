@@ -70,7 +70,11 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		return r.deliverPostStart(ctx, strategy)
+		if err := r.deliverPostStart(ctx, strategy); err != nil {
+			log.Debugf("post-start delivery failed, falling back to legacy inject: %v", err)
+			return r.legacyInject(ctx, timeout)
+		}
+		return nil
 	}
 
 	return r.legacyInject(ctx, timeout)

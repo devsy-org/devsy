@@ -91,6 +91,7 @@ func TestIsDockerLocal(t *testing.T) {
 	assert.True(t, isLocalDockerHost("unix:///var/run/docker.sock"))
 	assert.True(t, isLocalDockerHost("unix:///home/user/.docker/desktop/docker.sock"))
 	assert.True(t, isLocalDockerHost("npipe:////./pipe/docker_engine"))
+	assert.True(t, isLocalDockerHost("npipe:////./pipe/podman-machine-default"))
 	assert.False(t, isLocalDockerHost("tcp://192.168.1.100:2376"))
 	assert.False(t, isLocalDockerHost("ssh://user@remote-host"))
 }
