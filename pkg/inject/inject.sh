@@ -47,6 +47,14 @@ inject_binary() {
         return 1
     fi
 
+    if [ "$CHMOD_PATH" = "true" ]; then
+        $sh_c "chmod +x \"$temp_file\"" || {
+            >&2 echo "Error: Failed to make $temp_file executable"
+            $sh_c "rm -f \"$temp_file\"" 2>/dev/null || true
+            return 1
+        }
+    fi
+
     if ! $sh_c "mv \"$temp_file\" \"$INSTALL_PATH\""; then
         >&2 echo "Error: Failed to move binary to $INSTALL_PATH"
         $sh_c "rm -f \"$temp_file\"" 2>/dev/null || true
@@ -95,6 +103,14 @@ download_binary() {
     if [ "$iteration" -gt "$max_iteration" ]; then
         >&2 echo "Error: Failed to download devsy after $max_iteration attempts"
         return 1
+    fi
+
+    if [ "$CHMOD_PATH" = "true" ]; then
+        $sh_c "chmod +x \"$temp_file\"" || {
+            >&2 echo "Error: Failed to make $temp_file executable"
+            $sh_c "rm -f \"$temp_file\"" 2>/dev/null || true
+            return 1
+        }
     fi
 
     if ! $sh_c "mv \"$temp_file\" \"$INSTALL_PATH\""; then
@@ -146,13 +162,6 @@ install_agent() {
                 exit 1
             }
         fi
-    fi
-
-    if [ "$CHMOD_PATH" = "true" ]; then
-        $sh_c "chmod +x \"$INSTALL_PATH\"" || {
-            >&2 echo "Error: Failed to make $INSTALL_PATH executable"
-            exit 1
-        }
     fi
 }
 
