@@ -73,17 +73,23 @@ func TestNewAgentDelivery_CustomDriver(t *testing.T) {
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
-func TestNewAgentDelivery_KubernetesDriver_FallsToLegacy(t *testing.T) {
+func TestNewAgentDelivery_KubernetesDriver(t *testing.T) {
+	execFn := func(ctx context.Context, cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		return nil
+	}
+
 	opts := FactoryOptions{
 		WorkspaceConfig: &provider.AgentWorkspaceInfo{
 			Agent: provider.ProviderAgentConfig{
 				Driver: provider.KubernetesDriver,
 			},
 		},
+		ExecFunc: execFn,
 	}
 
 	d := NewAgentDelivery(opts)
-	assert.IsType(t, &LegacyShellDelivery{}, d)
+	assert.IsType(t, &KubernetesDelivery{}, d)
+	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
 func TestIsDockerLocal(t *testing.T) {

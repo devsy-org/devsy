@@ -41,6 +41,12 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 			ContainerID:   opts.ContainerID,
 		}
 
+	case driverType == provider.KubernetesDriver:
+		log.Debugf("using kubernetes delivery (exec)")
+		return &KubernetesDelivery{
+			ExecFunc: opts.ExecFunc,
+		}
+
 	case driverType == "" || driverType == provider.DockerDriver:
 		if isDockerLocal(opts.DockerCommand) {
 			log.Debugf("using local docker delivery (named volume)")
