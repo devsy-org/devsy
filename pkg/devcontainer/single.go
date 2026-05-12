@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/daemon/agent"
@@ -265,6 +267,13 @@ func (r *runner) resolveNewContainer(
 
 	r.injectDaemonEntrypoint(p, mergedConfig)
 
+	runOptions, err := r.buildRunOptionsForDelivery(mergedConfig, p.substitutionContext, buildInfo)
+	if err == nil {
+		if preStartErr := r.deliverPreStart(ctx, runOptions); preStartErr != nil {
+			log.Debugf("pre-start delivery skipped or failed, will use post-start: %v", preStartErr)
+		}
+	}
+
 	err = r.runContainer(ctx, p.parsedConfig, p.substitutionContext, mergedConfig, buildInfo)
 	if err != nil {
 		return nil, fmt.Errorf("runner run container: %w", err)
@@ -338,6 +347,36 @@ func (r *runner) findRunningContainerOrFail(
 		return nil, fmt.Errorf("dev container %s not found after %s", r.ID, operation)
 	}
 	return details, nil
+}
+
+func (r *runner) buildRunOptionsForDelivery(
+	mergedConfig *config.MergedDevContainerConfig,
+	substitutionContext *config.SubstitutionContext,
+	buildInfo *config.BuildInfo,
+) (*driver.RunOptions, error) {
+	if buildInfo.Dockerless != nil {
+		return r.getDockerlessRunOptions(mergedConfig, substitutionContext, buildInfo)
+	}
+	return r.getRunOptions(mergedConfig, substitutionContext, buildInfo)
+}
+
+func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOptions) error {
+	strategy := r.newAgentDelivery()
+	if strategy.Phase() != delivery.PhasePreStart {
+		return fmt.Errorf("strategy phase is %s, not pre-start", strategy.Phase())
+	}
+
+	binarySource, err := r.newBinarySource()
+	if err != nil {
+		return fmt.Errorf("create binary source: %w", err)
+	}
+
+	return strategy.DeliverPreStart(ctx, delivery.PreStartOptions{
+		WorkspaceID:  r.ID,
+		RunOptions:   runOptions,
+		BinarySource: binarySource,
+		Arch:         runtime.GOARCH,
+	})
 }
 
 func (r *runner) runContainer(
