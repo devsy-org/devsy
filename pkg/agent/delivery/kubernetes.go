@@ -1,10 +1,8 @@
 package delivery
 
 import (
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/inject"
@@ -39,26 +37,14 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	}
 	defer func() { _ = binary.Close() }()
 
-	pr, pw := io.Pipe()
-	go func() {
-		gw := gzip.NewWriter(pw)
-		_, copyErr := io.Copy(gw, binary)
-		closeErr := gw.Close()
-		if copyErr != nil {
-			_ = pw.CloseWithError(copyErr)
-		} else {
-			_ = pw.CloseWithError(closeErr)
-		}
-	}()
-
 	destPath := agent.ContainerDevsyHelperLocation
 	script := fmt.Sprintf(
-		`set -e; t=$(mktemp %s.XXXXXX); gzip -d > "$t" && chmod 755 "$t" && mv "$t" %s || { rm -f "$t"; exit 1; }`,
+		`set -e; t=$(mktemp %s.XXXXXX); cat > "$t" && chmod 755 "$t" && mv "$t" %s || { rm -f "$t"; exit 1; }`,
 		destPath,
 		destPath,
 	)
 
-	if err := d.ExecFunc(ctx, script, pr, nil, nil); err != nil {
+	if err := d.ExecFunc(ctx, script, binary, nil, nil); err != nil {
 		return fmt.Errorf("write binary to container: %w", err)
 	}
 

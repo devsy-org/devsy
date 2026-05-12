@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -70,15 +69,11 @@ func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 	require.NoError(t, err)
 
 	destPath := agent.ContainerDevsyHelperLocation
-	assert.Contains(t, capturedCmd, "gzip -d")
+	assert.Contains(t, capturedCmd, "cat >")
 	assert.Contains(t, capturedCmd, destPath)
 	assert.Contains(t, capturedCmd, "chmod 755")
 
-	gr, err := gzip.NewReader(&capturedStdin)
-	require.NoError(t, err)
-	decompressed, err := io.ReadAll(gr)
-	require.NoError(t, err)
-	assert.Equal(t, binaryData, string(decompressed))
+	assert.Equal(t, binaryData, capturedStdin.String())
 }
 
 func TestKubernetesDelivery_DeliverPostStart_BinarySourceError(t *testing.T) {
