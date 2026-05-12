@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -100,13 +101,18 @@ func (d *LocalDockerDelivery) populateVolume(
 	}
 	defer func() { _ = binary.Close() }()
 
-	err = d.populateVolumeWithHelper(ctx, volumeName, binary)
+	data, err := io.ReadAll(binary)
+	if err != nil {
+		return fmt.Errorf("read binary: %w", err)
+	}
+
+	err = d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
 	if err == nil {
 		return nil
 	}
 	log.Debugf("helper container populate failed, trying direct copy: %v", err)
 
-	return d.populateVolumeDirectCopy(ctx, volumeName, binary)
+	return d.populateVolumeDirectCopy(ctx, volumeName, data)
 }
 
 func (d *LocalDockerDelivery) populateVolumeWithHelper(
@@ -141,7 +147,7 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	ctx context.Context,
 	volumeName string,
-	binary io.Reader,
+	data []byte,
 ) error {
 	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
 	if err != nil {
@@ -149,10 +155,6 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	}
 
 	destPath := filepath.Join(mountpoint, binaryName())
-	data, err := io.ReadAll(binary)
-	if err != nil {
-		return fmt.Errorf("read binary: %w", err)
-	}
 
 	if err := os.WriteFile(destPath, data, 0o600); err != nil {
 		return fmt.Errorf("write binary to volume: %w", err)
