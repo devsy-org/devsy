@@ -19,7 +19,7 @@ type FactoryOptions struct {
 	HelperImage     string
 	IsRemoteDocker  bool
 	ContainerID     string
-	ExecFunc        inject.ExecFunc
+	ExecFunc        inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
@@ -105,7 +105,7 @@ func CommandFunc(
 		stdin io.Reader, stdout io.Writer, stderr io.Writer,
 	) error,
 	workspaceID string,
-) inject.ExecFunc {
+) inject.ExecFunc { //nolint:staticcheck // bridges driver command signature to legacy ExecFunc
 	return func(
 		ctx context.Context,
 		command string,

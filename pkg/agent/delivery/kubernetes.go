@@ -12,7 +12,7 @@ import (
 var _ AgentDelivery = (*KubernetesDelivery)(nil)
 
 type KubernetesDelivery struct {
-	ExecFunc inject.ExecFunc
+	ExecFunc inject.ExecFunc //nolint:staticcheck // K8s exec routing requires this type
 }
 
 func (d *KubernetesDelivery) Phase() DeliveryPhase {

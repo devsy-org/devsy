@@ -13,7 +13,7 @@ import (
 // Deprecated: LegacyShellDelivery is deprecated. Platform-native AgentDelivery implementations
 // (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type LegacyShellDelivery struct {
-	ExecFunc    inject.ExecFunc
+	ExecFunc    inject.ExecFunc //nolint:staticcheck // deprecated injection path
 	DownloadURL string
 	Timeout     func() *agent.InjectOptions
 }

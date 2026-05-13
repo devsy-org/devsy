@@ -18,9 +18,9 @@ var _ = ginkgo.Describe(
 			initialDir, err := os.Getwd()
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-			dockerCmd := "docker"
+			dockerCmd := testDockerCommand
 			if _, err := exec.LookPath("podman"); err == nil {
-				if _, dockerErr := exec.LookPath("docker"); dockerErr != nil {
+				if _, dockerErr := exec.LookPath(testDockerCommand); dockerErr != nil {
 					dockerCmd = "podman"
 				}
 			}
