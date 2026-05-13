@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testPodmanCmd     = "podman"
+	testComposeArg    = "compose"
+	testPodmanVersion = "2.32.4"
+)
+
 type HelperTestSuite struct {
 	suite.Suite
 }
@@ -92,13 +98,13 @@ func (s *HelperTestSuite) TestParseVersionPodmanCompose() {
 	}{
 		{
 			name:    "podman compose standard version",
-			version: "2.32.4",
-			want:    "2.32.4",
+			version: testPodmanVersion,
+			want:    testPodmanVersion,
 		},
 		{
 			name:    "podman compose with v prefix",
-			version: "v2.32.4",
-			want:    "2.32.4",
+			version: "v" + testPodmanVersion,
+			want:    testPodmanVersion,
 		},
 		{
 			name:    "podman-compose python variant",
@@ -107,13 +113,14 @@ func (s *HelperTestSuite) TestParseVersionPodmanCompose() {
 		},
 		{
 			name:    "podman compose with trailing newline",
-			version: "2.32.4\n",
-			want:    "2.32.4",
+			version: testPodmanVersion + "\n",
+			want:    testPodmanVersion,
 		},
 		{
-			name:    "podman compose with external provider warning",
-			version: ">>>> Executing external compose provider. Please see podman-compose(1) <<<<\n\n2.32.4\n",
-			want:    "2.32.4",
+			name: "podman compose with external provider warning",
+			version: ">>>> Executing external compose provider." +
+				" Please see podman-compose(1) <<<<\n\n" + testPodmanVersion + "\n",
+			want: testPodmanVersion,
 		},
 	}
 
@@ -132,26 +139,26 @@ func (s *HelperTestSuite) TestParseVersionPodmanCompose() {
 
 func (s *HelperTestSuite) TestComposeHelperPodmanFields() {
 	helper := &ComposeHelper{
-		Command: "podman",
-		Version: "2.32.4",
-		Args:    []string{"compose"},
+		Command: testPodmanCmd,
+		Version: testPodmanVersion,
+		Args:    []string{testComposeArg},
 	}
 
-	s.Equal("podman", helper.Command)
-	s.Equal("2.32.4", helper.Version)
-	s.Equal([]string{"compose"}, helper.Args)
+	s.Equal(testPodmanCmd, helper.Command)
+	s.Equal(testPodmanVersion, helper.Version)
+	s.Equal([]string{testComposeArg}, helper.Args)
 }
 
 func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
 	helper := &ComposeHelper{
-		Command: "podman",
-		Version: "2.32.4",
-		Args:    []string{"compose"},
+		Command: testPodmanCmd,
+		Version: testPodmanVersion,
+		Args:    []string{testComposeArg},
 	}
 
 	cmd := helper.buildCmd(context.TODO(), "--project-name", "test", "up", "-d")
-	s.True(strings.HasSuffix(cmd.Path, "podman"))
-	s.Contains(cmd.Args, "compose")
+	s.True(strings.HasSuffix(cmd.Path, testPodmanCmd))
+	s.Contains(cmd.Args, testComposeArg)
 	s.Contains(cmd.Args, "--project-name")
 	s.Contains(cmd.Args, "test")
 	s.Contains(cmd.Args, "up")

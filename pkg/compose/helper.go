@@ -22,6 +22,8 @@ import (
 const (
 	ProjectLabel = "com.docker.compose.project"
 	ServiceLabel = "com.docker.compose.service"
+	podmanCmd    = "podman"
+	composeArg   = "compose"
 )
 
 func LoadDockerComposeProject(
@@ -127,15 +129,15 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 }
 
 func tryPodmanCompose() (*ComposeHelper, error) {
-	if _, err := exec.LookPath("podman"); err != nil {
+	if _, err := exec.LookPath(podmanCmd); err != nil {
 		return nil, fmt.Errorf("podman not found in PATH")
 	}
 
-	if exec.Command("podman", "compose").Run() != nil {
+	if exec.Command(podmanCmd, composeArg).Run() != nil {
 		return nil, fmt.Errorf("podman compose not available")
 	}
 
-	cmd := exec.Command("podman", "compose", "version", "--short")
+	cmd := exec.Command(podmanCmd, composeArg, "version", "--short")
 	out, stderr, err := runCmdCapture(cmd)
 	if len(stderr) > 0 {
 		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
@@ -158,9 +160,9 @@ func tryPodmanCompose() (*ComposeHelper, error) {
 	}
 
 	return &ComposeHelper{
-		Command: "podman",
+		Command: podmanCmd,
 		Version: parsed.String(),
-		Args:    []string{"compose"},
+		Args:    []string{composeArg},
 	}, nil
 }
 
