@@ -308,6 +308,22 @@ jobs:
             install-kind: true
             requires-secret: false
 
+          - label: up-provider-podman
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            install-podman-linux: true
+            podman-rootless: true
+            requires-secret: false
+
+          - label: up-provider-podman
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            install-podman-linux: true
+            podman-rootless: false
+            requires-secret: false
+
           - label: up-provider-docker
             runner: ubuntu-latest
             free-disk-space: false
@@ -481,6 +497,22 @@ jobs:
           & "$installDir\podman.exe" machine set --rootful
           & "$installDir\podman.exe" machine start
 
+      - name: install and start podman (Linux rootless)
+        if: matrix.install-podman-linux == true && matrix.podman-rootless == true && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        run: |
+          sudo apt-get update && sudo apt-get install -y podman
+          systemctl --user start podman.socket
+          podman info
+          echo "DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock" >> "$GITHUB_ENV"
+
+      - name: install and start podman (Linux rootful)
+        if: matrix.install-podman-linux == true && matrix.podman-rootless == false && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        run: |
+          sudo apt-get update && sudo apt-get install -y podman
+          sudo systemctl start podman.socket
+          podman info
+          echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
+
       - name: setup kind (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: bash
@@ -547,6 +579,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
+              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
             GH_USERNAME="${GH_USERNAME}" \
