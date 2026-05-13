@@ -124,3 +124,101 @@ func TestPopulateVolume_FallbackToDirectCopy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 }
+
+func TestIsPodman(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{"default docker", "", false},
+		{"explicit docker", "docker", false},
+		{"explicit podman", podmanCmd, true},
+		{"full path podman", "/usr/bin/podman", true},
+		{"full path docker", "/usr/bin/docker", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &LocalDockerDelivery{DockerCommand: tt.cmd}
+			assert.Equal(t, tt.want, d.isPodman())
+		})
+	}
+}
+
+func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+
+	destPath := filepath.Join(mountDir, binaryName())
+	binaryContent := []byte("fake-agent-binary-content")
+
+	scriptPath := filepath.Join(tmpDir, "podman")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  unshare) shift; exec \"$@\" ;;\n" +
+		"  volume) echo \"" + mountDir + "\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
+	require.NoError(t, err)
+	assert.Equal(t, binaryContent, data)
+
+	info, err := os.Stat(destPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
+func TestPopulateVolumeDirectCopy_DockerUsesDirectWrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+
+	binaryContent := []byte("fake-agent-binary-content")
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  volume) echo \"" + mountDir + "\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
+	require.NoError(t, err)
+
+	destPath := filepath.Join(mountDir, binaryName())
+	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
+	require.NoError(t, err)
+	assert.Equal(t, binaryContent, data)
+
+	info, err := os.Stat(destPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
+func TestPopulateVolumeViaUnshare_FailureReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	scriptPath := filepath.Join(tmpDir, "podman")
+	script := "#!/bin/sh\necho 'unshare failed: permission denied' >&2; exit 1\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.populateVolumeViaUnshare(context.Background(), "/fake/path/devsy", []byte("data"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "podman unshare write failed")
+}
