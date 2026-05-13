@@ -354,6 +354,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: install gnupg2
+        if: runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        run: sudo apt-get install -y gnupg2
+
       - name: get operating system lowercase
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         id: os
