@@ -1,9 +1,17 @@
 package compose
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	testPodmanCmd     = "podman"
+	testComposeArg    = "compose"
+	testPodmanVersion = "2.32.4"
 )
 
 type HelperTestSuite struct {
@@ -79,4 +87,80 @@ func (s *HelperTestSuite) TestParseVersionWithPodmanWarning() {
 	v, err := parseVersion(cmdOutput)
 	s.NoError(err)
 	s.Equal("5.1.0", v.String())
+}
+
+func (s *HelperTestSuite) TestParseVersionPodmanCompose() {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "podman compose standard version",
+			version: testPodmanVersion,
+			want:    testPodmanVersion,
+		},
+		{
+			name:    "podman compose with v prefix",
+			version: "v" + testPodmanVersion,
+			want:    testPodmanVersion,
+		},
+		{
+			name:    "podman-compose python variant",
+			version: "1.0.6",
+			want:    "1.0.6",
+		},
+		{
+			name:    "podman compose with trailing newline",
+			version: testPodmanVersion + "\n",
+			want:    testPodmanVersion,
+		},
+		{
+			name: "podman compose with external provider warning",
+			version: ">>>> Executing external compose provider." +
+				" Please see podman-compose(1) <<<<\n\n" + testPodmanVersion + "\n",
+			want: testPodmanVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			got, err := parseVersion(tt.version)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+				s.Equal(tt.want, got.String())
+			}
+		})
+	}
+}
+
+func (s *HelperTestSuite) TestComposeHelperPodmanFields() {
+	helper := &ComposeHelper{
+		Command: testPodmanCmd,
+		Version: testPodmanVersion,
+		Args:    []string{testComposeArg},
+	}
+
+	s.Equal(testPodmanCmd, helper.Command)
+	s.Equal(testPodmanVersion, helper.Version)
+	s.Equal([]string{testComposeArg}, helper.Args)
+}
+
+func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
+	helper := &ComposeHelper{
+		Command: testPodmanCmd,
+		Version: testPodmanVersion,
+		Args:    []string{testComposeArg},
+	}
+
+	cmd := helper.buildCmd(context.TODO(), "--project-name", "test", "up", "-d")
+	s.True(strings.HasSuffix(cmd.Path, testPodmanCmd))
+	s.Contains(cmd.Args, testComposeArg)
+	s.Contains(cmd.Args, "--project-name")
+	s.Contains(cmd.Args, "test")
+	s.Contains(cmd.Args, "up")
+	s.Contains(cmd.Args, "-d")
 }
