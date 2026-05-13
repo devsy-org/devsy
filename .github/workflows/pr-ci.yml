@@ -186,7 +186,7 @@ jobs:
           go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
-    name: Test ${{ matrix.label }} on ${{ matrix.runner }}
+    name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
     needs: [can-read-secret, build-cli]
     strategy:
       fail-fast: false
@@ -305,8 +305,16 @@ jobs:
           - label: up-provider-podman
             runner: ubuntu-latest
             free-disk-space: true
-            install-kind: true
+            install-kind: false
             requires-secret: false
+            install-podman: rootless
+
+          - label: up-provider-podman
+            runner: ubuntu-latest
+            free-disk-space: true
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
 
           - label: up-provider-docker
             runner: ubuntu-latest
@@ -513,6 +521,23 @@ jobs:
           image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
           skipClusterLogsExport: true
 
+      - name: Install Podman (Linux rootless)
+        if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman info
+
+      - name: Install Podman (Linux rootful)
+        if: matrix.install-podman == 'rootful' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          sudo systemctl enable --now podman.socket
+          timeout 30 bash -c 'until sudo podman info >/dev/null 2>&1; do sleep 1; done'
+          echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
+          sudo podman info
+
       - name: remove docker
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: |
@@ -545,6 +570,7 @@ jobs:
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
