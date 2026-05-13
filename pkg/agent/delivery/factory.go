@@ -33,6 +33,13 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 			DownloadURL: "",
 		}
 
+	case driverType == provider.KubernetesDriver:
+		log.Debugf("using legacy shell delivery for kubernetes driver")
+		return &LegacyShellDelivery{
+			ExecFunc:    opts.ExecFunc,
+			DownloadURL: "",
+		}
+
 	case opts.IsRemoteDocker:
 		log.Debugf("using remote docker delivery (docker cp)")
 		return &RemoteDockerDelivery{
