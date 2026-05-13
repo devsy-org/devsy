@@ -1,0 +1,32 @@
+name: podman
+version: v0.0.1
+icon: https://devsy.sh/assets/podman.svg
+home: https://github.com/devsy-org/devsy
+description: |-
+  Devsy on Podman
+optionGroups:
+  - options:
+      - PODMAN_PATH
+      - PODMAN_HOST
+      - INACTIVITY_TIMEOUT
+    name: "Advanced Options"
+options:
+  INACTIVITY_TIMEOUT:
+    description: "If defined, will automatically stop the container after the inactivity period. Examples: 10m, 1h"
+  PODMAN_PATH:
+    description: The path where to find the podman binary.
+    default: podman
+  PODMAN_HOST:
+    global: true
+    description: The podman host to use.
+agent:
+  containerInactivityTimeout: ${INACTIVITY_TIMEOUT}
+  local: true
+  docker:
+    path: ${PODMAN_PATH}
+    install: false
+    env:
+      DOCKER_HOST: ${PODMAN_HOST}
+exec:
+  command: |-
+    "${DEVSY}" helper sh -c "${COMMAND}"
