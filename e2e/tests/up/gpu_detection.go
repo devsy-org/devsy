@@ -12,7 +12,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"GPU detection graceful fallback",
-	ginkgo.Label("gpu-detection"),
+	ginkgo.Label("up-gpu-detection"),
 	func() {
 		ginkgo.It("should not error under the test environment's container runtime", func() {
 			initialDir, err := os.Getwd()
