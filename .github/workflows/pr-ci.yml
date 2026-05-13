@@ -119,6 +119,72 @@ jobs:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
+  integration-tests-unprivileged:
+    name: Test ${{ matrix.label }} on ${{ matrix.runner }}
+    needs: [build-cli]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: context
+            runner: ubuntu-latest
+
+          - label: readconfiguration
+            runner: ubuntu-latest
+
+          - label: extends
+            runner: ubuntu-latest
+
+          - label: outdated
+            runner: ubuntu-latest
+
+          - label: machine
+            runner: ubuntu-latest
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: get operating system lowercase
+        id: os
+        shell: bash
+        run: |
+          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+
+      - name: download CLI artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: devsy-${{ steps.os.outputs.runner_os }}
+          path: ${{ runner.temp }}/devsy-bin/
+          merge-multiple: true
+
+      - name: setup executable
+        shell: bash
+        working-directory: ./e2e
+        run: |
+          TEMP_DIR="${{ runner.temp }}"
+          ls -R "$TEMP_DIR/devsy-bin/"
+          mkdir -p ./bin/
+          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
+          find ./bin -name "devsy-*" -exec chmod +x {} \;
+          ls -R ./bin/
+
+      - name: run test
+        shell: bash
+        working-directory: ./e2e
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GH_ACCESS_TOKEN: ${{ github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
+        run: |
+          go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+
   integration-tests:
     name: Test ${{ matrix.label }} on ${{ matrix.runner }}
     needs: [can-read-secret, build-cli]
@@ -126,31 +192,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: context
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
           - label: ide
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
             requires-secret: false
 
-          - label: integration
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: machine
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
           - label: machineprovider
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: integration
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -186,25 +240,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: readconfiguration
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: extends
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
           - label: extends-up
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: outdated
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
