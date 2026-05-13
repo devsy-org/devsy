@@ -183,16 +183,8 @@ func (d *LocalDockerDelivery) populateVolumeUnshare(
 
 	destPath := filepath.Join(mountpoint, binaryName())
 
-	script := fmt.Sprintf(
-		"cat > %s && chmod 755 %s",
-		destPath, destPath,
-	)
-	// #nosec G204 -- args are constructed internally, not from user input
-	cmd := exec.CommandContext(ctx, d.dockerCommand(), "unshare", "sh", "-c", script)
+	cmd := d.cmd(ctx, "unshare", "sh", "-c", `cat > "$1" && chmod 755 "$1"`, "--", destPath)
 	cmd.Stdin = bytes.NewReader(data)
-	if d.Environment != nil {
-		cmd.Env = append(os.Environ(), d.Environment...)
-	}
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
