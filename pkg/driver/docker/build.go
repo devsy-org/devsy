@@ -272,6 +272,12 @@ type buildOrchestrator struct {
 }
 
 func (o *buildOrchestrator) selectStrategy(options provider.BuildOptions) buildStrategy {
+	// Podman doesn't support the Docker BuildKit session API, so force CLI build.
+	if o.driver.Docker.IsPodman() {
+		log.Debugf("podman detected, forcing docker buildx strategy")
+		return &dockerBuildxStrategy{driver: o.driver}
+	}
+
 	builder := o.driver.Docker.Builder
 
 	// Select docker buildx if configured and not forcing internal buildkit
