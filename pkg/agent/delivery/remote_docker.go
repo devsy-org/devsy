@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -39,6 +40,10 @@ func (d *RemoteDockerDelivery) DeliverPostStart(ctx context.Context, opts PostSt
 	}
 
 	destPath := agent.ContainerDevsyHelperLocation
+
+	if err := d.ensureDir(ctx, destPath); err != nil {
+		return fmt.Errorf("ensure target directory: %w", err)
+	}
 
 	if err := d.copyBinaryFromSource(ctx, opts.BinarySource, opts.Arch, destPath); err != nil {
 		return fmt.Errorf("copy binary to container: %w", err)
@@ -92,6 +97,15 @@ func (d *RemoteDockerDelivery) copyBinaryFromSource(
 
 func (d *RemoteDockerDelivery) chmodBinary(ctx context.Context, destPath string) error {
 	out, err := d.cmd(ctx, "exec", d.ContainerID, "chmod", "755", destPath).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", string(out), err)
+	}
+	return nil
+}
+
+func (d *RemoteDockerDelivery) ensureDir(ctx context.Context, filePath string) error {
+	dir := path.Dir(filePath)
+	out, err := d.cmd(ctx, "exec", d.ContainerID, "mkdir", "-p", dir).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
