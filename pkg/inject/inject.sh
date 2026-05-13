@@ -1,4 +1,6 @@
 #!/bin/sh
+# Deprecated: inject.sh is deprecated. Platform-native AgentDelivery implementations
+# (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 set -e
 
 INSTALL_DIR="{{ .InstallDir }}"

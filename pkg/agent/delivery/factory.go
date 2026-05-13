@@ -28,6 +28,9 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 	switch {
 	case driverType == provider.CustomDriver:
 		log.Debugf("using legacy shell delivery for custom driver")
+		log.Warnf(
+			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
+		)
 		return &LegacyShellDelivery{
 			ExecFunc:    opts.ExecFunc,
 			DownloadURL: "",
@@ -35,6 +38,9 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 
 	case driverType == provider.KubernetesDriver:
 		log.Debugf("using legacy shell delivery for kubernetes driver")
+		log.Warnf(
+			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
+		)
 		return &LegacyShellDelivery{
 			ExecFunc:    opts.ExecFunc,
 			DownloadURL: "",
@@ -66,6 +72,9 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 
 	default:
 		log.Debugf("using legacy shell delivery for driver: %s", driverType)
+		log.Warnf(
+			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
+		)
 		return &LegacyShellDelivery{
 			ExecFunc:    opts.ExecFunc,
 			DownloadURL: "",
