@@ -56,7 +56,8 @@ type ComposeHelper struct {
 }
 
 // NewComposeHelper creates a new ComposeHelper instance after detecting whether Docker
-// Compose V1 or V2 is installed. It returns an error if neither is found.
+// Compose V2, Podman Compose, or Docker Compose V1 is installed. It returns an error
+// if none are found.
 func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
 	dockerCmd := dockerHelper.DockerCommand
 	if dockerCmd == "" {
@@ -68,12 +69,17 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 		return helper, nil
 	}
 
+	if helper, err := tryPodmanCompose(); err == nil {
+		helper.Docker = dockerHelper
+		return helper, nil
+	}
+
 	if helper, err := tryDockerComposeV1(); err == nil {
 		helper.Docker = dockerHelper
 		return helper, nil
 	}
 
-	return nil, fmt.Errorf("docker compose not installed")
+	return nil, fmt.Errorf("docker compose or podman compose not installed")
 }
 
 // tryDockerComposeV2 checks if Docker Compose V2 is available and returns a ComposeHelper if so.
@@ -118,6 +124,40 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	}
 
 	return helper, nil
+}
+
+func tryPodmanCompose() (*ComposeHelper, error) {
+	if _, err := exec.LookPath("podman"); err != nil {
+		return nil, fmt.Errorf("podman not found in PATH")
+	}
+
+	if exec.Command("podman", "compose").Run() != nil {
+		return nil, fmt.Errorf("podman compose not available")
+	}
+
+	cmd := exec.Command("podman", "compose", "version", "--short")
+	out, stderr, err := runCmdCapture(cmd)
+	if len(stderr) > 0 {
+		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to get podman compose version %s: %w",
+			strings.TrimSpace(string(stderr)),
+			err,
+		)
+	}
+
+	version := strings.TrimSpace(string(out))
+	if _, parseErr := parseVersion(version); parseErr != nil {
+		return nil, fmt.Errorf("failed to parse podman compose version %q: %w", version, parseErr)
+	}
+
+	return &ComposeHelper{
+		Command: "podman",
+		Version: version,
+		Args:    []string{"compose"},
+	}, nil
 }
 
 func tryDockerComposeV1() (*ComposeHelper, error) {

@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -79,4 +80,79 @@ func (s *HelperTestSuite) TestParseVersionWithPodmanWarning() {
 	v, err := parseVersion(cmdOutput)
 	s.NoError(err)
 	s.Equal("5.1.0", v.String())
+}
+
+func (s *HelperTestSuite) TestParseVersionPodmanCompose() {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "podman compose standard version",
+			version: "2.32.4",
+			want:    "2.32.4",
+		},
+		{
+			name:    "podman compose with v prefix",
+			version: "v2.32.4",
+			want:    "2.32.4",
+		},
+		{
+			name:    "podman-compose python variant",
+			version: "1.0.6",
+			want:    "1.0.6",
+		},
+		{
+			name:    "podman compose with trailing newline",
+			version: "2.32.4\n",
+			want:    "2.32.4",
+		},
+		{
+			name:    "podman compose with external provider warning",
+			version: ">>>> Executing external compose provider. Please see podman-compose(1) <<<<\n\n2.32.4\n",
+			want:    "2.32.4",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			got, err := parseVersion(tt.version)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+				s.Equal(tt.want, got.String())
+			}
+		})
+	}
+}
+
+func (s *HelperTestSuite) TestComposeHelperPodmanFields() {
+	helper := &ComposeHelper{
+		Command: "podman",
+		Version: "2.32.4",
+		Args:    []string{"compose"},
+	}
+
+	s.Equal("podman", helper.Command)
+	s.Equal("2.32.4", helper.Version)
+	s.Equal([]string{"compose"}, helper.Args)
+}
+
+func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
+	helper := &ComposeHelper{
+		Command: "podman",
+		Version: "2.32.4",
+		Args:    []string{"compose"},
+	}
+
+	cmd := helper.buildCmd(context.TODO(), "--project-name", "test", "up", "-d")
+	s.Equal("podman", cmd.Path[:len(cmd.Path)]) // binary name ends the path
+	s.Contains(cmd.Args, "compose")
+	s.Contains(cmd.Args, "--project-name")
+	s.Contains(cmd.Args, "test")
+	s.Contains(cmd.Args, "up")
+	s.Contains(cmd.Args, "-d")
 }
