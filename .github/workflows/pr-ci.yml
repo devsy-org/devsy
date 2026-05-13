@@ -186,7 +186,7 @@ jobs:
           go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
-    name: Test ${{ matrix.label }} on ${{ matrix.runner }}
+    name: Test ${{ matrix.label }}${{ matrix.variant && format(' ({0})', matrix.variant) || '' }} on ${{ matrix.runner }}
     needs: [can-read-secret, build-cli]
     strategy:
       fail-fast: false
@@ -309,6 +309,7 @@ jobs:
             requires-secret: false
 
           - label: up-provider-podman
+            variant: rootless
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -317,6 +318,7 @@ jobs:
             requires-secret: false
 
           - label: up-provider-podman
+            variant: rootful
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -502,7 +504,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y podman
           systemctl --user start podman.socket
-          podman info
+          timeout 10 bash -c "until [ -S /run/user/$(id -u)/podman/podman.sock ]; do sleep 0.5; done"
           echo "DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock" >> "$GITHUB_ENV"
 
       - name: install and start podman (Linux rootful)
@@ -510,7 +512,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y podman
           sudo systemctl start podman.socket
-          podman info
+          timeout 10 bash -c 'until [ -S /run/podman/podman.sock ]; do sleep 0.5; done'
           echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
 
       - name: setup kind (Windows)
@@ -579,7 +581,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
-              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+              DOCKER_HOST="${DOCKER_HOST:-}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
             GH_USERNAME="${GH_USERNAME}" \
