@@ -59,12 +59,10 @@ type DockerHelper struct {
 }
 
 func (r *DockerHelper) GPUSupportEnabled() (bool, error) {
-	out, err := r.buildCmd(context.TODO(), "info", "-f", "{{.Runtimes.nvidia}}").Output()
-	if err != nil {
-		return false, command.WrapCommandError(out, err)
+	if r.IsPodman() {
+		return r.podmanGPUAvailable()
 	}
-
-	return strings.Contains(string(out), "nvidia-container-runtime"), nil
+	return r.dockerGPUAvailable()
 }
 
 func (r *DockerHelper) FindDevContainer(
@@ -448,6 +446,26 @@ func (r *DockerHelper) GetContainerLogs(
 	cmd.Stderr = stderr
 
 	return cmd.Run()
+}
+
+func (r *DockerHelper) dockerGPUAvailable() (bool, error) {
+	out, err := r.buildCmd(context.TODO(), "info", "-f", "{{.Runtimes.nvidia}}").Output()
+	if err != nil {
+		log.Debugf("GPU detection: docker runtime query failed, assuming no GPU: %v", err)
+		return false, nil
+	}
+
+	return strings.Contains(string(out), "nvidia-container-runtime"), nil
+}
+
+func (r *DockerHelper) podmanGPUAvailable() (bool, error) {
+	out, err := r.buildCmd(context.TODO(), "info", "-f", "{{.Host.CDIDevices}}").Output()
+	if err != nil {
+		log.Debugf("GPU detection: podman CDI query failed, assuming no GPU: %v", err)
+		return false, nil
+	}
+
+	return strings.Contains(strings.ToLower(string(out)), "nvidia"), nil
 }
 
 func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
