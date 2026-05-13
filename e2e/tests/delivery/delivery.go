@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,10 +31,10 @@ var _ = ginkgo.Describe("agent delivery", ginkgo.Label("delivery"), func() {
 				binaryPath := findTestBinary()
 
 				err := d.DeliverPreStart(ctx, delivery.PreStartOptions{
-					WorkspaceID: workspaceID,
-					RunOptions:  runOpts,
-					BinaryPath:  binaryPath,
-					Arch:        "amd64",
+					WorkspaceID:  workspaceID,
+					RunOptions:   runOpts,
+					BinarySource: binarySourceFromPath(binaryPath),
+					Arch:         "amd64",
 				})
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func() {
@@ -79,9 +80,9 @@ var _ = ginkgo.Describe("agent delivery", ginkgo.Label("delivery"), func() {
 				binaryPath := findTestBinary()
 
 				err = d.DeliverPostStart(ctx, delivery.PostStartOptions{
-					WorkspaceID: "e2e-workspace",
-					BinaryPath:  binaryPath,
-					Arch:        "amd64",
+					WorkspaceID:  "e2e-workspace",
+					BinarySource: binarySourceFromPath(binaryPath),
+					Arch:         "amd64",
 				})
 				framework.ExpectNoError(err)
 
@@ -93,6 +94,13 @@ var _ = ginkgo.Describe("agent delivery", ginkgo.Label("delivery"), func() {
 			})
 	})
 })
+
+func binarySourceFromPath(path string) delivery.BinarySourceFunc {
+	return func(_ context.Context, _ string) (io.ReadCloser, error) {
+		// #nosec G304 -- test helper with controlled paths
+		return os.Open(path)
+	}
+}
 
 func findTestBinary() string {
 	candidates := []string{"/bin/sh", "/bin/busybox"}
