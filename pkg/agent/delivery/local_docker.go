@@ -177,8 +177,7 @@ func (d *LocalDockerDelivery) populateVolumeViaUnshare(
 	destPath string,
 	data []byte,
 ) error {
-	script := fmt.Sprintf("cat > %s && chmod 755 %s", destPath, destPath)
-	cmd := d.cmd(ctx, "unshare", "sh", "-c", script)
+	cmd := d.cmd(ctx, "unshare", "sh", "-c", `cat > "$1" && chmod 755 "$1"`, "--", destPath)
 	cmd.Stdin = bytes.NewReader(data)
 
 	out, err := cmd.CombinedOutput()
