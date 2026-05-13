@@ -148,14 +148,18 @@ func tryPodmanCompose() (*ComposeHelper, error) {
 		)
 	}
 
-	version := strings.TrimSpace(string(out))
-	if _, parseErr := parseVersion(version); parseErr != nil {
-		return nil, fmt.Errorf("failed to parse podman compose version %q: %w", version, parseErr)
+	parsed, parseErr := parseVersion(strings.TrimSpace(string(out)))
+	if parseErr != nil {
+		return nil, fmt.Errorf(
+			"failed to parse podman compose version %q: %w",
+			strings.TrimSpace(string(out)),
+			parseErr,
+		)
 	}
 
 	return &ComposeHelper{
 		Command: "podman",
-		Version: version,
+		Version: parsed.String(),
 		Args:    []string{"compose"},
 	}, nil
 }

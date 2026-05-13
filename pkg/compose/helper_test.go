@@ -2,6 +2,7 @@ package compose
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -149,7 +150,7 @@ func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
 	}
 
 	cmd := helper.buildCmd(context.TODO(), "--project-name", "test", "up", "-d")
-	s.Equal("podman", cmd.Path[:len(cmd.Path)]) // binary name ends the path
+	s.True(strings.HasSuffix(cmd.Path, "podman"))
 	s.Contains(cmd.Args, "compose")
 	s.Contains(cmd.Args, "--project-name")
 	s.Contains(cmd.Args, "test")
