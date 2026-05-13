@@ -186,7 +186,7 @@ jobs:
           go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
-    name: Test ${{ matrix.label }} on ${{ matrix.runner }}
+    name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
     needs: [can-read-secret, build-cli]
     strategy:
       fail-fast: false
@@ -534,7 +534,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y podman
           sudo podman system service --time=0 unix:///run/podman/podman.sock &
-          sleep 2
+          timeout 10 bash -c 'until [ -S /run/podman/podman.sock ]; do sleep 0.5; done'
           echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
           sudo podman info
 
@@ -570,6 +570,7 @@ jobs:
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
               PATH="${PATH}" \
               GOROOT="${GOROOT}" \
               go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
