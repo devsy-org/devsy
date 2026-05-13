@@ -149,6 +149,10 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	volumeName string,
 	data []byte,
 ) error {
+	if d.isRootlessPodman(ctx) {
+		return d.populateVolumeUnshare(ctx, volumeName, data)
+	}
+
 	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
 	if err != nil {
 		return fmt.Errorf("inspect volume mountpoint: %w", err)
@@ -164,6 +168,36 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 		return fmt.Errorf("chmod binary: %w", err)
 	}
 
+	return nil
+}
+
+func (d *LocalDockerDelivery) populateVolumeUnshare(
+	ctx context.Context,
+	volumeName string,
+	data []byte,
+) error {
+	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
+	if err != nil {
+		return fmt.Errorf("inspect volume mountpoint: %w", err)
+	}
+
+	destPath := filepath.Join(mountpoint, binaryName())
+
+	script := fmt.Sprintf(
+		"cat > %s && chmod 755 %s",
+		destPath, destPath,
+	)
+	// #nosec G204 -- args are constructed internally, not from user input
+	cmd := exec.CommandContext(ctx, d.dockerCommand(), "unshare", "sh", "-c", script)
+	cmd.Stdin = bytes.NewReader(data)
+	if d.Environment != nil {
+		cmd.Env = append(os.Environ(), d.Environment...)
+	}
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("podman unshare write: %s: %w", string(out), err)
+	}
 	return nil
 }
 
@@ -189,6 +223,25 @@ func (d *LocalDockerDelivery) removeVolume(ctx context.Context, workspaceID stri
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
 	return nil
+}
+
+func (d *LocalDockerDelivery) isPodman(ctx context.Context) bool {
+	out, err := d.cmd(ctx, "--version").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "podman")
+}
+
+func (d *LocalDockerDelivery) isRootlessPodman(ctx context.Context) bool {
+	if !d.isPodman(ctx) {
+		return false
+	}
+	out, err := d.cmd(ctx, "info", "--format", "{{.Host.Security.Rootless}}").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
 }
 
 func (d *LocalDockerDelivery) cmd(ctx context.Context, args ...string) *exec.Cmd {
