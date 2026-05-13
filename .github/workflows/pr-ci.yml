@@ -129,9 +129,6 @@ jobs:
           - label: context
             runner: ubuntu-latest
 
-          - label: ide
-            runner: ubuntu-latest
-
           - label: readconfiguration
             runner: ubuntu-latest
 
@@ -142,9 +139,6 @@ jobs:
             runner: ubuntu-latest
 
           - label: machine
-            runner: ubuntu-latest
-
-          - label: machineprovider
             runner: ubuntu-latest
 
     runs-on: ${{ matrix.runner }}
@@ -198,6 +192,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - label: ide
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: machineprovider
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: integration
             runner: ubuntu-latest
             free-disk-space: false
