@@ -19,6 +19,7 @@ var _ AgentDelivery = (*LocalDockerDelivery)(nil)
 
 const (
 	defaultDockerCmd   = "docker"
+	podmanCmd          = "podman"
 	volumePrefix       = "devsy-agent-"
 	volumeMountPath    = "/opt/devsy"
 	defaultHelperImage = "busybox:latest"
@@ -156,6 +157,10 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 
 	destPath := filepath.Join(mountpoint, binaryName())
 
+	if d.isPodman() {
+		return d.populateVolumeViaUnshare(ctx, destPath, data)
+	}
+
 	if err := os.WriteFile(destPath, data, 0o600); err != nil {
 		return fmt.Errorf("write binary to volume: %w", err)
 	}
@@ -165,6 +170,26 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	}
 
 	return nil
+}
+
+func (d *LocalDockerDelivery) populateVolumeViaUnshare(
+	ctx context.Context,
+	destPath string,
+	data []byte,
+) error {
+	script := fmt.Sprintf("cat > %s && chmod 755 %s", destPath, destPath)
+	cmd := d.cmd(ctx, "unshare", "sh", "-c", script)
+	cmd.Stdin = bytes.NewReader(data)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("podman unshare write failed: %s: %w", string(out), err)
+	}
+	return nil
+}
+
+func (d *LocalDockerDelivery) isPodman() bool {
+	return filepath.Base(d.dockerCommand()) == podmanCmd
 }
 
 func (d *LocalDockerDelivery) volumeMountpoint(
