@@ -10,6 +10,9 @@ var DockerProvider string
 //go:embed kubernetes/provider.yaml
 var KubernetesProvider string
 
+//go:embed podman/provider.yaml
+var PodmanProvider string
+
 //go:embed pro/provider.yaml
 var ProProvider string
 
@@ -18,6 +21,7 @@ func GetBuiltInProviders() map[string]string {
 	return map[string]string{
 		"docker":     DockerProvider,
 		"kubernetes": KubernetesProvider,
+		"podman":     PodmanProvider,
 		"pro":        ProProvider,
 	}
 }
