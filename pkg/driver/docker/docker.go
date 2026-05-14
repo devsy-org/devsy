@@ -49,13 +49,25 @@ func NewDockerDriver(
 		return nil, err
 	}
 
-	log.Debugf("using docker command: command=%s", dockerCommand)
+	var rt docker.ContainerRuntime
+	if workspaceInfo.Agent.Docker.Runtime != "" {
+		var err error
+		rt, err = docker.RuntimeFromName(workspaceInfo.Agent.Docker.Runtime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid runtime config: %w", err)
+		}
+	} else {
+		rt = docker.DetectRuntime(dockerCommand)
+	}
+
+	log.Debugf("using docker command: command=%s, runtime=%s", dockerCommand, rt.Name())
 	return &dockerDriver{
 		Docker: &docker.DockerHelper{
 			DockerCommand: dockerCommand,
 			Environment:   makeEnvironment(workspaceInfo.Agent.Docker.Env),
 			ContainerID:   workspaceInfo.Workspace.Source.Container,
 			Builder:       builder,
+			Runtime:       rt,
 		},
 		IDLabels:                   workspaceInfo.CLIOptions.IDLabels,
 		UpdateRemoteUserUIDDefault: workspaceInfo.CLIOptions.UpdateRemoteUserUIDDefault,
@@ -482,7 +494,7 @@ func (d *dockerDriver) buildRunArgs(
 		params: params,
 	}
 
-	if !helper.IsNerdctl() {
+	if helper.GetRuntime().SupportsSignalProxy() {
 		b.args = append(b.args, "--sig-proxy=false")
 	}
 
@@ -626,7 +638,7 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 	if options.WorkspaceMount != nil {
 		workspacePath := d.EnsurePath(options.WorkspaceMount)
 		mountPath := workspacePath.String()
-		if helper.IsNerdctl() {
+		if !helper.GetRuntime().SupportsMountConsistency() {
 			mountPath = stripMountConsistency(mountPath)
 		}
 		args = append(args, "--mount", mountPath)
@@ -825,7 +837,7 @@ func (d *dockerDriver) getPodmanArgs(
 	options *driver.RunOptions,
 	parsedConfig *config.DevContainerConfig,
 ) ([]string, error) {
-	if !d.Docker.IsPodman() {
+	if !d.Docker.GetRuntime().NeedsUserNamespaceArgs() {
 		return []string{}, nil
 	}
 

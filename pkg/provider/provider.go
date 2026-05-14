@@ -198,6 +198,10 @@ type ProviderDockerDriverConfig struct {
 	// HelperImage is used by LocalDockerDelivery for volume population.
 	// When empty, defaults to busybox:latest. A direct-copy fallback is used if the helper container approach fails.
 	HelperImage string `json:"helperImage,omitempty"`
+
+	// Runtime identifies the container runtime explicitly (docker, podman, nerdctl).
+	// When empty, the runtime is auto-detected from the binary at Path.
+	Runtime string `json:"runtime,omitempty"`
 }
 
 type ProviderKubernetesDriverConfig struct {
