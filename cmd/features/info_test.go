@@ -57,3 +57,13 @@ func TestInfoCmd_InvalidFeatureReference(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid feature reference")
 }
+
+func TestInfoCmd_HasSubcommands(t *testing.T) {
+	cmd := NewInfoCmd(nil)
+	subcommands := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		subcommands[sub.Name()] = true
+	}
+	assert.True(t, subcommands["manifest"], "info should have 'manifest' subcommand")
+	assert.True(t, subcommands["tags"], "info should have 'tags' subcommand")
+}

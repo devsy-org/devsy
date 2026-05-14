@@ -64,6 +64,9 @@ to display metadata.`,
 		&cmd.ShowDependencies, "show-dependencies", false, "Show declared dependencies",
 	)
 
+	infoCmd.AddCommand(NewInfoManifestCmd(globalFlags))
+	infoCmd.AddCommand(NewInfoTagsCmd(globalFlags))
+
 	return infoCmd
 }
 
