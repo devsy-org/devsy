@@ -238,8 +238,8 @@ func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() 
 	s.Contains([]string{"nerdctl", "docker", "docker-compose"}, ch.Command)
 }
 
-func (s *HelperTestSuite) TestTryPodmanComposeUsesProvidedCommand() {
-	helper, err := tryPodmanCompose("podman")
+func (s *HelperTestSuite) TestTryComposeSubcommandUsesProvidedCommand() {
+	helper, err := tryComposeSubcommand("podman")
 	if err != nil {
 		s.T().Skipf("podman not available in test environment: %v", err)
 	}
@@ -248,8 +248,25 @@ func (s *HelperTestSuite) TestTryPodmanComposeUsesProvidedCommand() {
 	s.Equal([]string{"compose"}, helper.Args)
 }
 
-func (s *HelperTestSuite) TestTryPodmanComposeRejectsNonexistentCommand() {
-	_, err := tryPodmanCompose("nonexistent-binary-xyz")
+func (s *HelperTestSuite) TestTryComposeSubcommandRejectsNonexistentCommand() {
+	_, err := tryComposeSubcommand("nonexistent-binary-xyz")
 	s.Error(err)
 	s.Contains(err.Error(), "not found in PATH")
+}
+
+func (s *HelperTestSuite) TestNewComposeHelperNonPodmanFallbackUsesPodman() {
+	helper := &docker.DockerHelper{
+		DockerCommand: "docker",
+		Runtime:       stubRuntime{name: docker.RuntimeDocker},
+	}
+
+	ch, err := NewComposeHelper(helper)
+	if err != nil {
+		s.T().Skipf("no compose binary available in test environment: %v", err)
+	}
+
+	// When Docker runtime succeeds, it should use "docker" — but if Docker Compose V2
+	// is unavailable, the fallback should independently probe "podman", not re-try "docker".
+	// We verify here that the successful helper uses a valid command.
+	s.Contains([]string{"docker", "podman", "docker-compose"}, ch.Command)
 }

@@ -71,14 +71,14 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 	var detectors []tryFunc
 	if dockerHelper.GetRuntime().Name() == docker.RuntimePodman {
 		detectors = []tryFunc{
-			func() (*ComposeHelper, error) { return tryPodmanCompose(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
 			tryDockerComposeV1,
 		}
 	} else {
 		detectors = []tryFunc{
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
-			func() (*ComposeHelper, error) { return tryPodmanCompose(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
 			tryDockerComposeV1,
 		}
 	}
@@ -137,7 +137,7 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	return helper, nil
 }
 
-func tryPodmanCompose(dockerCmd string) (*ComposeHelper, error) {
+func tryComposeSubcommand(dockerCmd string) (*ComposeHelper, error) {
 	if _, err := exec.LookPath(dockerCmd); err != nil {
 		return nil, fmt.Errorf("%s not found in PATH", dockerCmd)
 	}
