@@ -11,9 +11,9 @@ func TestRuntimeFromName(t *testing.T) {
 		input    string
 		expected RuntimeName
 	}{
-		{"docker", RuntimeDocker},
-		{"podman", RuntimePodman},
-		{"nerdctl", RuntimeNerdctl},
+		{string(RuntimeDocker), RuntimeDocker},
+		{string(RuntimePodman), RuntimePodman},
+		{string(RuntimeNerdctl), RuntimeNerdctl},
 		{"Docker", RuntimeDocker},
 		{"Podman", RuntimePodman},
 		{"NERDCTL", RuntimeNerdctl},
@@ -30,7 +30,7 @@ func TestRuntimeFromName(t *testing.T) {
 }
 
 func TestDockerRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName("docker")
+	rt := RuntimeFromName(string(RuntimeDocker))
 	assert.Equal(t, RuntimeDocker, rt.Name())
 	assert.True(t, rt.SupportsInternalBuildKit())
 	assert.True(t, rt.SupportsSignalProxy())
@@ -39,7 +39,7 @@ func TestDockerRuntimeCapabilities(t *testing.T) {
 }
 
 func TestPodmanRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName("podman")
+	rt := RuntimeFromName(string(RuntimePodman))
 	assert.Equal(t, RuntimePodman, rt.Name())
 	assert.False(t, rt.SupportsInternalBuildKit())
 	assert.True(t, rt.SupportsSignalProxy())
@@ -48,7 +48,7 @@ func TestPodmanRuntimeCapabilities(t *testing.T) {
 }
 
 func TestNerdctlRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName("nerdctl")
+	rt := RuntimeFromName(string(RuntimeNerdctl))
 	assert.Equal(t, RuntimeNerdctl, rt.Name())
 	assert.True(t, rt.SupportsInternalBuildKit())
 	assert.False(t, rt.SupportsSignalProxy())
