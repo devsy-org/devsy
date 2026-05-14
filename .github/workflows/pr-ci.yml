@@ -637,6 +637,7 @@ jobs:
         with:
           workspaces: "./desktop/src-tauri -> target"
           shared-key: "desktop-${{ matrix.runner }}"
+          cache-bin: "false"
 
       - name: get operating system lowercase
         id: os
