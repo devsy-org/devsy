@@ -3,7 +3,7 @@ title: Podman Provider Setup
 sidebar_label: Podman Provider Setup
 ---
 
-## Introduction
+## Purpose
 
 Podman is a first-class provider in Devsy. It runs containers without a background daemon — each container is a direct child of the calling process — which eliminates the single-point-of-failure that a persistent Docker daemon introduces. Podman is OCI-compatible, so existing `devcontainer.json` configurations work without changes.
 
@@ -84,13 +84,19 @@ The Podman provider exposes three options:
 | `PODMAN_HOST` | *(unset)* | Podman host socket or TCP address (sets `DOCKER_HOST` internally). Required on Windows to point Devsy at the WSL socket, e.g. `unix:///run/user/1000/podman/podman.sock`. |
 | `INACTIVITY_TIMEOUT` | *(unset)* | Stops the container after the specified idle period. Accepts duration strings such as `10m` or `1h`. |
 
-Set options interactively after adding the provider:
+Set options after adding the provider using `--option` flags:
 
 ```bash
-devsy provider set-options podman
+devsy provider set-options podman --option PODMAN_PATH=/usr/local/bin/podman
 ```
 
-Or pass them inline at add time:
+To see available options before setting them:
+
+```bash
+devsy provider options podman
+```
+
+Or pass options inline at add time:
 
 ```bash
 devsy provider add podman -o PODMAN_PATH=/usr/local/bin/podman -o INACTIVITY_TIMEOUT=1h
@@ -136,11 +142,10 @@ Devsy builds the workspace image with Buildah (Podman's built-in build tool) and
 devsy ssh my-workspace
 ```
 
-Verify the container runtime inside the workspace:
+A successful `devsy ssh` connection confirms the workspace is running under Podman. To verify the Podman binary inside the workspace:
 
 ```bash
-echo $DEVSY_PROVIDER
-# podman
+podman --version
 ```
 
 ## Troubleshooting Common Issues
