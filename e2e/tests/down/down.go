@@ -29,18 +29,20 @@ var _ = ginkgo.Describe("testing down command", ginkgo.Label("down"), func() {
 		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		name := "vscode-remote-try-python"
+		tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-		err = f.DevsyUp(ctx, "https://github.com/microsoft/vscode-remote-try-python.git")
+		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Verify workspace is running
-		status, err := f.DevsyStatus(ctx, name)
+		status, err := f.DevsyStatus(ctx, tempDir)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.ToUpper(status.State)).To(gomega.Equal("RUNNING"))
 
 		// Get workspace UID for container lookup
-		workspace, err := f.FindWorkspace(ctx, name)
+		workspace, err := f.FindWorkspace(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		containerIDs, err := dockerHelper.FindContainer(ctx, []string{
@@ -50,7 +52,7 @@ var _ = ginkgo.Describe("testing down command", ginkgo.Label("down"), func() {
 		gomega.Expect(containerIDs).NotTo(gomega.BeEmpty(), "container should exist before down")
 
 		// Run devsy down
-		err = f.DevsyDown(ctx, name)
+		err = f.DevsyDown(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Verify container is gone
@@ -61,7 +63,7 @@ var _ = ginkgo.Describe("testing down command", ginkgo.Label("down"), func() {
 		gomega.Expect(containerIDs).To(gomega.BeEmpty(), "container should be deleted after down")
 
 		// Verify workspace no longer appears in list
-		_, err = f.FindWorkspace(ctx, name)
+		_, err = f.FindWorkspace(ctx, tempDir)
 		gomega.Expect(err).To(gomega.HaveOccurred(), "workspace should not be in list after down")
 	}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
@@ -69,27 +71,29 @@ var _ = ginkgo.Describe("testing down command", ginkgo.Label("down"), func() {
 		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		name := "vscode-remote-try-python"
-		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
+		tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
-		err = f.DevsyUp(ctx, "https://github.com/microsoft/vscode-remote-try-python.git")
+		err = f.DevsyUp(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Verify workspace is running
-		status, err := f.DevsyStatus(ctx, name)
+		status, err := f.DevsyStatus(ctx, tempDir)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.ToUpper(status.State)).To(gomega.Equal("RUNNING"))
 
 		// Get workspace UID for container lookup
-		workspace, err := f.FindWorkspace(ctx, name)
+		workspace, err := f.FindWorkspace(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Run devsy stop
-		err = f.DevsyStop(ctx, name)
+		err = f.DevsyStop(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Verify workspace still exists in list (just stopped, not deleted)
-		_, err = f.FindWorkspace(ctx, name)
+		_, err = f.FindWorkspace(ctx, tempDir)
 		framework.ExpectNoError(err)
 
 		// Verify container still exists (stopped but not removed)
