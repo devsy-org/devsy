@@ -350,9 +350,18 @@ func getWorkspace(
 	workspaceFolder, workspaceID string,
 	conf *config.DevContainerConfig,
 ) (string, string) {
-	if conf.WorkspaceMount != "" {
-		mount := config.ParseMount(conf.WorkspaceMount)
-		ws := conf.WorkspaceMount
+	if conf.WorkspaceMount != nil {
+		// Explicit empty string means suppress the workspace mount entirely.
+		if *conf.WorkspaceMount == "" {
+			containerMountFolder := conf.WorkspaceFolder
+			if containerMountFolder == "" {
+				containerMountFolder = "/workspaces/" + workspaceID
+			}
+			return "", containerMountFolder
+		}
+
+		mount := config.ParseMount(*conf.WorkspaceMount)
+		ws := *conf.WorkspaceMount
 		if needsDefaultConsistency() && !mountHasConsistency(ws) {
 			ws += ",consistency='consistent'"
 		}

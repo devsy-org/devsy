@@ -192,8 +192,8 @@ func (r *runner) substitute(
 	if parsedConfig.WorkspaceFolder != "" {
 		substitutionContext.ContainerWorkspaceFolder = parsedConfig.WorkspaceFolder
 	}
-	if parsedConfig.WorkspaceMount != "" {
-		substitutionContext.WorkspaceMount = parsedConfig.WorkspaceMount
+	if parsedConfig.WorkspaceMount != nil {
+		substitutionContext.WorkspaceMount = *parsedConfig.WorkspaceMount
 	}
 
 	if options.WorkspaceMountConsistency != "" {

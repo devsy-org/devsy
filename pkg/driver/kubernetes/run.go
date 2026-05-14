@@ -104,6 +104,11 @@ func (k *KubernetesDriver) runContainer(
 ) (err error) {
 	// get workspace mount
 	mount := options.WorkspaceMount
+	if mount == nil {
+		return fmt.Errorf(
+			"workspace mount is suppressed; cannot run in Kubernetes without a workspace mount",
+		)
+	}
 	if mount.Target == "" {
 		return fmt.Errorf("workspace mount target is empty")
 	}

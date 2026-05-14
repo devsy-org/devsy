@@ -267,7 +267,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesEx
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: "type=bind,source=/src,target=/ws,consistency='consistent'",
+			WorkspaceMount: ptr("type=bind,source=/src,target=/ws,consistency='consistent'"),
 		},
 	}
 	options := provider2.CLIOptions{
