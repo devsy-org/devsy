@@ -17,9 +17,17 @@ const (
 	optionTypeSecret  = "secret"
 )
 
+// SecretPrompter prompts the user for a secret value. Implementations should
+// mask input when running interactively, or handle non-interactive mode
+// (e.g. emit a warning and return an empty string).
+type SecretPrompter interface {
+	PromptSecret(featureID, optionName string) (string, error)
+}
+
 // SecretOptions holds configuration for resolving secret-typed feature options.
 type SecretOptions struct {
 	SecretsFile string
+	Prompter    SecretPrompter
 }
 
 // ResolveSecretOptions resolves secret-typed options for a feature. For each option
@@ -64,6 +72,7 @@ type secretResolver struct {
 	featureID     string
 	featureSafeID string
 	fileData      map[string]map[string]string
+	prompter      SecretPrompter
 }
 
 func newSecretResolver(featureID string, opts *SecretOptions) (*secretResolver, error) {
@@ -71,12 +80,15 @@ func newSecretResolver(featureID string, opts *SecretOptions) (*secretResolver, 
 		featureID:     featureID,
 		featureSafeID: getFeatureSafeID(featureID),
 	}
-	if opts != nil && opts.SecretsFile != "" {
-		var err error
-		r.fileData, err = parseFeatureSecretsFile(opts.SecretsFile)
-		if err != nil {
-			return nil, err
+	if opts != nil {
+		if opts.SecretsFile != "" {
+			var err error
+			r.fileData, err = parseFeatureSecretsFile(opts.SecretsFile)
+			if err != nil {
+				return nil, err
+			}
 		}
+		r.prompter = opts.Prompter
 	}
 	return r, nil
 }
@@ -95,9 +107,23 @@ func (r *secretResolver) resolve(name string, option config.FeatureConfigOption)
 		return string(option.Default), nil
 	}
 
+	if r.prompter != nil {
+		val, err := r.prompter.PromptSecret(r.featureID, name)
+		if err != nil {
+			return "", fmt.Errorf(
+				"feature %q: prompt for secret option %q: %w",
+				r.featureID, name, err,
+			)
+		}
+		if val != "" {
+			return val, nil
+		}
+	}
+
 	return "", fmt.Errorf(
 		"feature %q: secret option %q is required but no value was provided. "+
-			"Set via devcontainer.json options, environment variable %s, or --feature-secrets-file",
+			"Set via devcontainer.json options, environment variable %s, "+
+			"--feature-secrets-file, or run in an interactive terminal to be prompted",
 		r.featureID, name, envVarName,
 	)
 }
