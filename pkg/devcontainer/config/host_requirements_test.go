@@ -10,12 +10,11 @@ import (
 const testWorkspacePath = "/workspace"
 
 type mockHostInfo struct {
-	cpus       int
-	memory     uint64
-	memErr     error
-	storage    uint64
-	storErr    error
-	gpuPresent bool
+	cpus    int
+	memory  uint64
+	memErr  error
+	storage uint64
+	storErr error
 }
 
 func (m mockHostInfo) NumCPU() int {
@@ -28,10 +27,6 @@ func (m mockHostInfo) TotalMemoryBytes() (uint64, error) {
 
 func (m mockHostInfo) AvailableStorageBytes(_ string) (uint64, error) {
 	return m.storage, m.storErr
-}
-
-func (m mockHostInfo) GPUAvailable() bool {
-	return m.gpuPresent
 }
 
 func TestValidateHostRequirements_Nil(t *testing.T) {
@@ -158,29 +153,32 @@ func TestValidateHostRequirements_GPU(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		reqs    *HostRequirements
-		gpu     bool
-		wantErr bool
+		name        string
+		reqs        *HostRequirements
+		wantWarning bool
 	}{
-		{"required available", &HostRequirements{GPU: gpu(gpuTrue)}, true, false},
-		{"required unavailable", &HostRequirements{GPU: gpu(gpuTrue)}, false, true},
-		{"optional unavailable", &HostRequirements{GPU: gpu(gpuOptional)}, false, false},
-		{"false unavailable", &HostRequirements{GPU: gpu(gpuFalse)}, false, false},
+		{"required emits warning", &HostRequirements{GPU: gpu(gpuTrue)}, true},
+		{"optional no warning", &HostRequirements{GPU: gpu(gpuOptional)}, false},
+		{"false no warning", &HostRequirements{GPU: gpu(gpuFalse)}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			host := mockHostInfo{cpus: 4, gpuPresent: tt.gpu}
-			_, err := ValidateHostRequirements(tt.reqs, host, testWorkspacePath)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
+			host := mockHostInfo{cpus: 4}
+			warnings, err := ValidateHostRequirements(tt.reqs, host, testWorkspacePath)
+			if err != nil {
+				t.Errorf("GPU should never hard-fail, got %v", err)
+			}
+			hasGPUWarning := false
+			for _, w := range warnings {
+				if strings.Contains(w, "gpu:") {
+					hasGPUWarning = true
 				}
-				if !errors.Is(err, ErrHostRequirementsNotMet) {
-					t.Errorf("expected ErrHostRequirementsNotMet, got %v", err)
-				}
-			} else if err != nil {
-				t.Errorf("expected no error, got %v", err)
+			}
+			if tt.wantWarning && !hasGPUWarning {
+				t.Error("expected GPU warning, got none")
+			}
+			if !tt.wantWarning && hasGPUWarning {
+				t.Error("unexpected GPU warning")
 			}
 		})
 	}
@@ -190,9 +188,8 @@ func TestValidateHostRequirements_MultipleHardFailures(t *testing.T) {
 	reqs := &HostRequirements{
 		CPUs:   16,
 		Memory: "256gb",
-		GPU:    &GPURequirement{Value: gpuTrue},
 	}
-	host := mockHostInfo{cpus: 4, memory: 8 * 1024 * 1024 * 1024, gpuPresent: false}
+	host := mockHostInfo{cpus: 4, memory: 8 * 1024 * 1024 * 1024}
 	_, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
 	if err == nil {
 		t.Fatal("expected error for multiple failures")

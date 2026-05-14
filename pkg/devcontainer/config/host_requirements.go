@@ -16,7 +16,6 @@ type HostInfo interface {
 	NumCPU() int
 	TotalMemoryBytes() (uint64, error)
 	AvailableStorageBytes(path string) (uint64, error)
-	GPUAvailable() bool
 }
 
 // ErrHostRequirementsNotMet is returned when the host does not satisfy hard
@@ -38,7 +37,7 @@ func ValidateHostRequirements(
 	hardFailures, warnings = appendCPUCheck(hardFailures, warnings, reqs.CPUs, host)
 	hardFailures, warnings = appendMemoryCheck(hardFailures, warnings, reqs.Memory, host)
 	warnings = appendStorageWarning(warnings, reqs.Storage, host, workspacePath)
-	hardFailures = appendGPUCheck(hardFailures, reqs.GPU, host)
+	warnings = appendGPUWarning(warnings, reqs.GPU)
 
 	for _, w := range warnings {
 		log.Warnw("hostRequirements not met", "warning", w)
@@ -93,21 +92,20 @@ func appendMemoryCheck(
 	return failures, warnings
 }
 
-func appendGPUCheck(failures []string, gpu *GPURequirement, host HostInfo) []string {
+func appendGPUWarning(warnings []string, gpu *GPURequirement) []string {
 	if gpu == nil {
-		return failures
+		return warnings
 	}
 	if gpu.Value == gpuOptional || gpu.Value == gpuFalse {
-		return failures
+		return warnings
 	}
 	required, err := strconv.ParseBool(gpu.Value)
 	if err != nil || !required {
-		return failures
+		return warnings
 	}
-	if !host.GPUAvailable() {
-		return append(failures, "gpu: required but not available on host")
-	}
-	return failures
+	return append(warnings,
+		"gpu: required — availability will be verified at container creation",
+	)
 }
 
 func appendStorageWarning(
