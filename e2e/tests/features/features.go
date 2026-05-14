@@ -24,6 +24,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	subCmdManifest = "manifest"
+	subCmdTags     = "tags"
+)
+
 var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 	var initialDir string
 
@@ -316,7 +321,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "manifest", featureRef,
+					"features", "info", subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -340,7 +345,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRef, nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "manifest", featureRef, "--output", "text",
+					"features", "info", subCmdManifest, featureRef, "--output", "text",
 				})
 				framework.ExpectNoError(err)
 
@@ -365,7 +370,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "manifest", featureRef,
+					"features", "info", subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -383,7 +388,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "manifest", "INVALID:///ref",
+					"features", "info", subCmdManifest, "INVALID:///ref",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
@@ -399,7 +404,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				featureRef := regHost + "/test/features/nonexistent:1.0.0"
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "manifest", featureRef,
+					"features", "info", subCmdManifest, featureRef,
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("fetch manifest"))
@@ -421,7 +426,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRepo+":latest", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "tags", featureRepo + ":1.0.0",
+					"features", "info", subCmdTags, featureRepo + ":1.0.0",
 				})
 				framework.ExpectNoError(err)
 
@@ -444,7 +449,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "tags", featureRepo + ":1.0.0",
+					"features", "info", subCmdTags, featureRepo + ":1.0.0",
 					"--output", "json",
 				})
 				framework.ExpectNoError(err)
@@ -467,7 +472,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				regHost := strings.TrimPrefix(srv.URL, "http://")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "tags",
+					"features", "info", subCmdTags,
 					regHost + "/test/features/empty:latest",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
@@ -478,7 +483,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", "tags", "INVALID:///ref",
+					"features", "info", subCmdTags, "INVALID:///ref",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
