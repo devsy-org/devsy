@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const defaultHost = "localhost"
+
 type Address struct {
 	Protocol string
 	Address  string
@@ -42,7 +44,7 @@ func toAddress(host, port string) (Address, error) {
 	_, err := strconv.Atoi(port)
 	if err == nil {
 		if host == "" {
-			host = "localhost"
+			host = defaultHost
 		}
 
 		return Address{

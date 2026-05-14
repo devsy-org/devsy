@@ -4,6 +4,15 @@ import (
 	"testing"
 )
 
+const (
+	protoTCP  = "tcp"
+	protoUnix = "unix"
+
+	addrLocalhost8080 = "localhost:8080"
+	addrLocalhost3000 = "localhost:3000"
+	testUnixSocket    = "/var/run/app.sock"
+)
+
 func TestParsePortSpec_BasicPorts(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -14,24 +23,24 @@ func TestParsePortSpec_BasicPorts(t *testing.T) {
 			name:  "bare port",
 			input: "8080",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "localhost:8080"},
-				Container: Address{Protocol: "tcp", Address: "localhost:8080"},
+				Host:      Address{Protocol: protoTCP, Address: addrLocalhost8080},
+				Container: Address{Protocol: protoTCP, Address: addrLocalhost8080},
 			},
 		},
 		{
 			name:  "host port to container port",
 			input: "8080:3000",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "localhost:8080"},
-				Container: Address{Protocol: "tcp", Address: "localhost:3000"},
+				Host:      Address{Protocol: protoTCP, Address: addrLocalhost8080},
+				Container: Address{Protocol: protoTCP, Address: addrLocalhost3000},
 			},
 		},
 		{
 			name:  "unix socket",
-			input: "/var/run/app.sock",
+			input: testUnixSocket,
 			want: Mapping{
-				Host:      Address{Protocol: "unix", Address: "/var/run/app.sock"},
-				Container: Address{Protocol: "unix", Address: "/var/run/app.sock"},
+				Host:      Address{Protocol: protoUnix, Address: testUnixSocket},
+				Container: Address{Protocol: protoUnix, Address: testUnixSocket},
 			},
 		},
 	}
@@ -59,40 +68,40 @@ func TestParsePortSpec_Hostnames(t *testing.T) {
 			name:  "IP host three-part",
 			input: "127.0.0.1:8080:3000",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "127.0.0.1:8080"},
-				Container: Address{Protocol: "tcp", Address: "localhost:3000"},
+				Host:      Address{Protocol: protoTCP, Address: "127.0.0.1:8080"},
+				Container: Address{Protocol: protoTCP, Address: addrLocalhost3000},
 			},
 		},
 		{
 			name:  "localhost explicit three-part",
 			input: "localhost:8080:3000",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "localhost:8080"},
-				Container: Address{Protocol: "tcp", Address: "localhost:3000"},
+				Host:      Address{Protocol: protoTCP, Address: addrLocalhost8080},
+				Container: Address{Protocol: protoTCP, Address: addrLocalhost3000},
 			},
 		},
 		{
 			name:  "hostname host",
 			input: "database.internal:5432:5432",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "database.internal:5432"},
-				Container: Address{Protocol: "tcp", Address: "localhost:5432"},
+				Host:      Address{Protocol: protoTCP, Address: "database.internal:5432"},
+				Container: Address{Protocol: protoTCP, Address: "localhost:5432"},
 			},
 		},
 		{
 			name:  "container hostname in three-part spec",
 			input: "8080:redis:6379",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "localhost:8080"},
-				Container: Address{Protocol: "tcp", Address: "redis:6379"},
+				Host:      Address{Protocol: protoTCP, Address: addrLocalhost8080},
+				Container: Address{Protocol: protoTCP, Address: "redis:6379"},
 			},
 		},
 		{
 			name:  "four-part full spec with hostnames",
 			input: "myhost:8080:mycontainer:3000",
 			want: Mapping{
-				Host:      Address{Protocol: "tcp", Address: "myhost:8080"},
-				Container: Address{Protocol: "tcp", Address: "mycontainer:3000"},
+				Host:      Address{Protocol: protoTCP, Address: "myhost:8080"},
+				Container: Address{Protocol: protoTCP, Address: "mycontainer:3000"},
 			},
 		},
 	}
@@ -128,18 +137,21 @@ func TestToAddress_TCP(t *testing.T) {
 			"empty host defaults to localhost",
 			"",
 			"8080",
-			Address{Protocol: "tcp", Address: "localhost:8080"},
+			Address{Protocol: protoTCP, Address: addrLocalhost8080},
 		},
-		{"localhost", "localhost", "3000", Address{Protocol: "tcp", Address: "localhost:3000"}},
-		{"IP address", "192.168.1.1", "443", Address{Protocol: "tcp", Address: "192.168.1.1:443"}},
+		{defaultHost, defaultHost, "3000", Address{Protocol: protoTCP, Address: addrLocalhost3000}},
+		{
+			"IP address", "192.168.1.1", "443",
+			Address{Protocol: protoTCP, Address: "192.168.1.1:443"},
+		},
 		{
 			"hostname",
 			"database.internal",
 			"5432",
-			Address{Protocol: "tcp", Address: "database.internal:5432"},
+			Address{Protocol: protoTCP, Address: "database.internal:5432"},
 		},
-		{"short hostname", "db", "5432", Address{Protocol: "tcp", Address: "db:5432"}},
-		{"IPv6 address", "::1", "8080", Address{Protocol: "tcp", Address: "::1:8080"}},
+		{"short hostname", "db", "5432", Address{Protocol: protoTCP, Address: "db:5432"}},
+		{"IPv6 address", "::1", "8080", Address{Protocol: protoTCP, Address: "::1:8080"}},
 	}
 
 	for _, tt := range tests {
@@ -156,18 +168,18 @@ func TestToAddress_TCP(t *testing.T) {
 }
 
 func TestToAddress_Unix(t *testing.T) {
-	got, err := toAddress("", "/var/run/app.sock")
+	got, err := toAddress("", testUnixSocket)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Address{Protocol: "unix", Address: "/var/run/app.sock"}
+	want := Address{Protocol: protoUnix, Address: testUnixSocket}
 	if got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
 
 func TestToAddress_HostWithUnixErrors(t *testing.T) {
-	_, err := toAddress("myhost", "/var/run/app.sock")
+	_, err := toAddress("myhost", testUnixSocket)
 	if err == nil {
 		t.Fatal("expected error for host with unix socket")
 	}
@@ -193,7 +205,7 @@ func TestSplitParts(t *testing.T) {
 		{
 			"three parts localhost middle",
 			"8080:localhost:3000",
-			result{"", "8080", "localhost", "3000"},
+			result{"", "8080", defaultHost, "3000"},
 		},
 		{
 			"four parts",
