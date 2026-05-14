@@ -68,7 +68,7 @@ Register the built-in Podman provider with Devsy:
 devsy provider add podman
 ```
 
-Devsy downloads the provider manifest and registers `podman` as an available provider. Confirm it appears in your provider list:
+Devsy registers `podman` as an available provider. Confirm it appears in your provider list:
 
 ```bash
 devsy provider list
@@ -81,7 +81,7 @@ The Podman provider exposes three options:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `PODMAN_PATH` | `podman` | Path to the `podman` binary. Override when `podman` is not on `PATH` — for example, `/usr/local/bin/podman`. |
-| `PODMAN_HOST` | *(unset)* | Podman host socket or TCP address (sets `DOCKER_HOST` internally). Required on Windows to point Devsy at the WSL socket, e.g. `unix:///run/user/1000/podman/podman.sock`. |
+| `PODMAN_HOST` | *(unset)* | Podman host socket or TCP address (sets `DOCKER_HOST` internally). Required on Windows to point Devsy at the WSL socket, e.g. `unix:///run/user/<UID>/podman/podman.sock` (replace `<UID>` with `id -u`). |
 | `INACTIVITY_TIMEOUT` | *(unset)* | Stops the container after the specified idle period. Accepts duration strings such as `10m` or `1h`. |
 
 Set options after adding the provider using `--option` flags:
@@ -136,7 +136,7 @@ Start a workspace using the Podman provider by passing `--provider podman` to `d
 devsy up --provider podman --id my-workspace https://github.com/my-org/my-repo
 ```
 
-Devsy builds the workspace image with Buildah (Podman's built-in build tool) and starts the container. When the workspace is ready, connect to it:
+Devsy builds the workspace image using `podman build` and starts the container. When the workspace is ready, connect to it:
 
 ```bash
 devsy ssh my-workspace
@@ -168,7 +168,7 @@ ls -la $XDG_RUNTIME_DIR/podman/podman.sock
 If the socket path differs from the default, set `PODMAN_HOST` to the correct path:
 
 ```bash
-devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/1000/podman/podman.sock
+devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
 ### Dockerfile features not supported during image build
