@@ -166,19 +166,11 @@ func TestValidateHostRequirements_GPU(t *testing.T) {
 			host := mockHostInfo{cpus: 4}
 			warnings, err := ValidateHostRequirements(tt.reqs, host, testWorkspacePath)
 			if err != nil {
-				t.Errorf("GPU should never hard-fail, got %v", err)
+				t.Fatalf("GPU should never hard-fail, got %v", err)
 			}
-			hasGPUWarning := false
-			for _, w := range warnings {
-				if strings.Contains(w, "gpu:") {
-					hasGPUWarning = true
-				}
-			}
-			if tt.wantWarning && !hasGPUWarning {
-				t.Error("expected GPU warning, got none")
-			}
-			if !tt.wantWarning && hasGPUWarning {
-				t.Error("unexpected GPU warning")
+			got := strings.Contains(strings.Join(warnings, " "), "gpu:")
+			if got != tt.wantWarning {
+				t.Errorf("gpu warning present=%v, want %v", got, tt.wantWarning)
 			}
 		})
 	}
