@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -163,4 +164,92 @@ func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
 	s.Contains(cmd.Args, "test")
 	s.Contains(cmd.Args, "up")
 	s.Contains(cmd.Args, "-d")
+}
+
+// stubRuntime implements docker.ContainerRuntime for testing detection order.
+type stubRuntime struct {
+	name docker.RuntimeName
+}
+
+func (r stubRuntime) Name() docker.RuntimeName       { return r.name }
+func (r stubRuntime) SupportsInternalBuildKit() bool { return false }
+func (r stubRuntime) SupportsSignalProxy() bool      { return false }
+func (r stubRuntime) SupportsMountConsistency() bool { return false }
+func (r stubRuntime) NeedsUserNamespaceArgs() bool   { return false }
+func (r stubRuntime) GPUAvailable(_ context.Context, _ *docker.DockerHelper) (bool, error) {
+	return false, nil
+}
+
+func (s *HelperTestSuite) TestNewComposeHelperPodmanRuntimeUsesDockerCommand() {
+	helper := &docker.DockerHelper{
+		DockerCommand: "podman",
+		Runtime:       stubRuntime{name: docker.RuntimePodman},
+	}
+
+	ch, err := NewComposeHelper(helper)
+	if err != nil {
+		s.T().Skipf("compose binary not available in test environment: %v", err)
+	}
+
+	s.Equal("podman", ch.Command)
+	s.Equal([]string{"compose"}, ch.Args)
+}
+
+func (s *HelperTestSuite) TestNewComposeHelperDockerRuntimeUsesDockerCommand() {
+	helper := &docker.DockerHelper{
+		DockerCommand: "docker",
+		Runtime:       stubRuntime{name: docker.RuntimeDocker},
+	}
+
+	ch, err := NewComposeHelper(helper)
+	if err != nil {
+		s.T().Skipf("compose binary not available in test environment: %v", err)
+	}
+
+	s.Equal("docker", ch.Command)
+	s.Equal([]string{"compose"}, ch.Args)
+}
+
+func (s *HelperTestSuite) TestNewComposeHelperDefaultDockerCommand() {
+	helper := &docker.DockerHelper{
+		DockerCommand: "",
+		Runtime:       stubRuntime{name: docker.RuntimeDocker},
+	}
+
+	ch, err := NewComposeHelper(helper)
+	if err != nil {
+		s.T().Skipf("compose binary not available in test environment: %v", err)
+	}
+
+	s.Equal("docker", ch.Command)
+}
+
+func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() {
+	helper := &docker.DockerHelper{
+		DockerCommand: "nerdctl",
+		Runtime:       stubRuntime{name: docker.RuntimeNerdctl},
+	}
+
+	ch, err := NewComposeHelper(helper)
+	if err != nil {
+		s.T().Skipf("compose binary not available in test environment: %v", err)
+	}
+
+	s.Contains([]string{"nerdctl", "docker", "docker-compose"}, ch.Command)
+}
+
+func (s *HelperTestSuite) TestTryPodmanComposeUsesProvidedCommand() {
+	helper, err := tryPodmanCompose("podman")
+	if err != nil {
+		s.T().Skipf("podman not available in test environment: %v", err)
+	}
+
+	s.Equal("podman", helper.Command)
+	s.Equal([]string{"compose"}, helper.Args)
+}
+
+func (s *HelperTestSuite) TestTryPodmanComposeRejectsNonexistentCommand() {
+	_, err := tryPodmanCompose("nonexistent-binary-xyz")
+	s.Error(err)
+	s.Contains(err.Error(), "not found in PATH")
 }
