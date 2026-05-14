@@ -10,9 +10,11 @@ import (
 )
 
 const (
-	testPodmanCmd     = "podman"
-	testComposeArg    = "compose"
-	testPodmanVersion = "2.32.4"
+	testPodmanCmd        = "podman"
+	testDockerCmd        = "docker"
+	testDockerComposeCmd = "docker-compose"
+	testComposeArg       = "compose"
+	testPodmanVersion    = "2.32.4"
 )
 
 type HelperTestSuite struct {
@@ -192,12 +194,12 @@ func (s *HelperTestSuite) TestNewComposeHelperPodmanRuntimeUsesDockerCommand() {
 	}
 
 	s.Equal("podman", ch.Command)
-	s.Equal([]string{"compose"}, ch.Args)
+	s.Equal([]string{testComposeArg}, ch.Args)
 }
 
 func (s *HelperTestSuite) TestNewComposeHelperDockerRuntimeUsesDockerCommand() {
 	helper := &docker.DockerHelper{
-		DockerCommand: "docker",
+		DockerCommand: testDockerCmd,
 		Runtime:       stubRuntime{name: docker.RuntimeDocker},
 	}
 
@@ -206,8 +208,8 @@ func (s *HelperTestSuite) TestNewComposeHelperDockerRuntimeUsesDockerCommand() {
 		s.T().Skipf("compose binary not available in test environment: %v", err)
 	}
 
-	s.Equal("docker", ch.Command)
-	s.Equal([]string{"compose"}, ch.Args)
+	s.Equal(testDockerCmd, ch.Command)
+	s.Equal([]string{testComposeArg}, ch.Args)
 }
 
 func (s *HelperTestSuite) TestNewComposeHelperDefaultDockerCommand() {
@@ -221,7 +223,7 @@ func (s *HelperTestSuite) TestNewComposeHelperDefaultDockerCommand() {
 		s.T().Skipf("compose binary not available in test environment: %v", err)
 	}
 
-	s.Equal("docker", ch.Command)
+	s.Equal(testDockerCmd, ch.Command)
 }
 
 func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() {
@@ -235,7 +237,7 @@ func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() 
 		s.T().Skipf("compose binary not available in test environment: %v", err)
 	}
 
-	s.Contains([]string{"nerdctl", "docker", "docker-compose"}, ch.Command)
+	s.Contains([]string{"nerdctl", testDockerCmd, testDockerComposeCmd}, ch.Command)
 }
 
 func (s *HelperTestSuite) TestTryComposeSubcommandUsesProvidedCommand() {
@@ -245,7 +247,7 @@ func (s *HelperTestSuite) TestTryComposeSubcommandUsesProvidedCommand() {
 	}
 
 	s.Equal("podman", helper.Command)
-	s.Equal([]string{"compose"}, helper.Args)
+	s.Equal([]string{testComposeArg}, helper.Args)
 }
 
 func (s *HelperTestSuite) TestTryComposeSubcommandRejectsNonexistentCommand() {
@@ -256,7 +258,7 @@ func (s *HelperTestSuite) TestTryComposeSubcommandRejectsNonexistentCommand() {
 
 func (s *HelperTestSuite) TestNewComposeHelperNonPodmanFallbackUsesPodman() {
 	helper := &docker.DockerHelper{
-		DockerCommand: "docker",
+		DockerCommand: testDockerCmd,
 		Runtime:       stubRuntime{name: docker.RuntimeDocker},
 	}
 
@@ -265,8 +267,8 @@ func (s *HelperTestSuite) TestNewComposeHelperNonPodmanFallbackUsesPodman() {
 		s.T().Skipf("no compose binary available in test environment: %v", err)
 	}
 
-	// When Docker runtime succeeds, it should use "docker" — but if Docker Compose V2
-	// is unavailable, the fallback should independently probe "podman", not re-try "docker".
+	// When Docker runtime succeeds, it should use testDockerCmd — but if Docker Compose V2
+	// is unavailable, the fallback should independently probe "podman", not re-try testDockerCmd.
 	// We verify here that the successful helper uses a valid command.
-	s.Contains([]string{"docker", "podman", "docker-compose"}, ch.Command)
+	s.Contains([]string{testDockerCmd, testPodmanCmd, testDockerComposeCmd}, ch.Command)
 }
