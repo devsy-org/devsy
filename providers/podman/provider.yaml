@@ -25,6 +25,7 @@ agent:
   docker:
     path: ${PODMAN_PATH}
     install: false
+    runtime: podman
     env:
       DOCKER_HOST: ${PODMAN_HOST}
 exec:
