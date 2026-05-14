@@ -32,6 +32,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/tunnel"
 	_ "github.com/devsy-org/devsy/e2e/tests/up"
 	_ "github.com/devsy-org/devsy/e2e/tests/up-features"
+	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
