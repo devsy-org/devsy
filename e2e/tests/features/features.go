@@ -388,7 +388,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, "INVALID:///ref",
+					"features", "info", subCmdManifest, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
@@ -483,7 +483,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdTags, "INVALID:///ref",
+					"features", "info", subCmdTags, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
