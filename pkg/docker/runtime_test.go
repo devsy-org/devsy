@@ -64,7 +64,7 @@ func TestDockerHelperGetRuntimeFallback(t *testing.T) {
 
 func TestDockerHelperGetRuntimeExplicit(t *testing.T) {
 	h := &DockerHelper{
-		DockerCommand: "docker",
+		DockerCommand: string(RuntimeDocker),
 		Runtime:       podmanRuntime{},
 	}
 	rt := h.GetRuntime()
@@ -73,7 +73,7 @@ func TestDockerHelperGetRuntimeExplicit(t *testing.T) {
 
 func TestDockerHelperIsPodmanDelegates(t *testing.T) {
 	h := &DockerHelper{
-		DockerCommand: "docker",
+		DockerCommand: string(RuntimeDocker),
 		Runtime:       podmanRuntime{},
 	}
 	assert.True(t, h.IsPodman())
@@ -82,7 +82,7 @@ func TestDockerHelperIsPodmanDelegates(t *testing.T) {
 
 func TestDockerHelperIsNerdctlDelegates(t *testing.T) {
 	h := &DockerHelper{
-		DockerCommand: "docker",
+		DockerCommand: string(RuntimeDocker),
 		Runtime:       nerdctlRuntime{},
 	}
 	assert.False(t, h.IsPodman())
