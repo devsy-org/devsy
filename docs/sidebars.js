@@ -187,6 +187,10 @@ module.exports = {
           type: "doc",
           id: "tutorials/docker-provider-via-wsl",
         },
+        {
+          type: "doc",
+          id: "tutorials/podman-provider-setup",
+        },
       ],
     },
     {

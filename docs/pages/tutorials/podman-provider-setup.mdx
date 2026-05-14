@@ -1,0 +1,184 @@
+---
+title: Podman Provider Setup
+sidebar_label: Podman Provider Setup
+---
+
+## Purpose
+
+Podman is a first-class provider in Devsy. It runs containers without a background daemon — each container is a direct child of the calling process — which eliminates the single-point-of-failure that a persistent Docker daemon introduces. Podman is OCI-compatible, so existing `devcontainer.json` configurations work without changes.
+
+This tutorial walks through installing Podman on your platform, registering it as a Devsy provider, and starting a workspace.
+
+## Prerequisites
+
+Install Podman for your platform before registering it as a Devsy provider.
+
+### Linux
+
+Install `podman` from your distribution's package manager:
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y podman
+
+# Fedora / RHEL / CentOS
+sudo dnf install -y podman
+
+# Arch Linux
+sudo pacman -S podman
+```
+
+### macOS
+
+Install via Homebrew or download [Podman Desktop](https://podman-desktop.io):
+
+```bash
+brew install podman
+podman machine init
+podman machine start
+```
+
+### Windows
+
+Podman on Windows runs inside WSL2. Install WSL2 first, then install Podman inside your WSL distro.
+
+**Step 1 — Enable WSL2.** Run the following in **PowerShell (as Administrator)** and restart when prompted:
+
+```powershell
+wsl --install
+```
+
+**Step 2 — Install Podman inside WSL.** Open your WSL terminal and run:
+
+```bash
+sudo apt-get update && sudo apt-get install -y podman
+```
+
+**Step 3 — Verify the socket is reachable from Windows.** Note the socket path — you will need it for the `PODMAN_HOST` option:
+
+```bash
+echo $XDG_RUNTIME_DIR/podman/podman.sock
+```
+
+## Adding the Podman Provider
+
+Register the built-in Podman provider with Devsy:
+
+```bash
+devsy provider add podman
+```
+
+Devsy registers `podman` as an available provider. Confirm it appears in your provider list:
+
+```bash
+devsy provider list
+```
+
+## Configuration Options
+
+The Podman provider exposes three options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `PODMAN_PATH` | `podman` | Path to the `podman` binary. Override when `podman` is not on `PATH` — for example, `/usr/local/bin/podman`. |
+| `PODMAN_HOST` | *(unset)* | Podman host socket or TCP address (sets `DOCKER_HOST` internally). Required on Windows to point Devsy at the WSL socket, e.g. `unix:///run/user/<UID>/podman/podman.sock` (replace `<UID>` with `id -u`). |
+| `INACTIVITY_TIMEOUT` | *(unset)* | Stops the container after the specified idle period. Accepts duration strings such as `10m` or `1h`. |
+
+Set options after adding the provider using `--option` flags:
+
+```bash
+devsy provider set-options podman --option PODMAN_PATH=/usr/local/bin/podman
+```
+
+To see available options before setting them:
+
+```bash
+devsy provider options podman
+```
+
+Or pass options inline at add time:
+
+```bash
+devsy provider add podman -o PODMAN_PATH=/usr/local/bin/podman -o INACTIVITY_TIMEOUT=1h
+```
+
+## Rootless vs Rootful Setup
+
+Podman can run in two modes:
+
+| Mode | How it works | When to use |
+|------|-------------|-------------|
+| **Rootless** (default) | Containers run as your user. User namespaces isolate processes from the host. | Recommended for most development workflows. Reduces the blast radius of a compromised container. |
+| **Rootful** | Containers run as root inside a Podman machine. | Required when a container needs to bind-mount paths owned by root, or when certain network configurations (e.g. macvlan) are needed. |
+
+**macOS / Windows — switching machine mode:**
+
+```bash
+# Initialize a new rootful machine (replaces the default rootless one)
+podman machine init --rootful
+
+# Or upgrade an existing machine in-place
+podman machine set --rootful
+podman machine stop && podman machine start
+```
+
+**Linux — rootless is the system default.** To run rootful containers, prefix commands with `sudo` or add your user to the `wheel` / `sudo` group and run `podman system service` as root.
+
+:::info
+After switching to rootful mode on macOS or Windows, update the `PODMAN_HOST` option in Devsy to point to the rootful socket. The rootful socket path is typically `/run/podman/podman.sock` (inside the VM).
+:::
+
+## Creating a Workspace with Podman
+
+Start a workspace using the Podman provider by passing `--provider podman` to `devsy up`:
+
+```bash
+devsy up --provider podman --id my-workspace https://github.com/my-org/my-repo
+```
+
+Devsy builds the workspace image using `podman build` and starts the container. When the workspace is ready, connect to it:
+
+```bash
+devsy ssh my-workspace
+```
+
+A successful `devsy ssh` connection confirms the workspace is running under Podman. To verify the Podman binary inside the workspace:
+
+```bash
+podman --version
+```
+
+## Troubleshooting Common Issues
+
+### Socket not found or permission denied
+
+Devsy cannot reach the Podman socket. Check that the Podman machine is running:
+
+```bash
+podman machine list
+podman machine start   # if the machine is stopped
+```
+
+On Linux, confirm the user socket exists:
+
+```bash
+ls -la $XDG_RUNTIME_DIR/podman/podman.sock
+```
+
+If the socket path differs from the default, set `PODMAN_HOST` to the correct path:
+
+```bash
+devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```
+
+### Dockerfile features not supported during image build
+
+Podman uses Buildah for image builds, not Docker BuildKit. Most Dockerfiles are compatible, but a small number of BuildKit-specific syntax extensions (e.g. `RUN --mount=type=cache` with the `buildkit` frontend) may fail or behave differently. If your workspace image uses BuildKit-only syntax, remove the `# syntax=docker/dockerfile:1` pragma or restructure the affected `RUN` steps.
+
+### `podman compose` vs `docker-compose`
+
+Podman v4+ ships `podman compose` as a built-in subcommand backed by the `podman-compose` Python library. It is compatible with `docker-compose` v2 syntax for most workloads. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, replace those calls with `podman compose` or create a shell alias:
+
+```bash
+alias docker-compose='podman compose'
+```
