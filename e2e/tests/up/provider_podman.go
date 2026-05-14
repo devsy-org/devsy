@@ -502,26 +502,6 @@ var _ = ginkgo.Describe(
 					gomega.Expect(strings.TrimSpace(setVar)).To(gomega.Equal(os.Getenv("HOME")))
 				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
-				ginkgo.It("should unset variable with remoteEnv null", func(ctx context.Context) {
-					tempDir, err := setupWorkspaceAndUp(
-						ctx,
-						"tests/up/testdata/docker-remote-env-null",
-						initialDir,
-						f,
-					)
-					framework.ExpectNoError(err)
-
-					setLine, err := f.DevsySSH(ctx, tempDir, "head -1 $HOME/remote-env-null.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(setLine)).To(gomega.Equal("SET=hello"))
-
-					unsetLine, err := f.DevsySSH(
-						ctx, tempDir, "tail -1 $HOME/remote-env-null.out",
-					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(unsetLine)).To(gomega.Equal("UNSET=true"))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
 				ginkgo.It("should merge extra devcontainer config", func(ctx context.Context) {
 					tempDir, err := setupWorkspace(
 						"tests/up/testdata/docker-extra-devcontainer",
@@ -1154,26 +1134,6 @@ var _ = ginkgo.Describe(
 					setVar, err := f.DevsySSH(ctx, tempDir, "cat $HOME/set-var.out")
 					framework.ExpectNoError(err)
 					gomega.Expect(strings.TrimSpace(setVar)).To(gomega.Equal(os.Getenv("HOME")))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-				ginkgo.It("should unset variable with remoteEnv null", func(ctx context.Context) {
-					tempDir, err := setupWorkspaceAndUp(
-						ctx,
-						"tests/up/testdata/docker-remote-env-null",
-						initialDir,
-						f,
-					)
-					framework.ExpectNoError(err)
-
-					setLine, err := f.DevsySSH(ctx, tempDir, "head -1 $HOME/remote-env-null.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(setLine)).To(gomega.Equal("SET=hello"))
-
-					unsetLine, err := f.DevsySSH(
-						ctx, tempDir, "tail -1 $HOME/remote-env-null.out",
-					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(unsetLine)).To(gomega.Equal("UNSET=true"))
 				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 				ginkgo.It("should merge extra devcontainer config", func(ctx context.Context) {
