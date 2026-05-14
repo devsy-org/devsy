@@ -134,12 +134,20 @@ func TestUpCmd_SkipPostAttachFlag(t *testing.T) {
 	assert.Equal(t, "false", flag.DefValue)
 }
 
+func TestUpCmd_SkipHostRequirementsFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup("skip-host-requirements")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
 func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{
 		"--skip-post-create",
 		"--skip-post-start",
 		"--skip-post-attach",
+		"--skip-host-requirements",
 	})
 	require.NoError(t, err)
 
@@ -152,6 +160,10 @@ func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
 	assert.True(t, val)
 
 	val, err = upCmd.Flags().GetBool("skip-post-attach")
+	require.NoError(t, err)
+	assert.True(t, val)
+
+	val, err = upCmd.Flags().GetBool("skip-host-requirements")
 	require.NoError(t, err)
 	assert.True(t, val)
 }

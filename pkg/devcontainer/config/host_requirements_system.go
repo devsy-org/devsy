@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -31,6 +32,13 @@ func (s SystemHostInfo) AvailableStorageBytes(path string) (uint64, error) {
 		return 0, fmt.Errorf("statfs %q: %w", path, err)
 	}
 	return bytes, nil
+}
+
+func (s SystemHostInfo) GPUAvailable() bool {
+	if err := exec.Command("nvidia-smi").Run(); err == nil {
+		return true
+	}
+	return false
 }
 
 func readMemTotalFromProc() (uint64, error) {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -15,61 +16,98 @@ type HostInfo interface {
 	NumCPU() int
 	TotalMemoryBytes() (uint64, error)
 	AvailableStorageBytes(path string) (uint64, error)
+	GPUAvailable() bool
 }
 
+// ErrHostRequirementsNotMet is returned when the host does not satisfy hard
+// requirements (CPU count, memory, or GPU) declared in devcontainer.json.
+var ErrHostRequirementsNotMet = errors.New("host does not meet minimum requirements")
+
 // ValidateHostRequirements checks whether the host satisfies the resource
-// requirements declared in devcontainer.json. Returns warning strings for
-// each unmet requirement; an empty slice means all requirements are met.
+// requirements declared in devcontainer.json. Hard failures (insufficient CPUs,
+// memory, or required GPU unavailable) are collected into a non-nil error.
+// Soft issues (detection errors, insufficient storage) are returned as warnings.
 func ValidateHostRequirements(
 	reqs *HostRequirements, host HostInfo, workspacePath string,
-) []string {
+) (warnings []string, err error) {
 	if reqs == nil {
-		return nil
+		return nil, nil
 	}
 
-	var warnings []string
-	warnings = appendCPUWarning(warnings, reqs.CPUs, host)
-	warnings = appendMemoryWarning(warnings, reqs.Memory, host)
+	var hardFailures []string
+	hardFailures, warnings = appendCPUCheck(hardFailures, warnings, reqs.CPUs, host)
+	hardFailures, warnings = appendMemoryCheck(hardFailures, warnings, reqs.Memory, host)
 	warnings = appendStorageWarning(warnings, reqs.Storage, host, workspacePath)
+	hardFailures = appendGPUCheck(hardFailures, reqs.GPU, host)
 
 	for _, w := range warnings {
 		log.Warnw("hostRequirements not met", "warning", w)
 	}
-	return warnings
+	for _, f := range hardFailures {
+		log.Warnw("hostRequirements not met", "error", f)
+	}
+
+	if len(hardFailures) > 0 {
+		return warnings, fmt.Errorf(
+			"%w: %s", ErrHostRequirementsNotMet, strings.Join(hardFailures, "; "),
+		)
+	}
+	return warnings, nil
 }
 
-func appendCPUWarning(warnings []string, required int, host HostInfo) []string {
+func appendCPUCheck(failures, warnings []string, required int, host HostInfo) ([]string, []string) {
 	if required <= 0 {
-		return warnings
+		return failures, warnings
 	}
 	available := host.NumCPU()
 	if available < required {
-		return append(warnings, fmt.Sprintf(
+		failures = append(failures, fmt.Sprintf(
 			"cpus: required %d, available %d", required, available,
 		))
 	}
-	return warnings
+	return failures, warnings
 }
 
-func appendMemoryWarning(warnings []string, required string, host HostInfo) []string {
+func appendMemoryCheck(
+	failures, warnings []string, required string, host HostInfo,
+) ([]string, []string) {
 	if required == "" {
-		return warnings
+		return failures, warnings
 	}
 	reqBytes, err := ParseSizeToBytes(required)
 	if err != nil {
-		return append(warnings, fmt.Sprintf("memory: invalid value %q: %v", required, err))
+		warnings = append(warnings, fmt.Sprintf("memory: invalid value %q: %v", required, err))
+		return failures, warnings
 	}
 	available, err := host.TotalMemoryBytes()
 	if err != nil {
-		return append(warnings, fmt.Sprintf("memory: unable to detect: %v", err))
+		warnings = append(warnings, fmt.Sprintf("memory: unable to detect: %v", err))
+		return failures, warnings
 	}
 	if available < reqBytes {
-		return append(warnings, fmt.Sprintf(
+		failures = append(failures, fmt.Sprintf(
 			"memory: required %s (%d bytes), available %d bytes",
 			required, reqBytes, available,
 		))
 	}
-	return warnings
+	return failures, warnings
+}
+
+func appendGPUCheck(failures []string, gpu *GPURequirement, host HostInfo) []string {
+	if gpu == nil {
+		return failures
+	}
+	if gpu.Value == gpuOptional || gpu.Value == gpuFalse {
+		return failures
+	}
+	required, err := strconv.ParseBool(gpu.Value)
+	if err != nil || !required {
+		return failures
+	}
+	if !host.GPUAvailable() {
+		return append(failures, "gpu: required but not available on host")
+	}
+	return failures
 }
 
 func appendStorageWarning(

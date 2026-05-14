@@ -309,12 +309,17 @@ func (r *runner) runDockerCompose(
 	composeAlias := project.Name
 	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = &composeAlias
 
-	// validate host requirements (advisory only — warnings never block creation)
-	hostWarnings := config.ValidateHostRequirements(
+	hostWarnings, hostErr := config.ValidateHostRequirements(
 		parsedConfig.Config.HostRequirements,
 		config.SystemHostInfo{},
 		substitutionContext.LocalWorkspaceFolder,
 	)
+	if hostErr != nil {
+		if !options.SkipHostRequirements {
+			return nil, hostErr
+		}
+		hostWarnings = append(hostWarnings, hostErr.Error())
+	}
 
 	return r.setupContainer(ctx, &setupContainerParams{
 		rawConfig:           parsedConfig.Raw,
