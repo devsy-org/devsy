@@ -10,10 +10,12 @@ import (
 
 // TerminalSecretPrompter prompts for secrets interactively when stdin is a
 // terminal, and emits a warning in non-interactive mode.
-type TerminalSecretPrompter struct{}
+type TerminalSecretPrompter struct {
+	IsTerminal func() bool
+}
 
 func (p *TerminalSecretPrompter) PromptSecret(featureID, optionName string) (string, error) {
-	if !terminal.IsTerminalIn {
+	if !p.isTerminal() {
 		log.Warnf(
 			"Feature %q: secret option %q has no value "+
 				"and stdin is not a terminal; skipping prompt",
@@ -36,4 +38,11 @@ func (p *TerminalSecretPrompter) PromptSecret(featureID, optionName string) (str
 	}
 
 	return answer, nil
+}
+
+func (p *TerminalSecretPrompter) isTerminal() bool {
+	if p.IsTerminal != nil {
+		return p.IsTerminal()
+	}
+	return terminal.IsTerminalIn
 }

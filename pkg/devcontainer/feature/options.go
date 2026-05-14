@@ -122,7 +122,8 @@ func (r *secretResolver) resolve(name string, option config.FeatureConfigOption)
 
 	return "", fmt.Errorf(
 		"feature %q: secret option %q is required but no value was provided. "+
-			"Set via devcontainer.json options, environment variable %s, or --feature-secrets-file",
+			"Set via devcontainer.json options, environment variable %s, "+
+			"--feature-secrets-file, or run in an interactive terminal to be prompted",
 		r.featureID, name, envVarName,
 	)
 }
