@@ -22,8 +22,6 @@ import (
 const (
 	ProjectLabel = "com.docker.compose.project"
 	ServiceLabel = "com.docker.compose.service"
-	podmanCmd    = "podman"
-	composeArg   = "compose"
 )
 
 func LoadDockerComposeProject(
@@ -58,27 +56,38 @@ type ComposeHelper struct {
 }
 
 // NewComposeHelper creates a new ComposeHelper instance after detecting whether Docker
-// Compose V2, Podman Compose, or Docker Compose V1 is installed. It returns an error
-// if none are found.
+// Compose V2, Podman Compose, or Docker Compose V1 is installed. The detection order
+// depends on the container runtime: Podman runtimes try podman compose first, while
+// Docker/nerdctl runtimes try docker compose V2 first. It returns an error if none
+// are found.
 func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
 	dockerCmd := dockerHelper.DockerCommand
 	if dockerCmd == "" {
 		dockerCmd = "docker"
 	}
 
-	if helper, err := tryDockerComposeV2(dockerCmd); err == nil {
-		helper.Docker = dockerHelper
-		return helper, nil
+	type tryFunc func() (*ComposeHelper, error)
+
+	var detectors []tryFunc
+	if dockerHelper.GetRuntime().Name() == docker.RuntimePodman {
+		detectors = []tryFunc{
+			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
+			tryDockerComposeV1,
+		}
+	} else {
+		detectors = []tryFunc{
+			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
+			tryDockerComposeV1,
+		}
 	}
 
-	if helper, err := tryPodmanCompose(); err == nil {
-		helper.Docker = dockerHelper
-		return helper, nil
-	}
-
-	if helper, err := tryDockerComposeV1(); err == nil {
-		helper.Docker = dockerHelper
-		return helper, nil
+	for _, detect := range detectors {
+		if helper, err := detect(); err == nil {
+			helper.Docker = dockerHelper
+			return helper, nil
+		}
 	}
 
 	return nil, fmt.Errorf("docker compose or podman compose not installed")
@@ -128,23 +137,24 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	return helper, nil
 }
 
-func tryPodmanCompose() (*ComposeHelper, error) {
-	if _, err := exec.LookPath(podmanCmd); err != nil {
-		return nil, fmt.Errorf("podman not found in PATH")
+func tryComposeSubcommand(dockerCmd string) (*ComposeHelper, error) {
+	if _, err := exec.LookPath(dockerCmd); err != nil {
+		return nil, fmt.Errorf("%s not found in PATH", dockerCmd)
 	}
 
-	if exec.Command(podmanCmd, composeArg).Run() != nil {
-		return nil, fmt.Errorf("podman compose not available")
+	if exec.Command(dockerCmd, "compose").Run() != nil {
+		return nil, fmt.Errorf("%s compose not available", dockerCmd)
 	}
 
-	cmd := exec.Command(podmanCmd, composeArg, "version", "--short")
+	cmd := exec.Command(dockerCmd, "compose", "version", "--short")
 	out, stderr, err := runCmdCapture(cmd)
 	if len(stderr) > 0 {
 		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
 	}
 	if err != nil {
 		return nil, fmt.Errorf(
-			"failed to get podman compose version %s: %w",
+			"failed to get %s compose version %s: %w",
+			dockerCmd,
 			strings.TrimSpace(string(stderr)),
 			err,
 		)
@@ -153,16 +163,17 @@ func tryPodmanCompose() (*ComposeHelper, error) {
 	parsed, parseErr := parseVersion(strings.TrimSpace(string(out)))
 	if parseErr != nil {
 		return nil, fmt.Errorf(
-			"failed to parse podman compose version %q: %w",
+			"failed to parse %s compose version %q: %w",
+			dockerCmd,
 			strings.TrimSpace(string(out)),
 			parseErr,
 		)
 	}
 
 	return &ComposeHelper{
-		Command: podmanCmd,
+		Command: dockerCmd,
 		Version: parsed.String(),
-		Args:    []string{composeArg},
+		Args:    []string{"compose"},
 	}, nil
 }
 
