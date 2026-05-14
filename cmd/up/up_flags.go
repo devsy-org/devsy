@@ -115,6 +115,9 @@ func (cmd *UpCmd) registerLifecycleFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false,
 			"Skip running postAttachCommand")
+	upCmd.Flags().
+		BoolVar(&cmd.SkipHostRequirements, "skip-host-requirements", false,
+			"Skip host requirements validation and allow container creation even if the host does not meet minimum requirements")
 }
 
 func (cmd *UpCmd) registerContainerOverrideFlags(upCmd *cobra.Command) {

@@ -224,11 +224,17 @@ func (r *runner) resolveNewContainer(
 	ctx context.Context,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
-	hostWarnings := config.ValidateHostRequirements(
+	hostWarnings, hostErr := config.ValidateHostRequirements(
 		p.parsedConfig.Config.HostRequirements,
 		config.SystemHostInfo{},
 		p.substitutionContext.LocalWorkspaceFolder,
 	)
+	if hostErr != nil {
+		if !p.options.SkipHostRequirements {
+			return nil, hostErr
+		}
+		hostWarnings = append(hostWarnings, hostErr.Error())
+	}
 
 	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
 		CLIOptions: provider2.CLIOptions{

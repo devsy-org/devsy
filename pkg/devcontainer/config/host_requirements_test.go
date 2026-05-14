@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -28,7 +30,10 @@ func (m mockHostInfo) AvailableStorageBytes(_ string) (uint64, error) {
 }
 
 func TestValidateHostRequirements_Nil(t *testing.T) {
-	warnings := ValidateHostRequirements(nil, mockHostInfo{}, "/tmp")
+	warnings, err := ValidateHostRequirements(nil, mockHostInfo{}, "/tmp")
+	if err != nil {
+		t.Errorf("expected no error for nil reqs, got %v", err)
+	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for nil reqs, got %v", warnings)
 	}
@@ -45,7 +50,10 @@ func TestValidateHostRequirements_AllMet(t *testing.T) {
 		memory:  8 * 1024 * 1024 * 1024,
 		storage: 50 * 1024 * 1024 * 1024,
 	}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	warnings, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings, got %v", warnings)
 	}
@@ -54,12 +62,15 @@ func TestValidateHostRequirements_AllMet(t *testing.T) {
 func TestValidateHostRequirements_CPUsInsufficient(t *testing.T) {
 	reqs := &HostRequirements{CPUs: 8}
 	host := mockHostInfo{cpus: 4}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
-	if len(warnings) != 1 {
-		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	warnings, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err == nil {
+		t.Fatal("expected error for insufficient CPUs, got nil")
 	}
-	if warnings[0] != "cpus: required 8, available 4" {
-		t.Errorf("unexpected warning: %s", warnings[0])
+	if !errors.Is(err, ErrHostRequirementsNotMet) {
+		t.Errorf("expected ErrHostRequirementsNotMet, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", warnings)
 	}
 }
 
@@ -69,16 +80,19 @@ func TestValidateHostRequirements_MemoryInsufficient(t *testing.T) {
 		cpus:   8,
 		memory: 8 * 1024 * 1024 * 1024,
 	}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
-	if len(warnings) != 1 {
-		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	_, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err == nil {
+		t.Fatal("expected error for insufficient memory, got nil")
+	}
+	if !errors.Is(err, ErrHostRequirementsNotMet) {
+		t.Errorf("expected ErrHostRequirementsNotMet, got %v", err)
 	}
 	expected := fmt.Sprintf(
 		"memory: required 24gb (%d bytes), available %d bytes",
 		uint64(24)*1024*1024*1024, uint64(8)*1024*1024*1024,
 	)
-	if warnings[0] != expected {
-		t.Errorf("got %q, want %q", warnings[0], expected)
+	if errMsg := err.Error(); !strings.Contains(errMsg, expected) {
+		t.Errorf("error message %q should contain %q", errMsg, expected)
 	}
 }
 
@@ -89,7 +103,10 @@ func TestValidateHostRequirements_StorageInsufficient(t *testing.T) {
 		memory:  32 * 1024 * 1024 * 1024,
 		storage: 20 * 1024 * 1024 * 1024,
 	}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	warnings, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err != nil {
+		t.Errorf("expected no error for storage (soft warning), got %v", err)
+	}
 	if len(warnings) != 1 {
 		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
 	}
@@ -105,7 +122,10 @@ func TestValidateHostRequirements_StorageInsufficient(t *testing.T) {
 func TestValidateHostRequirements_PartialOnlyCPUs(t *testing.T) {
 	reqs := &HostRequirements{CPUs: 2}
 	host := mockHostInfo{cpus: 4, memory: 0, storage: 0}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	warnings, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for partial (cpus met), got %v", warnings)
 	}
@@ -118,9 +138,56 @@ func TestValidateHostRequirements_DetectionErrors(t *testing.T) {
 		memErr:  fmt.Errorf("no /proc/meminfo"),
 		storErr: fmt.Errorf("permission denied"),
 	}
-	warnings := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	warnings, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err != nil {
+		t.Errorf("detection errors should be soft warnings, got error: %v", err)
+	}
 	if len(warnings) != 2 {
 		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateHostRequirements_GPU(t *testing.T) {
+	gpu := func(val string) *GPURequirement {
+		return &GPURequirement{Value: val}
+	}
+
+	tests := []struct {
+		name        string
+		reqs        *HostRequirements
+		wantWarning bool
+	}{
+		{"required emits warning", &HostRequirements{GPU: gpu(gpuTrue)}, true},
+		{"optional no warning", &HostRequirements{GPU: gpu(gpuOptional)}, false},
+		{"false no warning", &HostRequirements{GPU: gpu(gpuFalse)}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host := mockHostInfo{cpus: 4}
+			warnings, err := ValidateHostRequirements(tt.reqs, host, testWorkspacePath)
+			if err != nil {
+				t.Fatalf("GPU should never hard-fail, got %v", err)
+			}
+			got := strings.Contains(strings.Join(warnings, " "), "gpu:")
+			if got != tt.wantWarning {
+				t.Errorf("gpu warning present=%v, want %v", got, tt.wantWarning)
+			}
+		})
+	}
+}
+
+func TestValidateHostRequirements_MultipleHardFailures(t *testing.T) {
+	reqs := &HostRequirements{
+		CPUs:   16,
+		Memory: "256gb",
+	}
+	host := mockHostInfo{cpus: 4, memory: 8 * 1024 * 1024 * 1024}
+	_, err := ValidateHostRequirements(reqs, host, testWorkspacePath)
+	if err == nil {
+		t.Fatal("expected error for multiple failures")
+	}
+	if !errors.Is(err, ErrHostRequirementsNotMet) {
+		t.Errorf("expected ErrHostRequirementsNotMet, got %v", err)
 	}
 }
 

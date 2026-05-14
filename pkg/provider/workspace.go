@@ -250,9 +250,10 @@ type CLIOptions struct {
 	RemoteUser                  string            `json:"remoteUser,omitempty"`
 
 	// skip lifecycle hook options
-	SkipPostCreate bool `json:"skipPostCreate,omitempty"`
-	SkipPostStart  bool `json:"skipPostStart,omitempty"`
-	SkipPostAttach bool `json:"skipPostAttach,omitempty"`
+	SkipPostCreate       bool `json:"skipPostCreate,omitempty"`
+	SkipPostStart        bool `json:"skipPostStart,omitempty"`
+	SkipPostAttach       bool `json:"skipPostAttach,omitempty"`
+	SkipHostRequirements bool `json:"skipHostRequirements,omitempty"`
 
 	// dotfiles options
 	DotfilesRepo       string `json:"dotfilesRepo,omitempty"`
