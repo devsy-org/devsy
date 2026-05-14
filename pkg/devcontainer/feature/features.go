@@ -192,8 +192,14 @@ func pullOCIImage(ref name.Reference) (v1.Image, error) {
 	return img, nil
 }
 
-// PullFeatureToTemp pulls an OCI feature image and extracts it to a temporary folder.
-// Returns the path to the extracted feature folder.
+func FetchOCIManifest(ref name.Reference) (*v1.Manifest, error) {
+	img, err := pullOCIImage(ref)
+	if err != nil {
+		return nil, err
+	}
+	return img.Manifest()
+}
+
 func PullFeatureToTemp(ref name.Reference, id string) (string, error) {
 	featureFolder, err := getFeaturesTempFolder(id)
 	if err != nil {

@@ -24,6 +24,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	subCmdManifest = "manifest"
+	subCmdTags     = "tags"
+)
+
 var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 	var initialDir string
 
@@ -300,6 +305,190 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			gomega.Expect(stdout).To(gomega.ContainSubstring("1.0.0"))
 			gomega.Expect(stdout).To(gomega.ContainSubstring("2.0.0"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.Describe("manifest subcommand", func() {
+			ginkgo.It("returns valid OCI manifest JSON by default", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRef := regHost + "/test/features/go:1.0.0"
+
+				pushFeatureWithAnnotations(featureRef, map[string]string{
+					"org.opencontainers.image.title": "Go",
+				})
+
+				stdout, _, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdManifest, featureRef,
+				})
+				framework.ExpectNoError(err)
+
+				var manifest map[string]any
+				gomega.Expect(json.Unmarshal([]byte(stdout), &manifest)).To(gomega.Succeed())
+				gomega.Expect(manifest).To(gomega.HaveKey("schemaVersion"))
+				gomega.Expect(manifest).To(gomega.HaveKey("mediaType"))
+				gomega.Expect(manifest).To(gomega.HaveKey("config"))
+				gomega.Expect(manifest).To(gomega.HaveKey("layers"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("returns text output with --output=text", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRef := regHost + "/test/features/go:1.0.0"
+
+				pushFeatureWithAnnotations(featureRef, nil)
+
+				stdout, _, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdManifest, featureRef, "--output", "text",
+				})
+				framework.ExpectNoError(err)
+
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Schema Version:"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Media Type:"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Config:"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Layers:"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("includes annotations in manifest JSON", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRef := regHost + "/test/features/go:1.0.0"
+
+				pushFeatureWithAnnotations(featureRef, map[string]string{
+					"org.opencontainers.image.title":   "Go",
+					"org.opencontainers.image.version": "1.0.0",
+				})
+
+				stdout, _, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdManifest, featureRef,
+				})
+				framework.ExpectNoError(err)
+
+				var manifest map[string]any
+				gomega.Expect(json.Unmarshal([]byte(stdout), &manifest)).To(gomega.Succeed())
+				gomega.Expect(manifest).To(gomega.HaveKey("annotations"))
+				annotations, ok := manifest["annotations"].(map[string]any)
+				gomega.Expect(ok).To(gomega.BeTrue())
+				gomega.Expect(annotations).To(gomega.HaveKeyWithValue(
+					"org.opencontainers.image.title", "Go",
+				))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("fails with invalid feature reference", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				_, stderr, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdManifest, "not a valid ref!!!",
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("fails with non-existent feature", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRef := regHost + "/test/features/nonexistent:1.0.0"
+
+				_, stderr, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdManifest, featureRef,
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stderr).To(gomega.ContainSubstring("fetch manifest"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		})
+
+		ginkgo.Describe("tags subcommand", func() {
+			ginkgo.It("lists available tags in text format", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRepo := regHost + "/test/features/go"
+
+				pushFeatureWithAnnotations(featureRepo+":1.0.0", nil)
+				pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
+				pushFeatureWithAnnotations(featureRepo+":latest", nil)
+
+				stdout, _, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdTags, featureRepo + ":1.0.0",
+				})
+				framework.ExpectNoError(err)
+
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Available Tags:"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("1.0.0"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("2.0.0"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("latest"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("outputs JSON when --output=json is specified", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+				featureRepo := regHost + "/test/features/node"
+
+				pushFeatureWithAnnotations(featureRepo+":1.0.0", nil)
+				pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
+
+				stdout, _, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdTags, featureRepo + ":1.0.0",
+					"--output", "json",
+				})
+				framework.ExpectNoError(err)
+
+				var result map[string]any
+				gomega.Expect(json.Unmarshal([]byte(stdout), &result)).To(gomega.Succeed())
+				gomega.Expect(result).To(gomega.HaveKey("tags"))
+				tags, ok := result["tags"].([]any)
+				gomega.Expect(ok).To(gomega.BeTrue())
+				gomega.Expect(tags).To(gomega.ContainElement("1.0.0"))
+				gomega.Expect(tags).To(gomega.ContainElement("2.0.0"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("shows message when no tags are found", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				srv := httptest.NewServer(registry.New())
+				ginkgo.DeferCleanup(func() { srv.Close() })
+
+				regHost := strings.TrimPrefix(srv.URL, "http://")
+
+				_, stderr, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdTags,
+					regHost + "/test/features/empty:latest",
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stderr).To(gomega.ContainSubstring("list tags"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+			ginkgo.It("fails with invalid feature reference", func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+
+				_, stderr, err := f.ExecCommandCapture(ctx, []string{
+					"features", "info", subCmdTags, "not a valid ref!!!",
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
+			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		})
 	})
 })
 
