@@ -185,7 +185,7 @@ func mergeContainerScalars(result, child *DevContainerConfig) {
 	if child.WorkspaceFolder != "" {
 		result.WorkspaceFolder = child.WorkspaceFolder
 	}
-	if child.WorkspaceMount != "" {
+	if child.WorkspaceMount != nil {
 		result.WorkspaceMount = child.WorkspaceMount
 	}
 	if child.ShutdownAction != "" {

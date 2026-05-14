@@ -26,8 +26,11 @@ type DevContainerConfigWithPath struct {
 }
 
 func GetMounts(result *Result) []*Mount {
-	workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
-	mounts := []*Mount{&workspaceMount}
+	var mounts []*Mount
+	if result.SubstitutionContext.WorkspaceMount != "" {
+		workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
+		mounts = append(mounts, &workspaceMount)
+	}
 	for _, m := range result.MergedConfig.Mounts {
 		if m.Type == "bind" {
 			mounts = append(mounts, m)

@@ -428,8 +428,12 @@ func (r *runner) getDockerlessRunOptions(
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
 ) (*driver.RunOptions, error) {
-	// parse workspace mount
-	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
+	// parse workspace mount — nil when suppressed via workspaceMount: ""
+	var workspaceMountPtr *config.Mount
+	if substitutionContext.WorkspaceMount != "" {
+		parsed := config.ParseMount(substitutionContext.WorkspaceMount)
+		workspaceMountPtr = &parsed
+	}
 
 	// add metadata as label here
 	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
@@ -496,7 +500,7 @@ func (r *runner) getDockerlessRunOptions(
 		},
 		Privileged:     mergedConfig.Privileged,
 		Init:           mergedConfig.Init,
-		WorkspaceMount: &workspaceMountParsed,
+		WorkspaceMount: workspaceMountPtr,
 		Mounts:         mounts,
 		Userns:         substitutionContext.Userns,
 		UidMap:         substitutionContext.UidMap,
@@ -509,8 +513,12 @@ func (r *runner) getRunOptions(
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
 ) (*driver.RunOptions, error) {
-	// parse workspace mount
-	workspaceMountParsed := config.ParseMount(substitutionContext.WorkspaceMount)
+	// parse workspace mount — nil when suppressed via workspaceMount: ""
+	var workspaceMountPtr *config.Mount
+	if substitutionContext.WorkspaceMount != "" {
+		parsed := config.ParseMount(substitutionContext.WorkspaceMount)
+		workspaceMountPtr = &parsed
+	}
 
 	// add metadata as label here
 	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
@@ -553,7 +561,7 @@ func (r *runner) getRunOptions(
 		Labels:         labels,
 		Privileged:     mergedConfig.Privileged,
 		Init:           mergedConfig.Init,
-		WorkspaceMount: &workspaceMountParsed,
+		WorkspaceMount: workspaceMountPtr,
 		SecurityOpt:    mergedConfig.SecurityOpt,
 		Mounts:         mergedConfig.Mounts,
 		Userns:         substitutionContext.Userns,

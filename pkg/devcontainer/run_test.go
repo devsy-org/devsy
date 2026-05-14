@@ -131,11 +131,13 @@ func searchString(s, substr string) bool {
 	return false
 }
 
+func strPtr(s string) *string { return &s }
+
 func TestGetWorkspace_CustomWorkspaceMount(t *testing.T) {
 	customMount := "type=bind,source=/host/src,target=/custom-ws"
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: customMount,
+			WorkspaceMount: strPtr(customMount),
 		},
 	}
 
@@ -185,17 +187,30 @@ func TestGetWorkspace_DefaultMountWithWorkspaceFolder(t *testing.T) {
 func TestGetWorkspace_EmptyWorkspaceMount(t *testing.T) {
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: "",
+			WorkspaceMount: strPtr(""),
 		},
 	}
 
 	mount, folder := getWorkspace("/home/user/project", "ws-id", conf)
 
+	if mount != "" {
+		t.Fatalf("expected empty mount string (suppressed), got %q", mount)
+	}
 	if folder != "/workspaces/ws-id" {
 		t.Fatalf("expected default folder, got %q", folder)
 	}
+}
+
+func TestGetWorkspace_NilWorkspaceMount(t *testing.T) {
+	conf := &config.DevContainerConfig{}
+
+	mount, folder := getWorkspace("/home/user/project", "ws-id", conf)
+
 	if !contains(mount, "type=bind") {
-		t.Fatalf("expected default bind mount, got %q", mount)
+		t.Fatalf("expected default bind mount for nil WorkspaceMount, got %q", mount)
+	}
+	if folder != "/workspaces/ws-id" {
+		t.Fatalf("expected default folder, got %q", folder)
 	}
 }
 
@@ -203,7 +218,7 @@ func TestGetWorkspace_UserConsistencyPreserved(t *testing.T) {
 	customMount := "type=bind,source=/src,target=/ws,consistency=delegated"
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: customMount,
+			WorkspaceMount: strPtr(customMount),
 		},
 	}
 

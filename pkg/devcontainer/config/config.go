@@ -219,7 +219,8 @@ type NonComposeBase struct {
 	RunArgs []string `json:"runArgs,omitempty"`
 
 	// The --mount parameter for docker run. The default is to mount the project folder at /workspaces/$project.
-	WorkspaceMount string `json:"workspaceMount,omitempty"`
+	// Per the devcontainer spec, empty string suppresses the default workspace mount.
+	WorkspaceMount *string `json:"workspaceMount,omitempty"`
 }
 
 type DockerfileContainer struct {
