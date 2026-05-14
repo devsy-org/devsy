@@ -65,9 +65,9 @@ append `:Z` to your volume definitions, like so
 There is a [known issue](https://github.com/devsy-org/devsy/issues/1045) where some linux distros use a large PATH to find SSH and causes the connection string to be too long. The workaround is to specify
 the SSH binary explicitly in vscode.
 
-## Podman
+### Podman
 
-### Rootless socket path
+#### Rootless socket path
 
 Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, `PODMAN_HOST` is likely unset. Set it explicitly:
 
@@ -75,13 +75,7 @@ Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If D
 devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
-On macOS and Windows, also verify the Podman machine is running:
-
-```bash
-podman machine start
-```
-
-### `podman compose` vs `docker-compose`
+#### `podman compose` vs `docker-compose`
 
 Podman v4+ ships `podman compose` as a built-in subcommand. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, they will fail. Update references to `podman compose`, or add a shell alias as a stopgap:
 
@@ -91,11 +85,11 @@ alias docker-compose='podman compose'
 
 `devsy up` handles this automatically — Devsy's compose helper detects Podman via the `ContainerRuntime` interface. The alias is only needed for scripts that run inside the workspace itself.
 
-### BuildKit not available
+#### BuildKit not available
 
 Podman uses buildah internally for `podman build`. Dockerfiles with the `# syntax=docker/dockerfile:1` pragma or BuildKit-specific `RUN --mount` syntax will fail. Remove the syntax pragma and restructure affected `RUN` steps to avoid BuildKit mounts. Most standard Dockerfiles build without changes.
 
-### Volume mount permissions in rootless mode
+#### Volume mount permissions in rootless mode
 
 Rootless Podman maps UIDs through user namespaces. Files created inside the container appear owned by `nobody` on the host.
 
@@ -107,8 +101,4 @@ Rootless Podman maps UIDs through user namespaces. Files created inside the cont
 podman unshare chown -R $(id -u):$(id -g) /path/to/volume
 ```
 
-If rootless UID mapping is too restrictive, reinitialize with a rootful machine:
-
-```bash
-podman machine init --rootful
-```
+If rootless UID mapping is too restrictive for your workflow, run the container as root using `sudo podman` instead.
