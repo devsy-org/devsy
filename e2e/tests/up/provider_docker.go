@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -623,6 +624,36 @@ var _ = ginkgo.Describe(
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
+
+		ginkgo.It("CLI --mount flag creates additional mount", func(ctx context.Context) {
+			tempDir, err := dtc.setupAndUp(
+				ctx,
+				"tests/up/testdata/docker",
+				"--mount", "type=volume,source=devsy-e2e-mount-test,target=/cli-mount-test",
+			)
+			framework.ExpectNoError(err)
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1))
+
+			var details []container.InspectResponse
+			err = dtc.dockerHelper.Inspect(ctx, ids, "container", &details)
+			framework.ExpectNoError(err)
+
+			hasCLIMount := false
+			for _, m := range details[0].Mounts {
+				if m.Destination == "/cli-mount-test" {
+					hasCLIMount = true
+					gomega.Expect(m.Type).To(gomega.Equal(mount.TypeVolume))
+					break
+				}
+			}
+			gomega.Expect(hasCLIMount).To(gomega.BeTrue())
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("secrets-file injects env into lifecycle commands", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(

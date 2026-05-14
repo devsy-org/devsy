@@ -8,7 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const probeNone = "none"
+const (
+	probeNone       = "none"
+	flagNameMount   = "mount"
+	flagMount       = "--" + flagNameMount
+	testBindMountAB = "type=bind,source=/a,target=/b"
+)
 
 func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 	tests := []struct {
@@ -186,4 +191,77 @@ func TestUpCmd_RemoteUserFlagParsesValue(t *testing.T) {
 
 	flag := upCmd.Flags().Lookup("remote-user")
 	assert.Equal(t, "vscode", flag.Value.String())
+}
+
+func TestUpCmd_MountFlag(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	flag := upCmd.Flags().Lookup(flagNameMount)
+	require.NotNil(t, flag)
+	assert.Equal(t, "[]", flag.DefValue)
+}
+
+func TestUpCmd_MountFlagParsesValue(t *testing.T) {
+	const bindMount = "type=bind,source=/host/path,target=/container/path"
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	err := upCmd.ParseFlags([]string{flagMount, bindMount})
+	require.NoError(t, err)
+
+	flag := upCmd.Flags().Lookup(flagNameMount)
+	assert.Contains(t, flag.Value.String(), bindMount)
+}
+
+func TestUpCmd_MountFlagRepeatable(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	err := upCmd.ParseFlags([]string{
+		flagMount, testBindMountAB,
+		flagMount, "type=volume,source=myvolume,target=/c",
+	})
+	require.NoError(t, err)
+
+	flag := upCmd.Flags().Lookup(flagNameMount)
+	val := flag.Value.String()
+	assert.Contains(t, val, testBindMountAB)
+	assert.Contains(t, val, "type=volume,source=myvolume,target=/c")
+}
+
+func TestUpCmd_ValidateMounts(t *testing.T) {
+	tests := []struct {
+		name    string
+		mounts  []string
+		wantErr bool
+	}{
+		{name: "empty is valid", mounts: []string{}},
+		{
+			name:    "valid bind mount",
+			mounts:  []string{"type=bind,source=/host,target=/container"},
+			wantErr: false,
+		},
+		{
+			name:    "valid volume mount",
+			mounts:  []string{"type=volume,source=vol,target=/data"},
+			wantErr: false,
+		},
+		{name: "multiple valid", mounts: []string{
+			testBindMountAB,
+			"type=volume,source=v,target=/c",
+		}, wantErr: false},
+		{name: "missing target", mounts: []string{"type=bind,source=/host"}, wantErr: true},
+		{name: "one valid one missing target", mounts: []string{
+			testBindMountAB,
+			"type=bind,source=/c",
+		}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+			cmd.Mounts = tt.mounts
+			err := cmd.validate()
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "invalid --mount")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

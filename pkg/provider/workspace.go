@@ -240,6 +240,7 @@ type CLIOptions struct {
 	IDLabels                    []string          `json:"idLabels,omitempty"`
 	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
 	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
+	Mounts                      []string          `json:"mounts,omitempty"`
 	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
 	ContainerDataFolder         string            `json:"containerDataFolder,omitempty"`
 	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`

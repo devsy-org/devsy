@@ -217,6 +217,10 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.WorkspaceMountConsistency, "workspace-mount-consistency", "",
 			"Consistency mode for the workspace bind mount (consistent, cached, delegated)")
+	upCmd.Flags().
+		StringArrayVar(&cmd.Mounts, "mount", []string{},
+			"Additional mount to add to the container (format: type=bind,source=/host/path,target=/container/path). "+
+				"Can be specified multiple times")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
