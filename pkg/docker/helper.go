@@ -60,7 +60,10 @@ type DockerHelper struct {
 }
 
 func (r *DockerHelper) GPUSupportEnabled() (bool, error) {
-	return r.GetRuntime().GPUAvailable(context.TODO(), r)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return r.GetRuntime().GPUAvailable(ctx, r)
 }
 
 // GetRuntime returns the container runtime for this helper.

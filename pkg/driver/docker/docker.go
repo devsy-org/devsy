@@ -51,7 +51,11 @@ func NewDockerDriver(
 
 	var rt docker.ContainerRuntime
 	if workspaceInfo.Agent.Docker.Runtime != "" {
-		rt = docker.RuntimeFromName(workspaceInfo.Agent.Docker.Runtime)
+		var err error
+		rt, err = docker.RuntimeFromName(workspaceInfo.Agent.Docker.Runtime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid runtime config: %w", err)
+		}
 	} else {
 		rt = docker.DetectRuntime(dockerCommand)
 	}

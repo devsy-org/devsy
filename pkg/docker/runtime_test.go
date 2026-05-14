@@ -4,33 +4,42 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRuntimeFromName(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected RuntimeName
 	}{
-		{string(RuntimeDocker), RuntimeDocker},
-		{string(RuntimePodman), RuntimePodman},
-		{string(RuntimeNerdctl), RuntimeNerdctl},
-		{"Docker", RuntimeDocker},
-		{"Podman", RuntimePodman},
-		{"NERDCTL", RuntimeNerdctl},
-		{"", RuntimeDocker},
-		{"unknown", RuntimeDocker},
+		{"docker", string(RuntimeDocker), RuntimeDocker},
+		{"podman", string(RuntimePodman), RuntimePodman},
+		{"nerdctl", string(RuntimeNerdctl), RuntimeNerdctl},
+		{"Docker-uppercase", "Docker", RuntimeDocker},
+		{"Podman-uppercase", "Podman", RuntimePodman},
+		{"NERDCTL-uppercase", "NERDCTL", RuntimeNerdctl},
+		{"empty", "", RuntimeDocker},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			rt := RuntimeFromName(tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			rt, err := RuntimeFromName(tt.input)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, rt.Name())
 		})
 	}
 }
 
+func TestRuntimeFromNameUnknown(t *testing.T) {
+	_, err := RuntimeFromName("unknown")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown container runtime")
+}
+
 func TestDockerRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName(string(RuntimeDocker))
+	rt, err := RuntimeFromName(string(RuntimeDocker))
+	require.NoError(t, err)
 	assert.Equal(t, RuntimeDocker, rt.Name())
 	assert.True(t, rt.SupportsInternalBuildKit())
 	assert.True(t, rt.SupportsSignalProxy())
@@ -39,7 +48,8 @@ func TestDockerRuntimeCapabilities(t *testing.T) {
 }
 
 func TestPodmanRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName(string(RuntimePodman))
+	rt, err := RuntimeFromName(string(RuntimePodman))
+	require.NoError(t, err)
 	assert.Equal(t, RuntimePodman, rt.Name())
 	assert.False(t, rt.SupportsInternalBuildKit())
 	assert.True(t, rt.SupportsSignalProxy())
@@ -48,7 +58,8 @@ func TestPodmanRuntimeCapabilities(t *testing.T) {
 }
 
 func TestNerdctlRuntimeCapabilities(t *testing.T) {
-	rt := RuntimeFromName(string(RuntimeNerdctl))
+	rt, err := RuntimeFromName(string(RuntimeNerdctl))
+	require.NoError(t, err)
 	assert.Equal(t, RuntimeNerdctl, rt.Name())
 	assert.True(t, rt.SupportsInternalBuildKit())
 	assert.False(t, rt.SupportsSignalProxy())

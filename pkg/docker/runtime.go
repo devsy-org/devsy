@@ -2,9 +2,11 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // RuntimeName identifies a container runtime.
@@ -83,17 +85,22 @@ func DetectRuntime(dockerCommand string) ContainerRuntime {
 }
 
 // RuntimeFromName returns a ContainerRuntime for the given explicit name.
-// Falls back to Docker for unrecognized values.
-func RuntimeFromName(name string) ContainerRuntime {
-	switch RuntimeName(strings.ToLower(name)) {
+// Empty string defaults to Docker. Unknown non-empty names return an error
+// to catch typos in provider configuration.
+func RuntimeFromName(name string) (ContainerRuntime, error) {
+	switch RuntimeName(strings.ToLower(strings.TrimSpace(name))) {
+	case "", RuntimeDocker:
+		return dockerRuntime{}, nil
 	case RuntimePodman:
-		return podmanRuntime{}
+		return podmanRuntime{}, nil
 	case RuntimeNerdctl:
-		return nerdctlRuntime{}
+		return nerdctlRuntime{}, nil
 	default:
-		return dockerRuntime{}
+		return nil, fmt.Errorf("unknown container runtime %q", name)
 	}
 }
+
+const detectTimeout = 5 * time.Second
 
 var runtimeCache = &runtimeDetectionCache{entries: make(map[string]ContainerRuntime)}
 
@@ -104,19 +111,25 @@ type runtimeDetectionCache struct {
 
 func (c *runtimeDetectionCache) get(dockerCommand string) ContainerRuntime {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if rt, ok := c.entries[dockerCommand]; ok {
+		c.mu.Unlock()
 		return rt
 	}
+	c.mu.Unlock()
 
 	rt := detect(dockerCommand)
+
+	c.mu.Lock()
 	c.entries[dockerCommand] = rt
+	c.mu.Unlock()
 	return rt
 }
 
 func detect(dockerCommand string) ContainerRuntime {
-	out, err := exec.Command(dockerCommand, "--version").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), detectTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, dockerCommand, "--version").Output()
 	if err != nil {
 		return dockerRuntime{}
 	}
