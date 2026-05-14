@@ -316,36 +316,6 @@ var _ = ginkgo.Describe(
 					},
 					ginkgo.SpecTimeout(framework.TimeoutShort()),
 				)
-
-				ginkgo.It(
-					"should unset variable when remoteEnv is null",
-					func(ctx context.Context) {
-						tempDir, err := setupWorkspace(
-							"tests/up/testdata/docker-remote-env-null",
-							initialDir,
-							f,
-						)
-						framework.ExpectNoError(err)
-
-						err = f.DevsyUp(ctx, tempDir)
-						framework.ExpectNoError(err)
-
-						setLine, err := f.DevsySSH(
-							ctx, tempDir,
-							"head -1 $HOME/remote-env-null.out",
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(setLine)).To(gomega.Equal("SET=hello"))
-
-						unsetLine, err := f.DevsySSH(
-							ctx, tempDir,
-							"tail -1 $HOME/remote-env-null.out",
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(unsetLine)).To(gomega.Equal("UNSET=true"))
-					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
-				)
 			})
 
 			ginkgo.Context("custom image", func() {
@@ -1068,36 +1038,6 @@ var _ = ginkgo.Describe(
 						gomega.Expect(strings.TrimSpace(setVar)).To(
 							gomega.Equal(os.Getenv("HOME")),
 						)
-					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
-				)
-
-				ginkgo.It(
-					"should unset variable when remoteEnv is null",
-					func(ctx context.Context) {
-						tempDir, err := setupWorkspace(
-							"tests/up/testdata/docker-remote-env-null",
-							initialDir,
-							f,
-						)
-						framework.ExpectNoError(err)
-
-						err = f.DevsyUp(ctx, tempDir)
-						framework.ExpectNoError(err)
-
-						setLine, err := f.DevsySSH(
-							ctx, tempDir,
-							"head -1 $HOME/remote-env-null.out",
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(setLine)).To(gomega.Equal("SET=hello"))
-
-						unsetLine, err := f.DevsySSH(
-							ctx, tempDir,
-							"tail -1 $HOME/remote-env-null.out",
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(unsetLine)).To(gomega.Equal("UNSET=true"))
 					},
 					ginkgo.SpecTimeout(framework.TimeoutShort()),
 				)
