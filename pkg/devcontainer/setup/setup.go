@@ -522,7 +522,7 @@ func setupPlatformGitCredentials(
 	// setup platform git user
 	if platformOptions.UserCredentials.GitUser != "" &&
 		platformOptions.UserCredentials.GitEmail != "" {
-		gitUser, err := gitcredentials.GetUser(userName)
+		gitUser, err := gitcredentials.GetUser(userName, "")
 		if err == nil && gitUser.Name == "" && gitUser.Email == "" {
 			log.Info("Setup workspace git user and email")
 			err := gitcredentials.SetUser(userName, &gitcredentials.GitUser{

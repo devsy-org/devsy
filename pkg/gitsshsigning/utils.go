@@ -11,15 +11,13 @@ const (
 	GPGFormatSSH             = "ssh"
 )
 
-// ExtractGitConfiguration is used for extracting values from users local .gitconfig
-// that are needed to setup devsy-ssh-signature helper inside the workspace.
-func ExtractGitConfiguration() (string, string, error) {
-	format, err := readGitConfigValue(GPGFormatConfigKey)
+func ExtractGitConfiguration(workingDir string) (string, string, error) {
+	format, err := readGitConfigValue(GPGFormatConfigKey, workingDir)
 	if err != nil {
 		return "", "", err
 	}
 
-	signingKey, err := readGitConfigValue(UsersSigningKeyConfigKey)
+	signingKey, err := readGitConfigValue(UsersSigningKeyConfigKey, workingDir)
 	if err != nil {
 		return "", "", err
 	}
@@ -27,8 +25,11 @@ func ExtractGitConfiguration() (string, string, error) {
 	return format, signingKey, nil
 }
 
-func readGitConfigValue(key string) (string, error) {
+func readGitConfigValue(key string, workingDir string) (string, error) {
 	cmd := exec.Command("git", "config", "--get", key)
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
