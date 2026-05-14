@@ -15,6 +15,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const osWindows = "windows"
+
 var _ = ginkgo.Describe(
 	"testing up command for podman provider",
 	ginkgo.Label("up-provider-podman"),
@@ -350,7 +352,7 @@ var _ = ginkgo.Describe(
 				ginkgo.It(
 					"should use a custom devcontainer image",
 					func(ctx context.Context) {
-						if runtime.GOOS == "windows" {
+						if runtime.GOOS == osWindows {
 							ginkgo.Skip("skipping on windows")
 						}
 
@@ -1105,7 +1107,7 @@ var _ = ginkgo.Describe(
 				ginkgo.It(
 					"should use a custom devcontainer image",
 					func(ctx context.Context) {
-						if runtime.GOOS == "windows" {
+						if runtime.GOOS == osWindows {
 							ginkgo.Skip("skipping on windows")
 						}
 
