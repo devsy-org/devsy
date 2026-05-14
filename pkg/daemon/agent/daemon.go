@@ -61,10 +61,7 @@ func BuildWorkspaceDaemonConfig(
 	// build info isn't required in the workspace and can be omitted
 	platformOptions.Build = nil
 
-	shutdownAction := config.ShutdownActionStopContainer
-	if mergedConfig.ShutdownAction != "" {
-		shutdownAction = mergedConfig.ShutdownAction
-	}
+	shutdownAction := mergedConfig.ShutdownAction
 
 	daemonConfig := &DaemonConfig{
 		Platform: platformOptions,
