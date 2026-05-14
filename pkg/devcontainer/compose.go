@@ -688,9 +688,9 @@ func (r *runner) buildAndExtendDockerCompose(
 	dockerfileContents = buildInfo.dockerfileContents
 	buildTarget = buildInfo.buildTarget
 
-	var secretOpts *feature.SecretOptions
-	if featureSecretsFile != "" {
-		secretOpts = &feature.SecretOptions{SecretsFile: featureSecretsFile}
+	secretOpts := &feature.SecretOptions{
+		SecretsFile: featureSecretsFile,
+		Prompter:    &feature.TerminalSecretPrompter{},
 	}
 	extendImageBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
 		Ctx:                substitutionContext,

@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,25 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testOptionToken = "token"
+type mockPrompter struct {
+	called     bool
+	featureID  string
+	optionName string
+	returnVal  string
+	returnErr  error
+}
+
+func (m *mockPrompter) PromptSecret(featureID, optionName string) (string, error) {
+	m.called = true
+	m.featureID = featureID
+	m.optionName = optionName
+	return m.returnVal, m.returnErr
+}
+
+const (
+	testOptionToken   = "token"
+	prompterUnusedVal = "should-not-be-used"
+)
 
 type SecretOptionsTestSuite struct {
 	suite.Suite
@@ -237,4 +256,124 @@ func (s *SecretOptionsTestSuite) TestEmptyOptionsMapReturnsEarly() {
 	resolved, err := ResolveSecretOptions(testFeatureID, cfg, userOpts, nil)
 	s.NoError(err)
 	s.Equal(userOpts, resolved)
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterCalledWhenNoValueProvided() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+	p := &mockPrompter{returnVal: "prompted-secret"}
+	opts := &SecretOptions{Prompter: p}
+
+	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.NoError(err)
+	s.True(p.called)
+	s.Equal(testFeatureID, p.featureID)
+	s.Equal(testOptionToken, p.optionName)
+	s.Equal("prompted-secret", resolved[testOptionToken])
+}
+
+func (s *SecretOptionsTestSuite) TestSecretsFileTakesPrecedenceOverPrompter() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+
+	secretsFile := filepath.Join(s.T().TempDir(), "secrets.json")
+	content := `{"` + testFeatureID + `": {"` + testOptionToken + `": "file-value"}}`
+	err := os.WriteFile(secretsFile, []byte(content), 0o600)
+	s.Require().NoError(err)
+
+	p := &mockPrompter{returnVal: "prompted-value"}
+	opts := &SecretOptions{SecretsFile: secretsFile, Prompter: p}
+
+	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.NoError(err)
+	s.False(p.called)
+	s.Equal("file-value", resolved[testOptionToken])
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterReturnsEmptyStillErrors() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+	p := &mockPrompter{returnVal: ""}
+	opts := &SecretOptions{Prompter: p}
+
+	_, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.Error(err)
+	s.True(p.called)
+	s.Contains(err.Error(), "required but no value was provided")
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterErrorPropagated() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+	p := &mockPrompter{returnErr: errors.New("terminal closed")}
+	opts := &SecretOptions{Prompter: p}
+
+	_, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.Error(err)
+	s.Contains(err.Error(), "terminal closed")
+	s.Contains(err.Error(), "prompt for secret option")
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterNotCalledWhenUserValueExists() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+	p := &mockPrompter{returnVal: prompterUnusedVal}
+	opts := &SecretOptions{Prompter: p}
+
+	userOpts := map[string]any{testOptionToken: "user-provided"}
+	resolved, err := ResolveSecretOptions(testFeatureID, cfg, userOpts, opts)
+	s.NoError(err)
+	s.False(p.called)
+	s.Equal("user-provided", resolved[testOptionToken])
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterNotCalledWhenDefaultExists() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret, Default: "default-val"},
+		},
+	}
+	p := &mockPrompter{returnVal: prompterUnusedVal}
+	opts := &SecretOptions{Prompter: p}
+
+	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.NoError(err)
+	s.False(p.called)
+	s.Equal("default-val", resolved[testOptionToken])
+}
+
+func (s *SecretOptionsTestSuite) TestPrompterNotCalledWhenEnvVarSet() {
+	cfg := &config.FeatureConfig{
+		Options: map[string]config.FeatureConfigOption{
+			testOptionToken: {Type: optionTypeSecret},
+		},
+	}
+
+	safeFeatureID := getFeatureSafeID(testFeatureID)
+	safeOptionID := getFeatureSafeID(testOptionToken)
+	envVar := "DEVCONTAINER_FEATURE_SECRET_" + safeFeatureID + "_" + safeOptionID
+	s.T().Setenv(envVar, "env-value")
+
+	p := &mockPrompter{returnVal: prompterUnusedVal}
+	opts := &SecretOptions{Prompter: p}
+
+	resolved, err := ResolveSecretOptions(testFeatureID, cfg, map[string]any{}, opts)
+	s.NoError(err)
+	s.False(p.called)
+	s.Equal("env-value", resolved[testOptionToken])
 }

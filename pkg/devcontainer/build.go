@@ -587,8 +587,9 @@ func cleanupBuildInformation(c *config.DevContainerConfig) {
 }
 
 func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {
-	if options.FeatureSecretsFile == "" {
-		return nil
+	opts := &feature.SecretOptions{
+		SecretsFile: options.FeatureSecretsFile,
+		Prompter:    &feature.TerminalSecretPrompter{},
 	}
-	return &feature.SecretOptions{SecretsFile: options.FeatureSecretsFile}
+	return opts
 }
