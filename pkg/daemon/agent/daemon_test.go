@@ -15,9 +15,9 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 		want           string
 	}{
 		{
-			name:           "defaults to stopContainer when empty",
+			name:           "passes through empty value from merged config",
 			shutdownAction: "",
-			want:           config.ShutdownActionStopContainer,
+			want:           "",
 		},
 		{
 			name:           "preserves none",
