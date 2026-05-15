@@ -2,10 +2,11 @@ package port
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 )
+
+const defaultHost = "localhost"
 
 type Address struct {
 	Protocol string
@@ -39,26 +40,21 @@ func ParsePortSpec(port string) (Mapping, error) {
 	}, nil
 }
 
-func toAddress(ip, port string) (Address, error) {
-	// check if port is integer
+func toAddress(host, port string) (Address, error) {
 	_, err := strconv.Atoi(port)
 	if err == nil {
-		if ip == "" {
-			ip = "localhost"
-		}
-
-		if ip != "localhost" && net.ParseIP(ip) == nil {
-			return Address{}, fmt.Errorf("not an ip address %s", ip)
+		if host == "" {
+			host = defaultHost
 		}
 
 		return Address{
 			Protocol: "tcp",
-			Address:  ip + ":" + port,
+			Address:  host + ":" + port,
 		}, nil
 	}
 
-	if ip != "" {
-		return Address{}, fmt.Errorf("unexpected ip address for unix socket: %s", ip)
+	if host != "" {
+		return Address{}, fmt.Errorf("unexpected host for unix socket: %s", host)
 	}
 
 	return Address{
@@ -78,7 +74,10 @@ func splitParts(rawport string) (string, string, string, string, error) {
 	case 2:
 		return "", parts[0], "", containerport, nil
 	case 3:
-		if parts[1] == "localhost" || net.ParseIP(parts[1]) != nil {
+		// a:b:c — if middle token is non-numeric, it's a host/IP for the
+		// container side: hostPort:containerHost:containerPort.
+		// Otherwise it's hostHost:hostPort:containerPort.
+		if _, err := strconv.Atoi(parts[1]); err != nil {
 			return "", parts[0], parts[1], containerport, nil
 		}
 
