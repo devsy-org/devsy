@@ -10,10 +10,10 @@ jobs:
     name: Approve Workflows
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v5
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
 
       - uses: skevetter/automatic-approve-action@v2
