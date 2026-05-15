@@ -27,7 +27,7 @@ export async function initContexts() {
     contexts.set(result.contexts)
     activeContext.set(result.activeContext)
   } catch {
-    // Tauri not available
+    // IPC not available
   } finally {
     contextsLoading.set(false)
   }

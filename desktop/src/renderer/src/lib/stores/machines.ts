@@ -19,7 +19,7 @@ export async function initMachines() {
     machines.set(list)
     fetchStatuses(list)
   } catch {
-    // Tauri not available
+    // IPC not available
   } finally {
     machinesLoading.set(false)
   }

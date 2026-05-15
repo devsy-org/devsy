@@ -194,7 +194,7 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: desktop/flatpak/dev.devsy.app.yml
+          manifest-path: desktop/flatpak/sh.devsy.app.yml
           bundle: Devsy.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 

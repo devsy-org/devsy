@@ -168,5 +168,5 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: Devsy.flatpak
-          manifest-path: desktop/flatpak/dev.devsy.app.yml
+          manifest-path: desktop/flatpak/sh.devsy.app.yml
           upload-artifact: false

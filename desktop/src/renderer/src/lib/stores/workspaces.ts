@@ -19,7 +19,7 @@ export async function initWorkspaces() {
     workspaces.set(list)
     fetchStatuses(list)
   } catch {
-    // Tauri not available (e.g. during SSR or browser preview)
+    // IPC not available (e.g. during browser preview)
   } finally {
     workspacesLoading.set(false)
   }

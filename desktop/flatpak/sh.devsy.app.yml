@@ -1,4 +1,4 @@
-app-id: dev.devsy.app
+app-id: sh.devsy.app
 runtime: org.freedesktop.Platform
 runtime-version: "24.08"
 sdk: org.freedesktop.Sdk
@@ -35,7 +35,7 @@ modules:
       # Install the CLI binary
       - install -Dm755 opt/Devsy/resources/bin/devsy /app/bin/devsy
       # Install desktop file, icon, and wrapper
-      - install -Dm644 Devsy.desktop /app/share/applications/dev.devsy.app.desktop
+      - install -Dm644 Devsy.desktop /app/share/applications/sh.devsy.app.desktop
       - install -Dm755 devsy-wrapper /app/bin/devsy-wrapper
     sources:
       - type: file

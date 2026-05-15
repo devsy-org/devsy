@@ -15,7 +15,7 @@ export async function initProviders() {
     const list = await providerList()
     providers.set(list)
   } catch {
-    // Tauri not available
+    // IPC not available
   } finally {
     providersLoading.set(false)
   }

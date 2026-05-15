@@ -294,9 +294,3 @@ export async function listen<T>(
   // No-op in mock mode — events would come from the Rust backend
   return () => {}
 }
-
-// ── Detection ────────────────────────────────────────────────────────
-
-export function isTauri(): boolean {
-  return false
-}
