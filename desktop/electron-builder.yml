@@ -89,6 +89,11 @@ rpm:
     - at-spi2-core
     - libuuid
 
+protocols:
+  - name: Devsy
+    schemes:
+      - devsy
+
 publish:
   provider: github
   owner: devsy-org

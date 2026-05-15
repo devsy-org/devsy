@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, session } from "electron"
 import { CliRunner } from "./cli.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
@@ -9,8 +9,45 @@ import { AppTray } from "./tray.js"
 import { initAutoUpdater } from "./updater.js"
 import { Watcher } from "./watcher.js"
 
+const PROTOCOL = "devsy"
+
 let mainWindow: BrowserWindow | null = null
+let pendingDeepLink: string | null = null
 const state = new DaemonState()
+
+function handleDeepLink(url: string): void {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send("deep-link", url)
+  } else {
+    pendingDeepLink = url
+  }
+}
+
+// Enforce single instance; forward deep links from second instances to the first.
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+}
+
+app.on("second-instance", (_event, argv) => {
+  const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
+  if (url) {
+    handleDeepLink(url)
+  } else if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
+
+// macOS delivers protocol URLs via open-url (before or after ready).
+app.on("open-url", (event, url) => {
+  event.preventDefault()
+  handleDeepLink(url)
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -45,10 +82,35 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
+    if (pendingDeepLink) {
+      mainWindow?.webContents.send("deep-link", pendingDeepLink)
+      pendingDeepLink = null
+    }
   })
 }
 
 app.whenReady().then(() => {
+  // Register devsy:// as the default protocol handler for this app.
+  app.setAsDefaultProtocolClient(PROTOCOL)
+
+  // Capture deep link from argv on Windows/Linux when launched via protocol URL.
+  const startupUrl = process.argv.find((arg) =>
+    arg.startsWith(`${PROTOCOL}://`),
+  )
+  if (startupUrl) pendingDeepLink = startupUrl
+
+  // Apply Content Security Policy to all web responses.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:*",
+        ],
+      },
+    })
+  })
+
   // Resolve CLI binary: env override for testing, otherwise bundled in resources
   const binaryPath =
     process.env.DEVPOD_CLI_PATH ||
