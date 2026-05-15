@@ -203,6 +203,12 @@ func (r *runner) substitute(
 		)
 	}
 
+	// merge additional mounts from CLI --mount flags
+	for _, mountStr := range options.Mounts {
+		m := config.ParseMount(mountStr)
+		parsedConfig.Mounts = append(parsedConfig.Mounts, &m)
+	}
+
 	if options.DevContainerImage != "" {
 		parsedConfig.Build = nil
 		parsedConfig.Dockerfile = ""

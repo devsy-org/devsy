@@ -295,4 +295,68 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
 	s.NotContains(ctx.WorkspaceMount, "consistency=delegated")
 }
 
+func (s *SubstituteTestSuite) TestSubstitute_CLIMountsAppended() {
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+	}
+	options := provider2.CLIOptions{
+		Mounts: []string{
+			"type=bind,source=/host/data,target=/data",
+			"type=volume,source=myvolume,target=/vol",
+		},
+	}
+
+	substitutedConfig, _, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Require().Len(substitutedConfig.Config.Mounts, 2)
+	s.Equal("bind", substitutedConfig.Config.Mounts[0].Type)
+	s.Equal("/host/data", substitutedConfig.Config.Mounts[0].Source)
+	s.Equal("/data", substitutedConfig.Config.Mounts[0].Target)
+	s.Equal("volume", substitutedConfig.Config.Mounts[1].Type)
+	s.Equal("myvolume", substitutedConfig.Config.Mounts[1].Source)
+	s.Equal("/vol", substitutedConfig.Config.Mounts[1].Target)
+}
+
+func (s *SubstituteTestSuite) TestSubstitute_CLIMountsMergedWithExisting() {
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		NonComposeBase: config.NonComposeBase{
+			Mounts: []*config.Mount{
+				{Type: "bind", Source: "/existing", Target: "/existing-target"},
+			},
+		},
+	}
+	options := provider2.CLIOptions{
+		Mounts: []string{
+			"type=bind,source=/new,target=/new-target",
+		},
+	}
+
+	substitutedConfig, _, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Require().Len(substitutedConfig.Config.Mounts, 2)
+	s.Equal("/existing-target", substitutedConfig.Config.Mounts[0].Target)
+	s.Equal("/new-target", substitutedConfig.Config.Mounts[1].Target)
+}
+
+func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		NonComposeBase: config.NonComposeBase{
+			Mounts: []*config.Mount{
+				{Type: "bind", Source: "/existing", Target: "/existing-target"},
+			},
+		},
+	}
+	options := provider2.CLIOptions{}
+
+	substitutedConfig, _, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Require().Len(substitutedConfig.Config.Mounts, 1)
+	s.Equal("/existing-target", substitutedConfig.Config.Mounts[0].Target)
+}
+
 func ptr(s string) *string { return &s }

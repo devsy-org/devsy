@@ -36,6 +36,9 @@ func (cmd *UpCmd) validate() error {
 	if err := validateWorkspaceMountConsistency(cmd.WorkspaceMountConsistency); err != nil {
 		return err
 	}
+	if err := validateMounts(cmd.Mounts); err != nil {
+		return err
+	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
 }
@@ -67,6 +70,19 @@ func validateWorkspaceMountConsistency(value string) error {
 			MountConsistencyConsistent, MountConsistencyCached, MountConsistencyDelegated,
 		)
 	}
+}
+
+func validateMounts(mounts []string) error {
+	for _, m := range mounts {
+		parsed := config2.ParseMount(m)
+		if parsed.Target == "" {
+			return fmt.Errorf(
+				"invalid --mount value %q: target (dst/destination/target) is required",
+				m,
+			)
+		}
+	}
+	return nil
 }
 
 func validateRemoteUserUID(value string) error {
