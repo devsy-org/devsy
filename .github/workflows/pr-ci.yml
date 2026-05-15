@@ -519,9 +519,9 @@ jobs:
       - name: generate GitHub App token
         if: matrix.requires-secret == true && needs.can-read-secret.outputs.secret-set == 'true'
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v5
         with:
-          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
