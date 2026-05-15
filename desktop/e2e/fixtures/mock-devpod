@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Mock devpod binary for e2e tests (Unix wrapper)
+# Delegates to the cross-platform Node.js implementation
+exec node "$(dirname "$0")/mock-devpod.cjs" "$@"

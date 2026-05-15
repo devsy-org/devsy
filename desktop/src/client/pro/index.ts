@@ -1,1 +1,0 @@
-export { ProClient } from "./client"

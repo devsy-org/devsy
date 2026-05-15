@@ -1,1 +1,0 @@
-export { WorkspacesClient } from "./client"

@@ -127,71 +127,43 @@ tasks:
     desc: run e2e tests using act with focus
     cmd: act workflow_dispatch -W .github/workflows/act.yml -j e2e-test --input test_focus={{ .CLI_ARGS }}
 
-  desktop:build:
-    desc: build devsy Desktop application
+  desktop:setup:
+    desc: setup Electron desktop application
     dir: desktop
     cmds:
-      - cmd: yarn install --frozen-lockfile
+      - task: cli:build:dev
+      - cmd: mkdir -p resources/bin
+      - cmd: cp ../dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 ./resources/bin/devsy
+      - cmd: chmod +x ./resources/bin/devsy
+      - cmd: npm ci
+
+  desktop:dev:
+    desc: run desktop application in dev mode
+    dir: desktop
+    cmd: npm run electron:dev
+
+  desktop:build:
+    desc: build desktop application
+    dir: desktop
+    cmds:
+      - cmd: npm ci
       - task: desktop:check
-      - cmd: yarn build
+      - cmd: npm run build
 
   desktop:check:
     desc: check desktop application
     dir: desktop
-    cmds:
-      - cmd: yarn lint:ci
-      - cmd: yarn format:check
-      - cmd: yarn types:check
+    cmd: npm run check
 
-  desktop:update-deps:
-    desc: update yarn dependencies
+  desktop:test:
+    desc: run desktop unit tests
     dir: desktop
-    cmd: yarn upgrade --latest
+    cmd: npm run test
 
-  desktop:tauri:setup:
-    desc: setup tauri desktop application
+  desktop:test:e2e:
+    desc: run desktop e2e tests
     dir: desktop
-    cmds:
-      - task: cli:build:dev
-      - cmd: cp ../dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 ./src-tauri/bin/devsy-x86_64-unknown-linux-gnu
-      - cmd: yarn install --frozen-lockfile
-
-  desktop:tauri:generate-types:
-    desc: generate desktop types
-    dir: desktop/src-tauri
-    cmds:
-      - rm -rf ../src/gen && mkdir -p ../dist
-      - touch ../dist/index.html
-      - cargo test
-      - mkdir -p ../src/gen
-      - cp -r bindings/* ../src/gen/
-      - rm -rf bindings
-      - |
-        touch ../src/gen/index.ts
-        for f in ../src/gen/*.ts; do
-          echo "export * from './$(basename "$f" .ts)'" >> ../src/gen/index.ts
-        done
-      - cd ../ && yarn prettier --write src/gen
-
-  desktop:tauri:generate-signing-keys:
-    desc: Generate Tauri signing keys
-    dir: desktop
-    cmd: yarn tauri signer generate --ci -w ../app.key
-
-  desktop:tauri:dev:
-    desc: run tauri application in dev mode
-    dir: desktop
-    cmd: yarn desktop:dev
-
-  desktop:tauri:build-app:
-    desc: build tauri application
-    dir: desktop
-    cmd: yarn desktop:build:dev
-
-  desktop:tauri:update-deps:
-    desc: update tauri dependencies
-    dir: desktop/src-tauri
-    cmd: cargo update
+    cmd: npm run test:e2e
 
   desktop:act:build:ui:
     desc: build desktop ui using act

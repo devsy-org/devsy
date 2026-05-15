@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: setup Go
         uses: actions/setup-go@v6
@@ -22,7 +24,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-          only-new-issues: true
+          args: ${{ github.event_name == 'pull_request' && '--new-from-rev=origin/main' || '' }}
 
       - name: megalinter
         uses: oxsecurity/megalinter@v9

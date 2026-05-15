@@ -1,1 +1,0 @@
-export { IconTag } from "./IconTag"

@@ -1,9 +1,9 @@
 [Desktop Entry]
-Type=Application
 Name=Devsy
-Comment=Codespaces but open-source, client-only and unopinionated
-Exec=sh.devsy.devsy
-Icon=sh.devsy.devsy
-StartupNotify=true
+Comment=Dev environments in any infrastructure
+Exec=devsy-wrapper
+Icon=dev.devsy.app
+Terminal=false
+Type=Application
 Categories=Development;
-Keywords=development;container;devcontainer;remote;
+StartupWMClass=Devsy

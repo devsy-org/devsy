@@ -1,0 +1,46 @@
+app-id: dev.devsy.app
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: "24.08"
+command: devsy-wrapper
+
+finish-args:
+  # Wayland + X11 + GPU
+  - --socket=wayland
+  - --socket=x11
+  - --device=dri
+  # Network (required for workspace creation, provider communication)
+  - --share=network
+  # SSH agent forwarding
+  - --socket=ssh-auth
+  # Home directory (for ~/.devpod, ~/.ssh, workspace sources)
+  - --filesystem=home
+  # D-Bus for notifications and system tray
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Access to host commands via flatpak-spawn (for docker, kubectl, etc.)
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  - name: devsy-desktop
+    buildsystem: simple
+    build-commands:
+      # Extract the .deb package
+      - ar x devsy-desktop.deb
+      - tar xf data.tar.*
+      # Install the Electron app
+      - cp -r opt/Devsy /app/devsy
+      # Install the CLI binary
+      - install -Dm755 opt/Devsy/resources/bin/devsy /app/bin/devsy
+      # Install desktop file, icon, and wrapper
+      - install -Dm644 Devsy.desktop /app/share/applications/dev.devsy.app.desktop
+      - install -Dm755 devsy-wrapper /app/bin/devsy-wrapper
+    sources:
+      - type: file
+        path: devsy-desktop.deb
+      - type: file
+        path: Devsy.desktop
+      - type: file
+        path: devsy-wrapper
