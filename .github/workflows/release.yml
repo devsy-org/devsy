@@ -161,24 +161,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      - name: package with electron-builder
+      - name: package and publish with electron-builder
         working-directory: desktop
-        run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml
+        run: npx electron-builder ${{ matrix.builder-args }} --publish always --config electron-builder.yml
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: upload release assets
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          draft: true
-          files: |
-            desktop/release/*.dmg
-            desktop/release/*.zip
-            desktop/release/*.exe
-            desktop/release/*.AppImage
-            desktop/release/*.deb
-            desktop/release/*.rpm
 
       - name: upload cli assets
         uses: softprops/action-gh-release@v3

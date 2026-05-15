@@ -6,6 +6,7 @@ import { LogStore } from "./log-store.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
+import { initAutoUpdater } from "./updater.js"
 import { Watcher } from "./watcher.js"
 
 let mainWindow: BrowserWindow | null = null
@@ -101,6 +102,10 @@ app.whenReady().then(() => {
   appTray.setup()
 
   createWindow()
+
+  if (app.isPackaged) {
+    initAutoUpdater(() => mainWindow)
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

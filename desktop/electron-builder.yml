@@ -31,7 +31,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  notarize: false  # Set to true when Apple credentials are configured
+  # macOS auto-update requires code signing and notarization to be enabled
+  notarize: false
 
 dmg:
   sign: false
@@ -85,4 +86,7 @@ rpm:
     - at-spi2-core
     - libuuid
 
-publish: null  # Disable auto-publish; CI handles uploads
+publish:
+  provider: github
+  owner: devsy-org
+  repo: devsy
