@@ -11,7 +11,7 @@ const testBaseCommand = "devsy agent container credentials-server --user root"
 
 func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 	command := testBaseCommand
-	result := addGitSSHSigningKey(command, "/path/to/key.pub")
+	result := addGitSSHSigningKey(command, "/path/to/key.pub", "")
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("/path/to/key.pub"))
 	assert.Equal(t, command+" --git-user-signing-key "+encoded, result)
@@ -22,7 +22,7 @@ func TestAddGitSSHSigningKey_ExplicitKeyTakesPrecedence(t *testing.T) {
 	// of what ExtractGitConfiguration might return from host .gitconfig.
 	command := testBaseCommand
 	explicitKey := "/explicit/key.pub"
-	result := addGitSSHSigningKey(command, explicitKey)
+	result := addGitSSHSigningKey(command, explicitKey, "")
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(explicitKey))
 	assert.Equal(t, command+" --git-user-signing-key "+encoded, result)
@@ -35,7 +35,7 @@ func TestAddGitSSHSigningKey_EmptyExplicitKey_FallsBackToHostConfig(t *testing.T
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpHome)
 
-	result := addGitSSHSigningKey(command, "")
+	result := addGitSSHSigningKey(command, "", "")
 
 	assert.Equal(t, command, result)
 	assert.NotContains(t, result, "--git-user-signing-key")
