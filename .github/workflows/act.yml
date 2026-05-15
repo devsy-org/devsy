@@ -133,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: upload desktop linux artifact for flatpak
-        uses: actions/upload-artifact@v4 # pin to v4 for act support
+        uses: actions/upload-artifact@v5
         with:
           name: devsy-flatpak
           path: desktop/release/*.deb
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: download desktop linux artifact
-        uses: actions/download-artifact@v4 # pin to v4 for act support
+        uses: actions/download-artifact@v5
         with:
           name: devsy-flatpak
           path: desktop/flatpak/
