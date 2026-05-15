@@ -120,6 +120,8 @@ func deleteWorkspace(
 		log.Errorf("Removing container: %v", err)
 	}
 
-	_ = os.RemoveAll(workspaceInfo.Origin)
+	if err := forceRemoveAll(workspaceInfo.Origin); err != nil {
+		log.Errorf("remove workspace folder: %v", err)
+	}
 	return nil
 }

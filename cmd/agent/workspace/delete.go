@@ -3,7 +3,9 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -79,7 +81,9 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 	}
 
 	// delete workspace folder
-	_ = os.RemoveAll(workspaceInfo.Origin)
+	if err := forceRemoveAll(workspaceInfo.Origin); err != nil {
+		log.Errorf("remove workspace folder: %v", err)
+	}
 	return nil
 }
 
@@ -107,6 +111,39 @@ func removeContainer(
 	}
 
 	return nil
+}
+
+// forceRemoveAll attempts os.RemoveAll and, on failure, makes all directories
+// writable before retrying. Container runtimes (e.g. crun with Podman) can
+// leave directories without write permission, causing a standard RemoveAll to
+// fail with "permission denied".
+func forceRemoveAll(path string) error {
+	err := os.RemoveAll(path)
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+
+	// Walk the tree and add owner-write+execute to every directory so
+	// entries inside them can be unlinked on the retry.
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
+		}
+		_ = os.Chmod(
+			p,
+			info.Mode()|0o700,
+		) // #nosec G122 -- intentional: fixing perms for deletion, path is not user-controlled
+		return nil
+	})
+
+	return os.RemoveAll(path)
 }
 
 func removeDaemon(workspaceInfo *provider2.AgentWorkspaceInfo) error {
