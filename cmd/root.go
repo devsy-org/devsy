@@ -21,9 +21,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/klog/v2"
 )
 
 var globalFlags *flags.GlobalFlags
@@ -42,6 +44,7 @@ func NewRootCmd() *cobra.Command {
 				Debug:     globalFlags.Debug || os.Getenv(config.EnvDebug) == config.BoolTrue,
 				Format:    globalFlags.LogOutput,
 			})
+			klog.SetLogger(logr.New(log.LogrSink()))
 
 			if globalFlags.DevsyHome != "" {
 				_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
