@@ -16,7 +16,7 @@ jobs:
       - uses: j178/prek-action@v2
 
   lint:
-    name: Lint Gate
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
