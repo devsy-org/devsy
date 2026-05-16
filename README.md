@@ -39,38 +39,28 @@ Take a look at the <a href="https://devsy.sh/docs/getting-started/install">Devsy
 </tr>
 <tr>
 <td><b>macOS</b></td>
-<td>Apple Silicon (ARM64)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_darwin_aarch64.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS ARM64"></a></td>
-</tr>
-<tr>
-<td><b>macOS</b></td>
-<td>Intel (x64)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_darwin_x64.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS x64"></a></td>
+<td>Universal (Apple Silicon + Intel)</td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_universal.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS Universal"></a></td>
 </tr>
 <tr>
 <td><b>Windows</b></td>
-<td>x64</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_windows_x64.msi"><img src="https://img.shields.io/badge/Download-MSI-blue?style=flat-square&logo=windows" alt="Windows MSI"></a></td>
-</tr>
-<tr>
-<td><b>Windows</b></td>
-<td>x64 (Portable)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_windows_x64.exe"><img src="https://img.shields.io/badge/Download-EXE-blue?style=flat-square&logo=windows" alt="Windows EXE"></a></td>
+<td>x64 (Installer)</td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_win_x64.exe"><img src="https://img.shields.io/badge/Download-EXE-blue?style=flat-square&logo=windows" alt="Windows x64"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (AppImage)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.AppImage"><img src="https://img.shields.io/badge/Download-AppImage-blue?style=flat-square&logo=linux" alt="Linux AppImage"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.AppImage"><img src="https://img.shields.io/badge/Download-AppImage-blue?style=flat-square&logo=linux" alt="Linux AppImage"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (Debian/Ubuntu)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb"><img src="https://img.shields.io/badge/Download-DEB-blue?style=flat-square&logo=debian" alt="Linux DEB"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.deb"><img src="https://img.shields.io/badge/Download-DEB-blue?style=flat-square&logo=debian" alt="Linux DEB"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (RPM)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.rpm"><img src="https://img.shields.io/badge/Download-RPM-blue?style=flat-square&logo=redhat" alt="Linux RPM"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.rpm"><img src="https://img.shields.io/badge/Download-RPM-blue?style=flat-square&logo=redhat" alt="Linux RPM"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>

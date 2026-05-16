@@ -13,4 +13,7 @@
 /package-lock.json
 /tagsvendor/
 node_modules/
-desktop/src-tauri/gen/schemas
+desktop/dist/
+desktop/release/
+desktop/playwright-report/
+desktop/test-results/

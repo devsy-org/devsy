@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: setup Go
         uses: actions/setup-go@v6
@@ -30,7 +32,8 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-          only-new-issues: true
+          only-new-issues: false
+          args: ${{ github.event_name == 'pull_request' && '--new-from-rev=origin/main' || '' }}
 
   can-read-secret:
     name: Can Read Secret
@@ -46,38 +49,6 @@ jobs:
           else
             echo "secret-set=true" >> "$GITHUB_OUTPUT"
           fi
-
-  build-ui:
-    name: User Interface Build
-    needs: [precommit, lint-gate]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "latest"
-
-      - name: install dependencies
-        working-directory: ./desktop
-        run: yarn install --frozen-lockfile
-
-      - name: lint
-        working-directory: ./desktop
-        run: yarn lint:ci
-
-      - name: format
-        working-directory: ./desktop
-        run: yarn format:check
-
-      - name: type check
-        working-directory: ./desktop
-        run: yarn types:check
-
-      - name: build
-        working-directory: ./desktop
-        run: yarn build
 
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
@@ -588,190 +559,3 @@ jobs:
       - name: verify docker is installed
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: docker --version && docker ps
-
-  build-desktop:
-    name: Build Desktop App for ${{ matrix.arch }} on ${{ matrix.runner }}
-    needs: build-cli
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
-            tauri_include_updater_json: true
-            tauri_ci: true
-
-          - arch: amd64
-            target: x86_64-apple-darwin
-            runner: macos-latest
-            tauri_include_updater_json: true
-            tauri_ci: true
-
-          - arch: arm64
-            target: aarch64-apple-darwin
-            runner: macos-latest
-            tauri_include_updater_json: true
-            tauri_ci: false # https://github.com/tauri-apps/tauri/issues/3055
-
-          - arch: amd64
-            target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            tauri_include_updater_json: true
-            tauri_ci: true
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "latest"
-
-      - name: setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./desktop/src-tauri -> target"
-          shared-key: "desktop-${{ matrix.runner }}"
-          cache-bin: "false"
-
-      - name: get operating system lowercase
-        id: os
-        shell: bash
-        run: |
-          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
-          if [ "$OS" == "macos" ]; then
-            OS="darwin"
-          fi
-          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
-
-      - name: download CLI artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: devsy-*
-          path: ${{ runner.temp }}/devsy-bin/
-          merge-multiple: true
-
-      - name: setup executable
-        shell: bash
-        working-directory: ./desktop/src-tauri
-        run: |
-          TEMP_DIR="${{ runner.temp }}"
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            TEMP_DIR="${TEMP_DIR//\\//}"
-          fi
-
-          ls -R "$TEMP_DIR/devsy-bin/"
-          mkdir -p ./bin/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
-          find ./bin -type f -name "devsy-*" -exec chmod +x {} \;
-
-          find ./bin -type f -name "devsy-linux-amd64" -exec mv {} ./bin/devsy-x86_64-unknown-linux-gnu \;
-          find ./bin -type f -name "devsy-linux-arm64" -exec mv {} ./bin/devsy-aarch64-unknown-linux-gnu \;
-          find ./bin -type f -name "devsy-darwin-amd64" -exec mv {} ./bin/devsy-x86_64-apple-darwin \;
-          find ./bin -type f -name "devsy-darwin-arm64" -exec mv {} ./bin/devsy-aarch64-apple-darwin \;
-          find ./bin -type f -name "devsy-windows-amd64.exe" -exec mv {} ./bin/devsy-x86_64-pc-windows-msvc.exe \;
-          find ./bin -type f -name "devsy-windows-arm64.exe" -exec mv {} ./bin/devsy-aarch64-pc-windows-msvc.exe \;
-
-          ls -R ./bin/
-
-      # Linux prerequisites: https://tauri.app/start/prerequisites/#linux
-      - name: install linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: install desktop dependencies
-        working-directory: ./desktop
-        run: yarn install --frozen-lockfile
-
-      - name: generate signing key and update config
-        id: generate
-        working-directory: ./desktop
-        shell: bash
-        run: |
-          # throwaway signing key for test CI builds
-          yarn tauri signer generate --ci -w ./app.key -p "github-actions"
-          TAURI_PUBKEY=$(cat ./app.key.pub)
-          jq --arg pubkey "$TAURI_PUBKEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
-
-      - name: tauri build
-        uses: tauri-apps/tauri-action@v0.6
-        with:
-          projectPath: "./desktop"
-          args: "--target ${{ matrix.target }}"
-          includeUpdaterJson: ${{ matrix.tauri_include_updater_json }}
-          assetNamePattern: "[name]_[platform]_[arch][ext]"
-          retryAttempts: 1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: "${{ github.workspace }}/desktop/app.key"
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "github-actions"
-          CI: ${{ matrix.tauri_ci }}
-
-      - name: upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-${{ matrix.runner }}-${{ matrix.arch }}
-          path: desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*
-
-  build-flatpak:
-    name: Build Flatpak
-    # Use Ubuntu 22.04 to build the flatpak for compatibility with older glibc versions.
-    # For more details, see https://v2.tauri.app/distribute/appimage/
-    runs-on: ubuntu-22.04
-    needs: [build-desktop]
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
-      options: --privileged
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: clone shared-modules
-        run: git clone https://github.com/flathub/shared-modules.git desktop/flatpak/shared-modules
-
-      - name: download desktop linux artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: desktop-ubuntu-22.04-amd64
-          path: /tmp/devsy/
-
-      # Use GITHUB_WORKSPACE in containers because the path differs from github.workspace
-      # for more details, see https://github.com/actions/checkout/issues/785
-      - name: prepare flatpak manifest for PR build
-        shell: bash
-        run: |
-          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy_linux_amd64.deb|path: /tmp/devsy/deb/Devsy_0.0.0_amd64.deb|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.desktop|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.desktop|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-          sed -i "s|url: https://github.com/devsy-org/devsy/releases/download/\${VERSION}/Devsy.metainfo.xml|path: $GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml|" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-          sed -i "/sha256: \${SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-          sed -i "/sha256: \${DESKTOP_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-          sed -i "/sha256: \${META_SHA256}/d" "$GITHUB_WORKSPACE/desktop/flatpak/sh.devsy.devsy.yml"
-
-      - name: update flatpak metadata version and date
-        run: |
-          DATE=$(date +%Y-%m-%d)
-          VERSION="v0.0.0"
-
-          sed -i "s/__VERSION__/${VERSION}/g" "$GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml"
-          sed -i "s/__DATE__/${DATE}/g" "$GITHUB_WORKSPACE/desktop/flatpak/Devsy.metainfo.xml"
-
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: Devsy.flatpak
-          manifest-path: desktop/flatpak/sh.devsy.devsy.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-          upload-artifact: true

@@ -1,1 +1,0 @@
-export { IDEIcon } from "./IDEIcon"

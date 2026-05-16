@@ -13,20 +13,9 @@ Thank you for your interest in contributing to Devsy! This guide will help you g
 
 **Desktop Application Development:**
 
-- [NodeJS + yarn](https://nodejs.org/en/)
-- [Rust](https://www.rust-lang.org/tools/install)
+- [Node.js 22+](https://nodejs.org/en/) (with npm)
 - [Go 1.20+](https://go.dev/doc/install)
-
-**Linux Desktop Dependencies:**
-
-```bash
-sudo apt-get install libappindicator3-1 libgdk-pixbuf2.0-0 libbsd0 libxdmcp6 \
-  libwmf-0.2-7 libwmf-0.2-7-gtk libgtk-3-0 libwmf-dev libwebkit2gtk-4.0-37 \
-  librust-openssl-sys-dev librust-glib-sys-dev
-
-sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev \
-  libayatana-appindicator3-dev librsvg2-dev
-```
+- [Python 3.12+](https://www.python.org/) (for native module builds)
 
 ### Initial Setup
 
@@ -71,25 +60,25 @@ The binary will be output as `devsy` in the current directory.
 **Using Task (recommended):**
 
 ```bash
-# Setup Tauri environment (first time only)
-task desktop:tauri:setup
+# Setup Electron environment (first time only)
+task desktop:setup
 
 # Run in development mode
-task desktop:tauri:dev
+task desktop:dev
 
 # Build the application
-task desktop:tauri:build-app
+task desktop:build
 ```
 
 **Manual build:**
 
 ```bash
 cd desktop
-yarn install --frozen-lockfile
-yarn desktop:build:dev
+npm ci
+npm run build
 ```
 
-The application will be in `desktop/src-tauri/target/release`
+The packaged application will be in `desktop/release/`
 
 ## Development Workflow
 
@@ -114,25 +103,16 @@ task cli:build:dev
 ```bash
 # Install dependencies
 cd desktop
-yarn install --frozen-lockfile
+npm ci
 
-# Check code quality
+# Check code quality (type check + svelte-check)
 task desktop:check
 
-# Run linters
-yarn lint:ci
+# Run unit tests
+task desktop:test
 
-# Check formatting
-yarn format:check
-
-# Type check
-yarn types:check
-
-# Generate TypeScript types from Rust
-task desktop:tauri:generate-types
-
-# Update dependencies
-task desktop:update-deps
+# Run e2e tests
+task desktop:test:e2e
 ```
 
 ### E2E Testing
@@ -283,8 +263,10 @@ task cli:tidy               # Tidy go.mod and go.sum
 # Desktop tasks
 task desktop:build          # Build desktop application
 task desktop:check          # Check code quality
-task desktop:tauri:dev      # Run in development mode
-task desktop:tauri:setup    # Setup Tauri environment
+task desktop:dev            # Run in development mode
+task desktop:setup          # Setup Electron environment
+task desktop:test           # Run unit tests
+task desktop:test:e2e       # Run e2e tests
 
 # E2E testing
 task cli:test:e2e           # Run all e2e tests
@@ -296,7 +278,7 @@ task cli:test:e2e:focus     # Run focused tests
 
 - `/cmd` - CLI command implementations
 - `/pkg` - Core packages and libraries
-- `/desktop` - Desktop application (Tauri + React)
+- `/desktop` - Desktop application (Electron + Svelte)
 - `/e2e` - End-to-end tests
 - `/docs` - Documentation website
 - `/examples` - Example devcontainer configurations

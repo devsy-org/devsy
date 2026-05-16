@@ -1,0 +1,205 @@
+name: Desktop CI
+
+on:
+  push:
+    branches: [electron-ui, main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Type check
+        working-directory: desktop
+        run: npm run check
+
+      - name: Unit tests
+        working-directory: desktop
+        run: npm run test
+
+  build-desktop:
+    needs: lint-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            go-os: darwin
+            go-arch: universal
+            builder-args: --mac
+          - os: windows-2022
+            go-os: windows
+            go-arch: amd64
+            builder-args: --win
+          - os: ubuntu-latest
+            go-os: linux
+            go-arch: amd64
+            builder-args: --linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # ── Build Go CLI binary ──
+      - name: Build CLI (unix)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "${{ matrix.go-arch }}" = "universal" ]; then
+            # macOS universal binary: build both architectures and lipo them
+            GOOS=darwin GOARCH=amd64 go build -o devsy-amd64 .
+            GOOS=darwin GOARCH=arm64 go build -o devsy-arm64 .
+            lipo -create -output desktop/resources/bin/devsy devsy-amd64 devsy-arm64
+            rm devsy-amd64 devsy-arm64
+          else
+            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -o desktop/resources/bin/devsy .
+          fi
+          chmod +x desktop/resources/bin/devsy
+
+      - name: Build CLI (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -o desktop/resources/bin/devsy.exe .
+
+      # ── Windows native build tools ──
+      - name: Configure Windows build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
+
+      # ── Setup Python for native module builds ──
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install setuptools
+        run: pip install setuptools
+
+      # ── Install Electron dependencies ──
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      # ── Install xvfb on Linux for e2e tests ──
+      - name: Install xvfb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # ── E2E tests ──
+      - name: Run e2e tests (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        run: |
+          npm run electron:build
+          xvfb-run npx playwright test
+
+      - name: Run e2e tests (macOS/Windows)
+        if: runner.os != 'Linux'
+        working-directory: desktop
+        run: |
+          npm run electron:build
+          npx playwright test
+
+      # ── Package ──
+      - name: Package with electron-builder
+        working-directory: desktop
+        run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing (set these secrets when ready):
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # ── Upload artifacts ──
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.rpm
+          if-no-files-found: warn
+
+  build-flatpak:
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download Linux .deb artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: desktop-ubuntu-latest
+          path: desktop/flatpak/
+
+      - name: Find and rename .deb file
+        working-directory: desktop/flatpak
+        run: |
+          DEB=$(find . -maxdepth 1 -name '*.deb' -print -quit)
+          if [ -n "$DEB" ]; then
+            mv "$DEB" devsy-desktop.deb
+          else
+            echo "No .deb file found"
+            exit 1
+          fi
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: desktop/flatpak/sh.devsy.app.yml
+          bundle: Devsy.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: desktop-flatpak
+          path: Devsy.flatpak
