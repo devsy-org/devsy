@@ -167,6 +167,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: deploy update metadata to Netlify
+        if: runner.os == 'Linux'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          npm install -g netlify-cli
+          mkdir -p netlify-deploy/desktop
+          cp desktop/release/latest*.yml netlify-deploy/desktop/ 2>/dev/null || true
+          netlify deploy --prod --dir=netlify-deploy --site="$NETLIFY_SITE_ID"
+
       - name: upload cli assets
         uses: softprops/action-gh-release@v3
         if: runner.os == 'Linux'

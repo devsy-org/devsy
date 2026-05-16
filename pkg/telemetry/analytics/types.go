@@ -6,7 +6,3 @@ type Client interface {
 	RecordEvent(Event)
 	Flush()
 }
-
-type Request struct {
-	Data []Event `json:"data,omitempty"`
-}

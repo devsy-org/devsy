@@ -1,164 +1,87 @@
 package analytics
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
-	"net/http"
-	"sync"
-	"time"
-
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/posthog/posthog-go"
 )
 
 const (
-	defaultEndpoint = "https://analytics.loft.rocks/v1/insert"
+	// Replace with a real PostHog project API key.
+	posthogAPIKey = "phc_PLACEHOLDER"
 
-	eventsCountThreshold = 100
-
-	maxUploadInterval = 5 * time.Minute
-	minUploadInterval = 30 * time.Second
+	posthogEndpoint = "https://us.i.posthog.com"
 )
 
 var Dry = false
 
 func NewClient() Client {
-	c := &client{
-		endpoint: defaultEndpoint,
-
-		buffer:   newEventBuffer(eventsCountThreshold),
-		overflow: newEventBuffer(eventsCountThreshold),
-
-		events:     make(chan Event, 100),
-		httpClient: http.Client{Timeout: 3 * time.Second},
+	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
+		Endpoint: posthogEndpoint,
+	})
+	if err != nil {
+		log.Debugf("failed to create PostHog client: %v", err)
+		return NewNoopClient()
 	}
 
-	go c.loop()
-
-	return c
+	return &client{phClient: phClient}
 }
 
 type client struct {
-	buffer        *eventBuffer
-	overflow      *eventBuffer
-	droppedEvents int
-	bufferMutex   sync.Mutex
-
-	events chan Event
-
-	endpoint string
-
-	httpClient http.Client
+	phClient posthog.Client
 }
 
 func (c *client) RecordEvent(event Event) {
-	select {
-	case c.events <- event:
-	default:
+	eventData, ok := event["event"]
+	if !ok {
+		return
 	}
+
+	machineID, _ := eventData["machine_id"].(string)
+	eventType, _ := eventData["type"].(string)
+	properties := buildProperties(event)
+
+	if Dry {
+		log.Infof(
+			"analytics event: type=%s machine_id=%s properties=%v",
+			eventType, machineID, properties,
+		)
+		return
+	}
+
+	if err := c.phClient.Enqueue(posthog.Capture{
+		DistinctId: machineID,
+		Event:      eventType,
+		Properties: properties,
+	}); err != nil {
+		log.Debugf("error enqueuing PostHog event: %v", err)
+	}
+}
+
+func buildProperties(event Event) posthog.Properties {
+	properties := posthog.NewProperties()
+
+	for k, v := range event["event"] {
+		if k == "machine_id" || k == "timestamp" {
+			continue
+		}
+		properties.Set(k, v)
+	}
+
+	for k, v := range event["user"] {
+		if k == "machine_id" || k == "timestamp" {
+			continue
+		}
+		properties.Set(k, v)
+	}
+
+	return properties
 }
 
 func (c *client) Flush() {
-	c.bufferMutex.Lock()
-	isFull := c.buffer.IsFull()
-	c.bufferMutex.Unlock()
-
-	if !isFull {
-		startTime := time.Now()
-		for time.Since(startTime) < 500*time.Millisecond {
-			time.Sleep(10 * time.Millisecond)
-			if len(c.events) == 0 {
-				break
-			}
-		}
-	}
-
-	c.executeUpload(c.exchangeBuffer())
-}
-
-func (c *client) loop() {
-	go func() {
-		for event := range c.events {
-			c.bufferMutex.Lock()
-			if !c.buffer.Append(event) && !c.overflow.Append(event) {
-				c.droppedEvents++
-			}
-			c.bufferMutex.Unlock()
-		}
-	}()
-
-	for {
-		startWait := time.Now()
-		c.bufferMutex.Lock()
-		fullChan := c.buffer.Full()
-		c.bufferMutex.Unlock()
-
-		select {
-		case <-fullChan:
-			timeSinceStart := time.Since(startWait)
-			if timeSinceStart < minUploadInterval {
-				time.Sleep(minUploadInterval - timeSinceStart)
-			}
-		case <-time.After(maxUploadInterval):
-		}
-
-		c.Flush()
-	}
-}
-
-func (c *client) executeUpload(buffer []Event) {
-	if len(buffer) == 0 {
-		return
-	}
-
-	request := &Request{
-		Data: buffer,
-	}
-
 	if Dry {
-		marshaled, err := json.MarshalIndent(request, "", "  ")
-		if err != nil {
-			log.Debugf("failed to marshal analytics request: %v", err)
-			return
-		}
-		log.Infof("analytics request: %s", string(marshaled))
 		return
 	}
-
-	marshaled, err := json.Marshal(request)
-	if err != nil {
-		log.Debugf("failed to marshal analytics request: %v", err)
-		return
+	if err := c.phClient.Close(); err != nil {
+		log.Debugf("error flushing PostHog client: %v", err)
 	}
-
-	resp, err := c.httpClient.Post(c.endpoint, "application/json", bytes.NewReader(marshaled))
-	if err != nil {
-		log.Debugf("error sending analytics request: %v", err)
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		out, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Debugf("error reading analytics response body: %v", err)
-			return
-		}
-		log.Debugf("analytics request returned status %d: %s", resp.StatusCode, string(out))
-	}
-}
-
-func (c *client) exchangeBuffer() []Event {
-	c.bufferMutex.Lock()
-	defer c.bufferMutex.Unlock()
-
-	if c.droppedEvents > 0 {
-		log.Debugf("dropped %d analytics events (buffer full)", c.droppedEvents)
-	}
-
-	events := c.buffer.Drain()
-	c.buffer = c.overflow
-	c.overflow = newEventBuffer(eventsCountThreshold)
-	c.droppedEvents = 0
-	return events
 }

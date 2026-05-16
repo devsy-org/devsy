@@ -16,7 +16,8 @@ import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
 import { initSettings } from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
-import { appReady } from "$lib/ipc/commands.js"
+import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
+import { location } from "$lib/router.js"
 
 import DashboardPage from "./pages/DashboardPage.svelte"
 import WorkspacesPage from "./pages/WorkspacesPage.svelte"
@@ -79,12 +80,18 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+let unsubLocation: (() => void) | undefined
+
 onMount(() => {
   initWorkspaces()
   initProviders()
   initMachines()
   initContexts()
   destroySettings = initSettings()
+
+  unsubLocation = location.subscribe((path) => {
+    analyticsTrack("page_view", { path })
+  })
 
   // Signal the backend that the frontend is ready
   appReady().catch((err) => {
@@ -93,6 +100,7 @@ onMount(() => {
 })
 
 onDestroy(() => {
+  unsubLocation?.()
   destroyWorkspaces()
   destroyProviders()
   destroyMachines()

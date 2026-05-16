@@ -261,6 +261,9 @@ const COMMANDS: Record<string, Handler> = {
   terminal_resize: () => undefined,
   terminal_close: () => undefined,
   terminal_list: () => [],
+
+  // Analytics
+  analytics_track: () => undefined,
 }
 
 // ── Mock invoke ──────────────────────────────────────────────────────

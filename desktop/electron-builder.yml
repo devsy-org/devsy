@@ -95,6 +95,9 @@ protocols:
       - devsy
 
 publish:
-  provider: github
-  owner: devsy-org
-  repo: devsy
+  - provider: generic
+    url: https://dl.devsy.sh/desktop
+    useMultipleRangeRequest: false
+  - provider: github
+    owner: devsy-org
+    repo: devsy
