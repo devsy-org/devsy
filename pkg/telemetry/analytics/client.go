@@ -15,6 +15,11 @@ const (
 var Dry = false
 
 func NewClient() Client {
+	if posthogAPIKey == "" || posthogAPIKey == "phc_PLACEHOLDER" {
+		log.Debugf("PostHog API key not configured; analytics disabled")
+		return NewNoopClient()
+	}
+
 	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
 		Endpoint: posthogEndpoint,
 	})
@@ -45,6 +50,11 @@ func (c *client) RecordEvent(event Event) {
 			"analytics event: type=%s machine_id=%s properties=%v",
 			eventType, machineID, properties,
 		)
+		return
+	}
+
+	if machineID == "" {
+		log.Debugf("skipping event with empty machine_id: %s", eventType)
 		return
 	}
 

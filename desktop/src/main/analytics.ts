@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto"
+import { createHmac } from "node:crypto"
 import { homedir, platform, arch } from "node:os"
 import { PostHog } from "posthog-node"
 import { app } from "electron"
@@ -25,6 +25,10 @@ function isTelemetryDisabled(): boolean {
 
 export function initAnalytics(): void {
   if (isTelemetryDisabled()) return
+  if (!POSTHOG_API_KEY || POSTHOG_API_KEY === "phc_PLACEHOLDER") {
+    console.warn("[telemetry] PostHog API key not configured; analytics disabled")
+    return
+  }
 
   distinctId = getDistinctId()
   client = new PostHog(POSTHOG_API_KEY, {

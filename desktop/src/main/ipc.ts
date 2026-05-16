@@ -652,7 +652,27 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       _event,
       args: { name: string; properties?: Record<string, unknown> },
     ) => {
-      trackEvent(args.name, args.properties)
+      if (
+        !args?.name ||
+        typeof args.name !== "string" ||
+        args.name.length > 64
+      ) {
+        return
+      }
+      trackEvent(args.name, sanitizeAnalyticsProperties(args.properties))
     },
   )
+}
+
+function sanitizeAnalyticsProperties(
+  input?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object") return undefined
+  const entries = Object.entries(input).slice(0, 20)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of entries) {
+    if (!k || k.length > 64) continue
+    out[k] = typeof v === "string" ? v.slice(0, 256) : v
+  }
+  return out
 }

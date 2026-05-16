@@ -82,6 +82,13 @@ function handleKeydown(e: KeyboardEvent) {
 
 let unsubLocation: (() => void) | undefined
 
+function normalizeAnalyticsPath(path: string): string {
+  if (/^\/workspaces\/[^/]+$/.test(path)) return "/workspaces/:id"
+  if (/^\/providers\/[^/]+$/.test(path)) return "/providers/:id"
+  if (/^\/machines\/[^/]+$/.test(path)) return "/machines/:id"
+  return path
+}
+
 onMount(() => {
   initWorkspaces()
   initProviders()
@@ -90,7 +97,7 @@ onMount(() => {
   destroySettings = initSettings()
 
   unsubLocation = location.subscribe((path) => {
-    analyticsTrack("page_view", { path })
+    analyticsTrack("page_view", { path: normalizeAnalyticsPath(path) })
   })
 
   // Signal the backend that the frontend is ready

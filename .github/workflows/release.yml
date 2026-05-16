@@ -167,16 +167,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: deploy update metadata to Netlify
-        if: runner.os == 'Linux'
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: |
-          npm install -g netlify-cli
-          mkdir -p netlify-deploy/desktop
-          cp desktop/release/latest*.yml netlify-deploy/desktop/ 2>/dev/null || true
-          netlify deploy --prod --dir=netlify-deploy --site="$NETLIFY_SITE_ID"
+      - name: upload update metadata artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-metadata-${{ matrix.os }}
+          path: desktop/release/latest*.yml
+          if-no-files-found: ignore
 
       - name: upload cli assets
         uses: softprops/action-gh-release@v3
@@ -237,9 +233,33 @@ jobs:
           files: |
             ./Devsy.flatpak
 
+  deploy-update-metadata:
+    name: Deploy Update Metadata to Netlify
+    needs: [build-desktop]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: update-metadata-*
+          merge-multiple: true
+          path: sites/dl-devsy-sh/public/desktop
+
+      - name: deploy metadata
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          npm install -g netlify-cli
+          netlify deploy --prod \
+            --config=sites/dl-devsy-sh/netlify.toml \
+            --dir=sites/dl-devsy-sh/public \
+            --site="$NETLIFY_SITE_ID"
+
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak]
+    needs: [build-desktop, build-flatpak, deploy-update-metadata]
     if: github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
