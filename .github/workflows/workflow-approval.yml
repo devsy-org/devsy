@@ -19,4 +19,4 @@ jobs:
       - uses: skevetter/automatic-approve-action@v2
         with:
           token: ${{ steps.app-token.outputs.token }}
-          workflows: "commit.yml,lint.yml,pr-ci.yml,pre-commit.yml"
+          workflows: "commit.yml,lint.yml,pr-ci.yml,pre-commit.yml,release-please.yml,promote-release.yml"
