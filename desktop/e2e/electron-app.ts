@@ -11,10 +11,10 @@ export async function launchApp(): Promise<{
   app: ElectronApplication
   page: Page
 }> {
-  // Point the app at the mock devpod script via environment variable.
+  // Point the app at the mock devsy script via environment variable.
   // CliRunner detects .cjs extension and runs it through node directly,
   // so this works on all platforms without platform-specific wrappers.
-  const mockBinary = resolve(ROOT, "e2e/fixtures/mock-devpod.cjs")
+  const mockBinary = resolve(ROOT, "e2e/fixtures/mock-devsy.cjs")
   if (process.platform !== "win32") {
     chmodSync(mockBinary, 0o755)
   }
@@ -24,7 +24,7 @@ export async function launchApp(): Promise<{
     env: {
       ...process.env,
       NODE_ENV: "test",
-      DEVPOD_CLI_PATH: mockBinary,
+      DEVSY_CLI_PATH: mockBinary,
     },
   })
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict"
-// Mock devpod binary for e2e tests (cross-platform Node.js version)
+// Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
 // Handles --output json, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
@@ -20,7 +20,7 @@ function defaultState() {
           version: "v0.5.0",
           icon: "https://devsy.sh/icons/docker.svg",
           description: "Devsy on Docker",
-          source: { github: "devsy-org/devpod-provider-docker" },
+          source: { github: "devsy-org/devsy-provider-docker" },
           options: {
             DOCKER_HOST: {
               displayName: "Docker Host",
@@ -40,7 +40,7 @@ function defaultState() {
           version: "v0.3.0",
           icon: "https://devsy.sh/icons/k8s.svg",
           description: "Devsy on Kubernetes",
-          source: { github: "devsy-org/devpod-provider-kubernetes" },
+          source: { github: "devsy-org/devsy-provider-kubernetes" },
           options: {},
           optionGroups: [],
         },
@@ -398,6 +398,6 @@ switch (cmd) {
     break
 
   default:
-    process.stderr.write(`mock-devpod: unknown command '${cmd}'\n`)
+    process.stderr.write(`mock-devsy: unknown command '${cmd}'\n`)
     process.exit(1)
 }

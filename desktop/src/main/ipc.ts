@@ -209,19 +209,19 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   })
 
   // ── System ──
-  ipcMain.handle("devpod_version", async () => {
+  ipcMain.handle("devsy_version", async () => {
     return cli.runRaw(["version"])
   })
 
   ipcMain.handle(
-    "devpod_upgrade",
+    "devsy_upgrade",
     async (_event, args: { version: string }) => {
       return cli.runRaw(["upgrade", "--version", args.version])
     },
   )
 
   ipcMain.handle(
-    "devpod_upgrade_dry_run",
+    "devsy_upgrade_dry_run",
     async (_event, args: { version: string }) => {
       return cli.runRaw(["upgrade", "--version", args.version, "--dry-run"])
     },

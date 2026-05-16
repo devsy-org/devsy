@@ -24,7 +24,7 @@ export class LogStore {
   constructor(private baseDir: string) {}
 
   static defaultPath(): LogStore {
-    return new LogStore(join(homedir(), ".devpod", "logs"))
+    return new LogStore(join(homedir(), ".devsy", "logs"))
   }
 
   createLogFile(workspaceId: string): string {

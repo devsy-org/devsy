@@ -62,7 +62,7 @@ const PROVIDERS: Provider[] = [
   {
     name: "docker",
     version: "v0.5.0",
-    source: { github: "devsy-org/devpod-provider-docker" },
+    source: { github: "devsy-org/devsy-provider-docker" },
     description: "Devsy on Docker",
     isDefault: true,
     state: { initialized: true, singleMachine: true },
@@ -70,14 +70,14 @@ const PROVIDERS: Provider[] = [
   {
     name: "kubernetes",
     version: "v0.3.2",
-    source: { github: "devsy-org/devpod-provider-kubernetes" },
+    source: { github: "devsy-org/devsy-provider-kubernetes" },
     description: "Devsy on Kubernetes",
     state: { initialized: true, singleMachine: false },
   },
   {
     name: "aws",
     version: "v0.4.1",
-    source: { github: "devsy-org/devpod-provider-aws" },
+    source: { github: "devsy-org/devsy-provider-aws" },
     description: "Devsy on AWS",
     state: { initialized: false, singleMachine: false },
   },
@@ -232,10 +232,10 @@ const COMMANDS: Record<string, Handler> = {
   },
 
   // System
-  devpod_version: () => "v0.6.0-mock",
-  devpod_upgrade: () => "Successfully upgraded",
-  devpod_upgrade_dry_run: (args) =>
-    `asset_name=devpod-linux-arm64\nversion=${(args.version as string).replace(/^v/, "")}\nos=linux\narch=arm64\nurl=https://github.com/example/devpod/releases/download/${args.version}/devpod-linux-arm64\nsize=110624952`,
+  devsy_version: () => "v0.6.0-mock",
+  devsy_upgrade: () => "Successfully upgraded",
+  devsy_upgrade_dry_run: (args) =>
+    `asset_name=devsy-linux-arm64\nversion=${(args.version as string).replace(/^v/, "")}\nos=linux\narch=arm64\nurl=https://github.com/example/devsy/releases/download/${args.version}/devsy-linux-arm64\nsize=110624952`,
 
   // Logs
   workspace_logs_list: () => LOG_ENTRIES,

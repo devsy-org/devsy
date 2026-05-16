@@ -167,7 +167,7 @@ export function setFixedIde(value: boolean) {
 
 // ── Context Options (Devsy CLI) ─────────────────────────────────────
 
-// Options stored in Devsy CLI context (devpod context set-options)
+// Options stored in Devsy CLI context (devsy context set-options)
 export interface ContextOptions {
   telemetry: boolean
   agentUrl: string

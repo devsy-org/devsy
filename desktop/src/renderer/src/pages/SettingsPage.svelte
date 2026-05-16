@@ -33,9 +33,9 @@ import type {
   LocalOptions,
 } from "$lib/stores/settings.js"
 import {
-  devpodVersion,
-  devpodUpgrade,
-  devpodUpgradeDryRun,
+  devsyVersion,
+  devsyUpgrade,
+  devsyUpgradeDryRun,
 } from "$lib/ipc/commands.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -149,7 +149,7 @@ async function handleUpgrade() {
 
   // Dry-run first to validate
   try {
-    const info = await devpodUpgradeDryRun(version)
+    const info = await devsyUpgradeDryRun(version)
     if (info.includes("already up-to-date")) {
       toasts.info(`Already running ${version}`)
       return
@@ -162,7 +162,7 @@ async function handleUpgrade() {
   upgrading = true
   upgradeResult = null
   try {
-    await devpodUpgrade(version)
+    await devsyUpgrade(version)
     upgradeResult = version
     cliVersion = version.trim()
     toasts.success(`Upgraded to ${version}. Restart the app to complete.`)
@@ -193,7 +193,7 @@ onMount(async () => {
 
 async function loadVersion() {
   try {
-    cliVersion = (await devpodVersion()).trim()
+    cliVersion = (await devsyVersion()).trim()
   } catch {
     cliVersion = null
   }

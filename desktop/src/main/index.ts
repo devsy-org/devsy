@@ -113,7 +113,7 @@ app.whenReady().then(() => {
 
   // Resolve CLI binary: env override for testing, otherwise bundled in resources
   const binaryPath =
-    process.env.DEVPOD_CLI_PATH ||
+    process.env.DEVSY_CLI_PATH ||
     (app.isPackaged
       ? CliRunner.resolveBinaryPath(process.resourcesPath)
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))

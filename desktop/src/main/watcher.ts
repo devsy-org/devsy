@@ -58,10 +58,10 @@ export class Watcher {
     // Poll every 3 seconds
     this.pollTimer = setInterval(() => this.pollOnce(), 3000)
 
-    // Watch ~/.devpod/ for filesystem changes
-    const devpodDir = join(homedir(), ".devpod")
-    if (existsSync(devpodDir)) {
-      this.fsWatcher = watch(devpodDir, {
+    // Watch ~/.devsy/ for filesystem changes
+    const devsyDir = join(homedir(), ".devsy")
+    if (existsSync(devsyDir)) {
+      this.fsWatcher = watch(devsyDir, {
         ignoreInitial: true,
         awaitWriteFinish: { stabilityThreshold: 500 },
       })

@@ -15,7 +15,7 @@ finish-args:
   - --share=network
   # SSH agent forwarding
   - --socket=ssh-auth
-  # Home directory (for ~/.devpod, ~/.ssh, workspace sources)
+  # Home directory (for ~/.devsy, ~/.ssh, workspace sources)
   - --filesystem=home
   # D-Bus for notifications and system tray
   - --talk-name=org.freedesktop.Notifications

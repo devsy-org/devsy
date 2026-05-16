@@ -6,7 +6,7 @@ import {
   auditByResource,
   auditRecent,
   contextUse,
-  devpodVersion,
+  devsyVersion,
   machineCreate,
   machineDelete,
   machineStatus,
@@ -187,11 +187,11 @@ describe("IPC commands", () => {
   })
 
   describe("system commands", () => {
-    it("devpodVersion returns version string", async () => {
+    it("devsyVersion returns version string", async () => {
       mockInvoke.mockResolvedValue("v0.5.0")
-      const result = await devpodVersion()
+      const result = await devsyVersion()
       expect(result).toBe("v0.5.0")
-      expect(mockInvoke).toHaveBeenCalledWith("devpod_version")
+      expect(mockInvoke).toHaveBeenCalledWith("devsy_version")
     })
   })
 

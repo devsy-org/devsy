@@ -197,16 +197,16 @@ export async function appReady(): Promise<void> {
 }
 
 // System commands
-export async function devpodVersion(): Promise<string> {
-  return invoke<string>("devpod_version")
+export async function devsyVersion(): Promise<string> {
+  return invoke<string>("devsy_version")
 }
 
-export async function devpodUpgrade(version: string): Promise<string> {
-  return invoke<string>("devpod_upgrade", { version })
+export async function devsyUpgrade(version: string): Promise<string> {
+  return invoke<string>("devsy_upgrade", { version })
 }
 
-export async function devpodUpgradeDryRun(version: string): Promise<string> {
-  return invoke<string>("devpod_upgrade_dry_run", { version })
+export async function devsyUpgradeDryRun(version: string): Promise<string> {
+  return invoke<string>("devsy_upgrade_dry_run", { version })
 }
 
 // Log commands
