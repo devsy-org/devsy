@@ -5,6 +5,7 @@
       "release-type": "go",
       "prerelease-type": "rc",
       "prerelease": true,
+      "versioning": "prerelease",
       "bump-minor-pre-major": true,
       "component": "devsy",
       "changelog-path": "CHANGELOG.md",
