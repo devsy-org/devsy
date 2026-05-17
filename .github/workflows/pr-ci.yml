@@ -8,6 +8,7 @@ on:
 
 jobs:
   precommit:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Pre-commit
     runs-on: ubuntu-latest
     steps:
@@ -16,6 +17,7 @@ jobs:
       - uses: j178/prek-action@v2
 
   lint:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -33,6 +35,7 @@ jobs:
           only-new-issues: true
 
   can-read-secret:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Can Read Secret
     runs-on: ubuntu-latest
     outputs:
@@ -48,6 +51,7 @@ jobs:
           fi
 
   build-cli:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Build CLI Binary on ${{ matrix.runner }}
     needs: [precommit, lint]
     strategy:
@@ -88,6 +92,7 @@ jobs:
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
   integration-tests-unprivileged:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Test ${{ matrix.label }} on ${{ matrix.runner }}
     needs: [build-cli]
     strategy:
@@ -154,6 +159,7 @@ jobs:
           go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
+    if: "github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')"
     name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
     needs: [can-read-secret, build-cli]
     strategy:
