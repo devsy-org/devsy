@@ -1,7 +1,7 @@
 name: Release
 on:
   release:
-    types: [prereleased, published]
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
