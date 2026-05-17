@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1-rc](https://github.com/devsy-org/devsy/compare/v1.2.0...v1.2.1-rc) (2026-05-17)
+
+
+### Bug Fixes
+
+* **ci:** add prerelease versioning to release-please config ([#305](https://github.com/devsy-org/devsy/issues/305)) ([f65bb85](https://github.com/devsy-org/devsy/commit/f65bb8540c9a03c4bcafa95bdb247e00cdac6d81))
+
 ## [1.2.0](https://github.com/devsy-org/devsy/compare/v1.1.0...v1.2.0) (2026-05-17)
 
 
