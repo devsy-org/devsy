@@ -1,4 +1,5 @@
 import { dialog, type BrowserWindow } from "electron"
+import { trackEvent } from "./analytics.js"
 
 export async function initAutoUpdater(
   getMainWindow: () => BrowserWindow | null,
@@ -8,7 +9,17 @@ export async function initAutoUpdater(
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
+  autoUpdater.on("checking-for-update", () => {
+    trackEvent("update_check")
+  })
+
+  autoUpdater.on("update-available", (info) => {
+    trackEvent("update_available", { version: info.version })
+  })
+
   autoUpdater.on("update-downloaded", (info) => {
+    trackEvent("update_downloaded", { version: info.version })
+
     const win = getMainWindow()
     if (!win) return
 
@@ -23,12 +34,14 @@ export async function initAutoUpdater(
       })
       .then(({ response }) => {
         if (response === 0) {
+          trackEvent("update_installed", { version: info.version })
           autoUpdater.quitAndInstall()
         }
       })
   })
 
   autoUpdater.on("error", (err) => {
+    trackEvent("update_error", { error_type: err.name })
     console.error("Auto-update error:", err.message)
   })
 

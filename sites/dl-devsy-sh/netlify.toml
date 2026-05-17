@@ -1,0 +1,8 @@
+[build]
+  publish = "public"
+
+[[headers]]
+  for = "/desktop/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=60"

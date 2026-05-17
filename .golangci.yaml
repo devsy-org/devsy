@@ -31,6 +31,12 @@ linters:
     - unparam
     - unused
     - whitespace
+  exclusions:
+    rules:
+      - linters:
+          - gosec
+        text: "G101"
+        path: "pkg/telemetry/analytics/client.go"
   settings:
     cyclop:
       max-complexity: 8

@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { ipcMain } from "electron"
+import { trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
@@ -71,6 +72,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "provider_add",
     async (_event, args: { name: string; source?: string }) => {
+      trackEvent("provider_add")
       const src = args.source ?? args.name
       const cliArgs = ["provider", "add", src, "--use=false"]
       if (args.source) {
@@ -81,6 +83,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   )
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
+    trackEvent("provider_remove")
     await cli.runRaw(["provider", "delete", args.name])
   })
 
@@ -261,6 +264,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
         debug?: boolean
       },
     ) => {
+      trackEvent("workspace_create", { provider: args.provider })
       const cliArgs = ["up", args.source]
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
@@ -304,6 +308,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "workspace_stop",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
+      trackEvent("workspace_stop")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -343,6 +348,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "workspace_delete",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
+      trackEvent("workspace_delete")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -383,6 +389,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "workspace_rebuild",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
+      trackEvent("workspace_rebuild")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -422,6 +429,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "workspace_reset",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
+      trackEvent("workspace_reset")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -636,4 +644,35 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       return key
     },
   )
+
+  // ── Analytics ──
+  ipcMain.handle(
+    "analytics_track",
+    async (
+      _event,
+      args: { name: string; properties?: Record<string, unknown> },
+    ) => {
+      if (
+        !args?.name ||
+        typeof args.name !== "string" ||
+        args.name.length > 64
+      ) {
+        return
+      }
+      trackEvent(args.name, sanitizeAnalyticsProperties(args.properties))
+    },
+  )
+}
+
+function sanitizeAnalyticsProperties(
+  input?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object") return undefined
+  const entries = Object.entries(input).slice(0, 20)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of entries) {
+    if (!k || k.length > 64) continue
+    out[k] = typeof v === "string" ? v.slice(0, 256) : v
+  }
+  return out
 }

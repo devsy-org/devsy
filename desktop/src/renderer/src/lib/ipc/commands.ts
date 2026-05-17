@@ -242,3 +242,11 @@ export async function sshKeyGenerate(params: {
 }): Promise<SshKeyInfo> {
   return invoke<SshKeyInfo>("ssh_key_generate", params)
 }
+
+// Analytics
+export function analyticsTrack(
+  name: string,
+  properties?: Record<string, unknown>,
+): void {
+  invoke("analytics_track", { name, properties }).catch(() => {})
+}

@@ -1,5 +1,6 @@
 import { join } from "node:path"
 import { app, BrowserWindow, session } from "electron"
+import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
 import { CliRunner } from "./cli.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
@@ -90,6 +91,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  initAnalytics()
+  trackEvent("app_open")
+
   // Register devsy:// as the default protocol handler for this app.
   app.setAsDefaultProtocolClient(PROTOCOL)
 
@@ -136,6 +140,8 @@ app.whenReady().then(() => {
 
   app.on("before-quit", () => {
     ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    trackEvent("app_close")
+    shutdownAnalytics().catch(() => {})
     ptyManager.destroyAll()
   })
 
