@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0-rc](https://github.com/devsy-org/devsy/compare/v1.2.1-rc...v1.3.0-rc) (2026-05-17)
+
+
+### Features
+
+* add workspace rename command with auto-stop and e2e tests ([#308](https://github.com/devsy-org/devsy/issues/308)) ([ff2afac](https://github.com/devsy-org/devsy/commit/ff2afac1170f863629a95850db304cb32caeb6e9))
+* **desktop:** add workspace rename UI with inline editing ([#311](https://github.com/devsy-org/devsy/issues/311)) ([0038071](https://github.com/devsy-org/devsy/commit/0038071020b48fae8ba2774e1a5f6baa01db5af2))
+
+
+### Bug Fixes
+
+* **ci:** flatten downloaded CLI artifacts before desktop build ([#312](https://github.com/devsy-org/devsy/issues/312)) ([8a3b397](https://github.com/devsy-org/devsy/commit/8a3b397d6055c2f886740ffe5908a5e87b0a8a40))
+* **ci:** skip network-dependent OCI tests in goreleaser pre-hook ([#309](https://github.com/devsy-org/devsy/issues/309)) ([87d893e](https://github.com/devsy-org/devsy/commit/87d893eec5765d67966a0c826a2fa8220bfb99f3))
+
 ## [1.2.1-rc](https://github.com/devsy-org/devsy/compare/v1.2.0...v1.2.1-rc) (2026-05-17)
 
 
