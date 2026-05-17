@@ -138,12 +138,17 @@ jobs:
       - name: generate pro provider
         if: runner.os == 'Linux'
         working-directory: ./hack/pro
-        run: go run ./main.go ${{ inputs.tag || github.ref_name }} ../../desktop/resources/bin > ../../dist/provider.yaml
+        env:
+          PARTIAL: "true"
+        run: go run ./main.go ${{ inputs.tag || github.ref_name }} ../../dist > ../../dist/provider.yaml
 
       - name: configure Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
-        run: echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
+        run: |
+          echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          echo "GYP_MSVS_OVERRIDE_PATH=$vsPath" >> $env:GITHUB_ENV
 
       - uses: actions/setup-python@v6
         with:
@@ -167,6 +172,10 @@ jobs:
       - name: install xvfb
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: build desktop app
+        working-directory: desktop
+        run: npx electron-vite build
 
       - name: package and publish with electron-builder
         working-directory: desktop
