@@ -220,6 +220,12 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: rename
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: delivery
             runner: ubuntu-latest
             free-disk-space: false
