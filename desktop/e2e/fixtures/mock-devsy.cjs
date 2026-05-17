@@ -392,6 +392,20 @@ switch (cmd) {
     break
   }
 
+  case "rename": {
+    const oldId = sub
+    const newId = extra
+    if (oldId && newId) {
+      const idx = state.workspaces.findIndex((w) => w.id === oldId)
+      if (idx !== -1) {
+        state.workspaces[idx].id = newId
+        saveState(state)
+      }
+    }
+    out("")
+    break
+  }
+
   case "upgrade":
     out("Already up to date.")
     process.exit(0)

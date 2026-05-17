@@ -7,6 +7,7 @@ import {
   ClipboardCopy,
   Ellipsis,
   Monitor,
+  Pencil,
   Play,
   RefreshCw,
   RotateCcw,
@@ -17,6 +18,7 @@ import {
 import * as Tooltip from "$lib/components/ui/tooltip/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import { Button } from "$lib/components/ui/button/index.js"
+import { Input } from "$lib/components/ui/input/index.js"
 import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
@@ -38,6 +40,7 @@ import {
   workspaceRebuild,
   workspaceReset,
   workspaceDelete,
+  workspaceRename,
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
@@ -121,6 +124,9 @@ let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
 let selectedIde = $state<string | null>(null)
+let renaming = $state(false)
+let renameValue = $state("")
+let renameSaving = $state(false)
 let currentIde = $derived(selectedIde ?? workspace?.ide?.name ?? "none")
 let filteredIdes = $derived(
   IDE_OPTIONS.filter((i) =>
@@ -357,6 +363,30 @@ async function handleDelete() {
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   }
 }
+
+function startRename() {
+  renameValue = id
+  renaming = true
+}
+
+async function handleRename() {
+  const trimmed = renameValue.trim()
+  if (!trimmed || trimmed === id) {
+    renaming = false
+    return
+  }
+  renameSaving = true
+  try {
+    await workspaceRename(id, trimmed)
+    toasts.success(`Renamed workspace to ${trimmed}`)
+    renaming = false
+    goto(`/workspaces/${trimmed}`)
+  } catch (err) {
+    toasts.error(`Failed to rename: ${extractErrorMessage(err)}`)
+  } finally {
+    renameSaving = false
+  }
+}
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col gap-6">
@@ -364,7 +394,29 @@ async function handleDelete() {
     <Button variant="ghost" size="sm" onclick={() => goto("/workspaces")}>
       &larr; Back
     </Button>
-    <h1 class="text-2xl font-bold">{id}</h1>
+    {#if renaming}
+      <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
+        <Input
+          data-slot="workspace-rename-input"
+          value={renameValue}
+          oninput={(e) => (renameValue = e.currentTarget.value)}
+          class="h-8 w-56 text-lg font-bold"
+          disabled={renameSaving}
+        />
+        <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
+          {renameSaving ? "Saving..." : "Save"}
+        </Button>
+        <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
+          Cancel
+        </Button>
+      </form>
+    {:else}
+      <h1 class="text-2xl font-bold">{id}</h1>
+      <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
+        <Pencil class="h-4 w-4" />
+        <span class="sr-only">Rename</span>
+      </Button>
+    {/if}
     {#if workspace?.provider?.name}
       <span class={badgeVariants({ variant: "secondary" })}>{workspace.provider.name}</span>
     {/if}
