@@ -412,7 +412,7 @@ async function handleRename() {
       </form>
     {:else}
       <h1 class="text-2xl font-bold">{id}</h1>
-      <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename}>
+      <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
         <Pencil class="h-4 w-4" />
         <span class="sr-only">Rename</span>
       </Button>
