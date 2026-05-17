@@ -141,6 +141,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
+	rootCmd.AddCommand(NewRenameCmd(globalFlags))
 	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
 	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
 

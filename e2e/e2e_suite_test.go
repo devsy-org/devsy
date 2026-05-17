@@ -25,6 +25,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/outdated"
 	_ "github.com/devsy-org/devsy/e2e/tests/provider"
 	_ "github.com/devsy-org/devsy/e2e/tests/readconfiguration"
+	_ "github.com/devsy-org/devsy/e2e/tests/rename"
 	_ "github.com/devsy-org/devsy/e2e/tests/runusercommands"
 	_ "github.com/devsy-org/devsy/e2e/tests/selfupdate"
 	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
