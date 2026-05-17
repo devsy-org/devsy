@@ -287,6 +287,22 @@ func (f *Framework) DevsyProviderRename(
 	return nil
 }
 
+// DevsyRename executes the `devsy rename` command in the test framework.
+func (f *Framework) DevsyRename(
+	ctx context.Context,
+	oldName, newName string,
+	args ...string,
+) error {
+	baseArgs := []string{"rename", oldName, newName}
+	baseArgs = append(baseArgs, args...)
+	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	if err != nil {
+		return fmt.Errorf("devsy rename failed: %s", err.Error())
+	}
+
+	return nil
+}
+
 // DevsyProviderOptionsJSON executes `devsy provider options --output json` and returns the raw JSON.
 func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
