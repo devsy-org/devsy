@@ -242,27 +242,8 @@ module.exports = {
       ],
     },
     {
-      type: "category",
-      label: "Other topics",
-      items: [
-        {
-          type: "doc",
-          id: "other-topics/telemetry",
-        },
-        {
-          type: "doc",
-          id: "other-topics/mobile-support",
-        },
-      ],
-    },
-    {
       type: "doc",
       id: "licenses/devsy",
-    },
-    {
-      type: "link",
-      label: "community maintained",
-      href: "https://github.com/devsy-org/devsy",
     },
   ],
 };
