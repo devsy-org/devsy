@@ -66,7 +66,7 @@ jobs:
             go-os: darwin
             go-arch: universal
             builder-args: --mac
-          - os: windows-latest
+          - os: windows-2022
             go-os: windows
             go-arch: amd64
             builder-args: --win
@@ -141,14 +141,6 @@ jobs:
         env:
           PARTIAL: "true"
         run: go run ./main.go ${{ inputs.tag || github.ref_name }} ../../dist > ../../dist/provider.yaml
-
-      - name: configure Windows build tools
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          echo "GYP_MSVS_OVERRIDE_PATH=$vsPath" >> $env:GITHUB_ENV
 
       - uses: actions/setup-python@v6
         with:
