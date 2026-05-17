@@ -58,6 +58,13 @@ export async function workspaceStatus(workspaceId: string): Promise<string> {
   return invoke<string>("workspace_status", { workspaceId })
 }
 
+export async function workspaceRename(
+  workspaceId: string,
+  newWorkspaceId: string,
+): Promise<void> {
+  return invoke("workspace_rename", { workspaceId, newWorkspaceId })
+}
+
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")

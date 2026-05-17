@@ -58,6 +58,17 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     },
   )
 
+  ipcMain.handle(
+    "workspace_rename",
+    async (
+      _event,
+      args: { workspaceId: string; newWorkspaceId: string },
+    ) => {
+      trackEvent("workspace_rename", { workspaceId: args.workspaceId })
+      await cli.runRaw(["rename", args.workspaceId, args.newWorkspaceId])
+    },
+  )
+
   // ── Providers ──
   ipcMain.handle("provider_list", async () => {
     const raw = await cli.run<Record<string, ProviderEntry>>([
