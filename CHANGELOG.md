@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/devsy-org/devsy/compare/v1.1.0...v1.2.0) (2026-05-17)
+
+
+### Features
+
+* **telemetry:** replace Loft analytics with PostHog and add Netlify update hosting ([#303](https://github.com/devsy-org/devsy/issues/303)) ([07824bd](https://github.com/devsy-org/devsy/commit/07824bdf875abefc5d51c1a1d1fe68c34bbde08f))
+
 ## [1.1.0](https://github.com/devsy-org/devsy/compare/v1.0.0...v1.1.0) (2026-05-16)
 
 
