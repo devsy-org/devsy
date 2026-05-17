@@ -127,6 +127,7 @@ jobs:
           # Also stage binaries for dist/ upload and provider generation
           mkdir -p dist/
           find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
+          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} desktop/resources/bin/ \;
 
       - name: setup CLI binary (windows)
         if: runner.os == 'Windows'
@@ -145,10 +146,7 @@ jobs:
       - name: configure Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          echo "GYP_MSVS_OVERRIDE_PATH=$vsPath" >> $env:GITHUB_ENV
+        run: echo "GYP_MSVS_VERSION=2025" >> $env:GITHUB_ENV
 
       - uses: actions/setup-python@v6
         with:
