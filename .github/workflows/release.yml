@@ -101,6 +101,13 @@ jobs:
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
+      - name: flatten CLI artifacts
+        shell: bash
+        run: |
+          BIN_DIR="${{ runner.temp }}/devsy-bin"
+          find "$BIN_DIR" -mindepth 2 -type f -exec mv {} "$BIN_DIR/" \;
+          find "$BIN_DIR" -mindepth 1 -type d -delete 2>/dev/null || true
+
       - name: setup CLI binary (unix)
         if: runner.os != 'Windows'
         shell: bash
