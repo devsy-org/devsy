@@ -6,8 +6,7 @@ import (
 )
 
 const (
-	// Replace with a real PostHog project API key.
-	posthogAPIKey = "phc_PLACEHOLDER"
+	posthogAPIKey = "phc_u3TY39zxfrRcyXJoqZ5WRFVTr75gZBHi2AUrfqJ6GCj2"
 
 	posthogEndpoint = "https://us.i.posthog.com"
 )

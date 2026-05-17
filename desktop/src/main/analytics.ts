@@ -4,8 +4,7 @@ import { PostHog } from "posthog-node"
 import { app } from "electron"
 import { machineIdSync } from "./machine-id.js"
 
-// Replace with a real PostHog project API key.
-const POSTHOG_API_KEY = "phc_PLACEHOLDER"
+const POSTHOG_API_KEY = "phc_u3TY39zxfrRcyXJoqZ5WRFVTr75gZBHi2AUrfqJ6GCj2"
 const POSTHOG_HOST = "https://us.i.posthog.com"
 
 let client: PostHog | null = null
