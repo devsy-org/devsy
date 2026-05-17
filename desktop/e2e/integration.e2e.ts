@@ -300,6 +300,28 @@ test.describe
       await expect(headerArea).toContainText("Stopped", { timeout: 10000 })
     })
 
+    test("can rename a workspace", async () => {
+      // We're on the node-js detail page after stopping it
+
+      // Click the rename (pencil) button
+      await page.locator('[data-slot="workspace-rename-btn"]').click()
+
+      // Fill the rename input with new name
+      const renameInput = page.locator('[data-slot="workspace-rename-input"]')
+      await renameInput.waitFor({ timeout: 5000 })
+      await renameInput.fill("node-js-renamed")
+
+      // Click Save
+      await page.locator('[data-slot="workspace-rename-save"]').click()
+
+      // Wait for rename to complete and navigation to new URL
+      await page.waitForTimeout(4000)
+
+      // Verify the new name appears in the header
+      const headerArea = page.locator("h1", { hasText: "node-js-renamed" })
+      await expect(headerArea).toBeVisible({ timeout: 10000 })
+    })
+
     test("should delete workspace from detail page", async () => {
       // Open the More actions dropdown, then click Delete
       await page.getByRole("button", { name: "More actions" }).click()
@@ -313,10 +335,11 @@ test.describe
       // Navigates to /workspaces on success — wait for table
       await page.locator("table").waitFor({ timeout: 15000 })
 
-      // Verify node-js is gone
-      await expect(page.locator("table")).not.toContainText("node-js", {
-        timeout: 10000,
-      })
+      // Verify renamed workspace is gone
+      await expect(page.locator("table")).not.toContainText(
+        "node-js-renamed",
+        { timeout: 10000 },
+      )
     })
   })
 
