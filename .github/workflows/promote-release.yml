@@ -77,8 +77,9 @@ jobs:
 
       - name: create stable release
         uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
-          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ steps.version.outputs.stable_tag }}
           target_commitish: ${{ steps.version.outputs.commit_sha }}
           name: ${{ steps.version.outputs.stable_tag }}
