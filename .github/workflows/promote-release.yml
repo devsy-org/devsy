@@ -84,7 +84,7 @@ jobs:
           body: ${{ steps.rc_notes.outputs.body }}
           draft: false
           prerelease: false
-          make_latest: true
+          make_latest: "legacy"
 
       - name: trigger full rebuild
         env:
