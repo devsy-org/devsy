@@ -1,0 +1,70 @@
+name: Restore Netlify Site
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_id:
+        description: "Specific deploy ID to restore (leave empty to auto-detect last good deploy)"
+        required: false
+        type: string
+
+jobs:
+  restore:
+    name: Restore Netlify Production Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      - name: Find and restore deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          DEPLOY_ID_INPUT: ${{ inputs.deploy_id }}
+        run: |
+          if [ -n "$DEPLOY_ID_INPUT" ]; then
+            DEPLOY_ID="$DEPLOY_ID_INPUT"
+            echo "Restoring specific deploy: $DEPLOY_ID"
+          else
+            echo "Finding last non-CLI deploy (from Netlify build system)..."
+            DEPLOY_ID=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=20" | \
+              jq -r '[.[] | select(.deploy_source != "cli" and .state == "ready")] | .[0].id')
+
+            if [ "$DEPLOY_ID" = "null" ] || [ -z "$DEPLOY_ID" ]; then
+              echo "ERROR: Could not find a non-CLI deploy to restore"
+              echo "Available deploys:"
+              curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+                "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=10" | \
+                jq '.[] | {id, created_at, deploy_source, state, title}'
+              exit 1
+            fi
+            echo "Found deploy to restore: $DEPLOY_ID"
+          fi
+
+          echo "Restoring deploy $DEPLOY_ID to production..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID/restore")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Netlify restore failed (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+          echo "Restore API returned HTTP $HTTP_CODE — success"
+
+          echo ""
+          echo "Verifying..."
+          sleep 10
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://devsy.sh")
+          echo "devsy.sh HTTP status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "SUCCESS: devsy.sh is back online"
+          else
+            echo "WARNING: devsy.sh returned $STATUS — may need a few more seconds to propagate"
+          fi

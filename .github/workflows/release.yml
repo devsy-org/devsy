@@ -264,33 +264,9 @@ jobs:
           files: |
             ./Devsy.flatpak
 
-  deploy-update-metadata:
-    name: Deploy Update Metadata to Netlify
-    needs: [build-desktop]
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: update-metadata-*
-          merge-multiple: true
-          path: sites/dl-devsy-sh/public/desktop
-
-      - name: deploy metadata
-        working-directory: sites/dl-devsy-sh
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: |
-          npm install -g netlify-cli
-          netlify deploy --prod --no-build \
-            --dir=public \
-            --site="$NETLIFY_SITE_ID"
-
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak, deploy-update-metadata]
+    needs: [build-desktop, build-flatpak]
     permissions:
       contents: write
     if: github.event.release.prerelease
