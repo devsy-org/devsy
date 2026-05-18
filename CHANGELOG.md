@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.17](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.16...v1.3.0-rc.17) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** pass app token via GITHUB_TOKEN env for softprops release step ([#357](https://github.com/devsy-org/devsy/issues/357)) ([69b8cb3](https://github.com/devsy-org/devsy/commit/69b8cb302776cf6bacf54e4dc0a7f6412a3cdd5f))
+
 ## [1.3.0-rc.16](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.15...v1.3.0-rc.16) (2026-05-18)
 
 
