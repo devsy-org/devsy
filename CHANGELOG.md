@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.3](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.2...v1.3.0-rc.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** add permissions to publish-prerelease job ([#324](https://github.com/devsy-org/devsy/issues/324)) ([2f3cdbd](https://github.com/devsy-org/devsy/commit/2f3cdbda66e68459cb26770ebcf62bff6648448c))
+
 ## [1.3.0-rc.2](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.1...v1.3.0-rc.2) (2026-05-18)
 
 
