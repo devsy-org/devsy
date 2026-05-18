@@ -33,7 +33,7 @@ jobs:
           RC_TAG: ${{ inputs.rc_tag }}
         run: |
           if ! echo "$RC_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
-            echo "::error::Invalid RC tag format: $RC_TAG (expected v*.*.*-rc*)"
+            echo "::error::Invalid RC tag format: $RC_TAG (expected v*.*.*-rc.*)"
             exit 1
           fi
 
