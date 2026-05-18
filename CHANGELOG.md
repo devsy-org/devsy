@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0-rc.2](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.1...v1.3.0-rc.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** add --no-build flag to netlify deploy in release workflow ([#323](https://github.com/devsy-org/devsy/issues/323)) ([3c186eb](https://github.com/devsy-org/devsy/commit/3c186ebf66a693989bdef14f9ab708bb59439eda))
+* **ci:** fix Netlify deploy and Flatpak upload in release workflow ([#321](https://github.com/devsy-org/devsy/issues/321)) ([642dc1c](https://github.com/devsy-org/devsy/commit/642dc1c63aba7e6ba7e61412e19cf3cc57b3a9b2))
+
 ## [1.3.0-rc.1](https://github.com/devsy-org/devsy/compare/v1.3.0-rc...v1.3.0-rc.1) (2026-05-18)
 
 
