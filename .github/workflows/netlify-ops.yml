@@ -26,12 +26,12 @@ jobs:
           DEPLOYS=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=100")
 
-          DEPLOY_ID=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready")] | .[0].id')
-          DEPLOY_INFO=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready")] | .[0] | {id, created_at, deploy_source, title}')
+          DEPLOY_ID=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready" and .deploy_source != "cli")] | .[0].id')
+          DEPLOY_INFO=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready" and .deploy_source != "cli")] | .[0] | {id, created_at, deploy_source, title}')
 
           if [ "$DEPLOY_ID" = "null" ] || [ -z "$DEPLOY_ID" ]; then
-            echo "ERROR: No ready deploy found in last 100. States seen:"
-            echo "$DEPLOYS" | jq '[.[] | .state] | group_by(.) | map({state: .[0], count: length})'
+            echo "ERROR: No non-CLI ready deploy found in last 100. All deploys:"
+            echo "$DEPLOYS" | jq '.[] | {id, state, deploy_source, created_at}' | head -80
             exit 1
           fi
 
