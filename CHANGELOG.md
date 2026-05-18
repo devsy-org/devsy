@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0-rc.19](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.18...v1.3.0-rc.19) (2026-05-18)
+
+
+### Features
+
+* **ci:** enable autoMergeRequest in release-please action ([#363](https://github.com/devsy-org/devsy/issues/363)) ([2f889bb](https://github.com/devsy-org/devsy/commit/2f889bb7a81ce129ca1704a2b495fbe342740c48))
+
+
+### Bug Fixes
+
+* **ci:** pass app token via token input for softprops/action-gh-release ([#361](https://github.com/devsy-org/devsy/issues/361)) ([77a9373](https://github.com/devsy-org/devsy/commit/77a937307921fcb143b722741d52b6fbb44f6407))
+
 ## [1.3.0-rc.18](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.17...v1.3.0-rc.18) (2026-05-18)
 
 
