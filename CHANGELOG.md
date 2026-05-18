@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0-rc.5](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.4...v1.3.0-rc.5) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** correct RC tag regex to match dot-separated format ([#328](https://github.com/devsy-org/devsy/issues/328)) ([6bdacbe](https://github.com/devsy-org/devsy/commit/6bdacbeaec13ae1c620ad3e817c38bc89f4be1c9))
+* **ci:** remove Netlify prod deploy that overwrites devsy.sh ([#330](https://github.com/devsy-org/devsy/issues/330)) ([791c0e7](https://github.com/devsy-org/devsy/commit/791c0e7f55b04d835a177f3d1f7c3c9dfe9323dd))
+
 ## [1.3.0-rc.4](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.3...v1.3.0-rc.4) (2026-05-18)
 
 
