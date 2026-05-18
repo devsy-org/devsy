@@ -278,6 +278,8 @@ jobs:
   prerelease:
     name: Publish Prerelease
     needs: [build-desktop, build-flatpak, deploy-update-metadata]
+    permissions:
+      contents: write
     if: github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
