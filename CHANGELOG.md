@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.13](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.12...v1.3.0-rc.13) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** use github.token for stable release creation in promote workflow ([#349](https://github.com/devsy-org/devsy/issues/349)) ([abde042](https://github.com/devsy-org/devsy/commit/abde04251bc5bcebf8c6e06dfe778a57d764e97c))
+
 ## [1.3.0-rc.12](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.11...v1.3.0-rc.12) (2026-05-18)
 
 
