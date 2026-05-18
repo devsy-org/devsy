@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.15](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.14...v1.3.0-rc.15) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** use make_latest legacy to avoid admin permission requirement ([#353](https://github.com/devsy-org/devsy/issues/353)) ([540e67a](https://github.com/devsy-org/devsy/commit/540e67ac6581f7386de511e877a6b9bdc73a4525))
+
 ## [1.3.0-rc.14](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.13...v1.3.0-rc.14) (2026-05-18)
 
 
