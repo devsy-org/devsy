@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.20](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.19...v1.3.0-rc.20) (2026-05-18)
+
+
+### Features
+
+* auto-overwrite stale agent binary and workspace clean command ([#364](https://github.com/devsy-org/devsy/issues/364)) ([76841a4](https://github.com/devsy-org/devsy/commit/76841a48e134e2da3001e5f671d2523f97659599))
+
 ## [1.3.0-rc.19](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.18...v1.3.0-rc.19) (2026-05-18)
 
 
