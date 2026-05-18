@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.12](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.11...v1.3.0-rc.12) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** fix RC header rewrite and use gh CLI for stable release creation ([#347](https://github.com/devsy-org/devsy/issues/347)) ([9b80897](https://github.com/devsy-org/devsy/commit/9b80897dbfba3d4aafc3b751befb2e1e64d5e5de))
+
 ## [1.3.0-rc.11](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.10...v1.3.0-rc.11) (2026-05-18)
 
 
