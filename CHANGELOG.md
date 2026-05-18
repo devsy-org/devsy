@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.0-rc.1](https://github.com/devsy-org/devsy/compare/v1.3.0-rc...v1.3.0-rc.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** pin Windows desktop builds to windows-2022 for node-gyp compat ([#319](https://github.com/devsy-org/devsy/issues/319)) ([fb38c95](https://github.com/devsy-org/devsy/commit/fb38c9505b48d9bb746340e45ae3ba22577b3b19))
+* **ci:** resolve 3 desktop build failures in release workflow ([#314](https://github.com/devsy-org/devsy/issues/314)) ([4c5cea8](https://github.com/devsy-org/devsy/commit/4c5cea8fff9ebde992821710583dd54122855ce3))
+* **ci:** revert CI skip condition on release-please PRs ([#320](https://github.com/devsy-org/devsy/issues/320)) ([a7110d7](https://github.com/devsy-org/devsy/commit/a7110d727f04e95e589450f432ed0a007a6cd5a2))
+
 ## [1.3.0-rc](https://github.com/devsy-org/devsy/compare/v1.2.1-rc...v1.3.0-rc) (2026-05-17)
 
 
