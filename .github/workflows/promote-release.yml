@@ -65,28 +65,26 @@ jobs:
           echo "Stable tag: $STABLE_TAG at commit: $COMMIT_SHA"
 
       - name: fetch RC release notes
-        id: rc_notes
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RC_TAG: ${{ inputs.rc_tag }}
-          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
         run: |
           BODY=$(gh release view "$RC_TAG" --json body -q .body)
-          STABLE_VERSION="${STABLE_TAG#v}"
-          BODY=$(echo "$BODY" | sed "1s/^.*-rc\.[0-9]* /$STABLE_VERSION /")
-          { echo "body<<EOF"; echo "$BODY"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          # Strip -rc.N suffix from the version string in the first line header
+          BODY=$(echo "$BODY" | sed "1s/-rc\.[0-9]*//" )
+          echo "$BODY" > /tmp/release-notes.md
 
       - name: create stable release
-        uses: softprops/action-gh-release@v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ steps.version.outputs.stable_tag }}
-          target_commitish: ${{ steps.version.outputs.commit_sha }}
-          name: ${{ steps.version.outputs.stable_tag }}
-          body: ${{ steps.rc_notes.outputs.body }}
-          draft: false
-          prerelease: false
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
+          COMMIT_SHA: ${{ steps.version.outputs.commit_sha }}
+        run: |
+          gh release create "$STABLE_TAG" \
+            --target "$COMMIT_SHA" \
+            --title "$STABLE_TAG" \
+            --notes-file /tmp/release-notes.md \
+            --latest
 
       - name: trigger full rebuild
         env:
