@@ -10,11 +10,12 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       go: ${{ steps.filter.outputs.go }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -601,7 +602,8 @@ jobs:
       - name: Check required jobs
         run: |
           # Fail if any required job failed (not skipped)
-          if [[ "${{ needs.precommit.result }}" == "failure" ]] || \
+          if [[ "${{ needs.changes.result }}" == "failure" ]] || \
+             [[ "${{ needs.precommit.result }}" == "failure" ]] || \
              [[ "${{ needs.lint.result }}" == "failure" ]] || \
              [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
