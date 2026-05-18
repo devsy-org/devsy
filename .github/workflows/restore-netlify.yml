@@ -13,9 +13,6 @@ jobs:
     name: Restore Netlify Production Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Install Netlify CLI
-        run: npm install -g netlify-cli
-
       - name: Find and restore deploy
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -45,7 +42,7 @@ jobs:
           echo "Restoring deploy $DEPLOY_ID to production..."
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID/restore")
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys/$DEPLOY_ID/restore")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
