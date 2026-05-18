@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.18](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.17...v1.3.0-rc.18) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** remove permission-contents scope restriction from app token step ([#359](https://github.com/devsy-org/devsy/issues/359)) ([28b8a1b](https://github.com/devsy-org/devsy/commit/28b8a1be2831509ead2dd25f552ef05e3f698d62))
+
 ## [1.3.0-rc.17](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.16...v1.3.0-rc.17) (2026-05-18)
 
 
