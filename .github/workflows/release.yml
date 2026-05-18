@@ -271,7 +271,7 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           npm install -g netlify-cli
-          netlify deploy --prod \
+          netlify deploy --prod --no-build \
             --dir=public \
             --site="$NETLIFY_SITE_ID"
 
