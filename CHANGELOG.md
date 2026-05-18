@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.9](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.8...v1.3.0-rc.9) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** add fetch-tags to promote-release checkout step ([#340](https://github.com/devsy-org/devsy/issues/340)) ([8d457be](https://github.com/devsy-org/devsy/commit/8d457be20695e89568c644c522cb20448f229d32))
+
 ## [1.3.0-rc.8](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.7...v1.3.0-rc.8) (2026-05-18)
 
 
