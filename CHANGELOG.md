@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.14](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.13...v1.3.0-rc.14) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** restore softprops release step and wire rc_notes output id ([#351](https://github.com/devsy-org/devsy/issues/351)) ([a31522b](https://github.com/devsy-org/devsy/commit/a31522bd5c947f85f5177a0f709097cae8d37d9c))
+
 ## [1.3.0-rc.13](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.12...v1.3.0-rc.13) (2026-05-18)
 
 
