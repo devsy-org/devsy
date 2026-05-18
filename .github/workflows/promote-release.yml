@@ -71,11 +71,12 @@ jobs:
           COMMIT_SHA: ${{ steps.version.outputs.commit_sha }}
           RC_TAG: ${{ inputs.rc_tag }}
         run: |
+          RC_BODY=$(gh release view "$RC_TAG" --json body -q .body)
+
           gh release create "$STABLE_TAG" \
             --target "$COMMIT_SHA" \
             --title "$STABLE_TAG" \
-            --generate-notes \
-            --notes-start-tag "$RC_TAG" \
+            --notes "$RC_BODY" \
             --latest
 
           echo "Created stable release $STABLE_TAG"
