@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0-rc.10](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.9...v1.3.0-rc.10) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** publish stable release as latest instead of draft in promote workflow ([#344](https://github.com/devsy-org/devsy/issues/344)) ([4455eea](https://github.com/devsy-org/devsy/commit/4455eeae321a568421e26d6946260142d8504e63))
+* **ci:** use GITHUB_TOKEN for release.yml dispatch in promote workflow ([#342](https://github.com/devsy-org/devsy/issues/342)) ([5b9492f](https://github.com/devsy-org/devsy/commit/5b9492f9ca888194710589b9802f8a4d6ed6e64e))
+
 ## [1.3.0-rc.9](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.8...v1.3.0-rc.9) (2026-05-18)
 
 
