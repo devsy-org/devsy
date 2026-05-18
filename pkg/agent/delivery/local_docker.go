@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/version"
 )
 
 var _ AgentDelivery = (*LocalDockerDelivery)(nil)
@@ -26,9 +27,10 @@ const (
 )
 
 type LocalDockerDelivery struct {
-	DockerCommand string
-	Environment   []string
-	HelperImage   string
+	DockerCommand   string
+	Environment     []string
+	HelperImage     string
+	ExpectedVersion string
 }
 
 func (d *LocalDockerDelivery) Phase() DeliveryPhase {
@@ -46,11 +48,8 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 		return fmt.Errorf("create agent volume: %w", err)
 	}
 
-	if err := d.populateVolume(ctx, volumeName, opts.BinarySource, opts.Arch); err != nil {
-		if removeErr := d.removeVolume(ctx, volumeName); removeErr != nil {
-			log.Debugf("failed to clean up volume after populate failure: %v", removeErr)
-		}
-		return fmt.Errorf("populate agent volume: %w", err)
+	if err := d.ensureCurrentBinary(ctx, volumeName, opts.BinarySource, opts.Arch); err != nil {
+		return err
 	}
 
 	opts.RunOptions.Mounts = append(opts.RunOptions.Mounts, &config.Mount{
@@ -75,6 +74,36 @@ func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) e
 	return d.removeVolume(ctx, workspaceID)
 }
 
+func (d *LocalDockerDelivery) ensureCurrentBinary(
+	ctx context.Context,
+	volumeName string,
+	binarySource BinarySourceFunc,
+	arch string,
+) error {
+	expected := d.expectedVersion()
+	actual := d.detectVolumeVersion(ctx, volumeName)
+
+	if actual != "" && actual == expected {
+		log.Debugf(
+			"remote agent version matches expected version %s, skipping delivery",
+			expected,
+		)
+		return nil
+	}
+
+	if actual != "" {
+		log.Infof("upgraded remote agent from %s → %s", actual, expected)
+	}
+
+	if err := d.populateVolume(ctx, volumeName, binarySource, arch); err != nil {
+		if removeErr := d.removeVolume(ctx, volumeName); removeErr != nil {
+			log.Debugf("failed to clean up volume after populate failure: %v", removeErr)
+		}
+		return fmt.Errorf("populate agent volume: %w", err)
+	}
+	return nil
+}
+
 func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) error {
 	out, err := d.cmd(ctx, "volume", "create", name).CombinedOutput()
 	if err != nil {
@@ -88,6 +117,34 @@ func (d *LocalDockerDelivery) helperImageName() string {
 		return d.HelperImage
 	}
 	return defaultHelperImage
+}
+
+func (d *LocalDockerDelivery) expectedVersion() string {
+	if d.ExpectedVersion != "" {
+		return d.ExpectedVersion
+	}
+	return version.GetVersion()
+}
+
+func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeName string) string {
+	binaryPath := volumeMountPath + "/" + binaryName()
+	script := fmt.Sprintf(
+		`[ -x "%s" ] && "%s" version 2>/dev/null || true`,
+		binaryPath, binaryPath,
+	)
+	args := []string{
+		"run", "--rm",
+		"-v", volumeName + ":" + volumeMountPath,
+		d.helperImageName(),
+		"sh", "-c", script,
+	}
+
+	out, err := d.cmd(ctx, args...).CombinedOutput()
+	if err != nil {
+		log.Debugf("failed to detect agent version in volume: %v", err)
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (d *LocalDockerDelivery) populateVolume(
