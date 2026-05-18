@@ -28,6 +28,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          autoMergeRequest: true
 
   auto-merge-rc:
     name: Auto-merge RC Release PR
