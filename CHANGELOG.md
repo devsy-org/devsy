@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.8](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.7...v1.3.0-rc.8) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** exclude CLI deploys from Netlify restore search ([#337](https://github.com/devsy-org/devsy/issues/337)) ([db5ecf3](https://github.com/devsy-org/devsy/commit/db5ecf392f7d91dda6d39711c1d22e47356e678c))
+
 ## [1.3.0-rc.7](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.6...v1.3.0-rc.7) (2026-05-18)
 
 
