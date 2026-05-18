@@ -76,7 +76,7 @@ jobs:
 
       - name: create stable release
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
           COMMIT_SHA: ${{ steps.version.outputs.commit_sha }}
         run: |
