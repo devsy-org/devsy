@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.6](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.5...v1.3.0-rc.6) (2026-05-18)
+
+
+### Features
+
+* **ci:** add path-based filtering to skip e2e on non-Go changes ([#332](https://github.com/devsy-org/devsy/issues/332)) ([af92dfc](https://github.com/devsy-org/devsy/commit/af92dfc8eaf2376bf5365adf09bafafffb770f40))
+
 ## [1.3.0-rc.5](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.4...v1.3.0-rc.5) (2026-05-18)
 
 
