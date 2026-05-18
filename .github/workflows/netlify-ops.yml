@@ -10,6 +10,7 @@ on:
         options:
           - restore-devsy-sh
           - find-dl-site
+          - add-dl-custom-domain
 
 jobs:
   restore-devsy-sh:
@@ -94,3 +95,44 @@ jobs:
           echo "NETLIFY_DL_SITE_ID = $DL_SITE_ID"
           echo "========================================"
           echo "Run: gh secret set NETLIFY_DL_SITE_ID --org devsy-org --visibility all --body \"$DL_SITE_ID\""
+
+  add-dl-custom-domain:
+    name: Add dl.devsy.sh Custom Domain to dl-devsy-sh Site
+    if: inputs.operation == 'add-dl-custom-domain'
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      DL_SITE_ID: a6c8ca4e-62c1-4c75-95ba-1abcd2af540f
+    steps:
+      - name: Add custom domain and report DNS instructions
+        run: |
+          echo "Adding dl.devsy.sh as custom domain to site $DL_SITE_ID..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"custom_domain": "dl.devsy.sh"}' \
+            "https://api.netlify.com/api/v1/sites/$DL_SITE_ID")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Custom domain update failed (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+
+          echo "Custom domain set (HTTP $HTTP_CODE)"
+          NETLIFY_SUBDOMAIN=$(echo "$BODY" | jq -r '.subdomain // .name')
+          echo ""
+          echo "========================================"
+          echo "CUSTOM DOMAIN CONFIGURED: dl.devsy.sh"
+          echo "========================================"
+          echo ""
+          echo "CEO DNS action required — add this DNS record:"
+          echo "  Type:  CNAME"
+          echo "  Name:  dl"
+          echo "  Value: ${NETLIFY_SUBDOMAIN}.netlify.app"
+          echo ""
+          echo "Full site info:"
+          echo "$BODY" | jq '{id, name, custom_domain, subdomain, url, ssl_url}'
