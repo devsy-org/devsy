@@ -82,7 +82,7 @@ jobs:
 
       - name: trigger full rebuild
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
         run: |
           gh workflow run release.yml \
