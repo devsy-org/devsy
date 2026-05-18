@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testArch = "amd64"
 
 func TestLocalDockerDelivery_Phase(t *testing.T) {
 	d := &LocalDockerDelivery{}
@@ -112,7 +115,7 @@ func TestPopulateVolume_FallbackToDirectCopy(t *testing.T) {
 		DockerCommand: scriptPath,
 	}
 
-	err := d.populateVolume(context.Background(), "test-vol", binarySource, "amd64")
+	err := d.populateVolume(context.Background(), "test-vol", binarySource, testArch)
 	require.NoError(t, err)
 
 	destPath := filepath.Join(mountDir, binaryName())
@@ -221,4 +224,165 @@ func TestPopulateVolumeViaUnshare_FailureReturnsError(t *testing.T) {
 	err := d.populateVolumeViaUnshare(context.Background(), "/fake/path/devsy", []byte("data"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "podman unshare write failed")
+}
+
+func TestDetectVolumeVersion_ReturnsVersionFromHelper(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  run) echo \"v1.2.3\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	ver := d.detectVolumeVersion(context.Background(), "test-vol")
+	assert.Equal(t, "v1.2.3", ver)
+}
+
+func TestDetectVolumeVersion_ReturnsEmptyOnFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\nexit 1\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	ver := d.detectVolumeVersion(context.Background(), "test-vol")
+	assert.Empty(t, ver)
+}
+
+func TestDetectVolumeVersion_ReturnsEmptyWhenNoBinary(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  run) echo \"\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	ver := d.detectVolumeVersion(context.Background(), "test-vol")
+	assert.Empty(t, ver)
+}
+
+func TestDeliverPreStart_VersionMatch_SkipsPopulate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	populateCalled := false
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	markerPath := filepath.Join(tmpDir, "populate-called")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  volume) echo \"ok\" ;;\n" +
+		"  run)\n" +
+		"    if echo \"$@\" | grep -q \"\\-i\"; then\n" +
+		"      touch \"" + markerPath + "\"\n" +
+		"      cat > /dev/null\n" +
+		"    else\n" +
+		"      echo \"v2.0.0\"\n" +
+		"    fi\n" +
+		"    ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	binarySource := func(_ context.Context, _ string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader([]byte("binary"))), nil
+	}
+
+	d := &LocalDockerDelivery{
+		DockerCommand:   scriptPath,
+		ExpectedVersion: "v2.0.0",
+	}
+
+	opts := PreStartOptions{
+		WorkspaceID:  "test-ws",
+		RunOptions:   &driver.RunOptions{},
+		BinarySource: binarySource,
+		Arch:         testArch,
+	}
+
+	err := d.DeliverPreStart(context.Background(), opts)
+	require.NoError(t, err)
+
+	_, statErr := os.Stat(markerPath)
+	populateCalled = statErr == nil
+	assert.False(t, populateCalled, "populateVolume should not be called when versions match")
+}
+
+func TestDeliverPreStart_VersionMismatch_Overwrites(t *testing.T) {
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  volume)\n" +
+		"    case \"$2\" in\n" +
+		"      create) echo \"ok\" ;;\n" +
+		"      inspect) echo \"" + mountDir + "\" ;;\n" +
+		"      *) exit 1 ;;\n" +
+		"    esac\n" +
+		"    ;;\n" +
+		"  run)\n" +
+		"    if echo \"$@\" | grep -q \"\\-i\"; then\n" +
+		"      echo \"image not found\" >&2; exit 1\n" +
+		"    else\n" +
+		"      echo \"v1.0.0\"\n" +
+		"    fi\n" +
+		"    ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	binaryContent := []byte("new-agent-binary")
+	binarySource := func(_ context.Context, _ string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(binaryContent)), nil
+	}
+
+	d := &LocalDockerDelivery{
+		DockerCommand:   scriptPath,
+		ExpectedVersion: "v2.0.0",
+	}
+
+	opts := PreStartOptions{
+		WorkspaceID:  "test-ws",
+		RunOptions:   &driver.RunOptions{},
+		BinarySource: binarySource,
+		Arch:         testArch,
+	}
+
+	err := d.DeliverPreStart(context.Background(), opts)
+	require.NoError(t, err)
+
+	destPath := filepath.Join(mountDir, binaryName())
+	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
+	require.NoError(t, err)
+	assert.Equal(t, binaryContent, data)
+}
+
+func TestExpectedVersion_UsesFieldWhenSet(t *testing.T) {
+	d := &LocalDockerDelivery{ExpectedVersion: "v3.0.0"}
+	assert.Equal(t, "v3.0.0", d.expectedVersion())
+}
+
+func TestExpectedVersion_FallsBackToGetVersion(t *testing.T) {
+	d := &LocalDockerDelivery{}
+	assert.NotEmpty(t, d.expectedVersion())
 }
