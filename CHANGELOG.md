@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.7](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.6...v1.3.0-rc.7) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** deploy electron update metadata to dl.devsy.sh via Netlify ([#334](https://github.com/devsy-org/devsy/issues/334)) ([094c375](https://github.com/devsy-org/devsy/commit/094c3759fad5ad121fac2a969793aae14bb2a986))
+
 ## [1.3.0-rc.6](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.5...v1.3.0-rc.6) (2026-05-18)
 
 
