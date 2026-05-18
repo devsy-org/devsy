@@ -7,6 +7,27 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.goreleaser.yml'
+              - 'e2e/**'
+              - '.github/workflows/pr-ci.yml'
+
   precommit:
     name: Pre-commit
     runs-on: ubuntu-latest
@@ -49,7 +70,8 @@ jobs:
 
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
-    needs: [precommit, lint]
+    needs: [changes, precommit, lint]
+    if: needs.changes.outputs.go == 'true'
     strategy:
       matrix:
         include:
@@ -89,7 +111,8 @@ jobs:
 
   integration-tests-unprivileged:
     name: Test ${{ matrix.label }} on ${{ matrix.runner }}
-    needs: [build-cli]
+    needs: [changes, build-cli]
+    if: needs.changes.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -155,7 +178,8 @@ jobs:
 
   integration-tests:
     name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
-    needs: [can-read-secret, build-cli]
+    needs: [changes, can-read-secret, build-cli]
+    if: needs.changes.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -562,3 +586,29 @@ jobs:
       - name: verify docker is installed
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: docker --version && docker ps
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - changes
+      - precommit
+      - lint
+      - build-cli
+      - integration-tests-unprivileged
+      - integration-tests
+    steps:
+      - name: Check required jobs
+        run: |
+          # Fail if any required job failed (not skipped)
+          if [[ "${{ needs.changes.result }}" == "failure" ]] || \
+             [[ "${{ needs.precommit.result }}" == "failure" ]] || \
+             [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
+             [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
+             [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped"
