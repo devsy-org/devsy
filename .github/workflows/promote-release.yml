@@ -69,8 +69,11 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RC_TAG: ${{ inputs.rc_tag }}
+          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
         run: |
           BODY=$(gh release view "$RC_TAG" --json body -q .body)
+          STABLE_VERSION="${STABLE_TAG#v}"
+          BODY=$(echo "$BODY" | sed "1s/^.*-rc\.[0-9]* /$STABLE_VERSION /")
           { echo "body<<EOF"; echo "$BODY"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
       - name: create stable release
