@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.4](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.3...v1.3.0-rc.4) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** upload desktop artifacts via softprops/action-gh-release ([#326](https://github.com/devsy-org/devsy/issues/326)) ([6a67c26](https://github.com/devsy-org/devsy/commit/6a67c2629dca504bc2dcf9ee88b3c4b53b445aa3))
+
 ## [1.3.0-rc.3](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.2...v1.3.0-rc.3) (2026-05-18)
 
 
