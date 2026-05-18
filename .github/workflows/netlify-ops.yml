@@ -1,0 +1,96 @@
+name: Netlify Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Operation to perform"
+        required: true
+        type: choice
+        options:
+          - restore-devsy-sh
+          - find-dl-site
+
+jobs:
+  restore-devsy-sh:
+    name: Restore devsy.sh Production Deploy
+    if: inputs.operation == 'restore-devsy-sh'
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - name: Find last ready deploy and restore
+        run: |
+          echo "Fetching last 100 deploys to find a ready one..."
+          DEPLOYS=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=100")
+
+          DEPLOY_ID=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready")] | .[0].id')
+          DEPLOY_INFO=$(echo "$DEPLOYS" | jq -r '[.[] | select(.state == "ready")] | .[0] | {id, created_at, deploy_source, title}')
+
+          if [ "$DEPLOY_ID" = "null" ] || [ -z "$DEPLOY_ID" ]; then
+            echo "ERROR: No ready deploy found in last 100. States seen:"
+            echo "$DEPLOYS" | jq '[.[] | .state] | group_by(.) | map({state: .[0], count: length})'
+            exit 1
+          fi
+
+          echo "Restoring deploy: $DEPLOY_INFO"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys/$DEPLOY_ID/restore")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Restore failed (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+          echo "Restore succeeded (HTTP $HTTP_CODE)"
+          sleep 15
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://devsy.sh")
+          echo "devsy.sh HTTP status: $STATUS"
+          [ "$STATUS" = "200" ] && echo "SUCCESS: devsy.sh is back online" || echo "WARNING: Got $STATUS"
+
+  find-dl-site:
+    name: Find or Create dl.devsy.sh Netlify Site
+    if: inputs.operation == 'find-dl-site'
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+    steps:
+      - name: Find or create dl.devsy.sh site and output ID
+        run: |
+          echo "Listing Netlify sites..."
+          SITES=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites?per_page=100")
+
+          DL_SITE_ID=$(echo "$SITES" | \
+            jq -r '.[] | select(.custom_domain == "dl.devsy.sh" or .name == "dl-devsy-sh") | .id' | head -1)
+
+          if [ -n "$DL_SITE_ID" ] && [ "$DL_SITE_ID" != "null" ]; then
+            DL_SITE_NAME=$(echo "$SITES" | jq -r ".[] | select(.id == \"$DL_SITE_ID\") | .name")
+            echo "Found existing site: $DL_SITE_NAME"
+          else
+            echo "Site not found. Listing all sites for reference:"
+            echo "$SITES" | jq '.[] | {id, name, custom_domain, url}' | head -100
+            echo ""
+            echo "Creating dl-devsy-sh..."
+            CREATE_RESP=$(curl -s -X POST \
+              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"name": "dl-devsy-sh"}' \
+              "https://api.netlify.com/api/v1/sites")
+            DL_SITE_ID=$(echo "$CREATE_RESP" | jq -r '.id')
+            echo "Created: $(echo "$CREATE_RESP" | jq '{id, name, url}')"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "NETLIFY_DL_SITE_ID = $DL_SITE_ID"
+          echo "========================================"
+          echo "Run: gh secret set NETLIFY_DL_SITE_ID --org devsy-org --visibility all --body \"$DL_SITE_ID\""
