@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.11](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.10...v1.3.0-rc.11) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** rewrite RC version header to stable in promote workflow ([#345](https://github.com/devsy-org/devsy/issues/345)) ([fdfed92](https://github.com/devsy-org/devsy/commit/fdfed92b27d251d43a97d00b2c17f934ff86e8dc))
+
 ## [1.3.0-rc.10](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.9...v1.3.0-rc.10) (2026-05-18)
 
 
