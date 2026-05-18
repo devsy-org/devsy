@@ -223,6 +223,8 @@ jobs:
     name: Deploy Electron Update Metadata
     needs: [build-desktop]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: download update metadata artifacts
         uses: actions/download-artifact@v8
