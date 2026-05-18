@@ -24,6 +24,8 @@ jobs:
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
 
       - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
 
       - name: validate RC tag
         env:
