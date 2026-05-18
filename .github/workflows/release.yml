@@ -219,6 +219,33 @@ jobs:
           name: devsy-flatpak
           path: desktop/release/*.deb
 
+  deploy-update-metadata:
+    name: Deploy Electron Update Metadata
+    needs: [build-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: download update metadata artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: update-metadata-*
+          path: metadata/
+
+      - name: arrange files into publish directory
+        run: |
+          mkdir -p publish-dir/desktop
+          find metadata/ -name 'latest*.yml' -exec cp {} publish-dir/desktop/ \;
+
+      - name: deploy to Netlify (dl.devsy.sh)
+        uses: nwtgck/actions-netlify@v3
+        with:
+          publish-dir: ./publish-dir
+          production-deploy: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_DL_SITE_ID }}
+
   build-flatpak:
     name: Build Flatpak
     runs-on: ubuntu-latest
@@ -266,7 +293,7 @@ jobs:
 
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak]
+    needs: [build-desktop, build-flatpak, deploy-update-metadata]
     permissions:
       contents: write
     if: github.event.release.prerelease
