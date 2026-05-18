@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.16](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.15...v1.3.0-rc.16) (2026-05-18)
+
+
+### Bug Fixes
+
+* **ci:** explicitly request contents:write permission for app token ([#355](https://github.com/devsy-org/devsy/issues/355)) ([ed11e14](https://github.com/devsy-org/devsy/commit/ed11e145b81d11a1df595180a938492330a81a95))
+
 ## [1.3.0-rc.15](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.14...v1.3.0-rc.15) (2026-05-18)
 
 
