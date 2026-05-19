@@ -37,8 +37,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm install @semantic-release/changelog @semantic-release/git
 
       - name: Run semantic-release
         run: npx semantic-release ${{ inputs.dry-run && '--dry-run' || '' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
