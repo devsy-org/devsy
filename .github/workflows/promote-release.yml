@@ -104,8 +104,10 @@ jobs:
             && mv tmp.json .release-please-manifest.json
 
           git add .release-please-manifest.json
-          git commit -m "chore: update release-please manifest to v${STABLE_VERSION} [skip ci]"
-          git push origin main
+          if ! git diff --cached --quiet .release-please-manifest.json; then
+            git commit -m "chore: update release-please manifest to v${STABLE_VERSION} [skip ci]"
+            git push origin main
+          fi
 
       - name: trigger full rebuild
         env:
