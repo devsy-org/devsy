@@ -11,6 +11,12 @@ import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
+import {
+  type ReleaseChannel,
+  checkForUpdatesWithChannel,
+  getReleaseChannel,
+  setReleaseChannel,
+} from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
@@ -653,6 +659,20 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       }
 
       return key
+    },
+  )
+
+  // ── Release Channel ──
+  ipcMain.handle("get_release_channel", () => {
+    return getReleaseChannel()
+  })
+
+  ipcMain.handle(
+    "set_release_channel",
+    async (_event, args: { channel: string }) => {
+      const channel = args.channel as ReleaseChannel
+      setReleaseChannel(channel)
+      await checkForUpdatesWithChannel(channel)
     },
   )
 

@@ -36,6 +36,9 @@ import {
   devsyVersion,
   devsyUpgrade,
   devsyUpgradeDryRun,
+  getReleaseChannel,
+  setReleaseChannel as setReleaseChannelIpc,
+  type ReleaseChannel,
 } from "$lib/ipc/commands.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -137,9 +140,20 @@ let local = $state<LocalOptions>({
 
 // ── Version management ──────────────────────────────────────────────
 
+let releaseChannel = $state<ReleaseChannel>("stable")
 let targetVersion = $state("")
 let upgrading = $state(false)
 let upgradeResult = $state<string | null>(null)
+
+async function handleChannelChange(channel: ReleaseChannel) {
+  releaseChannel = channel
+  try {
+    await setReleaseChannelIpc(channel)
+    toasts.success(`Switched to ${channel} update channel`)
+  } catch (err) {
+    toasts.error(`Failed to switch channel: ${extractErrorMessage(err)}`)
+  }
+}
 
 async function handleUpgrade() {
   if (!targetVersion) return
@@ -189,6 +203,11 @@ onMount(async () => {
   localOptionsStore.set(local)
   loading = false
   await loadVersion()
+  try {
+    releaseChannel = await getReleaseChannel()
+  } catch {
+    // Ignore — defaults to stable
+  }
 })
 
 async function loadVersion() {
@@ -323,6 +342,25 @@ function toggleLocal(key: keyof LocalOptions) {
             <p class="text-xs text-muted-foreground">Download and install new Devsy versions in background</p>
           </div>
           <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
+        </div>
+
+        <div class="space-y-2">
+          <Label>Release Channel</Label>
+          <p class="text-xs text-muted-foreground">Choose which updates to receive. Beta includes pre-release versions with new features that may be less stable.</p>
+          <div class="flex gap-2">
+            <Button
+              variant={releaseChannel === "stable" ? "default" : "outline"}
+              onclick={() => handleChannelChange("stable")}
+            >
+              Stable
+            </Button>
+            <Button
+              variant={releaseChannel === "beta" ? "default" : "outline"}
+              onclick={() => handleChannelChange("beta")}
+            >
+              Beta
+            </Button>
+          </div>
         </div>
 
         <div class="space-y-2">

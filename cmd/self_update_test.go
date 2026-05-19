@@ -26,6 +26,13 @@ func TestNewSelfUpdateCmd_HasDryRunFlag(t *testing.T) {
 	assert.Equal(t, "false", f.DefValue)
 }
 
+func TestNewSelfUpdateCmd_HasChannelFlag(t *testing.T) {
+	cmd := NewSelfUpdateCmd()
+	f := cmd.Flags().Lookup("channel")
+	require.NotNil(t, f, "--channel flag must exist")
+	assert.Equal(t, "stable", f.DefValue)
+}
+
 func TestNewSelfUpdateCmd_AcceptsNoPositionalArgs(t *testing.T) {
 	cmd := NewSelfUpdateCmd()
 	err := cmd.Args(cmd, []string{"unexpected"})

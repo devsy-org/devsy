@@ -250,6 +250,17 @@ export async function sshKeyGenerate(params: {
   return invoke<SshKeyInfo>("ssh_key_generate", params)
 }
 
+// Release channel
+export type ReleaseChannel = "stable" | "beta"
+
+export async function getReleaseChannel(): Promise<ReleaseChannel> {
+  return invoke<ReleaseChannel>("get_release_channel")
+}
+
+export async function setReleaseChannel(channel: ReleaseChannel): Promise<void> {
+  return invoke("set_release_channel", { channel })
+}
+
 // Analytics
 export function analyticsTrack(
   name: string,

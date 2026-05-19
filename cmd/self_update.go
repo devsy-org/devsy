@@ -10,6 +10,7 @@ import (
 // SelfUpdateCmd is a struct that defines a command call for "self-update".
 type SelfUpdateCmd struct {
 	Version string
+	Channel string
 	DryRun  bool
 }
 
@@ -22,7 +23,12 @@ func NewSelfUpdateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			if err := selfupdate.Upgrade(ctx, cmd.Version, cmd.DryRun); err != nil {
+			opts := selfupdate.Options{
+				Version:           cmd.Version,
+				DryRun:            cmd.DryRun,
+				IncludePrerelease: cmd.Channel == "beta",
+			}
+			if err := selfupdate.Upgrade(ctx, opts); err != nil {
 				return fmt.Errorf("unable to update: %w", err)
 			}
 			return nil
@@ -32,6 +38,9 @@ func NewSelfUpdateCmd() *cobra.Command {
 	selfUpdateCmd.Flags().
 		StringVar(&cmd.Version, "version", "",
 			"The version to update to. Defaults to the latest stable version available")
+	selfUpdateCmd.Flags().
+		StringVar(&cmd.Channel, "channel", "stable",
+			"Release channel: 'stable' for production releases, 'beta' for pre-release versions")
 	selfUpdateCmd.Flags().
 		BoolVar(&cmd.DryRun, "dry-run", false, "Show which version would be downloaded without actually updating")
 	return selfUpdateCmd

@@ -50,7 +50,7 @@ jobs:
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
   build-desktop:
-    name: Build Desktop App on ${{ matrix.os }}
+    name: Build Desktop App (${{ matrix.name }})
     needs: build-cli
     permissions:
       contents: write
@@ -58,15 +58,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - name: linux-x64
+            os: ubuntu-22.04
             go-os: linux
             go-arch: amd64
             builder-args: --linux
-          - os: macos-latest
+          - name: macos-arm64
+            os: macos-latest
             go-os: darwin
-            go-arch: universal
-            builder-args: --mac
-          - os: windows-2022
+            go-arch: arm64
+            builder-args: --mac --arm64
+          - name: macos-x64
+            os: macos-latest
+            go-os: darwin
+            go-arch: amd64
+            builder-args: --mac --x64
+          - name: windows-x64
+            os: windows-2022
             go-os: windows
             go-arch: amd64
             builder-args: --win
@@ -114,15 +122,8 @@ jobs:
         run: |
           TEMP_DIR="${{ runner.temp }}"
           mkdir -p desktop/resources/bin
-
-          if [ "${{ matrix.go-arch }}" = "universal" ]; then
-            # macOS: use both arch binaries for universal build
-            cp "$TEMP_DIR/devsy-bin/devsy-darwin-amd64" desktop/resources/bin/devsy
-            chmod +x desktop/resources/bin/devsy
-          else
-            cp "$TEMP_DIR/devsy-bin/devsy-${{ matrix.go-os }}-${{ matrix.go-arch }}" desktop/resources/bin/devsy
-            chmod +x desktop/resources/bin/devsy
-          fi
+          cp "$TEMP_DIR/devsy-bin/devsy-${{ matrix.go-os }}-${{ matrix.go-arch }}" desktop/resources/bin/devsy
+          chmod +x desktop/resources/bin/devsy
 
           # Also stage binaries for dist/ upload and provider generation
           mkdir -p dist/
@@ -136,7 +137,7 @@ jobs:
           Copy-Item "${{ runner.temp }}/devsy-bin/devsy-windows-amd64.exe" desktop/resources/bin/devsy.exe
 
       - name: generate pro provider
-        if: runner.os == 'Linux'
+        if: matrix.name == 'linux-x64'
         working-directory: ./hack/pro
         env:
           PARTIAL: "true"
@@ -199,13 +200,15 @@ jobs:
       - name: upload update metadata artifact
         uses: actions/upload-artifact@v7
         with:
-          name: update-metadata-${{ matrix.os }}
-          path: desktop/release/latest*.yml
+          name: update-metadata-${{ matrix.name }}
+          path: |
+            desktop/release/latest*.yml
+            desktop/release/beta*.yml
           if-no-files-found: ignore
 
       - name: upload cli assets
         uses: softprops/action-gh-release@v3
-        if: runner.os == 'Linux'
+        if: matrix.name == 'linux-x64'
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -213,7 +216,7 @@ jobs:
             ./dist/*
 
       - name: upload desktop linux artifact for flatpak
-        if: runner.os == 'Linux'
+        if: matrix.name == 'linux-x64'
         uses: actions/upload-artifact@v7
         with:
           name: devsy-flatpak
@@ -222,21 +225,36 @@ jobs:
   deploy-update-metadata:
     name: Deploy Electron Update Metadata
     needs: [build-desktop]
-    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v6
+
       - name: download update metadata artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: update-metadata-*
           path: metadata/
 
-      - name: arrange files into publish directory
+      - name: fetch existing metadata from live site
         run: |
           mkdir -p publish-dir/desktop
-          find metadata/ -name 'latest*.yml' -exec cp {} publish-dir/desktop/ \;
+          for file in latest-mac.yml latest-linux.yml latest.yml beta-mac.yml beta-linux.yml beta.yml; do
+            curl -sSf "https://dl.devsy.sh/desktop/$file" -o "publish-dir/desktop/$file" 2>/dev/null || true
+          done
+
+      - name: merge macOS metadata from separate arch builds
+        run: |
+          pip install pyyaml
+          python3 hack/merge-mac-metadata.py metadata/ publish-dir/desktop/
+
+      - name: overlay non-mac metadata files
+        run: |
+          find metadata/ -name 'latest-linux.yml' -exec cp {} publish-dir/desktop/ \;
+          find metadata/ -name 'latest.yml' -exec cp {} publish-dir/desktop/ \;
+          find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
+          find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
 
       - name: deploy to Netlify (dl.devsy.sh)
         uses: nwtgck/actions-netlify@v3
@@ -294,7 +312,7 @@ jobs:
 
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak]
+    needs: [build-desktop, build-flatpak, deploy-update-metadata]
     permissions:
       contents: write
     if: github.event.release.prerelease

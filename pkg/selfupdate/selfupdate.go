@@ -12,10 +12,16 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 )
 
+type Options struct {
+	Version           string
+	DryRun            bool
+	IncludePrerelease bool
+}
+
 // Upgrade downloads the latest release from github and replaces devsy if a new version is found.
-// If dryRun is true, it only shows what would be downloaded without actually upgrading.
-func Upgrade(ctx context.Context, targetVersion string, dryRun bool) error {
-	release, updater, err := detectRelease(ctx, targetVersion)
+// If DryRun is true, it only shows what would be downloaded without actually upgrading.
+func Upgrade(ctx context.Context, opts Options) error {
+	release, updater, err := detectRelease(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -31,7 +37,7 @@ func Upgrade(ctx context.Context, targetVersion string, dryRun bool) error {
 		return nil
 	}
 
-	if dryRun {
+	if opts.DryRun {
 		dryRunOutput := fmt.Sprintf(
 			"asset_name=%s\nversion=%s\nos=%s\narch=%s\nurl=%s\nsize=%d\n",
 			release.AssetName,
@@ -61,20 +67,21 @@ func Upgrade(ctx context.Context, targetVersion string, dryRun bool) error {
 	return nil
 }
 
-// detectRelease detects which release to use based on targetVersion.
 func detectRelease(
 	ctx context.Context,
-	targetVersion string,
+	opts Options,
 ) (*selfupdate.Release, *selfupdate.Updater, error) {
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{})
+	updater, err := selfupdate.NewUpdater(selfupdate.Config{
+		Prerelease: opts.IncludePrerelease,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize updater: %w", err)
 	}
 
 	repo := selfupdate.ParseSlug(config.RepoSlug)
 
-	if targetVersion != "" {
-		release, err := detectSpecificVersion(ctx, updater, repo, targetVersion)
+	if opts.Version != "" {
+		release, err := detectSpecificVersion(ctx, updater, repo, opts.Version)
 		return release, updater, err
 	}
 
