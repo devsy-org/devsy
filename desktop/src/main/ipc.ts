@@ -11,6 +11,14 @@ import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
+import {
+  type ReleaseChannel,
+  checkForUpdates,
+  checkForUpdatesWithChannel,
+  getReleaseChannel,
+  installUpdate,
+  setReleaseChannel,
+} from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
@@ -655,6 +663,30 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       return key
     },
   )
+
+  // ── Release Channel ──
+  ipcMain.handle("get_release_channel", () => {
+    return getReleaseChannel()
+  })
+
+  ipcMain.handle(
+    "set_release_channel",
+    async (_event, args: { channel: string }) => {
+      if (args.channel !== "stable" && args.channel !== "beta") {
+        throw new Error(`Invalid release channel: ${args.channel}`)
+      }
+      setReleaseChannel(args.channel)
+      await checkForUpdatesWithChannel(args.channel)
+    },
+  )
+
+  ipcMain.handle("check_for_updates", async () => {
+    await checkForUpdates()
+  })
+
+  ipcMain.handle("install_update", async () => {
+    installUpdate()
+  })
 
   // ── Analytics ──
   ipcMain.handle(

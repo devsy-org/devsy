@@ -39,8 +39,13 @@ Take a look at the <a href="https://devsy.sh/docs/getting-started/install">Devsy
 </tr>
 <tr>
 <td><b>macOS</b></td>
-<td>Universal (Apple Silicon + Intel)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_universal.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS Universal"></a></td>
+<td>Apple Silicon (ARM64)</td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_arm64.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS ARM64"></a></td>
+</tr>
+<tr>
+<td><b>macOS</b></td>
+<td>Intel (x64)</td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_x64.dmg"><img src="https://img.shields.io/badge/Download-DMG-blue?style=flat-square&logo=apple" alt="macOS x64"></a></td>
 </tr>
 <tr>
 <td><b>Windows</b></td>

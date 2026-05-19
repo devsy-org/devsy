@@ -26,6 +26,13 @@ func TestNewSelfUpdateCmd_HasDryRunFlag(t *testing.T) {
 	assert.Equal(t, "false", f.DefValue)
 }
 
+func TestNewSelfUpdateCmd_HasChannelFlag(t *testing.T) {
+	cmd := NewSelfUpdateCmd()
+	f := cmd.Flags().Lookup("channel")
+	require.NotNil(t, f, "--channel flag must exist")
+	assert.Equal(t, channelStable, f.DefValue)
+}
+
 func TestNewSelfUpdateCmd_AcceptsNoPositionalArgs(t *testing.T) {
 	cmd := NewSelfUpdateCmd()
 	err := cmd.Args(cmd, []string{"unexpected"})
@@ -33,4 +40,22 @@ func TestNewSelfUpdateCmd_AcceptsNoPositionalArgs(t *testing.T) {
 
 	err = cmd.Args(cmd, []string{})
 	assert.NoError(t, err, "should accept zero arguments")
+}
+
+func TestNewSelfUpdateCmd_RejectsInvalidChannel(t *testing.T) {
+	cmd := NewSelfUpdateCmd()
+	cmd.SetArgs([]string{"--channel", "nightly"})
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid channel")
+}
+
+func TestNewSelfUpdateCmd_AcceptsValidChannels(t *testing.T) {
+	for _, ch := range []string{channelStable, channelBeta} {
+		cmd := NewSelfUpdateCmd()
+		require.NoError(t, cmd.Flags().Set("channel", ch))
+		preRunE := cmd.PreRunE
+		require.NotNil(t, preRunE)
+		assert.NoError(t, preRunE(cmd, nil))
+	}
 }
