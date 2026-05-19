@@ -10,7 +10,6 @@
 # Unit test targets
 /main
 /profile.out
-/package-lock.json
 /tagsvendor/
 node_modules/
 desktop/dist/
