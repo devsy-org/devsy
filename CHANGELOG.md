@@ -1,3 +1,26 @@
+# [1.4.0-rc.1](https://github.com/devsy-org/devsy/compare/v1.3.0...v1.4.0-rc.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* **ci:** add package-lock.json for semantic-release workflow ([bcd9208](https://github.com/devsy-org/devsy/commit/bcd9208c47754c3f250fdd6a3036c23abb856c07))
+* **ci:** add signed commit config and create-release-pr workflow ([c89325a](https://github.com/devsy-org/devsy/commit/c89325a95211dc24cdc4ac41088f2d717f709787))
+* **ci:** advance prerelease manifest past stable release ([#372](https://github.com/devsy-org/devsy/issues/372)) ([33a9d44](https://github.com/devsy-org/devsy/commit/33a9d44245f46eb28232c29d6a13cd81fd69b7ef))
+* **ci:** pass app token via token input for softprops/action-gh-release ([#361](https://github.com/devsy-org/devsy/issues/361)) ([77a9373](https://github.com/devsy-org/devsy/commit/77a937307921fcb143b722741d52b6fbb44f6407)), closes [softprops/action-#release](https://github.com/softprops/action-/issues/release)
+* **ci:** re-add changelog and git plugins with signed commit support ([#375](https://github.com/devsy-org/devsy/issues/375)) ([ad6e3f9](https://github.com/devsy-org/devsy/commit/ad6e3f9ae4377ebd35a7e7654906ba305cab93a1))
+* **ci:** remove @semantic-release/git plugin that can't push to protected branch ([c3bf35c](https://github.com/devsy-org/devsy/commit/c3bf35ca94f866c484a29136894b8fde51f34bce))
+* **ci:** remove @semantic-release/git plugin that cannot push to signature-protected branch ([e971f37](https://github.com/devsy-org/devsy/commit/e971f37cc2eb19e84c07b24dfc575898adf059d9))
+* **ci:** resolve semantic-release tag conflict and add changelog+git plugins ([d80ae42](https://github.com/devsy-org/devsy/commit/d80ae4296d6e1d8bd971e1f455fd699b6f4d8c02))
+* update workspace_result.json paths on workspace rename ([#369](https://github.com/devsy-org/devsy/issues/369)) ([f06f4ba](https://github.com/devsy-org/devsy/commit/f06f4baff598184301d734a3c38cff398ddeacb2))
+
+
+### Features
+
+* auto-overwrite stale agent binary and workspace clean command ([#364](https://github.com/devsy-org/devsy/issues/364)) ([76841a4](https://github.com/devsy-org/devsy/commit/76841a48e134e2da3001e5f671d2523f97659599))
+* **ci:** enable autoMergeRequest in release-please action ([#363](https://github.com/devsy-org/devsy/issues/363)) ([2f889bb](https://github.com/devsy-org/devsy/commit/2f889bb7a81ce129ca1704a2b495fbe342740c48))
+* **ci:** migrate from release-please to semantic-release ([#374](https://github.com/devsy-org/devsy/issues/374)) ([9fcceef](https://github.com/devsy-org/devsy/commit/9fcceeff13b85d49b69c8c87125729258c905bc9))
+* **ci:** replace single release-please config with dual prerelease/stable setup ([#368](https://github.com/devsy-org/devsy/issues/368)) ([d985356](https://github.com/devsy-org/devsy/commit/d9853564264b32fb0634785154907e94de6cd3c9))
+
 # Changelog
 
 ## [1.4.0-rc.1](https://github.com/devsy-org/devsy/compare/v1.4.0-rc.0...v1.4.0-rc.1) (2026-05-19)
