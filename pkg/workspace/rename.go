@@ -125,6 +125,10 @@ func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) 
 	}
 	if result.MergedConfig != nil {
 		result.MergedConfig.WorkspaceFolder = r.replace(result.MergedConfig.WorkspaceFolder)
+		if result.MergedConfig.WorkspaceMount != nil {
+			updated := r.replace(*result.MergedConfig.WorkspaceMount)
+			result.MergedConfig.WorkspaceMount = &updated
+		}
 	}
 
 	if !r.changed {
