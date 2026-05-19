@@ -10,6 +10,7 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -122,6 +123,17 @@ func (r *pathReplacer) replace(s string) string {
 	return s
 }
 
+func (r *pathReplacer) applyToMergedConfig(mc *devcontainerconfig.MergedDevContainerConfig) {
+	if mc == nil {
+		return
+	}
+	mc.WorkspaceFolder = r.replace(mc.WorkspaceFolder)
+	if mc.WorkspaceMount != nil {
+		updated := r.replace(*mc.WorkspaceMount)
+		mc.WorkspaceMount = &updated
+	}
+}
+
 // updateWorkspaceResult rewrites workspace_result.json to replace references
 // to the old workspace name with the new one. This ensures that cached paths
 // like ContainerWorkspaceFolder, LocalWorkspaceFolder, and WorkspaceMount
@@ -146,13 +158,7 @@ func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) 
 		sc.LocalWorkspaceFolder = r.replace(sc.LocalWorkspaceFolder)
 		sc.WorkspaceMount = r.replace(sc.WorkspaceMount)
 	}
-	if result.MergedConfig != nil {
-		result.MergedConfig.WorkspaceFolder = r.replace(result.MergedConfig.WorkspaceFolder)
-		if result.MergedConfig.WorkspaceMount != nil {
-			updated := r.replace(*result.MergedConfig.WorkspaceMount)
-			result.MergedConfig.WorkspaceMount = &updated
-		}
-	}
+	r.applyToMergedConfig(result.MergedConfig)
 
 	if !r.changed {
 		return
