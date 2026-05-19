@@ -8,12 +8,21 @@ import type {
 import { listen } from "./bridge.js"
 import type { UnlistenFn } from "./types.js"
 
+export interface UpdateStatus {
+  state: "checking" | "available" | "not-available" | "downloading" | "downloaded" | "error"
+  version?: string
+  releaseNotes?: string
+  releaseName?: string
+  error?: string
+}
+
 export const EVENT_NAMES = {
   WORKSPACES_CHANGED: "workspaces-changed",
   PROVIDERS_CHANGED: "providers-changed",
   MACHINES_CHANGED: "machines-changed",
   CONTEXTS_CHANGED: "contexts-changed",
   COMMAND_PROGRESS: "command-progress",
+  UPDATE_STATUS: "update-status",
 } as const
 
 interface WorkspacesPayload {
@@ -66,6 +75,14 @@ export function onCommandProgress(
   callback: (progress: CommandProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<CommandProgress>(EVENT_NAMES.COMMAND_PROGRESS, (event) => {
+    callback(event.payload)
+  })
+}
+
+export function onUpdateStatus(
+  callback: (status: UpdateStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<UpdateStatus>(EVENT_NAMES.UPDATE_STATUS, (event) => {
     callback(event.payload)
   })
 }

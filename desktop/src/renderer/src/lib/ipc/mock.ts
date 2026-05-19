@@ -262,6 +262,12 @@ const COMMANDS: Record<string, Handler> = {
   terminal_close: () => undefined,
   terminal_list: () => [],
 
+  // Release channel
+  get_release_channel: () => "stable",
+  set_release_channel: () => undefined,
+  check_for_updates: () => undefined,
+  install_update: () => undefined,
+
   // Analytics
   analytics_track: () => undefined,
 }

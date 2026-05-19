@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from "svelte"
+import { onMount, onDestroy } from "svelte"
 import { Check } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -38,8 +38,12 @@ import {
   devsyUpgradeDryRun,
   getReleaseChannel,
   setReleaseChannel as setReleaseChannelIpc,
+  checkForUpdates as checkForUpdatesIpc,
+  installUpdate as installUpdateIpc,
   type ReleaseChannel,
 } from "$lib/ipc/commands.js"
+import { onUpdateStatus, type UpdateStatus } from "$lib/ipc/events.js"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -144,6 +148,24 @@ let releaseChannel = $state<ReleaseChannel>("stable")
 let targetVersion = $state("")
 let upgrading = $state(false)
 let upgradeResult = $state<string | null>(null)
+let updateStatus = $state<UpdateStatus | null>(null)
+let unlistenUpdate: UnlistenFn | null = null
+
+async function handleCheckForUpdates() {
+  try {
+    await checkForUpdatesIpc()
+  } catch (err) {
+    toasts.error(`Update check failed: ${extractErrorMessage(err)}`)
+  }
+}
+
+async function handleInstallUpdate() {
+  try {
+    await installUpdateIpc()
+  } catch (err) {
+    toasts.error(`Failed to install update: ${extractErrorMessage(err)}`)
+  }
+}
 
 async function handleChannelChange(channel: ReleaseChannel) {
   const previous = releaseChannel
@@ -210,6 +232,17 @@ onMount(async () => {
   } catch {
     // Ignore — defaults to stable
   }
+  try {
+    unlistenUpdate = await onUpdateStatus((status) => {
+      updateStatus = status
+    })
+  } catch {
+    // Event listener setup failed
+  }
+})
+
+onDestroy(() => {
+  unlistenUpdate?.()
 })
 
 async function loadVersion() {
@@ -384,14 +417,58 @@ function toggleLocal(key: keyof LocalOptions) {
           <h2 class="text-lg font-semibold">Version</h2>
           <div class="flex items-center justify-between rounded-lg border p-3">
             <div>
-              <p class="text-sm font-medium">Devsy CLI</p>
+              <p class="text-sm font-medium">Devsy Desktop</p>
               {#if cliVersion}
                 <p class="text-xs font-mono text-muted-foreground">{cliVersion}</p>
               {:else}
                 <p class="text-xs text-muted-foreground">Not available</p>
               {/if}
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onclick={handleCheckForUpdates}
+              disabled={updateStatus?.state === "checking"}
+            >
+              {updateStatus?.state === "checking" ? "Checking..." : "Check for Updates"}
+            </Button>
           </div>
+
+          {#if updateStatus?.state === "not-available"}
+            <div class="rounded-md border border-border bg-muted/50 p-3">
+              <p class="text-sm text-muted-foreground">You're on the latest version.</p>
+            </div>
+          {/if}
+
+          {#if updateStatus?.state === "available" || updateStatus?.state === "downloaded"}
+            <div class="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium">
+                    {updateStatus.state === "downloaded" ? "Update ready to install" : "Update available"}
+                  </p>
+                  <p class="text-xs text-muted-foreground">Version {updateStatus.version}</p>
+                </div>
+                {#if updateStatus.state === "downloaded"}
+                  <Button size="sm" onclick={handleInstallUpdate}>Restart & Update</Button>
+                {/if}
+              </div>
+              {#if updateStatus.releaseNotes}
+                <div class="border-t border-border/50 pt-2 mt-2">
+                  <p class="text-xs font-medium text-muted-foreground mb-1">Release Notes</p>
+                  <div class="text-xs text-muted-foreground prose prose-sm dark:prose-invert max-h-40 overflow-y-auto">
+                    {@html updateStatus.releaseNotes}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          {#if updateStatus?.state === "error"}
+            <div class="rounded-md border border-destructive/30 bg-destructive/5 p-3">
+              <p class="text-sm text-destructive">Update check failed: {updateStatus.error}</p>
+            </div>
+          {/if}
 
           <div class="space-y-2">
             <Label>Install Specific Version</Label>

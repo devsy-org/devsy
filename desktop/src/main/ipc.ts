@@ -13,8 +13,10 @@ import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
 import {
   type ReleaseChannel,
+  checkForUpdates,
   checkForUpdatesWithChannel,
   getReleaseChannel,
+  installUpdate,
   setReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
@@ -677,6 +679,14 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       await checkForUpdatesWithChannel(args.channel)
     },
   )
+
+  ipcMain.handle("check_for_updates", async () => {
+    await checkForUpdates()
+  })
+
+  ipcMain.handle("install_update", async () => {
+    installUpdate()
+  })
 
   // ── Analytics ──
   ipcMain.handle(

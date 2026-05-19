@@ -261,6 +261,14 @@ export async function setReleaseChannel(channel: ReleaseChannel): Promise<void> 
   return invoke("set_release_channel", { channel })
 }
 
+export async function checkForUpdates(): Promise<void> {
+  return invoke("check_for_updates")
+}
+
+export async function installUpdate(): Promise<void> {
+  return invoke("install_update")
+}
+
 // Analytics
 export function analyticsTrack(
   name: string,
