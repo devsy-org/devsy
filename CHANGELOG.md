@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0-rc.21](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.20...v1.3.0-rc.21) (2026-05-19)
+
+
+### Features
+
+* **ci:** replace single release-please config with dual prerelease/stable setup ([#368](https://github.com/devsy-org/devsy/issues/368)) ([d985356](https://github.com/devsy-org/devsy/commit/d9853564264b32fb0634785154907e94de6cd3c9))
+
 ## [1.3.0-rc.20](https://github.com/devsy-org/devsy/compare/v1.3.0-rc.19...v1.3.0-rc.20) (2026-05-18)
 
 
