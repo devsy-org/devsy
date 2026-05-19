@@ -10,14 +10,18 @@ const (
 	testContainerNewWS = "/workspaces/new-ws"
 	testLocalNewWS     = "/home/user/new-ws"
 	testContainerNew   = "/workspaces/new"
+	testContainerOldWS = "/workspaces/old-ws"
+	testLocalOldWS     = "/home/user/old-ws"
+	testContainerApp   = "/workspaces/app"
+	testContainerOld   = "/workspaces/old"
 )
 
 func TestNewPathReplacer_DefaultWorkspaceDir(t *testing.T) {
-	r := newPathReplacer("/workspaces/old-ws", "/home/user/old-ws", "old-ws", "new-ws")
+	r := newPathReplacer(testContainerOldWS, testLocalOldWS, "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/workspaces/old-ws", testContainerNewWS},
-		{"/home/user/old-ws", testLocalNewWS},
+		{testContainerOldWS, testContainerNewWS},
+		{testLocalOldWS, testLocalNewWS},
 	}
 
 	assert.NotNil(t, r)
@@ -57,20 +61,20 @@ func TestNewPathReplacer_NestedWorkspacePath(t *testing.T) {
 }
 
 func TestNewPathReplacer_EmptyContainerFolder(t *testing.T) {
-	r := newPathReplacer("", "/home/user/old-ws", "old-ws", "new-ws")
+	r := newPathReplacer("", testLocalOldWS, "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/home/user/old-ws", testLocalNewWS},
+		{testLocalOldWS, testLocalNewWS},
 	}
 
 	assert.Equal(t, expected, r.pairs)
 }
 
 func TestNewPathReplacer_EmptyLocalFolder(t *testing.T) {
-	r := newPathReplacer("/workspaces/old-ws", "", "old-ws", "new-ws")
+	r := newPathReplacer(testContainerOldWS, "", "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/workspaces/old-ws", testContainerNewWS},
+		{testContainerOldWS, testContainerNewWS},
 	}
 
 	assert.Equal(t, expected, r.pairs)
@@ -101,7 +105,7 @@ func TestNewPathReplacer_SpecialCharacters(t *testing.T) {
 func TestPathReplacer_Replace_BasicReplacement(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", testContainerNewWS},
+			{testContainerOldWS, testContainerNewWS},
 		},
 	}
 
@@ -114,7 +118,7 @@ func TestPathReplacer_Replace_BasicReplacement(t *testing.T) {
 func TestPathReplacer_Replace_NoMatch(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", testContainerNewWS},
+			{testContainerOldWS, testContainerNewWS},
 		},
 	}
 
@@ -127,8 +131,8 @@ func TestPathReplacer_Replace_NoMatch(t *testing.T) {
 func TestPathReplacer_Replace_MultipleReplacements(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", testContainerNewWS},
-			{"/home/user/old-ws", testLocalNewWS},
+			{testContainerOldWS, testContainerNewWS},
+			{testLocalOldWS, testLocalNewWS},
 		},
 	}
 
@@ -144,7 +148,7 @@ func TestPathReplacer_Replace_MultipleReplacements(t *testing.T) {
 func TestPathReplacer_Replace_EmptyString(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", testContainerNewWS},
+			{testContainerOldWS, testContainerNewWS},
 		},
 	}
 
@@ -157,11 +161,11 @@ func TestPathReplacer_Replace_EmptyString(t *testing.T) {
 func TestPathReplacer_Replace_MultipleOccurrences(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/app", "/workspaces/app-new"},
+			{testContainerApp, "/workspaces/app-new"},
 		},
 	}
 
-	input := "/workspaces/app/go.mod /workspaces/app/go.sum"
+	input := testContainerApp + "/go.mod " + testContainerApp + "/go.sum"
 	expected := "/workspaces/app-new/go.mod /workspaces/app-new/go.sum"
 
 	output := r.replace(input)
@@ -173,7 +177,7 @@ func TestPathReplacer_Replace_MultipleOccurrences(t *testing.T) {
 func TestPathReplacer_Replace_PartialMatch(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/app", "/workspaces/app-new"},
+			{testContainerApp, "/workspaces/app-new"},
 		},
 	}
 
@@ -200,8 +204,8 @@ func TestPathReplacer_Replace_NoPairs(t *testing.T) {
 func TestPathReplacer_Replace_WorkspaceMount(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", testContainerNewWS},
-			{"/home/user/old-ws", testLocalNewWS},
+			{testContainerOldWS, testContainerNewWS},
+			{testLocalOldWS, testLocalNewWS},
 		},
 	}
 
@@ -217,14 +221,14 @@ func TestPathReplacer_Replace_WorkspaceMount(t *testing.T) {
 func TestPathReplacer_ReplaceMultipleCalls(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old", testContainerNew},
+			{testContainerOld, testContainerNew},
 		},
 	}
 
 	r.replace("/workspaces/other")
 	assert.False(t, r.changed)
 
-	r.replace("/workspaces/old")
+	r.replace(testContainerOld)
 	assert.True(t, r.changed)
 
 	r.replace("/workspaces/other")
@@ -234,13 +238,13 @@ func TestPathReplacer_ReplaceMultipleCalls(t *testing.T) {
 func TestPathReplacer_ReplacePairOrder(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old", testContainerNew},
+			{testContainerOld, testContainerNew},
 			{"/home/old", "/home/new"},
 			{"/mnt/old", "/mnt/new"},
 		},
 	}
 
-	input := "/workspaces/old /home/old /mnt/old"
+	input := testContainerOld + " /home/old /mnt/old"
 	expected := testContainerNew + " /home/new /mnt/new"
 
 	output := r.replace(input)
@@ -259,25 +263,25 @@ func TestPathReplacer_ReplaceWithTrailingSlash(t *testing.T) {
 		{
 			name: "no trailing slash in pair or input",
 			pairs: [][2]string{
-				{"/workspaces/old", testContainerNew},
+				{testContainerOld, testContainerNew},
 			},
-			input:    "/workspaces/old",
+			input:    testContainerOld,
 			expected: testContainerNew,
 		},
 		{
 			name: "trailing slash in input only",
 			pairs: [][2]string{
-				{"/workspaces/old", testContainerNew},
+				{testContainerOld, testContainerNew},
 			},
-			input:    "/workspaces/old/",
+			input:    testContainerOld + "/",
 			expected: testContainerNew + "/",
 		},
 		{
 			name: "subpath match",
 			pairs: [][2]string{
-				{"/workspaces/old", testContainerNew},
+				{testContainerOld, testContainerNew},
 			},
-			input:    "/workspaces/old/subdir/file.txt",
+			input:    testContainerOld + "/subdir/file.txt",
 			expected: testContainerNew + "/subdir/file.txt",
 		},
 	}
