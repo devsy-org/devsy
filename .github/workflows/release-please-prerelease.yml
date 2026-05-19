@@ -1,4 +1,4 @@
-name: Release Please
+name: Release Please (Prerelease)
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
         id: release
         with:
           token: ${{ steps.app-token.outputs.token }}
-          config-file: release-please-config.json
+          config-file: .github/prerelease-config.json
           manifest-file: .release-please-manifest.json
           autoMergeRequest: true
 
