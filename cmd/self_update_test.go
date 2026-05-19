@@ -41,3 +41,22 @@ func TestNewSelfUpdateCmd_AcceptsNoPositionalArgs(t *testing.T) {
 	err = cmd.Args(cmd, []string{})
 	assert.NoError(t, err, "should accept zero arguments")
 }
+
+func TestNewSelfUpdateCmd_RejectsInvalidChannel(t *testing.T) {
+	cmd := NewSelfUpdateCmd()
+	cmd.SetArgs([]string{"--channel", "nightly"})
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid channel")
+}
+
+func TestNewSelfUpdateCmd_AcceptsValidChannels(t *testing.T) {
+	for _, ch := range []string{"stable", "beta"} {
+		cmd := NewSelfUpdateCmd()
+		require.NoError(t, cmd.Flags().Set("channel", ch))
+		// PreRunE should pass validation
+		preRunE := cmd.PreRunE
+		require.NotNil(t, preRunE)
+		assert.NoError(t, preRunE(cmd, nil))
+	}
+}

@@ -670,9 +670,11 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
   ipcMain.handle(
     "set_release_channel",
     async (_event, args: { channel: string }) => {
-      const channel = args.channel as ReleaseChannel
-      setReleaseChannel(channel)
-      await checkForUpdatesWithChannel(channel)
+      if (args.channel !== "stable" && args.channel !== "beta") {
+        throw new Error(`Invalid release channel: ${args.channel}`)
+      }
+      setReleaseChannel(args.channel)
+      await checkForUpdatesWithChannel(args.channel)
     },
   )
 

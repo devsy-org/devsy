@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte"
-import { Check, ChevronsUpDown } from "@lucide/svelte"
+import { Check } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
@@ -146,11 +146,13 @@ let upgrading = $state(false)
 let upgradeResult = $state<string | null>(null)
 
 async function handleChannelChange(channel: ReleaseChannel) {
+  const previous = releaseChannel
   releaseChannel = channel
   try {
     await setReleaseChannelIpc(channel)
     toasts.success(`Switched to ${channel} update channel`)
   } catch (err) {
+    releaseChannel = previous
     toasts.error(`Failed to switch channel: ${extractErrorMessage(err)}`)
   }
 }
@@ -336,66 +338,86 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <h2 class="text-lg font-semibold">Updates</h2>
 
-        <div class="flex items-center justify-between">
-          <div>
-            <Label>Automatically Keep Up to Date</Label>
-            <p class="text-xs text-muted-foreground">Download and install new Devsy versions in background</p>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <Label>Automatic Updates</Label>
+              <p class="text-xs text-muted-foreground">Download and install updates in the background</p>
+            </div>
+            <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
           </div>
-          <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
+
+          <div class="space-y-3">
+            <Label>Release Channel</Label>
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                class="rounded-lg border p-3 text-left transition-colors {releaseChannel === 'stable' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-muted-foreground/50'}"
+                onclick={() => handleChannelChange("stable")}
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-sm">Stable</span>
+                  {#if releaseChannel === "stable"}
+                    <Check class="h-3.5 w-3.5 text-primary" />
+                  {/if}
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">Production-ready releases</p>
+              </button>
+              <button
+                class="rounded-lg border p-3 text-left transition-colors {releaseChannel === 'beta' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-muted-foreground/50'}"
+                onclick={() => handleChannelChange("beta")}
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-sm">Beta</span>
+                  {#if releaseChannel === "beta"}
+                    <Check class="h-3.5 w-3.5 text-primary" />
+                  {/if}
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">Early access to new features</p>
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div class="space-y-2">
-          <Label>Release Channel</Label>
-          <p class="text-xs text-muted-foreground">Choose which updates to receive. Beta includes pre-release versions with new features that may be less stable.</p>
-          <div class="flex gap-2">
-            <Button
-              variant={releaseChannel === "stable" ? "default" : "outline"}
-              onclick={() => handleChannelChange("stable")}
-            >
-              Stable
-            </Button>
-            <Button
-              variant={releaseChannel === "beta" ? "default" : "outline"}
-              onclick={() => handleChannelChange("beta")}
-            >
-              Beta
-            </Button>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label>Current Version</Label>
-          {#if cliVersion}
-            <p class="text-sm">Devsy CLI: <span class="font-mono">{cliVersion}</span></p>
-          {:else}
-            <p class="text-sm text-muted-foreground">Version information not available</p>
-          {/if}
-        </div>
+        <Separator />
 
         <div class="space-y-3">
-          <Label>Switch Version</Label>
-          <p class="text-xs text-muted-foreground">Install a specific Devsy CLI version. Useful for downgrading if a newer version introduced issues.</p>
-          <div class="flex gap-2">
-            <Input
-              value={targetVersion}
-              placeholder="e.g. v0.20.0"
-              oninput={(e) => (targetVersion = e.currentTarget.value)}
-              onkeydown={(e) => { if (e.key === "Enter") handleUpgrade() }}
-              disabled={upgrading}
-              class="max-w-48 font-mono"
-            />
-            <Button
-              onclick={handleUpgrade}
-              disabled={upgrading || !targetVersion}
-              variant="outline"
-            >
-              {upgrading ? "Installing..." : "Install"}
-            </Button>
+          <h2 class="text-lg font-semibold">Version</h2>
+          <div class="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p class="text-sm font-medium">Devsy CLI</p>
+              {#if cliVersion}
+                <p class="text-xs font-mono text-muted-foreground">{cliVersion}</p>
+              {:else}
+                <p class="text-xs text-muted-foreground">Not available</p>
+              {/if}
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <Label>Install Specific Version</Label>
+            <p class="text-xs text-muted-foreground">Downgrade or pin to a specific CLI version</p>
+            <div class="flex gap-2">
+              <Input
+                value={targetVersion}
+                placeholder="e.g. v1.4.0"
+                oninput={(e) => (targetVersion = e.currentTarget.value)}
+                onkeydown={(e) => { if (e.key === "Enter") handleUpgrade() }}
+                disabled={upgrading}
+                class="max-w-48 font-mono"
+              />
+              <Button
+                onclick={handleUpgrade}
+                disabled={upgrading || !targetVersion}
+                variant="outline"
+              >
+                {upgrading ? "Installing..." : "Install"}
+              </Button>
+            </div>
           </div>
           {#if upgradeResult}
             <div class="rounded-md border border-green-600/30 bg-green-600/10 p-3">
               <p class="text-sm text-green-700 dark:text-green-400">
-                Switched to {upgradeResult}. Restart the application to use the new version.
+                Switched to {upgradeResult}. Restart to use the new version.
               </p>
             </div>
           {/if}

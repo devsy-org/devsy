@@ -4,12 +4,10 @@
 When building macOS arm64 and x64 separately, each produces its own
 latest-mac.yml (or beta-mac.yml) with only one architecture's files.
 This script merges them into a single file with entries for both arches.
-
-Usage: python3 merge-mac-metadata.py <metadata-dir> <output-dir>
 """
 
+import argparse
 import glob
-import sys
 from pathlib import Path
 
 import yaml
@@ -43,7 +41,6 @@ def merge_mac_files(metadata_dir: str, output_dir: str) -> None:
 
         base_data["files"] = merged_files
 
-        # Set path to the first file entry (electron-updater uses this as default)
         if merged_files:
             base_data["path"] = merged_files[0]["url"]
             base_data["sha512"] = merged_files[0]["sha512"]
@@ -56,8 +53,21 @@ def merge_mac_files(metadata_dir: str, output_dir: str) -> None:
         print(f"Merged {len(found)} files into {out_file}")
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Merge macOS electron-updater metadata from separate arch builds"
+    )
+    parser.add_argument(
+        "metadata_dir",
+        help="Directory containing downloaded update-metadata-* artifacts",
+    )
+    parser.add_argument(
+        "output_dir",
+        help="Directory to write merged metadata files into",
+    )
+    args = parser.parse_args()
+    merge_mac_files(args.metadata_dir, args.output_dir)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <metadata-dir> <output-dir>", file=sys.stderr)
-        sys.exit(1)
-    merge_mac_files(sys.argv[1], sys.argv[2])
+    main()

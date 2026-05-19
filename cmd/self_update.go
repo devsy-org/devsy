@@ -21,6 +21,14 @@ func NewSelfUpdateCmd() *cobra.Command {
 		Use:   "self-update",
 		Short: "Update the Devsy CLI to the newest version",
 		Args:  cobra.NoArgs,
+		PreRunE: func(_ *cobra.Command, _ []string) error {
+			switch cmd.Channel {
+			case "stable", "beta":
+				return nil
+			default:
+				return fmt.Errorf("invalid channel %q: must be 'stable' or 'beta'", cmd.Channel)
+			}
+		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
 			opts := selfupdate.Options{
