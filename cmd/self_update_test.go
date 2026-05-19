@@ -30,7 +30,7 @@ func TestNewSelfUpdateCmd_HasChannelFlag(t *testing.T) {
 	cmd := NewSelfUpdateCmd()
 	f := cmd.Flags().Lookup("channel")
 	require.NotNil(t, f, "--channel flag must exist")
-	assert.Equal(t, "stable", f.DefValue)
+	assert.Equal(t, channelStable, f.DefValue)
 }
 
 func TestNewSelfUpdateCmd_AcceptsNoPositionalArgs(t *testing.T) {
@@ -51,10 +51,9 @@ func TestNewSelfUpdateCmd_RejectsInvalidChannel(t *testing.T) {
 }
 
 func TestNewSelfUpdateCmd_AcceptsValidChannels(t *testing.T) {
-	for _, ch := range []string{"stable", "beta"} {
+	for _, ch := range []string{channelStable, channelBeta} {
 		cmd := NewSelfUpdateCmd()
 		require.NoError(t, cmd.Flags().Set("channel", ch))
-		// PreRunE should pass validation
 		preRunE := cmd.PreRunE
 		require.NotNil(t, preRunE)
 		assert.NoError(t, preRunE(cmd, nil))
