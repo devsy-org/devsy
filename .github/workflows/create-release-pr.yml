@@ -40,7 +40,9 @@ jobs:
           gh pr create \
             --base release \
             --head main \
-            --title "release: promote main to stable" \
+            --title "feat(release): promote main to stable" \
             --body "## Commits being promoted
 
-          ${{ steps.commits.outputs.log }}"
+          ${{ steps.commits.outputs.log }}
+
+          > **Merge with rebase** to preserve individual commit messages for semantic-release."
