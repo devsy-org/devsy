@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -83,15 +84,31 @@ type pathReplacer struct {
 	changed bool
 }
 
-func newPathReplacer(context, oldName, newName string) *pathReplacer {
-	r := &pathReplacer{
-		pairs: [][2]string{{"/workspaces/" + oldName, "/workspaces/" + newName}},
+func newPathReplacer(
+	containerWorkspaceFolder, localWorkspaceFolder, oldName, newName string,
+) *pathReplacer {
+	r := &pathReplacer{}
+
+	if containerWorkspaceFolder != "" {
+		containerParent := strings.TrimSuffix(
+			containerWorkspaceFolder, filepath.Base(containerWorkspaceFolder),
+		)
+		r.pairs = append(r.pairs, [2]string{
+			containerParent + oldName,
+			containerParent + newName,
+		})
 	}
-	oldHostDir, _ := provider.GetWorkspaceDir(context, oldName)
-	newHostDir, _ := provider.GetWorkspaceDir(context, newName)
-	if oldHostDir != "" && newHostDir != "" {
-		r.pairs = append(r.pairs, [2]string{oldHostDir, newHostDir})
+
+	if localWorkspaceFolder != "" {
+		localParent := strings.TrimSuffix(
+			localWorkspaceFolder, filepath.Base(localWorkspaceFolder),
+		)
+		r.pairs = append(r.pairs, [2]string{
+			localParent + oldName,
+			localParent + newName,
+		})
 	}
+
 	return r
 }
 
@@ -116,7 +133,13 @@ func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) 
 		return
 	}
 
-	r := newPathReplacer(context, oldName, newName)
+	var containerWSFolder, localWSFolder string
+	if sc := result.SubstitutionContext; sc != nil {
+		containerWSFolder = sc.ContainerWorkspaceFolder
+		localWSFolder = sc.LocalWorkspaceFolder
+	}
+
+	r := newPathReplacer(containerWSFolder, localWSFolder, oldName, newName)
 
 	if sc := result.SubstitutionContext; sc != nil {
 		sc.ContainerWorkspaceFolder = r.replace(sc.ContainerWorkspaceFolder)
