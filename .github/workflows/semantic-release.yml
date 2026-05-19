@@ -34,8 +34,8 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "devsy-bot[bot]"
-          git config user.email "198134133+devsy-bot[bot]@users.noreply.github.com"
+          git config user.name "devsy-app[bot]"
+          git config user.email "277138668+devsy-app[bot]@users.noreply.github.com"
 
       - uses: actions/setup-node@v6
         with:
