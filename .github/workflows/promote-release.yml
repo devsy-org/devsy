@@ -86,6 +86,27 @@ jobs:
           prerelease: false
           make_latest: true
 
+      - name: update release-please manifest on main
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
+        run: |
+          STABLE_VERSION="${STABLE_TAG#v}"
+
+          git config user.name "devsy-app[bot]"
+          git config user.email "devsy-app[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          git fetch origin main
+          git checkout main
+
+          jq --arg v "$STABLE_VERSION" '."." = $v' .release-please-manifest.json > tmp.json \
+            && mv tmp.json .release-please-manifest.json
+
+          git add .release-please-manifest.json
+          git commit -m "chore: update release-please manifest to v${STABLE_VERSION} [skip ci]"
+          git push origin main
+
       - name: trigger full rebuild
         env:
           GH_TOKEN: ${{ github.token }}
