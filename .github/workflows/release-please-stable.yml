@@ -27,3 +27,31 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: .github/release-config.json
           manifest-file: .release-please-manifest-stable.json
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Advance prerelease manifest to next minor
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          STABLE_TAG="${{ steps.release.outputs.tag_name }}"
+          STABLE_VERSION="${STABLE_TAG#v}"
+          MAJOR=$(echo "$STABLE_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$STABLE_VERSION" | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          NEXT_RC_VERSION="${MAJOR}.${NEXT_MINOR}.0-rc.0"
+
+          printf '{\n  ".": "%s"\n}\n' "${NEXT_RC_VERSION}" > .release-please-manifest.json
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .release-please-manifest.json
+          git commit -m "chore: advance prerelease manifest to ${NEXT_RC_VERSION} after ${STABLE_TAG} release"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
