@@ -37,12 +37,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm install @semantic-release/changelog @semantic-release/git
-
-      - name: Configure Git for signed commits
-        run: |
-          git config user.name "devsy-app[bot]"
-          git config user.email "277138668+devsy-app[bot]@users.noreply.github.com"
 
       - name: Run semantic-release
         run: npx semantic-release ${{ inputs.dry-run && '--dry-run' || '' }}
