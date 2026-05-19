@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -77,6 +80,96 @@ func stopWorkspaceIfRunning(
 	return nil
 }
 
+type pathReplacer struct {
+	pairs   [][2]string
+	changed bool
+}
+
+func newPathReplacer(
+	containerWorkspaceFolder, localWorkspaceFolder, oldName, newName string,
+) *pathReplacer {
+	r := &pathReplacer{}
+
+	if containerWorkspaceFolder != "" {
+		containerParent := strings.TrimSuffix(
+			containerWorkspaceFolder, filepath.Base(containerWorkspaceFolder),
+		)
+		r.pairs = append(r.pairs, [2]string{
+			containerParent + oldName,
+			containerParent + newName,
+		})
+	}
+
+	if localWorkspaceFolder != "" {
+		localParent := strings.TrimSuffix(
+			localWorkspaceFolder, filepath.Base(localWorkspaceFolder),
+		)
+		r.pairs = append(r.pairs, [2]string{
+			localParent + oldName,
+			localParent + newName,
+		})
+	}
+
+	return r
+}
+
+func (r *pathReplacer) replace(s string) string {
+	for _, pair := range r.pairs {
+		if strings.Contains(s, pair[0]) {
+			s = strings.ReplaceAll(s, pair[0], pair[1])
+			r.changed = true
+		}
+	}
+	return s
+}
+
+func (r *pathReplacer) applyToMergedConfig(mc *devcontainerconfig.MergedDevContainerConfig) {
+	if mc == nil {
+		return
+	}
+	mc.WorkspaceFolder = r.replace(mc.WorkspaceFolder)
+	if mc.WorkspaceMount != nil {
+		updated := r.replace(*mc.WorkspaceMount)
+		mc.WorkspaceMount = &updated
+	}
+}
+
+// updateWorkspaceResult rewrites workspace_result.json to replace references
+// to the old workspace name with the new one. This ensures that cached paths
+// like ContainerWorkspaceFolder, LocalWorkspaceFolder, and WorkspaceMount
+// stay valid after rename.
+func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) {
+	context := devsyConfig.DefaultContext
+	result, err := provider.LoadWorkspaceResult(context, newName)
+	if err != nil || result == nil {
+		return
+	}
+
+	var containerWSFolder, localWSFolder string
+	if sc := result.SubstitutionContext; sc != nil {
+		containerWSFolder = sc.ContainerWorkspaceFolder
+		localWSFolder = sc.LocalWorkspaceFolder
+	}
+
+	r := newPathReplacer(containerWSFolder, localWSFolder, oldName, newName)
+
+	if sc := result.SubstitutionContext; sc != nil {
+		sc.ContainerWorkspaceFolder = r.replace(sc.ContainerWorkspaceFolder)
+		sc.LocalWorkspaceFolder = r.replace(sc.LocalWorkspaceFolder)
+		sc.WorkspaceMount = r.replace(sc.WorkspaceMount)
+	}
+	r.applyToMergedConfig(result.MergedConfig)
+
+	if !r.changed {
+		return
+	}
+
+	ws := &provider.Workspace{ID: newName, Context: context}
+	if err := provider.SaveWorkspaceResult(ws, result); err != nil {
+		log.Warnf("failed to update workspace result after rename: %v", err)
+	}
+}
+
 // Rename performs the workspace rename: auto-stops if running, moves the
 // workspace directory, updates the config ID, and removes the old SSH config
 // entry. If any step after the directory move fails, the entire operation is
@@ -108,6 +201,8 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 		rollbackErr := moveWorkspace(opts.DevsyConfig, opts.NewName, opts.OldName)
 		return errors.Join(err, rollbackErr)
 	}
+
+	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
 
 	_ = devssh.RemoveFromConfig(
 		opts.OldName,
