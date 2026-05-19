@@ -149,8 +149,8 @@ VS Code in its various flavors and the full JetBrains suite are supported, all o
 No need to install a server backend, Devsy runs only on your computer.
 </td>
 <td width="50%" valign="top">
-<b>Open-Source</b><br>
-Devsy is 100% open-source and extensible. A provider doesn't exist? Just create your own.
+<b>Extensible</b><br>
+Devsy is source-available and extensible. A provider doesn't exist? Just create your own.
 </td>
 </tr>
 <tr>
