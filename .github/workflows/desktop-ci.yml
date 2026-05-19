@@ -74,7 +74,6 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      # ── Build Go CLI binary ──
       - name: Build CLI (unix)
         if: runner.os != 'Windows'
         run: |
@@ -97,13 +96,11 @@ jobs:
           $env:GOARCH = "amd64"
           go build -o desktop/resources/bin/devsy.exe .
 
-      # ── Windows native build tools ──
       - name: Configure Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
         run: echo "GYP_MSVS_VERSION=2022" >> $env:GITHUB_ENV
 
-      # ── Setup Python for native module builds ──
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -112,17 +109,14 @@ jobs:
       - name: Install setuptools
         run: pip install setuptools
 
-      # ── Install Electron dependencies ──
       - name: Install dependencies
         working-directory: desktop
         run: npm ci
 
-      # ── Install xvfb on Linux for e2e tests ──
       - name: Install xvfb
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      # ── E2E tests ──
       - name: Run e2e tests (Linux)
         if: runner.os == 'Linux'
         working-directory: desktop
@@ -137,7 +131,6 @@ jobs:
           npm run electron:build
           npx playwright test
 
-      # ── Package ──
       - name: Package with electron-builder
         working-directory: desktop
         run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml
@@ -150,7 +143,6 @@ jobs:
           # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # ── Upload artifacts ──
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
