@@ -95,3 +95,22 @@ jobs:
             --field tag="$STABLE_TAG"
 
           echo "Triggered release.yml rebuild for $STABLE_TAG"
+
+      - name: advance prerelease manifest to next minor
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
+        run: |
+          STABLE_VERSION="${STABLE_TAG#v}"
+          MAJOR=$(echo "$STABLE_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$STABLE_VERSION" | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          NEXT_RC_VERSION="${MAJOR}.${NEXT_MINOR}.0-rc.0"
+
+          echo "{\".\": \"${NEXT_RC_VERSION}\"}" > .release-please-manifest.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .release-please-manifest.json
+          git commit -m "chore: advance prerelease manifest to ${NEXT_RC_VERSION} after ${STABLE_TAG} release"
+          git push origin HEAD:main
