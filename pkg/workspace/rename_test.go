@@ -6,12 +6,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	testContainerNewWS = "/workspaces/new-ws"
+	testLocalNewWS     = "/home/user/new-ws"
+	testContainerNew   = "/workspaces/new"
+)
+
 func TestNewPathReplacer_DefaultWorkspaceDir(t *testing.T) {
 	r := newPathReplacer("/workspaces/old-ws", "/home/user/old-ws", "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/workspaces/old-ws", "/workspaces/new-ws"},
-		{"/home/user/old-ws", "/home/user/new-ws"},
+		{"/workspaces/old-ws", testContainerNewWS},
+		{"/home/user/old-ws", testLocalNewWS},
 	}
 
 	assert.NotNil(t, r)
@@ -54,7 +60,7 @@ func TestNewPathReplacer_EmptyContainerFolder(t *testing.T) {
 	r := newPathReplacer("", "/home/user/old-ws", "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/home/user/old-ws", "/home/user/new-ws"},
+		{"/home/user/old-ws", testLocalNewWS},
 	}
 
 	assert.Equal(t, expected, r.pairs)
@@ -64,7 +70,7 @@ func TestNewPathReplacer_EmptyLocalFolder(t *testing.T) {
 	r := newPathReplacer("/workspaces/old-ws", "", "old-ws", "new-ws")
 
 	expected := [][2]string{
-		{"/workspaces/old-ws", "/workspaces/new-ws"},
+		{"/workspaces/old-ws", testContainerNewWS},
 	}
 
 	assert.Equal(t, expected, r.pairs)
@@ -95,7 +101,7 @@ func TestNewPathReplacer_SpecialCharacters(t *testing.T) {
 func TestPathReplacer_Replace_BasicReplacement(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", "/workspaces/new-ws"},
+			{"/workspaces/old-ws", testContainerNewWS},
 		},
 	}
 
@@ -108,7 +114,7 @@ func TestPathReplacer_Replace_BasicReplacement(t *testing.T) {
 func TestPathReplacer_Replace_NoMatch(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", "/workspaces/new-ws"},
+			{"/workspaces/old-ws", testContainerNewWS},
 		},
 	}
 
@@ -121,8 +127,8 @@ func TestPathReplacer_Replace_NoMatch(t *testing.T) {
 func TestPathReplacer_Replace_MultipleReplacements(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", "/workspaces/new-ws"},
-			{"/home/user/old-ws", "/home/user/new-ws"},
+			{"/workspaces/old-ws", testContainerNewWS},
+			{"/home/user/old-ws", testLocalNewWS},
 		},
 	}
 
@@ -138,7 +144,7 @@ func TestPathReplacer_Replace_MultipleReplacements(t *testing.T) {
 func TestPathReplacer_Replace_EmptyString(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", "/workspaces/new-ws"},
+			{"/workspaces/old-ws", testContainerNewWS},
 		},
 	}
 
@@ -194,8 +200,8 @@ func TestPathReplacer_Replace_NoPairs(t *testing.T) {
 func TestPathReplacer_Replace_WorkspaceMount(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old-ws", "/workspaces/new-ws"},
-			{"/home/user/old-ws", "/home/user/new-ws"},
+			{"/workspaces/old-ws", testContainerNewWS},
+			{"/home/user/old-ws", testLocalNewWS},
 		},
 	}
 
@@ -211,7 +217,7 @@ func TestPathReplacer_Replace_WorkspaceMount(t *testing.T) {
 func TestPathReplacer_ReplaceMultipleCalls(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old", "/workspaces/new"},
+			{"/workspaces/old", testContainerNew},
 		},
 	}
 
@@ -228,14 +234,14 @@ func TestPathReplacer_ReplaceMultipleCalls(t *testing.T) {
 func TestPathReplacer_ReplacePairOrder(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/workspaces/old", "/workspaces/new"},
+			{"/workspaces/old", testContainerNew},
 			{"/home/old", "/home/new"},
 			{"/mnt/old", "/mnt/new"},
 		},
 	}
 
 	input := "/workspaces/old /home/old /mnt/old"
-	expected := "/workspaces/new /home/new /mnt/new"
+	expected := testContainerNew + " /home/new /mnt/new"
 
 	output := r.replace(input)
 
@@ -253,26 +259,26 @@ func TestPathReplacer_ReplaceWithTrailingSlash(t *testing.T) {
 		{
 			name: "no trailing slash in pair or input",
 			pairs: [][2]string{
-				{"/workspaces/old", "/workspaces/new"},
+				{"/workspaces/old", testContainerNew},
 			},
 			input:    "/workspaces/old",
-			expected: "/workspaces/new",
+			expected: testContainerNew,
 		},
 		{
 			name: "trailing slash in input only",
 			pairs: [][2]string{
-				{"/workspaces/old", "/workspaces/new"},
+				{"/workspaces/old", testContainerNew},
 			},
 			input:    "/workspaces/old/",
-			expected: "/workspaces/new/",
+			expected: testContainerNew + "/",
 		},
 		{
 			name: "subpath match",
 			pairs: [][2]string{
-				{"/workspaces/old", "/workspaces/new"},
+				{"/workspaces/old", testContainerNew},
 			},
 			input:    "/workspaces/old/subdir/file.txt",
-			expected: "/workspaces/new/subdir/file.txt",
+			expected: testContainerNew + "/subdir/file.txt",
 		},
 	}
 
