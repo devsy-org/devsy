@@ -107,10 +107,13 @@ jobs:
           NEXT_MINOR=$((MINOR + 1))
           NEXT_RC_VERSION="${MAJOR}.${NEXT_MINOR}.0-rc.0"
 
-          echo "{\".\": \"${NEXT_RC_VERSION}\"}" > .release-please-manifest.json
+          printf '{\n  ".": "%s"\n}\n' "${NEXT_RC_VERSION}" > .release-please-manifest.json
 
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .release-please-manifest.json
           git commit -m "chore: advance prerelease manifest to ${NEXT_RC_VERSION} after ${STABLE_TAG} release"
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
