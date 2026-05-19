@@ -44,6 +44,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Configure git identity
+        run: |
+          git config user.name "devsy-app[bot]"
+          git config user.email "devsy-app[bot]@users.noreply.github.com"
+
       - name: Run semantic-release
         run: npx semantic-release ${{ inputs.dry-run && '--dry-run' || '' }}
         env:
