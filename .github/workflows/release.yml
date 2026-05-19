@@ -222,6 +222,7 @@ jobs:
   deploy-update-metadata:
     name: Deploy Electron Update Metadata
     needs: [build-desktop]
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -293,7 +294,7 @@ jobs:
 
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak, deploy-update-metadata]
+    needs: [build-desktop, build-flatpak]
     permissions:
       contents: write
     if: github.event.release.prerelease
