@@ -13,7 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testDefaultContext = "default"
+const (
+	testDefaultContext   = "default"
+	testContainerWSMount = "/workspaces/ws-old"
+)
 
 func setupTestPathManager(t *testing.T) {
 	t.Helper()
@@ -246,9 +249,9 @@ func TestUpdateWorkspaceResult_NilMergedConfig(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/ws-old",
+			ContainerWorkspaceFolder: testContainerWSMount,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old",
+			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=" + testContainerWSMount,
 		},
 		MergedConfig: nil,
 	}
@@ -273,13 +276,13 @@ func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/ws-old",
+			ContainerWorkspaceFolder: testContainerWSMount,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old",
+			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=" + testContainerWSMount,
 		},
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
-	result.MergedConfig.WorkspaceFolder = "/workspaces/ws-old"
+	result.MergedConfig.WorkspaceFolder = testContainerWSMount
 	result.MergedConfig.WorkspaceMount = nil
 
 	writeWorkspaceResult(t, newName, result)
