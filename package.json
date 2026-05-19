@@ -2,7 +2,6 @@
   "name": "devsy",
   "private": true,
   "devDependencies": {
-    "@biomejs/biome": "2.4.12",
-    "semantic-release": "^24.2.3"
+    "@biomejs/biome": "2.4.12"
   }
 }
