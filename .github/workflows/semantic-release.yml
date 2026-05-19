@@ -30,6 +30,12 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "devsy-bot[bot]"
+          git config user.email "198134133+devsy-bot[bot]@users.noreply.github.com"
 
       - uses: actions/setup-node@v6
         with:
