@@ -66,6 +66,11 @@ export async function initAutoUpdater(
   currentChannel = loadChannel()
   const { autoUpdater } = await import("electron-updater")
 
+  if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
+    console.warn("Auto-updater not available (app is not code-signed)")
+    return
+  }
+
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowPrerelease = currentChannel === "beta"
@@ -137,6 +142,13 @@ export async function initAutoUpdater(
 
 export async function checkForUpdates(): Promise<void> {
   const { autoUpdater } = await import("electron-updater")
+  if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
+    sendUpdateStatus({
+      state: "error",
+      error: "Auto-update is not available (app is not code-signed)",
+    })
+    return
+  }
   await autoUpdater.checkForUpdates()
 }
 
@@ -146,6 +158,13 @@ export async function checkForUpdatesWithChannel(
   const { autoUpdater } = await import("electron-updater")
   currentChannel = channel
   saveChannel(channel)
+  if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
+    sendUpdateStatus({
+      state: "error",
+      error: "Auto-update is not available (app is not code-signed)",
+    })
+    return
+  }
   autoUpdater.allowPrerelease = channel === "beta"
   autoUpdater.channel = channel === "beta" ? "beta" : "latest"
   await autoUpdater.checkForUpdates()
@@ -153,5 +172,8 @@ export async function checkForUpdatesWithChannel(
 
 export async function installUpdate(): Promise<void> {
   const { autoUpdater } = await import("electron-updater")
+  if (!autoUpdater || typeof autoUpdater.quitAndInstall !== "function") {
+    return
+  }
   autoUpdater.quitAndInstall()
 }
