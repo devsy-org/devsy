@@ -261,6 +261,7 @@ async function handleSubmit() {
       workspaceId,
       provider: selectedProvider || undefined,
       ide: selectedIde || undefined,
+      debug: true,
     })
 
     commandId = cmdId
