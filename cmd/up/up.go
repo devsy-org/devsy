@@ -32,6 +32,7 @@ type UpCmd struct {
 
 	ConfigureSSH       bool
 	GPGAgentForwarding bool
+	SSHTunnelMode      bool
 	OpenIDE            bool
 	Reconfigure        bool
 
@@ -92,6 +93,24 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 		return err
 	}
 
+	// Start TCP tunnel if enabled
+	useTunnel := cmd.SSHTunnelMode ||
+		devsyConfig.ContextOption(config.ContextOptionSSHTunnelMode) == config.BoolTrue
+	if useTunnel {
+		tunnelPort, tunnelCleanup, err := cmd.startTunnel(ctx, devsyConfig, client, wctx)
+		if err != nil {
+			log.Warnf("Failed to start SSH tunnel, falling back to ProxyCommand: %v", err)
+		} else {
+			defer tunnelCleanup()
+			wctx.tunnelPort = tunnelPort
+		}
+	}
+
+	// Re-write SSH config with tunnel port if tunnel started successfully
+	if err := cmd.reconfigureSSHWithTunnel(client, wctx); err != nil {
+		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
+	}
+
 	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
 		if emitJSON {
 			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
@@ -144,9 +163,10 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 
 // workspaceContext holds the result of workspace preparation.
 type workspaceContext struct {
-	result  *config2.Result
-	user    string
-	workdir string
+	result     *config2.Result
+	user       string
+	workdir    string
+	tunnelPort int
 }
 
 // resolveDotfilesOptions populates DotfilesRepo and DotfilesScript

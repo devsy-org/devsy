@@ -25,12 +25,19 @@ var userSettingsDirNames = map[Flavor]string{
 }
 
 // EnsureHostSettings ensures required VS Code user settings are configured
-// on the host machine. This is needed to disable exec-server mode which is
-// incompatible with ProxyCommand-based SSH connections.
-func EnsureHostSettings(flavor Flavor) {
+// on the host machine. When tunnelMode is false, it disables exec-server mode
+// which is incompatible with ProxyCommand-based SSH connections. When tunnelMode
+// is true, it removes the useExecServer setting since tunnel mode does not
+// require it.
+func EnsureHostSettings(flavor Flavor, tunnelMode bool) {
 	settingsPath, err := userSettingsPath(flavor)
 	if err != nil {
 		log.Debugf("cannot determine VS Code settings path: %v", err)
+		return
+	}
+
+	if tunnelMode {
+		removeUserSetting(settingsPath, settingUseExecServer)
 		return
 	}
 
@@ -40,6 +47,32 @@ func EnsureHostSettings(flavor Flavor) {
 
 	if err := mergeUserSettings(settingsPath, required); err != nil {
 		log.Debugf("failed to update VS Code host settings: %v", err)
+	}
+}
+
+// removeUserSetting removes a single key from the VS Code user settings file.
+// It is a no-op if the file does not exist or the key is not present.
+func removeUserSetting(path string, key string) {
+	existing, err := readSettingsFile(path)
+	if err != nil {
+		log.Debugf("cannot read settings file for removal: %v", err)
+		return
+	}
+
+	if _, ok := existing[key]; !ok {
+		return
+	}
+
+	delete(existing, key)
+
+	out, err := json.MarshalIndent(existing, "", "    ")
+	if err != nil {
+		log.Debugf("cannot marshal settings after removal: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		log.Debugf("cannot write settings after removal: %v", err)
 	}
 }
 

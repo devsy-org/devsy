@@ -82,6 +82,33 @@ func (cmd *UpCmd) openIDE(
 		Client:             client,
 		User:               wctx.user,
 		Result:             wctx.result,
+		TunnelMode:         wctx.tunnelPort > 0,
+	})
+}
+
+// reconfigureSSHWithTunnel re-writes the SSH config with the tunnel port
+// after the tunnel has been successfully started. This replaces the initial
+// ProxyCommand-based config with a direct TCP connection to the local tunnel.
+func (cmd *UpCmd) reconfigureSSHWithTunnel(
+	client client2.BaseWorkspaceClient,
+	wctx *workspaceContext,
+) error {
+	if !cmd.ConfigureSSH || wctx.tunnelPort == 0 {
+		return nil
+	}
+	// Re-write SSH config with tunnel port
+	path, err := devssh.ResolveSSHConfigPath(cmd.SSHConfigPath)
+	if err != nil {
+		return err
+	}
+	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
+		SSHConfigPath: path,
+		Context:       client.Context(),
+		Workspace:     client.Workspace(),
+		User:          wctx.user,
+		Workdir:       wctx.workdir,
+		TunnelPort:    wctx.tunnelPort,
+		Provider:      client.Provider(),
 	})
 }
 

@@ -35,6 +35,7 @@ type SSHConfigParams struct {
 	GPGAgent             bool
 	DevsyHome            string
 	Provider             string
+	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
@@ -47,16 +48,17 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	}
 
 	newFile, err := addHost(addHostParams{
-		path:      targetPath,
-		host:      params.Workspace + config.SSHHostSuffix,
-		user:      params.User,
-		context:   params.Context,
-		workspace: params.Workspace,
-		workdir:   params.Workdir,
-		command:   params.Command,
-		gpgagent:  params.GPGAgent,
-		devsyHome: params.DevsyHome,
-		provider:  params.Provider,
+		path:       targetPath,
+		host:       params.Workspace + config.SSHHostSuffix,
+		user:       params.User,
+		context:    params.Context,
+		workspace:  params.Workspace,
+		workdir:    params.Workdir,
+		command:    params.Command,
+		gpgagent:   params.GPGAgent,
+		devsyHome:  params.DevsyHome,
+		provider:   params.Provider,
+		tunnelPort: params.TunnelPort,
 	})
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -72,16 +74,17 @@ type DevsySSHEntry struct {
 }
 
 type addHostParams struct {
-	path      string
-	host      string
-	user      string
-	context   string
-	workspace string
-	workdir   string
-	command   string
-	gpgagent  bool
-	devsyHome string
-	provider  string
+	path       string
+	host       string
+	user       string
+	context    string
+	workspace  string
+	workdir    string
+	command    string
+	gpgagent   bool
+	devsyHome  string
+	provider   string
+	tunnelPort int
 }
 
 func addHost(params addHostParams) (string, error) {
@@ -187,6 +190,14 @@ func (b *sshConfigBuilder) addProxyCommand(proxyCmd string) *sshConfigBuilder {
 	return b
 }
 
+func (b *sshConfigBuilder) addTunnelConnection(port int) *sshConfigBuilder {
+	b.lines = append(b.lines,
+		"  Hostname 127.0.0.1",
+		fmt.Sprintf("  Port %d", port),
+	)
+	return b
+}
+
 func (b *sshConfigBuilder) addUser(user, host string) *sshConfigBuilder {
 	b.lines = append(b.lines, "  User "+user, MarkerEndPrefix+host)
 	return b
@@ -214,6 +225,15 @@ func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
 	return newSSHConfigBuilder(params.host).
 		addSSHOptions(params.provider).
 		addProxyCommand(proxyCmd).
+		addUser(params.user, params.host).
+		build()
+}
+
+// buildTunnelConfigLines creates the SSH config entry lines for TCP tunnel mode.
+func buildTunnelConfigLines(params addHostParams) []string {
+	return newSSHConfigBuilder(params.host).
+		addSSHOptions(params.provider).
+		addTunnelConnection(params.tunnelPort).
 		addUser(params.user, params.host).
 		build()
 }
@@ -267,8 +287,13 @@ func mergeSSHConfig(lines, newLines []string, position int) string {
 }
 
 func addHostSection(config, execPath string, params addHostParams) (string, error) {
-	proxyCmd := buildProxyCommand(execPath, params)
-	newLines := buildSSHConfigLines(params, proxyCmd)
+	var newLines []string
+	if params.tunnelPort > 0 {
+		newLines = buildTunnelConfigLines(params)
+	} else {
+		proxyCmd := buildProxyCommand(execPath, params)
+		newLines = buildSSHConfigLines(params, proxyCmd)
+	}
 
 	position, lines, err := findInsertPosition(config)
 	if err != nil {

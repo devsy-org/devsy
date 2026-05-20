@@ -18,10 +18,11 @@ import (
 const containersExtension = "ms-vscode-remote.remote-containers"
 
 type OpenParams struct {
-	Workspace string
-	Folder    string
-	NewWindow bool
-	Flavor    Flavor
+	Workspace  string
+	Folder     string
+	NewWindow  bool
+	Flavor     Flavor
+	TunnelMode bool
 }
 
 type openConfig struct {
@@ -83,7 +84,7 @@ var openConfigs = map[Flavor]openConfig{
 }
 
 func Open(ctx context.Context, params OpenParams) error {
-	EnsureHostSettings(params.Flavor)
+	EnsureHostSettings(params.Flavor, params.TunnelMode)
 
 	cliErr := openViaCLI(ctx, params)
 	if cliErr == nil {
