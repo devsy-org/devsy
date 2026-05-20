@@ -4,10 +4,12 @@ import { join } from "node:path"
 import { watch } from "chokidar"
 import type { BrowserWindow } from "electron"
 import type { CliRunner } from "./cli.js"
+import type { DaemonClient } from "./daemon-client.js"
 import type { DaemonState } from "./state.js"
 
 interface WatcherDeps {
   cli: CliRunner
+  daemon?: DaemonClient
   state: DaemonState
   getMainWindow: () => BrowserWindow | null
 }
@@ -109,12 +111,28 @@ export class Watcher {
     }
   }
 
+  private async queryWithFallback<T>(
+    daemonFn: (() => Promise<T>) | undefined,
+    cliFn: () => Promise<T>,
+  ): Promise<T> {
+    if (daemonFn) {
+      try {
+        return await daemonFn()
+      } catch {
+        // Daemon unavailable, fall through to CLI
+      }
+    }
+    return cliFn()
+  }
+
   private async pollWorkspaces(): Promise<void> {
     try {
-      const workspaces = await this.deps.cli.run<unknown[]>([
-        "list",
-        "--skip-pro",
-      ])
+      const workspaces = await this.queryWithFallback(
+        this.deps.daemon
+          ? () => this.deps.daemon!.listWorkspaces<unknown[]>()
+          : undefined,
+        () => this.deps.cli.run<unknown[]>(["list", "--skip-pro"]),
+      )
       const changed = this.deps.state.updateWorkspaces(workspaces as any[])
       if (changed) {
         this.send("workspaces-changed", {
@@ -128,10 +146,17 @@ export class Watcher {
 
   private async pollProviders(): Promise<void> {
     try {
-      const raw = await this.deps.cli.run<Record<string, ProviderEntry>>([
-        "provider",
-        "list",
-      ])
+      const raw = await this.queryWithFallback(
+        this.deps.daemon
+          ? () =>
+              this.deps.daemon!.listProviders<Record<string, ProviderEntry>>()
+          : undefined,
+        () =>
+          this.deps.cli.run<Record<string, ProviderEntry>>([
+            "provider",
+            "list",
+          ]),
+      )
       const providers = parseProviderEntries(raw)
       const changed = this.deps.state.updateProviders(providers as any[])
       if (changed) {
@@ -146,7 +171,12 @@ export class Watcher {
 
   private async pollMachines(): Promise<void> {
     try {
-      const machines = await this.deps.cli.run<unknown[]>(["machine", "list"])
+      const machines = await this.queryWithFallback(
+        this.deps.daemon
+          ? () => this.deps.daemon!.listMachines<unknown[]>()
+          : undefined,
+        () => this.deps.cli.run<unknown[]>(["machine", "list"]),
+      )
       const changed = this.deps.state.updateMachines(machines as any[])
       if (changed) {
         this.send("machines-changed", {
@@ -160,10 +190,12 @@ export class Watcher {
 
   private async pollContexts(): Promise<void> {
     try {
-      const entries = await this.deps.cli.run<ContextEntry[]>([
-        "context",
-        "list",
-      ])
+      const entries = await this.queryWithFallback(
+        this.deps.daemon
+          ? () => this.deps.daemon!.listContexts<ContextEntry[]>()
+          : undefined,
+        () => this.deps.cli.run<ContextEntry[]>(["context", "list"]),
+      )
       const active = entries.find((e) => e.default)?.name ?? ""
       const contexts = entries.map((e) => ({ name: e.name }))
       const changed = this.deps.state.updateContexts(contexts, active)
