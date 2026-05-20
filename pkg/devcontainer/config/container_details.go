@@ -18,6 +18,15 @@ type ContainerDetails struct {
 	Created string                 `json:"Created,omitempty"`
 	State   ContainerDetailsState  `json:"State"`
 	Config  ContainerDetailsConfig `json:"Config"`
+	Mounts  []ContainerMount       `json:"Mounts,omitempty"`
+}
+
+// ContainerMount represents a mount point on a container as returned by
+// docker/podman inspect.
+type ContainerMount struct {
+	Type        string `json:"Type,omitempty"`
+	Source      string `json:"Source,omitempty"`
+	Destination string `json:"Destination,omitempty"`
 }
 
 type ContainerDetailsConfig struct {
