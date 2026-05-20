@@ -225,7 +225,6 @@ jobs:
   deploy-update-metadata:
     name: Deploy Electron Update Metadata
     needs: [build-desktop]
-    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -252,10 +251,17 @@ jobs:
           pip install pyyaml
           python3 hack/merge-mac-metadata.py metadata/ publish-dir/desktop/
 
-      - name: overlay non-mac metadata files
+      - name: overlay non-mac metadata files (stable release)
+        if: ${{ !github.event.release.prerelease }}
         run: |
           find metadata/ -name 'latest-linux.yml' -exec cp {} publish-dir/desktop/ \;
           find metadata/ -name 'latest.yml' -exec cp {} publish-dir/desktop/ \;
+          find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
+          find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
+
+      - name: overlay non-mac metadata files (prerelease)
+        if: ${{ github.event.release.prerelease }}
+        run: |
           find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
           find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
 
@@ -315,7 +321,7 @@ jobs:
 
   prerelease:
     name: Publish Prerelease
-    needs: [build-desktop, build-flatpak]
+    needs: [build-desktop, build-flatpak, deploy-update-metadata]
     permissions:
       contents: write
     if: github.event.release.prerelease
