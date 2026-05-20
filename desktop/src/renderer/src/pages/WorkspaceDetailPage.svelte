@@ -378,6 +378,9 @@ async function handleRename() {
   renameSaving = true
   try {
     await workspaceRename(id, trimmed)
+    workspaces.update((current) =>
+      current.map((w) => (w.id === id ? { ...w, id: trimmed } : w)),
+    )
     toasts.success(`Renamed workspace to ${trimmed}`)
     renaming = false
     goto(`/workspaces/${trimmed}`)
