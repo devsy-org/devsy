@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -73,6 +74,10 @@ func (cmd *UpCmd) openIDE(
 		return nil
 	}
 
+	if isNewContainer(wctx) {
+		waitForContainerServices(ctx)
+	}
+
 	ideConfig := client.WorkspaceConfig().IDE
 	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, opener.Params{
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
@@ -83,6 +88,28 @@ func (cmd *UpCmd) openIDE(
 		User:               wctx.user,
 		Result:             wctx.result,
 	})
+}
+
+const containerNewThreshold = 30 * time.Second
+
+func isNewContainer(wctx *workspaceContext) bool {
+	if wctx.result == nil || wctx.result.ContainerDetails == nil {
+		return false
+	}
+	created, err := time.Parse(time.RFC3339Nano, wctx.result.ContainerDetails.Created)
+	if err != nil {
+		return false
+	}
+	return time.Since(created) < containerNewThreshold
+}
+
+func waitForContainerServices(ctx context.Context) {
+	const stabilizationDelay = 2 * time.Second
+	log.Debugf("waiting %s for container services to stabilize", stabilizationDelay)
+	select {
+	case <-time.After(stabilizationDelay):
+	case <-ctx.Done():
+	}
 }
 
 type configureSSHParams struct {
