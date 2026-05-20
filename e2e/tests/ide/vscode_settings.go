@@ -11,6 +11,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const settingEditorFontSize = "editor.fontSize"
+
 var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), func() {
 	var (
 		tmpHome     string
@@ -75,8 +77,8 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
     // Another comment
     "editor.tabSize": 4
 }`, map[string]any{
-			"editor.fontSize": float64(14),
-			"editor.tabSize":  float64(4),
+			settingEditorFontSize: float64(14),
+			"editor.tabSize":      float64(4),
 		}),
 		ginkgo.Entry("with block comments", `{
     /* Block comment explaining font size */
@@ -87,17 +89,17 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
      */
     "editor.wordWrap": "on"
 }`, map[string]any{
-			"editor.fontSize": float64(16),
-			"editor.wordWrap": "on",
+			settingEditorFontSize: float64(16),
+			"editor.wordWrap":     "on",
 		}),
 		ginkgo.Entry("with trailing commas", `{
     "editor.fontSize": 14,
     "editor.tabSize": 4,
     "editor.wordWrap": "on",
 }`, map[string]any{
-			"editor.fontSize": float64(14),
-			"editor.tabSize":  float64(4),
-			"editor.wordWrap": "on",
+			settingEditorFontSize: float64(14),
+			"editor.tabSize":      float64(4),
+			"editor.wordWrap":     "on",
 		}),
 		ginkgo.Entry("preserving existing settings during merge", `{
     // User's custom font settings
@@ -107,7 +109,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
     "terminal.integrated.fontSize": 13,
     "workbench.colorTheme": "One Dark Pro",
 }`, map[string]any{
-			"editor.fontSize":              float64(18),
+			settingEditorFontSize:          float64(18),
 			"editor.fontFamily":            "Fira Code",
 			"terminal.integrated.fontSize": float64(13),
 			"workbench.colorTheme":         "One Dark Pro",
@@ -160,7 +162,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
 
 		settings := readParsedSettings()
 		// Verify existing settings are preserved
-		gomega.Expect(settings).To(gomega.HaveKeyWithValue("editor.fontSize", float64(14)))
+		gomega.Expect(settings).To(gomega.HaveKeyWithValue(settingEditorFontSize, float64(14)))
 		gomega.Expect(settings).To(gomega.HaveKeyWithValue("editor.formatOnSave", true))
 		gomega.Expect(settings).To(gomega.HaveKeyWithValue("editor.minimap.enabled", false))
 		gomega.Expect(settings).
