@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -73,6 +75,12 @@ func (cmd *UpCmd) openIDE(
 		return nil
 	}
 
+	if isNewContainer(wctx) {
+		if err := waitForSSHReady(ctx, client, wctx.user); err != nil {
+			log.Warnf("SSH readiness probe failed: %v", err)
+		}
+	}
+
 	ideConfig := client.WorkspaceConfig().IDE
 	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, opener.Params{
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
@@ -83,6 +91,71 @@ func (cmd *UpCmd) openIDE(
 		User:               wctx.user,
 		Result:             wctx.result,
 	})
+}
+
+const containerNewThreshold = 30 * time.Second
+
+func isNewContainer(wctx *workspaceContext) bool {
+	if wctx.result == nil || wctx.result.ContainerDetails == nil {
+		return false
+	}
+	created, err := time.Parse(time.RFC3339Nano, wctx.result.ContainerDetails.Created)
+	if err != nil {
+		return false
+	}
+	return time.Since(created) < containerNewThreshold
+}
+
+const (
+	sshProbeTimeout  = 10 * time.Second
+	sshProbeInterval = 500 * time.Millisecond
+)
+
+// waitForSSHReady polls until the workspace SSH server accepts connections,
+// using the same transport path that VS Code Remote SSH will use.
+func waitForSSHReady(ctx context.Context, client client2.BaseWorkspaceClient, user string) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, sshProbeTimeout)
+	defer cancel()
+
+	workspace := client.Workspace()
+	log.Debugf("probing SSH readiness for workspace %s", workspace)
+
+	ticker := time.NewTicker(sshProbeInterval)
+	defer ticker.Stop()
+
+	for {
+		if err := runSSHProbe(ctx, execPath, workspace, user); err == nil {
+			log.Debugf("SSH ready for workspace %s", workspace)
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("workspace %s SSH not ready within %s", workspace, sshProbeTimeout)
+		case <-ticker.C:
+		}
+	}
+}
+
+func runSSHProbe(ctx context.Context, execPath, workspace, user string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	args := []string{"ssh", "--command", "true", workspace}
+	if user != "" {
+		args = []string{"ssh", "--command", "true", "--user", user, workspace}
+	}
+
+	//nolint:gosec // execPath is from os.Executable()
+	cmd := exec.CommandContext(probeCtx, execPath, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run()
 }
 
 type configureSSHParams struct {
