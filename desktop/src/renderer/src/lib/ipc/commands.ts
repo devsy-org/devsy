@@ -22,6 +22,7 @@ export async function workspaceUp(params: {
   provider?: string
   ide?: string
   debug?: boolean
+  workspaceFolder?: string
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }

@@ -351,3 +351,40 @@ export function initSettings() {
 
   return unsubscribe
 }
+
+// ── Per-workspace folder override ──────────────────────────────────
+
+const WORKSPACE_FOLDERS_KEY = "devsy-workspace-folders"
+
+export function getWorkspaceFolder(workspaceId: string): string {
+  if (!browser) return ""
+  try {
+    const stored = localStorage.getItem(WORKSPACE_FOLDERS_KEY)
+    if (stored) {
+      const map = JSON.parse(stored) as Record<string, string>
+      return map[workspaceId] ?? ""
+    }
+  } catch {
+    // ignore
+  }
+  return ""
+}
+
+export function setWorkspaceFolder(
+  workspaceId: string,
+  folder: string,
+): void {
+  if (!browser) return
+  try {
+    const stored = localStorage.getItem(WORKSPACE_FOLDERS_KEY)
+    const map: Record<string, string> = stored ? JSON.parse(stored) : {}
+    if (folder) {
+      map[workspaceId] = folder
+    } else {
+      delete map[workspaceId]
+    }
+    localStorage.setItem(WORKSPACE_FOLDERS_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}

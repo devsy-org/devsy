@@ -38,6 +38,7 @@ type UpCmd struct {
 	SSHConfigPath      string
 	SecretsFile        string
 	FeatureSecretsFile string
+	WorkspaceFolder    string
 
 	DotfilesSource        string
 	DotfilesScript        string
@@ -217,6 +218,10 @@ func (cmd *UpCmd) executeDevsyUp(
 			client.WorkspaceConfig().Source.GitSubPath,
 		)
 		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
+	}
+	if cmd.WorkspaceFolder != "" {
+		result.SubstitutionContext.ContainerWorkspaceFolder = cmd.WorkspaceFolder
+		workdir = cmd.WorkspaceFolder
 	}
 
 	return &workspaceContext{result: result, user: user, workdir: workdir}, nil

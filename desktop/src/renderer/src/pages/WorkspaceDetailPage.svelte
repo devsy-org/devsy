@@ -46,7 +46,7 @@ import {
   workspaceLogDelete,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
-import { loadLocalOptions } from "$lib/stores/settings.js"
+import { loadLocalOptions, getWorkspaceFolder, setWorkspaceFolder } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { LogEntry } from "$lib/types/index.js"
@@ -127,6 +127,9 @@ let selectedIde = $state<string | null>(null)
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
+let editingFolder = $state(false)
+let folderValue = $state("")
+let customFolder = $state("")
 let currentIde = $derived(selectedIde ?? workspace?.ide?.name ?? "none")
 let filteredIdes = $derived(
   IDE_OPTIONS.filter((i) =>
@@ -180,6 +183,7 @@ onMount(async () => {
   }
 
   loadLogs()
+  customFolder = getWorkspaceFolder(id)
 
   // Auto-trigger IDE open when navigated with ?action=open-ide
   const qs = new URLSearchParams($querystring ?? "")
@@ -312,9 +316,10 @@ async function handleStart() {
 
 async function handleOpenIde() {
   const ide = currentIde !== "none" ? currentIde : undefined
+  const folder = customFolder || undefined
   startStreamingOp("Open IDE")
   try {
-    commandId = await workspaceUp({ source: id, ide, debug: isDebug() })
+    commandId = await workspaceUp({ source: id, ide, debug: isDebug(), workspaceFolder: folder })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)
@@ -549,6 +554,30 @@ async function handleRename() {
                 </Command.Root>
               </Popover.Content>
             </Popover.Root>
+          </div>
+
+          <div class="text-muted-foreground">Workspace Folder</div>
+          <div>
+            {#if editingFolder}
+              <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); setWorkspaceFolder(id, folderValue.trim()); customFolder = folderValue.trim(); editingFolder = false; toasts.success("Workspace folder updated") }}>
+                <Input
+                  value={folderValue}
+                  oninput={(e) => (folderValue = e.currentTarget.value)}
+                  placeholder="/workspaces/my-project"
+                  class="h-7 w-56 text-xs font-mono"
+                />
+                <Button variant="outline" size="sm" type="submit" class="h-7 text-xs">Save</Button>
+                <Button variant="ghost" size="sm" type="button" class="h-7 text-xs" onclick={() => (editingFolder = false)}>Cancel</Button>
+              </form>
+            {:else}
+              <span class="inline-flex items-center gap-2">
+                <span class="font-mono text-xs">{customFolder || "Default"}</span>
+                <Button variant="ghost" size="icon-sm" onclick={() => { folderValue = customFolder; editingFolder = true }} disabled={operationRunning}>
+                  <Pencil class="h-3 w-3" />
+                  <span class="sr-only">Edit workspace folder</span>
+                </Button>
+              </span>
+            {/if}
           </div>
 
           <div class="text-muted-foreground">Source</div>
