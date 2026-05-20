@@ -4,6 +4,7 @@ import { createInterface } from "node:readline"
 import { promisify } from "node:util"
 
 const execFile = promisify(execFileCb)
+const MAX_CONCURRENT = 10
 
 /**
  * On macOS, GUI apps (including Electron) inherit a minimal PATH that excludes
@@ -34,11 +35,10 @@ export class CliRunner {
   private execPath: string
   private prefixArgs: string[]
   private env: NodeJS.ProcessEnv
+  private running = 0
+  private queue: Array<() => void> = []
 
   constructor(private binaryPath: string) {
-    // If the binary is a Node.js script, run it through node directly.
-    // Uses "node" from PATH rather than process.execPath because in Electron
-    // process.execPath is the Electron binary, not Node.js.
     if (/\.[cm]?js$/.test(binaryPath)) {
       this.execPath = "node"
       this.prefixArgs = [binaryPath]
@@ -49,19 +49,42 @@ export class CliRunner {
     this.env = buildEnv()
   }
 
+  private acquire(): Promise<void> {
+    if (this.running < MAX_CONCURRENT) {
+      this.running++
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.running++
+        resolve()
+      })
+    })
+  }
+
+  private release(): void {
+    this.running--
+    const next = this.queue.shift()
+    if (next) next()
+  }
+
   async run<T>(args: string[]): Promise<T> {
-    const fullArgs = [...this.prefixArgs, ...args, "--output", "json"]
+    await this.acquire()
     try {
+      const fullArgs = [...this.prefixArgs, ...args, "--output", "json"]
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
       return JSON.parse(stdout) as T
     } catch (error: unknown) {
       throw this.wrapError(error)
+    } finally {
+      this.release()
     }
   }
 
   async runRaw(args: string[]): Promise<string> {
+    await this.acquire()
     try {
       const { stdout } = await execFile(
         this.execPath,
@@ -71,6 +94,8 @@ export class CliRunner {
       return stdout
     } catch (error: unknown) {
       throw this.wrapError(error)
+    } finally {
+      this.release()
     }
   }
 
@@ -78,26 +103,27 @@ export class CliRunner {
     args: string[],
     onLine: (line: string, stream: "stdout" | "stderr") => void,
     onExit: (code: number) => void,
-  ): ChildProcess {
-    const child = spawn(this.execPath, [...this.prefixArgs, ...args], {
-      env: this.env,
+  ): void {
+    this.acquire().then(() => {
+      const child = spawn(this.execPath, [...this.prefixArgs, ...args], {
+        env: this.env,
+      })
+
+      if (child.stdout) {
+        const rl = createInterface({ input: child.stdout })
+        rl.on("line", (line) => onLine(line, "stdout"))
+      }
+
+      if (child.stderr) {
+        const rl = createInterface({ input: child.stderr })
+        rl.on("line", (line) => onLine(line, "stderr"))
+      }
+
+      child.on("close", (code) => {
+        this.release()
+        onExit(code ?? -1)
+      })
     })
-
-    if (child.stdout) {
-      const rl = createInterface({ input: child.stdout })
-      rl.on("line", (line) => onLine(line, "stdout"))
-    }
-
-    if (child.stderr) {
-      const rl = createInterface({ input: child.stderr })
-      rl.on("line", (line) => onLine(line, "stderr"))
-    }
-
-    child.on("close", (code) => {
-      onExit(code ?? -1)
-    })
-
-    return child
   }
 
   static stripAnsi(str: string): string {
