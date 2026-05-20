@@ -144,6 +144,7 @@ func BuildRoot() *cobra.Command {
 	rootCmd.AddCommand(NewRenameCmd(globalFlags))
 	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
 	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
+	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 
 	inheritCommandFlagsFromEnvironment(rootCmd)
 

@@ -2,6 +2,7 @@ import { join } from "node:path"
 import { app, BrowserWindow, session } from "electron"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
 import { CliRunner } from "./cli.js"
+import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
 import { PtyManager } from "./pty.js"
@@ -138,10 +139,15 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
   })
 
+  // Start local daemon for efficient polling
+  const daemonManager = new DaemonManager(binaryPath)
+  daemonManager.start()
+
   app.on("before-quit", () => {
     ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
+    daemonManager.stop()
     ptyManager.destroyAll()
   })
 
@@ -157,6 +163,7 @@ app.whenReady().then(() => {
   // Start state watcher
   const watcher = new Watcher({
     cli,
+    daemon: daemonManager.daemonClient,
     state,
     getMainWindow: () => mainWindow,
   })
