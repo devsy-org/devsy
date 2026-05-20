@@ -51,25 +51,25 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
 export class Watcher {
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private fsWatcher: ReturnType<typeof watch> | null = null
+  private polling = false
+  private pollQueued = false
 
   constructor(private deps: WatcherDeps) {}
 
   start(): void {
-    // Poll every 3 seconds
-    this.pollTimer = setInterval(() => this.pollOnce(), 3000)
+    this.pollTimer = setInterval(() => this.schedulePoll(), 3000)
 
-    // Watch ~/.devsy/ for filesystem changes
     const devsyDir = join(homedir(), ".devsy")
     if (existsSync(devsyDir)) {
       this.fsWatcher = watch(devsyDir, {
         ignoreInitial: true,
+        ignored: /[\\/]logs[\\/]/,
         awaitWriteFinish: { stabilityThreshold: 500 },
       })
-      this.fsWatcher.on("all", () => this.pollOnce())
+      this.fsWatcher.on("all", () => this.schedulePoll())
     }
 
-    // Initial poll
-    this.pollOnce()
+    this.schedulePoll()
   }
 
   stop(): void {
@@ -83,13 +83,30 @@ export class Watcher {
     }
   }
 
+  private schedulePoll(): void {
+    if (this.polling) {
+      this.pollQueued = true
+      return
+    }
+    this.pollOnce()
+  }
+
   private async pollOnce(): Promise<void> {
-    await Promise.allSettled([
-      this.pollWorkspaces(),
-      this.pollProviders(),
-      this.pollMachines(),
-      this.pollContexts(),
-    ])
+    this.polling = true
+    try {
+      await Promise.allSettled([
+        this.pollWorkspaces(),
+        this.pollProviders(),
+        this.pollMachines(),
+        this.pollContexts(),
+      ])
+    } finally {
+      this.polling = false
+      if (this.pollQueued) {
+        this.pollQueued = false
+        this.schedulePoll()
+      }
+    }
   }
 
   private async pollWorkspaces(): Promise<void> {
