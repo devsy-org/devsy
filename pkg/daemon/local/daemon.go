@@ -46,10 +46,6 @@ type contextEntry struct {
 	Default bool   `json:"default,omitempty"`
 }
 
-func GetSocketPath() string {
-	return fmt.Sprintf("/tmp/%s", socketSuffix)
-}
-
 func New(devsyConfig *config.Config) (*Daemon, error) {
 	socketPath := GetSocketPath()
 	ln, err := listen(socketPath)

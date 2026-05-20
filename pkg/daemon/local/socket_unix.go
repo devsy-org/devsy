@@ -1,3 +1,5 @@
+//go:build !windows
+
 package local
 
 import (
@@ -8,6 +10,10 @@ import (
 	"path/filepath"
 	"time"
 )
+
+func GetSocketPath() string {
+	return fmt.Sprintf("/tmp/%s", socketSuffix)
+}
 
 func Dial() (net.Conn, error) {
 	return net.DialTimeout("unix", GetSocketPath(), 2*time.Second)

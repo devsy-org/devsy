@@ -1,12 +1,19 @@
 import http from "node:http"
 
-const SOCKET_PATH = "/tmp/devsy-local.sock"
+const SOCKET_SUFFIX = "devsy-local.sock"
 const REQUEST_TIMEOUT = 3000
+
+function getDefaultSocketPath(): string {
+  if (process.platform === "win32") {
+    return `\\\\.\\pipe\\${SOCKET_SUFFIX}`
+  }
+  return `/tmp/${SOCKET_SUFFIX}`
+}
 
 export class DaemonClient {
   private socketPath: string
 
-  constructor(socketPath = SOCKET_PATH) {
+  constructor(socketPath = getDefaultSocketPath()) {
     this.socketPath = socketPath
   }
 
