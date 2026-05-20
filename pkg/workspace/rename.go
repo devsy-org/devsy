@@ -86,19 +86,9 @@ type pathReplacer struct {
 }
 
 func newPathReplacer(
-	containerWorkspaceFolder, localWorkspaceFolder, oldName, newName string,
+	localWorkspaceFolder, oldName, newName string,
 ) *pathReplacer {
 	r := &pathReplacer{}
-
-	if containerWorkspaceFolder != "" {
-		containerParent := strings.TrimSuffix(
-			containerWorkspaceFolder, filepath.Base(containerWorkspaceFolder),
-		)
-		r.pairs = append(r.pairs, [2]string{
-			containerParent + oldName,
-			containerParent + newName,
-		})
-	}
 
 	if localWorkspaceFolder != "" {
 		localParent := strings.TrimSuffix(
@@ -127,17 +117,16 @@ func (r *pathReplacer) applyToMergedConfig(mc *devcontainerconfig.MergedDevConta
 	if mc == nil {
 		return
 	}
-	mc.WorkspaceFolder = r.replace(mc.WorkspaceFolder)
 	if mc.WorkspaceMount != nil {
 		updated := r.replace(*mc.WorkspaceMount)
 		mc.WorkspaceMount = &updated
 	}
 }
 
-// updateWorkspaceResult rewrites workspace_result.json to replace references
-// to the old workspace name with the new one. This ensures that cached paths
-// like ContainerWorkspaceFolder, LocalWorkspaceFolder, and WorkspaceMount
-// stay valid after rename.
+// updateWorkspaceResult rewrites workspace_result.json to replace host-side
+// references to the old workspace name with the new one. Only LocalWorkspaceFolder
+// and WorkspaceMount are updated — ContainerWorkspaceFolder is an in-container
+// path that does not change when the host workspace is renamed.
 func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) {
 	context := devsyConfig.DefaultContext
 	result, err := provider.LoadWorkspaceResult(context, newName)
@@ -145,16 +134,14 @@ func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) 
 		return
 	}
 
-	var containerWSFolder, localWSFolder string
+	var localWSFolder string
 	if sc := result.SubstitutionContext; sc != nil {
-		containerWSFolder = sc.ContainerWorkspaceFolder
 		localWSFolder = sc.LocalWorkspaceFolder
 	}
 
-	r := newPathReplacer(containerWSFolder, localWSFolder, oldName, newName)
+	r := newPathReplacer(localWSFolder, oldName, newName)
 
 	if sc := result.SubstitutionContext; sc != nil {
-		sc.ContainerWorkspaceFolder = r.replace(sc.ContainerWorkspaceFolder)
 		sc.LocalWorkspaceFolder = r.replace(sc.LocalWorkspaceFolder)
 		sc.WorkspaceMount = r.replace(sc.WorkspaceMount)
 	}
