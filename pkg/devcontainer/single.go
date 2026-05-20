@@ -90,6 +90,14 @@ func (r *runner) runSingleContainer(
 	if options.Recreate && parsedConfig.Config.ContainerID != "" {
 		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
 	} else if !options.Recreate && containerDetails != nil {
+		if actual := workspaceMountDestination(containerDetails); actual != "" &&
+			actual != substitutionContext.ContainerWorkspaceFolder {
+			log.Infof(
+				"container workspace mount is %s, updating from computed %s",
+				actual, substitutionContext.ContainerWorkspaceFolder,
+			)
+			substitutionContext.ContainerWorkspaceFolder = actual
+		}
 		resolved, err = r.resolveExistingContainer(ctx, containerDetails, params)
 	} else {
 		resolved, err = r.resolveNewContainer(ctx, params)
@@ -353,6 +361,18 @@ func (r *runner) findRunningContainerOrFail(
 		return nil, fmt.Errorf("dev container %s not found after %s", r.ID, operation)
 	}
 	return details, nil
+}
+
+// workspaceMountDestination returns the container-side destination of the
+// workspace bind mount, or "" if none is found. This is used to prefer the
+// actual container mount path over the recomputed one after a rename.
+func workspaceMountDestination(containerDetails *config.ContainerDetails) string {
+	for _, mount := range containerDetails.Mounts {
+		if mount.Type == "bind" && strings.HasPrefix(mount.Destination, "/workspaces/") {
+			return mount.Destination
+		}
+	}
+	return ""
 }
 
 func (r *runner) buildRunOptionsForDelivery(
