@@ -33,13 +33,27 @@ func NewBinaryManager(downloadURL string) (*BinaryManager, error) {
 
 	cache := &BinaryCache{BaseDir: cachePath}
 
+	expectedVersion := versionFromDownloadURL(downloadURL)
+
 	return &BinaryManager{
 		sources: []BinarySource{
 			&InjectSource{},
-			&FileCacheSource{Cache: cache},
-			&HTTPDownloadSource{BaseURL: downloadURL, Cache: cache},
+			&FileCacheSource{Cache: cache, ExpectedVersion: expectedVersion},
+			&HTTPDownloadSource{BaseURL: downloadURL, Cache: cache, Version: expectedVersion},
 		},
 	}, nil
+}
+
+func versionFromDownloadURL(downloadURL string) string {
+	parts := strings.Split(strings.TrimRight(downloadURL, "/"), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	last := parts[len(parts)-1]
+	if strings.HasPrefix(last, "v") {
+		return last
+	}
+	return ""
 }
 
 func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.ReadCloser, error) {
@@ -66,8 +80,24 @@ func (c *BinaryCache) Set(arch string, data io.Reader) error {
 	return c.atomicWrite(c.pathFor(arch), data)
 }
 
+func (c *BinaryCache) WriteVersion(arch, ver string) {
+	_ = os.WriteFile(c.versionPathFor(arch), []byte(ver), 0o600) // #nosec G306
+}
+
+func (c *BinaryCache) ReadVersion(arch string) string {
+	data, err := os.ReadFile(c.versionPathFor(arch))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 func (c *BinaryCache) pathFor(arch string) string {
 	return filepath.Join(c.BaseDir, config.BinaryName+"-"+osLinux+"-"+arch)
+}
+
+func (c *BinaryCache) versionPathFor(arch string) string {
+	return c.pathFor(arch) + ".version"
 }
 
 func (c *BinaryCache) atomicWrite(path string, data io.Reader) error {
@@ -131,10 +161,20 @@ func (s *InjectSource) openCurrentExecutable() (io.ReadCloser, error) {
 }
 
 type FileCacheSource struct {
-	Cache *BinaryCache
+	Cache           *BinaryCache
+	ExpectedVersion string
 }
 
 func (s *FileCacheSource) GetBinary(ctx context.Context, arch string) (io.ReadCloser, error) {
+	if s.ExpectedVersion != "" {
+		cached := s.Cache.ReadVersion(arch)
+		if cached != s.ExpectedVersion {
+			return nil, fmt.Errorf(
+				"cache version %q does not match expected %q",
+				cached, s.ExpectedVersion,
+			)
+		}
+	}
 	return s.Cache.Get(arch)
 }
 
@@ -145,6 +185,7 @@ func (s *FileCacheSource) SourceName() string {
 type HTTPDownloadSource struct {
 	BaseURL string
 	Cache   *BinaryCache
+	Version string
 }
 
 func (s *HTTPDownloadSource) GetBinary(ctx context.Context, arch string) (io.ReadCloser, error) {
@@ -291,6 +332,9 @@ func (s *HTTPDownloadSource) streamAndCache(
 
 	if err := os.Rename(tmpPath, cachePath); err == nil {
 		success = true
+		if s.Version != "" && s.Cache != nil {
+			s.Cache.WriteVersion(arch, s.Version)
+		}
 	}
 }
 
