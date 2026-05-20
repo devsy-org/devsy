@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	testDefaultContext   = "default"
-	testContainerWSMount = "/workspaces/ws-old"
+	testDefaultContext         = "default"
+	testContainerWSFolder      = "/workspaces/ws-old"
+	testContainerWSFolderMount = "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old"
 )
 
 func setupTestPathManager(t *testing.T) {
@@ -80,17 +81,13 @@ func TestUpdateWorkspaceResult_BasicRename(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(
-		t,
-		"/workspaces/my-project-renamed",
-		got.SubstitutionContext.ContainerWorkspaceFolder,
-	)
+	// Container paths should NOT change (they are in-container paths)
+	assert.Equal(t, "/workspaces/my-project", got.SubstitutionContext.ContainerWorkspaceFolder)
+	assert.Equal(t, "/workspaces/my-project", got.MergedConfig.WorkspaceFolder)
+	// Host-side paths should be updated
 	assert.Equal(t, "/home/user/my-project-renamed", got.SubstitutionContext.LocalWorkspaceFolder)
-	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/workspaces/my-project-renamed")
 	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/home/user/my-project-renamed")
-	assert.Equal(t, "/workspaces/my-project-renamed", got.MergedConfig.WorkspaceFolder)
 	require.NotNil(t, got.MergedConfig.WorkspaceMount)
-	assert.Contains(t, *got.MergedConfig.WorkspaceMount, "/workspaces/my-project-renamed")
 	assert.Contains(t, *got.MergedConfig.WorkspaceMount, "/home/user/my-project-renamed")
 }
 
@@ -120,11 +117,12 @@ func TestUpdateWorkspaceResult_MergedConfigUpdated(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(t, "/workspaces/app-v2", got.MergedConfig.WorkspaceFolder)
+	// Container path unchanged
+	assert.Equal(t, "/workspaces/app", got.MergedConfig.WorkspaceFolder)
+	// Host source path updated in mount
 	require.NotNil(t, got.MergedConfig.WorkspaceMount)
-	assert.Equal(
-		t,
-		"type=bind,source=/home/dev/app-v2,target=/workspaces/app-v2",
+	assert.Equal(t,
+		"type=bind,source=/home/dev/app-v2,target=/workspaces/app",
 		*got.MergedConfig.WorkspaceMount,
 	)
 }
@@ -155,18 +153,18 @@ func TestUpdateWorkspaceResult_NonDefaultWorkspaceDir(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(t, "/home/coder/project-new", got.SubstitutionContext.ContainerWorkspaceFolder)
+	// Container path unchanged
+	assert.Equal(t, "/home/coder/project", got.SubstitutionContext.ContainerWorkspaceFolder)
+	assert.Equal(t, "/home/coder/project", got.MergedConfig.WorkspaceFolder)
+	// Host-side path updated
 	assert.Equal(t, "/mnt/data/project-new", got.SubstitutionContext.LocalWorkspaceFolder)
-	assert.Equal(
-		t,
-		"type=bind,source=/mnt/data/project-new,target=/home/coder/project-new",
+	assert.Equal(t,
+		"type=bind,source=/mnt/data/project-new,target=/home/coder/project",
 		got.SubstitutionContext.WorkspaceMount,
 	)
-	assert.Equal(t, "/home/coder/project-new", got.MergedConfig.WorkspaceFolder)
 	require.NotNil(t, got.MergedConfig.WorkspaceMount)
-	assert.Equal(
-		t,
-		"type=bind,source=/mnt/data/project-new,target=/home/coder/project-new",
+	assert.Equal(t,
+		"type=bind,source=/mnt/data/project-new,target=/home/coder/project",
 		*got.MergedConfig.WorkspaceMount,
 	)
 }
@@ -197,15 +195,12 @@ func TestUpdateWorkspaceResult_NestedPath(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(
-		t,
-		"/workspaces/org/repo-renamed",
-		got.SubstitutionContext.ContainerWorkspaceFolder,
-	)
+	// Container path unchanged
+	assert.Equal(t, "/workspaces/org/repo", got.SubstitutionContext.ContainerWorkspaceFolder)
+	assert.Equal(t, "/workspaces/org/repo", got.MergedConfig.WorkspaceFolder)
+	// Host-side path updated
 	assert.Equal(t, "/home/user/dev/org/repo-renamed", got.SubstitutionContext.LocalWorkspaceFolder)
-	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/workspaces/org/repo-renamed")
 	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/home/user/dev/org/repo-renamed")
-	assert.Equal(t, "/workspaces/org/repo-renamed", got.MergedConfig.WorkspaceFolder)
 }
 
 func TestUpdateWorkspaceResult_SameNameIdempotent(t *testing.T) {
@@ -249,9 +244,9 @@ func TestUpdateWorkspaceResult_NilMergedConfig(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: testContainerWSMount,
+			ContainerWorkspaceFolder: testContainerWSFolder,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=" + testContainerWSMount,
+			WorkspaceMount:           testContainerWSFolderMount,
 		},
 		MergedConfig: nil,
 	}
@@ -263,9 +258,11 @@ func TestUpdateWorkspaceResult_NilMergedConfig(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(t, "/workspaces/ws-new", got.SubstitutionContext.ContainerWorkspaceFolder)
+	// Container path unchanged
+	assert.Equal(t, testContainerWSFolder, got.SubstitutionContext.ContainerWorkspaceFolder)
+	// Host-side path updated
 	assert.Equal(t, "/home/user/ws-new", got.SubstitutionContext.LocalWorkspaceFolder)
-	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/workspaces/ws-new")
+	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/home/user/ws-new")
 }
 
 func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
@@ -276,13 +273,13 @@ func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: testContainerWSMount,
+			ContainerWorkspaceFolder: testContainerWSFolder,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=" + testContainerWSMount,
+			WorkspaceMount:           testContainerWSFolderMount,
 		},
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
-	result.MergedConfig.WorkspaceFolder = testContainerWSMount
+	result.MergedConfig.WorkspaceFolder = testContainerWSFolder
 	result.MergedConfig.WorkspaceMount = nil
 
 	writeWorkspaceResult(t, newName, result)
@@ -292,7 +289,8 @@ func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
 
 	got := loadWorkspaceResult(t, newName)
 
-	assert.Equal(t, "/workspaces/ws-new", got.MergedConfig.WorkspaceFolder)
+	// Container path unchanged
+	assert.Equal(t, testContainerWSFolder, got.MergedConfig.WorkspaceFolder)
 	assert.Nil(t, got.MergedConfig.WorkspaceMount)
 }
 
@@ -378,16 +376,12 @@ func TestUpdateWorkspaceResult_RawJSON(t *testing.T) {
 	var got devcontainerconfig.Result
 	require.NoError(t, json.Unmarshal(updatedBytes, &got))
 
-	assert.Equal(t, "/workspaces/new-ws", got.SubstitutionContext.ContainerWorkspaceFolder)
+	// Container path unchanged
+	assert.Equal(t, "/workspaces/old-ws", got.SubstitutionContext.ContainerWorkspaceFolder)
+	assert.Equal(t, "/workspaces/old-ws", got.MergedConfig.WorkspaceFolder)
+	// Host-side path updated
 	assert.Equal(t, "/home/user/new-ws", got.SubstitutionContext.LocalWorkspaceFolder)
-	assert.Equal(t,
-		"type=bind,source=/home/user/new-ws,target=/workspaces/new-ws",
-		got.SubstitutionContext.WorkspaceMount,
-	)
-	assert.Equal(t, "/workspaces/new-ws", got.MergedConfig.WorkspaceFolder)
+	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/home/user/new-ws")
 	require.NotNil(t, got.MergedConfig.WorkspaceMount)
-	assert.Equal(t,
-		"type=bind,source=/home/user/new-ws,target=/workspaces/new-ws",
-		*got.MergedConfig.WorkspaceMount,
-	)
+	assert.Contains(t, *got.MergedConfig.WorkspaceMount, "/home/user/new-ws")
 }
