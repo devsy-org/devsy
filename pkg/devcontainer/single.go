@@ -363,12 +363,17 @@ func (r *runner) findRunningContainerOrFail(
 	return details, nil
 }
 
+const (
+	mountTypeBind    = "bind"
+	workspacesPrefix = "/workspaces/"
+)
+
 // workspaceMountDestination returns the container-side destination of the
 // workspace bind mount, or "" if none is found. This is used to prefer the
 // actual container mount path over the recomputed one after a rename.
 func workspaceMountDestination(containerDetails *config.ContainerDetails) string {
 	for _, mount := range containerDetails.Mounts {
-		if mount.Type == "bind" && strings.HasPrefix(mount.Destination, "/workspaces/") {
+		if mount.Type == mountTypeBind && strings.HasPrefix(mount.Destination, workspacesPrefix) {
 			return mount.Destination
 		}
 	}

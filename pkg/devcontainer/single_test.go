@@ -6,7 +6,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-func TestWorkspaceMountDestination(t *testing.T) {
+const mountTypeVolume = "volume"
+
+func TestWorkspaceMountDestination(t *testing.T) { //nolint:funlen // table-driven test
 	tests := []struct {
 		name   string
 		mounts []config.ContainerMount
@@ -20,30 +22,54 @@ func TestWorkspaceMountDestination(t *testing.T) {
 		{
 			name: "bind mount under /workspaces/",
 			mounts: []config.ContainerMount{
-				{Type: "bind", Source: "/home/user/project", Destination: "/workspaces/my-app"},
+				{
+					Type:        mountTypeBind,
+					Source:      "/home/user/project",
+					Destination: "/workspaces/my-app",
+				},
 			},
 			want: "/workspaces/my-app",
 		},
 		{
 			name: "volume mount under /workspaces/ is ignored",
 			mounts: []config.ContainerMount{
-				{Type: "volume", Source: "myvol", Destination: "/workspaces/other"},
+				{
+					Type:        mountTypeVolume,
+					Source:      "myvol",
+					Destination: "/workspaces/other",
+				},
 			},
 			want: "",
 		},
 		{
 			name: "bind mount outside /workspaces/ is ignored",
 			mounts: []config.ContainerMount{
-				{Type: "bind", Source: "/host/path", Destination: "/app"},
+				{
+					Type:        mountTypeBind,
+					Source:      "/host/path",
+					Destination: "/opt/data",
+				},
 			},
 			want: "",
 		},
 		{
 			name: "multiple mounts returns first workspace bind",
 			mounts: []config.ContainerMount{
-				{Type: "volume", Source: "cache", Destination: "/cache"},
-				{Type: "bind", Source: "/home/user/ws", Destination: "/workspaces/old-name"},
-				{Type: "bind", Source: "/tmp/extra", Destination: "/extra"},
+				{
+					Type:        mountTypeVolume,
+					Source:      "cache",
+					Destination: "/cache",
+				},
+				{
+					Type:        mountTypeBind,
+					Source:      "/home/user/ws",
+					Destination: "/workspaces/old-name",
+				},
+				{
+					Type:        mountTypeBind,
+					Source:      "/tmp/extra",
+					Destination: "/extra",
+				},
 			},
 			want: "/workspaces/old-name",
 		},
