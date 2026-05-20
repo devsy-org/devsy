@@ -281,6 +281,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
         provider?: string
         ide?: string
         debug?: boolean
+        workspaceFolder?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -289,6 +290,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
       if (args.debug) cliArgs.push("--debug")
+      if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()

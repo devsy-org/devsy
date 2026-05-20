@@ -137,6 +137,9 @@ func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		BoolVar(&cmd.OpenIDE, "open-ide", true,
 			"If this is false and an IDE is configured, Devsy will only install the IDE server backend, but not open it")
+	upCmd.Flags().
+		StringVar(&cmd.WorkspaceFolder, "workspace-folder", "",
+			"Override the folder path opened in the IDE (absolute path inside the container)")
 }
 
 func (cmd *UpCmd) registerGitFlags(upCmd *cobra.Command) {
