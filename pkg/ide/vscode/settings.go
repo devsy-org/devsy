@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/tailscale/hujson"
 )
 
 const settingUseExecServer = "remote.SSH.useExecServer"
@@ -107,7 +108,11 @@ func readSettingsFile(path string) (map[string]any, error) {
 	existing := make(map[string]any)
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed internally
 	if err == nil {
-		if err := json.Unmarshal(data, &existing); err != nil {
+		normalized, err := hujson.Standardize(data)
+		if err != nil {
+			return nil, fmt.Errorf("normalize settings: %w", err)
+		}
+		if err := json.Unmarshal(normalized, &existing); err != nil {
 			return nil, fmt.Errorf("parse settings: %w", err)
 		}
 	} else if !os.IsNotExist(err) {

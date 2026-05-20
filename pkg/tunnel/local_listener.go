@@ -37,6 +37,9 @@ type LocalTunnelOptions struct {
 // NewLocalTunnel creates and starts a local TCP listener that forwards
 // connections to the container SSH server.
 func NewLocalTunnel(ctx context.Context, opts LocalTunnelOptions) (*LocalTunnel, error) {
+	if opts.DialFunc == nil {
+		return nil, fmt.Errorf("dial func is required")
+	}
 	if opts.BasePort == 0 {
 		opts.BasePort = 10800
 	}

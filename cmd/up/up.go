@@ -107,7 +107,7 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 	}
 
 	// Re-write SSH config with tunnel port if tunnel started successfully
-	if err := cmd.reconfigureSSHWithTunnel(client, wctx); err != nil {
+	if err := cmd.reconfigureSSHWithTunnel(devsyConfig, client, wctx); err != nil {
 		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
 	}
 

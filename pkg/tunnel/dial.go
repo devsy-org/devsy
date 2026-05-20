@@ -51,10 +51,13 @@ func (d *WorkspaceDialer) Dial(ctx context.Context) (io.ReadWriteCloser, error) 
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, fmt.Errorf("start devsy ssh: %w", err)
 	}
 
