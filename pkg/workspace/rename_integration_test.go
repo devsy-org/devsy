@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	testDefaultContext = "default"
+	testDefaultContext         = "default"
+	testContainerWSFolder      = "/workspaces/ws-old"
+	testContainerWSFolderMount = "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old"
 )
 
 func setupTestPathManager(t *testing.T) {
@@ -242,9 +244,9 @@ func TestUpdateWorkspaceResult_NilMergedConfig(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/ws-old",
+			ContainerWorkspaceFolder: testContainerWSFolder,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old",
+			WorkspaceMount:           testContainerWSFolderMount,
 		},
 		MergedConfig: nil,
 	}
@@ -257,7 +259,7 @@ func TestUpdateWorkspaceResult_NilMergedConfig(t *testing.T) {
 	got := loadWorkspaceResult(t, newName)
 
 	// Container path unchanged
-	assert.Equal(t, "/workspaces/ws-old", got.SubstitutionContext.ContainerWorkspaceFolder)
+	assert.Equal(t, testContainerWSFolder, got.SubstitutionContext.ContainerWorkspaceFolder)
 	// Host-side path updated
 	assert.Equal(t, "/home/user/ws-new", got.SubstitutionContext.LocalWorkspaceFolder)
 	assert.Contains(t, got.SubstitutionContext.WorkspaceMount, "/home/user/ws-new")
@@ -271,13 +273,13 @@ func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
 
 	result := &devcontainerconfig.Result{
 		SubstitutionContext: &devcontainerconfig.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/ws-old",
+			ContainerWorkspaceFolder: testContainerWSFolder,
 			LocalWorkspaceFolder:     "/home/user/ws-old",
-			WorkspaceMount:           "type=bind,source=/home/user/ws-old,target=/workspaces/ws-old",
+			WorkspaceMount:           testContainerWSFolderMount,
 		},
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
-	result.MergedConfig.WorkspaceFolder = "/workspaces/ws-old"
+	result.MergedConfig.WorkspaceFolder = testContainerWSFolder
 	result.MergedConfig.WorkspaceMount = nil
 
 	writeWorkspaceResult(t, newName, result)
@@ -288,7 +290,7 @@ func TestUpdateWorkspaceResult_NilWorkspaceMount(t *testing.T) {
 	got := loadWorkspaceResult(t, newName)
 
 	// Container path unchanged
-	assert.Equal(t, "/workspaces/ws-old", got.MergedConfig.WorkspaceFolder)
+	assert.Equal(t, testContainerWSFolder, got.MergedConfig.WorkspaceFolder)
 	assert.Nil(t, got.MergedConfig.WorkspaceMount)
 }
 

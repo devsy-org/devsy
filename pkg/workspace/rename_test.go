@@ -9,6 +9,8 @@ import (
 const (
 	testLocalNewWS = "/home/user/new-ws"
 	testLocalOldWS = "/home/user/old-ws"
+	testLocalOld   = "/home/user/old"
+	testLocalNew   = "/home/user/new"
 )
 
 func TestNewPathReplacer_DefaultWorkspaceDir(t *testing.T) {
@@ -172,14 +174,14 @@ func TestPathReplacer_Replace_WorkspaceMount(t *testing.T) {
 func TestPathReplacer_ReplaceMultipleCalls(t *testing.T) {
 	r := &pathReplacer{
 		pairs: [][2]string{
-			{"/home/user/old", "/home/user/new"},
+			{testLocalOld, testLocalNew},
 		},
 	}
 
 	r.replace("/home/user/other")
 	assert.False(t, r.changed)
 
-	r.replace("/home/user/old")
+	r.replace(testLocalOld)
 	assert.True(t, r.changed)
 
 	r.replace("/home/user/other")
@@ -211,28 +213,22 @@ func TestPathReplacer_ReplaceWithTrailingSlash(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "no trailing slash in pair or input",
-			pairs: [][2]string{
-				{"/home/user/old", "/home/user/new"},
-			},
-			input:    "/home/user/old",
-			expected: "/home/user/new",
+			name:     "no trailing slash in pair or input",
+			pairs:    [][2]string{{testLocalOld, testLocalNew}},
+			input:    testLocalOld,
+			expected: testLocalNew,
 		},
 		{
-			name: "trailing slash in input only",
-			pairs: [][2]string{
-				{"/home/user/old", "/home/user/new"},
-			},
-			input:    "/home/user/old/",
-			expected: "/home/user/new/",
+			name:     "trailing slash in input only",
+			pairs:    [][2]string{{testLocalOld, testLocalNew}},
+			input:    testLocalOld + "/",
+			expected: testLocalNew + "/",
 		},
 		{
-			name: "subpath match",
-			pairs: [][2]string{
-				{"/home/user/old", "/home/user/new"},
-			},
-			input:    "/home/user/old/subdir/file.txt",
-			expected: "/home/user/new/subdir/file.txt",
+			name:     "subpath match",
+			pairs:    [][2]string{{testLocalOld, testLocalNew}},
+			input:    testLocalOld + "/subdir/file.txt",
+			expected: testLocalNew + "/subdir/file.txt",
 		},
 	}
 
