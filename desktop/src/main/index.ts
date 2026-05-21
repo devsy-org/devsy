@@ -147,6 +147,7 @@ app.whenReady().then(() => {
     ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
+    cli.killAll()
     daemonManager.stop()
     ptyManager.destroyAll()
   })

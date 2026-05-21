@@ -189,3 +189,37 @@ func TestLocalTunnel_ContextCancellation(t *testing.T) {
 		t.Error("expected connection to be refused after context cancellation")
 	}
 }
+
+func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
+	ctx := t.Context()
+
+	tun, err := NewLocalTunnel(ctx, LocalTunnelOptions{
+		BasePort: 18500,
+		DialFunc: func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return nil, fmt.Errorf("workspace gone")
+		},
+		HealthCheckInterval: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalTunnel: %v", err)
+	}
+	defer func() { _ = tun.Close() }()
+
+	// The health check should shut down the tunnel after 3 failures
+	// 3 * 50ms = 150ms, give generous timeout
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("tunnel did not shut down after health check failures")
+		case <-ticker.C:
+			_, err := net.DialTimeout("tcp", tun.Addr(), 50*time.Millisecond)
+			if err != nil {
+				return // tunnel shut down - test passes
+			}
+		}
+	}
+}

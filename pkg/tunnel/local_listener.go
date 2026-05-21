@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -13,12 +14,13 @@ import (
 // LocalTunnel manages a local TCP listener that forwards connections
 // to a container SSH server through the Devsy tunnel infrastructure.
 type LocalTunnel struct {
-	listener net.Listener
-	port     int
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	dialFunc DialFunc
+	listener            net.Listener
+	port                int
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
+	dialFunc            DialFunc
+	healthCheckInterval time.Duration
 }
 
 // DialFunc establishes a connection to the remote SSH server.
@@ -31,6 +33,9 @@ type LocalTunnelOptions struct {
 	BasePort int
 	// DialFunc creates a connection to the remote SSH endpoint
 	DialFunc DialFunc
+	// HealthCheckInterval overrides the default health check interval (for testing).
+	// If zero, defaults to healthCheckInterval (30s).
+	HealthCheckInterval time.Duration
 }
 
 // NewLocalTunnel creates and starts a local TCP listener that forwards
@@ -48,13 +53,19 @@ func NewLocalTunnel(ctx context.Context, opts LocalTunnelOptions) (*LocalTunnel,
 		return nil, err
 	}
 
+	healthInterval := opts.HealthCheckInterval
+	if healthInterval == 0 {
+		healthInterval = healthCheckInterval
+	}
+
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	t := &LocalTunnel{
-		listener: listener,
-		port:     listenPort,
-		ctx:      tunnelCtx,
-		cancel:   cancel,
-		dialFunc: opts.DialFunc,
+		listener:            listener,
+		port:                listenPort,
+		ctx:                 tunnelCtx,
+		cancel:              cancel,
+		dialFunc:            opts.DialFunc,
+		healthCheckInterval: healthInterval,
 	}
 
 	t.wg.Add(1)
@@ -64,6 +75,9 @@ func NewLocalTunnel(ctx context.Context, opts LocalTunnelOptions) (*LocalTunnel,
 		<-tunnelCtx.Done()
 		_ = listener.Close()
 	}()
+
+	t.wg.Add(1)
+	go t.healthCheck()
 
 	return t, nil
 }
@@ -84,6 +98,43 @@ func (t *LocalTunnel) Close() error {
 	err := t.listener.Close()
 	t.wg.Wait()
 	return err
+}
+
+func (t *LocalTunnel) healthCheck() {
+	defer t.wg.Done()
+
+	ticker := time.NewTicker(t.healthCheckInterval)
+	defer ticker.Stop()
+
+	failures := 0
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case <-ticker.C:
+			conn, err := t.dialFunc(t.ctx)
+			if err != nil {
+				failures++
+				log.Debugf(
+					"tunnel health check failed (%d/%d): %v",
+					failures,
+					healthCheckMaxFailures,
+					err,
+				)
+				if failures >= healthCheckMaxFailures {
+					log.Infof(
+						"tunnel health check: %d consecutive failures, shutting down",
+						failures,
+					)
+					t.cancel()
+					return
+				}
+			} else {
+				_ = conn.Close()
+				failures = 0
+			}
+		}
+	}
 }
 
 func (t *LocalTunnel) acceptLoop() {
@@ -118,7 +169,11 @@ func (t *LocalTunnel) handleConnection(localConn net.Conn) {
 	bridgeConnections(t.ctx, localConn, remoteConn)
 }
 
-const listenPortRange = 100
+const (
+	listenPortRange        = 100
+	healthCheckInterval    = 30 * time.Second
+	healthCheckMaxFailures = 3
+)
 
 func listenAvailablePort(basePort int) (net.Listener, int, error) {
 	for i := range listenPortRange {
