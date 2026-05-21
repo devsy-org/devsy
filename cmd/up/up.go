@@ -129,6 +129,11 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 		}
 		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
 	}
+
+	if wctx.tunnelPort > 0 {
+		log.Infof("SSH tunnel active on port %d, waiting for shutdown signal...", wctx.tunnelPort)
+		<-ctx.Done()
+	}
 	return nil
 }
 

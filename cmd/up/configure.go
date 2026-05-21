@@ -101,6 +101,13 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 	}
 
 	sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+	if sshConfigIncludePath != "" {
+		includePath, err := devssh.ResolveSSHConfigPath(sshConfigIncludePath)
+		if err != nil {
+			return err
+		}
+		sshConfigIncludePath = includePath
+	}
 
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
