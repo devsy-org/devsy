@@ -232,14 +232,6 @@ async function handleSaveAll() {
         <div class="space-y-4">
           <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">General</h3>
 
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>Telemetry</Label>
-              <p class="text-xs text-muted-foreground">Send anonymous usage data</p>
-            </div>
-            <Switch checked={opts.telemetry} onCheckedChange={() => toggleOption("telemetry")} disabled={saving || loading} />
-          </div>
-
           <div class="space-y-1.5">
             <Label>Agent URL</Label>
             <p class="text-xs text-muted-foreground">Custom agent endpoint URL</p>
