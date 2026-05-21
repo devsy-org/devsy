@@ -82,6 +82,42 @@ func (cmd *UpCmd) openIDE(
 		Client:             client,
 		User:               wctx.user,
 		Result:             wctx.result,
+		TunnelMode:         wctx.tunnelPort > 0,
+	})
+}
+
+func (cmd *UpCmd) reconfigureSSHWithTunnel(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	wctx *workspaceContext,
+) error {
+	if !cmd.ConfigureSSH || wctx.tunnelPort == 0 {
+		return nil
+	}
+
+	path, err := devssh.ResolveSSHConfigPath(cmd.SSHConfigPath)
+	if err != nil {
+		return err
+	}
+
+	sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+	if sshConfigIncludePath != "" {
+		includePath, err := devssh.ResolveSSHConfigPath(sshConfigIncludePath)
+		if err != nil {
+			return err
+		}
+		sshConfigIncludePath = includePath
+	}
+
+	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
+		SSHConfigPath:        path,
+		SSHConfigIncludePath: sshConfigIncludePath,
+		Context:              client.Context(),
+		Workspace:            client.Workspace(),
+		User:                 wctx.user,
+		Workdir:              wctx.workdir,
+		TunnelPort:           wctx.tunnelPort,
+		Provider:             client.Provider(),
 	})
 }
 

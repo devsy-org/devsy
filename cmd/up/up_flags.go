@@ -23,6 +23,9 @@ func (cmd *UpCmd) registerSSHFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
 		StringVar(&cmd.SSHConfigPath, "ssh-config", "",
 			"The path to the ssh config to modify, if empty will use ~/.ssh/config")
+	upCmd.Flags().
+		BoolVar(&cmd.SSHTunnelMode, "ssh-tunnel-mode", false,
+			"If true will use a local TCP tunnel instead of ProxyCommand for SSH connections")
 }
 
 func (cmd *UpCmd) registerDotfilesFlags(upCmd *cobra.Command) {

@@ -36,6 +36,7 @@ type Params struct {
 	Client             client2.BaseWorkspaceClient
 	User               string
 	Result             *config2.Result
+	TunnelMode         bool
 }
 
 // Open dispatches to the correct IDE opener based on ideName.
@@ -155,10 +156,11 @@ func openVSCodeFlavor(
 	params Params,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
-		Workspace: params.Client.Workspace(),
-		Folder:    params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-		NewWindow: vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
-		Flavor:    vsCodeFlavorMap[ideName],
+		Workspace:  params.Client.Workspace(),
+		Folder:     params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+		NewWindow:  vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
+		Flavor:     vsCodeFlavorMap[ideName],
+		TunnelMode: params.TunnelMode,
 	})
 }
 

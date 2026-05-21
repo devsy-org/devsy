@@ -98,6 +98,38 @@ func (s *SettingsSuite) TestMergeUserSettings_OverridesWrongValue() {
 	s.Equal(false, settings[settingUseExecServer])
 }
 
+func (s *SettingsSuite) TestRemoveUserSetting_RemovesKey() {
+	path := filepath.Join(s.tmpDir, "settings.json")
+	initial := map[string]any{
+		settingUseExecServer: false,
+		"editor.fontSize":    float64(14),
+	}
+	s.writeJSON(path, initial)
+
+	removeUserSetting(path, settingUseExecServer)
+
+	settings, err := readSettingsFile(path)
+	s.Require().NoError(err)
+	s.NotContains(settings, settingUseExecServer, "useExecServer should have been removed")
+	s.Equal(float64(14), settings["editor.fontSize"], "other settings should be preserved")
+}
+
+func (s *SettingsSuite) TestRemoveUserSetting_NoFile() {
+	removeUserSetting(filepath.Join(s.tmpDir, "nonexistent", "settings.json"), "some.key")
+}
+
+func (s *SettingsSuite) TestRemoveUserSetting_KeyNotPresent() {
+	path := filepath.Join(s.tmpDir, "settings.json")
+	initial := map[string]any{"editor.fontSize": float64(14)}
+	s.writeJSON(path, initial)
+
+	removeUserSetting(path, "nonexistent.key")
+
+	settings, err := readSettingsFile(path)
+	s.Require().NoError(err)
+	s.Len(settings, 1, "file should be unchanged")
+}
+
 func (s *SettingsSuite) TestMergeUserSettings_HandlesLineComments() {
 	path := filepath.Join(s.tmpDir, "settings.json")
 	s.writeRaw(path, `{
