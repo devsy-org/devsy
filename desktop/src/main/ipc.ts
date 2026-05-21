@@ -296,19 +296,37 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(wsId)
       const win = deps.getMainWindow()
+      let signalledDone = false
 
       cli.runStreaming(
         cliArgs,
         (line) => {
           const formatted = formatLogLine(line)
           logStore.appendLog(logPath, formatted)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: formatted,
-            done: false,
-          })
+
+          // Detect the success JSON envelope emitted before the tunnel blocks.
+          // This allows the UI to transition to "ready" even if the process
+          // stays alive to maintain a tunnel.
+          if (!signalledDone && line.includes('"outcome":"success"')) {
+            signalledDone = true
+            win?.webContents.send("command-progress", {
+              commandId: cmdId,
+              message: formatted,
+              done: true,
+            })
+            return
+          }
+
+          if (!signalledDone) {
+            win?.webContents.send("command-progress", {
+              commandId: cmdId,
+              message: formatted,
+              done: false,
+            })
+          }
         },
         (code) => {
+          if (signalledDone) return
           const exitMsg = formatLogLine(
             `Exit code: ${code}`,
             code === 0 ? "INFO" : "ERROR",

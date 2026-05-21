@@ -193,7 +193,8 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   }
   if (progress.done) {
     submitting = false
-    if (stripAnsi(progress.message).includes("Exit code: 0")) {
+    const msg = stripAnsi(progress.message)
+    if (msg.includes("Exit code: 0") || msg.includes('"outcome":"success"')) {
       createdId = wsId ?? null
       toasts.success(`Workspace ${wsId ?? "created"} is ready`)
       requestAnimationFrame(() => {
@@ -445,7 +446,7 @@ async function handleSubmit() {
         </div>
 
         <Sheet.Footer class="px-0 pt-2">
-          <Button type="submit" disabled={submitting || $providers.length === 0} class="w-full">
+          <Button type="submit" disabled={submitting || $providers.length === 0} size="lg">
             {#if submitting}<Spinner />{/if}
             {submitting ? "Creating..." : "Create Workspace"}
           </Button>
@@ -480,7 +481,7 @@ async function handleSubmit() {
 
       {#if createdId}
         <div class="pb-8">
-          <Button class="w-full" bind:ref={openBtnEl} onclick={() => { open = false; goto(`/workspaces/${createdId}`) }}>
+          <Button size="lg" bind:ref={openBtnEl} onclick={() => { open = false; goto(`/workspaces/${createdId}`) }}>
             Open Workspace
           </Button>
         </div>
