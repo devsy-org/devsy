@@ -46,6 +46,7 @@ let opts = $state<ContextOptions>({
   sshAgentForwarding: true,
   sshAddPrivateKeys: true,
   sshStrictHostKeyChecking: false,
+  sshTunnelMode: false,
   gpgAgentForwarding: false,
   agentInjectTimeout: "20",
   registryCache: "",
@@ -65,6 +66,7 @@ let initialOpts = $state<ContextOptions>({
   sshAgentForwarding: true,
   sshAddPrivateKeys: true,
   sshStrictHostKeyChecking: false,
+  sshTunnelMode: false,
   gpgAgentForwarding: false,
   agentInjectTimeout: "20",
   registryCache: "",
@@ -342,6 +344,14 @@ async function handleSaveAll() {
               <p class="text-xs text-muted-foreground">Enable strict SSH host key verification</p>
             </div>
             <Switch checked={opts.sshStrictHostKeyChecking} onCheckedChange={() => toggleOption("sshStrictHostKeyChecking")} disabled={saving || loading} />
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <Label>SSH Tunnel Mode</Label>
+              <p class="text-xs text-muted-foreground">Use local TCP tunnel instead of ProxyCommand for VS Code compatibility</p>
+            </div>
+            <Switch checked={opts.sshTunnelMode} onCheckedChange={() => toggleOption("sshTunnelMode")} disabled={saving || loading} />
           </div>
 
           <div class="space-y-1.5">

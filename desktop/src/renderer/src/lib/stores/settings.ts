@@ -179,6 +179,7 @@ export interface ContextOptions {
   sshAgentForwarding: boolean
   sshAddPrivateKeys: boolean
   sshStrictHostKeyChecking: boolean
+  sshTunnelMode: boolean
   gpgAgentForwarding: boolean
   agentInjectTimeout: string
   registryCache: string
@@ -210,6 +211,7 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
   sshAgentForwarding: true,
   sshAddPrivateKeys: true,
   sshStrictHostKeyChecking: false,
+  sshTunnelMode: false,
   gpgAgentForwarding: false,
   agentInjectTimeout: "20",
   registryCache: "",
@@ -241,6 +243,7 @@ export const CONTEXT_OPTION_KEYS: Record<keyof ContextOptions, string> = {
   sshAgentForwarding: "SSH_AGENT_FORWARDING",
   sshAddPrivateKeys: "SSH_ADD_PRIVATE_KEYS",
   sshStrictHostKeyChecking: "SSH_STRICT_HOST_KEY_CHECKING",
+  sshTunnelMode: "SSH_TUNNEL_MODE",
   gpgAgentForwarding: "GPG_AGENT_FORWARDING",
   agentInjectTimeout: "AGENT_INJECT_TIMEOUT",
   registryCache: "REGISTRY_CACHE",
@@ -306,6 +309,7 @@ export function parseContextOptions(
     sshAgentForwarding: bool("SSH_AGENT_FORWARDING", true),
     sshAddPrivateKeys: bool("SSH_ADD_PRIVATE_KEYS", true),
     sshStrictHostKeyChecking: bool("SSH_STRICT_HOST_KEY_CHECKING"),
+    sshTunnelMode: bool("SSH_TUNNEL_MODE"),
     gpgAgentForwarding: bool("GPG_AGENT_FORWARDING"),
     agentInjectTimeout: str("AGENT_INJECT_TIMEOUT", "20"),
     registryCache: str("REGISTRY_CACHE"),
