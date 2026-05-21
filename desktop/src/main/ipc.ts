@@ -334,7 +334,9 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
           }
         },
         (code) => {
-          tunnelProcesses.delete(wsId)
+          if (tunnelProcesses.get(wsId) === child) {
+            tunnelProcesses.delete(wsId)
+          }
           if (signalledDone) return
           const exitMsg = formatLogLine(
             `Exit code: ${code}`,

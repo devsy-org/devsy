@@ -148,12 +148,15 @@ app.whenReady().then(() => {
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
     cli.killAll()
+    for (const proc of tunnelProcesses.values()) {
+      proc.kill("SIGTERM")
+    }
     daemonManager.stop()
     ptyManager.destroyAll()
   })
 
   // Register IPC handlers
-  registerIpcHandlers({
+  const { tunnelProcesses } = registerIpcHandlers({
     cli,
     state,
     logStore,

@@ -216,10 +216,11 @@ func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
 		case <-deadline:
 			t.Fatal("tunnel did not shut down after health check failures")
 		case <-ticker.C:
-			_, err := net.DialTimeout("tcp", tun.Addr(), 50*time.Millisecond)
+			conn, err := net.DialTimeout("tcp", tun.Addr(), 50*time.Millisecond)
 			if err != nil {
 				return // tunnel shut down - test passes
 			}
+			_ = conn.Close()
 		}
 	}
 }
