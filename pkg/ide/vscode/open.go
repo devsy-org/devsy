@@ -84,7 +84,7 @@ var openConfigs = map[Flavor]openConfig{
 }
 
 func Open(ctx context.Context, params OpenParams) error {
-	EnsureHostSettings(params.Flavor, params.TunnelMode)
+	EnsureHostSettings(params.Flavor)
 
 	cliErr := openViaCLI(ctx, params)
 	if cliErr == nil {

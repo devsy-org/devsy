@@ -63,7 +63,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
 	ginkgo.DescribeTable("should parse JSONC settings",
 		func(content string, expectedKeys map[string]any) {
 			writeSettings(content)
-			vscode.EnsureHostSettings(vscode.FlavorStable, false)
+			vscode.EnsureHostSettings(vscode.FlavorStable)
 
 			settings := readParsedSettings()
 			for key, val := range expectedKeys {
@@ -158,7 +158,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
     "telemetry.telemetryLevel": "off",
 }`)
 
-		vscode.EnsureHostSettings(vscode.FlavorStable, false)
+		vscode.EnsureHostSettings(vscode.FlavorStable)
 
 		settings := readParsedSettings()
 		// Verify existing settings are preserved
@@ -183,7 +183,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
 		err := os.RemoveAll(settingsDir)
 		framework.ExpectNoError(err)
 
-		vscode.EnsureHostSettings(vscode.FlavorStable, false)
+		vscode.EnsureHostSettings(vscode.FlavorStable)
 
 		// Verify the file was created
 		_, err = os.Stat(settingsPath())
@@ -196,7 +196,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
 	ginkgo.It("should handle empty settings file", func() {
 		writeSettings(`{}`)
 
-		vscode.EnsureHostSettings(vscode.FlavorStable, false)
+		vscode.EnsureHostSettings(vscode.FlavorStable)
 
 		settings := readParsedSettings()
 		gomega.Expect(settings).To(gomega.HaveKeyWithValue("remote.SSH.useExecServer", false))

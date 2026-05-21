@@ -26,19 +26,13 @@ var userSettingsDirNames = map[Flavor]string{
 }
 
 // EnsureHostSettings ensures required VS Code user settings are configured
-// on the host machine. When tunnelMode is false, it disables exec-server mode
-// which is incompatible with ProxyCommand-based SSH connections. When tunnelMode
-// is true, it removes the useExecServer setting since tunnel mode does not
-// require it.
-func EnsureHostSettings(flavor Flavor, tunnelMode bool) {
+// on the host machine. It disables exec-server mode (useExecServer=false)
+// which is required for both ProxyCommand and tunnel-based SSH connections
+// because VS Code needs a remote TCP port to connect to.
+func EnsureHostSettings(flavor Flavor) {
 	settingsPath, err := userSettingsPath(flavor)
 	if err != nil {
 		log.Debugf("cannot determine VS Code settings path: %v", err)
-		return
-	}
-
-	if tunnelMode {
-		removeUserSetting(settingsPath, settingUseExecServer)
 		return
 	}
 
