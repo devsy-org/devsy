@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/port"
 )
 
 // LocalTunnel manages a local TCP listener that forwards connections
@@ -44,21 +43,15 @@ func NewLocalTunnel(ctx context.Context, opts LocalTunnelOptions) (*LocalTunnel,
 		opts.BasePort = 10800
 	}
 
-	availablePort, err := port.FindAvailablePort(opts.BasePort)
+	listener, listenPort, err := listenAvailablePort(opts.BasePort)
 	if err != nil {
-		return nil, fmt.Errorf("find available port: %w", err)
-	}
-
-	addr := fmt.Sprintf("127.0.0.1:%d", availablePort)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("listen on %s: %w", addr, err)
+		return nil, err
 	}
 
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	t := &LocalTunnel{
 		listener: listener,
-		port:     availablePort,
+		port:     listenPort,
 		ctx:      tunnelCtx,
 		cancel:   cancel,
 		dialFunc: opts.DialFunc,
@@ -123,6 +116,22 @@ func (t *LocalTunnel) handleConnection(localConn net.Conn) {
 	defer func() { _ = remoteConn.Close() }()
 
 	bridgeConnections(t.ctx, localConn, remoteConn)
+}
+
+const listenPortRange = 100
+
+func listenAvailablePort(basePort int) (net.Listener, int, error) {
+	for i := range listenPortRange {
+		addr := fmt.Sprintf("127.0.0.1:%d", basePort+i)
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue
+		}
+		return listener, basePort + i, nil
+	}
+	return nil, 0, fmt.Errorf(
+		"no available port in range %d-%d", basePort, basePort+listenPortRange-1,
+	)
 }
 
 func bridgeConnections(ctx context.Context, local net.Conn, remote io.ReadWriteCloser) {
