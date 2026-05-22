@@ -52,7 +52,7 @@ import { extractErrorMessage } from "$lib/utils/error.js"
 import type { LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
-import { stripAnsi } from "$lib/utils/log-parser.js"
+import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
@@ -162,8 +162,7 @@ onMount(async () => {
         }
         if (progress.done) {
           operationRunning = false
-          const msg = stripAnsi(progress.message)
-          const success = msg.includes("Exit code: 0") || msg.includes('"outcome":"success"')
+          const success = isCommandSuccess(progress.message)
           if (success) {
             toasts.success(`${operationLabel} ${id} succeeded`)
           } else {

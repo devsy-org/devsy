@@ -7,6 +7,12 @@ export function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "").replace(BRACKET_RE, "")
 }
 
+export function isCommandSuccess(message: string | undefined | null): boolean {
+  if (!message) return false
+  const clean = stripAnsi(message)
+  return clean.includes("Exit code: 0") || clean.includes('"outcome":"success"')
+}
+
 export interface ParsedLogLine {
   time: string
   level: "info" | "warn" | "fatal" | "debug" | "error" | ""
