@@ -19,7 +19,7 @@ import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { stripAnsi } from "$lib/utils/log-parser.js"
+import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
 let {
@@ -193,8 +193,7 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   }
   if (progress.done) {
     submitting = false
-    const msg = stripAnsi(progress.message)
-    if (msg.includes("Exit code: 0") || msg.includes('"outcome":"success"')) {
+    if (isCommandSuccess(progress.message)) {
       createdId = wsId ?? null
       toasts.success(`Workspace ${wsId ?? "created"} is ready`)
       requestAnimationFrame(() => {
