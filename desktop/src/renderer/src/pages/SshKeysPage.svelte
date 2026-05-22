@@ -204,7 +204,6 @@ async function copyPublicKey(key: SshKeyInfo) {
     </ScrollArea>
 
     <p class="text-xs text-muted-foreground">
-      {keys.length} key{keys.length === 1 ? "" : "s"} found.
       Keys with <ShieldCheck class="inline h-3 w-3 text-green-600" /> have a passphrase.
       Keys with <ShieldAlert class="inline h-3 w-3 text-amber-500" /> do not.
     </p>
