@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -42,6 +43,7 @@ func (d *WorkspaceDialer) Dial(ctx context.Context) (io.ReadWriteCloser, error) 
 
 	// #nosec G204 -- binary is self-referencing executable
 	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Stderr = log.Writer(log.LevelDebug)
 
 	stdin, err := cmd.StdinPipe()

@@ -46,8 +46,9 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
 }
 
-export function registerIpcHandlers(deps: IpcDependencies): void {
+export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: Map<string, import("node:child_process").ChildProcess> } {
   const { cli, state, logStore } = deps
+  const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
@@ -298,17 +299,23 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       const win = deps.getMainWindow()
       let signalledDone = false
 
-      cli.runStreaming(
+      // Kill any existing tunnel process for this workspace before starting a new one
+      const existing = tunnelProcesses.get(wsId)
+      if (existing) {
+        existing.kill("SIGTERM")
+        tunnelProcesses.delete(wsId)
+      }
+
+      const child = await cli.runStreaming(
         cliArgs,
         (line) => {
           const formatted = formatLogLine(line)
-          logStore.appendLog(logPath, formatted)
 
-          // Detect the success JSON envelope emitted before the tunnel blocks.
-          // This allows the UI to transition to "ready" even if the process
-          // stays alive to maintain a tunnel.
           if (!signalledDone && line.includes('"outcome":"success"')) {
+            logStore.appendLog(logPath, formatted)
             signalledDone = true
+            // Track this as a tunnel process (it stays alive for the tunnel)
+            tunnelProcesses.set(wsId, child)
             win?.webContents.send("command-progress", {
               commandId: cmdId,
               message: formatted,
@@ -318,6 +325,7 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
           }
 
           if (!signalledDone) {
+            logStore.appendLog(logPath, formatted)
             win?.webContents.send("command-progress", {
               commandId: cmdId,
               message: formatted,
@@ -326,6 +334,9 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
           }
         },
         (code) => {
+          if (tunnelProcesses.get(wsId) === child) {
+            tunnelProcesses.delete(wsId)
+          }
           if (signalledDone) return
           const exitMsg = formatLogLine(
             `Exit code: ${code}`,
@@ -348,6 +359,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     "workspace_stop",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_stop")
+      // Kill tunnel process for this workspace
+      const tunnelProc = tunnelProcesses.get(args.workspaceId)
+      if (tunnelProc) {
+        tunnelProc.kill("SIGTERM")
+        tunnelProcesses.delete(args.workspaceId)
+      }
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -388,6 +405,12 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
     "workspace_delete",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_delete")
+      // Kill tunnel process for this workspace
+      const tunnelProc = tunnelProcesses.get(args.workspaceId)
+      if (tunnelProc) {
+        tunnelProc.kill("SIGTERM")
+        tunnelProcesses.delete(args.workspaceId)
+      }
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(args.workspaceId)
       const win = deps.getMainWindow()
@@ -725,6 +748,8 @@ export function registerIpcHandlers(deps: IpcDependencies): void {
       trackEvent(args.name, sanitizeAnalyticsProperties(args.properties))
     },
   )
+
+  return { tunnelProcesses }
 }
 
 function sanitizeAnalyticsProperties(

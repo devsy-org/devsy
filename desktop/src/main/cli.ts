@@ -4,7 +4,7 @@ import { createInterface } from "node:readline"
 import { promisify } from "node:util"
 
 const execFile = promisify(execFileCb)
-const MAX_CONCURRENT = 10
+const MAX_CONCURRENT = 50
 
 /**
  * On macOS, GUI apps (including Electron) inherit a minimal PATH that excludes
@@ -99,31 +99,43 @@ export class CliRunner {
     }
   }
 
-  runStreaming(
+  private activeChildren = new Set<ChildProcess>()
+
+  async runStreaming(
     args: string[],
     onLine: (line: string, stream: "stdout" | "stderr") => void,
     onExit: (code: number) => void,
-  ): void {
-    this.acquire().then(() => {
-      const child = spawn(this.execPath, [...this.prefixArgs, ...args], {
-        env: this.env,
-      })
-
-      if (child.stdout) {
-        const rl = createInterface({ input: child.stdout })
-        rl.on("line", (line) => onLine(line, "stdout"))
-      }
-
-      if (child.stderr) {
-        const rl = createInterface({ input: child.stderr })
-        rl.on("line", (line) => onLine(line, "stderr"))
-      }
-
-      child.on("close", (code) => {
-        this.release()
-        onExit(code ?? -1)
-      })
+  ): Promise<ChildProcess> {
+    await this.acquire()
+    const child = spawn(this.execPath, [...this.prefixArgs, ...args], {
+      env: this.env,
     })
+
+    this.activeChildren.add(child)
+
+    if (child.stdout) {
+      const rl = createInterface({ input: child.stdout })
+      rl.on("line", (line) => onLine(line, "stdout"))
+    }
+
+    if (child.stderr) {
+      const rl = createInterface({ input: child.stderr })
+      rl.on("line", (line) => onLine(line, "stderr"))
+    }
+
+    child.on("close", (code) => {
+      this.activeChildren.delete(child)
+      this.release()
+      onExit(code ?? -1)
+    })
+
+    return child
+  }
+
+  killAll(): void {
+    for (const child of this.activeChildren) {
+      child.kill("SIGTERM")
+    }
   }
 
   static stripAnsi(str: string): string {
