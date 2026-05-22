@@ -162,7 +162,8 @@ onMount(async () => {
         }
         if (progress.done) {
           operationRunning = false
-          const success = stripAnsi(progress.message).includes("Exit code: 0")
+          const msg = stripAnsi(progress.message)
+          const success = msg.includes("Exit code: 0") || msg.includes('"outcome":"success"')
           if (success) {
             toasts.success(`${operationLabel} ${id} succeeded`)
           } else {
