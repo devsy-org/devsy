@@ -25,7 +25,7 @@ func (d *darwinPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "Library", "Application Support", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (d *darwinPathManager) DataDir() (string, error) {
@@ -34,7 +34,7 @@ func (d *darwinPathManager) DataDir() (string, error) {
 		return "", fmt.Errorf("data dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "Library", "Application Support", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (d *darwinPathManager) CacheDir() (string, error) {
@@ -43,7 +43,7 @@ func (d *darwinPathManager) CacheDir() (string, error) {
 		return "", fmt.Errorf("cache dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "Library", "Caches", RepoName))
+	return ensureDir(filepath.Join(home, ".cache", RepoName))
 }
 
 func (d *darwinPathManager) StateDir() (string, error) {
@@ -52,7 +52,7 @@ func (d *darwinPathManager) StateDir() (string, error) {
 		return "", fmt.Errorf("state dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "Library", "Application Support", RepoName, "state"))
+	return ensureDir(filepath.Join(home, "."+RepoName, "state"))
 }
 
 func (d *darwinPathManager) RuntimeDir() (string, error) {

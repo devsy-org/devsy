@@ -20,36 +20,24 @@ func newPlatformPathManager() PathManager {
 }
 
 func (l *linuxPathManager) ConfigDir() (string, error) {
-	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return ensureDir(filepath.Join(dir, RepoName))
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".config", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (l *linuxPathManager) DataDir() (string, error) {
-	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
-		return ensureDir(filepath.Join(dir, RepoName))
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("data dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".local", "share", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (l *linuxPathManager) CacheDir() (string, error) {
-	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" {
-		return ensureDir(filepath.Join(dir, RepoName))
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cache dir: %w", err)
@@ -59,22 +47,14 @@ func (l *linuxPathManager) CacheDir() (string, error) {
 }
 
 func (l *linuxPathManager) StateDir() (string, error) {
-	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return ensureDir(filepath.Join(dir, RepoName))
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("state dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".local", "state", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName, "state"))
 }
 
 func (l *linuxPathManager) RuntimeDir() (string, error) {
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return ensureDir(filepath.Join(dir, RepoName))
-	}
-
 	return ensureDir(filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())))
 }

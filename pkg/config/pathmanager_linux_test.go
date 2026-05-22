@@ -27,16 +27,11 @@ func skipIfNotLinux(t *testing.T) {
 	}
 }
 
-func TestLinuxXDGDefaults(t *testing.T) {
+func TestLinuxDefaults(t *testing.T) {
 	skipIfNotLinux(t)
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("XDG_CACHE_HOME", "")
-	t.Setenv("XDG_STATE_HOME", "")
-	t.Setenv("XDG_RUNTIME_DIR", "")
 
 	pm := newTestLinuxPM()
 	uid := os.Getuid()
@@ -50,53 +45,11 @@ func TestLinuxXDGDefaults(t *testing.T) {
 		fn   func() (string, error)
 		want string
 	}{
-		{"ConfigDir", pm.ConfigDir, filepath.Join(home, ".config", RepoName)},
-		{"DataDir", pm.DataDir, filepath.Join(home, ".local", "share", RepoName)},
+		{"ConfigDir", pm.ConfigDir, filepath.Join(home, "."+RepoName)},
+		{"DataDir", pm.DataDir, filepath.Join(home, "."+RepoName)},
 		{"CacheDir", pm.CacheDir, filepath.Join(home, ".cache", RepoName)},
-		{"StateDir", pm.StateDir, filepath.Join(home, ".local", "state", RepoName)},
+		{"StateDir", pm.StateDir, filepath.Join(home, "."+RepoName, "state")},
 		{"RuntimeDir", pm.RuntimeDir, wantRuntime},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.fn()
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLinuxXDGEnvOverrides(t *testing.T) {
-	skipIfNotLinux(t)
-
-	customConfig := t.TempDir()
-	customData := t.TempDir()
-	customCache := t.TempDir()
-	customState := t.TempDir()
-	customRuntime := t.TempDir()
-
-	t.Setenv("XDG_CONFIG_HOME", customConfig)
-	t.Setenv("XDG_DATA_HOME", customData)
-	t.Setenv("XDG_CACHE_HOME", customCache)
-	t.Setenv("XDG_STATE_HOME", customState)
-	t.Setenv("XDG_RUNTIME_DIR", customRuntime)
-
-	pm := newTestLinuxPM()
-
-	tests := []struct {
-		name string
-		fn   func() (string, error)
-		want string
-	}{
-		{"ConfigDir", pm.ConfigDir, filepath.Join(customConfig, RepoName)},
-		{"DataDir", pm.DataDir, filepath.Join(customData, RepoName)},
-		{"CacheDir", pm.CacheDir, filepath.Join(customCache, RepoName)},
-		{"StateDir", pm.StateDir, filepath.Join(customState, RepoName)},
-		{"RuntimeDir", pm.RuntimeDir, filepath.Join(customRuntime, RepoName)},
 	}
 
 	for _, tt := range tests {
@@ -117,7 +70,6 @@ func TestConfigFilePathDefault(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv(EnvConfig, "")
 
 	pm := newTestLinuxPM()
@@ -127,7 +79,7 @@ func TestConfigFilePathDefault(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := filepath.Join(home, ".config", RepoName, ConfigFile)
+	want := filepath.Join(home, "."+RepoName, ConfigFile)
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -151,12 +103,12 @@ func TestConfigFilePathDEVSYCONFIGOverride(t *testing.T) {
 func TestContextDataSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
-	dataDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", dataDir)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	pm := newTestLinuxPM()
 	ctx := "myctx"
-	base := filepath.Join(dataDir, RepoName, "contexts", ctx)
+	base := filepath.Join(home, "."+RepoName, "contexts", ctx)
 
 	tests := []struct {
 		name string
@@ -207,12 +159,12 @@ func TestContextDataSubPaths(t *testing.T) {
 func TestProviderAndProInstanceSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
-	dataDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", dataDir)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	pm := newTestLinuxPM()
 	ctx := "myctx"
-	base := filepath.Join(dataDir, RepoName, "contexts", ctx)
+	base := filepath.Join(home, "."+RepoName, "contexts", ctx)
 
 	tests := []struct {
 		name string
@@ -267,11 +219,11 @@ func TestProviderAndProInstanceSubPaths(t *testing.T) {
 func TestCacheSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
-	cacheDir := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	pm := newTestLinuxPM()
-	base := filepath.Join(cacheDir, RepoName)
+	base := filepath.Join(home, ".cache", RepoName)
 
 	tests := []struct {
 		name string
@@ -305,11 +257,9 @@ func TestCacheSubPaths(t *testing.T) {
 func TestRuntimeSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
-	runtimeDir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-
 	pm := newTestLinuxPM()
-	base := filepath.Join(runtimeDir, RepoName)
+	uid := os.Getuid()
+	base := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, uid))
 
 	tests := []struct {
 		name string
@@ -356,8 +306,8 @@ func TestRuntimeSubPaths(t *testing.T) {
 func TestStateSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
-	stateDir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateDir)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	pm := newTestLinuxPM()
 
@@ -366,7 +316,7 @@ func TestStateSubPaths(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := filepath.Join(stateDir, RepoName, "logs")
+	want := filepath.Join(home, "."+RepoName, "state", "logs")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
