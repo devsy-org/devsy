@@ -126,7 +126,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   ipcMain.handle(
     "provider_set_options",
     async (_event, args: { name: string; options: string[] }) => {
-      const cliArgs = ["provider", "set-options", args.name]
+      const cliArgs = ["provider", "set-options", args.name, "--skip-init"]
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }

@@ -17,7 +17,8 @@ import (
 type SetOptionsCmd struct {
 	*flags.GlobalFlags
 
-	Dry bool
+	Dry      bool
+	SkipInit bool
 
 	Reconfigure   bool
 	SingleMachine bool
@@ -55,6 +56,8 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
 	setOptionsCmd.Flags().
 		BoolVar(&cmd.Dry, "dry", false, "Dry will not persist the options to file and instead return the new filled options")
+	setOptionsCmd.Flags().
+		BoolVar(&cmd.SkipInit, "skip-init", false, "If true will skip running the provider init command")
 	return setOptionsCmd
 }
 
@@ -86,7 +89,7 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 		UserOptions:    cmd.Options,
 		Reconfigure:    cmd.Reconfigure,
 		SkipRequired:   cmd.Dry,
-		SkipInit:       cmd.Dry,
+		SkipInit:       cmd.Dry || cmd.SkipInit,
 		SkipSubOptions: false,
 		SingleMachine:  &cmd.SingleMachine,
 	})

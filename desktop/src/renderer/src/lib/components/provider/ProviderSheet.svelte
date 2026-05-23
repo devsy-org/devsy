@@ -91,11 +91,9 @@ async function loadOptions() {
     const raw = await providerOptions(provider.name)
     options = raw as unknown as Record<string, ProviderOption>
 
-    const currentOpts = provider.options ?? {}
     for (const [key, opt] of Object.entries(options)) {
-      const currentVal = currentOpts[key]
-      if (currentVal?.value != null) {
-        optionValues[key] = String(currentVal.value)
+      if (opt.value != null) {
+        optionValues[key] = String(opt.value)
       } else if (opt.default != null) {
         optionValues[key] = String(opt.default)
       } else {
@@ -202,6 +200,8 @@ async function handleSaveOptions() {
       if (val !== "") values[key] = val
     }
     await providerSetOptions(provider.name, values)
+    const updated = await providerList()
+    providers.set(updated)
     initialValues = { ...optionValues }
     if (setup) {
       await providerUse(provider.name)
