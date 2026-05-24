@@ -37,6 +37,10 @@ linters:
           - gosec
         text: "G101"
         path: "pkg/telemetry/analytics/client.go"
+      - path: "hack/"
+        linters:
+          - forbidigo
+          - gosec
   settings:
     cyclop:
       max-complexity: 8
