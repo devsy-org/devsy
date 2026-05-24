@@ -66,6 +66,7 @@ func (cmd *InfoTagsCmd) Run(featureID string) error {
 		return nil
 	}
 
+	_, _ = fmt.Fprintln(os.Stdout, "Available Tags:")
 	rows := make([][]string, 0, len(tags))
 	for _, tag := range tags {
 		rows = append(rows, []string{tag})
