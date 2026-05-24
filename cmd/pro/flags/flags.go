@@ -1,14 +1,20 @@
 package flags
 
 import (
-	"github.com/devsy-org/devsy/cmd/flags"
+	rootflags "github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	flag "github.com/spf13/pflag"
 )
 
+// BindEnv re-exports rootflags.BindEnv so pro subcommands can wire env vars
+// through their existing local `flags` import alias.
+func BindEnv(fs *flag.FlagSet, flagName string) {
+	rootflags.BindEnv(fs, flagName)
+}
+
 // GlobalFlags is the flags that contains the global flags.
 type GlobalFlags struct {
-	*flags.GlobalFlags
+	*rootflags.GlobalFlags
 
 	Config string
 }

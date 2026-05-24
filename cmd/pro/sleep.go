@@ -48,8 +48,10 @@ func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				"During this time the space can only be woken up by `devsy pro wakeup`, "+
 				"manually deleting the annotation on the namespace or through the UI")
 	_ = c.MarkFlagRequired("project")
+	flags.BindEnv(c.Flags(), "project")
 	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
 	_ = c.MarkFlagRequired("host")
+	flags.BindEnv(c.Flags(), "host")
 
 	return c
 }

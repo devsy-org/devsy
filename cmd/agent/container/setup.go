@@ -61,9 +61,9 @@ type SetupContainerCmd struct {
 }
 
 // NewSetupContainerCmd creates a new command.
-func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SetupContainerCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	setupContainerCmd := &cobra.Command{
 		Use:   "setup",
@@ -96,6 +96,10 @@ func NewSetupContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	setupContainerCmd.Flags().
 		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
 	_ = setupContainerCmd.MarkFlagRequired("setup-info")
+
+	flags.BindEnv(setupContainerCmd.Flags(), "access-key")
+	flags.BindEnv(setupContainerCmd.Flags(), "platform-host")
+
 	return setupContainerCmd
 }
 

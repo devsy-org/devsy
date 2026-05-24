@@ -43,7 +43,7 @@ func TestBuildCmd_ConfigAlias(t *testing.T) {
 }
 
 func TestGlobalFlags_LogFormatAlias(t *testing.T) {
-	rootCmd := BuildRoot()
+	rootCmd, globalFlags := BuildRoot()
 	rootCmd.SetArgs([]string{flagLogFormat, formatJSON, "version"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
@@ -58,14 +58,14 @@ func TestConfigAlias_IsHidden(t *testing.T) {
 }
 
 func TestLogFormatAlias_IsHidden(t *testing.T) {
-	rootCmd := BuildRoot()
+	rootCmd, _ := BuildRoot()
 	f := rootCmd.PersistentFlags().Lookup("log-format")
 	require.NotNil(t, f)
 	assert.True(t, f.Hidden, flagLogFormat+" alias should be hidden")
 }
 
 func TestConfigAlias_E2E(t *testing.T) {
-	rootCmd := BuildRoot()
+	rootCmd, _ := BuildRoot()
 	rootCmd.SetArgs([]string{"up", flagConfig, "/tmp/test.json", "--help"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)

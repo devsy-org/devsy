@@ -27,7 +27,7 @@ func TestNewRunUserCommandsCmdAlias_IsHidden(t *testing.T) {
 }
 
 func TestNewRunUserCommandsCmdAlias_RegisteredInRoot(t *testing.T) {
-	rootCmd := BuildRoot()
+	rootCmd, _ := BuildRoot()
 	found := false
 	for _, sub := range rootCmd.Commands() {
 		if sub.Use == "runUserCommands" {
@@ -399,7 +399,7 @@ func TestBuildLifecycleEnvArgs_NilValueSkipped(t *testing.T) {
 }
 
 func TestRunUserCommandsCmd_RegisteredInRoot(t *testing.T) {
-	rootCmd := BuildRoot()
+	rootCmd, _ := BuildRoot()
 	found := false
 	for _, sub := range rootCmd.Commands() {
 		if sub.Use == "run-user-commands" {

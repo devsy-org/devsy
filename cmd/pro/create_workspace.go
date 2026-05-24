@@ -48,6 +48,7 @@ func NewCreateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
 	_ = c.MarkFlagRequired("host")
+	flags.BindEnv(c.Flags(), "host")
 	c.Flags().StringVar(&cmd.Instance, "instance", "", "The workspace instance to create")
 	_ = c.MarkFlagRequired("instance")
 
