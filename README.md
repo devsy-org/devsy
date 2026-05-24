@@ -6,21 +6,57 @@
   </picture>
 </a>
 
-### **[Website](https://www.devsy.sh)** • **[Quickstart](https://www.devsy.sh/docs/getting-started/install)** • **[Documentation](https://www.devsy.sh/docs/what-is-devsy)** • **[GitHub](https://github.com/devsy-org/devsy)**
+Devsy enables businesses and independent developers to run engineering at scale. It standardizes developer environments, enforces security controls, and runs workspaces across Docker, Kubernetes, cloud providers, and remote hosts with the open DevContainer standard.
 
-[![Open in Devsy!](https://img.shields.io/badge/open_in_devsy-8A2BE2?style=for-the-badge)](https://devsy.sh/open#https://github.com/devsy-org/devsy)
+<table>
+<tr>
+<td><b>Website</b></td>
+<td><a href="https://www.devsy.sh">https://www.devsy.sh</a></td>
+</tr>
+<tr>
+<td><b>Quickstart</b></td>
+<td><a href="https://www.devsy.sh/docs/getting-started/install">https://www.devsy.sh/docs/getting-started/install</a></td>
+</tr>
+<tr>
+<td><b>Documentation</b></td>
+<td><a href="https://www.devsy.sh/docs/what-is-devsy">https://www.devsy.sh/docs/what-is-devsy</a></td>
+</tr>
+<tr>
+<td><b>Repository</b></td>
+<td><a href="https://github.com/devsy-org/devsy">https://github.com/devsy-org/devsy</a></td>
+</tr>
+</table>
 
-Devsy is a client-only tool to create reproducible developer environments based on a [devcontainer.json](https://containers.dev/) on any backend. Each developer environment runs in a container and is specified through a [devcontainer.json](https://containers.dev/). Through Devsy providers, these environments can be created on any backend, such as the local computer, a Kubernetes cluster, any reachable remote machine, or in a VM in the cloud.
-
-You can think of Devsy as the glue that connects your local IDE to a machine where you want to develop. So depending on the requirements of your project, you can either create a workspace locally on the computer, on a beefy cloud machine with many GPUs, or a spare remote computer. Within Devsy, every workspace is managed the same way, which also makes it easy to switch between workspaces that might be hosted somewhere else.
+Devsy creates container-based developer environments defined by a [devcontainer.json](https://containers.dev/). The same configuration works across local and remote infrastructure.
 
 ![Devsy Flow](docs/static/media/devsy-flow.gif)
+
+## Use cases
+
+<table>
+<tr>
+<th>Audience</th>
+<th>Outcome</th>
+</tr>
+<tr>
+<td><b>Engineering organizations</b></td>
+<td>Consistent environments across teams, faster onboarding, and centralized security and policy controls.</td>
+</tr>
+<tr>
+<td><b>Platform and DevOps teams</b></td>
+<td>Standardized environment delivery on existing infrastructure without provider lock-in.</td>
+</tr>
+<tr>
+<td><b>Independent developers and consultants</b></td>
+<td>Local and remote development with one toolchain and configuration.</td>
+</tr>
+</table>
 
 <h2 align="center">Downloads</h2>
 
 <p>
-Devsy is available as both a desktop application with a graphical interface and a command-line tool.
-Take a look at the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> for installation instructions and more information.
+Devsy is available as a desktop application and a command-line tool.
+See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> for installation instructions.
 </p>
 
 <table align="center" width="80%">
@@ -119,57 +155,46 @@ Take a look at the <a href="https://devsy.sh/docs/getting-started/install">Devsy
 </tr>
 </table>
 
-<h2 align="center">Why Devsy?</h2>
-
+<h2 align="center">Operate Engineering at Scale</h2>
 <p>
-Devsy reuses the open <a href="https://containers.dev/">DevContainer standard</a> to create a consistent developer experience no matter what backend you want to use.
+Devsy implements the open <a href="https://containers.dev/">DevContainer standard</a>. Development environments remain portable and repeatable across provider backends.
 </p>
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <b>Cost savings</b><br>
-Devsy is usually around 5-10 times cheaper than existing services with comparable feature sets because it uses bare virtual machines in any cloud and shuts down unused virtual machines automatically.
+Lower infrastructure usage with local and remote options plus auto-shutdown controls.
 </td>
 <td width="50%" valign="top">
 <b>No vendor lock-in</b><br>
-Choose whatever cloud provider suits you best, be it the cheapest one or the most powerful, Devsy supports all cloud providers. If you are tired of using a provider, change it with a single command.
+Choose the infrastructure that fits your business. Devsy supports cloud providers and self-managed platforms.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>Local development</b><br>
-You get the same developer experience also locally, so you don't need to rely on a cloud provider at all.
+<b>Flexible development</b><br>
+Run one environment in local and remote setups from prototype to production workflows.
 </td>
 <td width="50%" valign="top">
 <b>Cross-IDE support</b><br>
-VS Code in its various flavors and the full JetBrains suite are supported, all others can be connected through SSH.
+Support teams across popular editors including VS Code and JetBrains.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>Client-only</b><br>
-No need to install a server backend, Devsy runs only on your computer.
-</td>
-<td width="50%" valign="top">
-<b>Extensible</b><br>
-Devsy is source-available and extensible. A provider doesn't exist? Just create your own.
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<b>Rich feature set</b><br>
-Devsy already supports prebuilds, auto inactivity shutdown, Git & Docker credentials sync, and many more features to come.
+<b>Feature set</b><br>
+Features include prebuilds, inactivity-based shutdown, and Git and Docker credential sync.
 </td>
 <td width="50%" valign="top">
 <b>Desktop App</b><br>
-Devsy comes with an easy-to-use desktop application that abstracts all the complexity away. If you want to build your own integration, Devsy offers a feature-rich CLI as well.
+Use the Devsy desktop app for workspace management. Use the CLI for automation and platform integration.
 </td>
 </tr>
 </table>
 
-## MacOS Users
+## macOS users
 
-Apple charges an annual $100 developer registration fee that grants access to sign the software application for the MacOS desktop environment. Creating a developer account and publishing the signed version is on the roadmap, but I have not gotten to this just yet. For the moment, users must enable the application via the settings menu.
+Apple requires a paid developer account to distribute code-signed macOS applications. Devsy does not yet ship a signed macOS build. macOS users enable the app in system settings.
 
-<img alt="MacOS security settings" width="600px" src="docs/static/media/macos-permissions.png">
+<img alt="macOS security settings" width="600px" src="docs/static/media/macos-permissions.png">
