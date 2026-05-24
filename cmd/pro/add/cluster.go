@@ -78,6 +78,7 @@ func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	c.Flags().
 		StringVar(&cmd.KubeContext, "kube-context", "", "The kube context to use for installation")
 	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
+	proflags.BindEnv(c.Flags(), "host")
 
 	return c
 }

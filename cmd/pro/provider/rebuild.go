@@ -38,6 +38,7 @@ func NewRebuildCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 	c.Flags().StringVar(&cmd.Project, "project", "", "The project to use")
 	_ = c.MarkFlagRequired("project")
+	flags.BindEnv(c.Flags(), "project")
 
 	return c
 }

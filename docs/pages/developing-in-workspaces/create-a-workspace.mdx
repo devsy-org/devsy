@@ -34,12 +34,12 @@ Under the hood, the Desktop Application will call the CLI command `devsy up REPO
 :::
 
 :::info Note
-You can set the location of your devsy home by passing the `--devsy-home={home_path}` flag,
+You can set the location of your devsy home by passing the `--home={home_path}` flag,
 or by setting the env var `DEVSY_HOME` to your desired home directory.
 
 This can be useful if you are having trouble with a workspace trying to mount to a windows location when it should be mounting to a path inside the WSL VM.
 
-For example: setting `devsy-home=/mnt/c/Users/MyUser/` will result in a workspace path of something like `/mnt/c/Users/MyUser/.devsy/contexts/default/workspaces/...`
+For example: setting `--home=/mnt/c/Users/MyUser/` will result in a workspace path of something like `/mnt/c/Users/MyUser/.devsy/contexts/default/workspaces/...`
 :::
 
 ### Via Devsy CLI

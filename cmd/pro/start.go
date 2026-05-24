@@ -136,6 +136,8 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	startCmd.Flags().
 		StringVar(&cmd.ChartRepo, "chart-repo", "https://charts.devsy.sh/", "The chart repo to deploy Devsy Pro")
 
+	proflags.BindEnv(startCmd.Flags(), "host")
+
 	return startCmd
 }
 

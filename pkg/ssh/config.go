@@ -122,7 +122,7 @@ func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCom
 
 func (b *proxyCommandBuilder) withDevsyHome(home string) *proxyCommandBuilder {
 	if home != "" {
-		b.options = append(b.options, fmt.Sprintf("--devsy-home \"%s\"", home))
+		b.options = append(b.options, fmt.Sprintf("--home \"%s\"", home))
 	}
 	return b
 }

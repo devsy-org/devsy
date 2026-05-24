@@ -91,7 +91,7 @@ Host testhost
 			workdir:   "",
 			command:   "",
 			gpgagent:  false,
-			devsyHome: "C:\\\\White Space\\devsy\\test",
+			devsyHome: "C:\\\\W S\\d",
 			provider:  "",
 			expected: `# Devsy Start testhost
 Host testhost
@@ -100,7 +100,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --devsy-home "C:\\White Space\devsy\test"
+  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --home "C:\\W S\d"
   User testuser
 # Devsy End testhost`,
 		},

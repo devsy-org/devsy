@@ -1,7 +1,6 @@
 package flags
 
 import (
-	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	flag "github.com/spf13/pflag"
 )
@@ -27,7 +26,7 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 
 	flags.StringVar(
 		&globalFlags.DevsyHome,
-		config.BinaryName+"-home",
+		"home",
 		"",
 		"If defined will override the default devsy home",
 	)
@@ -78,5 +77,11 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		"The data folder where agent data is stored.",
 	)
 	_ = flags.MarkHidden("agent-dir")
+
+	BindEnv(flags, "home")
+	BindEnv(flags, "context")
+	BindEnv(flags, "provider")
+	BindEnv(flags, "debug")
+
 	return globalFlags
 }
