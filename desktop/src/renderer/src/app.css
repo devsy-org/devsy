@@ -82,18 +82,18 @@
 
 /* ── Purple accent ── */
 .theme-purple {
-  --primary: hsl(275.7 100% 42.9%);
+  --primary: hsl(252 100% 68%);
   --primary-foreground: hsl(270 98.8% 98%);
   --secondary: hsl(240 3.5% 95.8%);
   --secondary-foreground: hsl(240 6% 10%);
-  --ring: hsl(275.7 100% 42.9%);
+  --ring: hsl(252 100% 68%);
 }
 .dark.theme-purple {
-  --primary: hsl(274.9 82.4% 37.9%);
+  --primary: hsl(251 67% 55%);
   --primary-foreground: hsl(270 98.8% 98%);
   --secondary: hsl(240 4% 15.9%);
   --secondary-foreground: hsl(180 0% 98%);
-  --ring: hsl(274.9 82.4% 37.9%);
+  --ring: hsl(251 67% 55%);
 }
 
 @theme inline {

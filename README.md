@@ -12,8 +12,6 @@
 
 Devsy is a client-only tool to create reproducible developer environments based on a [devcontainer.json](https://containers.dev/) on any backend. Each developer environment runs in a container and is specified through a [devcontainer.json](https://containers.dev/). Through Devsy providers, these environments can be created on any backend, such as the local computer, a Kubernetes cluster, any reachable remote machine, or in a VM in the cloud.
 
-![Codespaces](docs/static/media/codespaces-banner.png)
-
 You can think of Devsy as the glue that connects your local IDE to a machine where you want to develop. So depending on the requirements of your project, you can either create a workspace locally on the computer, on a beefy cloud machine with many GPUs, or a spare remote computer. Within Devsy, every workspace is managed the same way, which also makes it easy to switch between workspaces that might be hosted somewhere else.
 
 ![Devsy Flow](docs/static/media/devsy-flow.gif)
