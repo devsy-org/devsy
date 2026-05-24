@@ -91,36 +91,34 @@ test.describe
         .getByRole("button", { name: /add your first provider/i })
         .click()
 
-      // Wait for the Add Provider page heading
-      await page
-        .locator("h1", { hasText: "Add Provider" })
-        .waitFor({ timeout: 5000 })
+      // The provider wizard opens as a Dialog
+      const wizard = page.locator('[data-slot="dialog-content"]')
+      await wizard.waitFor({ timeout: 5000 })
+      await expect(wizard).toContainText("Select a Provider")
 
-      // Click docker preset card
-      await page
+      // Click the docker preset card to select it
+      await wizard
         .locator("button", { hasText: "docker" })
         .filter({ hasText: "Local Docker containers" })
         .click()
 
-      // doAdd() calls providerAdd, providerUse, then goto('/providers?setup=docker')
-      // Wait for redirect back to providers page
-      await page
-        .locator('[data-slot="sidebar-inset"] h1', { hasText: /providers/i })
-        .waitFor({ timeout: 10000 })
+      // Click Continue to add the provider
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
-      // Wait for the watcher to pick up the new provider
+      // Docker mock has no required options → wizard jumps to init then complete.
+      // Wait for the "Done" button on the Complete step.
+      await wizard
+        .getByRole("button", { name: "Done" })
+        .waitFor({ timeout: 15000 })
+      await wizard.getByRole("button", { name: "Done" }).click()
+
+      // Wizard closes, ProviderAddPage redirects to /providers
+      await wizard.waitFor({ state: "hidden", timeout: 10000 })
       await page.waitForTimeout(4000)
 
       // Verify docker appears in provider cards
       const main = page.locator('[data-slot="sidebar-inset"] main')
       await expect(main).toContainText("docker", { timeout: 10000 })
-
-      // The setup flow auto-opens the ProviderSheet — close it if open
-      const setupSheet = page.locator('[data-slot="sheet-content"]')
-      if (await setupSheet.isVisible()) {
-        await page.keyboard.press("Escape")
-        await setupSheet.waitFor({ state: "hidden", timeout: 5000 })
-      }
     })
 
     test("should rename docker provider to my-docker", async () => {
@@ -175,30 +173,26 @@ test.describe
         .getByRole("button", { name: /add your first provider/i })
         .click()
 
-      await page
-        .locator("h1", { hasText: "Add Provider" })
-        .waitFor({ timeout: 5000 })
+      const wizard = page.locator('[data-slot="dialog-content"]')
+      await wizard.waitFor({ timeout: 5000 })
 
-      await page
+      await wizard
         .locator("button", { hasText: "docker" })
         .filter({ hasText: "Local Docker containers" })
         .click()
 
-      await page
-        .locator('[data-slot="sidebar-inset"] h1', { hasText: /providers/i })
-        .waitFor({ timeout: 10000 })
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
+      await wizard
+        .getByRole("button", { name: "Done" })
+        .waitFor({ timeout: 15000 })
+      await wizard.getByRole("button", { name: "Done" }).click()
+
+      await wizard.waitFor({ state: "hidden", timeout: 10000 })
       await page.waitForTimeout(4000)
 
       const main = page.locator('[data-slot="sidebar-inset"] main')
       await expect(main).toContainText("docker", { timeout: 10000 })
-
-      // Close setup sheet if it auto-opened
-      const setupSheet = page.locator('[data-slot="sheet-content"]')
-      if (await setupSheet.isVisible()) {
-        await page.keyboard.press("Escape")
-        await setupSheet.waitFor({ state: "hidden", timeout: 5000 })
-      }
     })
   })
 
