@@ -233,6 +233,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: download update metadata artifacts
         uses: actions/download-artifact@v8
         with:
@@ -247,9 +251,7 @@ jobs:
           done
 
       - name: merge macOS metadata from separate arch builds
-        run: |
-          pip install pyyaml
-          python3 hack/merge-mac-metadata.py metadata/ publish-dir/desktop/
+        run: go run hack/merge_mac_metadata.go metadata/ publish-dir/desktop/
 
       - name: overlay non-mac metadata files (stable release)
         if: ${{ !github.event.release.prerelease }}
