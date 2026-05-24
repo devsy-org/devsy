@@ -3,9 +3,11 @@ package features
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/spf13/cobra"
@@ -62,28 +64,36 @@ func (cmd *InfoManifestCmd) Run(featureID string) error {
 
 func (cmd *InfoManifestCmd) printText(manifest *v1.Manifest) error {
 	w := os.Stdout
-	_, _ = fmt.Fprintf(w, "Schema Version: %d\n", manifest.SchemaVersion)
-	_, _ = fmt.Fprintf(w, "Media Type: %s\n", manifest.MediaType)
 
-	_, _ = fmt.Fprintf(w, "\nConfig:\n")
-	_, _ = fmt.Fprintf(w, "  Media Type: %s\n", manifest.Config.MediaType)
-	_, _ = fmt.Fprintf(w, "  Digest: %s\n", manifest.Config.Digest)
-	_, _ = fmt.Fprintf(w, "  Size: %d\n", manifest.Config.Size)
+	table.Print([]string{"Property", "Value"}, [][]string{
+		{"Schema Version", strconv.FormatInt(manifest.SchemaVersion, 10)},
+		{"Media Type", string(manifest.MediaType)},
+		{"Config Media Type", string(manifest.Config.MediaType)},
+		{"Config Digest", manifest.Config.Digest.String()},
+		{"Config Size", strconv.FormatInt(manifest.Config.Size, 10)},
+	})
 
 	if len(manifest.Layers) > 0 {
-		_, _ = fmt.Fprintf(w, "\nLayers:\n")
+		_, _ = fmt.Fprintln(w, "\nLayers:")
+		layerRows := make([][]string, 0, len(manifest.Layers))
 		for i, layer := range manifest.Layers {
-			_, _ = fmt.Fprintf(w, "  [%d] Media Type: %s\n", i, layer.MediaType)
-			_, _ = fmt.Fprintf(w, "      Digest: %s\n", layer.Digest)
-			_, _ = fmt.Fprintf(w, "      Size: %d\n", layer.Size)
+			layerRows = append(layerRows, []string{
+				strconv.Itoa(i),
+				string(layer.MediaType),
+				layer.Digest.String(),
+				strconv.FormatInt(layer.Size, 10),
+			})
 		}
+		table.Print([]string{"#", "Media Type", "Digest", "Size"}, layerRows)
 	}
 
 	if len(manifest.Annotations) > 0 {
-		_, _ = fmt.Fprintf(w, "\nAnnotations:\n")
+		_, _ = fmt.Fprintln(w, "\nAnnotations:")
+		annoRows := make([][]string, 0, len(manifest.Annotations))
 		for k, v := range manifest.Annotations {
-			_, _ = fmt.Fprintf(w, "  %s: %s\n", k, v)
+			annoRows = append(annoRows, []string{k, v})
 		}
+		table.Print([]string{"Key", "Value"}, annoRows)
 	}
 
 	return nil

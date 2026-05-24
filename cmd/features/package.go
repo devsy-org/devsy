@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -238,13 +239,15 @@ func (cmd *PackageCmd) packageFeature(
 func (cmd *PackageCmd) printResults(results []packageResult) error {
 	w := os.Stdout
 	_, _ = fmt.Fprintln(w, "Packaged dev container features:")
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
 		version := r.Version
 		if version == "" {
 			version = "(no version)"
 		}
-		_, _ = fmt.Fprintf(w, "  %s (%s) -> %s\n", r.FeatureID, version, r.OutputPath)
+		rows = append(rows, []string{r.FeatureID, version, r.OutputPath})
 	}
+	table.Print([]string{"Feature ID", "Version", "Output Path"}, rows)
 	_, _ = fmt.Fprintf(w, "\nTotal: %d feature(s) packaged\n", len(results))
 	return nil
 }

@@ -3,13 +3,16 @@ package pro
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +80,26 @@ func (cmd *ListClustersCmd) Run(
 		return fmt.Errorf("list clusters with provider \"%s\": %w", provider.Name, err)
 	}
 
-	fmt.Println(buf.String())
+	if buf.Len() == 0 {
+		table.Print([]string{"Name", "Online"}, nil)
+		return nil
+	}
+
+	clusters := managementv1.ProjectClusters{}
+	if err := json.Unmarshal(buf.Bytes(), &clusters); err != nil {
+		return fmt.Errorf("parse clusters output: %w", err)
+	}
+
+	headers := []string{"Name", "Display Name", "Online"}
+	rows := make([][]string, 0, len(clusters.Clusters))
+	for _, c := range clusters.Clusters {
+		rows = append(rows, []string{
+			c.GetName(),
+			c.Spec.DisplayName,
+			fmt.Sprintf("%t", c.Status.Online),
+		})
+	}
+	table.Print(headers, rows)
 
 	return nil
 }

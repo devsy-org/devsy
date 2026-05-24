@@ -3,12 +3,16 @@ package pro
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +74,35 @@ func (cmd *ListWorkspacesCmd) Run(
 		return fmt.Errorf("list workspaces: %w", err)
 	}
 
-	fmt.Println(buf.String())
+	headers := []string{"Name", "Display Name", "Project", "Age"}
+	if buf.Len() == 0 {
+		table.Print(headers, nil)
+		return nil
+	}
+
+	instances := []managementv1.DevsyWorkspaceInstance{}
+	if err := json.Unmarshal(buf.Bytes(), &instances); err != nil {
+		return fmt.Errorf("parse workspaces output: %w", err)
+	}
+
+	rows := make([][]string, 0, len(instances))
+	for _, inst := range instances {
+		project := ""
+		if inst.GetLabels() != nil {
+			project = inst.GetLabels()["devsy.sh/project"]
+		}
+		age := ""
+		if !inst.CreationTimestamp.IsZero() {
+			age = time.Since(inst.CreationTimestamp.Time).Round(time.Second).String()
+		}
+		rows = append(rows, []string{
+			inst.GetName(),
+			inst.Spec.DisplayName,
+			project,
+			age,
+		})
+	}
+	table.Print(headers, rows)
 
 	return nil
 }
