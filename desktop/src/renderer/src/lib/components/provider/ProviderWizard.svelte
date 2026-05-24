@@ -186,7 +186,6 @@ async function handleSelect() {
   try {
     await providerAdd(name, name !== src ? src : undefined)
     providerName = name
-    await loadProviderOptions()
   } catch (err) {
     const msg = extractErrorMessage(err)
     if (msg.includes("already exists")) {
@@ -197,7 +196,14 @@ async function handleSelect() {
     adding = false
     return
   }
+
+  const loaded = await loadProviderOptions()
   adding = false
+  if (!loaded) {
+    // Provider was created but we couldn't load its options. Stay on the
+    // select step so the user sees the error and can retry/back out.
+    return
+  }
 
   if (requiredOptions.length === 0 || !hasUnfilledRequired) {
     currentStep = "initialize"
@@ -207,7 +213,7 @@ async function handleSelect() {
   }
 }
 
-async function loadProviderOptions() {
+async function loadProviderOptions(): Promise<boolean> {
   loadingOptions = true
   try {
     const raw = await providerOptions(providerName)
@@ -221,8 +227,10 @@ async function loadProviderOptions() {
         optionValues[key] = ""
       }
     }
+    return true
   } catch (err) {
     error = `Failed to load options: ${extractErrorMessage(err)}`
+    return false
   } finally {
     loadingOptions = false
   }
@@ -264,14 +272,17 @@ async function startInit() {
 }
 
 async function refreshAndComplete() {
-  const updated = await providerList()
-  providers.set(updated)
+  try {
+    const updated = await providerList()
+    providers.set(updated)
+  } catch (err) {
+    toasts.error(`Failed to refresh providers: ${extractErrorMessage(err)}`)
+  }
   currentStep = "complete"
 }
 
 function handleSkipInit() {
-  providerList().then((updated) => providers.set(updated))
-  currentStep = "complete"
+  refreshAndComplete()
 }
 
 async function handleSetDefault() {
@@ -293,6 +304,13 @@ function handleDone() {
 
 <Dialog.Root bind:open>
   <Dialog.Content class="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+    <Dialog.Header class="sr-only">
+      <Dialog.Title>Add Provider</Dialog.Title>
+      <Dialog.Description>
+        Step-by-step wizard to add and initialize a new provider.
+      </Dialog.Description>
+    </Dialog.Header>
+
     <!-- Progress bar -->
     <div class="px-6 pt-5">
       <Progress value={progressValue} max={100} class="h-1" />
