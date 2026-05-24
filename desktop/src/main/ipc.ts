@@ -115,6 +115,39 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     await cli.runRaw(["provider", "set-options", args.name])
   })
 
+  ipcMain.handle(
+    "provider_init_streaming",
+    async (_event, args: { name: string }) => {
+      const cmdId = crypto.randomUUID()
+      const win = deps.getMainWindow()
+
+      await cli.runStreaming(
+        ["provider", "set-options", args.name],
+        (line) => {
+          const formatted = formatLogLine(line)
+          win?.webContents.send("command-progress", {
+            commandId: cmdId,
+            message: formatted,
+            done: false,
+          })
+        },
+        (code) => {
+          const exitMsg = formatLogLine(
+            `Exit code: ${code}`,
+            code === 0 ? "INFO" : "ERROR",
+          )
+          win?.webContents.send("command-progress", {
+            commandId: cmdId,
+            message: exitMsg,
+            done: true,
+          })
+        },
+      )
+
+      return cmdId
+    },
+  )
+
   ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
     await cli.runRaw(["provider", "update", args.name, "--use=false"])
   })
@@ -126,7 +159,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   ipcMain.handle(
     "provider_set_options",
     async (_event, args: { name: string; options: string[] }) => {
-      const cliArgs = ["provider", "set-options", args.name]
+      const cliArgs = ["provider", "set-options", args.name, "--skip-init"]
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }

@@ -28,12 +28,10 @@ import type { Provider, ProviderOption } from "$lib/types/index.js"
 let {
   provider,
   open = $bindable(false),
-  setup = false,
   ondeleted,
 }: {
   provider: Provider
   open: boolean
-  setup?: boolean
   ondeleted?: () => void
 } = $props()
 
@@ -44,7 +42,6 @@ let saving = $state(false)
 let loading = $state(true)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
-let setupCompleted = $state(false)
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
@@ -91,11 +88,9 @@ async function loadOptions() {
     const raw = await providerOptions(provider.name)
     options = raw as unknown as Record<string, ProviderOption>
 
-    const currentOpts = provider.options ?? {}
     for (const [key, opt] of Object.entries(options)) {
-      const currentVal = currentOpts[key]
-      if (currentVal?.value != null) {
-        optionValues[key] = String(currentVal.value)
+      if (opt.value != null) {
+        optionValues[key] = String(opt.value)
       } else if (opt.default != null) {
         optionValues[key] = String(opt.default)
       } else {
@@ -202,15 +197,10 @@ async function handleSaveOptions() {
       if (val !== "") values[key] = val
     }
     await providerSetOptions(provider.name, values)
+    const updated = await providerList()
+    providers.set(updated)
     initialValues = { ...optionValues }
-    if (setup) {
-      await providerUse(provider.name)
-      setupCompleted = true
-      toasts.success(`Provider ${provider.name} configured successfully`)
-      open = false
-    } else {
-      toasts.success("Options saved")
-    }
+    toasts.success("Options saved")
   } catch (err) {
     toasts.error(`Failed to save options: ${extractErrorMessage(err)}`)
   } finally {
@@ -276,15 +266,6 @@ async function handleSaveOptions() {
     <Separator />
 
     <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-6">
-      {#if setup && !loading && hasUnfilledRequired}
-        <div class="rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
-          <h3 class="text-sm font-semibold text-amber-700 dark:text-amber-400">Configure required options</h3>
-          <p class="mt-1 text-xs text-amber-600 dark:text-amber-400/80">
-            Fill in the required fields below and save.
-          </p>
-        </div>
-      {/if}
-
       {#if loading}
         <p class="text-sm text-muted-foreground">Loading options...</p>
       {:else if Object.keys(options).length === 0}
@@ -298,7 +279,7 @@ async function handleSaveOptions() {
           {/if}
 
           {#each entries as [key, opt] (key)}
-            <div class="space-y-1.5 {setup && opt.required && !optionValues[key]?.trim() ? 'rounded-md border border-amber-500/30 bg-amber-500/5 p-3' : ''}">
+            <div class="space-y-1.5">
               <Label class="text-sm">
                 {opt.displayName ?? opt.name ?? key}
                 {#if opt.required}

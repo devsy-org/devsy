@@ -90,6 +90,10 @@ export async function providerInit(name: string): Promise<void> {
   return invoke("provider_init", { name })
 }
 
+export async function providerInitStreaming(name: string): Promise<string> {
+  return invoke<string>("provider_init_streaming", { name })
+}
+
 export async function providerUpdate(name: string): Promise<void> {
   return invoke("provider_update", { name })
 }

@@ -6,40 +6,16 @@ import {
   Plug,
   SearchX,
 } from "@lucide/svelte"
-import { goto, querystring } from "$lib/router.js"
+import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ProviderCard from "$lib/components/provider/ProviderCard.svelte"
-import ProviderSheet from "$lib/components/provider/ProviderSheet.svelte"
 import { providers, providersLoading } from "$lib/stores/providers.js"
 
 let search = $state("")
 let sortBy = $state<"name" | "version">("name")
-
-// Sheet state for setup flow (redirected from /providers/add)
-let setupProviderName = $state<string | null>(null)
-let setupSheetOpen = $state(false)
-
-let setupProvider = $derived(
-  setupProviderName
-    ? $providers.find((p) => p.name === setupProviderName)
-    : undefined,
-)
-
-// Auto-open sheet when arriving with ?setup=<name>
-$effect(() => {
-  const params = new URLSearchParams($querystring ?? "")
-  const setup = params.get("setup")
-  if (setup && $providers.length > 0) {
-    setupProviderName = setup
-    setupSheetOpen = true
-    // Clean up the URL
-    const hash = window.location.hash.split("?")[0]
-    history.replaceState({}, "", window.location.pathname + hash)
-  }
-})
 
 let filtered = $derived.by(() => {
   const q = search.toLowerCase()
@@ -126,12 +102,3 @@ let filtered = $derived.by(() => {
     </div>
   {/if}
 </div>
-
-{#if setupProvider}
-  <ProviderSheet
-    provider={setupProvider}
-    bind:open={setupSheetOpen}
-    setup={true}
-    ondeleted={() => { setupProviderName = null }}
-  />
-{/if}
