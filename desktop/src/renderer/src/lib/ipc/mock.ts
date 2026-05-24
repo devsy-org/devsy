@@ -68,6 +68,13 @@ const PROVIDERS: Provider[] = [
     state: { initialized: true, singleMachine: true },
   },
   {
+    name: "podman",
+    version: "v0.0.1",
+    source: { github: "devsy-org/devsy-provider-podman" },
+    description: "Devsy on Podman",
+    state: { initialized: false, singleMachine: true },
+  },
+  {
     name: "kubernetes",
     version: "v0.3.2",
     source: { github: "devsy-org/devsy-provider-kubernetes" },

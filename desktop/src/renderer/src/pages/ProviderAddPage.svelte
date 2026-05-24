@@ -13,6 +13,7 @@ import { extractErrorMessage } from "$lib/utils/error.js"
 
 const PROVIDERS = [
   { name: "docker", description: "Local Docker containers" },
+  { name: "podman", description: "Local Podman containers" },
   { name: "ssh", description: "Remote SSH machines" },
   { name: "kubernetes", description: "Kubernetes clusters" },
   { name: "aws", description: "Amazon Web Services" },
@@ -147,7 +148,7 @@ async function handleSubmit() {
     <div class="space-y-2">
       <Label>Provider Source</Label>
       <Input
-        placeholder="e.g. docker, or github.com/org/provider"
+        placeholder="e.g. docker, podman, or github.com/org/provider"
         value={providerSource}
         oninput={(e) => { providerSource = e.currentTarget.value; error = "" }}
       />
