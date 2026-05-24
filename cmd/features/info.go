@@ -149,7 +149,7 @@ func listTags(ref name.Reference) ([]string, error) {
 func (cmd *InfoCmd) printText(info *featureInfo) error {
 	w := os.Stdout
 
-	rows := [][]string{{"Feature", info.Name}}
+	rows := [][]string{{headerFeature, info.Name}}
 	rows = appendField(rows, "ID", info.ID)
 	rows = appendField(rows, "Version", info.Version)
 	rows = appendField(rows, "Description", info.Description)
@@ -159,7 +159,7 @@ func (cmd *InfoCmd) printText(info *featureInfo) error {
 	if info.Deprecated {
 		rows = append(rows, []string{"Status", "DEPRECATED"})
 	}
-	table.Print([]string{"Property", "Value"}, rows)
+	table.Print([]string{"Property", headerValue}, rows)
 
 	cmd.printDependencies(w, info)
 	cmd.printTags(w, info)
@@ -219,7 +219,7 @@ func (cmd *InfoCmd) printAnnotations(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOCI Annotations:")
-	headers := []string{"Key", "Value"}
+	headers := []string{"Key", headerValue}
 	var rows [][]string
 	for k, v := range info.Annotations {
 		rows = append(rows, []string{k, v})

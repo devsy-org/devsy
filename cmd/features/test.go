@@ -367,7 +367,7 @@ func (cmd *TestCmd) printResults(results []testResult) {
 		rows = append(rows, []string{status, r.FeatureID, r.Scenario, r.Error})
 	}
 
-	table.Print([]string{"Status", "Feature", "Scenario", "Error"}, rows)
+	table.Print([]string{"Status", headerFeature, "Scenario", "Error"}, rows)
 
 	_, _ = fmt.Fprintf(w, "\nTotal: %d passed, %d failed\n", passed, failed)
 }

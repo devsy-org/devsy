@@ -65,7 +65,7 @@ func (cmd *InfoManifestCmd) Run(featureID string) error {
 func (cmd *InfoManifestCmd) printText(manifest *v1.Manifest) error {
 	w := os.Stdout
 
-	table.Print([]string{"Property", "Value"}, [][]string{
+	table.Print([]string{"Property", headerValue}, [][]string{
 		{"Schema Version", strconv.FormatInt(manifest.SchemaVersion, 10)},
 		{"Media Type", string(manifest.MediaType)},
 		{"Config Media Type", string(manifest.Config.MediaType)},
@@ -93,7 +93,7 @@ func (cmd *InfoManifestCmd) printText(manifest *v1.Manifest) error {
 		for k, v := range manifest.Annotations {
 			annoRows = append(annoRows, []string{k, v})
 		}
-		table.Print([]string{"Key", "Value"}, annoRows)
+		table.Print([]string{"Key", headerValue}, annoRows)
 	}
 
 	return nil

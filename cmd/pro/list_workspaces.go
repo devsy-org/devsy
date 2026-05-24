@@ -74,7 +74,7 @@ func (cmd *ListWorkspacesCmd) Run(
 		return fmt.Errorf("list workspaces: %w", err)
 	}
 
-	headers := []string{"Name", "Display Name", "Project", "Age"}
+	headers := []string{headerName, headerDisplayName, "Project", "Age"}
 	if buf.Len() == 0 {
 		table.Print(headers, nil)
 		return nil

@@ -10,6 +10,9 @@ const (
 	outputJSON = "json"
 	outputText = "text"
 	outputYAML = "yaml"
+
+	headerFeature = "Feature"
+	headerValue   = "Value"
 )
 
 func validateOutputFormat(format string) error {

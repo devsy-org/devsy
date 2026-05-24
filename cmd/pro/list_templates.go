@@ -80,7 +80,7 @@ func (cmd *ListTemplatesCmd) Run(
 		return fmt.Errorf("list templates with provider \"%s\": %w", provider.Name, err)
 	}
 
-	headers := []string{"Name", "Display Name", "Description"}
+	headers := []string{headerName, headerDisplayName, "Description"}
 	if buf.Len() == 0 {
 		table.Print(headers, nil)
 		return nil

@@ -16,6 +16,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	headerName        = "Name"
+	headerDisplayName = "Display Name"
+)
+
 // NewProCmd returns a new command.
 func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
 	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}

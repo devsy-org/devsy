@@ -81,7 +81,7 @@ func (cmd *ListClustersCmd) Run(
 	}
 
 	if buf.Len() == 0 {
-		table.Print([]string{"Name", "Online"}, nil)
+		table.Print([]string{headerName, "Online"}, nil)
 		return nil
 	}
 
@@ -90,7 +90,7 @@ func (cmd *ListClustersCmd) Run(
 		return fmt.Errorf("parse clusters output: %w", err)
 	}
 
-	headers := []string{"Name", "Display Name", "Online"}
+	headers := []string{headerName, headerDisplayName, "Online"}
 	rows := make([][]string, 0, len(clusters.Clusters))
 	for _, c := range clusters.Clusters {
 		rows = append(rows, []string{

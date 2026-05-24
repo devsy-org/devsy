@@ -73,7 +73,7 @@ func (cmd *ListProjectsCmd) Run(
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", provider.Name, err)
 	}
 
-	headers := []string{"Name", "Display Name", "Description"}
+	headers := []string{headerName, headerDisplayName, "Description"}
 	if buf.Len() == 0 {
 		table.Print(headers, nil)
 		return nil
