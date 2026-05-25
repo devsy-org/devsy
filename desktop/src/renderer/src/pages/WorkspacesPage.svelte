@@ -18,7 +18,7 @@ import { Input } from "$lib/components/ui/input/index.js"
 import * as Table from "$lib/components/ui/table/index.js"
 import TableSkeleton from "$lib/components/ui/skeleton/TableSkeleton.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
-import CreateWorkspaceSheet from "$lib/components/workspace/CreateWorkspaceSheet.svelte"
+import WorkspaceWizard from "$lib/components/workspace/WorkspaceWizard.svelte"
 import {
   workspaceUp,
   workspaceStop,
@@ -277,4 +277,4 @@ async function handleDelete() {
   onconfirm={handleDelete}
 />
 
-<CreateWorkspaceSheet bind:open={createSheetOpen} />
+<WorkspaceWizard bind:open={createSheetOpen} />
