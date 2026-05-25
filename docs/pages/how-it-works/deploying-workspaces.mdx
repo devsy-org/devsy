@@ -15,6 +15,6 @@ First Devsy checks if we need to create/start a machine to deploy the devcontain
 to build the workspace. Building is done by the agent since we need access to build tools such as buildkit or kaniko, i.e. `devsy workspace build`. The workspace now contains everything needed,
 so Devsy sets up a SSH connection to the Devsy agent running alongside the container's control plane.
 
-The agent recieves "devsy agent workspace up" with the workspace spec serialised as workspace-info and uses the control plane (kube api server for k8s, docker daemon for anything else) to start the devcontainer.
+The agent receives "devsy agent workspace up" with the workspace spec serialised as workspace-info and uses the control plane (kube api server for k8s, docker daemon for anything else) to start the devcontainer.
 Once started Devsy deploys a daemon to monitor activity, optionally sets up any platform access for pro users then optionally retrieves credentials from the local environment before launching the IDE. Once the
 IDE has started the deployment process has complete, Devsy's agent daemon will continue to monitor the pod, if deployed, to put the machine or container to sleep when not in use.

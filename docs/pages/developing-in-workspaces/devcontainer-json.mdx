@@ -106,7 +106,6 @@ When working on the `devcontainer.json` itself, it's important to understand whe
 
 A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but Devsy allows you to make changes to the configuration on the fly and reapply them via `devsy up my-workspace --recreate`.
 This will apply **ALL** new configurations including Dockerfile changes as well as new mounts, new features or any other configuration that is not included in the above command. Devsy will only replace the existing running container if the command has succeeded, so if there is a mistake in the new configuration, the existing workspace should not be impacted.
-The Desktop app equivalent for this is the 'Rebuild' button.
 
 :::warning Recreating / Rebuilding
 Changes in the overlay layer of the container, which means all changes to non-volumes will be lost. Changes within the project path and all other mounted paths will be preserved.

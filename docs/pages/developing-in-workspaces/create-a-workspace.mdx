@@ -15,19 +15,13 @@ A workspace is defined through a `devcontainer.json`. If Devsy can't find one, i
 
 ### Via Devsy Desktop Application
 
-Navigate to the 'Workspaces' view and click on the 'Create' button in the title. Enter the Git repository you want to work on or select a local folder.
+Navigate to the 'Workspaces' view and click on the 'Create' button in the title to open the create-workspace wizard. The wizard walks through five steps:
 
-:::info Add Provider
-If you haven't configured a provider yet, Devsy will automatically open the provider modal for you. You can later add providers in the same way by navigating to 'Providers' > 'Add'
-:::
-
-You can also configure one of the additional settings:
-- **Provider**: The provider to use for this workspace. Cannot be changed later.
-- **Default IDE**: The ide to open after successfully creating this workspace. Can be changed later.
-- **Workspace Name**: Override the automatically determined workspace name with this option. Cannot be changed later.
-- **Prebuild Repository**: A docker image repository such as `ghcr.io/my-org/my-repo` that contains prebuilds for this workspace. Devsy will try to automatically find a fitting prebuild for this workspace in the given repository.
-
-Then press `Create Workspace` to launch the workspace.
+1. **Provider**: Select an initialized provider to host the workspace. Cannot be changed later. If no initialized provider exists, the wizard prompts you to add one (navigates to 'Providers' > 'Add').
+2. **Source**: Pick one of the Quick Start templates or enter a custom source (Git URL, image, or local path). Use 'Show advanced options' to optionally set a **Workspace Folder** (a subfolder within the source to use as the workspace root).
+3. **IDE**: Choose an IDE to open the workspace with. Optional; the default is `none`.
+4. **Review**: Optionally override the auto-derived **Workspace Name** and confirm the configuration.
+5. **Launch**: Devsy creates the workspace and streams progress. The workspace is launched in the chosen IDE on success.
 
 :::info
 Under the hood, the Desktop Application will call the CLI command `devsy up REPOSITORY`
@@ -122,10 +116,6 @@ If you are working on the `devcontainer.json` or have pulled changes that affect
 
 When recreating a workspace, changes only to the project path or mounted volumes will be preserved. **All other changes made in the container will be lost.**
 
-### Via Devsy Desktop Application
-
-Navigate to the 'Workspaces' view and press on the 'More Options' button on the workspace you want to recreate. Then press 'Rebuild' and confirm to rebuild the workspace.
-
 ### Via Devsy CLI
 
 Run the following command to rebuild an existing workspace:
@@ -138,10 +128,6 @@ devsy up my-workspace --recreate
 Some scenarios require pulling in the latest changes from a Git repository or re-uploading your local folder. If instead of recreating the devcontainer you need to completely restart your workspace from a clean slate, use `Reset` over `Recreate`.
 
 ** When recreating a workspace, no changes will be preserved! **
-
-### Via Devsy Desktop Application
-
-Navigate to the 'Workspaces' view and press on the 'More Options' button on the workspace you want to reset. Then press 'Reset' and confirm.
 
 ### Via Devsy CLI
 

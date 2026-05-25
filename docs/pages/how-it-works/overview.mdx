@@ -24,7 +24,7 @@ Below is a high level overview of how Devsy uses your local environment, a sourc
 Devsy establishes a connection to the workspace using a vendor specific API. This vendor specific communication channel is referred to as the "tunnel".  When you run a `devsy up` command, Devsy selects a
 provider based on your context and starts your devcontainer. If using a machine provider, Devsy will check if it should create a VM first. Once the devcontainer
 is running Devsy deploys an agent to the container. The way in which Devsy communicates with the workspace depends on the provider, this is known as the "tunnel". For AWS this could be instance connect, kubernetes uses
-the kubernetes control plane (kubectl), this connection is secured based on this tunnel. The Devsy agent starts a SSH server using the STDIO of the secure tunnel in order for you local Devsy CLI/UI to forward
+the kubernetes control plane (kubectl), this connection is secured based on this tunnel. The Devsy agent starts a SSH server using the STDIO of the secure tunnel in order for your local Devsy CLI/UI to forward
 ports over the SSH connection. Once this is done Devsy starts your local IDE and connects it to the devcontainer via SSH.
 
 If you developer environment requires any port forwarding, then your IDE or an SSH connection must be running. That's because devsy needs the SSH server running on the agent to perform the forwarding,
