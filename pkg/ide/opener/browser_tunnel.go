@@ -403,7 +403,12 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 
 // openBrowserAsync opens a URL in the browser without blocking the caller.
 // debugFmt must contain a single %v verb for the error.
+//
+// Uses context.Background() intentionally: open2.Open retries until ctx is
+// done, and `devsy up` exits as soon as the detached helper is spawned. Tying
+// the browser-open retries to the up ctx would cancel them prematurely.
 func openBrowserAsync(url, debugFmt string) {
+	//nolint:gosec // G118: intentional — see comment above
 	if err := open2.Open(context.Background(), url); err != nil {
 		pkglog.Debugf(debugFmt, err)
 	}
