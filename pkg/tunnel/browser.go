@@ -1,18 +1,17 @@
 package tunnel
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
@@ -140,8 +139,6 @@ func SetupBackhaul(
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	var stderrBuf bytes.Buffer
-
 	buildCmd := func() *exec.Cmd {
 		//nolint:gosec // execPath is the current binary, arguments are controlled
 		cmd := exec.CommandContext(ctx,
@@ -163,7 +160,7 @@ func SetupBackhaul(
 			cmd.Args = append(cmd.Args, "--debug")
 		}
 		cmd.Stdout = writer
-		cmd.Stderr = io.MultiWriter(writer, &stderrBuf)
+		cmd.Stderr = writer
 		return cmd
 	}
 
@@ -177,13 +174,12 @@ func SetupBackhaul(
 
 	var lastErr error
 	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
-		stderrBuf.Reset()
 		cmd := buildCmd()
 		lastErr = cmd.Run()
 		if lastErr == nil {
 			return true, nil
 		}
-		if !isTransientBackhaulErr(stderrBuf.String()) {
+		if !isTransientBackhaulErr(lastErr) {
 			return false, lastErr
 		}
 		return false, nil
@@ -203,14 +199,18 @@ func SetupBackhaul(
 	return err
 }
 
-// isTransientBackhaulErr classifies subprocess stderr from `devsy ssh ...` to decide
-// whether to retry. We match on substring (rather than typed errors) because the
-// error crosses a subprocess boundary; the strings must stay in sync with
-// pkg/workspace/workspace.go ("workspace not found for args") and
-// pkg/workspace/list.go's LoadWorkspaceConfig path ("unexpected end of JSON input").
-func isTransientBackhaulErr(stderr string) bool {
-	return strings.Contains(stderr, "workspace not found for args") ||
-		strings.Contains(stderr, "unexpected end of JSON input")
+// isTransientBackhaulErr returns true when the `devsy ssh` subprocess exited
+// with exitcode.WorkspaceNotFound, indicating the workspace registration has
+// not yet propagated (a race with concurrent workspace.json writers). The
+// exit-code contract is set in cmd/root.go and the constant lives in
+// pkg/exitcode; using it here keeps this decision typed rather than relying
+// on stderr substring matching.
+func isTransientBackhaulErr(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	return exitErr.ExitCode() == exitcode.WorkspaceNotFound
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.

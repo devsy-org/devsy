@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,8 +21,10 @@ import (
 	"github.com/devsy-org/devsy/cmd/use"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
+	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -77,6 +80,12 @@ func Execute() {
 			if cliErr.DocURL != "" {
 				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
 			}
+		}
+		// Signal workspace-not-found via a distinct exit code so parent
+		// processes (e.g. SetupBackhaul) can detect the registration race
+		// without parsing stderr.
+		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+			os.Exit(exitcode.WorkspaceNotFound)
 		}
 		os.Exit(1)
 	}
