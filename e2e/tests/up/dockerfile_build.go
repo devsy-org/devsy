@@ -15,7 +15,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"testing up command for dockerfile builds",
-	ginkgo.Label("up-dockerfile-build"),
+	ginkgo.Label("up-provider-docker"),
 	func() {
 		var f *framework.Framework
 		var dockerHelper *docker.DockerHelper

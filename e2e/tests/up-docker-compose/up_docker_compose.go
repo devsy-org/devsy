@@ -25,7 +25,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"devsy up docker compose test suite",
-	ginkgo.Label("up-docker-compose", "suite"),
+	ginkgo.Label("up-docker-compose"),
 	func() {
 		var tc *testContext
 

@@ -16,7 +16,7 @@ import (
 	"github.com/onsi/gomega/ghttp"
 )
 
-var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features", "suite"), func() {
+var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {

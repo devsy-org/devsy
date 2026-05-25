@@ -12,7 +12,7 @@ import (
 )
 
 var _ = ginkgo.Describe(
-	"testing self-update command", ginkgo.Label("selfupdate"), ginkgo.Ordered, func() {
+	"testing self-update command", ginkgo.Label("self-update"), ginkgo.Ordered, func() {
 		ginkgo.It(
 			"should detect correct binary for current OS and architecture using dry-run",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),

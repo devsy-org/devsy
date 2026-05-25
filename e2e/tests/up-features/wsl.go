@@ -17,7 +17,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"devsy up docker features test suite",
-	ginkgo.Label("up-features", "wsl"),
+	ginkgo.Label("up-features"),
 	func() {
 		var initialDir string
 

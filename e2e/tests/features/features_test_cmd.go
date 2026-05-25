@@ -25,7 +25,7 @@ const (
 	featureNameBadFeature = "bad-feature"
 )
 
-var _ = ginkgo.Describe("features test", ginkgo.Label("features", "features-test"), func() {
+var _ = ginkgo.Describe("features test", ginkgo.Label("features"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {
