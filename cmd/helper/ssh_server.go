@@ -97,6 +97,12 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Sweep auth-agent-conn-* directories left behind by orphaned previous
+	// instances (whose ConnectionCompleteCallback may not have fired because
+	// EOF didn't propagate through the proxy chain). Liveness is decided via
+	// a per-directory flock the owning process holds for its lifetime.
+	helperssh.SweepStaleAgentSockets()
+
 	// start the server
 	server, err := helperssh.NewServer(
 		cmd.Address,

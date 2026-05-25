@@ -5,11 +5,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/ssh"
 )
+
+const agentSocketDirPrefix = "auth-agent-conn-"
 
 func setupAgentListener(reuseSock string) (net.Listener, string, error) {
 	runtimeDir, err := config.DefaultPathManager().RuntimeDir()
@@ -60,11 +63,20 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 		return nil, "", fmt.Errorf("create runtime dir: %w", err)
 	}
 
-	dir := filepath.Join(runtimeDir, fmt.Sprintf("auth-agent-conn-%s", connID))
+	dir := filepath.Join(runtimeDir, fmt.Sprintf("%s%s", agentSocketDirPrefix, connID))
 	// #nosec G301
 	err = os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating SSH_AUTH_SOCK dir: %w", err)
+	}
+
+	// Take an exclusive lock on a per-directory lockfile, held for the
+	// lifetime of this process. The kernel releases the lock on any process
+	// exit (including SIGKILL), so a subsequent helper that finds this
+	// directory and successfully takes the same lock can safely conclude the
+	// owner is gone and remove the directory.
+	if err := takeAgentDirLock(dir); err != nil {
+		return nil, "", err
 	}
 
 	l, socketDir, err := ssh.NewAgentListener(dir)
@@ -73,6 +85,40 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 	}
 
 	return l, socketDir, nil
+}
+
+// SweepStaleAgentSockets walks the runtime directory and removes any
+// auth-agent-conn-* directory whose owning process is no longer alive.
+// Liveness is detected via a per-directory flock: the owning process holds
+// an exclusive flock on the lockfile for its lifetime, so any other process
+// that can successfully take the flock knows the original owner is gone.
+//
+// Call this at the start of every helper ssh-server process to clean up
+// after orphaned predecessors (whose ConnectionCompleteCallback may not
+// have fired because EOF didn't propagate through the proxy chain).
+func SweepStaleAgentSockets() {
+	runtimeDir, err := config.DefaultPathManager().RuntimeDir()
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(runtimeDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), agentSocketDirPrefix) {
+			continue
+		}
+		dirPath := filepath.Join(runtimeDir, e.Name())
+		if !agentDirIsStale(dirPath) {
+			continue
+		}
+		if err := os.RemoveAll(dirPath); err != nil {
+			log.Debugf("sweep stale agent dir %s: %v", dirPath, err)
+			continue
+		}
+		log.Debugf("swept stale agent socket dir: %s", dirPath)
+	}
 }
 
 // cleanupAgentSocketDir removes the per-connection agent socket directory.
