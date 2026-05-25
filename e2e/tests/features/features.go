@@ -83,6 +83,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				"features", "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
+				flagOutput, "plain",
 			})
 			framework.ExpectNoError(err)
 
@@ -162,6 +163,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				"features", "generate-docs",
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
+				flagOutput, "plain",
 			})
 			framework.ExpectNoError(err)
 
@@ -209,6 +211,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
 				"--namespace", "ghcr.io/test/features",
+				flagOutput, "plain",
 			})
 			framework.ExpectNoError(err)
 
@@ -237,6 +240,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				"features", "info", featureRef,
+				flagOutput, "plain",
 			})
 			framework.ExpectNoError(err)
 
@@ -411,6 +415,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
 					"features", "info", subCmdTags, featureRepo + ":1.0.0",
+					flagOutput, "plain",
 				})
 				framework.ExpectNoError(err)
 
