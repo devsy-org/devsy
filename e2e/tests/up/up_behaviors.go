@@ -82,9 +82,8 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 				"cat $HOME/remote-env-cwf.out",
 			)
 			framework.ExpectNoError(err)
-			gomega.Expect(framework.CleanString(remoteCwf)).
-				To(gomega.ContainSubstring("/workspaces/"),
-					"remoteEnv containerWorkspaceFolder should resolve at substitution time")
+			gomega.Expect(remoteCwf).To(gomega.ContainSubstring("/workspaces/"),
+				"remoteEnv containerWorkspaceFolder should resolve at substitution time")
 
 			remoteCwfb, err := dtc.execSSHCapture(
 				ctx,
