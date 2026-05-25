@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -221,6 +223,10 @@ func initProvider(
 	provider *provider2.ProviderConfig,
 	stdout, stderr io.Writer,
 ) error {
+	// Capture the sub-binary's stderr in parallel with forwarding it to the
+	// regular log sink so that errors.Classify has the real provider output
+	// to fingerprint, not just an opaque "exit status 1".
+	stderrBuf := &bytes.Buffer{}
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
 		Name:    "init",
@@ -229,10 +235,13 @@ func initProvider(
 		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
 		Stdout:  stdout,
-		Stderr:  stderr,
+		Stderr:  io.MultiWriter(stderr, stderrBuf),
 	})
 	if err != nil {
-		return fmt.Errorf("init: %w", err)
+		return cliErrors.Classify(fmt.Errorf("init: %w", err), cliErrors.ClassifyContext{
+			Provider: provider.Name,
+			Stderr:   stderrBuf.String(),
+		})
 	}
 	if devsyConfig.Current().Providers == nil {
 		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}

@@ -101,7 +101,14 @@ export interface Context {
 export interface CommandProgress {
   commandId: string
   message: string
+  /** Optional log level; populated when the underlying stderr line was JSON. */
+  level?: "info" | "warn" | "error"
   done: boolean
+  /**
+   * Structured CLI error. Present only on the final (done: true) event when the
+   * CLI emitted a `cliError` field on its zap JSON output.
+   */
+  cliError?: import("../../../../shared/cli-error.js").CLIError
 }
 
 export interface AuditEntry {

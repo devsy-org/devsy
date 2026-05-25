@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { ipcMain } from "electron"
+import type { CLIError } from "../shared/cli-error.js"
 import { trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
@@ -111,8 +112,19 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     await cli.runRaw(["provider", "use", args.name])
   })
 
+  // Returns an envelope rather than throwing so a structured cliError survives
+  // the IPC boundary. Electron's structured-clone only preserves
+  // name/message/stack/cause on Error instances and drops arbitrary
+  // own-properties, so a thrown Error with a .cliError attached would lose it.
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "set-options", args.name])
+    try {
+      await cli.runRaw(["provider", "set-options", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
   })
 
   ipcMain.handle(
@@ -123,15 +135,16 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
       await cli.runStreaming(
         ["provider", "set-options", args.name],
-        (line) => {
+        (line, _stream, meta) => {
           const formatted = formatLogLine(line)
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: formatted,
+            level: meta?.level,
             done: false,
           })
         },
-        (code) => {
+        (code, cliError) => {
           const exitMsg = formatLogLine(
             `Exit code: ${code}`,
             code === 0 ? "INFO" : "ERROR",
@@ -139,6 +152,8 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: exitMsg,
+            level: code === 0 ? "info" : "error",
+            cliError,
             done: true,
           })
         },

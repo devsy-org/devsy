@@ -35,7 +35,7 @@ describe("CliRunner", () => {
       expect(result).toEqual([{ id: "ws-1" }])
       expect(mockExecFile).toHaveBeenCalledWith(
         "/usr/local/bin/devsy",
-        ["list", "--skip-pro", "--result-format", "json"],
+        ["list", "--skip-pro", "--result-format", "json", "--log-output", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )
@@ -58,6 +58,44 @@ describe("CliRunner", () => {
       )
 
       await expect(cli.run(["list"])).rejects.toThrow("workspace not found")
+    })
+
+    it("extracts cliError from a zap JSON stderr line and attaches it to the thrown Error", async () => {
+      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+        typeof vi.fn
+      >
+      const cliErrorPayload = {
+        code: "AWS_PROFILE_MISSING",
+        message: "AWS credentials are not configured.",
+        hint: "Set AWS_PROFILE or create ~/.aws/credentials.",
+        docUrl: "https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
+        provider: "aws",
+        cause: "init: exit status 1: failed to get shared config profile, default",
+      }
+      const stderrLine = JSON.stringify({
+        level: "error",
+        ts: "2026-05-25T06:02:47.423-0500",
+        msg: cliErrorPayload.message,
+        cliError: cliErrorPayload,
+      })
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+          const error = new Error("Command failed") as Error & {
+            code: number
+            stderr: string
+          }
+          error.code = 1
+          error.stderr = `noise before\n${stderrLine}\n`
+          callback(error, { stdout: "", stderr: error.stderr })
+        },
+      )
+
+      const rejection = await cli
+        .run(["provider", "set-options", "aws"])
+        .catch((e) => e as Error & { cliError?: typeof cliErrorPayload })
+      expect(rejection).toBeInstanceOf(Error)
+      expect(rejection.cliError).toEqual(cliErrorPayload)
+      expect(rejection.message).toBe(cliErrorPayload.message)
     })
   })
 
@@ -92,7 +130,7 @@ describe("CliRunner", () => {
       await jsCli.run(["list"])
       expect(mockExecFile).toHaveBeenCalledWith(
         "node",
-        ["/tmp/mock.cjs", "list", "--result-format", "json"],
+        ["/tmp/mock.cjs", "list", "--result-format", "json", "--log-output", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )

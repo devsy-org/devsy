@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/up"
 	"github.com/devsy-org/devsy/cmd/use"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/go-logr/logr"
@@ -25,6 +27,18 @@ import (
 	"golang.org/x/crypto/ssh"
 	"k8s.io/klog/v2"
 )
+
+const (
+	logOutputJSON   = "json"
+	logOutputLogfmt = "logfmt"
+)
+
+// isMachineLogFormat reports whether the configured --log-output mode produces
+// a structured, machine-parseable stream (json or logfmt). Callers use this to
+// suppress decorative human-readable affordances that would corrupt the stream.
+func isMachineLogFormat(format string) bool {
+	return format == logOutputJSON || format == logOutputLogfmt
+}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -47,14 +61,22 @@ func Execute() {
 			os.Exit(execExitErr.ExitCode())
 		}
 
-		if globalFlags.Debug {
-			log.Errorf("%+v", err)
-		} else {
-			if rootCmd.Annotations == nil ||
-				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
-				log.Error("Try using -v or --debug flag to see more verbose output")
+		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+		// Always emit the error through zap so the configured log encoder
+		// (json/logfmt/text) governs the wire format. JSONError preserves
+		// the full err.Error() chain in the top-level "msg" field and ships
+		// the structured CLIError under "cliError" for the desktop IPC.
+		log.JSONError(cliErr)
+		// In human-friendly text mode, follow up with hint/doc affordances
+		// that don't fit cleanly into the zap line. These extras are
+		// suppressed in machine-readable modes so log streams stay parseable.
+		if !isMachineLogFormat(globalFlags.LogOutput) {
+			if cliErr.Hint != "" {
+				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
 			}
-			log.Errorf("%v", err)
+			if cliErr.DocURL != "" {
+				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
+			}
 		}
 		os.Exit(1)
 	}
