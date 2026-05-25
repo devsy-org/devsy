@@ -69,7 +69,7 @@ One of the most important features of Devsy is to make sure that developer envir
 
 ### Non-Machine Providers
 
-For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, kubernetes or ssh, where you don't want the container to be running if its not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
+For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if its not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
 
 ### Machine Providers
 

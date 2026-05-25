@@ -19,3 +19,37 @@ exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
 
 Devsy relies on an active SSH session to perform port forwarding to the local host. When running Devsy without an IDE, such as `--ide none`,
 an active SSH session needs to be open using `devsy ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
+
+### Structured CLI errors
+
+Devsy classifies common failures and prints a stable error `code` alongside a hint and documentation link. When running with `--result-format json` (or when invoked by Devsy Desktop), errors are emitted as a JSON object matching:
+
+```json
+{
+  "code": "DOCKER_NOT_RUNNING",
+  "message": "Docker is not running.",
+  "hint": "Start Docker Desktop or run `sudo systemctl start docker`.",
+  "docUrl": "https://docs.docker.com/config/daemon/start/",
+  "provider": "docker",
+  "cause": "exit status 1: Cannot connect to the Docker daemon"
+}
+```
+
+Common error codes you may see:
+
+| Code | Meaning |
+|---|---|
+| `DOCKER_NOT_RUNNING` | Docker daemon is not reachable. |
+| `DOCKER_PERMISSION_DENIED` | Your user cannot access `docker.sock`. Add yourself to the `docker` group. |
+| `PODMAN_SOCKET_UNAVAILABLE` | Podman user socket is not running. Run `systemctl --user start podman.socket`. |
+| `KUBE_CONFIG_MISSING` | Devsy could not find a kubeconfig. Set `KUBECONFIG` or create `~/.kube/config`. |
+| `KUBE_UNREACHABLE` | Devsy cannot connect to the Kubernetes API server on port `6443`. |
+| `AWS_PROFILE_MISSING` / `AWS_CREDS_INVALID` / `AWS_REGION_MISSING` | AWS configuration problems — refresh credentials or set `AWS_REGION`. |
+| `PROVIDER_INIT_FAILED` | Generic provider init failure. Re-run with `--debug` for the original error. |
+| `UNKNOWN` | Devsy could not classify the error; the raw error text is preserved in `message`. |
+
+Re-run with `--debug` to see the original error chain, and pass `--result-format json` (or `plain` to force human-readable output) to control rendering — the default `auto` chooses JSON when stdout is not a TTY.
+
+### VS Code Browser workspace fails to open on first create
+
+Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail immediately after `devsy up --ide openvscode`. This has been fixed — if you previously hit this, simply re-run `devsy up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry automatically.

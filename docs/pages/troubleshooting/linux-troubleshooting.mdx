@@ -65,11 +65,27 @@ append `:Z` to your volume definitions, like so
 There is a [known issue](https://github.com/devsy-org/devsy/issues/1045) where some linux distros use a large PATH to find SSH and causes the connection string to be too long. The workaround is to specify
 the SSH binary explicitly in vscode.
 
+### Docker socket permission denied
+
+If `devsy up` exits with the structured error code `DOCKER_PERMISSION_DENIED`, your user is not a member of the `docker` group. Add yourself and re-login:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+If Devsy reports `DOCKER_NOT_RUNNING`, start the daemon:
+
+```bash
+sudo systemctl start docker
+```
+
+See the [Structured CLI errors](./troubleshooting#structured-cli-errors) reference for the full list of codes.
+
 ### Podman
 
 #### Rootless socket path
 
-Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, `PODMAN_HOST` is likely unset. Set it explicitly:
+Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, you will see the structured error code `PODMAN_SOCKET_UNAVAILABLE`. Either start the user socket with `systemctl --user start podman.socket`, or set `PODMAN_HOST` explicitly:
 
 ```bash
 devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
