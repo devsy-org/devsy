@@ -110,11 +110,24 @@ func Fatal(args ...any) { sugar.Load().Fatal(args...) }
 
 // JSONError writes a single structured zap entry carrying a *CLIError under
 // the "cliError" field. The desktop IPC layer parses this field by name.
+//
+// The top-level "msg" is set to the original error chain (when available) so
+// that log consumers grepping the textual message still see the underlying
+// cause. The friendly, user-facing summary remains in cliError.message and is
+// what the desktop UI surfaces.
 func JSONError(cliErr *cliErrors.CLIError) {
 	if cliErr == nil {
 		return
 	}
-	sugar.Load().Desugar().Error(cliErr.Message, zap.Any("cliError", cliErr))
+	msg := cliErr.Message
+	if wrapped := cliErr.Unwrap(); wrapped != nil {
+		if s := wrapped.Error(); s != "" {
+			msg = s
+		}
+	} else if cliErr.Cause != "" {
+		msg = cliErr.Cause
+	}
+	sugar.Load().Desugar().Error(msg, zap.Any("cliError", cliErr))
 }
 
 func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
