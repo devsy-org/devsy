@@ -537,6 +537,8 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <Separator />
 
+        <!-- Color Scheme picker kept but hidden — settled on purple. Re-enable by switching to {#if true}. -->
+        {#if false}
         <div class="space-y-2">
           <h2 class="text-lg font-semibold">Color Scheme</h2>
           <div class="flex gap-2">
@@ -554,6 +556,7 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
 
         <Separator />
+        {/if}
 
         <div class="space-y-2">
           <h2 class="text-lg font-semibold">UI Scale</h2>
