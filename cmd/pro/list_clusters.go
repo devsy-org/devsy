@@ -80,8 +80,9 @@ func (cmd *ListClustersCmd) Run(
 		return fmt.Errorf("list clusters with provider \"%s\": %w", provider.Name, err)
 	}
 
+	headers := []string{headerName, headerDisplayName, "Online"}
 	if buf.Len() == 0 {
-		table.Print([]string{headerName, "Online"}, nil)
+		table.Print(headers, nil)
 		return nil
 	}
 
@@ -90,7 +91,6 @@ func (cmd *ListClustersCmd) Run(
 		return fmt.Errorf("parse clusters output: %w", err)
 	}
 
-	headers := []string{headerName, headerDisplayName, "Online"}
 	rows := make([][]string, 0, len(clusters.Clusters))
 	for _, c := range clusters.Clusters {
 		rows = append(rows, []string{
