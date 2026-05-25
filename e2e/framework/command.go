@@ -16,6 +16,7 @@ import (
 const (
 	flagResultFormat = "--result-format"
 	formatJSON       = "json"
+	cmdList          = "list"
 )
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
@@ -51,7 +52,7 @@ func (f *Framework) DevsyListParsed(ctx context.Context) ([]*provider2.Workspace
 
 // DevsyList executes the `devsy list` command in the test framework.
 func (f *Framework) DevsyList(ctx context.Context) (string, error) {
-	listArgs := []string{"list", flagResultFormat, formatJSON}
+	listArgs := []string{cmdList, flagResultFormat, formatJSON}
 
 	out, _, err := f.ExecCommandCapture(ctx, listArgs)
 	if err != nil {
@@ -189,7 +190,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 }
 
 func (f *Framework) DevsyProviderList(ctx context.Context, extraArgs ...string) error {
-	baseArgs := []string{"provider", "list"}
+	baseArgs := []string{"provider", cmdList}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider list failed: %s", err.Error())
@@ -505,7 +506,7 @@ func (f *Framework) DevsyLogs(ctx context.Context, workspace string) (string, er
 }
 
 func (f *Framework) DevsyIDEList(ctx context.Context, extraArgs ...string) (string, error) {
-	baseArgs := []string{"ide", "list"}
+	baseArgs := []string{"ide", cmdList}
 	return f.ExecCommandOutput(ctx, append(baseArgs, extraArgs...))
 }
 
