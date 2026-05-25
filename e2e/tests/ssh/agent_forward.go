@@ -328,13 +328,16 @@ var _ = ginkgo.Describe(
 
 				// Session 1: NO agent request via the multiplexed channel.
 				// SSH_AUTH_SOCK should be empty inside the container.
+				// Pass the shell command as a single pre-quoted argv element
+				// so ssh's space-join to the remote login shell preserves the
+				// inner quoting.
 				noAgentArgs := []string{
 					"-o", "ControlPath=" + controlPath,
 					"-o", sshOptStrictHostKeyCheckingNo,
 					"-o", sshOptUserKnownHostsFileNull,
 					"-o", sshOptForwardAgentNo,
 					host, "--",
-					"sh", "-c", "printf %s \"${SSH_AUTH_SOCK:-}\"",
+					`sh -c 'printf %s "${SSH_AUTH_SOCK:-}"'`,
 				}
 				// #nosec G204
 				s1Cmd := exec.Command("ssh", noAgentArgs...)

@@ -218,7 +218,12 @@ func SSHMultiplexedExec(
 		host,
 		"--",
 	}
-	args = append(args, cmd...)
+	// ssh joins remote argv with spaces before handing it to the remote
+	// login shell, which loses any in-argument quoting. Pre-quote each
+	// element so shell metacharacters (spaces, $, quotes) survive intact.
+	for _, a := range cmd {
+		args = append(args, shellQuote(a))
+	}
 
 	// #nosec G204 -- controlled args for test
 	c := exec.Command("ssh", args...)
@@ -238,6 +243,13 @@ func mergedEnv(extra map[string]string) []string {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+// shellQuote returns a POSIX-shell single-quoted form of s safe to embed in
+// a remote ssh command line. Single quotes inside s are escaped via the
+// '\” idiom.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // WaitForConditionShort polls the given predicate until it returns true or
