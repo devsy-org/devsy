@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +21,6 @@ type PackageCmd struct {
 	Target                 string
 	OutputFolder           string
 	ForceCleanOutputFolder bool
-	Output                 string
 }
 
 type packageResult struct {
@@ -58,17 +58,14 @@ and creates gzipped tar archives suitable for OCI distribution.`,
 		&cmd.ForceCleanOutputFolder, "force-clean-output-folder", false,
 		"Clean output folder before writing",
 	)
-	packageCmd.Flags().StringVar(
-		&cmd.Output, "output", "text",
-		"Output format (text or json)",
-	)
 	_ = packageCmd.MarkFlagRequired("target")
 
 	return packageCmd
 }
 
 func (cmd *PackageCmd) Run() error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
 		return err
 	}
 
@@ -96,7 +93,7 @@ func (cmd *PackageCmd) Run() error {
 		results = append(results, result)
 	}
 
-	if cmd.Output == outputJSON {
+	if mode == output.ModeJSON {
 		return writeJSON(os.Stdout, results)
 	}
 

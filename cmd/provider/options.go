@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"sort"
 	"strconv"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -23,7 +25,6 @@ type OptionsCmd struct {
 	*flags.GlobalFlags
 
 	Hidden bool
-	Output string
 }
 
 // NewOptionsCmd creates a new command.
@@ -51,8 +52,6 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 	optionsCmd.Flags().
 		BoolVar(&cmd.Hidden, "hidden", false, "If true, will also show hidden options.")
-	optionsCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
 	return optionsCmd
 }
 
@@ -93,7 +92,11 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	return printOptions(devsyConfig, providerWithOptions, cmd.Output, cmd.Hidden)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	return printOptions(devsyConfig, providerWithOptions, mode, cmd.Hidden)
 }
 
 func printOptions(
@@ -105,60 +108,76 @@ func printOptions(
 	entryOptions := devsyConfig.ProviderOptions(provider.Config.Name)
 	dynamicOptions := devsyConfig.DynamicProviderOptionDefinitions(provider.Config.Name)
 	srcOptions := MergeDynamicOptions(provider.Config.Options, dynamicOptions)
-	if format == "plain" {
-		tableEntries := [][]string{}
-		for optionName, entry := range srcOptions {
-			if !showHidden && entry.Hidden {
-				continue
-			}
-
-			value := entryOptions[optionName].Value
-			if value != "" && entry.Password {
-				value = "********"
-			}
-
-			tableEntries = append(tableEntries, []string{
-				optionName,
-				strconv.FormatBool(entry.Required),
-				entry.Description,
-				entry.Default,
-				value,
-			})
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
-
-		table.Print([]string{
-			"Name",
-			"Required",
-			"Description",
-			"Default",
-			"Value",
-		}, tableEntries)
-	} else if format == "json" {
-		options := map[string]optionWithValue{}
-		for optionName, entry := range srcOptions {
-			if !showHidden && entry.Hidden {
-				continue
-			}
-
-			options[optionName] = optionWithValue{
-				Option:   *entry,
-				Children: entryOptions[optionName].Children,
-				Value:    entryOptions[optionName].Value,
-			}
-		}
-
-		out, err := json.MarshalIndent(options, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Print(string(out))
-	} else {
-		return fmt.Errorf("unexpected output format, choose either json or plain. Got %s", format)
+	switch format {
+	case output.ModePlain:
+		printOptionsPlain(srcOptions, entryOptions, showHidden)
+	case output.ModeJSON:
+		return printOptionsJSON(srcOptions, entryOptions, showHidden)
 	}
 
+	return nil
+}
+
+func printOptionsPlain(
+	srcOptions map[string]*types.Option,
+	entryOptions map[string]config.OptionValue,
+	showHidden bool,
+) {
+	tableEntries := [][]string{}
+	for optionName, entry := range srcOptions {
+		if !showHidden && entry.Hidden {
+			continue
+		}
+
+		value := entryOptions[optionName].Value
+		if value != "" && entry.Password {
+			value = "********"
+		}
+
+		tableEntries = append(tableEntries, []string{
+			optionName,
+			strconv.FormatBool(entry.Required),
+			entry.Description,
+			entry.Default,
+			value,
+		})
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	table.Print([]string{
+		"Name",
+		"Required",
+		"Description",
+		"Default",
+		"Value",
+	}, tableEntries)
+}
+
+func printOptionsJSON(
+	srcOptions map[string]*types.Option,
+	entryOptions map[string]config.OptionValue,
+	showHidden bool,
+) error {
+	options := map[string]optionWithValue{}
+	for optionName, entry := range srcOptions {
+		if !showHidden && entry.Hidden {
+			continue
+		}
+
+		options[optionName] = optionWithValue{
+			Option:   *entry,
+			Children: entryOptions[optionName].Children,
+			Value:    entryOptions[optionName].Value,
+		}
+	}
+
+	out, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, _ = os.Stdout.Write(out)
 	return nil
 }
 

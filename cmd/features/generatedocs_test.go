@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +41,7 @@ func TestGenerateDocsCmd_Run(t *testing.T) {
 		ProjectFolder: projectDir,
 		OutputFolder:  outputDir,
 		Namespace:     "ghcr.io/test/features",
-		Output:        "text",
+		GlobalFlags:   &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()
@@ -78,7 +79,7 @@ func TestGenerateDocsCmd_NoFeatures(t *testing.T) {
 
 	cmd := &GenerateDocsCmd{
 		ProjectFolder: projectDir,
-		Output:        "text",
+		GlobalFlags:   &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()
@@ -110,7 +111,7 @@ func TestGenerateDocsCmd_MultipleFeatures(t *testing.T) {
 	cmd := &GenerateDocsCmd{
 		ProjectFolder: projectDir,
 		OutputFolder:  outputDir,
-		Output:        "text",
+		GlobalFlags:   &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()

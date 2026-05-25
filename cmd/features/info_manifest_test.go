@@ -3,17 +3,10 @@ package features
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestInfoManifestCmd_FlagDefaults(t *testing.T) {
-	cmd := NewInfoManifestCmd(nil)
-
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	assert.Equal(t, "json", outputFlag.DefValue)
-}
 
 func TestInfoManifestCmd_RequiresExactlyOneArg(t *testing.T) {
 	cmd := NewInfoManifestCmd(nil)
@@ -40,15 +33,8 @@ func TestInfoManifestCmd_RequiresExactlyOneArg(t *testing.T) {
 	}
 }
 
-func TestInfoManifestCmd_InvalidOutputFormat(t *testing.T) {
-	cmd := &InfoManifestCmd{Output: "xml"}
-	err := cmd.Run("ghcr.io/devcontainers/features/go:1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-}
-
 func TestInfoManifestCmd_InvalidFeatureReference(t *testing.T) {
-	cmd := &InfoManifestCmd{Output: outputJSON}
+	cmd := &InfoManifestCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}}
 	err := cmd.Run("not a valid reference!!!")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid feature reference")

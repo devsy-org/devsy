@@ -19,7 +19,7 @@ const (
 	flagTarget           = "--target"
 	flagOutputFolder     = "--output-folder"
 	flagForceCleanOutput = "--force-clean-output-folder"
-	flagOutput           = "--output"
+	flagOutput           = "--result-format"
 	outputJSON           = "json"
 	featureNameGo        = "go"
 	featureNameNode      = "node"

@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -15,8 +16,6 @@ import (
 // OptionsCmd holds the options cmd flags.
 type OptionsCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 // NewOptionsCmd creates a new command.
@@ -32,8 +31,6 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	optionsCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
 	return optionsCmd
 }
 
@@ -55,8 +52,12 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 		entryOptions = map[string]config.OptionValue{}
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		tableEntries := [][]string{}
 		for _, entry := range config.ContextOptions {
 			value := entryOptions[entry.Name].Value
@@ -78,7 +79,7 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 			"Default",
 			"Value",
 		}, tableEntries)
-	case "json":
+	case output.ModeJSON:
 		options := map[string]optionWithValue{}
 		for _, entry := range config.ContextOptions {
 			options[entry.Name] = optionWithValue{
@@ -92,11 +93,6 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 			return err
 		}
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

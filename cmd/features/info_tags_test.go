@@ -3,17 +3,10 @@ package features
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestInfoTagsCmd_FlagDefaults(t *testing.T) {
-	cmd := NewInfoTagsCmd(nil)
-
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	assert.Equal(t, outputText, outputFlag.DefValue)
-}
 
 func TestInfoTagsCmd_RequiresExactlyOneArg(t *testing.T) {
 	cmd := NewInfoTagsCmd(nil)
@@ -23,15 +16,8 @@ func TestInfoTagsCmd_RequiresExactlyOneArg(t *testing.T) {
 	assert.Error(t, cmd.Args(cmd, []string{"first", "second"}))
 }
 
-func TestInfoTagsCmd_InvalidOutputFormat(t *testing.T) {
-	cmd := &InfoTagsCmd{Output: "csv"}
-	err := cmd.Run("ghcr.io/devcontainers/features/go:1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-}
-
 func TestInfoTagsCmd_InvalidFeatureReference(t *testing.T) {
-	cmd := &InfoTagsCmd{Output: outputText}
+	cmd := &InfoTagsCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
 	err := cmd.Run("not a valid reference!!!")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid feature reference")

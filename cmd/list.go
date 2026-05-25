@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -18,7 +19,6 @@ import (
 type ListCmd struct {
 	*flags.GlobalFlags
 
-	Output  string
 	SkipPro bool
 }
 
@@ -37,8 +37,6 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
 	listCmd.Flags().BoolVar(&cmd.SkipPro, "skip-pro", false, "Don't list pro workspaces")
 	return listCmd
 }
@@ -55,8 +53,12 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	switch cmd.Output {
-	case "json":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModeJSON:
 		sort.SliceStable(workspaces, func(i, j int) bool {
 			return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
 		})
@@ -65,7 +67,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			return err
 		}
 		fmt.Print(string(out))
-	case "plain":
+	case output.ModePlain:
 		tableEntries := [][]string{}
 		sort.SliceStable(workspaces, func(i, j int) bool {
 			return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
@@ -97,11 +99,6 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			"Age",
 			"Pro",
 		}, tableEntries)
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

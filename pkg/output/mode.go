@@ -1,24 +1,31 @@
 package output
 
-import "github.com/devsy-org/devsy/pkg/terminal"
+import (
+	"fmt"
+
+	"github.com/devsy-org/devsy/pkg/terminal"
+)
 
 const (
 	ModeJSON  = "json"
 	ModePlain = "plain"
 )
 
-func ResolveMode(flagValue string) string {
+func ResolveMode(flagValue string) (string, error) {
 	switch flagValue {
 	case ModeJSON:
-		return ModeJSON
+		return ModeJSON, nil
 	case ModePlain:
-		return ModePlain
+		return ModePlain, nil
 	case "auto":
 		if !terminal.IsTerminalOut {
-			return ModeJSON
+			return ModeJSON, nil
 		}
-		return ModePlain
+		return ModePlain, nil
 	default:
-		return ModeJSON
+		return "", fmt.Errorf(
+			"unexpected output format, choose json, plain, or auto. Got %q",
+			flagValue,
+		)
 	}
 }

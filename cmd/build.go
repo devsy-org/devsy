@@ -226,7 +226,11 @@ func (cmd *BuildCmd) build(
 		log.Debugf("done building devcontainer")
 		log.Infof("cleaning up temporary workspace")
 	}()
-	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
 
 	result, err := clientimplementation.BuildAgentClient(
 		ctx,

@@ -9,6 +9,7 @@ import (
 
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -19,8 +20,7 @@ import (
 type ListCmd struct {
 	proflags.GlobalFlags
 
-	Output string
-	Login  bool
+	Login bool
 }
 
 // NewListCmd creates a new command.
@@ -39,8 +39,6 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 
 	listCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
-	listCmd.Flags().
 		BoolVar(&cmd.Login, "login", false, "Check if the user is logged into the pro instance")
 	return listCmd
 }
@@ -57,8 +55,12 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		tableEntries := [][]string{}
 		for _, proInstance := range proInstances {
 			entry := []string{
@@ -87,7 +89,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		}
 
 		table.Print(tableHeaders, tableEntries)
-	case "json":
+	case output.ModeJSON:
 		tableEntries := []*proTableEntry{}
 		for _, proInstance := range proInstances {
 			entry := &proTableEntry{
@@ -112,11 +114,6 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			return err
 		}
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

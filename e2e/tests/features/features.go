@@ -122,28 +122,12 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				"features", "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
-				"--output", "json",
+				"--result-format", "json",
 			})
 			framework.ExpectNoError(err)
 
 			var result []map[string]any
 			gomega.Expect(json.Unmarshal([]byte(stdout), &result)).To(gomega.Succeed())
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("rejects invalid output format", func(ctx context.Context) {
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-
-			workspaceDir, err := os.MkdirTemp("", "e2e-resolve-deps-invalid-*")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(workspaceDir) })
-
-			_, stderr, err := f.ExecCommandCapture(ctx, []string{
-				"features", "resolve-dependencies",
-				"--workspace-folder", workspaceDir,
-				"--output", "yaml",
-			})
-			gomega.Expect(err).To(gomega.HaveOccurred())
-			gomega.Expect(stderr).To(gomega.ContainSubstring("invalid output format"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	})
 
@@ -275,7 +259,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "info", featureRef, "--output", "json",
+				"features", "info", featureRef, "--result-format", "json",
 			})
 			framework.ExpectNoError(err)
 
@@ -333,7 +317,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				gomega.Expect(manifest).To(gomega.HaveKey("layers"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
-			ginkgo.It("returns text output with --output=text", func(ctx context.Context) {
+			ginkgo.It("returns text output with --result-format=plain", func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				srv := httptest.NewServer(registry.New())
@@ -345,7 +329,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRef, nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef, "--output", "text",
+					"features", "info", subCmdManifest, featureRef, "--result-format", "plain",
 				})
 				framework.ExpectNoError(err)
 
@@ -450,7 +434,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
 					"features", "info", subCmdTags, featureRepo + ":1.0.0",
-					"--output", "json",
+					"--result-format", "json",
 				})
 				framework.ExpectNoError(err)
 

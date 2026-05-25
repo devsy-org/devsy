@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestResolveDepsCmd_NoFeatures(t *testing.T) {
 
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: workspaceDir,
-		Output:          "text",
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()
@@ -35,7 +36,7 @@ func TestResolveDepsCmd_NoFeatures(t *testing.T) {
 func TestResolveDepsCmd_MissingWorkspace(t *testing.T) {
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: "/nonexistent/path/12345",
-		Output:          "text",
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()
@@ -55,23 +56,11 @@ func TestResolveDepsCmd_ExplicitConfig(t *testing.T) {
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: tmpDir,
 		Config:          configPath,
-		Output:          outputJSON,
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "json"},
 	}
 
 	err := cmd.Run()
 	require.NoError(t, err)
-}
-
-func TestResolveDepsCmd_InvalidOutputFormat(t *testing.T) {
-	cmd := &ResolveDepsCmd{
-		WorkspaceFolder: t.TempDir(),
-		Output:          "yaml",
-	}
-
-	err := cmd.Run()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-	assert.Contains(t, err.Error(), "yaml")
 }
 
 func TestResolveDepsCmd_WithOptions(t *testing.T) {
@@ -103,7 +92,7 @@ func TestResolveDepsCmd_WithOptions(t *testing.T) {
 
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: workspaceDir,
-		Output:          "text",
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 
 	err := cmd.Run()

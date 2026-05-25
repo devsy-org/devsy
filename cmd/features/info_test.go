@@ -3,16 +3,13 @@ package features
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestInfoCmd_FlagDefaults(t *testing.T) {
 	cmd := NewInfoCmd(nil)
-
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	assert.Equal(t, "text", outputFlag.DefValue)
 
 	showTagsFlag := cmd.Flags().Lookup("show-tags")
 	require.NotNil(t, showTagsFlag)
@@ -25,7 +22,7 @@ func TestInfoCmd_FlagDefaults(t *testing.T) {
 
 func TestInfoCmd_AllFlagsRegistered(t *testing.T) {
 	cmd := NewInfoCmd(nil)
-	expected := []string{"output", "show-tags", "show-dependencies"}
+	expected := []string{"show-tags", "show-dependencies"}
 	for _, name := range expected {
 		assert.NotNil(t, cmd.Flags().Lookup(name), "flag %q should be registered", name)
 	}
@@ -39,19 +36,9 @@ func TestInfoCmd_RequiresExactlyOneArg(t *testing.T) {
 	assert.Error(t, cmd.Args(cmd, []string{"one", "two"}))
 }
 
-func TestInfoCmd_InvalidOutputFormat(t *testing.T) {
-	infoCmd := &InfoCmd{
-		Output: "yaml",
-	}
-	err := infoCmd.Run("ghcr.io/devcontainers/features/go:1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
-	assert.Contains(t, err.Error(), "yaml")
-}
-
 func TestInfoCmd_InvalidFeatureReference(t *testing.T) {
 	infoCmd := &InfoCmd{
-		Output: "text",
+		GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"},
 	}
 	err := infoCmd.Run("not a valid reference!!!")
 	require.Error(t, err)
