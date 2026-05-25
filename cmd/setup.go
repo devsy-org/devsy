@@ -70,7 +70,11 @@ func NewSetUpCmd(f *flags.GlobalFlags) *cobra.Command {
 
 // Run executes the set-up command logic.
 func (cmd *SetUpCmd) Run(ctx context.Context) error {
-	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
 
 	helper := &docker.DockerHelper{DockerCommand: cmd.resolveDockerPath()}
 

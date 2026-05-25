@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,10 +31,6 @@ func TestPackageCmd_FlagDefaults(t *testing.T) {
 	forceCleanFlag := cmd.Flags().Lookup("force-clean-output-folder")
 	require.NotNil(t, forceCleanFlag)
 	assert.Equal(t, "false", forceCleanFlag.DefValue)
-
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	assert.Equal(t, "text", outputFlag.DefValue)
 }
 
 func TestPackageCmd_AllFlagsRegistered(t *testing.T) {
@@ -41,7 +39,6 @@ func TestPackageCmd_AllFlagsRegistered(t *testing.T) {
 		"target",
 		"output-folder",
 		"force-clean-output-folder",
-		"output",
 	}
 	for _, name := range expected {
 		assert.NotNil(t, cmd.Flags().Lookup(name), "flag %q should be registered", name)
@@ -164,7 +161,7 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 		Target:                 targetDir,
 		OutputFolder:           outputDir,
 		ForceCleanOutputFolder: true,
-		Output:                 outputText,
+		GlobalFlags:            &flags.GlobalFlags{ResultFormat: output.ModePlain},
 	}
 
 	err := cmd.Run()
@@ -174,16 +171,6 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "old file should be removed")
 
 	assert.FileExists(t, filepath.Join(outputDir, "devcontainer-feature-feat.tgz"))
-}
-
-func TestPackageCmd_InvalidOutputFormat(t *testing.T) {
-	cmd := &PackageCmd{
-		Target: "/tmp",
-		Output: outputYAML,
-	}
-	err := cmd.Run()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid output format")
 }
 
 func TestPackageCmd_InvalidFeatureID(t *testing.T) {

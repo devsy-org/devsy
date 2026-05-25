@@ -33,8 +33,8 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 	flags.StringVar(
 		&globalFlags.ResultFormat,
 		"result-format",
-		"json",
-		"The result output format. Can be json, plain, or auto",
+		"auto",
+		"The result output format. Can be json, plain, or auto (auto picks plain on a TTY and json when piped)",
 	)
 	flags.StringVar(
 		&globalFlags.LogOutput,

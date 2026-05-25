@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +19,6 @@ type GenerateDocsCmd struct {
 	ProjectFolder string
 	OutputFolder  string
 	Namespace     string
-	Output        string
 }
 
 func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -44,16 +44,14 @@ documentation for each feature based on its devcontainer-feature.json.`,
 	generateDocsCmd.Flags().StringVar(
 		&cmd.Namespace, "namespace", "", "Registry namespace for linking (e.g. ghcr.io/myorg/features)",
 	)
-	generateDocsCmd.Flags().StringVar(
-		&cmd.Output, "output", "text", "Output format (text or json)",
-	)
 	_ = generateDocsCmd.MarkFlagRequired("project-folder")
 
 	return generateDocsCmd
 }
 
 func (cmd *GenerateDocsCmd) Run() error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
 		return err
 	}
 
@@ -72,11 +70,13 @@ func (cmd *GenerateDocsCmd) Run() error {
 		return err
 	}
 
-	if cmd.Output == outputJSON {
+	switch mode {
+	case output.ModeJSON:
 		return cmd.writeJSON(features)
+	case output.ModePlain:
+		return cmd.writeDocs(features, outputFolder)
 	}
-
-	return cmd.writeDocs(features, outputFolder)
+	return nil
 }
 
 func (cmd *GenerateDocsCmd) resolveOutputFolder(

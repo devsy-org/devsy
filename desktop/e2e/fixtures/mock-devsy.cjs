@@ -2,7 +2,7 @@
 "use strict"
 // Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
-// Handles --output json, --skip-pro, and other flags the app sends
+// Handles --result-format json, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
 
 const fs = require("node:fs")
@@ -104,7 +104,7 @@ let nameFlag = ""
 let i = 0
 while (i < args.length) {
   const arg = args[i]
-  if (arg === "--output") {
+  if (arg === "--result-format") {
     i += 2
     continue
   }

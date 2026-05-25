@@ -10,6 +10,7 @@ import {
   Settings,
   SquareTerminal,
 } from "@lucide/svelte"
+import AppLogo from "$lib/components/layout/AppLogo.svelte"
 import { location } from "$lib/router.js"
 import * as Sidebar from "$lib/components/ui/sidebar/index.js"
 import { workspaces } from "$lib/stores/workspaces.js"
@@ -106,9 +107,7 @@ function isActive(href: string): boolean {
     <Sidebar.Menu>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton size="lg" class="pointer-events-none">
-          <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Box class="size-4" />
-          </div>
+          <AppLogo class="size-8 rounded-lg" />
           <div class="grid flex-1 text-left text-sm leading-tight">
             <span class="truncate font-semibold">Devsy</span>
             <span class="truncate text-xs text-muted-foreground">Desktop</span>

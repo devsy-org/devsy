@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
@@ -12,8 +13,6 @@ import (
 
 type InfoTagsCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 type tagsOutput struct {
@@ -37,16 +36,10 @@ queries the registry for all available image tags.`,
 		},
 	}
 
-	tagsCmd.Flags().StringVar(&cmd.Output, "output", "text", "Output format (text or json)")
-
 	return tagsCmd
 }
 
 func (cmd *InfoTagsCmd) Run(featureID string) error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
-		return err
-	}
-
 	ref, err := name.ParseReference(featureID)
 	if err != nil {
 		return fmt.Errorf("invalid feature reference %q: %w", featureID, err)
@@ -57,20 +50,26 @@ func (cmd *InfoTagsCmd) Run(featureID string) error {
 		return fmt.Errorf("list tags: %w", err)
 	}
 
-	if cmd.Output == outputJSON {
-		return writeJSON(os.Stdout, &tagsOutput{Tags: tags})
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
 	}
+	switch mode {
+	case output.ModeJSON:
+		return writeJSON(os.Stdout, &tagsOutput{Tags: tags})
+	case output.ModePlain:
+		if len(tags) == 0 {
+			_, _ = fmt.Fprintln(os.Stdout, "No tags found.")
+			return nil
+		}
 
-	if len(tags) == 0 {
-		_, _ = fmt.Fprintln(os.Stdout, "No tags found.")
+		_, _ = fmt.Fprintln(os.Stdout, "Available Tags:")
+		rows := make([][]string, 0, len(tags))
+		for _, tag := range tags {
+			rows = append(rows, []string{tag})
+		}
+		table.Print([]string{"Tag"}, rows)
 		return nil
 	}
-
-	_, _ = fmt.Fprintln(os.Stdout, "Available Tags:")
-	rows := make([][]string, 0, len(tags))
-	for _, tag := range tags {
-		rows = append(rows, []string{tag})
-	}
-	table.Print([]string{"Tag"}, rows)
 	return nil
 }

@@ -137,7 +137,7 @@ export class CliRunner {
       const fullArgs = [
         ...this.prefixArgs,
         ...args,
-        "--output",
+        "--result-format",
         "json",
         "--log-output",
         "json",

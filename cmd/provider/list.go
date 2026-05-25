@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -18,8 +19,6 @@ import (
 // ListCmd holds the list cmd flags.
 type ListCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 // NewListCmd creates a new command.
@@ -37,8 +36,6 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
 	return listCmd
 }
 
@@ -65,8 +62,12 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		configuredProviders = map[string]*config.ProviderConfig{}
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		tableEntries := [][]string{}
 		for _, entry := range providers {
 			tableEntries = append(tableEntries, []string{
@@ -88,7 +89,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			"Initialized",
 			"Description",
 		}, tableEntries)
-	case "json":
+	case output.ModeJSON:
 		retMap := map[string]ProviderWithDefault{}
 		for k, entry := range providers {
 			var dynamicOptions map[string]*types.Option
@@ -109,11 +110,6 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			return err
 		}
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

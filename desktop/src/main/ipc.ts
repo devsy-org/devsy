@@ -60,7 +60,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       return cli.runRaw([
         "status",
         args.workspaceId,
-        "--output",
+        "--result-format",
         "json",
         "--timeout",
         "5s",
@@ -234,7 +234,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   })
 
   ipcMain.handle("machine_status", async (_event, args: { id: string }) => {
-    return cli.runRaw(["machine", "status", args.id, "--output", "json"])
+    return cli.runRaw(["machine", "status", args.id, "--result-format", "json"])
   })
 
   // ── Contexts ──

@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,6 @@ type StatusCmd struct {
 	*flags.GlobalFlags
 	client2.StatusOptions
 
-	Output  string
 	Timeout string
 }
 
@@ -73,7 +73,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 	statusCmd.Flags().
 		BoolVar(&cmd.ContainerStatus, "container-status", true, "If enabled shows the workspace container status as well")
-	statusCmd.Flags().StringVar(&cmd.Output, "output", "plain", "Status shows the workspace status")
 	statusCmd.Flags().
 		StringVar(&cmd.Timeout, "timeout", "30s", "The timeout to wait until the status can be retrieved")
 	return statusCmd
@@ -102,8 +101,12 @@ func (cmd *StatusCmd) Run(
 		return err
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		switch instanceStatus {
 		case client2.StatusStopped:
 			log.Infof(
@@ -129,7 +132,7 @@ func (cmd *StatusCmd) Run(
 		default:
 			log.Infof("Workspace '%s' is '%s'", client.Workspace(), instanceStatus)
 		}
-	case "json":
+	case output.ModeJSON:
 		out, err := json.Marshal(&client2.WorkspaceStatus{
 			ID:       client.Workspace(),
 			Context:  client.Context(),
@@ -141,11 +144,6 @@ func (cmd *StatusCmd) Run(
 		}
 
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

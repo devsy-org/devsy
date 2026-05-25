@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -15,8 +16,6 @@ import (
 
 type InfoManifestCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 func NewInfoManifestCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -36,16 +35,10 @@ ghcr.io/devcontainers/features/go:1 and outputs the OCI image manifest.`,
 		},
 	}
 
-	manifestCmd.Flags().StringVar(&cmd.Output, "output", "json", "Output format (text or json)")
-
 	return manifestCmd
 }
 
 func (cmd *InfoManifestCmd) Run(featureID string) error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
-		return err
-	}
-
 	ref, err := name.ParseReference(featureID)
 	if err != nil {
 		return fmt.Errorf("invalid feature reference %q: %w", featureID, err)
@@ -56,10 +49,17 @@ func (cmd *InfoManifestCmd) Run(featureID string) error {
 		return fmt.Errorf("fetch manifest: %w", err)
 	}
 
-	if cmd.Output == outputJSON {
-		return writeJSON(os.Stdout, manifest)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
 	}
-	return cmd.printText(manifest)
+	switch mode {
+	case output.ModeJSON:
+		return writeJSON(os.Stdout, manifest)
+	case output.ModePlain:
+		return cmd.printText(manifest)
+	}
+	return nil
 }
 
 func (cmd *InfoManifestCmd) printText(manifest *v1.Manifest) error {

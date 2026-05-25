@@ -49,6 +49,7 @@ let renameValue = $state("")
 let renameSaving = $state(false)
 let initializing = $state(false)
 let initError = $state<CLIError | null>(null)
+let loadedFor = $state<string | null>(null)
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -109,7 +110,12 @@ async function loadOptions() {
 }
 
 $effect(() => {
-  if (open) {
+  if (!open) {
+    loadedFor = null
+    return
+  }
+  if (loadedFor !== provider.name) {
+    loadedFor = provider.name
     loadOptions()
   }
 })

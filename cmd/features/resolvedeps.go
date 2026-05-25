@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,6 @@ type ResolveDepsCmd struct {
 
 	WorkspaceFolder string
 	Config          string
-	Output          string
 }
 
 type resolvedFeature struct {
@@ -51,16 +51,14 @@ install order based on dependency declarations and install ordering.`,
 		&cmd.Config, "config", "",
 		"Path to specific devcontainer.json (optional)",
 	)
-	resolveDepsCmd.Flags().StringVar(
-		&cmd.Output, "output", "text", "Output format (text or json)",
-	)
 	_ = resolveDepsCmd.MarkFlagRequired("workspace-folder")
 
 	return resolveDepsCmd
 }
 
 func (cmd *ResolveDepsCmd) Run() error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
 		return err
 	}
 
@@ -76,7 +74,7 @@ func (cmd *ResolveDepsCmd) Run() error {
 	}
 
 	if len(devContainerConfig.Features) == 0 {
-		return cmd.printEmpty()
+		return cmd.printEmpty(mode)
 	}
 
 	sorted, err := feature.ResolveFeatureOrder(devContainerConfig)
@@ -86,14 +84,14 @@ func (cmd *ResolveDepsCmd) Run() error {
 
 	resolved := buildResolvedList(sorted)
 
-	if cmd.Output == outputJSON {
+	if mode == output.ModeJSON {
 		return writeJSON(os.Stdout, resolved)
 	}
 	return cmd.printText(resolved)
 }
 
-func (cmd *ResolveDepsCmd) printEmpty() error {
-	if cmd.Output == outputJSON {
+func (cmd *ResolveDepsCmd) printEmpty(mode string) error {
+	if mode == output.ModeJSON {
 		_, err := fmt.Fprintln(os.Stdout, "[]")
 		return err
 	}
