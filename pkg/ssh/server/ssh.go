@@ -16,7 +16,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/ssh"
+	gossh "golang.org/x/crypto/ssh"
 )
+
+// connAgentIntents maps an active SSH connection to its lazy agent intent.
+// Cleanup is driven from ConnectionCompleteCallback, which runs as a defer
+// in HandleConn BEFORE the stdio listener's Close()-on-EOF triggers os.Exit
+// — that ordering is the only reliable way to guarantee the socket
+// directory is removed before the process dies in stdio mode.
+var connAgentIntents sync.Map // map[*gossh.ServerConn]*connAgentIntent
 
 // ctxKey is a private type for ssh.Context keys.
 type ctxKey int
@@ -192,7 +200,31 @@ func NewServer(
 
 	server.sshServer.Handler = server.handler
 	server.sshServer.ConnCallback = server.connCallback
+	server.sshServer.ConnectionCompleteCallback = cleanupAgentOnConnComplete
 	return server, nil
+}
+
+// cleanupAgentOnConnComplete tears down the per-connection agent state for
+// a connection that just ended. Runs synchronously in HandleConn's defer
+// chain, which is critical in stdio mode where the listener's Close hook
+// calls os.Exit and ctx.Done()-driven goroutines never get to run.
+func cleanupAgentOnConnComplete(sc *gossh.ServerConn, _ error) {
+	v, ok := connAgentIntents.LoadAndDelete(sc)
+	if !ok {
+		return
+	}
+	intent, ok := v.(*connAgentIntent)
+	if !ok || intent == nil {
+		return
+	}
+	intent.mu.Lock()
+	state := intent.state
+	intent.mu.Unlock()
+	if state != nil {
+		sock := state.sockPath()
+		state.close()
+		log.Debugf("ssh conn close: connID=%s agent_sock=%s cleaned up", intent.connID, sock)
+	}
 }
 
 // newConnID returns a short hex identifier unique to the connection.
@@ -260,6 +292,13 @@ func (s *server) handler(sess ssh.Session) {
 				)
 				exitWithError(sess, sErr)
 				return
+			}
+			// Register the intent against the underlying gossh.ServerConn so
+			// cleanupAgentOnConnComplete can find and tear it down when the
+			// connection ends.
+			if sc, ok := sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn); ok &&
+				sc != nil {
+				connAgentIntents.LoadOrStore(sc, intent)
 			}
 			state.startForwarding(sess)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))
@@ -356,20 +395,5 @@ func (s *server) connCallback(ctx ssh.Context, conn net.Conn) net.Conn {
 	ctx.SetValue(ctxKeyConnAgent, intent)
 
 	log.Debugf("ssh conn open: connID=%s remote=%s", intent.connID, conn.RemoteAddr())
-
-	go func() {
-		<-ctx.Done()
-		intent.mu.Lock()
-		state := intent.state
-		intent.mu.Unlock()
-		if state == nil {
-			log.Debugf("ssh conn close: connID=%s (no agent listener allocated)", intent.connID)
-			return
-		}
-		sock := state.sockPath()
-		state.close()
-		log.Debugf("ssh conn close: connID=%s agent_sock=%s cleaned up", intent.connID, sock)
-	}()
-
 	return conn
 }
