@@ -1,6 +1,0 @@
-{
-  "name": "Run User Commands Test",
-  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
-  "onCreateCommand": "echo oncreate-ran > /tmp/lifecycle-test.txt",
-  "postCreateCommand": "echo postcreate-ran >> /tmp/lifecycle-test.txt"
-}

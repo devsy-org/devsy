@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	"github.com/tailscale/hujson"
 )
 
 const (
@@ -50,8 +51,11 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			data, err := os.ReadFile(filepath.Clean(devcontainerPath))
 			framework.ExpectNoError(err)
 
+			normalized, err := hujson.Standardize(data)
+			framework.ExpectNoError(err, "devcontainer.json should be valid JSONC")
+
 			var config map[string]any
-			err = json.Unmarshal(data, &config)
+			err = json.Unmarshal(normalized, &config)
 			framework.ExpectNoError(err, "devcontainer.json should be valid JSON")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -73,8 +77,11 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 			data, err := os.ReadFile(filepath.Clean(devcontainerPath))
 			framework.ExpectNoError(err)
 
+			normalized, err := hujson.Standardize(data)
+			framework.ExpectNoError(err, "devcontainer.json should be valid JSONC")
+
 			var config map[string]any
-			err = json.Unmarshal(data, &config)
+			err = json.Unmarshal(normalized, &config)
 			framework.ExpectNoError(err)
 
 			features, ok := config["features"].(map[string]any)

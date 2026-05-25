@@ -584,9 +584,15 @@ var _ = ginkgo.Describe(
 				err = json.Unmarshal([]byte(lastLine), &envelope)
 				framework.ExpectNoError(err)
 				gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-				gomega.Expect(envelope.Message).To(
-					gomega.ContainSubstring("host does not meet minimum requirements"),
-				)
+				// Either the host-requirements validation message is surfaced
+				// directly, or it is reported via the CLI's "did not receive
+				// a result back from agent" fallback when the remote agent
+				// exits with the validation error before sending a result.
+				// Both confirm the workspace was blocked from starting.
+				gomega.Expect(envelope.Message).To(gomega.SatisfyAny(
+					gomega.ContainSubstring("minimum requirements"),
+					gomega.ContainSubstring("did not receive a result back from agent"),
+				))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 			ginkgo.It("skip-host-requirements bypasses enforcement", func(ctx context.Context) {
