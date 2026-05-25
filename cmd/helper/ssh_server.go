@@ -97,6 +97,13 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Sweep auth-agent-conn-* directories left behind by predecessors that
+	// were killed by docker exec / proxy-chain teardown before any internal
+	// SSH cleanup could run. Liveness is decided via a per-directory flock
+	// the owning process holds for its lifetime; the kernel releases the
+	// flock on any process exit (including SIGKILL).
+	helperssh.SweepStaleAgentSockets()
+
 	// start the server
 	server, err := helperssh.NewServer(
 		cmd.Address,

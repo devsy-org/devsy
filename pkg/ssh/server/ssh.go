@@ -210,15 +210,12 @@ func NewServer(
 // even when the underlying transport is stuck (e.g. in stdio mode where EOF
 // on stdin can be delayed by the proxy chain).
 func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {
-	log.Debugf("ssh ConnectionClosingCallback fired")
 	v := ctx.Value(ctxKeyConnAgent)
 	if v == nil {
-		log.Debugf("ssh ConnectionClosingCallback: no intent on ctx")
 		return
 	}
 	intent, ok := v.(*connAgentIntent)
 	if !ok || intent == nil {
-		log.Debugf("ssh ConnectionClosingCallback: intent type assert failed")
 		return
 	}
 	intent.mu.Lock()
