@@ -225,40 +225,39 @@ test.describe
     test("should create Node.js workspace", async () => {
       await page.getByRole("button", { name: /create workspace/i }).click()
 
-      const sheet = page.locator('[role="dialog"]')
-      await sheet.waitFor({ timeout: 5000 })
+      const dialog = page.locator('[role="dialog"]').first()
+      await dialog.waitFor({ timeout: 5000 })
 
-      // Click Node.js template
-      await sheet.locator("button", { hasText: "Node.js" }).click()
+      // Step 1 — Provider: select docker, continue
+      await dialog.locator("button", { hasText: "docker" }).first().click()
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Verify source input is populated
-      const sourceInput = sheet.locator('input[placeholder*="github"]')
+      // Step 2 — Source: click Node.js template
+      await dialog.locator("button", { hasText: "Node.js" }).click()
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
       await expect(sourceInput).toHaveValue(
         "https://github.com/microsoft/vscode-remote-try-node",
         { timeout: 5000 },
       )
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Select IDE = None
-      await sheet.getByRole("button", { name: /select an ide/i }).click()
-      await page.locator('[role="option"]', { hasText: "None" }).click()
+      // Step 3 — IDE: default "None", continue
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Submit
-      await sheet.getByRole("button", { name: /create workspace/i }).click()
+      // Step 4 — Review: Launch
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Wait for output
-      await expect(sheet).toContainText("Output", { timeout: 15000 })
-      await expect(sheet).toContainText(/resolving|pulling|starting|ready/i, {
+      // Step 5 — Launch: wait for streaming output and success
+      await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
         timeout: 15000,
       })
-
-      // Wait for "Open Workspace" success button
-      await sheet
+      await dialog
         .getByRole("button", { name: /open workspace/i })
         .waitFor({ timeout: 15000 })
 
-      // Close the sheet
+      // Close the dialog
       await page.keyboard.press("Escape")
-      await sheet.waitFor({ state: "hidden", timeout: 5000 })
+      await dialog.waitFor({ state: "hidden", timeout: 5000 })
 
       // Wait for watcher to pick up the new workspace
       await page.waitForTimeout(4000)
@@ -360,34 +359,36 @@ test.describe
 
       await page.getByRole("button", { name: /create workspace/i }).click()
 
-      const sheet = page.locator('[role="dialog"]')
-      await sheet.waitFor({ timeout: 5000 })
+      const dialog = page.locator('[role="dialog"]').first()
+      await dialog.waitFor({ timeout: 5000 })
 
-      // Click Python template
-      await sheet.locator("button", { hasText: "Python" }).click()
+      // Step 1 — Provider: select docker, continue
+      await dialog.locator("button", { hasText: "docker" }).first().click()
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Verify source populated
-      const sourceInput = sheet.locator('input[placeholder*="github"]')
+      // Step 2 — Source: click Python template
+      await dialog.locator("button", { hasText: "Python" }).click()
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
       await expect(sourceInput).toHaveValue(
         "https://github.com/microsoft/vscode-remote-try-python",
         { timeout: 5000 },
       )
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Select IDE = None
-      await sheet.getByRole("button", { name: /select an ide/i }).click()
-      await page.locator('[role="option"]', { hasText: "None" }).click()
+      // Step 3 — IDE: default "None", continue
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Submit
-      await sheet.getByRole("button", { name: /create workspace/i }).click()
+      // Step 4 — Review: Launch
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Wait for success
-      await sheet
+      // Step 5 — Launch: wait for success
+      await dialog
         .getByRole("button", { name: /open workspace/i })
         .waitFor({ timeout: 15000 })
 
-      // Close sheet
+      // Close the dialog
       await page.keyboard.press("Escape")
-      await sheet.waitFor({ state: "hidden", timeout: 5000 })
+      await dialog.waitFor({ state: "hidden", timeout: 5000 })
 
       await page.waitForTimeout(4000)
     })
