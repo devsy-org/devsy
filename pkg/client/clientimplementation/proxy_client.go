@@ -89,13 +89,20 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 	})
 }
 
-// executeWithJSONLog runs a command with JSON log streaming.
+// executeWithJSONLog runs a command with JSON log streaming. After the
+// sub-process exits we close the pipe and block on the scanner goroutine
+// so every buffered log line is forwarded through zap before the caller
+// can observe completion. Without this drain, callers that propagate the
+// error and exit (e.g. cmd/root.go calls os.Exit on failure) race the
+// goroutine and can lose the tail of the sub-process stderr — which is
+// where the actionable error message usually lives.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
-	writer, _ := log.PipeJSONStream()
-	defer func() { _ = writer.Close() }()
-
+	writer, done := log.PipeJSONStream()
 	params.stderr = writer
-	return e.execute(ctx, params)
+	err := e.execute(ctx, params)
+	_ = writer.Close()
+	<-done
+	return err
 }
 
 func (s *proxyClient) Lock(ctx context.Context) error {

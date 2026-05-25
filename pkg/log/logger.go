@@ -127,7 +127,7 @@ func JSONError(cliErr *cliErrors.CLIError) {
 	} else if cliErr.Cause != "" {
 		msg = cliErr.Cause
 	}
-	sugar.Load().Desugar().Error(msg, zap.Any("cliError", cliErr))
+	sugar.Load().Desugar().Error(msg, zap.Object("cliError", cliErr))
 }
 
 func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }

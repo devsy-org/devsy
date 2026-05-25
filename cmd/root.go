@@ -28,7 +28,17 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const logOutputJSON = "json"
+const (
+	logOutputJSON   = "json"
+	logOutputLogfmt = "logfmt"
+)
+
+// isMachineLogFormat reports whether the configured --log-output mode produces
+// a structured, machine-parseable stream (json or logfmt). Callers use this to
+// suppress decorative human-readable affordances that would corrupt the stream.
+func isMachineLogFormat(format string) bool {
+	return format == logOutputJSON || format == logOutputLogfmt
+}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -52,18 +62,20 @@ func Execute() {
 		}
 
 		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
-		if globalFlags.LogOutput == logOutputJSON {
-			log.JSONError(cliErr)
-		} else {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", cliErr.Message)
+		// Always emit the error through zap so the configured log encoder
+		// (json/logfmt/text) governs the wire format. JSONError preserves
+		// the full err.Error() chain in the top-level "msg" field and ships
+		// the structured CLIError under "cliError" for the desktop IPC.
+		log.JSONError(cliErr)
+		// In human-friendly text mode, follow up with hint/doc affordances
+		// that don't fit cleanly into the zap line. These extras are
+		// suppressed in machine-readable modes so log streams stay parseable.
+		if !isMachineLogFormat(globalFlags.LogOutput) {
 			if cliErr.Hint != "" {
 				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
 			}
 			if cliErr.DocURL != "" {
 				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-			}
-			if globalFlags.Debug && cliErr.Cause != "" {
-				fmt.Fprintf(os.Stderr, "\nOriginal error: %s\n", cliErr.Cause)
 			}
 		}
 		os.Exit(1)

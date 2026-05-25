@@ -11,7 +11,11 @@
 // desktop app and MUST NOT change without coordinated changes in both repos.
 package errors
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"go.uber.org/zap/zapcore"
+)
 
 // Code is the stable, machine-readable identifier for a class of CLI errors.
 // The string values are part of the IPC contract.
@@ -79,6 +83,31 @@ func (e *CLIError) MarshalJSON() ([]byte, error) {
 		Provider: e.Provider,
 		Cause:    e.Cause,
 	})
+}
+
+// MarshalLogObject teaches zap to encode a *CLIError as a structured JSON
+// object (instead of falling back to .Error()). Field names must stay in
+// lock-step with MarshalJSON and the IPC contract documented at the top of
+// this file.
+func (e *CLIError) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	if e == nil {
+		return nil
+	}
+	enc.AddString("code", string(e.Code))
+	enc.AddString("message", e.Message)
+	if e.Hint != "" {
+		enc.AddString("hint", e.Hint)
+	}
+	if e.DocURL != "" {
+		enc.AddString("docUrl", e.DocURL)
+	}
+	if e.Provider != "" {
+		enc.AddString("provider", e.Provider)
+	}
+	if e.Cause != "" {
+		enc.AddString("cause", e.Cause)
+	}
+	return nil
 }
 
 // ClassifyContext carries optional information that helps Classify produce a
