@@ -205,13 +205,21 @@ func WriteTunnelState(contextName, workspaceID string, state TunnelState) error 
 //
 // If a tunnel is already running for this workspace, no new process is
 // spawned; the existing tunnel is reused.
+// browserIDEInvocation bundles the per-call IDE-specific knobs that aren't
+// part of the lower-level tunnel parameters.
+type browserIDEInvocation struct {
+	Label       string // e.g. "vscode", "jupyter", "rstudio" — used in user-facing log lines
+	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
+}
+
 func startDetachedBrowserTunnel(
 	ctx context.Context,
 	params IdeParams,
 	tunnelParams tunnel.BrowserTunnelParams,
-	label string,
-	openBrowser bool,
+	inv browserIDEInvocation,
 ) error {
+	label := inv.Label
+	openBrowser := inv.OpenBrowser
 	if _, ok := params.Client.(client2.DaemonClient); ok {
 		return tunnel.StartBrowserTunnel(ctx, tunnelParams)
 	}

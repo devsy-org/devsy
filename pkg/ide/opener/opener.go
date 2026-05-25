@@ -291,7 +291,7 @@ func openJupyterBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, "jupyter", openBrowser)
+	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser})
 }
 
 func openRStudioBrowser(
@@ -327,7 +327,7 @@ func openRStudioBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, "rstudio", openBrowser)
+	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser})
 }
 
 func openVSCodeBrowser(
@@ -369,7 +369,7 @@ func openVSCodeBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	}, "vscode", openBrowser)
+	}, browserIDEInvocation{Label: "vscode", OpenBrowser: openBrowser})
 }
 
 func startFleet(ctx context.Context, client client2.BaseWorkspaceClient) error {
