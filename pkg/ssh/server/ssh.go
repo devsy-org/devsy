@@ -209,8 +209,10 @@ func NewServer(
 // chain, which is critical in stdio mode where the listener's Close hook
 // calls os.Exit and ctx.Done()-driven goroutines never get to run.
 func cleanupAgentOnConnComplete(sc *gossh.ServerConn, _ error) {
+	log.Debugf("ssh ConnectionCompleteCallback fired (sc=%p)", sc)
 	v, ok := connAgentIntents.LoadAndDelete(sc)
 	if !ok {
+		log.Debugf("ssh ConnectionCompleteCallback: no intent registered for sc=%p", sc)
 		return
 	}
 	intent, ok := v.(*connAgentIntent)
@@ -220,11 +222,13 @@ func cleanupAgentOnConnComplete(sc *gossh.ServerConn, _ error) {
 	intent.mu.Lock()
 	state := intent.state
 	intent.mu.Unlock()
-	if state != nil {
-		sock := state.sockPath()
-		state.close()
-		log.Debugf("ssh conn close: connID=%s agent_sock=%s cleaned up", intent.connID, sock)
+	if state == nil {
+		log.Debugf("ssh conn close: connID=%s (no listener allocated)", intent.connID)
+		return
 	}
+	sock := state.sockPath()
+	state.close()
+	log.Debugf("ssh conn close: connID=%s agent_sock=%s cleaned up", intent.connID, sock)
 }
 
 // newConnID returns a short hex identifier unique to the connection.
