@@ -134,10 +134,10 @@ func NewServer(
 			Addr: addr,
 			// Keep-alive at the connection level (devsy-org/ssh v1.2.0+):
 			// detects dead peers in stdio mode where EOF on stdin can be
-			// delayed indefinitely by the proxy chain. After
-			// ClientAliveCountMax unanswered intervals the connection is
-			// closed, HandleConn unwinds, and ConnectionClosingCallback runs.
-			ClientAliveInterval: 15 * time.Second,
+			// delayed indefinitely by the proxy chain. 5s × 2 = ~10s
+			// detection so per-connection agent socket dirs are cleaned up
+			// well within typical test/health-check polling windows.
+			ClientAliveInterval: 5 * time.Second,
 			ClientAliveCountMax: 2,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
 				log.Debugf("Accepted forward: %s:%d", dhost, dport)
@@ -210,12 +210,15 @@ func NewServer(
 // even when the underlying transport is stuck (e.g. in stdio mode where EOF
 // on stdin can be delayed by the proxy chain).
 func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {
+	log.Debugf("ssh ConnectionClosingCallback fired")
 	v := ctx.Value(ctxKeyConnAgent)
 	if v == nil {
+		log.Debugf("ssh ConnectionClosingCallback: no intent on ctx")
 		return
 	}
 	intent, ok := v.(*connAgentIntent)
 	if !ok || intent == nil {
+		log.Debugf("ssh ConnectionClosingCallback: intent type assert failed")
 		return
 	}
 	intent.mu.Lock()
