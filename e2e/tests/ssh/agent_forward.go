@@ -248,9 +248,12 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// New, separate connection — the old path must be gone.
+				// New, separate connection — the old path must be gone. The
+				// cleanup hop traverses the devsy proxy → in-container SSH
+				// server's ctx.Done(), which can take several seconds under
+				// CI load, so poll with a generous timeout.
 				waitErr := framework.WaitForConditionShort(
-					5*time.Second, 250*time.Millisecond,
+					30*time.Second, 500*time.Millisecond,
 					func() (bool, error) {
 						// Use a single devsy ssh command on a fresh connection
 						// (devsy ssh, not the just-closed ControlMaster) to
