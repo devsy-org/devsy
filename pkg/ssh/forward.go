@@ -44,6 +44,33 @@ func PortForward(
 	)
 }
 
+// ForwardOpts groups the parameters for PortForwardWithListener so callers
+// don't have to thread a long positional argument list.
+type ForwardOpts struct {
+	Listener         net.Listener
+	RemoteNetwork    string
+	RemoteAddr       string
+	ExitAfterTimeout time.Duration
+}
+
+// PortForwardWithListener is like PortForward, but uses a caller-supplied
+// listener instead of binding one internally. This lets the caller reserve
+// the local port before forking, eliminating a TOCTOU race between port
+// probe and net.Listen in a detached child.
+func PortForwardWithListener(
+	ctx context.Context,
+	client *ssh.Client,
+	opts ForwardOpts,
+) error {
+	defer func() { _ = opts.Listener.Close() }()
+
+	return portForwarding(
+		ctx, client, opts.Listener,
+		opts.Listener.Addr().String(), opts.RemoteNetwork, opts.RemoteAddr,
+		opts.ExitAfterTimeout, forward,
+	)
+}
+
 func ReversePortForward(
 	ctx context.Context,
 	client *ssh.Client,

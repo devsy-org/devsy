@@ -9,6 +9,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -135,6 +136,25 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	devsyConfig *config.Config,
 	args []string,
 ) (string, error) {
+	// Best-effort: terminate any detached browser tunnel helper so its process
+	// (and the host ports it holds) doesn't outlive the workspace directory.
+	// If the workspace can't be resolved (already gone with --ignore-not-found,
+	// for example) we just skip the kill — workspace.Delete is the source of
+	// truth for whether the delete succeeds.
+	client, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+	})
+	if err == nil {
+		opener.KillBrowserTunnel(client.Context(), client.Workspace())
+	} else {
+		log.Warnf("resolve workspace for tunnel cleanup failed: %v", err)
+		if len(args) > 0 {
+			opener.KillBrowserTunnel(cmd.Context, args[0])
+		}
+	}
+
 	return workspace.Delete(ctx, workspace.DeleteOptions{
 		DevsyConfig:    devsyConfig,
 		Args:           args,

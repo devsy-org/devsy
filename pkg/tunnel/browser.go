@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"time"
@@ -29,6 +30,11 @@ type BrowserTunnelParams struct {
 	ExtraPorts       []string
 	AuthSockID       string
 	GitSSHSigningKey string
+
+	// ExtraListeners holds pre-bound listeners for ExtraPorts entries,
+	// keyed by host addr (e.g. "localhost:10800"). Set by the parent so the
+	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
+	ExtraListeners map[string]net.Listener
 
 	// DaemonStartFunc is called when the client is a DaemonClient.
 	// If nil, the SSH tunnel path is always used.
@@ -104,6 +110,7 @@ func runBrowserTunnelServices(
 				config.ContextOptionGitSSHSignatureForwarding,
 			) == config.BoolTrue,
 			GitSSHSigningKey: p.GitSSHSigningKey,
+			ExtraListeners:   p.ExtraListeners,
 		},
 	)
 	if err != nil {

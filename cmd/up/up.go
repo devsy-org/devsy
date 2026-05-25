@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -115,14 +116,17 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
 	}
 
-	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
-		if emitJSON {
-			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
+	// Browser-based IDEs (VSCode Browser, Jupyter, RStudio) open a tunnel that
+	// blocks for the lifetime of the IDE session. Emit the success envelope
+	// before openIDE so downstream consumers (e.g. the desktop wizard) can
+	// detect that the workspace is ready instead of waiting forever.
+	ideName := client.WorkspaceConfig().IDE.Name
+	if cmd.IDE != "" {
+		ideName = cmd.IDE
 	}
+	browserIDE := cmd.OpenIDE && opener.IsBrowserIDE(ideName)
 
-	if emitJSON {
+	writeResultEnvelope := func() {
 		containerID := ""
 		var warnings []string
 		if wctx.result != nil {
@@ -132,6 +136,21 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 			warnings = wctx.result.HostWarnings
 		}
 		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
+	}
+
+	if emitJSON && browserIDE {
+		writeResultEnvelope()
+	}
+
+	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
+		if emitJSON && !browserIDE {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
+		return err
+	}
+
+	if emitJSON && !browserIDE {
+		writeResultEnvelope()
 	}
 
 	if wctx.tunnelPort > 0 {
@@ -202,6 +221,12 @@ func (cmd *UpCmd) resolveDotfilesOptions(devsyConfig *config.Config) {
 func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 	if cmd.Reset {
 		cmd.Recreate = true
+	}
+
+	if cmd.Recreate {
+		// Kill any existing detached browser tunnel before recreating the
+		// container so the new tunnel can't race with a now-broken one.
+		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 	}
 
 	targetIDE := client.WorkspaceConfig().IDE.Name
