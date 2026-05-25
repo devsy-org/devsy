@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -16,8 +17,6 @@ import (
 // StatusCmd holds the configuration.
 type StatusCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 // NewStatusCmd creates a new status command.
@@ -33,7 +32,6 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	statusCmd.Flags().StringVar(&cmd.Output, "output", "plain", "Output format: plain or json")
 	return statusCmd
 }
 
@@ -55,8 +53,12 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		switch machineStatus {
 		case client.StatusStopped:
 			log.Infof(
@@ -77,7 +79,7 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 		default:
 			log.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
 		}
-	case "json":
+	case output.ModeJSON:
 		out, err := json.Marshal(struct {
 			ID       string `json:"id,omitempty"`
 			Context  string `json:"context,omitempty"`
@@ -94,11 +96,6 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 		}
 
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

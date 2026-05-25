@@ -35,7 +35,7 @@ describe("CliRunner", () => {
       expect(result).toEqual([{ id: "ws-1" }])
       expect(mockExecFile).toHaveBeenCalledWith(
         "/usr/local/bin/devsy",
-        ["list", "--skip-pro", "--output", "json"],
+        ["list", "--skip-pro", "--result-format", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )
@@ -92,7 +92,7 @@ describe("CliRunner", () => {
       await jsCli.run(["list"])
       expect(mockExecFile).toHaveBeenCalledWith(
         "node",
-        ["/tmp/mock.cjs", "list", "--output", "json"],
+        ["/tmp/mock.cjs", "list", "--result-format", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )

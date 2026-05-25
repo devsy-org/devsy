@@ -7,6 +7,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -17,7 +18,6 @@ import (
 type InfoCmd struct {
 	*flags.GlobalFlags
 
-	Output           string
 	ShowTags         bool
 	ShowDependencies bool
 }
@@ -55,7 +55,6 @@ to display metadata.`,
 		},
 	}
 
-	infoCmd.Flags().StringVar(&cmd.Output, "output", "text", "Output format (text or json)")
 	infoCmd.Flags().BoolVar(
 		&cmd.ShowTags, "show-tags", false, "List available tags from the registry",
 	)
@@ -70,10 +69,6 @@ to display metadata.`,
 }
 
 func (cmd *InfoCmd) Run(featureID string) error {
-	if err := validateOutputFormat(cmd.Output); err != nil {
-		return err
-	}
-
 	ref, err := name.ParseReference(featureID)
 	if err != nil {
 		return fmt.Errorf("invalid feature reference %q: %w", featureID, err)
@@ -92,10 +87,17 @@ func (cmd *InfoCmd) Run(featureID string) error {
 		info.Tags = tags
 	}
 
-	if cmd.Output == outputJSON {
-		return writeJSON(os.Stdout, info)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
 	}
-	return cmd.printText(info)
+	switch mode {
+	case output.ModeJSON:
+		return writeJSON(os.Stdout, info)
+	case output.ModePlain:
+		return cmd.printText(info)
+	}
+	return nil
 }
 
 func (cmd *InfoCmd) fetchInfo(

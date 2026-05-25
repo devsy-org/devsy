@@ -132,6 +132,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+		return err
+	}
+
 	if cmd.ContainerID != "" {
 		return cmd.runWithContainerID(ctx, args)
 	}
@@ -173,7 +177,11 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
 	envMap := buildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
-	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
 		target:  target,
@@ -228,7 +236,11 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 
 	workdir := containerDetails.Config.WorkingDir
 
-	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
 		target:  target,

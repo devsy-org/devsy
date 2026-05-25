@@ -69,7 +69,11 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 ) error {
 	cmd.prepareWorkspace(client)
 
-	emitJSON := output.ResolveMode(cmd.ResultFormat) == output.ModeJSON
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {

@@ -74,7 +74,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyIDEUse(ctx, ideIntelliJ, "--context", contextB)
 				framework.ExpectNoError(err)
 
-				output, err := f.DevsyIDEList(ctx, "--output", "json")
+				output, err := f.DevsyIDEList(ctx, "--result-format", "json")
 				framework.ExpectNoError(err)
 
 				var ides []map[string]any
@@ -90,7 +90,7 @@ var _ = ginkgo.Describe(
 					}
 				}
 
-				output, err = f.DevsyIDEList(ctx, "--context", contextB, "--output", "json")
+				output, err = f.DevsyIDEList(ctx, "--context", contextB, "--result-format", "json")
 				framework.ExpectNoError(err)
 
 				err = json.Unmarshal([]byte(output), &ides)
@@ -113,7 +113,7 @@ var _ = ginkgo.Describe(
 
 				ginkgo.GinkgoT().Setenv("DEVSY_CONTEXT", contextB)
 
-				output, err = f.DevsyIDEList(ctx, "--output", "json")
+				output, err = f.DevsyIDEList(ctx, "--result-format", "json")
 				framework.ExpectNoError(err)
 
 				err = json.Unmarshal([]byte(output), &ides)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
@@ -18,8 +19,6 @@ import (
 // ListCmd holds the configuration.
 type ListCmd struct {
 	*flags.GlobalFlags
-
-	Output string
 }
 
 // NewListCmd creates a new list command.
@@ -36,8 +35,6 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().
-		StringVar(&cmd.Output, "output", "plain", "The output format to use. Can be json or plain")
 	return listCmd
 }
 
@@ -58,8 +55,12 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	switch cmd.Output {
-	case "plain":
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	switch mode {
+	case output.ModePlain:
 		tableEntries := [][]string{}
 		for _, entry := range entries {
 			machineConfig, err := provider.LoadMachineConfig(
@@ -85,7 +86,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			"Provider",
 			"Age",
 		}, tableEntries)
-	case "json":
+	case output.ModeJSON:
 		tableEntries := []*provider.Machine{}
 		for _, entry := range entries {
 			machineConfig, err := provider.LoadMachineConfig(
@@ -106,11 +107,6 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 			return err
 		}
 		fmt.Print(string(out))
-	default:
-		return fmt.Errorf(
-			"unexpected output format, choose either json or plain. Got %s",
-			cmd.Output,
-		)
 	}
 
 	return nil

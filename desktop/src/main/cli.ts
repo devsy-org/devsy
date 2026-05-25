@@ -71,7 +71,7 @@ export class CliRunner {
   async run<T>(args: string[]): Promise<T> {
     await this.acquire()
     try {
-      const fullArgs = [...this.prefixArgs, ...args, "--output", "json"]
+      const fullArgs = [...this.prefixArgs, ...args, "--result-format", "json"]
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
