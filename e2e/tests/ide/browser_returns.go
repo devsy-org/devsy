@@ -46,11 +46,19 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				// Run up with a browser IDE. With the old behavior this would block
-				// indefinitely; the SpecTimeout would fire and the test would fail.
-				// With the new behavior the CLI exits once the detached helper is
-				// spawned and the success envelope is written.
-				err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=openvscode")
+				// Run up with a browser IDE. --ide-option OPEN=false suppresses the
+				// host browser launch (we'd have nothing to display it on in CI) but
+				// still runs openIDE → startDetachedBrowserTunnel → writes tunnel.json.
+				// --open-ide=false would skip openIDE entirely, which is not what we
+				// want to exercise. With the old blocking behavior this would still
+				// hang past SpecTimeout; with the new behavior the CLI returns.
+				err = f.DevsyUpWithIDE(
+					ctx,
+					tempDir,
+					"--ide=openvscode",
+					"--ide-option",
+					"OPEN=false",
+				)
 				framework.ExpectNoError(err)
 
 				// Resolve the workspace and read its tunnel.json.

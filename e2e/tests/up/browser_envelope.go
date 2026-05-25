@@ -45,7 +45,7 @@ var _ = ginkgo.Describe(
 					ctx,
 					tempDir,
 					"--ide=openvscode",
-					"--open-ide=false",
+					"--ide-option", "OPEN=false",
 					"--result-format", "json",
 				)
 				framework.ExpectNoError(err)
