@@ -21,6 +21,7 @@ const (
 	flagForceCleanOutput = "--force-clean-output-folder"
 	flagOutput           = "--result-format"
 	outputJSON           = "json"
+	outputPlain          = "plain"
 	featureNameGo        = "go"
 	featureNameNode      = "node"
 	featureVersion100    = "1.0.0"
