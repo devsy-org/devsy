@@ -20,7 +20,7 @@ exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
 Devsy relies on an active SSH session to perform port forwarding to the local host. When running Devsy without an IDE, such as `--ide none`,
 an active SSH session needs to be open using `devsy ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
 
-### Structured CLI errors
+### Structured CLI errors {#structured-cli-errors}
 
 Devsy classifies common failures and prints a stable error `code` alongside a hint and documentation link. When running with `--result-format json` (or when invoked by Devsy Desktop), errors are emitted as a JSON object matching:
 
