@@ -248,32 +248,24 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// New, separate connection — the old path must be gone. The
-				// cleanup hop traverses the devsy proxy → in-container SSH
-				// server's ctx.Done(), which can take several seconds under
-				// CI load, so poll with a generous timeout.
-				waitErr := framework.WaitForConditionShort(
-					30*time.Second, 500*time.Millisecond,
-					func() (bool, error) {
-						// Use a single devsy ssh command on a fresh connection
-						// (devsy ssh, not the just-closed ControlMaster) to
-						// observe the now-cleaned-up filesystem.
-						out, sshErr := f.DevsySSH(
-							context.Background(),
-							tempDir,
-							"test -S "+sockPath+" && echo PRESENT || echo GONE",
-						)
-						if sshErr != nil {
-							return false, sshErr
-						}
-						return strings.Contains(out, "GONE"), nil
-					},
-				)
-				framework.ExpectNoError(
-					waitErr,
-					"socket %s must be cleaned up after connection close",
-					sockPath,
-				)
+				// The cleanup hop traverses the devsy proxy → in-container
+				// SSH server's ctx.Done(), which can take several seconds
+				// under CI load. Each devsy ssh observation runs on a fresh
+				// connection so the just-closed socket's filesystem state is
+				// always up-to-date.
+				gomega.Eventually(func() string {
+					out, _ := f.DevsySSH(
+						context.Background(),
+						tempDir,
+						"test -S "+sockPath+" && echo PRESENT || echo GONE",
+					)
+					return out
+				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
+					Should(
+						gomega.ContainSubstring("GONE"),
+						"socket %s must be cleaned up after connection close",
+						sockPath,
+					)
 			},
 		)
 
@@ -433,24 +425,18 @@ var _ = ginkgo.Describe(
 				// On a fresh devsy ssh connection, assert no auth-agent-conn-*
 				// directories remain. With lazy allocation, none are ever
 				// created; with the cleanup goroutine, any leftover is removed.
-				waitErr := framework.WaitForConditionShort(
-					5*time.Second, 250*time.Millisecond,
-					func() (bool, error) {
-						out, sshErr := f.DevsySSH(
-							context.Background(),
-							tempDir,
-							"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/auth-agent-conn-* 2>/dev/null | wc -l'",
-						)
-						if sshErr != nil {
-							return false, sshErr
-						}
-						return strings.Contains(strings.TrimSpace(out), "0"), nil
-					},
-				)
-				framework.ExpectNoError(
-					waitErr,
-					"no auth-agent-conn-* dir must remain after a no-forward connection closes",
-				)
+				gomega.Eventually(func() string {
+					out, _ := f.DevsySSH(
+						context.Background(),
+						tempDir,
+						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/auth-agent-conn-* 2>/dev/null | wc -l'",
+					)
+					return strings.TrimSpace(out)
+				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
+					Should(
+						gomega.Equal("0"),
+						"no auth-agent-conn-* dir must remain after a no-forward connection closes",
+					)
 			},
 		)
 

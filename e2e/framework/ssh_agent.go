@@ -246,29 +246,3 @@ func mergedEnv(extra map[string]string) []string {
 	}
 	return env
 }
-
-// WaitForConditionShort polls the given predicate until it returns true or
-// the timeout elapses. Returns nil on success, or the last error / a timeout
-// error.
-func WaitForConditionShort(
-	timeout time.Duration,
-	interval time.Duration,
-	fn func() (bool, error),
-) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for {
-		ok, err := fn()
-		if ok {
-			return nil
-		}
-		lastErr = err
-		if time.Now().After(deadline) {
-			if lastErr != nil {
-				return fmt.Errorf("timed out after %s: %w", timeout, lastErr)
-			}
-			return fmt.Errorf("timed out after %s", timeout)
-		}
-		time.Sleep(interval)
-	}
-}
