@@ -131,7 +131,7 @@ func SaveProviderConfig(context string, provider *ProviderConfig) error {
 	}
 
 	providerConfigFile := filepath.Join(providerDir, ProviderConfigFile)
-	err = os.WriteFile(providerConfigFile, providerDirBytes, 0o600)
+	err = WriteFileAtomic(providerConfigFile, providerDirBytes, 0o600)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func SaveProInstanceConfig(context string, proInstance *ProInstance) error {
 	}
 
 	proInstanceConfigFile := filepath.Join(providerDir, ProInstanceConfigFile)
-	err = os.WriteFile(proInstanceConfigFile, proInstanceBytes, 0o600)
+	err = WriteFileAtomic(proInstanceConfigFile, proInstanceBytes, 0o600)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 	}
 
 	workspaceResultFile := filepath.Join(workspaceDir, WorkspaceResultFile)
-	err = os.WriteFile(workspaceResultFile, resultBytes, 0o600)
+	err = WriteFileAtomic(workspaceResultFile, resultBytes, 0o600)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func SaveWorkspaceConfig(workspace *Workspace) error {
 
 	workspaceConfigFile := filepath.Join(workspaceDir, WorkspaceConfigFile)
 	// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.WriteFile(workspaceConfigFile, workspaceConfigBytes, 0o644)
+	err = WriteFileAtomic(workspaceConfigFile, workspaceConfigBytes, 0o644)
 	if err != nil {
 		return err
 	}
@@ -236,7 +236,7 @@ func SaveMachineConfig(machine *Machine) error {
 	}
 
 	machineConfigFile := filepath.Join(machineDir, MachineConfigFile)
-	err = os.WriteFile(machineConfigFile, machineConfigBytes, 0o600)
+	err = WriteFileAtomic(machineConfigFile, machineConfigBytes, 0o600)
 	if err != nil {
 		return err
 	}

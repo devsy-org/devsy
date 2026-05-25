@@ -30,6 +30,12 @@ var errProvideWorkspaceArg = errors.New(
 	"please provide a workspace name, e.g. 'devsy up ./my-folder', " +
 		"'devsy up github.com/my-org/my-repo' or 'devsy up ubuntu'")
 
+// ErrWorkspaceNotFound is returned by Get when the requested workspace is not
+// present in the local store or any configured provider. Callers should use
+// errors.Is to detect it; the wrapping message includes the args for context.
+// See pkg/exitcode.WorkspaceNotFound for the corresponding process exit code.
+var ErrWorkspaceNotFound = errors.New("workspace not found")
+
 // RemoteCreator defines the interface for clients that support remote workspace creation.
 // This interface is implemented by ProxyClient and DaemonClient to enable workspace
 // creation on remote platforms.
@@ -187,7 +193,7 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 		return nil, err
 	}
 	if workspace == nil {
-		return nil, fmt.Errorf("workspace not found for args: %v", opts.Args)
+		return nil, fmt.Errorf("%w for args: %v", ErrWorkspaceNotFound, opts.Args)
 	}
 
 	provider, workspace, machine, err := loadExistingWorkspace(

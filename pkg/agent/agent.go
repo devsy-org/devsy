@@ -402,7 +402,7 @@ func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo
 	}
 
 	// write workspace config
-	err = os.WriteFile(file, encoded, 0o600)
+	err = provider2.WriteFileAtomic(file, encoded, 0o600)
 	if err != nil {
 		return fmt.Errorf("write workspace config file: %w", err)
 	}

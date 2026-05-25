@@ -421,7 +421,12 @@ func (cmd *SSHCmd) reverseForwardPorts(
 				mapping.Container.Address,
 				timeout,
 			)
-			if !errors.Is(io.EOF, err) {
+			if errors.Is(err, devssh.ErrIdleTimeout) {
+				log.Infof("reverse port-forward %s exited due to idle timeout", portMapping)
+				errChan <- nil
+				return
+			}
+			if !errors.Is(err, io.EOF) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
 			}
 		}(portMapping)
@@ -464,7 +469,12 @@ func (cmd *SSHCmd) forwardPorts(
 				mapping.Container.Address,
 				timeout,
 			)
-			if !errors.Is(io.EOF, err) {
+			if errors.Is(err, devssh.ErrIdleTimeout) {
+				log.Infof("port-forward %s exited due to idle timeout", portMapping)
+				errChan <- nil
+				return
+			}
+			if !errors.Is(err, io.EOF) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
 			}
 		}(portMapping)

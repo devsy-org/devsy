@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -10,6 +11,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"golang.org/x/crypto/ssh"
 )
+
+// ErrIdleTimeout is returned by PortForward / ReversePortForward when the
+// forwarder shuts down because it stayed idle longer than the configured
+// EXIT_AFTER_TIMEOUT. Callers that want to treat idle-timeout as a clean exit
+// should check for this error with errors.Is.
+var ErrIdleTimeout = errors.New("port forward idle timeout")
 
 type ForwardingFunction func(
 	net.Conn,
@@ -64,27 +71,39 @@ func portForwarding(
 	exitAfterTimeout time.Duration,
 	forwardFn ForwardingFunction,
 ) error {
+	// Derive a child context so the idle-timeout handler can signal shutdown
+	// with a typed cause (ErrIdleTimeout) without killing the whole process.
+	fwdCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
 	done := make(chan struct{})
 	defer close(done)
 
 	go func() {
 		select {
 		case <-done:
-		case <-ctx.Done():
+		case <-fwdCtx.Done():
 			_ = listener.Close()
 		}
 	}()
 
-	counter := newConnectionCounter(ctx, exitAfterTimeout, func() {
-		log.Fatal(
-			"Stopping devsy up, because it stayed idle for a while. " +
+	counter := newConnectionCounter(fwdCtx, exitAfterTimeout, func() {
+		log.Infof(
+			"Stopping port-forward on %s: idle for a while. "+
 				"You can disable this via 'devsy context set-options -o EXIT_AFTER_TIMEOUT=false'",
+			srcAddr,
 		)
+		cancel(ErrIdleTimeout)
 	}, srcAddr)
 	for {
 		// waiting for a new connection
 		connection, err := listener.Accept()
 		if err != nil {
+			// If shutdown was caused by the idle timeout, surface that
+			// typed error so callers can choose to treat it as a clean exit.
+			if cause := context.Cause(fwdCtx); errors.Is(cause, ErrIdleTimeout) {
+				return ErrIdleTimeout
+			}
 			return err
 		}
 

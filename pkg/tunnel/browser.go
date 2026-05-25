@@ -2,16 +2,20 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
@@ -130,43 +134,83 @@ func SetupBackhaul(
 		remoteUser = "root"
 	}
 
-	//nolint:gosec // execPath is the current binary, arguments are controlled
-	backhaulCmd := exec.CommandContext(ctx,
-		execPath,
-		"ssh",
-		"--agent-forwarding=true",
-		fmt.Sprintf("--reuse-ssh-auth-sock=%s", authSockID),
-		"--start-services=false",
-		"--user",
-		remoteUser,
-		"--context",
-		client.Context(),
-		client.Workspace(),
-		"--log-output=raw",
-		"--command",
-		"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
-	)
-
-	if log.DebugEnabled() {
-		backhaulCmd.Args = append(backhaulCmd.Args, "--debug")
-	}
-
 	log.Info("Setting up backhaul SSH connection")
 
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	backhaulCmd.Stdout = writer
-	backhaulCmd.Stderr = writer
-
-	err = backhaulCmd.Run()
-	if err != nil {
-		return err
+	buildCmd := func() *exec.Cmd {
+		//nolint:gosec // execPath is the current binary, arguments are controlled
+		cmd := exec.CommandContext(ctx,
+			execPath,
+			"ssh",
+			"--agent-forwarding=true",
+			fmt.Sprintf("--reuse-ssh-auth-sock=%s", authSockID),
+			"--start-services=false",
+			"--user",
+			remoteUser,
+			"--context",
+			client.Context(),
+			client.Workspace(),
+			"--log-output=raw",
+			"--command",
+			"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
+		)
+		if log.DebugEnabled() {
+			cmd.Args = append(cmd.Args, "--debug")
+		}
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		return cmd
 	}
 
-	log.Infof("Done setting up backhaul")
+	// 5 steps × 200ms ≈ 1s covers the workspace.json atomic-rename window
+	// observed during a concurrent `agent workspace up` rewrite.
+	backoff := wait.Backoff{
+		Duration: 200 * time.Millisecond,
+		Factor:   1.0,
+		Steps:    5,
+	}
 
-	return nil
+	var lastErr error
+	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
+		cmd := buildCmd()
+		lastErr = cmd.Run()
+		if lastErr == nil {
+			return true, nil
+		}
+		if !isTransientBackhaulErr(lastErr) {
+			return false, lastErr
+		}
+		return false, nil
+	})
+	if err == nil {
+		log.Infof("Done setting up backhaul")
+		return nil
+	}
+	if wait.Interrupted(err) {
+		// Either retries exhausted or ctx cancelled; surface the underlying
+		// subprocess error if we have one, else the wait error.
+		if lastErr != nil && !errors.Is(err, context.Canceled) &&
+			!errors.Is(err, context.DeadlineExceeded) {
+			return lastErr
+		}
+	}
+	return err
+}
+
+// isTransientBackhaulErr returns true when the `devsy ssh` subprocess exited
+// with exitcode.WorkspaceNotFound, indicating the workspace registration has
+// not yet propagated (a race with concurrent workspace.json writers). The
+// exit-code contract is set in cmd/root.go and the constant lives in
+// pkg/exitcode; using it here keeps this decision typed rather than relying
+// on stderr substring matching.
+func isTransientBackhaulErr(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	return exitErr.ExitCode() == exitcode.WorkspaceNotFound
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
