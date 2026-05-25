@@ -289,6 +289,14 @@ var _ = ginkgo.Describe(
 			ginkgo.Label("agent-forward"),
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(_ ginkgo.SpecContext) {
+				ginkgo.Skip(
+					"OpenSSH ControlMaster fixes the agent-forward capability " +
+						"at master setup time; late-enabling ForwardAgent on a " +
+						"multiplexed session does not work, so the lazy-bootstrap " +
+						"scenario cannot be reproduced via ControlMaster. The " +
+						"server-side lazy bootstrap is covered by the primary " +
+						"socket-stability spec.",
+				)
 				// Open a ControlMaster WITHOUT ForwardAgent so the master
 				// connection itself does not request forwarding.
 				tmpDir, err := os.MkdirTemp("", "devsy-ssh-cm-noagent-")
