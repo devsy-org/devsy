@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
@@ -129,6 +132,14 @@ func ListLocalWorkspaces(
 		}
 
 		workspaceConfig, err := providerpkg.LoadWorkspaceConfig(contextName, entry.Name())
+		// Workspace config writes are atomic via tempfile+rename (see provider.WriteFileAtomic),
+		// but a reader can briefly race the rename on some filesystems and observe a torn read.
+		// One short retry clears that window without masking persistently corrupt files.
+		if err != nil && isTransientLoadErr(err) {
+			log.Debugf("transient load error for workspace=%s, retrying: %v", entry.Name(), err)
+			time.Sleep(50 * time.Millisecond)
+			workspaceConfig, err = providerpkg.LoadWorkspaceConfig(contextName, entry.Name())
+		}
 		if err != nil {
 			log.Warnf("could not load workspace: workspace=%s, error=%v", entry.Name(), err)
 			continue
@@ -385,6 +396,20 @@ func listInstancesDaemonProvider(
 	owner platform.OwnerFilter,
 ) ([]managementv1.DevsyWorkspaceInstance, error) {
 	return daemon.NewLocalClient(provider).ListWorkspaces(ctx, owner)
+}
+
+// isTransientLoadErr returns true for the two error shapes a reader observes when
+// it raced a writer mid-write: a truncated tail (io.ErrUnexpectedEOF) or invalid
+// JSON syntax (*json.SyntaxError).
+func isTransientLoadErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var syntaxErr *json.SyntaxError
+	return errors.As(err, &syntaxErr)
 }
 
 func checkInstanceExists(ctx context.Context, workspace *providerpkg.Workspace) bool {

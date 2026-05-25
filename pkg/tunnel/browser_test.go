@@ -50,3 +50,40 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestIsTransientBackhaulErr(t *testing.T) {
+	tests := []struct {
+		name     string
+		stderr   string
+		expected bool
+	}{
+		{name: "empty", stderr: "", expected: false},
+		{
+			name:     "workspace not found exact",
+			stderr:   "workspace not found for args: [rust]",
+			expected: true,
+		},
+		{
+			name:     "unexpected end of JSON input",
+			stderr:   "Error: unexpected end of JSON input\n",
+			expected: true,
+		},
+		{name: "unrelated error", stderr: "some unrelated error", expected: false},
+		{
+			name:     "embedded in longer blob",
+			stderr:   "time=... level=ERROR msg=\"setup failed\" err=\"workspace not found for args: [go]\"\nexit status 1\n",
+			expected: true,
+		},
+		{
+			name:     "upper-case variant is case-sensitive",
+			stderr:   "Workspace Not Found For Args",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isTransientBackhaulErr(tt.stderr))
+		})
+	}
+}
