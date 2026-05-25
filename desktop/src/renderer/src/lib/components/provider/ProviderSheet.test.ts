@@ -23,8 +23,8 @@ vi.mock("$lib/ipc/commands.js", () => ({
   providerRename: (...args: unknown[]) => providerRename(...args),
 }))
 
-vi.mock("$lib/stores/providers.js", () => {
-  const { writable } = require("svelte/store")
+vi.mock("$lib/stores/providers.js", async () => {
+  const { writable } = await import("svelte/store")
   return { providers: writable([]) }
 })
 
