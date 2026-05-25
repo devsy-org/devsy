@@ -18,7 +18,15 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const osWindows = "windows"
+const (
+	osWindows = "windows"
+
+	envSSHAuthSock = "SSH_AUTH_SOCK"
+
+	sshOptStrictHostKeyCheckingNo = "StrictHostKeyChecking=no"
+	sshOptUserKnownHostsFileNull  = "UserKnownHostsFile=/dev/null"
+	sshOptForwardAgentNo          = "ForwardAgent=no"
+)
 
 var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Ordered, func() {
 	var initialDir string

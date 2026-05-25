@@ -94,12 +94,12 @@ var _ = ginkgo.Describe(
 				controlPath, closeCM, err := framework.OpenSSHControlMaster(
 					ginkgo.GinkgoT(),
 					host,
-					map[string]string{"SSH_AUTH_SOCK": authSock},
+					map[string]string{envSSHAuthSock: authSock},
 				)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(closeCM)
 
-				env := map[string]string{"SSH_AUTH_SOCK": authSock}
+				env := map[string]string{envSSHAuthSock: authSock}
 
 				// Session A: capture $SSH_AUTH_SOCK inside the container and
 				// verify the forwarded key is reachable.
@@ -168,7 +168,7 @@ var _ = ginkgo.Describe(
 			"each connection gets its own socket",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(_ ginkgo.SpecContext) {
-				env := map[string]string{"SSH_AUTH_SOCK": authSock}
+				env := map[string]string{envSSHAuthSock: authSock}
 
 				cp1, close1, err := framework.OpenSSHControlMaster(ginkgo.GinkgoT(), host, env)
 				framework.ExpectNoError(err)
@@ -221,7 +221,7 @@ var _ = ginkgo.Describe(
 			"socket directory is cleaned up after connection close",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(_ ginkgo.SpecContext) {
-				env := map[string]string{"SSH_AUTH_SOCK": authSock}
+				env := map[string]string{envSSHAuthSock: authSock}
 
 				cp, closeCM, err := framework.OpenSSHControlMaster(ginkgo.GinkgoT(), host, env)
 				framework.ExpectNoError(err)
@@ -307,12 +307,12 @@ var _ = ginkgo.Describe(
 				})
 
 				startArgs := []string{
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
+					"-o", sshOptStrictHostKeyCheckingNo,
+					"-o", sshOptUserKnownHostsFileNull,
 					"-o", "ControlMaster=yes",
 					"-o", "ControlPath=" + controlPath,
 					"-o", "ControlPersist=120",
-					"-o", "ForwardAgent=no",
+					"-o", sshOptForwardAgentNo,
 					"-N", "-f",
 					host,
 				}
@@ -330,9 +330,9 @@ var _ = ginkgo.Describe(
 				// SSH_AUTH_SOCK should be empty inside the container.
 				noAgentArgs := []string{
 					"-o", "ControlPath=" + controlPath,
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
-					"-o", "ForwardAgent=no",
+					"-o", sshOptStrictHostKeyCheckingNo,
+					"-o", sshOptUserKnownHostsFileNull,
+					"-o", sshOptForwardAgentNo,
 					host, "--",
 					"sh", "-c", "printf %s \"${SSH_AUTH_SOCK:-}\"",
 				}
@@ -351,8 +351,8 @@ var _ = ginkgo.Describe(
 				// lazily on this first agent-requesting session.
 				withAgentArgs := []string{
 					"-o", "ControlPath=" + controlPath,
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
+					"-o", sshOptStrictHostKeyCheckingNo,
+					"-o", sshOptUserKnownHostsFileNull,
 					"-o", "ForwardAgent=yes",
 					host, "--",
 					"ssh-add", "-L",
@@ -383,12 +383,12 @@ var _ = ginkgo.Describe(
 				})
 
 				startArgs := []string{
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
+					"-o", sshOptStrictHostKeyCheckingNo,
+					"-o", sshOptUserKnownHostsFileNull,
 					"-o", "ControlMaster=yes",
 					"-o", "ControlPath=" + controlPath,
 					"-o", "ControlPersist=120",
-					"-o", "ForwardAgent=no",
+					"-o", sshOptForwardAgentNo,
 					"-N", "-f",
 					host,
 				}
@@ -405,9 +405,9 @@ var _ = ginkgo.Describe(
 				// Run a trivial command without requesting forwarding.
 				trivialArgs := []string{
 					"-o", "ControlPath=" + controlPath,
-					"-o", "StrictHostKeyChecking=no",
-					"-o", "UserKnownHostsFile=/dev/null",
-					"-o", "ForwardAgent=no",
+					"-o", sshOptStrictHostKeyCheckingNo,
+					"-o", sshOptUserKnownHostsFileNull,
+					"-o", sshOptForwardAgentNo,
 					host, "--",
 					"true",
 				}
@@ -456,12 +456,12 @@ var _ = ginkgo.Describe(
 				controlPath, closeCM, err := framework.OpenSSHControlMaster(
 					ginkgo.GinkgoT(),
 					host,
-					map[string]string{"SSH_AUTH_SOCK": authSock},
+					map[string]string{envSSHAuthSock: authSock},
 				)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(closeCM)
 
-				env := map[string]string{"SSH_AUTH_SOCK": authSock}
+				env := map[string]string{envSSHAuthSock: authSock}
 
 				const n = 4
 				var wg sync.WaitGroup
