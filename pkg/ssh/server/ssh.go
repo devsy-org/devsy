@@ -139,6 +139,13 @@ func NewServer(
 		currentUser: currentUser.Username,
 		sshServer: ssh.Server{
 			Addr: addr,
+			// ClientAliveInterval + ClientAliveCountMax give the server a way
+			// to notice a dead peer in stdio mode, where EOF on stdin can be
+			// delayed indefinitely by the proxy chain. With these set, the
+			// gossh connection eventually fails, HandleConn returns, and the
+			// per-connection agent state can be torn down.
+			ClientAliveInterval: 5 * time.Second,
+			ClientAliveCountMax: 2,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
 				log.Debugf("Accepted forward: %s:%d", dhost, dport)
 				return true
@@ -303,6 +310,12 @@ func (s *server) handler(sess ssh.Session) {
 			if sc, ok := sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn); ok &&
 				sc != nil {
 				connAgentIntents.LoadOrStore(sc, intent)
+				log.Debugf("ssh intent registered: connID=%s sc=%p", intent.connID, sc)
+			} else {
+				log.Debugf(
+					"ssh intent NOT registered (missing gossh.ServerConn): connID=%s",
+					intent.connID,
+				)
 			}
 			state.startForwarding(sess)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))
