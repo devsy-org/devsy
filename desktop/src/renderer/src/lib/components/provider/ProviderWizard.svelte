@@ -12,6 +12,8 @@ import { Progress } from "$lib/components/ui/progress/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import ProviderIcon from "./ProviderIcon.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
+import ErrorCard from "$lib/components/ErrorCard.svelte"
+import type { CLIError } from "$shared/cli-error.js"
 import {
   providerAdd,
   providerInitStreaming,
@@ -78,7 +80,8 @@ let saving = $state(false)
 let initCommandId = $state<string | null>(null)
 let initLines = $state<string[]>([])
 let initRunning = $state(false)
-let initError = $state("")
+let initError = $state<CLIError | null>(null)
+let initStartError = $state("")
 
 // Event listener cleanup
 let unlisten: UnlistenFn | null = null
@@ -132,7 +135,8 @@ function reset() {
   initCommandId = null
   initLines = []
   initRunning = false
-  initError = ""
+  initError = null
+  initStartError = ""
 }
 
 $effect(() => {
@@ -155,7 +159,11 @@ onMount(async () => {
         if (isCommandSuccess(progress.message)) {
           refreshAndComplete()
         } else {
-          initError = "Initialization failed. You can retry or skip this step."
+          initError =
+            progress.cliError ?? {
+              code: "UNKNOWN",
+              message: "Provider initialization failed.",
+            }
         }
       }
     }
@@ -262,13 +270,14 @@ async function handleConfigure() {
 
 async function startInit() {
   initRunning = true
-  initError = ""
+  initError = null
+  initStartError = ""
   initLines = []
   try {
     initCommandId = await providerInitStreaming(providerName)
   } catch (err) {
     initRunning = false
-    initError = `Failed to start initialization: ${extractErrorMessage(err)}`
+    initStartError = `Failed to start initialization: ${err instanceof Error ? err.message : String(err)}`
   }
 }
 
@@ -506,17 +515,34 @@ function handleDone() {
             </p>
           </div>
 
-          {#if initError}
+          {#if initStartError}
             <Alert.Root variant="destructive">
               <AlertCircle class="h-4 w-4" />
-              <Alert.Description>{initError}</Alert.Description>
+              <Alert.Description>{initStartError}</Alert.Description>
             </Alert.Root>
           {/if}
 
+          {#if initError}
+            <ErrorCard cliError={initError} />
+          {/if}
+
           {#if initLines.length > 0}
-            <div class="max-h-48 overflow-y-auto rounded-md border bg-muted/30">
-              <LogTable lines={initLines} />
-            </div>
+            {#if initError}
+              <details class="rounded-md border bg-muted/30">
+                <summary
+                  class="cursor-pointer select-none px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Show logs
+                </summary>
+                <div class="max-h-48 overflow-y-auto border-t">
+                  <LogTable lines={initLines} />
+                </div>
+              </details>
+            {:else}
+              <div class="max-h-48 overflow-y-auto rounded-md border bg-muted/30">
+                <LogTable lines={initLines} />
+              </div>
+            {/if}
           {:else if initRunning}
             <div class="flex items-center justify-center py-8">
               <Spinner class="size-6" />

@@ -14,7 +14,8 @@
     "verbatimModuleSyntax": false,
     "types": ["vite/client"],
     "paths": {
-      "$lib/*": ["./src/lib/*"]
+      "$lib/*": ["./src/lib/*"],
+      "$shared/*": ["../shared/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte"]

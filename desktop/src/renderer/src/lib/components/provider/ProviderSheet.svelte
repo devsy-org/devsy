@@ -10,6 +10,8 @@ import * as Sheet from "$lib/components/ui/sheet/index.js"
 import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
+import ErrorCard from "$lib/components/ErrorCard.svelte"
+import type { CLIError } from "$shared/cli-error.js"
 import {
   providerUse,
   providerUpdate,
@@ -46,6 +48,7 @@ let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
 let initializing = $state(false)
+let initError = $state<CLIError | null>(null)
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -129,15 +132,43 @@ async function handleUpdate() {
   }
 }
 
+/**
+ * Pull a structured CLIError off a thrown IPC error if the main process
+ * attached one. Electron's structured-clone IPC preserves additional own
+ * properties on Error objects, so a `cliError` field set in cli.ts/wrapError
+ * survives the bridge.
+ */
+function extractCliError(err: unknown): CLIError | null {
+  if (err && typeof err === "object" && "cliError" in err) {
+    const candidate = (err as { cliError?: unknown }).cliError
+    if (candidate && typeof candidate === "object" && "code" in candidate && "message" in candidate) {
+      return candidate as CLIError
+    }
+  }
+  return null
+}
+
 async function handleInitialize() {
   initializing = true
+  initError = null
   try {
     await providerInit(provider.name)
     const updated = await providerList()
     providers.set(updated)
     toasts.success(`Initialized ${provider.name}`)
   } catch (err) {
-    toasts.error(`Failed to initialize: ${extractErrorMessage(err)}`)
+    const cliError = extractCliError(err)
+    if (cliError) {
+      initError = cliError
+    } else {
+      initError = {
+        code: "UNKNOWN",
+        message:
+          err instanceof Error
+            ? err.message
+            : `Failed to initialize ${provider.name}.`,
+      }
+    }
   } finally {
     initializing = false
   }
@@ -264,6 +295,12 @@ async function handleSaveOptions() {
     </div>
 
     <Separator />
+
+    {#if initError}
+      <div class="px-6 pt-4">
+        <ErrorCard cliError={initError} />
+      </div>
+    {/if}
 
     <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-6">
       {#if loading}

@@ -87,7 +87,16 @@ export async function providerUse(name: string): Promise<void> {
 }
 
 export async function providerInit(name: string): Promise<void> {
-  return invoke("provider_init", { name })
+  const result = await invoke<
+    | { ok: true }
+    | { ok: false; message: string; cliError?: import("$shared/cli-error.js").CLIError }
+  >("provider_init", { name })
+  if (result.ok) return
+  const err = new Error(result.message) as Error & {
+    cliError?: import("$shared/cli-error.js").CLIError
+  }
+  if (result.cliError) err.cliError = result.cliError
+  throw err
 }
 
 export async function providerInitStreaming(name: string): Promise<string> {

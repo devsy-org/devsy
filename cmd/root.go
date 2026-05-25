@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/up"
 	"github.com/devsy-org/devsy/cmd/use"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/go-logr/logr"
@@ -25,6 +27,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"k8s.io/klog/v2"
 )
+
+const logOutputJSON = "json"
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -47,14 +51,20 @@ func Execute() {
 			os.Exit(execExitErr.ExitCode())
 		}
 
-		if globalFlags.Debug {
-			log.Errorf("%+v", err)
+		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+		if globalFlags.LogOutput == logOutputJSON {
+			log.JSONError(cliErr)
 		} else {
-			if rootCmd.Annotations == nil ||
-				rootCmd.Annotations[agent.AgentExecutedAnnotation] != config.BoolTrue {
-				log.Error("Try using -v or --debug flag to see more verbose output")
+			fmt.Fprintf(os.Stderr, "Error: %s\n", cliErr.Message)
+			if cliErr.Hint != "" {
+				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
 			}
-			log.Errorf("%v", err)
+			if cliErr.DocURL != "" {
+				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
+			}
+			if globalFlags.Debug && cliErr.Cause != "" {
+				fmt.Fprintf(os.Stderr, "\nOriginal error: %s\n", cliErr.Cause)
+			}
 		}
 		os.Exit(1)
 	}
