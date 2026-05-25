@@ -111,6 +111,7 @@ func (cmd *SetUpCmd) Run(ctx context.Context) error {
 		containerID: containerDetails.ID,
 		envArgs:     envArgs,
 		workdir:     workdir,
+		user:        devcconfig.GetRemoteUser(result),
 	}
 
 	if err := cmd.runSetUpLifecycleHooks(params, result); err != nil {
@@ -280,7 +281,10 @@ func (cmd *SetUpCmd) copyAndExecFeatures(
 			containerFeaturesPath,
 			i,
 		)
-		execArgs := buildDockerExecArgs(cmd.Container, nil, "", []string{installCmd})
+		execArgs := buildDockerExecArgs(dockerExecArgs{
+			container: cmd.Container,
+			command:   []string{installCmd},
+		})
 		if err := helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("install feature %s: %w", fs.ConfigID, err)
 		}
@@ -357,22 +361,34 @@ func (cmd *SetUpCmd) runSetUpLifecycleHooks(
 	return nil
 }
 
-func buildDockerExecArgs(
-	container string,
-	envArgs []string,
-	workspaceFolder string,
-	command []string,
-) []string {
+// dockerExecArgs collects the inputs for buildDockerExecArgs.
+// User is optional; when set the lifecycle hook runs as that user, per
+// the devcontainer spec (remoteUser). Without it, root-default exec cannot
+// overwrite files previously created by the remoteUser on storage backends
+// that do not honour CAP_DAC_OVERRIDE across UIDs.
+// See https://containers.dev/implementors/json_reference/ (lifecycle-scripts).
+type dockerExecArgs struct {
+	container       string
+	user            string
+	envArgs         []string
+	workspaceFolder string
+	command         []string
+}
+
+func buildDockerExecArgs(a dockerExecArgs) []string {
 	args := []string{dockerExecSubcommand}
-	args = append(args, envArgs...)
-	if workspaceFolder != "" {
-		args = append(args, "--workdir", workspaceFolder)
+	args = append(args, a.envArgs...)
+	if a.workspaceFolder != "" {
+		args = append(args, "--workdir", a.workspaceFolder)
 	}
-	args = append(args, container)
-	if len(command) == 1 {
-		args = append(args, "sh", "-c", command[0])
+	if a.user != "" {
+		args = append(args, "--user", a.user)
+	}
+	args = append(args, a.container)
+	if len(a.command) == 1 {
+		args = append(args, "sh", "-c", a.command[0])
 	} else {
-		args = append(args, command...)
+		args = append(args, a.command...)
 	}
 	return args
 }

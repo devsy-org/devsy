@@ -17,6 +17,7 @@ const (
 	devContainerIDLength    = 20
 	specDevContainerIDWidth = 52
 	containerEnvField       = "containerEnv"
+	remoteEnvField          = "remoteEnv"
 
 	LabelLocalFolder = "devcontainer.local_folder"
 	LabelConfigFile  = "devcontainer.config_file"
@@ -45,10 +46,21 @@ type SubstitutionContext struct {
 	GidMap                   []string          `json:"GidMap,omitempty"`
 }
 
-// preContainerFields lists devcontainer.json keys that are evaluated before
-// the container exists. These fields must not resolve container-scoped
-// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename).
-var preContainerFields = []string{containerEnvField}
+// preContainerFields lists devcontainer.json keys whose values reference
+// the running container's environment and are resolved through the
+// restricted replacer. Workspace-folder variables resolve normally (the
+// host computes ContainerWorkspaceFolder via getWorkspace), but
+// ${containerEnv:VAR} references stay literal so they can be resolved
+// later: host-side from the image's inspected env for containerEnv (see
+// ResolveContainerEnvFromImage), or inside the container by the agent's
+// SubstituteContainerEnv pass for remoteEnv.
+//
+// remoteEnv is included here for parity with containerEnv per the
+// devcontainers spec — the reference implementation
+// (devcontainers/cli src/spec-common/variableSubstitution.ts) treats
+// ${containerWorkspaceFolder} the same in both fields, while
+// ${containerEnv:VAR} stays unresolved until the container env is known.
+var preContainerFields = []string{containerEnvField, remoteEnvField}
 
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}

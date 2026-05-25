@@ -78,12 +78,12 @@ func TestBuildContainerEnvArgs_Empty(t *testing.T) {
 }
 
 func TestBuildDockerExecArgs_SingleStringCommand(t *testing.T) {
-	args := buildDockerExecArgs(
-		testContainerName,
-		[]string{testEnvFlag, testEnvFoo},
-		testWorkspacePath,
-		[]string{"touch /tmp/test"},
-	)
+	args := buildDockerExecArgs(dockerExecArgs{
+		container:       testContainerName,
+		envArgs:         []string{testEnvFlag, testEnvFoo},
+		workspaceFolder: testWorkspacePath,
+		command:         []string{"touch /tmp/test"},
+	})
 	expected := []string{
 		dockerExecSubcommand, testEnvFlag, testEnvFoo,
 		testWorkdirFlag, testWorkspacePath,
@@ -93,12 +93,11 @@ func TestBuildDockerExecArgs_SingleStringCommand(t *testing.T) {
 }
 
 func TestBuildDockerExecArgs_MultipleCommandParts(t *testing.T) {
-	args := buildDockerExecArgs(
-		testContainerName,
-		nil,
-		testWorkspacePath,
-		[]string{"ls", "-la", "/tmp"},
-	)
+	args := buildDockerExecArgs(dockerExecArgs{
+		container:       testContainerName,
+		workspaceFolder: testWorkspacePath,
+		command:         []string{"ls", "-la", "/tmp"},
+	})
 	expected := []string{
 		dockerExecSubcommand,
 		testWorkdirFlag, testWorkspacePath,
@@ -108,12 +107,10 @@ func TestBuildDockerExecArgs_MultipleCommandParts(t *testing.T) {
 }
 
 func TestBuildDockerExecArgs_NoWorkdir(t *testing.T) {
-	args := buildDockerExecArgs(
-		testContainerName,
-		nil,
-		"",
-		[]string{testCmdEcho, testCmdHello},
-	)
+	args := buildDockerExecArgs(dockerExecArgs{
+		container: testContainerName,
+		command:   []string{testCmdEcho, testCmdHello},
+	})
 	expected := []string{
 		dockerExecSubcommand,
 		testContainerName, testCmdEcho, testCmdHello,

@@ -137,6 +137,7 @@ type lifecycleExecParams struct {
 	containerID string
 	envArgs     []string
 	workdir     string
+	user        string
 }
 
 // Run executes the run-user-commands logic.
@@ -216,6 +217,7 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 		containerID: containerDetails.ID,
 		envArgs:     envArgs,
 		workdir:     workdir,
+		user:        devcconfig.GetRemoteUser(result),
 	}
 
 	if err := cmd.runLifecycleHooks(params, result); err != nil {
@@ -372,6 +374,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		containerID: containerDetails.ID,
 		envArgs:     envArgs,
 		workdir:     resolveExecWorkdir(result, client.Workspace()),
+		user:        devcconfig.GetRemoteUser(result),
 	}
 	return params, result, nil
 }
@@ -454,7 +457,13 @@ func execLifecycleHook(params *lifecycleExecParams, name string, hook types.Life
 		}
 		log.Infof("running %s: %s %v", name, key, command)
 
-		args := buildDockerExecArgs(params.containerID, params.envArgs, params.workdir, command)
+		args := buildDockerExecArgs(dockerExecArgs{
+			container:       params.containerID,
+			user:            params.user,
+			envArgs:         params.envArgs,
+			workspaceFolder: params.workdir,
+			command:         command,
+		})
 		if err := params.helper.Run(params.ctx, args, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("command %q failed: %w", key, err)
 		}
