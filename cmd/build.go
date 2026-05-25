@@ -210,14 +210,18 @@ func (cmd *BuildCmd) build(
 	ctx context.Context,
 	workspaceClient client.WorkspaceClient,
 ) error {
-	err := workspaceClient.Lock(ctx)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
+		return err
+	}
+	emitJSON := mode == output.ModeJSON
+
+	if err = workspaceClient.Lock(ctx); err != nil {
 		return err
 	}
 	defer workspaceClient.Unlock()
 
-	err = clientimplementation.StartWait(ctx, workspaceClient, true)
-	if err != nil {
+	if err = clientimplementation.StartWait(ctx, workspaceClient, true); err != nil {
 		return err
 	}
 
@@ -226,11 +230,6 @@ func (cmd *BuildCmd) build(
 		log.Debugf("done building devcontainer")
 		log.Infof("cleaning up temporary workspace")
 	}()
-	mode, err := output.ResolveMode(cmd.ResultFormat)
-	if err != nil {
-		return err
-	}
-	emitJSON := mode == output.ModeJSON
 
 	result, err := clientimplementation.BuildAgentClient(
 		ctx,

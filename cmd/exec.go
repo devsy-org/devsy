@@ -132,6 +132,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+		return err
+	}
+
 	if cmd.ContainerID != "" {
 		return cmd.runWithContainerID(ctx, args)
 	}
