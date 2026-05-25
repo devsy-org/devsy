@@ -77,7 +77,9 @@ var _ = ginkgo.Describe(
 				env := matched[0]
 				gomega.Expect(env.ContainerID).NotTo(gomega.BeEmpty())
 				gomega.Expect(env.RemoteUser).NotTo(gomega.BeEmpty())
-				gomega.Expect(env.RemoteWorkspaceFolder).NotTo(gomega.BeEmpty())
+				// RemoteWorkspaceFolder may legitimately be empty when the
+				// devcontainer.json doesn't set a workspaceFolder and no
+				// --workspace-folder flag is passed.
 			},
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
