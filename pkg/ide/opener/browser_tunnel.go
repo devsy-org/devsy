@@ -239,7 +239,7 @@ func startDetachedBrowserTunnel(
 	defer unlock()
 
 	// Reuse an existing live tunnel if present; clear stale state otherwise.
-	if tryReuseExistingTunnel(contextName, workspaceID, openBrowser, label) {
+	if tryReuseExistingTunnel(ctx, contextName, workspaceID, inv) {
 		return nil
 	}
 
@@ -255,7 +255,7 @@ func startDetachedBrowserTunnel(
 	)
 
 	if openBrowser {
-		go openBrowserAsync(tunnelParams.TargetURL, "could not open browser: %v")
+		go openBrowserAsync(ctx, tunnelParams.TargetURL, "could not open browser: %v")
 	}
 
 	return nil
@@ -404,12 +404,12 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 // openBrowserAsync opens a URL in the browser without blocking the caller.
 // debugFmt must contain a single %v verb for the error.
 //
-// Uses context.Background() intentionally: open2.Open retries until ctx is
-// done, and `devsy up` exits as soon as the detached helper is spawned. Tying
-// the browser-open retries to the up ctx would cancel them prematurely.
-func openBrowserAsync(url, debugFmt string) {
-	//nolint:gosec // G118: intentional — see comment above
-	if err := open2.Open(context.Background(), url); err != nil {
+// Uses context.WithoutCancel so values from the caller's ctx are preserved
+// but cancellation isn't propagated: open2.Open retries until ctx is done,
+// and `devsy up` exits as soon as the detached helper is spawned. Tying the
+// browser-open retries to the up ctx would cancel them prematurely.
+func openBrowserAsync(ctx context.Context, url, debugFmt string) {
+	if err := open2.Open(context.WithoutCancel(ctx), url); err != nil {
 		pkglog.Debugf(debugFmt, err)
 	}
 }
@@ -420,9 +420,9 @@ func openBrowserAsync(url, debugFmt string) {
 // exists but the recorded PID is dead, the stale state file is removed and
 // false is returned so the caller can proceed with a fresh spawn.
 func tryReuseExistingTunnel(
+	ctx context.Context,
 	contextName, workspaceID string,
-	openBrowser bool,
-	label string,
+	inv browserIDEInvocation,
 ) bool {
 	existing, _ := ReadTunnelState(contextName, workspaceID)
 	if existing == nil {
@@ -431,10 +431,10 @@ func tryReuseExistingTunnel(
 	if isProcessAlive(existing.PID) {
 		pkglog.Infof(
 			"%s browser tunnel already running (PID %d). Reusing existing tunnel at %s",
-			label, existing.PID, existing.TargetURL,
+			inv.Label, existing.PID, existing.TargetURL,
 		)
-		if openBrowser {
-			go openBrowserAsync(existing.TargetURL, "could not reopen browser: %v")
+		if inv.OpenBrowser {
+			go openBrowserAsync(ctx, existing.TargetURL, "could not reopen browser: %v")
 		}
 		return true
 	}
