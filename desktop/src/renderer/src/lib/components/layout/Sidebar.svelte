@@ -107,7 +107,9 @@ function isActive(href: string): boolean {
     <Sidebar.Menu>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton size="lg" class="pointer-events-none">
-          <AppLogo class="size-8 rounded-lg" />
+          <div class="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
+            <AppLogo class="size-full" />
+          </div>
           <div class="grid flex-1 text-left text-sm leading-tight">
             <span class="truncate font-semibold">Devsy</span>
             <span class="truncate text-xs text-muted-foreground">Desktop</span>
