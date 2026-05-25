@@ -21,7 +21,6 @@ import (
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
 type BrowserTunnelParams struct {
-	Ctx              context.Context
 	DevsyConfig      *config.Config
 	Client           client2.BaseWorkspaceClient
 	User             string
@@ -42,25 +41,25 @@ type BrowserTunnelParams struct {
 }
 
 // StartBrowserTunnel sets up a browser tunnel for IDE access, either via daemon or SSH.
-func StartBrowserTunnel(p BrowserTunnelParams) error {
+func StartBrowserTunnel(ctx context.Context, p BrowserTunnelParams) error {
 	if p.AuthSockID != "" {
 		go func() {
-			if err := SetupBackhaul(p.Ctx, p.Client, p.AuthSockID); err != nil {
+			if err := SetupBackhaul(ctx, p.Client, p.AuthSockID); err != nil {
 				log.Error("Failed to setup backhaul SSH connection: ", err)
 			}
 		}()
 	}
 
 	if p.DaemonStartFunc != nil {
-		return p.DaemonStartFunc(p.Ctx)
+		return p.DaemonStartFunc(ctx)
 	}
 
-	return startBrowserTunnelSSH(p)
+	return startBrowserTunnelSSH(ctx, p)
 }
 
-func startBrowserTunnelSSH(p BrowserTunnelParams) error {
+func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 	return NewTunnel(
-		p.Ctx,
+		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()

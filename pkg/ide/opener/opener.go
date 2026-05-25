@@ -27,8 +27,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
-// Params holds the parameters needed to open an IDE.
-type Params struct {
+// IdeParams holds the parameters needed to open an IDE.
+type IdeParams struct {
 	GPGAgentForwarding bool
 	SSHAuthSockID      string
 	GitSSHSigningKey   string
@@ -51,7 +51,7 @@ func Open(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
@@ -63,7 +63,7 @@ func Open(
 // browserIDEOpener returns a handler for browser-based IDEs if ideName matches.
 func browserIDEOpener(
 	ideName string,
-) (func(context.Context, map[string]config.OptionValue, Params) error, bool) {
+) (func(context.Context, map[string]config.OptionValue, IdeParams) error, bool) {
 	switch ideName {
 	case string(config.IDEOpenVSCode):
 		return openVSCodeBrowser, true
@@ -80,7 +80,7 @@ func openDesktopIDE(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	switch ideName {
 	case string(config.IDEVSCode), string(config.IDEVSCodeInsiders), string(config.IDECursor),
@@ -160,7 +160,7 @@ func openVSCodeFlavor(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
 		Workspace:  params.Client.Workspace(),
@@ -174,7 +174,7 @@ func openVSCodeFlavor(
 func openJetBrains(
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
 	workspace := params.Client.Workspace()
@@ -221,7 +221,7 @@ func openJetBrains(
 }
 
 func makeDaemonStartFunc(
-	params Params,
+	params IdeParams,
 	forwardPorts bool,
 	extraPorts []string,
 ) func(ctx context.Context) error {
@@ -261,7 +261,7 @@ func makeDaemonStartFunc(
 func openJupyterBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -282,8 +282,7 @@ func openJupyterBrowser(
 
 	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
-	return startDetachedBrowserTunnel(params, tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -298,7 +297,7 @@ func openJupyterBrowser(
 func openRStudioBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -319,8 +318,7 @@ func openRStudioBrowser(
 
 	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
-	return startDetachedBrowserTunnel(params, tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -335,7 +333,7 @@ func openRStudioBrowser(
 func openVSCodeBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IdeParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -361,8 +359,7 @@ func openVSCodeBrowser(
 		openvscode.ForwardPortsOption,
 	) == config.BoolTrue
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
-	return startDetachedBrowserTunnel(params, tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,

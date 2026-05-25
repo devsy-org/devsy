@@ -134,8 +134,7 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("parse inherited listeners: %w", err)
 	}
 
-	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return tunnel.StartBrowserTunnel(ctx, tunnel.BrowserTunnelParams{
 		DevsyConfig:      devsyConfig,
 		Client:           client,
 		User:             cmd.User,

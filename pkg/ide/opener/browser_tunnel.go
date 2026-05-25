@@ -206,13 +206,14 @@ func WriteTunnelState(contextName, workspaceID string, state TunnelState) error 
 // If a tunnel is already running for this workspace, no new process is
 // spawned; the existing tunnel is reused.
 func startDetachedBrowserTunnel(
-	params Params,
+	ctx context.Context,
+	params IdeParams,
 	tunnelParams tunnel.BrowserTunnelParams,
 	label string,
 	openBrowser bool,
 ) error {
 	if _, ok := params.Client.(client2.DaemonClient); ok {
-		return tunnel.StartBrowserTunnel(tunnelParams)
+		return tunnel.StartBrowserTunnel(ctx, tunnelParams)
 	}
 
 	contextName := params.Client.Context()
