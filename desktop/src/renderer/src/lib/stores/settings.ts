@@ -83,14 +83,9 @@ export function cycleTheme() {
   })
 }
 
-// Color scheme (accent)
-export const colorScheme = writable<ColorScheme>(
-  getStored(
-    COLOR_SCHEME_KEY,
-    ["default", "emerald", "purple"] as const,
-    "emerald",
-  ),
-)
+// Color scheme (accent) — picker is hidden in Settings; force purple for all
+// users regardless of any previously persisted value.
+export const colorScheme = writable<ColorScheme>("purple")
 
 const COLOR_SCHEME_CLASSES: ColorScheme[] = ["emerald", "purple"]
 
