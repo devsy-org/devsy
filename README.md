@@ -1,10 +1,12 @@
 <br>
-<a href="https://www.devsy.sh">
-  <picture width="500">
-    <source media="(prefers-color-scheme: dark)" srcset="docs/static/media/devsy_dark.png">
-    <img alt="Devsy wordmark" width="500" src="docs/static/media/devsy.png">
-  </picture>
-</a>
+<p align="center">
+  <a href="https://www.devsy.sh">
+    <picture width="500">
+      <source media="(prefers-color-scheme: dark)" srcset="docs/static/media/devsy_dark.png">
+      <img alt="Devsy wordmark" width="500" src="docs/static/media/devsy.png">
+    </picture>
+  </a>
+</p>
 
 Devsy enables businesses and independent developers to run engineering at scale. It standardizes developer environments, enforces security controls, and runs workspaces across Docker, Kubernetes, cloud providers, and remote hosts with the open DevContainer standard.
 
