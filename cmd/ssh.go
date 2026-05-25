@@ -426,7 +426,7 @@ func (cmd *SSHCmd) reverseForwardPorts(
 				errChan <- nil
 				return
 			}
-			if !errors.Is(io.EOF, err) {
+			if !errors.Is(err, io.EOF) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
 			}
 		}(portMapping)
@@ -474,7 +474,7 @@ func (cmd *SSHCmd) forwardPorts(
 				errChan <- nil
 				return
 			}
-			if !errors.Is(io.EOF, err) {
+			if !errors.Is(err, io.EOF) {
 				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
 			}
 		}(portMapping)
