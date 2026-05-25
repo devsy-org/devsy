@@ -13,7 +13,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 )
 
-const flagResultFormat = "--result-format"
+const (
+	flagResultFormat = "--result-format"
+	formatJSON       = "json"
+)
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
 	list, err := f.DevsyListParsed(ctx)
@@ -48,7 +51,7 @@ func (f *Framework) DevsyListParsed(ctx context.Context) ([]*provider2.Workspace
 
 // DevsyList executes the `devsy list` command in the test framework.
 func (f *Framework) DevsyList(ctx context.Context) (string, error) {
-	listArgs := []string{"list", flagResultFormat, "json"}
+	listArgs := []string{"list", flagResultFormat, formatJSON}
 
 	out, _, err := f.ExecCommandCapture(ctx, listArgs)
 	if err != nil {
@@ -211,7 +214,7 @@ func (f *Framework) DevsyStatus(
 	ctx context.Context,
 	extraArgs ...string,
 ) (client.WorkspaceStatus, error) {
-	baseArgs := []string{"status", flagResultFormat, "json"}
+	baseArgs := []string{"status", flagResultFormat, formatJSON}
 	baseArgs = append(baseArgs, extraArgs...)
 	stdout, err := f.ExecCommandOutput(ctx, baseArgs)
 	if err != nil {
@@ -310,7 +313,7 @@ func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
 	providerName string,
 ) (string, error) {
-	args := []string{"provider", "options", providerName, flagResultFormat, "json"}
+	args := []string{"provider", "options", providerName, flagResultFormat, formatJSON}
 	stdout, _, err := f.ExecCommandCapture(ctx, args)
 	if err != nil {
 		return "", fmt.Errorf("devsy provider options failed: %s", err.Error())
