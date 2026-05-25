@@ -19,13 +19,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// connAgentIntents maps an active SSH connection to its lazy agent intent.
-// Cleanup is driven from ConnectionCompleteCallback, which runs as a defer
-// in HandleConn BEFORE the stdio listener's Close()-on-EOF triggers os.Exit
-// — that ordering is the only reliable way to guarantee the socket
-// directory is removed before the process dies in stdio mode.
-var connAgentIntents sync.Map // map[*gossh.ServerConn]*connAgentIntent
-
 // ctxKey is a private type for ssh.Context keys.
 type ctxKey int
 
@@ -139,12 +132,12 @@ func NewServer(
 		currentUser: currentUser.Username,
 		sshServer: ssh.Server{
 			Addr: addr,
-			// ClientAliveInterval + ClientAliveCountMax give the server a way
-			// to notice a dead peer in stdio mode, where EOF on stdin can be
-			// delayed indefinitely by the proxy chain. With these set, the
-			// gossh connection eventually fails, HandleConn returns, and the
-			// per-connection agent state can be torn down.
-			ClientAliveInterval: 5 * time.Second,
+			// Keep-alive at the connection level (devsy-org/ssh v1.2.0+):
+			// detects dead peers in stdio mode where EOF on stdin can be
+			// delayed indefinitely by the proxy chain. After
+			// ClientAliveCountMax unanswered intervals the connection is
+			// closed, HandleConn unwinds, and ConnectionClosingCallback runs.
+			ClientAliveInterval: 15 * time.Second,
 			ClientAliveCountMax: 2,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
 				log.Debugf("Accepted forward: %s:%d", dhost, dport)
@@ -207,19 +200,18 @@ func NewServer(
 
 	server.sshServer.Handler = server.handler
 	server.sshServer.ConnCallback = server.connCallback
-	server.sshServer.ConnectionCompleteCallback = cleanupAgentOnConnComplete
+	server.sshServer.ConnectionClosingCallback = cleanupAgentOnConnClosing
 	return server, nil
 }
 
-// cleanupAgentOnConnComplete tears down the per-connection agent state for
-// a connection that just ended. Runs synchronously in HandleConn's defer
-// chain, which is critical in stdio mode where the listener's Close hook
-// calls os.Exit and ctx.Done()-driven goroutines never get to run.
-func cleanupAgentOnConnComplete(sc *gossh.ServerConn, _ error) {
-	log.Debugf("ssh ConnectionCompleteCallback fired (sc=%p)", sc)
-	v, ok := connAgentIntents.LoadAndDelete(sc)
-	if !ok {
-		log.Debugf("ssh ConnectionCompleteCallback: no intent registered for sc=%p", sc)
+// cleanupAgentOnConnClosing tears down the per-connection agent state when
+// HandleConn observes the inbound channels stream close. Runs synchronously
+// in HandleConn's defer chain before sshConn.Wait() — so it fires reliably
+// even when the underlying transport is stuck (e.g. in stdio mode where EOF
+// on stdin can be delayed by the proxy chain).
+func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {
+	v := ctx.Value(ctxKeyConnAgent)
+	if v == nil {
 		return
 	}
 	intent, ok := v.(*connAgentIntent)
@@ -303,19 +295,6 @@ func (s *server) handler(sess ssh.Session) {
 				)
 				exitWithError(sess, sErr)
 				return
-			}
-			// Register the intent against the underlying gossh.ServerConn so
-			// cleanupAgentOnConnComplete can find and tear it down when the
-			// connection ends.
-			if sc, ok := sess.Context().Value(ssh.ContextKeyConn).(*gossh.ServerConn); ok &&
-				sc != nil {
-				connAgentIntents.LoadOrStore(sc, intent)
-				log.Debugf("ssh intent registered: connID=%s sc=%p", intent.connID, sc)
-			} else {
-				log.Debugf(
-					"ssh intent NOT registered (missing gossh.ServerConn): connID=%s",
-					intent.connID,
-				)
 			}
 			state.startForwarding(sess)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))

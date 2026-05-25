@@ -20,7 +20,7 @@ require (
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
 	github.com/devsy-org/apiserver v1.5.0
-	github.com/devsy-org/ssh v1.1.0
+	github.com/devsy-org/ssh v1.2.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.4.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
