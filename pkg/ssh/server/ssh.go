@@ -1,16 +1,91 @@
 package server
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
+	"sync"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/ssh"
 )
+
+// ctxKey is a private type for ssh.Context keys.
+type ctxKey int
+
+const (
+	ctxKeyConnAgent ctxKey = iota
+)
+
+// connAgentIntent is stored on the ssh.Context for every non-reuseSock
+// connection. It carries the connection id plus a lazily-populated
+// per-connection agent state. The actual listener + socket directory are
+// only allocated on the first session that requests agent forwarding.
+type connAgentIntent struct {
+	connID string
+	mu     sync.Mutex
+	state  *connAgentState
+	setErr error
+	inited bool
+}
+
+// connAgentState holds the per-connection agent forwarding listener and
+// its socket directory. ForwardAgentConnections is started lazily on the
+// first session that requests agent forwarding, since it requires an
+// ssh.Session to open the auth-agent channel back to the client.
+type connAgentState struct {
+	listener  net.Listener
+	socketDir string
+	socket    string
+	once      sync.Once
+}
+
+// newConnAgentState constructs the per-connection agent state, allocating
+// the unix-socket listener and its containing directory. The socket path
+// always mirrors listener.Addr().String() so callers cannot drift the two.
+func newConnAgentState(connID string) (*connAgentState, error) {
+	l, socketDir, err := setupConnectionAgentListener(connID)
+	if err != nil {
+		return nil, err
+	}
+	return &connAgentState{
+		listener:  l,
+		socketDir: socketDir,
+		socket:    l.Addr().String(),
+	}, nil
+}
+
+// sockPath returns the unix socket path clients should set as $SSH_AUTH_SOCK.
+func (c *connAgentState) sockPath() string {
+	return c.socket
+}
+
+// startForwarding starts ForwardAgentConnections exactly once for the
+// connection, bound to the first session that requests agent forwarding.
+func (c *connAgentState) startForwarding(sess ssh.Session) {
+	c.once.Do(func() {
+		go ssh.ForwardAgentConnections(c.listener, sess)
+	})
+}
+
+// close tears down the listener and removes the socket directory.
+func (c *connAgentState) close() {
+	if c == nil {
+		return
+	}
+	if c.listener != nil {
+		_ = c.listener.Close()
+	}
+	cleanupAgentSocketDir(c.socketDir)
+}
 
 const (
 	DefaultPort     int = 8022
@@ -116,7 +191,37 @@ func NewServer(
 	}
 
 	server.sshServer.Handler = server.handler
+	server.sshServer.ConnCallback = server.connCallback
 	return server, nil
+}
+
+// newConnID returns a short hex identifier unique to the connection.
+// Uses crypto/rand; on the unlikely event of a rand.Read failure falls
+// back to a sha256-of-time derivation so the connection still gets an ID.
+func newConnID(remote string) string {
+	var b [8]byte
+	_, err := rand.Read(b[:])
+	if err == nil {
+		return hex.EncodeToString(b[:])
+	}
+	sum := sha256.Sum256([]byte(remote + strconv.FormatInt(time.Now().UnixNano(), 10)))
+	return fmt.Sprintf("%x", sum)[:16]
+}
+
+// ensureConnAgentState lazily allocates the per-connection agent listener
+// the first time an agent-forwarding session arrives. Subsequent calls
+// return the same state (or the same error).
+func (intent *connAgentIntent) ensureState() (*connAgentState, error) {
+	intent.mu.Lock()
+	defer intent.mu.Unlock()
+	if intent.inited {
+		return intent.state, intent.setErr
+	}
+	intent.inited = true
+	state, err := newConnAgentState(intent.connID)
+	intent.state = state
+	intent.setErr = err
+	return state, err
 }
 
 func (s *server) handler(sess ssh.Session) {
@@ -125,17 +230,42 @@ func (s *server) handler(sess ssh.Session) {
 	cmd := s.getCommand(sess, isPty)
 
 	if ssh.AgentRequested(sess) {
-		l, tmpDir, err := setupAgentListener(s.reuseSock)
-		if err != nil {
-			exitWithError(sess, err)
-			return
+		if s.reuseSock != "" {
+			// openvscode backhaul / explicit shared-socket mode: keep the
+			// existing per-session listener behavior.
+			l, tmpDir, err := setupAgentListener(s.reuseSock)
+			if err != nil {
+				exitWithError(sess, err)
+				return
+			}
+			defer func() { _ = l.Close() }()
+			defer func() { _ = os.RemoveAll(tmpDir) }()
+
+			go ssh.ForwardAgentConnections(l, sess)
+
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String()))
+		} else if intent, ok := sess.Context().Value(ctxKeyConnAgent).(*connAgentIntent); ok && intent != nil {
+			// Common interactive case: lazily allocate the connection-scoped
+			// listener on first request, then reuse it for every subsequent
+			// session on the same connection. ForwardAgentConnections needs an
+			// ssh.Session to open the auth-agent channel, so it is bound to
+			// the first session that requests agent forwarding.
+			state, sErr := intent.ensureState()
+			if sErr != nil || state == nil {
+				log.Errorf("ssh agent forwarding setup failed (connID=%s): %v", intent.connID, sErr)
+				_, _ = fmt.Fprintf(
+					sess.Stderr(),
+					"warning: ssh agent forwarding unavailable: %v\n",
+					sErr,
+				)
+				exitWithError(sess, sErr)
+				return
+			}
+			state.startForwarding(sess)
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))
+		} else {
+			log.Debugf("agent requested but no connection-scoped agent intent available")
 		}
-		defer func() { _ = l.Close() }()
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-
-		go ssh.ForwardAgentConnections(l, sess)
-
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String()))
 	}
 
 	// start shell session
@@ -207,4 +337,39 @@ func (s *server) Serve(listener net.Listener) error {
 func (s *server) ListenAndServe() error {
 	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
 	return s.sshServer.ListenAndServe()
+}
+
+// connCallback is invoked once per inbound SSH connection. Outside the
+// explicit reuseSock (openvscode backhaul) mode it stores a lightweight
+// intent on the ssh.Context and schedules a teardown goroutine. The agent
+// listener itself is allocated lazily on the first session that requests
+// agent forwarding, so failed-auth probes never touch the filesystem.
+func (s *server) connCallback(ctx ssh.Context, conn net.Conn) net.Conn {
+	// Preserve the openvscode backhaul path: when a reuseSock is provided,
+	// the per-session setupAgentListener(reuseSock) path is the intended
+	// behavior. Skip setting up a per-connection listener here.
+	if s.reuseSock != "" {
+		return conn
+	}
+
+	intent := &connAgentIntent{connID: newConnID(conn.RemoteAddr().String())}
+	ctx.SetValue(ctxKeyConnAgent, intent)
+
+	log.Debugf("ssh conn open: connID=%s remote=%s", intent.connID, conn.RemoteAddr())
+
+	go func() {
+		<-ctx.Done()
+		intent.mu.Lock()
+		state := intent.state
+		intent.mu.Unlock()
+		if state == nil {
+			log.Debugf("ssh conn close: connID=%s (no agent listener allocated)", intent.connID)
+			return
+		}
+		sock := state.sockPath()
+		state.close()
+		log.Debugf("ssh conn close: connID=%s agent_sock=%s cleaned up", intent.connID, sock)
+	}()
+
+	return conn
 }

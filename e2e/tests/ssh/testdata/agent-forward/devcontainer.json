@@ -1,0 +1,5 @@
+{
+  "name": "Agent Forward",
+  "image": "alpine:3.20",
+  "onCreateCommand": "apk add --no-cache openssh-client git"
+}
