@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"al.essio.dev/pkg/shellescape"
 )
 
 // testLogger is the minimal subset of testing.TB / Ginkgo's FullGinkgoTInterface
@@ -222,7 +224,7 @@ func SSHMultiplexedExec(
 	// login shell, which loses any in-argument quoting. Pre-quote each
 	// element so shell metacharacters (spaces, $, quotes) survive intact.
 	for _, a := range cmd {
-		args = append(args, shellQuote(a))
+		args = append(args, shellescape.Quote(a))
 	}
 
 	// #nosec G204 -- controlled args for test
@@ -243,13 +245,6 @@ func mergedEnv(extra map[string]string) []string {
 		env = append(env, k+"="+v)
 	}
 	return env
-}
-
-// shellQuote returns a POSIX-shell single-quoted form of s safe to embed in
-// a remote ssh command line. Single quotes inside s are escaped via the
-// '\” idiom.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // WaitForConditionShort polls the given predicate until it returns true or
