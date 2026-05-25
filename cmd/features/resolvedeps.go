@@ -137,7 +137,7 @@ func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
 
 func (cmd *ResolveDepsCmd) printText(resolved []resolvedFeature) error {
 	_, _ = fmt.Fprintf(os.Stdout, "Feature install order (%d features):\n\n", len(resolved))
-	headers := []string{"#", "Feature", "Depends On", "Installs After"}
+	headers := []string{"#", headerFeature, "Depends On", "Installs After"}
 	var rows [][]string
 	for i, rf := range resolved {
 		version := rf.ID

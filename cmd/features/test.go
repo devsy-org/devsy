@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -349,24 +350,24 @@ func (cmd *TestCmd) dockerRemove(containerName string) {
 
 func (cmd *TestCmd) printResults(results []testResult) {
 	w := os.Stdout
-	_, _ = fmt.Fprintln(w, "\n=== Feature Test Results ===")
+	_, _ = fmt.Fprintln(w, "\nFeature Test Results")
+
 	passed := 0
 	failed := 0
-
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
-		label := r.FeatureID
-		if r.Scenario != "" {
-			label = fmt.Sprintf("%s/%s", r.FeatureID, r.Scenario)
+		status := "PASS"
+		if !r.Passed {
+			status = "FAIL"
+			failed++
+		} else {
+			passed++
 		}
 
-		if r.Passed {
-			_, _ = fmt.Fprintf(w, "  PASS: %s\n", label)
-			passed++
-		} else {
-			_, _ = fmt.Fprintf(w, "  FAIL: %s — %s\n", label, r.Error)
-			failed++
-		}
+		rows = append(rows, []string{status, r.FeatureID, r.Scenario, r.Error})
 	}
+
+	table.Print([]string{"Status", headerFeature, "Scenario", "Error"}, rows)
 
 	_, _ = fmt.Fprintf(w, "\nTotal: %d passed, %d failed\n", passed, failed)
 }

@@ -349,9 +349,9 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				})
 				framework.ExpectNoError(err)
 
-				gomega.Expect(stdout).To(gomega.ContainSubstring("Schema Version:"))
-				gomega.Expect(stdout).To(gomega.ContainSubstring("Media Type:"))
-				gomega.Expect(stdout).To(gomega.ContainSubstring("Config:"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Schema Version"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Media Type"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring("Config Media Type"))
 				gomega.Expect(stdout).To(gomega.ContainSubstring("Layers:"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 

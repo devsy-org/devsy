@@ -3,7 +3,6 @@ package features
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -149,16 +148,18 @@ func listTags(ref name.Reference) ([]string, error) {
 
 func (cmd *InfoCmd) printText(info *featureInfo) error {
 	w := os.Stdout
-	_, _ = fmt.Fprintf(w, "Feature: %s\n", info.Name)
-	printField(w, "ID", info.ID)
-	printField(w, "Version", info.Version)
-	printField(w, "Description", info.Description)
-	printField(w, "Authors", info.Authors)
-	printField(w, "Source", info.Source)
-	printField(w, "Documentation", info.DocumentationURL)
+
+	rows := [][]string{{headerFeature, info.Name}}
+	rows = appendField(rows, "ID", info.ID)
+	rows = appendField(rows, "Version", info.Version)
+	rows = appendField(rows, "Description", info.Description)
+	rows = appendField(rows, "Authors", info.Authors)
+	rows = appendField(rows, "Source", info.Source)
+	rows = appendField(rows, "Documentation", info.DocumentationURL)
 	if info.Deprecated {
-		_, _ = fmt.Fprintln(w, "Status: DEPRECATED")
+		rows = append(rows, []string{"Status", "DEPRECATED"})
 	}
+	table.Print([]string{"Property", headerValue}, rows)
 
 	cmd.printDependencies(w, info)
 	cmd.printTags(w, info)
@@ -168,10 +169,11 @@ func (cmd *InfoCmd) printText(info *featureInfo) error {
 	return nil
 }
 
-func printField(w *os.File, label, value string) {
+func appendField(rows [][]string, label, value string) [][]string {
 	if value != "" {
-		_, _ = fmt.Fprintf(w, "%s: %s\n", label, value)
+		return append(rows, []string{label, value})
 	}
+	return rows
 }
 
 func (cmd *InfoCmd) printDependencies(w *os.File, info *featureInfo) {
@@ -192,7 +194,11 @@ func (cmd *InfoCmd) printTags(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nAvailable Tags:")
-	_, _ = fmt.Fprintf(w, "  %s\n", strings.Join(info.Tags, ", "))
+	rows := make([][]string, 0, len(info.Tags))
+	for _, tag := range info.Tags {
+		rows = append(rows, []string{tag})
+	}
+	table.Print([]string{"Tag"}, rows)
 }
 
 func (cmd *InfoCmd) printOptions(w *os.File, info *featureInfo) {
@@ -213,7 +219,7 @@ func (cmd *InfoCmd) printAnnotations(w *os.File, info *featureInfo) {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "\nOCI Annotations:")
-	headers := []string{"Key", "Value"}
+	headers := []string{"Key", headerValue}
 	var rows [][]string
 	for k, v := range info.Annotations {
 		rows = append(rows, []string{k, v})

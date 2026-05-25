@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -45,15 +46,17 @@ func (cmd *ListAvailableCmd) Run(ctx context.Context) error {
 	}
 
 	_, _ = fmt.Fprintln(os.Stdout, "List of available providers from "+config.RepoOwner+":")
+	var rows [][]string
 	for _, v := range jsonResult {
 		name, ok := v["name"].(string)
 		if !ok || name == "" {
 			continue
 		}
 		if after, ok0 := strings.CutPrefix(name, config.ProviderPrefix); ok0 {
-			_, _ = fmt.Fprintln(os.Stdout, "\t", after)
+			rows = append(rows, []string{after})
 		}
 	}
+	table.Print([]string{"Provider"}, rows)
 
 	return nil
 }

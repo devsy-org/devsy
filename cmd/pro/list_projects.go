@@ -3,12 +3,15 @@ package pro
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +73,26 @@ func (cmd *ListProjectsCmd) Run(
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", provider.Name, err)
 	}
 
-	fmt.Println(buf.String())
+	headers := []string{headerName, headerDisplayName, "Description"}
+	if buf.Len() == 0 {
+		table.Print(headers, nil)
+		return nil
+	}
+
+	projects := []managementv1.Project{}
+	if err := json.Unmarshal(buf.Bytes(), &projects); err != nil {
+		return fmt.Errorf("parse projects output: %w", err)
+	}
+
+	rows := make([][]string, 0, len(projects))
+	for _, p := range projects {
+		rows = append(rows, []string{
+			p.GetName(),
+			p.Spec.DisplayName,
+			p.Spec.Description,
+		})
+	}
+	table.Print(headers, rows)
 
 	return nil
 }

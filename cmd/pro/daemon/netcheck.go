@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
 )
@@ -91,29 +92,28 @@ func (cmd *NetcheckCmd) Run(
 		return err
 	}
 
+	rows := [][]string{}
 	for _, region := range dm.Regions {
 		report, err := tsClient.DebugDERPRegion(ctx, strconv.Itoa(region.RegionID))
 		if err != nil {
 			return err
 		}
-		msg := fmt.Sprintf("DERP %d (%s)\n", region.RegionID, region.RegionCode)
-		if len(report.Errors) > 0 {
-			for _, error := range report.Errors {
-				msg += fmt.Sprintf("  Error: %s\n", error)
-			}
+		regionLabel := fmt.Sprintf("DERP %d (%s)", region.RegionID, region.RegionCode)
+		for _, e := range report.Errors {
+			rows = append(rows, []string{regionLabel, "Error", e})
 		}
-		if len(report.Warnings) > 0 {
-			for _, warning := range report.Warnings {
-				msg += fmt.Sprintf("  Warning: %s\n", warning)
-			}
+		for _, w := range report.Warnings {
+			rows = append(rows, []string{regionLabel, "Warning", w})
 		}
-		if len(report.Info) > 0 {
-			for _, info := range report.Info {
-				msg += fmt.Sprintf("  Info: %s\n", info)
-			}
+		for _, i := range report.Info {
+			rows = append(rows, []string{regionLabel, "Info", i})
 		}
-		fmt.Println(msg)
+		if len(report.Errors) == 0 && len(report.Warnings) == 0 && len(report.Info) == 0 {
+			rows = append(rows, []string{regionLabel, "", ""})
+		}
 	}
+
+	table.Print([]string{"Region", "Level", "Message"}, rows)
 
 	return nil
 }

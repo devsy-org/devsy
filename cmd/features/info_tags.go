@@ -3,9 +3,9 @@ package features
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 )
@@ -61,13 +61,16 @@ func (cmd *InfoTagsCmd) Run(featureID string) error {
 		return writeJSON(os.Stdout, &tagsOutput{Tags: tags})
 	}
 
-	w := os.Stdout
 	if len(tags) == 0 {
-		_, _ = fmt.Fprintln(w, "No tags found.")
+		_, _ = fmt.Fprintln(os.Stdout, "No tags found.")
 		return nil
 	}
 
-	_, _ = fmt.Fprintln(w, "Available Tags:")
-	_, _ = fmt.Fprintf(w, "  %s\n", strings.Join(tags, ", "))
+	_, _ = fmt.Fprintln(os.Stdout, "Available Tags:")
+	rows := make([][]string, 0, len(tags))
+	for _, tag := range tags {
+		rows = append(rows, []string{tag})
+	}
+	table.Print([]string{"Tag"}, rows)
 	return nil
 }
