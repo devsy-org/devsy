@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -160,7 +161,7 @@ func TestPackageCmd_ForceCleanOutputFolder(t *testing.T) {
 		Target:                 targetDir,
 		OutputFolder:           outputDir,
 		ForceCleanOutputFolder: true,
-		GlobalFlags:            &flags.GlobalFlags{ResultFormat: "plain"},
+		GlobalFlags:            &flags.GlobalFlags{ResultFormat: output.ModePlain},
 	}
 
 	err := cmd.Run()

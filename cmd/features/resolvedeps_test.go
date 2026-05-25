@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +27,7 @@ func TestResolveDepsCmd_NoFeatures(t *testing.T) {
 
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: workspaceDir,
-		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: output.ModePlain},
 	}
 
 	err := cmd.Run()
@@ -36,7 +37,7 @@ func TestResolveDepsCmd_NoFeatures(t *testing.T) {
 func TestResolveDepsCmd_MissingWorkspace(t *testing.T) {
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: "/nonexistent/path/12345",
-		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: output.ModePlain},
 	}
 
 	err := cmd.Run()
@@ -56,7 +57,7 @@ func TestResolveDepsCmd_ExplicitConfig(t *testing.T) {
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: tmpDir,
 		Config:          configPath,
-		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "json"},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: output.ModeJSON},
 	}
 
 	err := cmd.Run()
@@ -92,7 +93,7 @@ func TestResolveDepsCmd_WithOptions(t *testing.T) {
 
 	cmd := &ResolveDepsCmd{
 		WorkspaceFolder: workspaceDir,
-		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "plain"},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: output.ModePlain},
 	}
 
 	err := cmd.Run()

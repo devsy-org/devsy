@@ -122,7 +122,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				"features", "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
-				"--result-format", "json",
+				flagOutput, outputJSON,
 			})
 			framework.ExpectNoError(err)
 
@@ -259,7 +259,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "info", featureRef, "--result-format", "json",
+				"features", "info", featureRef, flagOutput, outputJSON,
 			})
 			framework.ExpectNoError(err)
 
@@ -329,7 +329,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRef, nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef, "--result-format", "plain",
+					"features", "info", subCmdManifest, featureRef, flagOutput, "plain",
 				})
 				framework.ExpectNoError(err)
 
@@ -434,7 +434,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
 					"features", "info", subCmdTags, featureRepo + ":1.0.0",
-					"--result-format", "json",
+					flagOutput, outputJSON,
 				})
 				framework.ExpectNoError(err)
 

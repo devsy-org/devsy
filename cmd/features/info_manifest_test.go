@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func TestInfoManifestCmd_RequiresExactlyOneArg(t *testing.T) {
 }
 
 func TestInfoManifestCmd_InvalidFeatureReference(t *testing.T) {
-	cmd := &InfoManifestCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}}
+	cmd := &InfoManifestCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: output.ModeJSON}}
 	err := cmd.Run("not a valid reference!!!")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid feature reference")
