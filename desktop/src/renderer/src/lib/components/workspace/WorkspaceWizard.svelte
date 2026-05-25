@@ -26,7 +26,7 @@ import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
@@ -679,9 +679,28 @@ function selectTemplate(t: { name: string; source: string }) {
           {/if}
 
           {#if outputLines.length > 0}
-            <div class="max-h-80 overflow-auto rounded-md border">
-              <LogTable lines={outputLines} />
-              <div bind:this={outputEl}></div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Output</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onclick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
+                      toasts.success("Copied to clipboard")
+                    } catch {
+                      toasts.error("Failed to copy")
+                    }
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+              <div class="max-h-80 overflow-auto rounded-md border">
+                <LogTable lines={outputLines} />
+                <div bind:this={outputEl}></div>
+              </div>
             </div>
           {:else if launchRunning}
             <div class="flex items-center justify-center py-8">
