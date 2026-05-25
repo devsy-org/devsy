@@ -15,6 +15,13 @@ type Result struct {
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`
 	ContainerDetails           *ContainerDetails           `json:"ContainerDetails"`
 	HostWarnings               []string                    `json:"HostWarnings,omitempty"`
+	// Error, when non-empty, indicates the agent failed to produce a usable
+	// devcontainer result and carries the underlying error message. This
+	// allows structured errors (e.g. host requirements not met) to flow back
+	// to the host side via the tunnel before the agent process exits, instead
+	// of being lost to a generic "did not receive a result back from agent"
+	// fallback.
+	Error string `json:"Error,omitempty"`
 }
 
 type DevContainerConfigWithPath struct {

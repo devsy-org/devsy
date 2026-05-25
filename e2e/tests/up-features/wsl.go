@@ -62,7 +62,6 @@ var _ = ginkgo.Describe(
 			featureArchiveFileBuf, err := os.ReadFile(featureArchiveFilePath)
 			framework.ExpectNoError(err)
 
-			f := framework.NewDefaultFramework(initialDir + "/bin")
 			server.AppendHandlers(
 				ghttp.CombineHandlers(
 					ghttp.VerifyRequest("GET", "/devcontainer-feature-hello.tgz"),
@@ -71,10 +70,7 @@ var _ = ginkgo.Describe(
 				),
 			)
 
-			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
-			framework.ExpectNoError(err)
-			err = f.DevsyProviderUse(ctx, "docker")
+			f, err := setupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
 			framework.ExpectNoError(err)
 
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
@@ -87,7 +83,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"ensure dependencies installed via features are accessible in lifecycle hooks",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := setupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
 				framework.ExpectNoError(err)
 
 				tempDir, err := framework.CopyToTempDir(

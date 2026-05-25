@@ -581,6 +581,22 @@ func (r *runner) getRunOptions(
 		uid = r.WorkspaceConfig.Workspace.UID
 	}
 
+	// Resolve any ${containerEnv:VAR} references in containerEnv values using
+	// the image's inspected environment. ${containerWorkspaceFolder} and
+	// ${containerWorkspaceFolderBasename} are already substituted upstream in
+	// runner.substitute, since the host fully knows those values.
+	var imageEnv []string
+	if buildInfo.ImageDetails != nil {
+		imageEnv = buildInfo.ImageDetails.Config.Env
+	}
+	resolvedContainerEnv, err := config.ResolveContainerEnvFromImage(
+		mergedConfig.ContainerEnv, imageEnv,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve containerEnv from image: %w", err)
+	}
+	mergedConfig.ContainerEnv = resolvedContainerEnv
+
 	return &driver.RunOptions{
 		UID:            uid,
 		Image:          buildInfo.ImageName,

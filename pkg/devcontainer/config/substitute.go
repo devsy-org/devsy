@@ -180,17 +180,47 @@ func replaceWithContext(
 }
 
 // restrictedReplace wraps a ReplaceFunction to preserve container-scoped
-// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename,
-// containerEnv) as literals for pre-container field substitution.
+// variables that cannot be resolved at host substitution time as literals.
+//
+// containerWorkspaceFolder and containerWorkspaceFolderBasename are NOT
+// restricted: the host knows their values (derived from getWorkspace) and
+// must resolve them before passing containerEnv to `docker run -e`, since
+// shells and the container runtime do not perform devcontainer variable
+// expansion on env-var values.
+//
+// Only ${containerEnv:VAR} refs remain literal here — those depend on the
+// running container's environment and are resolved later, either host-side
+// from the image's inspected env (see ResolveContainerEnvFromImage) or
+// inside the container via SubstituteContainerEnv.
 func restrictedReplace(fallback ReplaceFunction) ReplaceFunction {
 	return func(match, variable string, args []string) string {
 		switch variable {
-		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", containerEnvField:
+		case containerEnvField:
 			return match
 		default:
 			return fallback(match, variable, args)
 		}
 	}
+}
+
+// ResolveContainerEnvFromImage substitutes ${containerEnv:VAR} references in
+// the given env map using the image's environment (as returned by image
+// inspect, in KEY=VALUE form). The returned map preserves all other entries
+// unchanged. Use this host-side to resolve containerEnv values referencing
+// the image PATH (or similar) before passing them to `docker run -e`.
+func ResolveContainerEnvFromImage(
+	containerEnv map[string]string,
+	imageEnv []string,
+) (map[string]string, error) {
+	if len(containerEnv) == 0 {
+		return containerEnv, nil
+	}
+	imageEnvMap := ListToObject(imageEnv)
+	out := map[string]string{}
+	if err := SubstituteContainerEnv(imageEnvMap, containerEnv, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func lookupValue(isWindows bool, env map[string]string, args []string, match string) string {

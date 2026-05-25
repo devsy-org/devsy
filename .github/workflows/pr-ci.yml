@@ -383,9 +383,11 @@ jobs:
             install-kind: true
             requires-secret: false
 
-          # up-features wsl.go is build-tagged windows but requires Docker
-          # buildkit which the Windows CI runner does not provide (it uses
-          # Podman). Re-enable once wsl.go is ported to the podman provider.
+          - label: up-features
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
 
     runs-on: ${{ matrix.runner }}
     steps:

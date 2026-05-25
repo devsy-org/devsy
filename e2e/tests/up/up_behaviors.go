@@ -35,12 +35,8 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	})
 
 	ginkgo.It(
-		"containerEnv preserves container-scoped vars as literals",
+		"containerEnv resolves container-scoped vars host-side",
 		func(ctx context.Context) {
-			// Pre-existing: containerEnv ${containerWorkspaceFolder}
-			// is not resolved at runtime through shell. See
-			// pkg/devcontainer/config/substitute.go for the real fix.
-			ginkgo.Skip("containerEnv substitution not resolved at runtime")
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-varsub-scope")
 			framework.ExpectNoError(err)
 
@@ -232,15 +228,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		err = json.Unmarshal([]byte(lastLine), &envelope)
 		framework.ExpectNoError(err)
 		gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-		// Either the host-requirements validation message is surfaced
-		// directly, or it is reported via the CLI's "did not receive a
-		// result back from agent" fallback when the remote agent exits
-		// with the validation error before sending a result. Both
-		// confirm the workspace was blocked from starting.
-		gomega.Expect(envelope.Message).To(gomega.SatisfyAny(
-			gomega.ContainSubstring("minimum requirements"),
-			gomega.ContainSubstring("did not receive a result back from agent"),
-		))
+		gomega.Expect(envelope.Message).To(gomega.ContainSubstring("minimum requirements"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("skip-host-requirements bypasses enforcement", func(ctx context.Context) {
