@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"slices"
 	"testing"
 
@@ -543,6 +544,77 @@ func TestMergeConfiguration_ShutdownActionDefault_ComposeConfig(t *testing.T) {
 	}
 	if merged.ShutdownAction != ShutdownActionStopCompose {
 		t.Errorf("ShutdownAction = %q, want %q", merged.ShutdownAction, ShutdownActionStopCompose)
+	}
+}
+
+// TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks asserts that
+// lifecycle commands declared directly in the user's devcontainer.json are
+// carried into MergedDevContainerConfig even when no image metadata entries
+// are supplied. Regression test for the case where `devsy set-up` (and other
+// callers passing nil metadata) silently dropped the user's postCreateCommand.
+func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
+	postCreate := types.LifecycleHook{"": {"touch /tmp/setup-test-marker"}}
+	postStart := types.LifecycleHook{"": {"echo started"}}
+	onCreate := types.LifecycleHook{"": {"echo onCreate"}}
+
+	cfg := &DevContainerConfig{
+		ImageContainer: ImageContainer{Image: "alpine"},
+		DevContainerActions: DevContainerActions{
+			OnCreateCommand:   onCreate,
+			PostCreateCommand: postCreate,
+			PostStartCommand:  postStart,
+		},
+	}
+
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(merged.PostCreateCommands) != 1 {
+		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
+	}
+	if got := merged.PostCreateCommands[0][""]; len(got) != 1 ||
+		got[0] != "touch /tmp/setup-test-marker" {
+		t.Errorf("PostCreateCommands[0] = %v, want [touch /tmp/setup-test-marker]", got)
+	}
+	if len(merged.PostStartCommands) != 1 {
+		t.Errorf("PostStartCommands = %v, want one entry", merged.PostStartCommands)
+	}
+	if len(merged.OnCreateCommands) != 1 {
+		t.Errorf("OnCreateCommands = %v, want one entry", merged.OnCreateCommands)
+	}
+}
+
+// TestMergeConfiguration_NilMetadata_ParsedFromJSONFile exercises the full
+// parse-then-merge path used by `devsy set-up`'s loadConfig.
+func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/devcontainer.json"
+	if err := os.WriteFile(
+		path,
+		[]byte(`{"image":"alpine","postCreateCommand":"touch /tmp/setup-test-marker"}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	cfg, err := ParseDevContainerJSONFile(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	if len(merged.PostCreateCommands) != 1 {
+		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
+	}
+	cmds := merged.PostCreateCommands[0][""]
+	if len(cmds) != 1 || cmds[0] != "touch /tmp/setup-test-marker" {
+		t.Errorf("PostCreateCommands[0][\"\"] = %v, want [touch /tmp/setup-test-marker]", cmds)
 	}
 }
 

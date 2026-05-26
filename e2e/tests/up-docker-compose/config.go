@@ -572,7 +572,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				stdout, _, err := btc.f.DevsyUpStreams(ctx, tempDir)
+				stdout, _, err := btc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"expected devsy up to fail when host requirements are not met")
 
@@ -596,7 +596,9 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				stdout, _, err := btc.f.DevsyUpStreams(ctx, tempDir, "--skip-host-requirements")
+				stdout, _, err := btc.f.DevsyUpStreams(
+					ctx, tempDir, "--skip-host-requirements", "--result-format", "json",
+				)
 				framework.ExpectNoError(err)
 
 				lines := strings.Split(strings.TrimSpace(stdout), "\n")

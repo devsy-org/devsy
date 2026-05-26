@@ -118,6 +118,22 @@ func TestBuildDockerExecArgs_NoWorkdir(t *testing.T) {
 	assert.Equal(t, expected, args)
 }
 
+func TestBuildDockerExecArgs_WithUser(t *testing.T) {
+	args := buildDockerExecArgs(dockerExecArgs{
+		container:       testContainerName,
+		user:            "vscode",
+		workspaceFolder: testWorkspacePath,
+		command:         []string{testCmdEcho, testCmdHello},
+	})
+	expected := []string{
+		dockerExecSubcommand,
+		testWorkdirFlag, testWorkspacePath,
+		"--user", "vscode",
+		testContainerName, testCmdEcho, testCmdHello,
+	}
+	assert.Equal(t, expected, args)
+}
+
 func TestSetUpCmd_ResolveDockerPath_Default(t *testing.T) {
 	cmd := &SetUpCmd{GlobalFlags: &flags.GlobalFlags{}}
 	assert.Equal(t, defaultDockerCommand, cmd.resolveDockerPath())

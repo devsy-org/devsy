@@ -215,7 +215,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir)
+		stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 		gomega.Expect(err).To(gomega.HaveOccurred(),
 			"devsy up should fail when host requirements not met")
 
@@ -239,7 +239,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		stdout, _, err := dtc.f.DevsyUpStreams(
-			ctx, tempDir, "--skip-host-requirements",
+			ctx, tempDir, "--skip-host-requirements", "--result-format", "json",
 		)
 		framework.ExpectNoError(err)
 

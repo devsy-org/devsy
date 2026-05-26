@@ -33,6 +33,20 @@ func MergeConfiguration(
 	config *DevContainerConfig,
 	imageMetadataEntries []*ImageMetadata,
 ) (*MergedDevContainerConfig, error) {
+	// When no image metadata entries are provided, synthesize one from the
+	// supplied config so that lifecycle hooks, customizations, mounts, etc.
+	// declared directly in the devcontainer.json still propagate through the
+	// merge. Callers that build a proper metadata chain (single image, compose,
+	// etc.) call AddConfigToImageMetadata first and pass a non-empty list, in
+	// which case the user config is already represented there.
+	if len(imageMetadataEntries) == 0 && config != nil {
+		userMetadata := &ImageMetadata{}
+		userMetadata.DevContainerConfigBase = config.DevContainerConfigBase
+		userMetadata.DevContainerActions = config.DevContainerActions
+		userMetadata.NonComposeBase = config.NonComposeBase
+		imageMetadataEntries = []*ImageMetadata{userMetadata}
+	}
+
 	customizations := map[string][]any{}
 	for _, imageMetadata := range imageMetadataEntries {
 		for k, v := range imageMetadata.Customizations {
