@@ -151,9 +151,10 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	} else {
 		// Without a resolved workspace the context/workspace pair the tunnel
 		// state lives under is unknown, and guessing risks SIGTERMing the
-		// wrong workspace's helper. Surface the orphan so the operator can
-		// clean it up manually.
-		log.Warnf("resolve workspace for tunnel cleanup failed: %v", err)
+		// wrong workspace's helper. This is the expected happy path under
+		// --ignore-not-found when the workspace is already gone, so log at
+		// Debug rather than Warn to avoid misleading operators.
+		log.Debugf("resolve workspace for tunnel cleanup failed: %v", err)
 	}
 
 	return workspace.Delete(ctx, workspace.DeleteOptions{

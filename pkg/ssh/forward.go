@@ -45,10 +45,11 @@ func PortForward(
 }
 
 // ForwardOpts groups the parameters for PortForwardWithListener so callers
-// don't have to thread a long positional argument list.
+// don't have to thread a long positional argument list. The remote network
+// is hardcoded to "tcp" — the only caller has always used "tcp" and adding
+// another protocol would require non-trivial changes elsewhere.
 type ForwardOpts struct {
 	Listener         net.Listener
-	RemoteNetwork    string
 	RemoteAddr       string
 	ExitAfterTimeout time.Duration
 }
@@ -56,7 +57,8 @@ type ForwardOpts struct {
 // PortForwardWithListener is like PortForward, but uses a caller-supplied
 // listener instead of binding one internally. This lets the caller reserve
 // the local port before forking, eliminating a TOCTOU race between port
-// probe and net.Listen in a detached child.
+// probe and net.Listen in a detached child. The remote network is always
+// "tcp".
 func PortForwardWithListener(
 	ctx context.Context,
 	client *ssh.Client,
@@ -66,7 +68,7 @@ func PortForwardWithListener(
 
 	return portForwarding(
 		ctx, client, opts.Listener,
-		opts.Listener.Addr().String(), opts.RemoteNetwork, opts.RemoteAddr,
+		opts.Listener.Addr().String(), "tcp", opts.RemoteAddr,
 		opts.ExitAfterTimeout, forward,
 	)
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
-	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -138,7 +138,7 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 	stopSignals := installSignalCancel(ctx, cancel)
 	defer stopSignals()
 
-	client, err := workspace2.Get(ctx, workspace2.GetOptions{
+	client, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: devsyConfig,
 		Args:        []string{cmd.Workspace},
 		Owner:       cmd.Owner,

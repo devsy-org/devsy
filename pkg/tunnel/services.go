@@ -418,7 +418,6 @@ func forwardPort(ctx context.Context, p singlePortForwardParams) []string {
 					p.containerClient,
 					devssh.ForwardOpts{
 						Listener:         listener,
-						RemoteNetwork:    "tcp",
 						RemoteAddr:       containerAddr,
 						ExitAfterTimeout: p.exitAfterTimeout,
 					},
