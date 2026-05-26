@@ -101,12 +101,21 @@ func parseInheritedListenerEntry(entry string) (string, net.Listener, error) {
 		return "", nil, fmt.Errorf("invalid --inherit-listener %q (expected host:port=fd)", entry)
 	}
 	hostAddr := entry[:eqIdx]
+	if hostAddr == "" {
+		return "", nil, fmt.Errorf("invalid --inherit-listener %q (empty host:port)", entry)
+	}
 	fd, err := strconv.Atoi(entry[eqIdx+1:])
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid fd in --inherit-listener %q: %w", entry, err)
 	}
-	if fd < 0 {
-		return "", nil, fmt.Errorf("invalid negative fd %d in --inherit-listener %q", fd, entry)
+	// Inherited fds from cmd.ExtraFiles start at 3; 0/1/2 are the child's
+	// stdio, which net.FileListener would mishandle in confusing ways.
+	if fd < 3 {
+		return "", nil, fmt.Errorf(
+			"invalid fd %d in --inherit-listener %q (must be >= 3)",
+			fd,
+			entry,
+		)
 	}
 	//nolint:gosec // fd is bounds-checked above
 	f := os.NewFile(uintptr(fd), "inherited-listener-"+hostAddr)

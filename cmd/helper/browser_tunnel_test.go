@@ -24,7 +24,17 @@ func TestParseInheritedListenerEntry_Errors(t *testing.T) {
 		{
 			name:      "negative fd",
 			entry:     "localhost:10800=-1",
-			wantInErr: "negative fd",
+			wantInErr: "must be >= 3",
+		},
+		{
+			name:      "stdio fd (must be >= 3)",
+			entry:     "localhost:10800=2",
+			wantInErr: "must be >= 3",
+		},
+		{
+			name:      "empty host",
+			entry:     "=3",
+			wantInErr: "empty host:port",
 		},
 	}
 
