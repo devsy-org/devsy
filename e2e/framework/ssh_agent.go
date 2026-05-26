@@ -14,9 +14,6 @@ import (
 	"al.essio.dev/pkg/shellescape"
 )
 
-// testLogger is the minimal subset of testing.TB / Ginkgo's FullGinkgoTInterface
-// used by these helpers. Keeping it narrow lets callers pass either
-// ginkgo.GinkgoT() or a real *testing.T without an awkward type assertion.
 type testLogger interface {
 	Helper()
 	Fatalf(format string, args ...any)
@@ -25,9 +22,6 @@ type testLogger interface {
 // StartMockSSHAgent starts an isolated ssh-agent on a temporary socket path
 // and loads a freshly generated ed25519 key into it. The returned cleanup
 // function kills the agent process and removes the temp directory.
-//
-// Accepts a narrow testLogger interface satisfied by both *testing.T and
-// ginkgo.GinkgoT().
 func StartMockSSHAgent(t testLogger) (authSock string, pubKey string, cleanup func()) {
 	t.Helper()
 
@@ -144,9 +138,6 @@ func addKeyToAgent(sockPath, keyPath string) error {
 //
 // `extraEnv` is merged into the child ssh process environment (e.g. to set
 // SSH_AUTH_SOCK for agent forwarding).
-//
-// Accepts a narrow testLogger interface satisfied by both *testing.T and
-// ginkgo.GinkgoT().
 func OpenSSHControlMaster(
 	t testLogger,
 	workspaceHost string,
@@ -200,11 +191,8 @@ func OpenSSHControlMaster(
 	return controlPath, closer, nil
 }
 
-// SSHMultiplexedExec runs a command over an existing OpenSSH ControlMaster
-// connection identified by controlPath. Each invocation is a new SSH "session"
-// on the same underlying connection — exactly the scenario that asserts
-// $SSH_AUTH_SOCK is stable across sessions (regression for the per-session
-// socket allocation bug).
+// SSHMultiplexedExec runs cmd as a new SSH session on the existing
+// ControlMaster connection at controlPath.
 func SSHMultiplexedExec(
 	controlPath, host string,
 	extraEnv map[string]string,
@@ -237,8 +225,8 @@ func SSHMultiplexedExec(
 	return outBuf.String(), errBuf.String(), err
 }
 
-// mergedEnv builds an env slice from os.Environ() with the given overrides
-// applied last (so they win on duplicate keys).
+// mergedEnv returns os.Environ() with extra overrides applied last so they
+// win on duplicate keys.
 func mergedEnv(extra map[string]string) []string {
 	env := os.Environ()
 	for k, v := range extra {

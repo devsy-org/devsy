@@ -16,11 +16,9 @@ import (
 	"github.com/onsi/gomega"
 )
 
-// Regression tests for the per-session agent-forwarding socket bug.
-// Previously the SSH server allocated a fresh agent-forwarding socket per SSH
-// session, so $SSH_AUTH_SOCK changed between sessions on the same connection
-// and stale sockets leaked. The fix allocates one socket per CONNECTION and
-// cleans it up on connection close — these specs lock that contract in place.
+// SSH agent-forwarding regression tests: $SSH_AUTH_SOCK must be stable
+// across sessions on one connection, distinct across connections, and the
+// per-connection socket directory must be cleaned up on disconnect.
 var _ = ginkgo.Describe(
 	"devsy ssh agent forwarding",
 	ginkgo.Label("ssh"),

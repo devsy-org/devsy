@@ -64,12 +64,11 @@ func newConnAgentState(connID string) (*connAgentState, error) {
 	}, nil
 }
 
-// sockPath returns the unix socket path clients should set as $SSH_AUTH_SOCK.
 func (c *connAgentState) sockPath() string {
 	return c.socket
 }
 
-// startForwarding starts ForwardAgentConnections exactly once for the
+// startForwarding launches ForwardAgentConnections at most once per
 // connection, bound to the first session that requests agent forwarding.
 func (c *connAgentState) startForwarding(sess ssh.Session) {
 	c.once.Do(func() {
@@ -77,7 +76,6 @@ func (c *connAgentState) startForwarding(sess ssh.Session) {
 	})
 }
 
-// close tears down the listener and removes the socket directory.
 func (c *connAgentState) close() {
 	if c == nil {
 		return
