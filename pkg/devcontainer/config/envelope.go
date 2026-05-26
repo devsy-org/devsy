@@ -11,6 +11,7 @@ type ResultEnvelope struct {
 	ContainerID           string   `json:"containerId"`
 	RemoteUser            string   `json:"remoteUser"`
 	RemoteWorkspaceFolder string   `json:"remoteWorkspaceFolder"`
+	URL                   string   `json:"url,omitempty"`
 	Warnings              []string `json:"warnings,omitempty"`
 }
 
@@ -19,15 +20,11 @@ type ErrorEnvelope struct {
 	Message string `json:"message"`
 }
 
-//nolint:revive
-func WriteResultJSON(w io.Writer, containerID, user, workdir string, warnings []string) error {
-	env := ResultEnvelope{
-		Outcome:               "success",
-		ContainerID:           containerID,
-		RemoteUser:            user,
-		RemoteWorkspaceFolder: workdir,
-		Warnings:              warnings,
-	}
+// WriteResultJSON serializes env as a success envelope to w. The caller
+// supplies the envelope fields; this function stamps Outcome="success" and
+// appends a trailing newline.
+func WriteResultJSON(w io.Writer, env ResultEnvelope) error {
+	env.Outcome = "success"
 	data, err := json.Marshal(env)
 	if err != nil {
 		return err

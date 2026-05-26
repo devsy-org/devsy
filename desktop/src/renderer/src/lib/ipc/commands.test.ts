@@ -45,6 +45,20 @@ describe("IPC commands", () => {
       expect(result).toBe("cmd-123")
     })
 
+    it("workspaceUp forwards ideLaunch", async () => {
+      mockInvoke.mockResolvedValue("cmd-789")
+      await workspaceUp({
+        source: "github.com/org/repo",
+        ide: "openvscode",
+        ideLaunch: "headless",
+      })
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_up", {
+        source: "github.com/org/repo",
+        ide: "openvscode",
+        ideLaunch: "headless",
+      })
+    })
+
     it("workspaceUp works with minimal parameters", async () => {
       mockInvoke.mockResolvedValue("cmd-456")
       await workspaceUp({ source: "my-repo" })

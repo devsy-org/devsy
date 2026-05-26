@@ -1,6 +1,9 @@
 package up
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/devsy-org/devsy/pkg/ide/opener"
+	"github.com/spf13/cobra"
+)
 
 func (cmd *UpCmd) registerFlags(upCmd *cobra.Command) {
 	cmd.registerSSHFlags(upCmd)
@@ -137,9 +140,12 @@ func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
 		StringVar(&cmd.IDE, "ide", "", "The IDE to open the workspace in. If empty will use vscode locally or in browser")
 	upCmd.Flags().
 		StringArrayVar(&cmd.IDEOptions, "ide-option", []string{}, "IDE option in the form KEY=VALUE")
-	upCmd.Flags().
-		BoolVar(&cmd.OpenIDE, "open-ide", true,
-			"If this is false and an IDE is configured, Devsy will only install the IDE server backend, but not open it")
+	cmd.IDELaunch = opener.LaunchAuto
+	upCmd.Flags().Var(
+		&cmd.IDELaunch,
+		"ide-launch",
+		"How to launch the IDE: auto opens it (default), headless skips the host browser/app, skip does not launch.",
+	)
 	upCmd.Flags().
 		StringVar(&cmd.WorkspaceFolder, "workspace-folder", "",
 			"Override the folder path opened in the IDE (absolute path inside the container)")

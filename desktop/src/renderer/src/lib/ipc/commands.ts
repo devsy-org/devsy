@@ -21,6 +21,7 @@ export async function workspaceUp(params: {
   workspaceId?: string
   provider?: string
   ide?: string
+  ideLaunch?: "auto" | "headless" | "skip"
   debug?: boolean
   workspaceFolder?: string
 }): Promise<string> {

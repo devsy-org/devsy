@@ -13,6 +13,7 @@ func TestWriteResultJSON(t *testing.T) {
 		containerID string
 		user        string
 		workdir     string
+		url         string
 		warnings    []string
 	}{
 		{
@@ -53,12 +54,34 @@ func TestWriteResultJSON(t *testing.T) {
 				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
 			},
 		},
+		{
+			name:        "with url",
+			containerID: "abc123",
+			user:        "vscode",
+			workdir:     "/workspaces/project",
+			url:         "http://localhost:8080/?folder=/workspaces/project",
+			warnings:    nil,
+		},
+		{
+			name:        "empty url omitted",
+			containerID: "abc123",
+			user:        "vscode",
+			workdir:     "/workspaces/project",
+			url:         "",
+			warnings:    nil,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			err := WriteResultJSON(&buf, tt.containerID, tt.user, tt.workdir, tt.warnings)
+			err := WriteResultJSON(&buf, ResultEnvelope{
+				ContainerID:           tt.containerID,
+				RemoteUser:            tt.user,
+				RemoteWorkspaceFolder: tt.workdir,
+				URL:                   tt.url,
+				Warnings:              tt.warnings,
+			})
 			if err != nil {
 				t.Fatalf("WriteResultJSON returned error: %v", err)
 			}
@@ -85,6 +108,15 @@ func TestWriteResultJSON(t *testing.T) {
 			if envelope.RemoteWorkspaceFolder != tt.workdir {
 				t.Errorf("remoteWorkspaceFolder = %q, want %q",
 					envelope.RemoteWorkspaceFolder, tt.workdir)
+			}
+			if envelope.URL != tt.url {
+				t.Errorf("url = %q, want %q", envelope.URL, tt.url)
+			}
+			if tt.url == "" && bytes.Contains(output, []byte(`"url"`)) {
+				t.Error("url field must be omitted when empty")
+			}
+			if tt.url != "" && !bytes.Contains(output, []byte(`"url"`)) {
+				t.Error("url field must be present when set")
 			}
 			if len(tt.warnings) == 0 {
 				if envelope.Warnings != nil {

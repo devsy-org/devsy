@@ -34,17 +34,17 @@ var _ = ginkgo.Describe("devsy ide test suite", ginkgo.Label("ide"), ginkgo.Orde
 				framework.ExpectNoError(err)
 			})
 
-			err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=vscode")
+			err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=vscode")
 			framework.ExpectNoError(err)
 
-			err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=openvscode")
+			err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=openvscode")
 			framework.ExpectNoError(err)
 
-			err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=jupyternotebook")
+			err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=jupyternotebook")
 			framework.ExpectNoError(err)
 
 			// TODO: Fix broken IDE
-			// err = f.DevsyUpWithIDE(ctx, tempDir, "--open-ide=false", "--ide=fleet")
+			// err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=fleet")
 			// framework.ExpectNoError(err)
 
 			// check if ssh works

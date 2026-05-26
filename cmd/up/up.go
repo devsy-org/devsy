@@ -34,7 +34,7 @@ type UpCmd struct {
 	ConfigureSSH       bool
 	GPGAgentForwarding bool
 	SSHTunnelMode      bool
-	OpenIDE            bool
+	IDELaunch          opener.IDELaunchMode
 	Reconfigure        bool
 
 	SSHConfigPath      string
@@ -116,7 +116,8 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
 	}
 
-	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
+	ideURL, err := cmd.openIDE(ctx, devsyConfig, client, wctx)
+	if err != nil {
 		if emitJSON {
 			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
 		}
@@ -132,7 +133,13 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 			}
 			warnings = wctx.result.HostWarnings
 		}
-		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
+		_ = config2.WriteResultJSON(os.Stdout, config2.ResultEnvelope{
+			ContainerID:           containerID,
+			RemoteUser:            wctx.user,
+			RemoteWorkspaceFolder: wctx.workdir,
+			URL:                   ideURL,
+			Warnings:              warnings,
+		})
 	}
 
 	if wctx.tunnelPort > 0 {
