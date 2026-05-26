@@ -370,8 +370,35 @@ func spawnTunnelHelper(
 	setup.Cleanup()
 
 	pid := cmd.Process.Pid
-	// Capture the helper's creation timestamp so later reuse/kill paths can
-	// detect PID reuse and avoid acting on an unrelated process.
+	if err := recordHelperState(cmd.Process, pid, recordHelperStateOpts{
+		ContextName: contextName,
+		WorkspaceID: workspaceID,
+		TargetURL:   tunnelParams.TargetURL,
+		Label:       label,
+	}); err != nil {
+		return 0, "", err
+	}
+
+	logLocation := logPath
+	if logFile == nil {
+		logLocation = os.DevNull
+	}
+	return pid, logLocation, nil
+}
+
+// recordHelperStateOpts bundles workspace identity + helper invocation metadata
+// that recordHelperState persists to tunnel.json.
+type recordHelperStateOpts struct {
+	ContextName string
+	WorkspaceID string
+	TargetURL   string
+	Label       string
+}
+
+// recordHelperState captures the helper's process identity (PID + CreateTime
+// via gopsutil) and persists it to tunnel.json. On any failure the helper is
+// killed so we don't leave an un-identifiable orphan.
+func recordHelperState(proc *os.Process, pid int, opts recordHelperStateOpts) error {
 	createTime, err := helperCreateTime(pid)
 	if err != nil {
 		pkglog.Warnf(
@@ -379,33 +406,27 @@ func spawnTunnelHelper(
 			pid,
 			err,
 		)
-		_ = cmd.Process.Kill()
-		_ = cmd.Process.Release()
-		return 0, "", fmt.Errorf("identify helper pid %d: %w", pid, err)
+		_ = proc.Kill()
+		_ = proc.Release()
+		return fmt.Errorf("identify helper pid %d: %w", pid, err)
 	}
 	state := TunnelState{
 		PID:        pid,
 		CreateTime: createTime,
-		TargetURL:  tunnelParams.TargetURL,
-		Label:      label,
+		TargetURL:  opts.TargetURL,
+		Label:      opts.Label,
 	}
-	if err := WriteTunnelState(contextName, workspaceID, state); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Process.Release()
-		return 0, "", fmt.Errorf(
+	if err := WriteTunnelState(opts.ContextName, opts.WorkspaceID, state); err != nil {
+		_ = proc.Kill()
+		_ = proc.Release()
+		return fmt.Errorf(
 			"write tunnel state file (helper PID %d killed to avoid orphan): %w",
 			pid,
 			err,
 		)
 	}
-
-	_ = cmd.Process.Release()
-
-	logLocation := logPath
-	if logFile == nil {
-		logLocation = os.DevNull
-	}
-	return pid, logLocation, nil
+	_ = proc.Release()
+	return nil
 }
 
 // attachHelperStdio wires the helper command's stdout/stderr to logFile if

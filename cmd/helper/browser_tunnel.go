@@ -70,40 +70,45 @@ func parseInheritedListeners(entries []string) (map[string]net.Listener, error) 
 	}
 	out := make(map[string]net.Listener, len(entries))
 	for _, entry := range entries {
-		eqIdx := strings.LastIndex(entry, "=")
-		if eqIdx < 0 {
-			return nil, fmt.Errorf("invalid --inherit-listener %q (expected host:port=fd)", entry)
-		}
-		hostAddr := entry[:eqIdx]
-		fdStr := entry[eqIdx+1:]
-		fd, err := strconv.Atoi(fdStr)
+		hostAddr, l, err := parseInheritedListenerEntry(entry)
 		if err != nil {
-			return nil, fmt.Errorf("invalid fd in --inherit-listener %q: %w", entry, err)
-		}
-		if fd < 0 {
-			return nil, fmt.Errorf("invalid negative fd %d in --inherit-listener %q", fd, entry)
-		}
-		//nolint:gosec // fd is bounds-checked above
-		f := os.NewFile(uintptr(fd), "inherited-listener-"+hostAddr)
-		if f == nil {
-			return nil, fmt.Errorf("invalid fd %d for %s", fd, hostAddr)
-		}
-		l, err := net.FileListener(f)
-		// FileListener dup'd the fd; close ours regardless of success.
-		_ = f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("wrap inherited listener for %s: %w", hostAddr, err)
+			return nil, err
 		}
 		if _, exists := out[hostAddr]; exists {
-			// Close the newly-wrapped listener so we don't leak its fd; the
-			// previously-stored listener for hostAddr will be cleaned up by
-			// the caller via the returned error path.
+			// Close the newly-wrapped listener so we don't leak its fd.
 			_ = l.Close()
 			return nil, fmt.Errorf("duplicate --inherit-listener for %s", hostAddr)
 		}
 		out[hostAddr] = l
 	}
 	return out, nil
+}
+
+func parseInheritedListenerEntry(entry string) (string, net.Listener, error) {
+	eqIdx := strings.LastIndex(entry, "=")
+	if eqIdx < 0 {
+		return "", nil, fmt.Errorf("invalid --inherit-listener %q (expected host:port=fd)", entry)
+	}
+	hostAddr := entry[:eqIdx]
+	fd, err := strconv.Atoi(entry[eqIdx+1:])
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid fd in --inherit-listener %q: %w", entry, err)
+	}
+	if fd < 0 {
+		return "", nil, fmt.Errorf("invalid negative fd %d in --inherit-listener %q", fd, entry)
+	}
+	//nolint:gosec // fd is bounds-checked above
+	f := os.NewFile(uintptr(fd), "inherited-listener-"+hostAddr)
+	if f == nil {
+		return "", nil, fmt.Errorf("invalid fd %d for %s", fd, hostAddr)
+	}
+	l, err := net.FileListener(f)
+	// FileListener dup'd the fd; close ours regardless of success.
+	_ = f.Close()
+	if err != nil {
+		return "", nil, fmt.Errorf("wrap inherited listener for %s: %w", hostAddr, err)
+	}
+	return hostAddr, l, nil
 }
 
 // Run runs the browser-tunnel helper command.
