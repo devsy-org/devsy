@@ -15,15 +15,17 @@ import (
 
 const osWindows = "windows"
 
-// uniqueConnID returns a random hex connID so parallel test binaries (e.g.
-// goreleaser running pre-hook tests for multiple targets at once) don't
-// collide on the shared runtime-dir flock.
+// uniqueConnID returns a short random hex connID so parallel test binaries
+// (e.g. goreleaser running pre-hook tests for multiple targets at once)
+// don't collide on the shared runtime-dir flock. Kept short because macOS
+// UNIX_PATH_MAX is only 104 bytes and the runtime dir prefix is already
+// ~50 bytes there.
 func uniqueConnID(t *testing.T) string {
 	t.Helper()
-	var b [8]byte
+	var b [4]byte
 	_, err := rand.Read(b[:])
 	require.NoError(t, err)
-	return "test-" + hex.EncodeToString(b[:])
+	return "t" + hex.EncodeToString(b[:])
 }
 
 func TestSetupConnectionAgentListener_HappyPath(t *testing.T) {
