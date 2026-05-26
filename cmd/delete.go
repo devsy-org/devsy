@@ -149,10 +149,11 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	if err == nil {
 		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 	} else {
+		// Without a resolved workspace we don't know which context/workspace
+		// pair the tunnel state lives under, and guessing risks SIGTERMing
+		// the wrong workspace's helper. Surface the orphan so the operator
+		// can clean it up manually.
 		log.Warnf("resolve workspace for tunnel cleanup failed: %v", err)
-		if len(args) > 0 {
-			opener.KillBrowserTunnel(cmd.Context, args[0])
-		}
 	}
 
 	return workspace.Delete(ctx, workspace.DeleteOptions{

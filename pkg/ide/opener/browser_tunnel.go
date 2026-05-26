@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/gofrs/flock"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 // KillBrowserTunnel terminates the detached browser tunnel for a workspace
@@ -31,6 +33,9 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 
 	state := loadLiveTunnelState(contextName, workspaceID, statePath)
 	if state == nil {
+		// loadLiveTunnelState already removed the stale file when the PID
+		// is no longer ours (dead, or reused by an unrelated process), so
+		// we don't risk SIGTERMing a foreign process here.
 		return
 	}
 
@@ -39,8 +44,10 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 }
 
 // loadLiveTunnelState reads the tunnel state file and returns it only if the
-// recorded PID is still alive. If the state file is missing, unreadable, or
-// the PID is dead, the stale state file is removed and nil is returned.
+// recorded PID is still our helper (PID alive AND CreateTime matches). If the
+// state file is missing, unreadable, or the PID is no longer ours (dead, or
+// reused by another process), the stale state file is removed and nil is
+// returned.
 func loadLiveTunnelState(contextName, workspaceID, statePath string) *TunnelState {
 	state, err := ReadTunnelState(contextName, workspaceID)
 	if err != nil {
@@ -52,7 +59,7 @@ func loadLiveTunnelState(contextName, workspaceID, statePath string) *TunnelStat
 		_ = os.Remove(statePath)
 		return nil
 	}
-	if !isProcessAlive(state.PID) {
+	if !isOurHelper(state) {
 		_ = os.Remove(statePath)
 		return nil
 	}
@@ -130,10 +137,56 @@ const TunnelLockFileName = "tunnel.lock"
 const TunnelLogFileName = "tunnel.log"
 
 // TunnelState describes a running browser tunnel for a workspace.
+//
+// CreateTime is the helper process's creation timestamp in milliseconds since
+// epoch, as reported by gopsutil. It pairs with PID to detect PID reuse: if
+// the process at PID has a different CreateTime than what we recorded, the
+// helper is gone and a foreign process now occupies that PID.
 type TunnelState struct {
-	PID       int    `json:"pid"`
-	TargetURL string `json:"targetUrl"`
-	Label     string `json:"label,omitempty"`
+	PID        int    `json:"pid"`
+	CreateTime int64  `json:"createTime"`
+	TargetURL  string `json:"targetUrl"`
+	Label      string `json:"label,omitempty"`
+}
+
+// helperCreateTime returns the creation timestamp (milliseconds since epoch)
+// of the process with the given PID, via gopsutil. It's used right after
+// spawning the helper so we can persist a PID+CreateTime identity in the
+// state file.
+func helperCreateTime(pid int) (int64, error) {
+	if pid <= 0 || pid > math.MaxInt32 {
+		return 0, fmt.Errorf("pid %d out of int32 range", pid)
+	}
+	//nolint:gosec // pid is bounds-checked above
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return 0, fmt.Errorf("lookup process: %w", err)
+	}
+	t, err := p.CreateTime()
+	if err != nil {
+		return 0, fmt.Errorf("read process create time: %w", err)
+	}
+	return t, nil
+}
+
+// isOurHelper reports whether the process at state.PID is still the helper we
+// spawned, by comparing its current creation time against state.CreateTime.
+// Returns false if the process no longer exists, the creation time can't be
+// read, or the creation time differs (PID reuse).
+func isOurHelper(state *TunnelState) bool {
+	if state == nil || state.PID <= 0 || state.PID > math.MaxInt32 {
+		return false
+	}
+	//nolint:gosec // PID is bounds-checked above
+	p, err := process.NewProcess(int32(state.PID))
+	if err != nil {
+		return false
+	}
+	createTime, err := p.CreateTime()
+	if err != nil {
+		return false
+	}
+	return createTime == state.CreateTime
 }
 
 // TunnelStateFilePath returns the path used to store the browser tunnel state
@@ -317,7 +370,25 @@ func spawnTunnelHelper(
 	setup.Cleanup()
 
 	pid := cmd.Process.Pid
-	state := TunnelState{PID: pid, TargetURL: tunnelParams.TargetURL, Label: label}
+	// Capture the helper's creation timestamp so later reuse/kill paths can
+	// detect PID reuse and avoid acting on an unrelated process.
+	createTime, err := helperCreateTime(pid)
+	if err != nil {
+		pkglog.Warnf(
+			"identify tunnel helper pid %d via gopsutil (killing to avoid un-identifiable state): %v",
+			pid,
+			err,
+		)
+		_ = cmd.Process.Kill()
+		_ = cmd.Process.Release()
+		return 0, "", fmt.Errorf("identify helper pid %d: %w", pid, err)
+	}
+	state := TunnelState{
+		PID:        pid,
+		CreateTime: createTime,
+		TargetURL:  tunnelParams.TargetURL,
+		Label:      label,
+	}
 	if err := WriteTunnelState(contextName, workspaceID, state); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Process.Release()
@@ -405,11 +476,18 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 // debugFmt must contain a single %v verb for the error.
 //
 // Uses context.WithoutCancel so values from the caller's ctx are preserved
-// but cancellation isn't propagated: open2.Open retries until ctx is done,
-// and `devsy up` exits as soon as the detached helper is spawned. Tying the
-// browser-open retries to the up ctx would cancel them prematurely.
+// but cancellation isn't propagated: `devsy up` exits as soon as the detached
+// helper is spawned, and tying the browser-open retries to the up ctx would
+// cancel them prematurely.
+//
+// We additionally bound the attempt with a 30s timeout: open2.Open retries
+// every 1s until its context is done, which on a broken URL or missing
+// browser would otherwise loop forever. 30s is generous enough to let the OS
+// launch a real browser but short enough that we don't leak a goroutine.
 func openBrowserAsync(ctx context.Context, url, debugFmt string) {
-	if err := open2.Open(context.WithoutCancel(ctx), url); err != nil {
+	tctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := open2.Open(tctx, url); err != nil {
 		pkglog.Debugf(debugFmt, err)
 	}
 }
@@ -428,7 +506,7 @@ func tryReuseExistingTunnel(
 	if existing == nil {
 		return false
 	}
-	if isProcessAlive(existing.PID) {
+	if isOurHelper(existing) {
 		pkglog.Infof(
 			"%s browser tunnel already running (PID %d). Reusing existing tunnel at %s",
 			inv.Label, existing.PID, existing.TargetURL,

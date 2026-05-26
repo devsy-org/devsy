@@ -94,6 +94,13 @@ func parseInheritedListeners(entries []string) (map[string]net.Listener, error) 
 		if err != nil {
 			return nil, fmt.Errorf("wrap inherited listener for %s: %w", hostAddr, err)
 		}
+		if _, exists := out[hostAddr]; exists {
+			// Close the newly-wrapped listener so we don't leak its fd; the
+			// previously-stored listener for hostAddr will be cleaned up by
+			// the caller via the returned error path.
+			_ = l.Close()
+			return nil, fmt.Errorf("duplicate --inherit-listener for %s", hostAddr)
+		}
 		out[hostAddr] = l
 	}
 	return out, nil
