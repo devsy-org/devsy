@@ -116,17 +116,14 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
 	}
 
-	// Browser-based IDEs (VSCode Browser, Jupyter, RStudio) open a tunnel that
-	// blocks for the lifetime of the IDE session. Emit the success envelope
-	// before openIDE so downstream consumers (e.g. the desktop wizard) can
-	// detect that the workspace is ready instead of waiting forever.
-	ideName := client.WorkspaceConfig().IDE.Name
-	if cmd.IDE != "" {
-		ideName = cmd.IDE
+	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
+		if emitJSON {
+			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		}
+		return err
 	}
-	browserIDE := cmd.OpenIDE && opener.IsBrowserIDE(ideName)
 
-	writeResultEnvelope := func() {
+	if emitJSON {
 		containerID := ""
 		var warnings []string
 		if wctx.result != nil {
@@ -136,21 +133,6 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 			warnings = wctx.result.HostWarnings
 		}
 		_ = config2.WriteResultJSON(os.Stdout, containerID, wctx.user, wctx.workdir, warnings)
-	}
-
-	if emitJSON && browserIDE {
-		writeResultEnvelope()
-	}
-
-	if err := cmd.openIDE(ctx, devsyConfig, client, wctx); err != nil {
-		if emitJSON && !browserIDE {
-			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
-	}
-
-	if emitJSON && !browserIDE {
-		writeResultEnvelope()
 	}
 
 	if wctx.tunnelPort > 0 {

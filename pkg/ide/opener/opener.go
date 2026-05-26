@@ -39,8 +39,10 @@ type IDEParams struct {
 	TunnelMode         bool
 }
 
-// IsBrowserIDE reports whether the given IDE name uses a browser tunnel
-// that blocks the CLI process for the lifetime of the IDE session.
+// IsBrowserIDE reports whether the given IDE name uses a browser-based
+// tunnel (openvscode, jupyter, rstudio). These IDEs spawn a detached
+// helper process for the tunnel; the CLI does not block on the IDE
+// session lifetime.
 func IsBrowserIDE(ideName string) bool {
 	_, ok := browserIDEOpener(ideName)
 	return ok
