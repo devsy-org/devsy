@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,12 +15,23 @@ import (
 
 const osWindows = "windows"
 
+// uniqueConnID returns a random hex connID so parallel test binaries (e.g.
+// goreleaser running pre-hook tests for multiple targets at once) don't
+// collide on the shared runtime-dir flock.
+func uniqueConnID(t *testing.T) string {
+	t.Helper()
+	var b [8]byte
+	_, err := rand.Read(b[:])
+	require.NoError(t, err)
+	return "test-" + hex.EncodeToString(b[:])
+}
+
 func TestSetupConnectionAgentListener_HappyPath(t *testing.T) {
 	if runtime.GOOS == osWindows {
 		t.Skip("unix socket based test")
 	}
 
-	l, socketDir, err := setupConnectionAgentListener("testconn01")
+	l, socketDir, err := setupConnectionAgentListener(uniqueConnID(t))
 	require.NoError(t, err)
 	require.NotNil(t, l)
 	t.Cleanup(func() {
@@ -87,7 +100,7 @@ func TestSetupConnectionAgentListener_BadRuntimeDir(t *testing.T) {
 	// underneath it will always fail with ENOTDIR.
 	t.Setenv("TMPDIR", "/dev/null/definitely-not-a-dir")
 
-	l, socketDir, err := setupConnectionAgentListener("badruntime")
+	l, socketDir, err := setupConnectionAgentListener(uniqueConnID(t))
 	if err == nil {
 		// Some platforms (notably darwin) ignore TMPDIR for the
 		// confstr-derived temp dir. Clean up and skip.
@@ -104,7 +117,7 @@ func TestNewConnAgentState_LifecycleAndSockPath(t *testing.T) {
 		t.Skip("unix socket based test")
 	}
 
-	state, err := newConnAgentState("lifecycle01")
+	state, err := newConnAgentState(uniqueConnID(t))
 	require.NoError(t, err)
 	require.NotNil(t, state)
 
