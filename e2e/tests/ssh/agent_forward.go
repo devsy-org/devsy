@@ -205,7 +205,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"socket directory is cleaned up after connection close",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
-			func(_ ginkgo.SpecContext) {
+			func(ctx ginkgo.SpecContext) {
 				env := map[string]string{envSSHAuthSock: authSock}
 
 				cp, closeCM, err := framework.OpenSSHControlMaster(ginkgo.GinkgoT(), host, env)
@@ -239,8 +239,10 @@ var _ = ginkgo.Describe(
 				// connection so the just-closed socket's filesystem state is
 				// always up-to-date.
 				gomega.Eventually(func() string {
+					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+					defer cancel()
 					out, _ := f.DevsySSH(
-						context.Background(),
+						pollCtx,
 						tempDir,
 						"test -S "+sockPath+" && echo PRESENT || echo GONE",
 					)
@@ -259,7 +261,7 @@ var _ = ginkgo.Describe(
 			ginkgo.Label("ssh"),
 			ginkgo.Label("agent-forward"),
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
-			func(_ ginkgo.SpecContext) {
+			func(ctx ginkgo.SpecContext) {
 				tmpDir, err := os.MkdirTemp("", "devsy-ssh-cm-clean-")
 				framework.ExpectNoError(err)
 				controlPath := filepath.Join(tmpDir, "cm.sock")
@@ -313,8 +315,10 @@ var _ = ginkgo.Describe(
 				// directories remain. With lazy allocation, none are ever
 				// created; with the cleanup goroutine, any leftover is removed.
 				gomega.Eventually(func() string {
+					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+					defer cancel()
 					out, _ := f.DevsySSH(
-						context.Background(),
+						pollCtx,
 						tempDir,
 						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/auth-agent-conn-* 2>/dev/null | wc -l'",
 					)
