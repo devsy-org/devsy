@@ -7,5 +7,8 @@ package server
 // detection mechanism is not needed here.
 func takeAgentDirLock(string) error { return nil }
 
+// releaseAgentDirLock is a no-op on Windows; see takeAgentDirLock.
+func releaseAgentDirLock(string) {}
+
 // agentDirIsStale is a no-op on Windows; see takeAgentDirLock.
 func agentDirIsStale(string) bool { return false }

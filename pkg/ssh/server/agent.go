@@ -84,6 +84,8 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 
 	l, socketDir, err := ssh.NewAgentListener(dir)
 	if err != nil {
+		releaseAgentDirLock(dir)
+		cleanupAgentSocketDir(dir)
 		return nil, "", fmt.Errorf("new agent listener: %w", err)
 	}
 

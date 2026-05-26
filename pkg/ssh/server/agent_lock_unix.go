@@ -43,6 +43,23 @@ func takeAgentDirLock(dir string) error {
 	return nil
 }
 
+// releaseAgentDirLock drops a previously-acquired lock on dir's lockfile.
+// Used on setup failure paths after takeAgentDirLock succeeded; the steady-
+// state lifetime is process exit, where the kernel auto-releases.
+func releaseAgentDirLock(dir string) {
+	lockPath := filepath.Join(dir, agentLockFilename)
+	agentLockFDsMu.Lock()
+	defer agentLockFDsMu.Unlock()
+	for i, f := range agentLockFDs {
+		if f.Name() != lockPath {
+			continue
+		}
+		_ = f.Close()
+		agentLockFDs = append(agentLockFDs[:i], agentLockFDs[i+1:]...)
+		return
+	}
+}
+
 // agentDirIsStale reports whether the agent socket directory's owner is no
 // longer alive. It probes the lockfile with a non-blocking exclusive flock:
 // success means the original owner has exited.
