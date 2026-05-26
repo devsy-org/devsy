@@ -19,9 +19,9 @@ import (
 )
 
 // KillBrowserTunnel terminates the detached browser tunnel for a workspace
-// (if any) and removes its state file. Missing files and dead PIDs are
-// tolerated silently. This is safe to call from any workspace teardown or
-// recreate path.
+// (if any) and removes its state file. Missing state and dead/foreign PIDs
+// are tolerated silently; lock contention is logged at Warn level. Safe to
+// call from any workspace teardown or recreate path.
 func KillBrowserTunnel(contextName, workspaceID string) {
 	statePath, err := TunnelStateFilePath(contextName, workspaceID)
 	if err != nil {

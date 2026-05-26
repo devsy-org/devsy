@@ -45,9 +45,7 @@ func PortForward(
 }
 
 // ForwardOpts groups the parameters for PortForwardWithListener so callers
-// don't have to thread a long positional argument list. The remote network
-// is hardcoded to "tcp" — the only caller has always used "tcp" and adding
-// another protocol would require non-trivial changes elsewhere.
+// don't have to thread a long positional argument list.
 type ForwardOpts struct {
 	Listener         net.Listener
 	RemoteAddr       string

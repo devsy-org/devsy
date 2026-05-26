@@ -10,6 +10,13 @@ import (
 	"github.com/docker/go-connections/nat"
 )
 
+// held pairs a listener with its dup'd file handle so both can be closed
+// after the helper has been forked.
+type held struct {
+	l net.Listener
+	f *os.File
+}
+
 // prepareInheritedListeners binds each entry in extraPorts on the parent and
 // returns the resulting *os.File handles (to attach via cmd.ExtraFiles),
 // helper CLI args (--inherit-listener host:port=fd), and a cleanup that
@@ -18,11 +25,6 @@ import (
 // On Unix only: the helper inherits these fds at fd 3, 4, ... (in order).
 // If binding any port fails the function returns an error and rolls back
 // any partial state; callers may fall back to the legacy path.
-type held struct {
-	l net.Listener
-	f *os.File
-}
-
 func prepareInheritedListeners(extraPorts []string) (inheritedListenerSetup, error) {
 	var holds []held
 	var files []*os.File
