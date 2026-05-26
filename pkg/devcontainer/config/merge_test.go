@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"testing"
@@ -8,7 +9,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-const testPortRange = "3000-3002"
+const (
+	testPortRange = "3000-3002"
+	testTouchHook = "touch /tmp/setup-test-marker"
+)
 
 func gpu(val string) *GPURequirement {
 	return &GPURequirement{Value: val}
@@ -553,7 +557,7 @@ func TestMergeConfiguration_ShutdownActionDefault_ComposeConfig(t *testing.T) {
 // are supplied. Regression test for the case where `devsy set-up` (and other
 // callers passing nil metadata) silently dropped the user's postCreateCommand.
 func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
-	postCreate := types.LifecycleHook{"": {"touch /tmp/setup-test-marker"}}
+	postCreate := types.LifecycleHook{"": {testTouchHook}}
 	postStart := types.LifecycleHook{"": {"echo started"}}
 	onCreate := types.LifecycleHook{"": {"echo onCreate"}}
 
@@ -575,7 +579,7 @@ func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
 		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
 	}
 	if got := merged.PostCreateCommands[0][""]; len(got) != 1 ||
-		got[0] != "touch /tmp/setup-test-marker" {
+		got[0] != testTouchHook {
 		t.Errorf("PostCreateCommands[0] = %v, want [touch /tmp/setup-test-marker]", got)
 	}
 	if len(merged.PostStartCommands) != 1 {
@@ -593,7 +597,7 @@ func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
 	path := dir + "/devcontainer.json"
 	if err := os.WriteFile(
 		path,
-		[]byte(`{"image":"alpine","postCreateCommand":"touch /tmp/setup-test-marker"}`),
+		fmt.Appendf(nil, `{"image":"alpine","postCreateCommand":%q}`, testTouchHook),
 		0o600,
 	); err != nil {
 		t.Fatalf("write fixture: %v", err)
@@ -613,7 +617,7 @@ func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
 		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
 	}
 	cmds := merged.PostCreateCommands[0][""]
-	if len(cmds) != 1 || cmds[0] != "touch /tmp/setup-test-marker" {
+	if len(cmds) != 1 || cmds[0] != testTouchHook {
 		t.Errorf("PostCreateCommands[0][\"\"] = %v, want [touch /tmp/setup-test-marker]", cmds)
 	}
 }
