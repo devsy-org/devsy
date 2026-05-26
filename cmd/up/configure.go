@@ -74,7 +74,7 @@ func (cmd *UpCmd) openIDE(
 	}
 
 	ideConfig := client.WorkspaceConfig().IDE
-	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, opener.IdeParams{
+	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, opener.IDEParams{
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
 		SSHAuthSockID:      cmd.SSHAuthSockID,
 		GitSSHSigningKey:   cmd.GitSSHSigningKey,

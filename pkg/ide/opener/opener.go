@@ -27,8 +27,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
-// IdeParams holds the parameters needed to open an IDE.
-type IdeParams struct {
+// IDEParams holds the parameters needed to open an IDE.
+type IDEParams struct {
 	GPGAgentForwarding bool
 	SSHAuthSockID      string
 	GitSSHSigningKey   string
@@ -51,7 +51,7 @@ func Open(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
@@ -63,7 +63,7 @@ func Open(
 // browserIDEOpener returns a handler for browser-based IDEs if ideName matches.
 func browserIDEOpener(
 	ideName string,
-) (func(context.Context, map[string]config.OptionValue, IdeParams) error, bool) {
+) (func(context.Context, map[string]config.OptionValue, IDEParams) error, bool) {
 	switch ideName {
 	case string(config.IDEOpenVSCode):
 		return openVSCodeBrowser, true
@@ -80,7 +80,7 @@ func openDesktopIDE(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	switch ideName {
 	case string(config.IDEVSCode), string(config.IDEVSCodeInsiders), string(config.IDECursor),
@@ -160,7 +160,7 @@ func openVSCodeFlavor(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
 		Workspace:  params.Client.Workspace(),
@@ -174,7 +174,7 @@ func openVSCodeFlavor(
 func openJetBrains(
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
 	workspace := params.Client.Workspace()
@@ -221,7 +221,7 @@ func openJetBrains(
 }
 
 func makeDaemonStartFunc(
-	params IdeParams,
+	params IDEParams,
 	forwardPorts bool,
 	extraPorts []string,
 ) func(ctx context.Context) error {
@@ -261,7 +261,7 @@ func makeDaemonStartFunc(
 func openJupyterBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -297,7 +297,7 @@ func openJupyterBrowser(
 func openRStudioBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -333,7 +333,7 @@ func openRStudioBrowser(
 func openVSCodeBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params IdeParams,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {

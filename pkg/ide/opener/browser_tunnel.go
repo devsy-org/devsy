@@ -284,6 +284,13 @@ func WriteTunnelState(contextName, workspaceID string, state TunnelState) error 
 	return nil
 }
 
+// browserIDEInvocation bundles the per-call IDE-specific knobs that aren't
+// part of the lower-level tunnel parameters.
+type browserIDEInvocation struct {
+	Label       string // e.g. "vscode", "jupyter", "rstudio" — used in user-facing log lines
+	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
+}
+
 // startDetachedBrowserTunnel spawns `devsy helper browser-tunnel ...` as a
 // detached background process so the CLI can return to the prompt while the
 // tunnel remains running.
@@ -293,16 +300,9 @@ func WriteTunnelState(contextName, workspaceID string, state TunnelState) error 
 //
 // If a tunnel is already running for this workspace, no new process is
 // spawned; the existing tunnel is reused.
-// browserIDEInvocation bundles the per-call IDE-specific knobs that aren't
-// part of the lower-level tunnel parameters.
-type browserIDEInvocation struct {
-	Label       string // e.g. "vscode", "jupyter", "rstudio" — used in user-facing log lines
-	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
-}
-
 func startDetachedBrowserTunnel(
 	ctx context.Context,
-	params IdeParams,
+	params IDEParams,
 	tunnelParams tunnel.BrowserTunnelParams,
 	inv browserIDEInvocation,
 ) error {
@@ -343,7 +343,7 @@ func startDetachedBrowserTunnel(
 	)
 
 	if openBrowser {
-		go openBrowserAsync(ctx, tunnelParams.TargetURL, "could not open browser: %v")
+		go openBrowserAsync(ctx, tunnelParams.TargetURL)
 	}
 
 	return nil
@@ -542,7 +542,6 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 }
 
 // openBrowserAsync opens a URL in the browser without blocking the caller.
-// debugFmt must contain a single %v verb for the error.
 //
 // Uses context.WithoutCancel so values from the caller's ctx are preserved
 // but cancellation isn't propagated: `devsy up` exits as soon as the detached
@@ -553,12 +552,15 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 // every 1s until its context is done, which on a broken URL or missing
 // browser would otherwise loop forever. 30s is generous enough to let the OS
 // launch a real browser but short enough to avoid leaking a goroutine.
-func openBrowserAsync(ctx context.Context, url, debugFmt string) {
+func openBrowserAsync(ctx context.Context, url string) {
 	tctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	if err := open2.Open(tctx, url); err != nil {
-		pkglog.Debugf(debugFmt, err)
-		pkglog.Warnf("could not open browser automatically; open this URL manually: %s", url)
+		pkglog.Warnf(
+			"could not open browser automatically (%v); open this URL manually: %s",
+			err,
+			url,
+		)
 	}
 }
 
@@ -582,7 +584,7 @@ func tryReuseExistingTunnel(
 			inv.Label, existing.PID, existing.TargetURL,
 		)
 		if inv.OpenBrowser {
-			go openBrowserAsync(ctx, existing.TargetURL, "could not reopen browser: %v")
+			go openBrowserAsync(ctx, existing.TargetURL)
 		}
 		return true
 	}
