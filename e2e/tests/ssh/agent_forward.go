@@ -41,19 +41,6 @@ var _ = ginkgo.Describe(
 			if runtime.GOOS == osWindows {
 				ginkgo.Skip("UNIX sockets required; skipping on windows")
 			}
-			if _, err := exec.LookPath("ssh"); err != nil {
-				ginkgo.Skip("openssh client not available on host")
-			}
-			if _, err := exec.LookPath("ssh-agent"); err != nil {
-				ginkgo.Skip("ssh-agent not available on host")
-			}
-			if _, err := exec.LookPath("ssh-keygen"); err != nil {
-				ginkgo.Skip("ssh-keygen not available on host")
-			}
-			if _, err := exec.LookPath("ssh-add"); err != nil {
-				ginkgo.Skip("ssh-add not available on host")
-			}
-
 			var err error
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)

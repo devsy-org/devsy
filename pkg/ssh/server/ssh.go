@@ -132,11 +132,11 @@ func NewServer(
 		currentUser: currentUser.Username,
 		sshServer: ssh.Server{
 			Addr: addr,
-			// Keep-alive at the connection level (devsy-org/ssh v1.2.0+):
-			// detects dead peers in stdio mode where EOF on stdin can be
-			// delayed indefinitely by the proxy chain. 5s × 2 = ~10s
-			// detection so per-connection agent socket dirs are cleaned up
-			// well within typical test/health-check polling windows.
+			// Keep-alive at the connection level: detects dead peers in
+			// stdio mode where EOF on stdin can be delayed indefinitely by
+			// the proxy chain. 5s × 2 = ~10s detection so per-connection
+			// agent socket dirs are cleaned up well within typical
+			// test/health-check polling windows.
 			ClientAliveInterval: 5 * time.Second,
 			ClientAliveCountMax: 2,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
