@@ -153,10 +153,10 @@ const TunnelLogFileName = "tunnel.log"
 
 // TunnelState describes a running browser tunnel for a workspace.
 //
-// CreateTime is the helper process's creation timestamp in milliseconds since
-// epoch, as reported by gopsutil. It pairs with PID to detect PID reuse: if
-// the process at PID has a different CreateTime than the recorded value, the
-// helper is gone and a foreign process now occupies that PID.
+// CreateTime is the helper process's creation timestamp in milliseconds
+// since epoch. It pairs with PID to detect PID reuse: if the process at PID
+// has a different CreateTime than the recorded value, the helper is gone
+// and a foreign process now occupies that PID.
 type TunnelState struct {
 	PID        int    `json:"pid"`
 	CreateTime int64  `json:"createTime"`
@@ -164,10 +164,10 @@ type TunnelState struct {
 	Label      string `json:"label,omitempty"`
 }
 
-// helperCreateTime returns the creation timestamp (milliseconds since epoch)
-// of the process with the given PID, via gopsutil. It's used right after
-// spawning the helper so a PID+CreateTime identity can be persisted in the
-// state file.
+// helperCreateTime returns the creation timestamp (milliseconds since
+// epoch) of the process with the given PID. It's used right after spawning
+// the helper so a PID+CreateTime identity can be persisted in the state
+// file.
 func helperCreateTime(pid int) (int64, error) {
 	if pid <= 0 || pid > math.MaxInt32 {
 		return 0, fmt.Errorf("pid %d out of int32 range", pid)
@@ -410,14 +410,14 @@ type recordHelperStateOpts struct {
 	Label       string
 }
 
-// recordHelperState captures the helper's process identity (PID + CreateTime
-// via gopsutil) and persists it to tunnel.json. On any failure the helper is
+// recordHelperState captures the helper's process identity (PID +
+// CreateTime) and persists it to tunnel.json. On any failure the helper is
 // killed to avoid leaving an un-identifiable orphan.
 func recordHelperState(proc *os.Process, pid int, opts recordHelperStateOpts) error {
 	createTime, err := helperCreateTime(pid)
 	if err != nil {
 		pkglog.Warnf(
-			"identify tunnel helper pid %d via gopsutil (killing to avoid un-identifiable state): %v",
+			"identify tunnel helper pid %d (killing to avoid un-identifiable state): %v",
 			pid,
 			err,
 		)
