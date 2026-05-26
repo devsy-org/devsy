@@ -17,6 +17,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
+	"github.com/tailscale/hujson"
 )
 
 const templateMetadataFile = "devcontainer-template.json"
@@ -365,8 +366,13 @@ func addFeaturesToDevcontainer(workspaceFolder string, features []string) error 
 		return fmt.Errorf("read devcontainer.json: %w", err)
 	}
 
+	normalized, err := hujson.Standardize(data)
+	if err != nil {
+		return fmt.Errorf("parse devcontainer.json: %w", err)
+	}
+
 	var config map[string]any
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err := json.Unmarshal(normalized, &config); err != nil {
 		return fmt.Errorf("parse devcontainer.json: %w", err)
 	}
 

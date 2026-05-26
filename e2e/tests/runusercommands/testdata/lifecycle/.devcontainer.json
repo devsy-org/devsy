@@ -1,0 +1,9 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "onCreateCommand": {
+    "write-oncreate": "printf oncreate-ran > /tmp/lifecycle-test.txt"
+  },
+  "postCreateCommand": {
+    "write-postcreate": "printf ' postcreate-ran' >> /tmp/lifecycle-test.txt"
+  }
+}

@@ -17,6 +17,7 @@ const (
 	devContainerIDLength    = 20
 	specDevContainerIDWidth = 52
 	containerEnvField       = "containerEnv"
+	remoteEnvField          = "remoteEnv"
 
 	LabelLocalFolder = "devcontainer.local_folder"
 	LabelConfigFile  = "devcontainer.config_file"
@@ -45,10 +46,21 @@ type SubstitutionContext struct {
 	GidMap                   []string          `json:"GidMap,omitempty"`
 }
 
-// preContainerFields lists devcontainer.json keys that are evaluated before
-// the container exists. These fields must not resolve container-scoped
-// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename).
-var preContainerFields = []string{containerEnvField}
+// preContainerFields lists devcontainer.json keys whose values reference
+// the running container's environment and are resolved through the
+// restricted replacer. Workspace-folder variables resolve normally (the
+// host computes ContainerWorkspaceFolder via getWorkspace), but
+// ${containerEnv:VAR} references stay literal so they can be resolved
+// later: host-side from the image's inspected env for containerEnv (see
+// ResolveContainerEnvFromImage), or inside the container by the agent's
+// SubstituteContainerEnv pass for remoteEnv.
+//
+// remoteEnv is included here for parity with containerEnv per the
+// devcontainers spec — the reference implementation
+// (devcontainers/cli src/spec-common/variableSubstitution.ts) treats
+// ${containerWorkspaceFolder} the same in both fields, while
+// ${containerEnv:VAR} stays unresolved until the container env is known.
+var preContainerFields = []string{containerEnvField, remoteEnvField}
 
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}
@@ -180,17 +192,47 @@ func replaceWithContext(
 }
 
 // restrictedReplace wraps a ReplaceFunction to preserve container-scoped
-// variables (containerWorkspaceFolder, containerWorkspaceFolderBasename,
-// containerEnv) as literals for pre-container field substitution.
+// variables that cannot be resolved at host substitution time as literals.
+//
+// containerWorkspaceFolder and containerWorkspaceFolderBasename are NOT
+// restricted: the host knows their values (derived from getWorkspace) and
+// must resolve them before passing containerEnv to `docker run -e`, since
+// shells and the container runtime do not perform devcontainer variable
+// expansion on env-var values.
+//
+// Only ${containerEnv:VAR} refs remain literal here — those depend on the
+// running container's environment and are resolved later, either host-side
+// from the image's inspected env (see ResolveContainerEnvFromImage) or
+// inside the container via SubstituteContainerEnv.
 func restrictedReplace(fallback ReplaceFunction) ReplaceFunction {
 	return func(match, variable string, args []string) string {
 		switch variable {
-		case "containerWorkspaceFolder", "containerWorkspaceFolderBasename", containerEnvField:
+		case containerEnvField:
 			return match
 		default:
 			return fallback(match, variable, args)
 		}
 	}
+}
+
+// ResolveContainerEnvFromImage substitutes ${containerEnv:VAR} references in
+// the given env map using the image's environment (as returned by image
+// inspect, in KEY=VALUE form). The returned map preserves all other entries
+// unchanged. Use this host-side to resolve containerEnv values referencing
+// the image PATH (or similar) before passing them to `docker run -e`.
+func ResolveContainerEnvFromImage(
+	containerEnv map[string]string,
+	imageEnv []string,
+) (map[string]string, error) {
+	if len(containerEnv) == 0 {
+		return containerEnv, nil
+	}
+	imageEnvMap := ListToObject(imageEnv)
+	out := map[string]string{}
+	if err := SubstituteContainerEnv(imageEnvMap, containerEnv, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func lookupValue(isWindows bool, env map[string]string, args []string, match string) string {

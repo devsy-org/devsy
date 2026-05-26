@@ -178,19 +178,35 @@ func (r *runner) substitute(
 
 	// Substitute applies phase-aware variable scoping per the devcontainer spec
 	// (https://containers.dev/implementors/reference/ — "Variables in devcontainer.json"):
-	// - Pre-container fields (containerEnv) only resolve local-scoped variables
-	//   (devcontainerId, localEnv, localWorkspaceFolder, localWorkspaceFolderBasename).
-	// - Post-container fields (remoteEnv, lifecycle commands, etc.) additionally
+	// - All workspace-folder variables (local* and container*) are resolved
+	//   host-side, including in containerEnv values, because the host knows
+	//   ContainerWorkspaceFolder (it is computed by getWorkspace).
+	// - Post-container fields (remoteEnv, lifecycle commands, etc.) likewise
 	//   resolve containerWorkspaceFolder and containerWorkspaceFolderBasename.
-	// - containerEnv references (${containerEnv:VAR}) are resolved later via
-	//   SubstituteContainerEnv after the container is running.
+	// - Only containerEnv references (${containerEnv:VAR}) remain literal here;
+	//   they are resolved host-side from the image's inspected env (see
+	//   ResolveContainerEnvFromImage) before passing to `docker run -e`, and
+	//   for remoteEnv inside the container via SubstituteContainerEnv.
 	parsedConfig := &config.DevContainerConfig{}
 	err := config.Substitute(substitutionContext, rawParsedConfig, parsedConfig)
 	if err != nil {
 		return nil, nil, err
 	}
-	if parsedConfig.WorkspaceFolder != "" {
+	if parsedConfig.WorkspaceFolder != "" &&
+		parsedConfig.WorkspaceFolder != substitutionContext.ContainerWorkspaceFolder {
+		// WorkspaceFolder was overridden via devcontainer.json. Re-run
+		// substitution so containerEnv/remoteEnv values that reference
+		// ${containerWorkspaceFolder} pick up the override.
 		substitutionContext.ContainerWorkspaceFolder = parsedConfig.WorkspaceFolder
+		reSubstituted := &config.DevContainerConfig{}
+		if err := config.Substitute(
+			substitutionContext,
+			rawParsedConfig,
+			reSubstituted,
+		); err != nil {
+			return nil, nil, err
+		}
+		parsedConfig = reSubstituted
 	}
 	if parsedConfig.WorkspaceMount != nil {
 		substitutionContext.WorkspaceMount = *parsedConfig.WorkspaceMount

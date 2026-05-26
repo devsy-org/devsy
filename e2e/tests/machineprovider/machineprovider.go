@@ -15,7 +15,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"devsy machine provider test suite",
-	ginkgo.Label("machineprovider"),
+	ginkgo.Label("machine-provider"),
 	ginkgo.Ordered,
 	func() {
 		var initialDir string

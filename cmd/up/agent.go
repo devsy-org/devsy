@@ -32,6 +32,12 @@ func (cmd *UpCmd) devsyUp(
 
 	result, err := cmd.dispatchClient(ctx, devsyConfig, client)
 	if err != nil {
+		// Preserve a structured error envelope the agent may have forwarded
+		// over the tunnel before exiting non-zero (e.g. host requirements
+		// not met), so the caller can surface the real cause.
+		if result != nil && result.Error != "" {
+			return result, err
+		}
 		return nil, err
 	}
 

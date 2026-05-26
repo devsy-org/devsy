@@ -2,9 +2,11 @@ package up
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 )
@@ -44,6 +46,23 @@ func addFileToTar(tarWriter *tar.Writer, filePath string) error {
 
 	header, err := tar.FileInfoHeader(fileInfo, fileInfo.Name())
 	if err != nil {
+		return err
+	}
+
+	// Normalize CRLF -> LF for shell scripts so they execute correctly inside
+	// Linux containers when the test runs from a Windows host (where git may
+	// have checked the file out with CRLF line endings).
+	if strings.HasSuffix(strings.ToLower(filePath), ".sh") {
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return err
+		}
+		content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+		header.Size = int64(len(content))
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+		_, err = tarWriter.Write(content)
 		return err
 	}
 

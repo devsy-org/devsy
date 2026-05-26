@@ -11,7 +11,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"testing up command for working with git repositories",
-	ginkgo.Label("up-git-repositories"),
+	ginkgo.Label("up-workspaces"),
 	func() {
 		var initialDir string
 

@@ -396,7 +396,11 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
+			// The base test image bakes a devcontainer.metadata label into
+			// the image itself, so override it with an empty array to
+			// exercise the "no metadata" branch.
 			out, err := exec.CommandContext(ctx, "docker", "run", "-d",
+				"--label", "devcontainer.metadata=[]",
 				"ghcr.io/devsy-org/test-images/base:ubuntu",
 				"sleep", "infinity",
 			).Output()

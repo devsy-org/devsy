@@ -17,7 +17,7 @@ import (
 )
 
 var _ = ginkgo.Describe("devsy portsAttributes e2e",
-	ginkgo.Label("ssh", "ports-attributes"), func() {
+	ginkgo.Label("ssh"), func() {
 		var initialDir string
 
 		ginkgo.BeforeEach(func() {

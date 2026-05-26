@@ -27,7 +27,7 @@ const (
 	featureVersion100    = "1.0.0"
 )
 
-var _ = ginkgo.Describe("features package", ginkgo.Label("features", "features-package"), func() {
+var _ = ginkgo.Describe("features package", ginkgo.Label("features"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {

@@ -184,6 +184,9 @@ const (
 	testContainerWorkspaceFolderName         = "containerWorkspaceFolder"
 	testContainerWorkspaceFolderBasenameName = "containerWorkspaceFolderBasename"
 	testPATHKey                              = "PATH"
+	testCaseResolvesCWF                      = "resolves containerWorkspaceFolder"
+	testCaseResolvesCWFBasename              = "resolves containerWorkspaceFolderBasename"
+	testProjectName                          = "project"
 )
 
 func TestComputeDevContainerID(t *testing.T) {
@@ -297,14 +300,14 @@ func TestSubstituteContainerEnvScoping(t *testing.T) {
 		want  map[string]string
 	}{
 		{
-			name:  "preserves containerWorkspaceFolder",
+			name:  testCaseResolvesCWF,
 			input: map[string]string{"V": testContainerWorkspaceFolderVar},
-			want:  map[string]string{"V": testContainerWorkspaceFolderVar},
+			want:  map[string]string{"V": testContainerWorkspaceFolder},
 		},
 		{
-			name:  "preserves containerWorkspaceFolderBasename",
+			name:  testCaseResolvesCWFBasename,
 			input: map[string]string{"V": testContainerWorkspaceFolderBasenameVar},
-			want:  map[string]string{"V": testContainerWorkspaceFolderBasenameVar},
+			want:  map[string]string{"V": testProjectName},
 		},
 		{
 			name:  "preserves containerEnv references",
@@ -321,7 +324,7 @@ func TestSubstituteContainerEnvScoping(t *testing.T) {
 			},
 			want: map[string]string{
 				"LOCAL": testWorkspaceFolder,
-				"BASE":  "project",
+				"BASE":  testProjectName,
 				"ENV":   "hello",
 				"DEVID": testDevContainerID,
 			},
@@ -347,14 +350,14 @@ func TestSubstituteRemoteEnvScoping(t *testing.T) {
 		want  map[string]*string
 	}{
 		{
-			name:  "resolves containerWorkspaceFolder",
+			name:  testCaseResolvesCWF,
 			input: map[string]*string{"V": strPtr("/prefix${containerWorkspaceFolder}")},
 			want:  map[string]*string{"V": strPtr("/prefix/workspaces/project")},
 		},
 		{
-			name:  "resolves containerWorkspaceFolderBasename",
+			name:  testCaseResolvesCWFBasename,
 			input: map[string]*string{"V": strPtr(testContainerWorkspaceFolderBasenameVar)},
-			want:  map[string]*string{"V": strPtr("project")},
+			want:  map[string]*string{"V": strPtr(testProjectName)},
 		},
 	}
 	for _, tt := range tests {
@@ -387,7 +390,7 @@ func TestSubstituteMixedScoping(t *testing.T) {
 		t.Fatalf("Substitute() error: %v", err)
 	}
 	assertContainerEnv(t, out.ContainerEnv, map[string]string{
-		testCWFKey: testContainerWorkspaceFolderVar,
+		testCWFKey: testContainerWorkspaceFolder,
 		testLOCKey: testWorkspaceFolder,
 	})
 	assertRemoteEnv(t, out.RemoteEnv, map[string]*string{
@@ -415,16 +418,16 @@ func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "preserves containerWorkspaceFolder",
+			name:     testCaseResolvesCWF,
 			match:    testContainerWorkspaceFolderVar,
 			variable: testContainerWorkspaceFolderName,
-			want:     testContainerWorkspaceFolderVar,
+			want:     testContainerWorkspaceFolder,
 		},
 		{
-			name:     "preserves containerWorkspaceFolderBasename",
+			name:     testCaseResolvesCWFBasename,
 			match:    testContainerWorkspaceFolderBasenameVar,
 			variable: testContainerWorkspaceFolderBasenameName,
-			want:     testContainerWorkspaceFolderBasenameVar,
+			want:     testProjectName,
 		},
 		{
 			name:     "preserves containerEnv",

@@ -1,13 +1,18 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"slices"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-const testPortRange = "3000-3002"
+const (
+	testPortRange = "3000-3002"
+	testTouchHook = "touch /tmp/setup-test-marker"
+)
 
 func gpu(val string) *GPURequirement {
 	return &GPURequirement{Value: val}
@@ -543,6 +548,98 @@ func TestMergeConfiguration_ShutdownActionDefault_ComposeConfig(t *testing.T) {
 	}
 	if merged.ShutdownAction != ShutdownActionStopCompose {
 		t.Errorf("ShutdownAction = %q, want %q", merged.ShutdownAction, ShutdownActionStopCompose)
+	}
+}
+
+// TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks asserts that
+// lifecycle commands declared directly in the user's devcontainer.json are
+// carried into MergedDevContainerConfig even when no image metadata entries
+// are supplied. Regression test for the case where `devsy set-up` (and other
+// callers passing nil metadata) silently dropped the user's postCreateCommand.
+func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
+	postCreate := types.LifecycleHook{"": {testTouchHook}}
+	postStart := types.LifecycleHook{"": {"echo started"}}
+	onCreate := types.LifecycleHook{"": {"echo onCreate"}}
+
+	cfg := &DevContainerConfig{
+		ImageContainer: ImageContainer{Image: "alpine"},
+		DevContainerActions: DevContainerActions{
+			OnCreateCommand:   onCreate,
+			PostCreateCommand: postCreate,
+			PostStartCommand:  postStart,
+		},
+	}
+
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(merged.PostCreateCommands) != 1 {
+		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
+	}
+	if got := merged.PostCreateCommands[0][""]; len(got) != 1 ||
+		got[0] != testTouchHook {
+		t.Errorf("PostCreateCommands[0] = %v, want [touch /tmp/setup-test-marker]", got)
+	}
+	if len(merged.PostStartCommands) != 1 {
+		t.Errorf("PostStartCommands = %v, want one entry", merged.PostStartCommands)
+	}
+	if len(merged.OnCreateCommands) != 1 {
+		t.Errorf("OnCreateCommands = %v, want one entry", merged.OnCreateCommands)
+	}
+}
+
+// TestMergeConfiguration_NilMetadata_ParsedFromJSONFile exercises the full
+// parse-then-merge path used by `devsy set-up`'s loadConfig.
+func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/devcontainer.json"
+	if err := os.WriteFile(
+		path,
+		fmt.Appendf(nil, `{"image":"alpine","postCreateCommand":%q}`, testTouchHook),
+		0o600,
+	); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	cfg, err := ParseDevContainerJSONFile(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	if len(merged.PostCreateCommands) != 1 {
+		t.Fatalf("PostCreateCommands = %v, want one entry", merged.PostCreateCommands)
+	}
+	cmds := merged.PostCreateCommands[0][""]
+	if len(cmds) != 1 || cmds[0] != testTouchHook {
+		t.Errorf("PostCreateCommands[0][\"\"] = %v, want [touch /tmp/setup-test-marker]", cmds)
+	}
+}
+
+// TestMergeConfiguration_PropagatesOrigin verifies that the Origin of the input
+// DevContainerConfig is preserved into the MergedDevContainerConfig. Downstream
+// consumers (notably local feature path resolution) rely on Origin to resolve
+// relative paths against the directory of the originating devcontainer.json,
+// per https://containers.dev/implementors/features/.
+func TestMergeConfiguration_PropagatesOrigin(t *testing.T) {
+	cfg := &DevContainerConfig{
+		Origin: "/abs/path/.devcontainer/devcontainer.json",
+		ImageContainer: ImageContainer{
+			Image: "alpine",
+		},
+	}
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if merged.Origin != cfg.Origin {
+		t.Errorf("merged.Origin = %q, want %q", merged.Origin, cfg.Origin)
 	}
 }
 

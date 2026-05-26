@@ -120,9 +120,6 @@ jobs:
           - label: context
             runner: ubuntu-latest
 
-          - label: readconfiguration
-            runner: ubuntu-latest
-
           - label: extends
             runner: ubuntu-latest
 
@@ -130,6 +127,12 @@ jobs:
             runner: ubuntu-latest
 
           - label: machine
+            runner: ubuntu-latest
+
+          - label: self-update
+            runner: ubuntu-latest
+
+          - label: upgrade
             runner: ubuntu-latest
 
     runs-on: ${{ matrix.runner }}
@@ -190,7 +193,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: machineprovider
+          - label: machine-provider
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -232,6 +235,18 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: exec
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: features
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: extends-up
             runner: ubuntu-latest
             free-disk-space: false
@@ -256,13 +271,31 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: exec
+          - label: logs
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
             requires-secret: false
 
-          - label: features
+          - label: templates
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: setup
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: run-user-commands
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: read-configuration
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -276,10 +309,10 @@ jobs:
             install-kind: true
             requires-secret: false
 
-          - label: up-git-repositories
+          - label: up-behaviors
             runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
+            free-disk-space: false
+            install-kind: false
             requires-secret: false
 
           - label: up-handle-errors
@@ -320,55 +353,23 @@ jobs:
             install-kind: true
             requires-secret: false
 
-          - label: up-dockerfile-build
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
           #  Up Docker Compose tests
 
-          - label: up-docker-compose && build
+          - label: up-docker-compose
             runner: ubuntu-latest
             free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          - label: up-docker-compose && config
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          - label: up-docker-compose && suite
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
+            install-kind: false
             requires-secret: false
 
           # Up Docker Feature tests
 
-          - label: up-features && suite
+          - label: up-features
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: true
             requires-secret: false
 
-          # Upgrade tests
-
-          - label: upgrade
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
           # Windows tests
-
-          - label: context
-            runner: windows-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
 
           - label: provider
             runner: windows-latest
@@ -377,6 +378,12 @@ jobs:
             requires-secret: false
 
           - label: up-docker-wsl
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+
+          - label: up-features
             runner: windows-latest
             free-disk-space: false
             install-kind: true

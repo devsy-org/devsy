@@ -147,6 +147,14 @@ func (cmd *UpCmd) up(
 ) error {
 	result, err := cmd.devsyUp(ctx, workspaceInfo)
 	if err != nil {
+		// Forward the structured error back to the host through the tunnel
+		// BEFORE returning so the CLI can surface the actual cause (e.g.
+		// host requirements not met) instead of the generic "did not
+		// receive a result back from agent" fallback.
+		errResult := &config2.Result{Error: err.Error()}
+		if sendErr := cmd.sendResult(ctx, errResult, tunnelClient); sendErr != nil {
+			log.Debugf("failed to send error result back to host: %v", sendErr)
+		}
 		return err
 	}
 
