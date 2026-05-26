@@ -322,12 +322,6 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: up-browser-envelope
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-
           - label: up-handle-errors
             runner: ubuntu-latest
             free-disk-space: true
