@@ -30,6 +30,21 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 	if err != nil {
 		return
 	}
+	// If the workspace dir is already gone, there's nothing to lock on and
+	// nothing to kill — skip silently rather than recreating the dir just
+	// for a lock file.
+	if _, statErr := os.Stat(filepath.Dir(statePath)); statErr != nil {
+		return
+	}
+	// Serialize against startDetachedBrowserTunnel so a concurrent `devsy up`
+	// can't reuse a tunnel we're about to SIGTERM, or have its freshly written
+	// state file removed mid-spawn.
+	unlock, lockErr := acquireTunnelLock(contextName, workspaceID)
+	if lockErr != nil {
+		pkglog.Debugf("acquire tunnel lock for teardown: %v", lockErr)
+		return
+	}
+	defer unlock()
 
 	state := loadLiveTunnelState(contextName, workspaceID, statePath)
 	if state == nil {
