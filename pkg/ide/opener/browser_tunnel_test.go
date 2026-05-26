@@ -30,7 +30,7 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 	args := buildHelperArgs("ctx-test", "ws-test", tunnel.BrowserTunnelParams{
 		TargetURL:        "http://localhost:10800/?folder=/workspace",
 		AuthSockID:       "sock-abc",
-		User:             "vscode",
+		User:             "test-user",
 		GitSSHSigningKey: "",
 	})
 
@@ -45,7 +45,7 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 		{"--workspace", "ws-test"},
 		{"--target-url", "http://localhost:10800/?folder=/workspace"},
 		{"--auth-sock-id", "sock-abc"},
-		{"--user", "vscode"},
+		{"--user", "test-user"},
 	}
 	for _, p := range checkPairs {
 		if !containsAdjacent(args, p.flag, p.value) {
@@ -99,7 +99,7 @@ func TestWriteReadTunnelState_RoundTrip(t *testing.T) {
 		PID:        12345,
 		CreateTime: 67890,
 		TargetURL:  "http://localhost:10800",
-		Label:      "vscode",
+		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx-test", "ws-test", want); err != nil {
 		t.Fatalf("WriteTunnelState: %v", err)
@@ -136,7 +136,7 @@ func assertStatePathSane(t *testing.T, contextName, workspaceID string) {
 func TestReadTunnelState_MissingReturnsNilNil(t *testing.T) {
 	setupTempHome(t)
 
-	state := TunnelState{PID: 42, CreateTime: 1, TargetURL: "http://x", Label: "vscode"}
+	state := TunnelState{PID: 42, CreateTime: 1, TargetURL: "http://x", Label: LabelVSCodeBrowser}
 	if err := WriteTunnelState("ctx-test", "ws-test", state); err != nil {
 		t.Fatalf("WriteTunnelState: %v", err)
 	}

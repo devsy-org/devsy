@@ -369,7 +369,7 @@ func openVSCodeBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	}, browserIDEInvocation{Label: "vscode", OpenBrowser: openBrowser})
+	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser})
 }
 
 func startFleet(ctx context.Context, client client2.BaseWorkspaceClient) error {

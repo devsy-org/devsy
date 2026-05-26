@@ -109,8 +109,30 @@ func waitForExit(pid int, timeout time.Duration) bool {
 	}
 }
 
+// prepareInheritedListenersOrFallback wraps prepareInheritedListeners with
+// the error-handling policy: EADDRINUSE means the port got stolen between
+// probe and bind (expected; log at Debug and fall back to the legacy racy
+// path). Any other error (FD exhaustion, permission denied, transient
+// syscall failure) is logged at Warn so the silent regression to the racy
+// path is visible.
+func prepareInheritedListenersOrFallback(extraPorts []string) inheritedListenerSetup {
+	setup, err := prepareInheritedListeners(extraPorts)
+	if err == nil {
+		return setup
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		pkglog.Debugf("inherit-listener: port stolen between probe and bind, falling back: %v", err)
+	} else {
+		pkglog.Warnf(
+			"inherit-listener preparation failed (falling back to legacy racy port-binding path): %v",
+			err,
+		)
+	}
+	return inheritedListenerSetup{Cleanup: func() {}}
+}
+
 // inheritedListenerSetup bundles the result of prepareInheritedListeners so
-// the function stays within revive's function-result-limit.
+// the multi-value return stays manageable.
 type inheritedListenerSetup struct {
 	Files   []*os.File
 	Args    []string
@@ -200,28 +222,8 @@ func spawnTunnelHelper(
 	args := buildHelperArgs(contextName, workspaceID, tunnelParams)
 
 	// Pre-bind the host listeners in the parent so the chosen ports are
-	// truly reserved before the helper forks. On Windows this is a no-op
-	// (os/exec ExtraFiles is unsupported there).
-	setup, lerr := prepareInheritedListeners(tunnelParams.ExtraPorts)
-	if lerr != nil {
-		// EADDRINUSE means the port got stolen between probe and bind —
-		// expected and recoverable via the legacy fallback path. Anything
-		// else (FD exhaustion, permission denied, transient syscall
-		// failure) deserves a Warn so the silent regression to the racy
-		// legacy path is visible.
-		if errors.Is(lerr, syscall.EADDRINUSE) {
-			pkglog.Debugf(
-				"inherit-listener: port stolen between probe and bind, falling back: %v",
-				lerr,
-			)
-		} else {
-			pkglog.Warnf(
-				"inherit-listener preparation failed (falling back to legacy racy port-binding path): %v",
-				lerr,
-			)
-		}
-		setup = inheritedListenerSetup{Cleanup: func() {}}
-	}
+	// truly reserved before the helper forks. On Windows this is a no-op.
+	setup := prepareInheritedListenersOrFallback(tunnelParams.ExtraPorts)
 	args = append(args, setup.Args...)
 
 	//nolint:gosec // execPath is the current binary, arguments are controlled

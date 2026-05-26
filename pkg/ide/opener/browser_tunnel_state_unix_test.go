@@ -161,7 +161,7 @@ func TestLoadLiveTunnelState_NonMatchingPID(t *testing.T) {
 		PID:        1,
 		CreateTime: 1,
 		TargetURL:  "http://x",
-		Label:      "vscode",
+		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", state); err != nil {
 		t.Fatalf("WriteTunnelState: %v", err)
@@ -189,7 +189,7 @@ func TestLoadLiveTunnelState_LiveMatch(t *testing.T) {
 		PID:        pid,
 		CreateTime: ct,
 		TargetURL:  "http://localhost:10800",
-		Label:      "vscode",
+		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", want); err != nil {
 		t.Fatalf("WriteTunnelState: %v", err)

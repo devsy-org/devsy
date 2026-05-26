@@ -25,6 +25,11 @@ const TunnelLockFileName = "tunnel.lock"
 // helper's stdout/stderr log.
 const TunnelLogFileName = "tunnel.log"
 
+// LabelVSCodeBrowser is the TunnelState.Label value used for the openvscode
+// (VS Code Browser) tunnel. Exposed so tests can reference it without
+// duplicating the literal.
+const LabelVSCodeBrowser = "vscode"
+
 // TunnelState describes a running browser tunnel for a workspace.
 //
 // CreateTime is the helper process's creation timestamp in milliseconds
