@@ -74,7 +74,7 @@ func loadLiveTunnelState(contextName, workspaceID, statePath string) *TunnelStat
 		_ = os.Remove(statePath)
 		return nil
 	}
-	if !isOurHelper(state) {
+	if !helperMatchesState(state) {
 		_ = os.Remove(statePath)
 		return nil
 	}
@@ -184,11 +184,11 @@ func helperCreateTime(pid int) (int64, error) {
 	return t, nil
 }
 
-// isOurHelper reports whether the process at state.PID is still the helper we
-// spawned, by comparing its current creation time against state.CreateTime.
-// Returns false if the process no longer exists, the creation time can't be
-// read, or the creation time differs (PID reuse).
-func isOurHelper(state *TunnelState) bool {
+// helperMatchesState reports whether the process at state.PID matches the
+// helper we recorded by comparing its current creation time against
+// state.CreateTime. Returns false if the process no longer exists, the
+// creation time can't be read, or the creation time differs (PID reuse).
+func helperMatchesState(state *TunnelState) bool {
 	if state == nil || state.PID <= 0 || state.PID > math.MaxInt32 {
 		return false
 	}
@@ -542,7 +542,7 @@ func tryReuseExistingTunnel(
 	if existing == nil {
 		return false
 	}
-	if isOurHelper(existing) {
+	if helperMatchesState(existing) {
 		pkglog.Infof(
 			"%s browser tunnel already running (PID %d). Reusing existing tunnel at %s",
 			inv.Label, existing.PID, existing.TargetURL,
