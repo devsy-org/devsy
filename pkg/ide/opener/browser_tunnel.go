@@ -41,7 +41,11 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 	// state file removed mid-spawn.
 	unlock, lockErr := acquireTunnelLock(contextName, workspaceID)
 	if lockErr != nil {
-		pkglog.Debugf("acquire tunnel lock for teardown: %v", lockErr)
+		pkglog.Warnf(
+			"could not acquire tunnel lock for workspace %s teardown (helper may still be running): %v",
+			workspaceID,
+			lockErr,
+		)
 		return
 	}
 	defer unlock()
@@ -195,11 +199,27 @@ func helperMatchesState(state *TunnelState) bool {
 	//nolint:gosec // PID is bounds-checked above
 	p, err := process.NewProcess(int32(state.PID))
 	if err != nil {
-		return false
+		if errors.Is(err, process.ErrorProcessNotRunning) {
+			return false
+		}
+		// Unexpected error (permission denied on foreign-UID Linux or
+		// Windows, /proc not mounted, gopsutil parse error). Treat as
+		// "process is probably still the recorded helper" to avoid a
+		// silent respawn that would orphan a live helper still holding
+		// the port.
+		pkglog.Warnf(
+			"tunnel helper pid %d: identity check failed (%v); assuming live to avoid orphan",
+			state.PID, err,
+		)
+		return true
 	}
 	createTime, err := p.CreateTime()
 	if err != nil {
-		return false
+		pkglog.Warnf(
+			"tunnel helper pid %d: read create time failed (%v); assuming live to avoid orphan",
+			state.PID, err,
+		)
+		return true
 	}
 	return createTime == state.CreateTime
 }
@@ -351,9 +371,22 @@ func spawnTunnelHelper(
 	// (os/exec ExtraFiles is unsupported there).
 	setup, lerr := prepareInheritedListeners(tunnelParams.ExtraPorts)
 	if lerr != nil {
-		// Port likely got stolen between probe and bind; fall back to the
-		// legacy path rather than failing the whole launch.
-		pkglog.Debugf("inherit-listener preparation failed, falling back: %v", lerr)
+		// EADDRINUSE means the port got stolen between probe and bind —
+		// expected and recoverable via the legacy fallback path. Anything
+		// else (FD exhaustion, permission denied, transient syscall
+		// failure) deserves a Warn so the silent regression to the racy
+		// legacy path is visible.
+		if errors.Is(lerr, syscall.EADDRINUSE) {
+			pkglog.Debugf(
+				"inherit-listener: port stolen between probe and bind, falling back: %v",
+				lerr,
+			)
+		} else {
+			pkglog.Warnf(
+				"inherit-listener preparation failed (falling back to legacy racy port-binding path): %v",
+				lerr,
+			)
+		}
 		setup = inheritedListenerSetup{Cleanup: func() {}}
 	}
 	args = append(args, setup.Args...)
@@ -525,6 +558,7 @@ func openBrowserAsync(ctx context.Context, url, debugFmt string) {
 	defer cancel()
 	if err := open2.Open(tctx, url); err != nil {
 		pkglog.Debugf(debugFmt, err)
+		pkglog.Warnf("could not open browser automatically; open this URL manually: %s", url)
 	}
 }
 

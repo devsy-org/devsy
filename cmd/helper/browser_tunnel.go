@@ -72,16 +72,27 @@ func parseInheritedListeners(entries []string) (map[string]net.Listener, error) 
 	for _, entry := range entries {
 		hostAddr, l, err := parseInheritedListenerEntry(entry)
 		if err != nil {
+			closeAllListeners(out)
 			return nil, err
 		}
 		if _, exists := out[hostAddr]; exists {
-			// Close the newly-wrapped listener to avoid leaking its fd.
+			// Close the newly-wrapped listener and any previously-stored
+			// ones to avoid leaking fds when the helper bails out.
 			_ = l.Close()
+			closeAllListeners(out)
 			return nil, fmt.Errorf("duplicate --inherit-listener for %s", hostAddr)
 		}
 		out[hostAddr] = l
 	}
 	return out, nil
+}
+
+// closeAllListeners closes every listener in m, ignoring errors. Used on
+// parseInheritedListeners error paths to avoid leaking inherited fds.
+func closeAllListeners(m map[string]net.Listener) {
+	for _, l := range m {
+		_ = l.Close()
+	}
 }
 
 func parseInheritedListenerEntry(entry string) (string, net.Listener, error) {
