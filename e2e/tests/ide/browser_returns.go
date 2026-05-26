@@ -47,11 +47,12 @@ var _ = ginkgo.Describe(
 				})
 
 				// Run up with a browser IDE. --ide-option OPEN=false suppresses the
-				// host browser launch (we'd have nothing to display it on in CI) but
-				// still runs openIDE → startDetachedBrowserTunnel → writes tunnel.json.
-				// --open-ide=false would skip openIDE entirely, which is not what we
-				// want to exercise. With the old blocking behavior this would still
-				// hang past SpecTimeout; with the new behavior the CLI returns.
+				// host browser launch (no display available in CI) but still runs
+				// openIDE → startDetachedBrowserTunnel → writes tunnel.json.
+				// --open-ide=false would skip openIDE entirely, which is not what
+				// the test exercises. With the old blocking behavior this would
+				// still hang past SpecTimeout; with the new behavior the CLI
+				// returns.
 				err = f.DevsyUpWithIDE(
 					ctx,
 					tempDir,

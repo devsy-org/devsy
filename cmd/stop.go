@@ -145,7 +145,7 @@ func (cmd *StopCmd) stopSingleMachine(
 		return false, nil
 	}
 
-	// if we haven't found another workspace on this machine, delete the whole machine
+	// if no other workspace was found on this machine, delete the whole machine
 	machineClient, err := workspace2.GetMachine(
 		devsyConfig,
 		[]string{singleMachineName},

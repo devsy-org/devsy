@@ -75,7 +75,7 @@ func parseInheritedListeners(entries []string) (map[string]net.Listener, error) 
 			return nil, err
 		}
 		if _, exists := out[hostAddr]; exists {
-			// Close the newly-wrapped listener so we don't leak its fd.
+			// Close the newly-wrapped listener to avoid leaking its fd.
 			_ = l.Close()
 			return nil, fmt.Errorf("duplicate --inherit-listener for %s", hostAddr)
 		}
@@ -137,7 +137,7 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// Best-effort cleanup of the tunnel state file when this child exits.
-	// Only remove if we still own it (PID matches) so a re-spawned tunnel's
+	// Only remove if the PID still matches so a re-spawned tunnel's
 	// state isn't accidentally clobbered.
 	defer cleanupOwnedTunnelState(client.Context(), client.Workspace())
 

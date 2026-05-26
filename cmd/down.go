@@ -121,7 +121,7 @@ func (cmd *DownCmd) stop(
 		log.Infof("workspace is %s, skipping stop", status)
 		// The workspace may have been stopped out-of-band (e.g. docker kill
 		// directly) while leaving the detached tunnel helper alive. Kill it
-		// proactively so we don't leak ports + SSH connections.
+		// proactively to avoid leaking ports + SSH connections.
 		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 		return nil
 	}

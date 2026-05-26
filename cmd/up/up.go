@@ -305,7 +305,7 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 	go func() {
 		<-ctx.Done()
 		<-signals
-		// force shutdown if context is done and we receive another signal
+		// force shutdown if context is done and another signal arrives
 		os.Exit(1)
 	}()
 

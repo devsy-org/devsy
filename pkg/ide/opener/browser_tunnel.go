@@ -37,7 +37,7 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 		return
 	}
 	// Serialize against startDetachedBrowserTunnel so a concurrent `devsy up`
-	// can't reuse a tunnel we're about to SIGTERM, or have its freshly written
+	// can't reuse a tunnel marked for SIGTERM, or have its freshly written
 	// state file removed mid-spawn.
 	unlock, lockErr := acquireTunnelLock(contextName, workspaceID)
 	if lockErr != nil {
@@ -49,8 +49,8 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 	state := loadLiveTunnelState(contextName, workspaceID, statePath)
 	if state == nil {
 		// loadLiveTunnelState already removed the stale file when the PID
-		// is no longer ours (dead, or reused by an unrelated process), so
-		// we don't risk SIGTERMing a foreign process here.
+		// is no longer owned by this caller (dead, or reused by an unrelated
+		// process), avoiding the risk of SIGTERMing a foreign process here.
 		return
 	}
 
@@ -59,10 +59,10 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 }
 
 // loadLiveTunnelState reads the tunnel state file and returns it only if the
-// recorded PID is still our helper (PID alive AND CreateTime matches). If the
-// state file is missing, unreadable, or the PID is no longer ours (dead, or
-// reused by another process), the stale state file is removed and nil is
-// returned.
+// recorded PID is still the owned helper (PID alive AND CreateTime matches).
+// If the state file is missing, unreadable, or the PID is no longer owned
+// (dead, or reused by another process), the stale state file is removed and
+// nil is returned.
 func loadLiveTunnelState(contextName, workspaceID, statePath string) *TunnelState {
 	state, err := ReadTunnelState(contextName, workspaceID)
 	if err != nil {
@@ -155,7 +155,7 @@ const TunnelLogFileName = "tunnel.log"
 //
 // CreateTime is the helper process's creation timestamp in milliseconds since
 // epoch, as reported by gopsutil. It pairs with PID to detect PID reuse: if
-// the process at PID has a different CreateTime than what we recorded, the
+// the process at PID has a different CreateTime than the recorded value, the
 // helper is gone and a foreign process now occupies that PID.
 type TunnelState struct {
 	PID        int    `json:"pid"`
@@ -166,7 +166,7 @@ type TunnelState struct {
 
 // helperCreateTime returns the creation timestamp (milliseconds since epoch)
 // of the process with the given PID, via gopsutil. It's used right after
-// spawning the helper so we can persist a PID+CreateTime identity in the
+// spawning the helper so a PID+CreateTime identity can be persisted in the
 // state file.
 func helperCreateTime(pid int) (int64, error) {
 	if pid <= 0 || pid > math.MaxInt32 {
@@ -185,7 +185,7 @@ func helperCreateTime(pid int) (int64, error) {
 }
 
 // helperMatchesState reports whether the process at state.PID matches the
-// helper we recorded by comparing its current creation time against
+// helper as recorded by comparing its current creation time against
 // state.CreateTime. Returns false if the process no longer exists, the
 // creation time can't be read, or the creation time differs (PID reuse).
 func helperMatchesState(state *TunnelState) bool {
@@ -295,8 +295,8 @@ func startDetachedBrowserTunnel(
 	contextName := params.Client.Context()
 	workspaceID := params.Client.Workspace()
 
-	// Serialize concurrent attempts (e.g. parallel `devsy up`) so we don't
-	// orphan helper processes by racing on the state file.
+	// Serialize concurrent attempts (e.g. parallel `devsy up`) to avoid
+	// orphaning helper processes by racing on the state file.
 	unlock, err := acquireTunnelLock(contextName, workspaceID)
 	if err != nil {
 		return fmt.Errorf(
@@ -347,7 +347,7 @@ func spawnTunnelHelper(
 	args := buildHelperArgs(contextName, workspaceID, tunnelParams)
 
 	// Pre-bind the host listeners in the parent so the chosen ports are
-	// truly reserved before we fork the helper. On Windows this is a no-op
+	// truly reserved before the helper forks. On Windows this is a no-op
 	// (os/exec ExtraFiles is unsupported there).
 	setup, lerr := prepareInheritedListeners(tunnelParams.ExtraPorts)
 	if lerr != nil {
@@ -412,7 +412,7 @@ type recordHelperStateOpts struct {
 
 // recordHelperState captures the helper's process identity (PID + CreateTime
 // via gopsutil) and persists it to tunnel.json. On any failure the helper is
-// killed so we don't leave an un-identifiable orphan.
+// killed to avoid leaving an un-identifiable orphan.
 func recordHelperState(proc *os.Process, pid int, opts recordHelperStateOpts) error {
 	createTime, err := helperCreateTime(pid)
 	if err != nil {
@@ -516,10 +516,10 @@ func openTunnelLogFile(contextName, workspaceID string) (*os.File, string) {
 // helper is spawned, and tying the browser-open retries to the up ctx would
 // cancel them prematurely.
 //
-// We additionally bound the attempt with a 30s timeout: open2.Open retries
+// The attempt is additionally bounded with a 30s timeout: open2.Open retries
 // every 1s until its context is done, which on a broken URL or missing
 // browser would otherwise loop forever. 30s is generous enough to let the OS
-// launch a real browser but short enough that we don't leak a goroutine.
+// launch a real browser but short enough to avoid leaking a goroutine.
 func openBrowserAsync(ctx context.Context, url, debugFmt string) {
 	tctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()

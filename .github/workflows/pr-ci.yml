@@ -7,7 +7,7 @@ on:
   pull_request:
 
 # Cancel in-flight runs for the same PR when a new commit is pushed.
-# For main-branch pushes we don't cancel — each commit on main should
+# main-branch pushes are not cancelled — each commit on main should
 # run independently so historical results remain bisection-friendly.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}

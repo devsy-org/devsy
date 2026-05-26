@@ -139,8 +139,8 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	// Best-effort: terminate any detached browser tunnel helper so its process
 	// (and the host ports it holds) doesn't outlive the workspace directory.
 	// If the workspace can't be resolved (already gone with --ignore-not-found,
-	// for example) we just skip the kill — workspace.Delete is the source of
-	// truth for whether the delete succeeds.
+	// for example), skip the kill — workspace.Delete is the source of truth
+	// for whether the delete succeeds.
 	client, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: devsyConfig,
 		Args:        args,
@@ -149,10 +149,10 @@ func (cmd *DeleteCmd) deleteWorkspace(
 	if err == nil {
 		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 	} else {
-		// Without a resolved workspace we don't know which context/workspace
-		// pair the tunnel state lives under, and guessing risks SIGTERMing
-		// the wrong workspace's helper. Surface the orphan so the operator
-		// can clean it up manually.
+		// Without a resolved workspace the context/workspace pair the tunnel
+		// state lives under is unknown, and guessing risks SIGTERMing the
+		// wrong workspace's helper. Surface the orphan so the operator can
+		// clean it up manually.
 		log.Warnf("resolve workspace for tunnel cleanup failed: %v", err)
 	}
 

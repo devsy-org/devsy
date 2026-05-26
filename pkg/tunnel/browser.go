@@ -196,7 +196,7 @@ func SetupBackhaul(
 	}
 	if wait.Interrupted(err) {
 		// Either retries exhausted or ctx cancelled; surface the underlying
-		// subprocess error if we have one, else the wait error.
+		// subprocess error if one is available, else the wait error.
 		if lastErr != nil && !errors.Is(err, context.Canceled) &&
 			!errors.Is(err, context.DeadlineExceeded) {
 			return lastErr
