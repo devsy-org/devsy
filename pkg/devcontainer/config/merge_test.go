@@ -622,6 +622,27 @@ func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
 	}
 }
 
+// TestMergeConfiguration_PropagatesOrigin verifies that the Origin of the input
+// DevContainerConfig is preserved into the MergedDevContainerConfig. Downstream
+// consumers (notably local feature path resolution) rely on Origin to resolve
+// relative paths against the directory of the originating devcontainer.json,
+// per https://containers.dev/implementors/features/.
+func TestMergeConfiguration_PropagatesOrigin(t *testing.T) {
+	cfg := &DevContainerConfig{
+		Origin: "/abs/path/.devcontainer/devcontainer.json",
+		ImageContainer: ImageContainer{
+			Image: "alpine",
+		},
+	}
+	merged, err := MergeConfiguration(cfg, nil)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if merged.Origin != cfg.Origin {
+		t.Errorf("merged.Origin = %q, want %q", merged.Origin, cfg.Origin)
+	}
+}
+
 func TestMergeConfiguration_ShutdownActionExplicit_NotOverridden(t *testing.T) {
 	cfg := &DevContainerConfig{
 		DevContainerConfigBase: DevContainerConfigBase{

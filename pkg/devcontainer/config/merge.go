@@ -69,6 +69,11 @@ func MergeConfiguration(
 		ImageContainer:         copiedConfig.ImageContainer,
 		ComposeContainer:       copiedConfig.ComposeContainer,
 		DockerfileContainer:    copiedConfig.DockerfileContainer,
+		// Origin must be preserved so downstream consumers (e.g. local feature
+		// path resolution per https://containers.dev/implementors/features/)
+		// can resolve relative paths against the directory of the originating
+		// devcontainer.json file.
+		Origin: copiedConfig.Origin,
 	}
 
 	// adjust config
