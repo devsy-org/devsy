@@ -9,6 +9,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -118,6 +119,10 @@ func (cmd *DownCmd) stop(
 
 	if status != client2.StatusRunning {
 		log.Infof("workspace is %s, skipping stop", status)
+		// The workspace may have been stopped out-of-band (e.g. docker kill
+		// directly) while leaving the detached tunnel helper alive. Kill it
+		// proactively to avoid leaking ports + SSH connections.
+		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 		return nil
 	}
 
@@ -126,6 +131,8 @@ func (cmd *DownCmd) stop(
 	if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
 		return fmt.Errorf("stop workspace: %w", err)
 	}
+
+	opener.KillBrowserTunnel(client.Context(), client.Workspace())
 
 	return nil
 }

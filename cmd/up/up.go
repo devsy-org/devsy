@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -204,6 +205,12 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 		cmd.Recreate = true
 	}
 
+	if cmd.Recreate {
+		// Kill any existing detached browser tunnel before recreating the
+		// container so the new tunnel can't race with a now-broken one.
+		opener.KillBrowserTunnel(client.Context(), client.Workspace())
+	}
+
 	targetIDE := client.WorkspaceConfig().IDE.Name
 	if cmd.IDE != "" {
 		targetIDE = cmd.IDE
@@ -280,7 +287,7 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 	go func() {
 		<-ctx.Done()
 		<-signals
-		// force shutdown if context is done and we receive another signal
+		// force shutdown if context is done and another signal arrives
 		os.Exit(1)
 	}()
 

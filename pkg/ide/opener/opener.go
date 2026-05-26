@@ -27,8 +27,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
-// Params holds the parameters needed to open an IDE.
-type Params struct {
+// IDEParams holds the parameters needed to open an IDE.
+type IDEParams struct {
 	GPGAgentForwarding bool
 	SSHAuthSockID      string
 	GitSSHSigningKey   string
@@ -39,12 +39,21 @@ type Params struct {
 	TunnelMode         bool
 }
 
+// IsBrowserIDE reports whether the given IDE name uses a browser-based
+// tunnel (openvscode, jupyter, rstudio). These IDEs spawn a detached
+// helper process for the tunnel; the CLI does not block on the IDE
+// session lifetime.
+func IsBrowserIDE(ideName string) bool {
+	_, ok := browserIDEOpener(ideName)
+	return ok
+}
+
 // Open dispatches to the correct IDE opener based on ideName.
 func Open(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
@@ -56,7 +65,7 @@ func Open(
 // browserIDEOpener returns a handler for browser-based IDEs if ideName matches.
 func browserIDEOpener(
 	ideName string,
-) (func(context.Context, map[string]config.OptionValue, Params) error, bool) {
+) (func(context.Context, map[string]config.OptionValue, IDEParams) error, bool) {
 	switch ideName {
 	case string(config.IDEOpenVSCode):
 		return openVSCodeBrowser, true
@@ -73,7 +82,7 @@ func openDesktopIDE(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	switch ideName {
 	case string(config.IDEVSCode), string(config.IDEVSCodeInsiders), string(config.IDECursor),
@@ -153,7 +162,7 @@ func openVSCodeFlavor(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
 		Workspace:  params.Client.Workspace(),
@@ -167,7 +176,7 @@ func openVSCodeFlavor(
 func openJetBrains(
 	ideName string,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
 	workspace := params.Client.Workspace()
@@ -214,7 +223,7 @@ func openJetBrains(
 }
 
 func makeDaemonStartFunc(
-	params Params,
+	params IDEParams,
 	forwardPorts bool,
 	extraPorts []string,
 ) func(ctx context.Context) error {
@@ -254,7 +263,7 @@ func makeDaemonStartFunc(
 func openJupyterBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -271,23 +280,11 @@ func openJupyterBrowser(
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d/lab", jupyterPort)
-	if jupyter.Options.GetValue(ideOptions, jupyter.OpenOption) == config.BoolTrue {
-		go func() {
-			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				pkglog.Errorf("error opening jupyter notebook: error=%v", openErr)
-			}
-
-			pkglog.Info(
-				"started jupyter notebook in browser mode. " +
-					"Please keep this terminal open as long as you use Jupyter Notebook",
-			)
-		}()
-	}
+	openBrowser := jupyter.Options.GetValue(ideOptions, jupyter.OpenOption) == config.BoolTrue
 
 	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
-	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -296,13 +293,13 @@ func openJupyterBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	})
+	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser})
 }
 
 func openRStudioBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -319,22 +316,11 @@ func openRStudioBrowser(
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d", rsPort)
-	if rstudio.Options.GetValue(ideOptions, rstudio.OpenOption) == config.BoolTrue {
-		go func() {
-			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				pkglog.Errorf("error opening rstudio: %v", openErr)
-			}
-
-			pkglog.Infof(
-				"started RStudio Server in browser mode. Please keep this terminal open as long as you use it",
-			)
-		}()
-	}
+	openBrowser := rstudio.Options.GetValue(ideOptions, rstudio.OpenOption) == config.BoolTrue
 
 	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
-	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -343,13 +329,13 @@ func openRStudioBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	})
+	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser})
 }
 
 func openVSCodeBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
-	params Params,
+	params IDEParams,
 ) error {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
@@ -367,18 +353,7 @@ func openVSCodeBrowser(
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d/?folder=%s", vscodePort, folder)
-	if openvscode.Options.GetValue(ideOptions, openvscode.OpenOption) == config.BoolTrue {
-		go func() {
-			if openErr := open2.Open(ctx, targetURL); openErr != nil {
-				pkglog.Errorf("error opening vscode: %v", openErr)
-			}
-
-			pkglog.Infof(
-				"started vscode in browser mode. " +
-					"Please keep this terminal open as long as you use VSCode browser version",
-			)
-		}()
-	}
+	openBrowser := openvscode.Options.GetValue(ideOptions, openvscode.OpenOption) == config.BoolTrue
 
 	pkglog.Infof("Starting vscode in browser mode at %s", targetURL)
 	forwardPorts := openvscode.Options.GetValue(
@@ -386,8 +361,7 @@ func openVSCodeBrowser(
 		openvscode.ForwardPortsOption,
 	) == config.BoolTrue
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
-	return tunnel.StartBrowserTunnel(tunnel.BrowserTunnelParams{
-		Ctx:              ctx,
+	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -397,7 +371,7 @@ func openVSCodeBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	})
+	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser})
 }
 
 func startFleet(ctx context.Context, client client2.BaseWorkspaceClient) error {

@@ -9,6 +9,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -94,6 +95,7 @@ func (cmd *StopCmd) Run(
 	if err != nil {
 		return err
 	} else if wasStopped {
+		opener.KillBrowserTunnel(client.Context(), client.Workspace())
 		return nil
 	}
 
@@ -102,6 +104,8 @@ func (cmd *StopCmd) Run(
 	if err != nil {
 		return err
 	}
+
+	opener.KillBrowserTunnel(client.Context(), client.Workspace())
 
 	return nil
 }
@@ -141,7 +145,7 @@ func (cmd *StopCmd) stopSingleMachine(
 		return false, nil
 	}
 
-	// if we haven't found another workspace on this machine, delete the whole machine
+	// if no other workspace was found on this machine, delete the whole machine
 	machineClient, err := workspace2.GetMachine(
 		devsyConfig,
 		[]string{singleMachineName},

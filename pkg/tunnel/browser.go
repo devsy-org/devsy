@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"time"
@@ -20,7 +21,6 @@ import (
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
 type BrowserTunnelParams struct {
-	Ctx              context.Context
 	DevsyConfig      *config.Config
 	Client           client2.BaseWorkspaceClient
 	User             string
@@ -30,31 +30,36 @@ type BrowserTunnelParams struct {
 	AuthSockID       string
 	GitSSHSigningKey string
 
+	// ExtraListeners holds pre-bound listeners for ExtraPorts entries,
+	// keyed by host addr (e.g. "localhost:10800"). Set by the parent so the
+	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
+	ExtraListeners map[string]net.Listener
+
 	// DaemonStartFunc is called when the client is a DaemonClient.
 	// If nil, the SSH tunnel path is always used.
 	DaemonStartFunc func(ctx context.Context) error
 }
 
 // StartBrowserTunnel sets up a browser tunnel for IDE access, either via daemon or SSH.
-func StartBrowserTunnel(p BrowserTunnelParams) error {
+func StartBrowserTunnel(ctx context.Context, p BrowserTunnelParams) error {
 	if p.AuthSockID != "" {
 		go func() {
-			if err := SetupBackhaul(p.Ctx, p.Client, p.AuthSockID); err != nil {
+			if err := SetupBackhaul(ctx, p.Client, p.AuthSockID); err != nil {
 				log.Error("Failed to setup backhaul SSH connection: ", err)
 			}
 		}()
 	}
 
 	if p.DaemonStartFunc != nil {
-		return p.DaemonStartFunc(p.Ctx)
+		return p.DaemonStartFunc(ctx)
 	}
 
-	return startBrowserTunnelSSH(p)
+	return startBrowserTunnelSSH(ctx, p)
 }
 
-func startBrowserTunnelSSH(p BrowserTunnelParams) error {
+func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 	return NewTunnel(
-		p.Ctx,
+		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
@@ -104,6 +109,7 @@ func runBrowserTunnelServices(
 				config.ContextOptionGitSSHSignatureForwarding,
 			) == config.BoolTrue,
 			GitSSHSigningKey: p.GitSSHSigningKey,
+			ExtraListeners:   p.ExtraListeners,
 		},
 	)
 	if err != nil {
@@ -190,7 +196,7 @@ func SetupBackhaul(
 	}
 	if wait.Interrupted(err) {
 		// Either retries exhausted or ctx cancelled; surface the underlying
-		// subprocess error if we have one, else the wait error.
+		// subprocess error if one is available, else the wait error.
 		if lastErr != nil && !errors.Is(err, context.Canceled) &&
 			!errors.Is(err, context.DeadlineExceeded) {
 			return lastErr

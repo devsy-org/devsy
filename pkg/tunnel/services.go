@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ type RunServicesOptions struct {
 	ConfigureGitCredentials        bool
 	ConfigureGitSSHSignatureHelper bool
 	GitSSHSigningKey               string
+	// ExtraListeners holds pre-bound listeners keyed by "host:port" so the
+	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
+	ExtraListeners map[string]net.Listener
 }
 
 // getExitAfterTimeout calculates the timeout value based on configuration.
@@ -223,6 +227,7 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 		containerClient:  opts.ContainerClient,
 		extraPorts:       opts.ExtraPorts,
 		exitAfterTimeout: exitAfterTimeout,
+		extraListeners:   opts.ExtraListeners,
 	}
 
 	forwardedPorts, err := forwardDevContainerPorts(ctx, fp)
@@ -265,6 +270,7 @@ type portForwardParams struct {
 	containerClient  *ssh.Client
 	extraPorts       []string
 	exitAfterTimeout time.Duration
+	extraListeners   map[string]net.Listener
 }
 
 // forwardDevContainerPorts forwards all the ports defined in the devcontainer.json.
@@ -319,6 +325,7 @@ func forwardExtraPorts(ctx context.Context, p portForwardParams) []string {
 			containerClient:  p.containerClient,
 			port:             port,
 			exitAfterTimeout: p.exitAfterTimeout,
+			extraListeners:   p.extraListeners,
 		})...)
 	}
 	return forwardedPorts
@@ -379,6 +386,7 @@ type singlePortForwardParams struct {
 	containerClient  *ssh.Client
 	port             string
 	exitAfterTimeout time.Duration
+	extraListeners   map[string]net.Listener
 }
 
 // forwardPort forwards a single port specification.
@@ -403,15 +411,29 @@ func forwardPort(ctx context.Context, p singlePortForwardParams) []string {
 			hostAddr := parsedPort.Binding.HostIP + ":" + parsedPort.Binding.HostPort
 			containerAddr := "localhost:" + parsedPort.Port.Port()
 			log.Debugf("forward port %s to %s", hostAddr, containerAddr)
-			if err := devssh.PortForward(
-				ctx,
-				p.containerClient,
-				"tcp",
-				hostAddr,
-				"tcp",
-				containerAddr,
-				p.exitAfterTimeout,
-			); err != nil {
+			var err error
+			if listener, ok := p.extraListeners[hostAddr]; ok && listener != nil {
+				err = devssh.PortForwardWithListener(
+					ctx,
+					p.containerClient,
+					devssh.ForwardOpts{
+						Listener:         listener,
+						RemoteAddr:       containerAddr,
+						ExitAfterTimeout: p.exitAfterTimeout,
+					},
+				)
+			} else {
+				err = devssh.PortForward(
+					ctx,
+					p.containerClient,
+					"tcp",
+					hostAddr,
+					"tcp",
+					containerAddr,
+					p.exitAfterTimeout,
+				)
+			}
+			if err != nil {
 				log.Errorf(
 					"error port forwarding %s:%s to %s: %v",
 					parsedPort.Binding.HostIP,

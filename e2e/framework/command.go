@@ -82,6 +82,29 @@ func (f *Framework) DevsyUpStreams(
 	return stdout, stderr, nil
 }
 
+// DevsyUpStreamsRaw executes the `devsy up` command capturing stdout/stderr without
+// injecting a default --ide flag, allowing callers to supply their own IDE selection.
+func (f *Framework) DevsyUpStreamsRaw(
+	ctx context.Context,
+	workspace string,
+	additionalArgs ...string,
+) (string, string, error) {
+	upArgs := []string{"up", workspace}
+	upArgs = append(upArgs, additionalArgs...)
+
+	stdout, stderr, err := execWithDockerRetry(
+		ctx,
+		func(ctx context.Context) (string, string, error) {
+			return f.ExecCommandCapture(ctx, upArgs)
+		},
+	)
+	if err != nil {
+		return stdout, stderr, fmt.Errorf("devsy up failed: %s", err.Error())
+	}
+
+	return stdout, stderr, nil
+}
+
 // DevsyUp executes the `devsy up` command in the test framework.
 func (f *Framework) DevsyUpWithIDE(ctx context.Context, additionalArgs ...string) error {
 	upArgs := []string{"up", "--debug"}

@@ -160,6 +160,54 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		gomega.Expect(envelope.Outcome).To(gomega.Equal("success"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It(
+		"emits success envelope for openvscode with --result-format json",
+		func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+
+			// --ide-option OPEN=false keeps the openIDE pipeline active (so the
+			// success envelope ordering is exercised) but skips the host browser
+			// launch (no display available in CI).
+			stdout, _, err := dtc.f.DevsyUpStreamsRaw(
+				ctx,
+				tempDir,
+				"--ide=openvscode",
+				"--ide-option", "OPEN=false",
+				"--result-format", "json",
+			)
+			framework.ExpectNoError(err)
+
+			lines := strings.Split(strings.TrimSpace(stdout), "\n")
+			gomega.Expect(lines).NotTo(gomega.BeEmpty())
+
+			var matched []config.ResultEnvelope
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				var env config.ResultEnvelope
+				if json.Unmarshal([]byte(line), &env) != nil {
+					continue
+				}
+				if env.Outcome == "success" {
+					matched = append(matched, env)
+				}
+			}
+
+			gomega.Expect(matched).To(gomega.HaveLen(1),
+				"expected exactly one success envelope in stdout, got %d", len(matched))
+			gomega.Expect(matched[0].ContainerID).NotTo(gomega.BeEmpty())
+			gomega.Expect(matched[0].RemoteUser).NotTo(gomega.BeEmpty())
+			// RemoteWorkspaceFolder may legitimately be empty when the
+			// devcontainer.json doesn't set a workspaceFolder.
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
 	ginkgo.It("suppresses JSON envelope with --result-format plain", func(ctx context.Context) {
 		tempDir, err := setupWorkspace(
 			"tests/up/testdata/docker",
