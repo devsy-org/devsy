@@ -230,6 +230,9 @@ func (cmd *UpCmd) executeDevsyUp(
 	// the generic SSH-level wrapper, so callers see the actual cause
 	// (e.g. host requirements not met) instead of a generic fallback.
 	if result != nil && result.Error != "" {
+		if err != nil {
+			return nil, fmt.Errorf("start workspace: %s: %w", result.Error, err)
+		}
 		return nil, fmt.Errorf("start workspace: %s", result.Error)
 	}
 	if err != nil {
