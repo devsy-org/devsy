@@ -77,6 +77,15 @@ export class DaemonState {
     return { contexts: [...this.contexts], activeContext: this.activeContext }
   }
 
+  // workspaceContext resolves the context name for a workspace, falling back to
+  // "default" when the workspace is unknown or its context field is missing
+  // (e.g. an older workspace.json written before the field existed).
+  workspaceContext(workspaceId: string): string {
+    const ws = this.workspaces.get(workspaceId)
+    const ctx = ws && typeof ws.context === "string" ? ws.context : ""
+    return ctx || "default"
+  }
+
   private mapsEqual<K, V>(a: Map<K, V>, b: Map<K, V>): boolean {
     if (a.size !== b.size) return false
     for (const [key, val] of a) {

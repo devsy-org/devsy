@@ -90,6 +90,8 @@ func (cmd *UpCmd) prepareClient( //nolint:funlen
 
 	cmd.resolveSSHConfig(devsyConfig)
 
+	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
+
 	client, err := workspace2.Resolve(
 		ctx,
 		devsyConfig,

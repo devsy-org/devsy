@@ -190,13 +190,32 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+// isHostAgentInvocation reports whether this `devsy agent ...` call is
+// running on the user's host (as opposed to inside the workspace container).
+// The signal is implicit: container-side calls always receive an explicit
+// agentFolder via --agent-dir or set DEVSY_HOME, while host-side calls have
+// neither. When true, per-workspace agent state lives under the canonical
+// PathManager.WorkspaceAgentDir so a single os.RemoveAll(WorkspaceDir) wipes
+// it on delete.
+func isHostAgentInvocation(agentFolder string) bool {
+	return agentFolder == "" && os.Getenv(config.EnvHome) == ""
+}
+
 func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if isHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
+	}
+
 	homeFolder, err := FindAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err
-	}
-	if context == "" {
-		context = config.DefaultContext
 	}
 
 	// workspace folder
@@ -207,12 +226,23 @@ func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, erro
 }
 
 func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if isHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		if _, statErr := os.Stat(workspaceDir); statErr == nil {
+			return workspaceDir, nil
+		}
+		return "", os.ErrNotExist
+	}
+
 	homeFolder, err := FindAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err
-	}
-	if context == "" {
-		context = config.DefaultContext
 	}
 
 	// workspace folder
@@ -228,6 +258,21 @@ func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, err
 }
 
 func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if isHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		// #nosec G301 -- mirrors the legacy 0o755 perms below.
+		if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+			return "", err
+		}
+		return workspaceDir, nil
+	}
+
 	homeFolder, err := PrepareAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err
