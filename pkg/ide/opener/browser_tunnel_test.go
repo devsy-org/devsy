@@ -1,11 +1,13 @@
 package opener
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -130,6 +132,83 @@ func assertStatePathSane(t *testing.T, contextName, workspaceID string) {
 	}
 	if filepath.Base(statePath) != TunnelStateFileName {
 		t.Errorf("statePath basename = %q, want %q", filepath.Base(statePath), TunnelStateFileName)
+	}
+}
+
+func TestHostPortFromURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"http with port", "http://localhost:10800/x", "localhost:10800", false},
+		{"https with port", "https://example.com:8443/", "example.com:8443", false},
+		{"http no port", "http://example.com/", "example.com:80", false},
+		{"https no port", "https://example.com/", "example.com:443", false},
+		{"ipv6 with port", "http://[::1]:10800/", "[::1]:10800", false},
+		{"empty", "", "", true},
+		{"no host", "http:///foo", "", true},
+		{"unsupported scheme no port", "ftp://example.com/", "", true},
+		{"garbage", "://bad", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := hostPortFromURL(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("hostPortFromURL(%q) = %q, want error", tc.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("hostPortFromURL(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("hostPortFromURL(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProbeTCPReachable_Reachable(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	start := time.Now()
+	ok := probeTCPReachable(ln.Addr().String(), 2*time.Second)
+	if !ok {
+		t.Fatalf("probeTCPReachable(%s) = false; want true", ln.Addr())
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("probe took %s; expected near-instant success", elapsed)
+	}
+}
+
+func TestProbeTCPReachable_Unreachable(t *testing.T) {
+	// Allocate a port, then close the listener so nothing's listening.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	budget := 600 * time.Millisecond
+	start := time.Now()
+	ok := probeTCPReachable(addr, budget)
+	elapsed := time.Since(start)
+	if ok {
+		t.Fatalf("probeTCPReachable(%s) = true; want false (nothing listening)", addr)
+	}
+	// Must respect the budget (allow some slack for slow CI).
+	if elapsed > budget+2*time.Second {
+		t.Errorf("probe took %s; budget was %s", elapsed, budget)
 	}
 }
 

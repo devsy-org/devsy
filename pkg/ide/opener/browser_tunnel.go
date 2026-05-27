@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,14 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/gofrs/flock"
+)
+
+// browserProbeBudget bounds how long openBrowserWhenReachable will wait for
+// the target URL's port to accept TCP connections before giving up.
+const (
+	browserProbeBudget   = 5 * time.Second
+	browserProbeInterval = 200 * time.Millisecond
+	browserProbeDial     = 300 * time.Millisecond
 )
 
 // KillBrowserTunnel terminates the detached browser tunnel for a workspace
@@ -165,15 +175,18 @@ func startDetachedBrowserTunnel(
 ) (string, error) {
 	label := inv.Label
 	openBrowser := inv.OpenBrowser
-	if _, ok := params.Client.(client.DaemonClient); ok {
-		if openBrowser {
-			go openBrowserAsync(ctx, tunnelParams.TargetURL)
-		}
-		return tunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, tunnelParams)
-	}
-
 	contextName := params.Client.Context()
 	workspaceID := params.Client.Workspace()
+
+	if _, ok := params.Client.(client.DaemonClient); ok {
+		return runDaemonBrowserTunnel(ctx, daemonTunnelArgs{
+			ContextName:  contextName,
+			WorkspaceID:  workspaceID,
+			TunnelParams: tunnelParams,
+			Inv:          inv,
+			OpenBrowser:  openBrowser,
+		})
+	}
 
 	// Serialize concurrent attempts (e.g. parallel `devsy up`) to avoid
 	// orphaning helper processes by racing on the state file.
@@ -433,6 +446,118 @@ func tryReuseExistingTunnel(
 		_ = os.Remove(statePath)
 	}
 	return "", false
+}
+
+// daemonTunnelArgs bundles the parameters for runDaemonBrowserTunnel to keep
+// its signature small.
+type daemonTunnelArgs struct {
+	ContextName  string
+	WorkspaceID  string
+	TunnelParams tunnel.BrowserTunnelParams
+	Inv          browserIDEInvocation
+	OpenBrowser  bool
+}
+
+// runDaemonBrowserTunnel handles the daemon-client path: reuse an existing
+// helper if one is live, otherwise start the in-process tunnel and open the
+// browser only once the target URL becomes reachable.
+func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, error) {
+	unlock, err := acquireTunnelLock(a.ContextName, a.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf(
+			"acquire tunnel lock (refusing to start unlocked to avoid orphan helpers): %w",
+			err,
+		)
+	}
+	defer unlock()
+
+	if reusedURL, ok := tryReuseExistingTunnel(ctx, a.ContextName, a.WorkspaceID, a.Inv); ok {
+		return reusedURL, nil
+	}
+
+	if a.OpenBrowser {
+		go openBrowserWhenReachable(ctx, a.TunnelParams.TargetURL)
+	}
+	return a.TunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, a.TunnelParams)
+}
+
+// openBrowserWhenReachable polls the target URL's TCP port until it accepts
+// connections, then opens the browser. If the port never becomes reachable
+// within browserProbeBudget the browser is NOT opened and a warning is
+// logged — better than launching a tab to a dead address when
+// tunnel.StartBrowserTunnel fails fast.
+func openBrowserWhenReachable(ctx context.Context, url string) {
+	hostPort, err := hostPortFromURL(url)
+	if err != nil {
+		pkglog.Warnf("could not parse browser-tunnel URL %q: %v; skipping auto-open", url, err)
+		return
+	}
+	if !probeTCPReachable(hostPort, browserProbeBudget) {
+		pkglog.Warnf(
+			"browser-tunnel URL %s never became reachable within %s; "+
+				"skipping browser auto-open (open it manually once the tunnel is up)",
+			url, browserProbeBudget,
+		)
+		return
+	}
+	openBrowserAsync(ctx, url)
+}
+
+// probeTCPReachable returns true if a TCP connection to hostPort succeeds
+// within the given budget, polling every browserProbeInterval. Each dial
+// uses a short timeout so a hung host can't burn the whole budget on one
+// attempt.
+func probeTCPReachable(hostPort string, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
+	for {
+		conn, err := net.DialTimeout("tcp", hostPort, browserProbeDial)
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(browserProbeInterval)
+	}
+}
+
+// hostPortFromURL extracts a "host:port" suitable for net.DialTimeout from
+// a URL string. When the URL has no explicit port the scheme's default
+// (80 for http, 443 for https) is used.
+func hostPortFromURL(rawURL string) (string, error) {
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse url: %w", err)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("url %q has no host", rawURL)
+	}
+	host, port, splitErr := net.SplitHostPort(u.Host)
+	if splitErr == nil {
+		if host == "" || port == "" {
+			return "", fmt.Errorf("url %q has empty host or port", rawURL)
+		}
+		return net.JoinHostPort(host, port), nil
+	}
+	// No explicit port; fall back to scheme default.
+	defaultPort, err := defaultPortForScheme(u.Scheme)
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(u.Host, defaultPort), nil
+}
+
+// defaultPortForScheme returns the well-known port for http/https schemes.
+func defaultPortForScheme(scheme string) (string, error) {
+	switch scheme {
+	case "http", "ws":
+		return "80", nil
+	case "https", "wss":
+		return "443", nil
+	default:
+		return "", fmt.Errorf("unsupported scheme %q (no default port)", scheme)
+	}
 }
 
 // acquireTunnelLock takes an exclusive file lock that serializes concurrent
