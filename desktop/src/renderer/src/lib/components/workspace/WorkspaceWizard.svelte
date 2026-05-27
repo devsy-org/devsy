@@ -295,7 +295,7 @@ async function handleLaunch() {
       source: source.trim(),
       workspaceId,
       provider: selectedProvider || undefined,
-      ide: selectedIde && selectedIde !== "none" ? selectedIde : undefined,
+      ide: selectedIde,
       ideLaunch: "auto",
       workspaceFolder: workspaceFolder.trim() || undefined,
       debug: true,

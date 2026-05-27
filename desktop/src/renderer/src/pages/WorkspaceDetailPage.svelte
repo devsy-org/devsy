@@ -41,6 +41,7 @@ import {
   workspaceReset,
   workspaceDelete,
   workspaceRename,
+  workspaceSetIde,
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
@@ -124,6 +125,7 @@ let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
 let selectedIde = $state<string | null>(null)
+let ideSetSeq = 0
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
@@ -305,9 +307,16 @@ function startStreamingOp(label: string) {
 }
 
 async function handleStart() {
+  const ide = currentIde
+  const folder = customFolder || undefined
   startStreamingOp("Start")
   try {
-    commandId = await workspaceUp({ source: id, debug: isDebug() })
+    commandId = await workspaceUp({
+      source: id,
+      ide,
+      debug: isDebug(),
+      workspaceFolder: folder,
+    })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
@@ -315,7 +324,7 @@ async function handleStart() {
 }
 
 async function handleOpenIde() {
-  const ide = currentIde !== "none" ? currentIde : undefined
+  const ide = currentIde
   const folder = customFolder || undefined
   startStreamingOp("Open IDE")
   try {
@@ -450,7 +459,7 @@ async function handleRename() {
         </Button>
       {/if}
 
-      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning}>
+      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
         {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
         Open IDE
       </Button>
@@ -545,10 +554,19 @@ async function handleRename() {
                         <Command.Item
                           value={ide.value}
                           class="justify-start"
-                          onSelect={() => {
+                          onSelect={async () => {
+                            const seq = ++ideSetSeq
+                            const prev = selectedIde
                             selectedIde = ide.value
                             ideComboOpen = false
                             ideSearch = ""
+                            try {
+                              await workspaceSetIde(id, ide.value)
+                            } catch (err) {
+                              if (seq !== ideSetSeq) return
+                              selectedIde = prev
+                              toasts.error(`Failed to set IDE: ${extractErrorMessage(err)}`)
+                            }
                           }}
                         >
                           <Check class="mr-2 h-4 w-4 {currentIde === ide.value ? 'opacity-100' : 'opacity-0'}" />

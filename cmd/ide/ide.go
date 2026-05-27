@@ -13,6 +13,7 @@ func NewIDECmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	ideCmd.AddCommand(NewUseCmd(flags))
+	ideCmd.AddCommand(NewSetCmd(flags))
 	ideCmd.AddCommand(NewSetOptionsCmd(flags))
 	ideCmd.AddCommand(NewOptionsCmd(flags))
 	ideCmd.AddCommand(NewListCmd(flags))
