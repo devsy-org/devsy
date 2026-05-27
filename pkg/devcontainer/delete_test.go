@@ -2,12 +2,14 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	dockerdriver "github.com/devsy-org/devsy/pkg/driver/docker"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -208,6 +210,32 @@ func TestDelete_OmitsRemoveVolumesWhenFlagUnset(t *testing.T) {
 	}
 	if d.deleteRemoveVolumes {
 		t.Error("driver.DeleteDevContainer was called with removeVolumes=true, want false")
+	}
+}
+
+// TestDelete_PropagatesDaemonUnavailableSentinel guards against the
+// regression where the docker driver swallowed daemon-down errors during
+// volume cleanup and returned nil, hiding the failure from `devsy delete
+// --remove-volumes` callers.
+func TestDelete_PropagatesDaemonUnavailableSentinel(t *testing.T) {
+	wrapped := fmt.Errorf("remove volume foo: %w",
+		dockerdriver.ErrDockerDaemonUnavailable)
+	d := &mockDriver{
+		findResult: &config.ContainerDetails{
+			ID:     testContainerID,
+			State:  config.ContainerDetailsState{Status: "exited"},
+			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
+		},
+		deleteErr: wrapped,
+	}
+	r := newTestRunner(d)
+
+	err := r.Delete(context.Background(), DeleteOptions{RemoveVolumes: true})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, dockerdriver.ErrDockerDaemonUnavailable) {
+		t.Errorf("expected ErrDockerDaemonUnavailable in chain, got: %v", err)
 	}
 }
 

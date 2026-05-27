@@ -3,6 +3,7 @@ package docker
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
+
+// ErrDockerDaemonUnavailable signals that the docker daemon could not be
+// reached during a destructive operation (e.g. volume removal). It is a
+// hard failure: callers MUST surface it rather than treating the request
+// as successfully completed.
+var ErrDockerDaemonUnavailable = errors.New("docker daemon unavailable")
 
 func makeEnvironment(env map[string]string) []string {
 	if env == nil {
@@ -449,21 +456,22 @@ func (d *dockerDriver) removeContainerAndVolumes(
 	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
 		return err
 	}
-	owned := d.filterDriverOwnedVolumes(ctx, candidates)
+	owned, err := d.filterDriverOwnedVolumes(ctx, candidates)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDockerDaemonUnavailable, err)
+	}
 	for _, name := range owned {
-		err := d.Docker.RemoveVolume(ctx, name)
-		if err == nil {
+		rmErr := d.Docker.RemoveVolume(ctx, name)
+		if rmErr == nil {
 			continue
 		}
-		action := classifyVolumeRemoveError(err)
-		switch action {
+		switch classifyVolumeRemoveError(rmErr) {
 		case volumeErrIgnore:
-			log.Debugf("remove volume %s: %v", name, err)
+			log.Debugf("remove volume %s: %v", name, rmErr)
 		case volumeErrAbort:
-			log.Warnf("docker daemon unavailable, aborting volume cleanup: %v", err)
-			return nil
+			return fmt.Errorf("%w: %w", ErrDockerDaemonUnavailable, rmErr)
 		default:
-			log.Warnf("remove volume %s: %v", name, err)
+			log.Warnf("remove volume %s: %v", name, rmErr)
 		}
 	}
 	return nil
@@ -1325,13 +1333,15 @@ func isLegacyDriverOwnedVolume(name string) bool {
 
 // filterDriverOwnedVolumes keeps only volumes that carry the
 // `devsy.driver-owned=true` label, falling back to legacy name matching
-// for volumes created by older devsy versions. Inspect failures are
-// logged at debug; the volume is excluded to err on the side of caution
-// (better to leak a volume than to wipe a user's cache).
+// for volumes created by older devsy versions. A daemon-down inspect
+// failure aborts the entire walk so the caller can surface the outage;
+// any other inspect error is logged at debug and the volume is excluded
+// to err on the side of caution (better to leak a volume than to wipe
+// a user's cache).
 func (d *dockerDriver) filterDriverOwnedVolumes(
 	ctx context.Context,
 	names []string,
-) []string {
+) ([]string, error) {
 	var owned []string
 	for _, name := range names {
 		if isLegacyDriverOwnedVolume(name) {
@@ -1340,6 +1350,9 @@ func (d *dockerDriver) filterDriverOwnedVolumes(
 		}
 		labels, err := d.Docker.InspectVolumeLabels(ctx, name)
 		if err != nil {
+			if classifyVolumeInspectError(err) == volumeErrAbort {
+				return nil, err
+			}
 			log.Debugf("inspect volume %s labels (skipping): %v", name, err)
 			continue
 		}
@@ -1347,19 +1360,21 @@ func (d *dockerDriver) filterDriverOwnedVolumes(
 			owned = append(owned, name)
 		}
 	}
-	return owned
+	return owned, nil
 }
 
 // classifyVolumeRemoveError maps a docker CLI error message to a coarse
 // action. We rely on string matching because the docker client doesn't
-// expose structured error codes through the CLI.
+// expose structured error codes through the CLI. "permission denied"
+// alone is NOT enough to abort — a single restricted volume (e.g. in a
+// rootless setup) should not halt cleanup of every other volume; we
+// require an accompanying daemon-y hint to treat it as a hard outage.
 func classifyVolumeRemoveError(err error) volumeErrAction {
 	if err == nil {
 		return volumeErrOther
 	}
 	msg := err.Error()
-	if strings.Contains(msg, "Cannot connect to the Docker daemon") ||
-		strings.Contains(msg, "permission denied") {
+	if isDaemonUnavailableMessage(msg) {
 		return volumeErrAbort
 	}
 	if strings.Contains(msg, "is in use") ||
@@ -1368,4 +1383,38 @@ func classifyVolumeRemoveError(err error) volumeErrAction {
 		return volumeErrIgnore
 	}
 	return volumeErrOther
+}
+
+// classifyVolumeInspectError reuses the daemon-unavailable detector so
+// the inspect path can bail out the same way the remove path does. We
+// don't need an Ignore class here because the helper already swallows
+// missing-volume responses upstream.
+func classifyVolumeInspectError(err error) volumeErrAction {
+	if err == nil {
+		return volumeErrOther
+	}
+	if isDaemonUnavailableMessage(err.Error()) {
+		return volumeErrAbort
+	}
+	return volumeErrOther
+}
+
+// isDaemonUnavailableMessage returns true if the docker CLI error string
+// indicates the daemon is unreachable (socket missing, daemon not
+// running, or a daemon-scoped permission denial like
+// "Got permission denied while trying to connect to the Docker daemon").
+func isDaemonUnavailableMessage(msg string) bool {
+	if strings.Contains(msg, "Cannot connect to the Docker daemon") {
+		return true
+	}
+	if strings.Contains(msg, "Is the docker daemon running") {
+		return true
+	}
+	if !strings.Contains(msg, "permission denied") {
+		return false
+	}
+	return strings.Contains(msg, "daemon") ||
+		strings.Contains(msg, "socket") ||
+		strings.Contains(msg, "/var/run/docker") ||
+		strings.Contains(msg, "Got permission denied while trying to connect")
 }

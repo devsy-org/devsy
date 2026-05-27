@@ -281,7 +281,16 @@ func (s *DockerDriverTestSuite) TestClassifyVolumeRemoveError() {
 		{"Error: no such volume: foo", volumeErrIgnore},
 		{"Error: No such volume: foo", volumeErrIgnore},
 		{"Cannot connect to the Docker daemon at unix:///var/run/docker.sock", volumeErrAbort},
-		{"permission denied while trying to connect", volumeErrAbort},
+		{"Is the docker daemon running?", volumeErrAbort},
+		{
+			"Got permission denied while trying to connect to the Docker daemon socket",
+			volumeErrAbort,
+		},
+		{"permission denied: /var/run/docker.sock", volumeErrAbort},
+		// Bare "permission denied" with no daemon hint must NOT abort —
+		// one restricted volume shouldn't halt cleanup of the rest.
+		{"Error: permission denied removing volume foo", volumeErrOther},
+		{"permission denied", volumeErrOther},
 		{"some other docker error", volumeErrOther},
 	}
 	for _, tc := range cases {
@@ -289,6 +298,17 @@ func (s *DockerDriverTestSuite) TestClassifyVolumeRemoveError() {
 		s.Equal(tc.want, got, tc.msg)
 	}
 	s.Equal(volumeErrOther, classifyVolumeRemoveError(nil))
+}
+
+func (s *DockerDriverTestSuite) TestClassifyVolumeInspectError() {
+	s.Equal(volumeErrOther, classifyVolumeInspectError(nil))
+	s.Equal(
+		volumeErrAbort,
+		classifyVolumeInspectError(
+			errors.New("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
+		),
+	)
+	s.Equal(volumeErrOther, classifyVolumeInspectError(errors.New("some inspect failure")))
 }
 
 func (s *DockerDriverTestSuite) TestCollectNamedVolumes() {
@@ -326,14 +346,66 @@ esac
 `)
 
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
-	got := d.filterDriverOwnedVolumes(context.Background(), []string{
+	got, err := d.filterDriverOwnedVolumes(context.Background(), []string{
 		"dockerless-xyz",  // legacy
 		"devsy-agent-xyz", // legacy
 		"labeled",         // labeled
 		"unlabeled",       // not owned, user cache
 		"bogus",           // missing -> excluded
 	})
+	s.NoError(err)
 	s.Equal([]string{"dockerless-xyz", "devsy-agent-xyz", "labeled"}, got)
+}
+
+// TestFilterDriverOwnedVolumes_DaemonDownAborts verifies that when
+// `docker volume inspect` reports the daemon is unreachable we surface
+// the failure instead of silently treating every candidate as
+// "not owned" and exiting cleanly.
+func (s *DockerDriverTestSuite) TestFilterDriverOwnedVolumes_DaemonDownAborts() {
+	tmp := s.T().TempDir()
+	bin := writeScript(s.T(), tmp, "docker-fake", `#!/bin/sh
+echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' 1>&2
+exit 1
+`)
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	got, err := d.filterDriverOwnedVolumes(context.Background(), []string{"some-vol"})
+	s.Error(err)
+	s.Nil(got)
+}
+
+// TestRemoveContainerAndVolumes_DaemonDownReturnsSentinel ensures the
+// daemon-down classification on volume removal produces an error that
+// wraps ErrDockerDaemonUnavailable, rather than the previous silent
+// `return nil` path that masked the outage from `devsy delete`.
+func (s *DockerDriverTestSuite) TestRemoveContainerAndVolumes_DaemonDownReturnsSentinel() {
+	tmp := s.T().TempDir()
+	// First call ("rm -fv ...") succeeds; subsequent volume calls report
+	// the daemon is unreachable. We sequence by writing a counter file.
+	counter := filepath.Join(tmp, "counter")
+	require.NoError(s.T(), os.WriteFile(counter, []byte("0"), 0o600))
+	bin := writeScript(s.T(), tmp, "docker-fake", `#!/bin/sh
+n=$(cat `+counter+`)
+echo $((n+1)) > `+counter+`
+if [ "$n" = "0" ]; then
+  # container removal succeeds
+  exit 0
+fi
+echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock' 1>&2
+exit 1
+`)
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	container := &config.ContainerDetails{
+		ID: "c1",
+		Mounts: []config.ContainerMount{
+			// legacy name → skipped by inspect path, hits RemoveVolume directly
+			{Type: "volume", Source: "dockerless-xyz"},
+		},
+	}
+	err := d.removeContainerAndVolumes(context.Background(), container)
+	s.Error(err)
+	s.ErrorIs(err, ErrDockerDaemonUnavailable)
 }
 
 func (s *DockerDriverTestSuite) TestStripMountConsistency() {
