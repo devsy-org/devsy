@@ -149,6 +149,8 @@ func TestHostPortFromURL(t *testing.T) {
 		{"http no port", "http://example.com/", "example.com:80", false},
 		{"https no port", "https://example.com/", "example.com:443", false},
 		{"ipv6 with port", "http://[::1]:10800/", "[::1]:10800", false},
+		{"ipv6 no port", "http://[::1]/", "[::1]:80", false},
+		{"ipv6 https no port", "https://[2001:db8::1]/", "[2001:db8::1]:443", false},
 		{"empty", "", "", true},
 		{"no host", "http:///foo", "", true},
 		{"unsupported scheme no port", "ftp://example.com/", "", true},

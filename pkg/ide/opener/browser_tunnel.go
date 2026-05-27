@@ -547,28 +547,29 @@ func probeTCPReachable(
 
 // hostPortFromURL extracts a "host:port" suitable for net.DialTimeout from
 // a URL string. When the URL has no explicit port the scheme's default
-// (80 for http, 443 for https) is used.
+// (80 for http/ws, 443 for https/wss) is used.
+//
+// Uses u.Hostname() / u.Port() rather than u.Host so IPv6 literals are
+// unbracketed for net.JoinHostPort, which adds brackets itself when
+// needed. Passing the bracketed u.Host directly produces malformed
+// "[[::1]]:80" double-bracketing on the no-port path.
 func hostPortFromURL(rawURL string) (string, error) {
 	u, err := neturl.Parse(rawURL)
 	if err != nil {
 		return "", fmt.Errorf("parse url: %w", err)
 	}
-	if u.Host == "" {
+	host := u.Hostname()
+	if host == "" {
 		return "", fmt.Errorf("url %q has no host", rawURL)
 	}
-	host, port, splitErr := net.SplitHostPort(u.Host)
-	if splitErr == nil {
-		if host == "" || port == "" {
-			return "", fmt.Errorf("url %q has empty host or port", rawURL)
+	port := u.Port()
+	if port == "" {
+		port, err = defaultPortForScheme(u.Scheme)
+		if err != nil {
+			return "", err
 		}
-		return net.JoinHostPort(host, port), nil
 	}
-	// No explicit port; fall back to scheme default.
-	defaultPort, err := defaultPortForScheme(u.Scheme)
-	if err != nil {
-		return "", err
-	}
-	return net.JoinHostPort(u.Host, defaultPort), nil
+	return net.JoinHostPort(host, port), nil
 }
 
 // defaultPortForScheme returns the well-known port for http/https schemes.
