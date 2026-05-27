@@ -106,21 +106,22 @@ func (d *LocalDockerDelivery) ensureCurrentBinary(
 }
 
 func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) error {
-	args := []string{
-		"volume", "create",
-		"--label", docker.LabelDriverOwned + "=true",
-		"--label", docker.LabelWorkspaceID + "=" + strings.TrimPrefix(name, volumePrefix),
-		name,
+	labels := map[string]string{
+		docker.LabelDriverOwned: "true",
+		docker.LabelWorkspaceID: strings.TrimPrefix(name, volumePrefix),
 	}
-	out, err := d.cmd(ctx, args...).CombinedOutput()
-	if err != nil {
-		msg := string(out)
-		if strings.Contains(msg, "already exists") {
-			return nil
-		}
-		return fmt.Errorf("%s: %w", msg, err)
+	return d.dockerHelper().CreateVolume(ctx, name, labels)
+}
+
+// dockerHelper builds an on-demand DockerHelper that reuses the delivery's
+// configured docker command and environment. We construct it lazily rather
+// than hold a struct field so the existing zero-value usage of
+// LocalDockerDelivery (and its tests) keeps working.
+func (d *LocalDockerDelivery) dockerHelper() *docker.DockerHelper {
+	return &docker.DockerHelper{
+		DockerCommand: d.dockerCommand(),
+		Environment:   d.Environment,
 	}
-	return nil
 }
 
 func (d *LocalDockerDelivery) helperImageName() string {

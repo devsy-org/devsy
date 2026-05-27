@@ -377,6 +377,47 @@ func TestDeliverPreStart_VersionMismatch_Overwrites(t *testing.T) {
 	assert.Equal(t, binaryContent, data)
 }
 
+func TestCreateVolume_AppliesDriverOwnedAndWorkspaceLabels(t *testing.T) {
+	tmpDir := t.TempDir()
+	argsLog := filepath.Join(tmpDir, "args.log")
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	// Capture the full argv to a file so we can assert label flags appeared,
+	// independent of label-map iteration order.
+	script := "#!/bin/sh\n" +
+		"echo \"$@\" >> \"" + argsLog + "\"\n" +
+		"exit 0\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.createVolume(context.Background(), volumePrefix+"ws-xyz")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(argsLog) //nolint:gosec // test reads from controlled temp dir
+	require.NoError(t, err)
+	logged := string(data)
+	assert.Contains(t, logged, "volume create")
+	assert.Contains(t, logged, "--label devsy.driver-owned=true")
+	assert.Contains(t, logged, "--label devsy.workspace-id=ws-xyz")
+	assert.Contains(t, logged, volumePrefix+"ws-xyz")
+}
+
+func TestCreateVolume_AlreadyExistsIsIdempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\necho 'Error: volume already exists' 1>&2\nexit 1\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.createVolume(context.Background(), volumePrefix+"ws-xyz")
+	require.NoError(t, err)
+}
+
 func TestExpectedVersion_UsesFieldWhenSet(t *testing.T) {
 	d := &LocalDockerDelivery{ExpectedVersion: "v3.0.0"}
 	assert.Equal(t, "v3.0.0", d.expectedVersion())
