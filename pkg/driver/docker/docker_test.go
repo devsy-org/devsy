@@ -340,6 +340,9 @@ last=
 for a in "$@"; do last=$a; done
 case "$last" in
   labeled) echo '{"devsy.driver-owned":"true"}'; exit 0;;
+  labeled-match) echo '{"devsy.driver-owned":"true","devsy.workspace-id":"ws-A"}'; exit 0;;
+  labeled-other) echo '{"devsy.driver-owned":"true","devsy.workspace-id":"ws-B"}'; exit 0;;
+  labeled-empty) echo '{"devsy.driver-owned":"true","devsy.workspace-id":""}'; exit 0;;
   unlabeled) echo '{}'; exit 0;;
   bogus) echo 'Error: no such volume: bogus' 1>&2; exit 1;;
 esac
@@ -349,12 +352,75 @@ esac
 	got, err := d.filterDriverOwnedVolumes(context.Background(), []string{
 		"dockerless-xyz",  // legacy
 		"devsy-agent-xyz", // legacy
-		"labeled",         // labeled
+		"labeled",         // driver-owned, no workspace-id label -> kept
+		"labeled-match",   // driver-owned, workspace-id matches -> kept
+		"labeled-other",   // driver-owned, workspace-id DIFFERENT -> excluded
+		"labeled-empty",   // driver-owned, workspace-id empty string -> kept
 		"unlabeled",       // not owned, user cache
 		"bogus",           // missing -> excluded
-	})
+	}, "ws-A")
 	s.NoError(err)
-	s.Equal([]string{"dockerless-xyz", "devsy-agent-xyz", "labeled"}, got)
+	s.Equal([]string{
+		"dockerless-xyz",
+		"devsy-agent-xyz",
+		"labeled",
+		"labeled-match",
+		"labeled-empty",
+	}, got)
+}
+
+func (s *DockerDriverTestSuite) TestVolumeOwnedByWorkspace() {
+	cases := []struct {
+		name   string
+		labels map[string]string
+		ws     string
+		want   bool
+	}{
+		{
+			name:   "not driver-owned",
+			labels: map[string]string{},
+			ws:     "ws-A",
+			want:   false,
+		},
+		{
+			name: "driver-owned, no workspace-id label",
+			labels: map[string]string{
+				docker.LabelDriverOwned: "true",
+			},
+			ws:   "ws-A",
+			want: true,
+		},
+		{
+			name: "driver-owned, empty workspace-id",
+			labels: map[string]string{
+				docker.LabelDriverOwned: "true",
+				docker.LabelWorkspaceID: "",
+			},
+			ws:   "ws-A",
+			want: true,
+		},
+		{
+			name: "driver-owned, matching workspace-id",
+			labels: map[string]string{
+				docker.LabelDriverOwned: "true",
+				docker.LabelWorkspaceID: "ws-A",
+			},
+			ws:   "ws-A",
+			want: true,
+		},
+		{
+			name: "driver-owned, different workspace-id",
+			labels: map[string]string{
+				docker.LabelDriverOwned: "true",
+				docker.LabelWorkspaceID: "ws-B",
+			},
+			ws:   "ws-A",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		s.Equal(tc.want, volumeOwnedByWorkspace(tc.labels, tc.ws), tc.name)
+	}
 }
 
 // TestFilterDriverOwnedVolumes_DaemonDownAborts verifies that when
@@ -369,7 +435,7 @@ exit 1
 `)
 
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
-	got, err := d.filterDriverOwnedVolumes(context.Background(), []string{"some-vol"})
+	got, err := d.filterDriverOwnedVolumes(context.Background(), []string{"some-vol"}, "ws-A")
 	s.Error(err)
 	s.Nil(got)
 }
@@ -403,7 +469,7 @@ exit 1
 			{Type: "volume", Source: "dockerless-xyz"},
 		},
 	}
-	err := d.removeContainerAndVolumes(context.Background(), container)
+	err := d.removeContainerAndVolumes(context.Background(), container, "ws-A")
 	s.Error(err)
 	s.ErrorIs(err, ErrDockerDaemonUnavailable)
 }

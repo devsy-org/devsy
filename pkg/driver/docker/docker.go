@@ -206,7 +206,7 @@ func (d *dockerDriver) DeleteDevContainer(
 	if !removeVolumes {
 		return d.Docker.Remove(ctx, container.ID)
 	}
-	return d.removeContainerAndVolumes(ctx, container)
+	return d.removeContainerAndVolumes(ctx, container, workspaceId)
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
@@ -449,6 +449,7 @@ func (d *dockerDriver) UpdateContainerUserUID(
 func (d *dockerDriver) removeContainerAndVolumes(
 	ctx context.Context,
 	container *config.ContainerDetails,
+	workspaceID string,
 ) error {
 	// Snapshot named volumes before removal; the Mounts list is
 	// unrecoverable once the container is gone.
@@ -456,7 +457,7 @@ func (d *dockerDriver) removeContainerAndVolumes(
 	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
 		return err
 	}
-	owned, err := d.filterDriverOwnedVolumes(ctx, candidates)
+	owned, err := d.filterDriverOwnedVolumes(ctx, candidates, workspaceID)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDockerDaemonUnavailable, err)
 	}
@@ -1332,15 +1333,23 @@ func isLegacyDriverOwnedVolume(name string) bool {
 }
 
 // filterDriverOwnedVolumes keeps only volumes that carry the
-// `devsy.driver-owned=true` label, falling back to legacy name matching
-// for volumes created by older devsy versions. A daemon-down inspect
-// failure aborts the entire walk so the caller can surface the outage;
-// any other inspect error is logged at debug and the volume is excluded
-// to err on the side of caution (better to leak a volume than to wipe
-// a user's cache).
+// `devsy.driver-owned=true` label AND whose `devsy.workspace-id` label
+// either matches the workspace being deleted or is empty (legacy /
+// diagnostic-missing). Legacy name matching covers volumes created by
+// older devsy versions that predate label-based ownership.
+//
+// The workspace-id check is defense-in-depth: it prevents an orphaned
+// volume left behind by an earlier workspace from being collateral-damaged
+// when an unrelated workspace runs its cleanup pass.
+//
+// A daemon-down inspect failure aborts the entire walk so the caller can
+// surface the outage; any other inspect error is logged at debug and the
+// volume is excluded to err on the side of caution (better to leak a
+// volume than to wipe a user's cache).
 func (d *dockerDriver) filterDriverOwnedVolumes(
 	ctx context.Context,
 	names []string,
+	workspaceID string,
 ) ([]string, error) {
 	var owned []string
 	for _, name := range names {
@@ -1356,11 +1365,26 @@ func (d *dockerDriver) filterDriverOwnedVolumes(
 			log.Debugf("inspect volume %s labels (skipping): %v", name, err)
 			continue
 		}
-		if labels[docker.LabelDriverOwned] == "true" {
+		if volumeOwnedByWorkspace(labels, workspaceID) {
 			owned = append(owned, name)
 		}
 	}
 	return owned, nil
+}
+
+// volumeOwnedByWorkspace returns true when the volume is devsy-owned and
+// safe to delete for the given workspace. A missing `devsy.workspace-id`
+// label is treated as "no constraint" — legacy or diagnostic-missing
+// labels should not block cleanup.
+func volumeOwnedByWorkspace(labels map[string]string, workspaceID string) bool {
+	if labels[docker.LabelDriverOwned] != "true" {
+		return false
+	}
+	wsLabel, hasLabel := labels[docker.LabelWorkspaceID]
+	if !hasLabel || wsLabel == "" {
+		return true
+	}
+	return wsLabel == workspaceID
 }
 
 // classifyVolumeRemoveError maps a docker CLI error message to a coarse
