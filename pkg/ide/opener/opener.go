@@ -298,7 +298,7 @@ func openJupyterBrowser(
 
 	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
-	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -307,10 +307,11 @@ func openJupyterBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser}); err != nil {
+	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser})
+	if err != nil {
 		return "", err
 	}
-	return targetURL, nil
+	return effectiveURL, nil
 }
 
 func openRStudioBrowser(
@@ -337,7 +338,7 @@ func openRStudioBrowser(
 
 	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
-	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -346,10 +347,11 @@ func openRStudioBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser}); err != nil {
+	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser})
+	if err != nil {
 		return "", err
 	}
-	return targetURL, nil
+	return effectiveURL, nil
 }
 
 func openVSCodeBrowser(
@@ -381,7 +383,7 @@ func openVSCodeBrowser(
 		openvscode.ForwardPortsOption,
 	) == config.BoolTrue
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
-	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -391,10 +393,11 @@ func openVSCodeBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser}); err != nil {
+	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser})
+	if err != nil {
 		return "", err
 	}
-	return targetURL, nil
+	return effectiveURL, nil
 }
 
 func startFleet(ctx context.Context, params IDEParams) (string, error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/gofrs/flock"
+	"k8s.io/apimachinery/pkg/util/wait"
+)
+
+// browserProbeBudget bounds how long openBrowserWhenReachable will wait for
+// the target URL's port to accept TCP connections before giving up.
+const (
+	browserProbeBudget   = 5 * time.Second
+	browserProbeInterval = 200 * time.Millisecond
+	browserProbeDial     = 300 * time.Millisecond
 )
 
 // KillBrowserTunnel terminates the detached browser tunnel for a workspace
@@ -154,27 +165,35 @@ type browserIDEInvocation struct {
 // the tunnel inline because the daemon already runs out-of-process.
 //
 // If a tunnel is already running for this workspace, no new process is
-// spawned; the existing tunnel is reused.
+// spawned; the existing tunnel is reused and its recorded TargetURL is
+// returned (which may differ from tunnelParams.TargetURL when the caller
+// allocated a new port that the existing helper isn't using).
 func startDetachedBrowserTunnel(
 	ctx context.Context,
 	params IDEParams,
 	tunnelParams tunnel.BrowserTunnelParams,
 	inv browserIDEInvocation,
-) error {
+) (string, error) {
 	label := inv.Label
 	openBrowser := inv.OpenBrowser
-	if _, ok := params.Client.(client.DaemonClient); ok {
-		return tunnel.StartBrowserTunnel(ctx, tunnelParams)
-	}
-
 	contextName := params.Client.Context()
 	workspaceID := params.Client.Workspace()
+
+	if _, ok := params.Client.(client.DaemonClient); ok {
+		return runDaemonBrowserTunnel(ctx, daemonTunnelArgs{
+			ContextName:  contextName,
+			WorkspaceID:  workspaceID,
+			TunnelParams: tunnelParams,
+			Inv:          inv,
+			OpenBrowser:  openBrowser,
+		})
+	}
 
 	// Serialize concurrent attempts (e.g. parallel `devsy up`) to avoid
 	// orphaning helper processes by racing on the state file.
 	unlock, err := acquireTunnelLock(contextName, workspaceID)
 	if err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"acquire tunnel lock (refusing to spawn unlocked to avoid orphan helpers): %w",
 			err,
 		)
@@ -182,13 +201,13 @@ func startDetachedBrowserTunnel(
 	defer unlock()
 
 	// Reuse an existing live tunnel if present; clear stale state otherwise.
-	if tryReuseExistingTunnel(ctx, contextName, workspaceID, inv) {
-		return nil
+	if reusedURL, ok := tryReuseExistingTunnel(ctx, contextName, workspaceID, inv); ok {
+		return reusedURL, nil
 	}
 
 	pid, logLocation, err := spawnTunnelHelper(contextName, workspaceID, tunnelParams, label)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	pkglog.Infof(
@@ -201,7 +220,7 @@ func startDetachedBrowserTunnel(
 		go openBrowserAsync(ctx, tunnelParams.TargetURL)
 	}
 
-	return nil
+	return tunnelParams.TargetURL, nil
 }
 
 // spawnTunnelHelper locates the current executable, builds the helper
@@ -400,18 +419,19 @@ func openBrowserAsync(ctx context.Context, url string) {
 }
 
 // tryReuseExistingTunnel reuses an already-running tunnel helper for the
-// workspace, if any. It returns true if an existing live tunnel was found and
-// reused (in which case the caller should not spawn a new helper). If state
-// exists but the recorded PID is dead, the stale state file is removed and
-// false is returned so the caller can proceed with a fresh spawn.
+// workspace, if any. On reuse it returns the recorded TargetURL so the
+// caller can surface the live URL (not its own freshly-computed one).
+// If state exists but the recorded PID is dead, the stale state file is
+// removed and ("", false) is returned so the caller can proceed with a
+// fresh spawn.
 func tryReuseExistingTunnel(
 	ctx context.Context,
 	contextName, workspaceID string,
 	inv browserIDEInvocation,
-) bool {
+) (string, bool) {
 	existing, _ := ReadTunnelState(contextName, workspaceID)
 	if existing == nil {
-		return false
+		return "", false
 	}
 	if helperMatchesState(existing) {
 		pkglog.Infof(
@@ -421,12 +441,147 @@ func tryReuseExistingTunnel(
 		if inv.OpenBrowser {
 			go openBrowserAsync(ctx, existing.TargetURL)
 		}
-		return true
+		return existing.TargetURL, true
 	}
 	if statePath, err := TunnelStateFilePath(contextName, workspaceID); err == nil {
 		_ = os.Remove(statePath)
 	}
-	return false
+	return "", false
+}
+
+// daemonTunnelArgs bundles the parameters for runDaemonBrowserTunnel to keep
+// its signature small.
+type daemonTunnelArgs struct {
+	ContextName  string
+	WorkspaceID  string
+	TunnelParams tunnel.BrowserTunnelParams
+	Inv          browserIDEInvocation
+	OpenBrowser  bool
+}
+
+// runDaemonBrowserTunnel handles the daemon-client path: reuse an existing
+// helper if one is live, otherwise start the in-process tunnel and open the
+// browser only once the target URL becomes reachable.
+func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, error) {
+	unlock, err := acquireTunnelLock(a.ContextName, a.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf(
+			"acquire tunnel lock (refusing to start unlocked to avoid orphan helpers): %w",
+			err,
+		)
+	}
+	defer unlock()
+
+	if reusedURL, ok := tryReuseExistingTunnel(ctx, a.ContextName, a.WorkspaceID, a.Inv); ok {
+		return reusedURL, nil
+	}
+
+	// Derive a cancellable context for the probe goroutine. When
+	// StartBrowserTunnel returns (success or failure) the deferred
+	// cancelProbe stops the probe so it does not keep polling a port that
+	// will never come up and emit a misleading "didn't come up" warning
+	// alongside the original error.
+	probeCtx, cancelProbe := context.WithCancel(ctx)
+	defer cancelProbe()
+
+	if a.OpenBrowser {
+		go openBrowserWhenReachable(probeCtx, a.TunnelParams.TargetURL)
+	}
+	return a.TunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, a.TunnelParams)
+}
+
+// openBrowserWhenReachable polls the target URL's TCP port until it accepts
+// connections, then opens the browser. If ctx is cancelled before the port
+// is reachable the goroutine exits silently — the caller already gave up
+// (e.g. tunnel.StartBrowserTunnel failed) and warning about an unreachable
+// URL would only duplicate that error. The "didn't come up" warning is
+// reserved for the budget-expired case.
+func openBrowserWhenReachable(ctx context.Context, url string) {
+	hostPort, err := hostPortFromURL(url)
+	if err != nil {
+		pkglog.Warnf("could not parse browser-tunnel URL %q: %v; skipping auto-open", url, err)
+		return
+	}
+	if err := probeTCPReachable(ctx, hostPort, browserProbeBudget); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		pkglog.Warnf(
+			"browser-tunnel URL %s never became reachable within %s; "+
+				"skipping browser auto-open (open it manually once the tunnel is up)",
+			url, browserProbeBudget,
+		)
+		return
+	}
+	openBrowserAsync(ctx, url)
+}
+
+// probeTCPReachable polls hostPort until a TCP connection succeeds or ctx /
+// budget is exhausted. It returns nil on the first successful dial,
+// context.DeadlineExceeded when the budget elapses with no listener, or
+// context.Canceled when the caller's ctx is cancelled first.
+//
+// Each dial uses its own short timeout so a hung host can't burn the whole
+// budget on one attempt.
+func probeTCPReachable(
+	ctx context.Context,
+	hostPort string,
+	budget time.Duration,
+) error {
+	return wait.PollUntilContextTimeout(
+		ctx,
+		browserProbeInterval,
+		budget,
+		true, // try once at t=0 before the first interval
+		func(dialCtx context.Context) (bool, error) {
+			d := net.Dialer{Timeout: browserProbeDial}
+			conn, err := d.DialContext(dialCtx, "tcp", hostPort)
+			if err != nil {
+				return false, nil // keep polling until budget/ctx
+			}
+			_ = conn.Close()
+			return true, nil
+		},
+	)
+}
+
+// hostPortFromURL extracts a "host:port" suitable for net.DialTimeout from
+// a URL string. When the URL has no explicit port the scheme's default
+// (80 for http/ws, 443 for https/wss) is used.
+//
+// Uses u.Hostname() / u.Port() rather than u.Host so IPv6 literals are
+// unbracketed for net.JoinHostPort, which adds brackets itself when
+// needed. Passing the bracketed u.Host directly produces malformed
+// "[[::1]]:80" double-bracketing on the no-port path.
+func hostPortFromURL(rawURL string) (string, error) {
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse url: %w", err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("url %q has no host", rawURL)
+	}
+	port := u.Port()
+	if port == "" {
+		port, err = defaultPortForScheme(u.Scheme)
+		if err != nil {
+			return "", err
+		}
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+// defaultPortForScheme returns the well-known port for http/https schemes.
+func defaultPortForScheme(scheme string) (string, error) {
+	switch scheme {
+	case "http", "ws":
+		return "80", nil
+	case "https", "wss":
+		return "443", nil
+	default:
+		return "", fmt.Errorf("unsupported scheme %q (no default port)", scheme)
+	}
 }
 
 // acquireTunnelLock takes an exclusive file lock that serializes concurrent
