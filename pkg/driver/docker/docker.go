@@ -183,11 +183,7 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 
 // DeleteDevContainer removes the workspace container. When removeVolumes
 // is true it also removes anonymous volumes attached to the container
-// (`docker rm -v`) and each named volume the container referenced. Per-
-// volume errors are logged and skipped because a shared/in-use volume
-// shouldn't block the rest of the delete.
-//
-//nolint:cyclop // short, sequential branches; extracting a helper would trip funcorder.
+// (`docker rm -v`) and each named volume the container referenced.
 func (d *dockerDriver) DeleteDevContainer(
 	ctx context.Context,
 	workspaceId string,
@@ -203,23 +199,7 @@ func (d *dockerDriver) DeleteDevContainer(
 	if !removeVolumes {
 		return d.Docker.Remove(ctx, container.ID)
 	}
-	// Snapshot named volumes before removal; the Mounts list is
-	// unrecoverable once the container is gone.
-	var namedVolumes []string
-	for _, m := range container.Mounts {
-		if m.Type == "volume" && m.Source != "" {
-			namedVolumes = append(namedVolumes, m.Source)
-		}
-	}
-	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
-		return err
-	}
-	for _, name := range namedVolumes {
-		if err := d.Docker.RemoveVolume(ctx, name); err != nil {
-			log.Debugf("remove volume %s: %v", name, err)
-		}
-	}
-	return nil
+	return d.removeContainerAndVolumes(ctx, container)
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
@@ -447,6 +427,35 @@ func (d *dockerDriver) UpdateContainerUserUID(
 	}
 
 	return d.applyPermissions(ctx, container.ID, localUser.Uid, localUser.Gid, info.HomeDir, writer)
+}
+
+// removeContainerAndVolumes deletes the container along with its anonymous
+// volumes (via `docker rm -v`), then removes each named volume the
+// container referenced. Named volumes are removed AFTER the container so
+// docker doesn't refuse on "volume in use" against the now-dead container.
+// Per-volume errors are logged at debug and skipped — a volume held by
+// another workspace (e.g. shared dockerless cache) shouldn't block delete.
+func (d *dockerDriver) removeContainerAndVolumes(
+	ctx context.Context,
+	container *config.ContainerDetails,
+) error {
+	// Snapshot named volumes before removal; the Mounts list is
+	// unrecoverable once the container is gone.
+	var namedVolumes []string
+	for _, m := range container.Mounts {
+		if m.Type == "volume" && m.Source != "" {
+			namedVolumes = append(namedVolumes, m.Source)
+		}
+	}
+	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
+		return err
+	}
+	for _, name := range namedVolumes {
+		if err := d.Docker.RemoveVolume(ctx, name); err != nil {
+			log.Debugf("remove volume %s: %v", name, err)
+		}
+	}
+	return nil
 }
 
 func (d *dockerDriver) gatherUpdateRequirements(
