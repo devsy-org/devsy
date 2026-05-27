@@ -79,6 +79,14 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     },
   )
 
+  ipcMain.handle(
+    "workspace_set_ide",
+    async (_event, args: { workspaceId: string; ide: string }) => {
+      trackEvent("workspace_set_ide", { ide: args.ide })
+      await cli.runRaw(["ide", "set", args.workspaceId, args.ide])
+    },
+  )
+
   // ── Providers ──
   ipcMain.handle("provider_list", async () => {
     const raw = await cli.run<Record<string, ProviderEntry>>([

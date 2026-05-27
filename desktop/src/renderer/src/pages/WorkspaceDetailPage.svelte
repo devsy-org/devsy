@@ -41,6 +41,7 @@ import {
   workspaceReset,
   workspaceDelete,
   workspaceRename,
+  workspaceSetIde,
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
@@ -305,9 +306,16 @@ function startStreamingOp(label: string) {
 }
 
 async function handleStart() {
+  const ide = currentIde !== "none" ? currentIde : undefined
+  const folder = customFolder || undefined
   startStreamingOp("Start")
   try {
-    commandId = await workspaceUp({ source: id, debug: isDebug() })
+    commandId = await workspaceUp({
+      source: id,
+      ide,
+      debug: isDebug(),
+      workspaceFolder: folder,
+    })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
@@ -545,10 +553,18 @@ async function handleRename() {
                         <Command.Item
                           value={ide.value}
                           class="justify-start"
-                          onSelect={() => {
+                          onSelect={async () => {
+                            const prev = selectedIde
                             selectedIde = ide.value
                             ideComboOpen = false
                             ideSearch = ""
+                            if (ide.value === "none") return
+                            try {
+                              await workspaceSetIde(id, ide.value)
+                            } catch (err) {
+                              selectedIde = prev
+                              toasts.error(`Failed to set IDE: ${extractErrorMessage(err)}`)
+                            }
                           }}
                         >
                           <Check class="mr-2 h-4 w-4 {currentIde === ide.value ? 'opacity-100' : 'opacity-0'}" />
