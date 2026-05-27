@@ -2,6 +2,7 @@ package opener
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -180,12 +181,12 @@ func TestProbeTCPReachable_Reachable(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 
 	start := time.Now()
-	ok, cancelled := probeTCPReachable(context.Background(), ln.Addr().String(), 2*time.Second)
-	if !ok {
-		t.Fatalf("probeTCPReachable(%s) = false; want true", ln.Addr())
-	}
-	if cancelled {
-		t.Fatalf("probeTCPReachable cancelled=true; want false")
+	if err := probeTCPReachable(
+		context.Background(),
+		ln.Addr().String(),
+		2*time.Second,
+	); err != nil {
+		t.Fatalf("probeTCPReachable(%s) err = %v; want nil", ln.Addr(), err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("probe took %s; expected near-instant success", elapsed)
@@ -205,13 +206,10 @@ func TestProbeTCPReachable_Unreachable(t *testing.T) {
 
 	budget := 600 * time.Millisecond
 	start := time.Now()
-	ok, cancelled := probeTCPReachable(context.Background(), addr, budget)
+	err = probeTCPReachable(context.Background(), addr, budget)
 	elapsed := time.Since(start)
-	if ok {
-		t.Fatalf("probeTCPReachable(%s) = true; want false (nothing listening)", addr)
-	}
-	if cancelled {
-		t.Fatalf("probeTCPReachable cancelled=true; want false (budget expired)")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("probeTCPReachable(%s) err = %v; want DeadlineExceeded", addr, err)
 	}
 	// Must respect the budget (allow some slack for slow CI).
 	if elapsed > budget+2*time.Second {
@@ -219,9 +217,9 @@ func TestProbeTCPReachable_Unreachable(t *testing.T) {
 	}
 }
 
-// TestProbeTCPReachable_CtxCancelledBeforeBudget verifies the probe loop
-// observes ctx cancellation and reports cancelled=true so callers can
-// suppress the "never came up" warning.
+// TestProbeTCPReachable_CtxCancelledBeforeBudget verifies the probe observes
+// ctx cancellation and returns context.Canceled so callers can suppress the
+// "never came up" warning.
 func TestProbeTCPReachable_CtxCancelledBeforeBudget(t *testing.T) {
 	// Allocate and close a port so dials fail immediately.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -235,7 +233,7 @@ func TestProbeTCPReachable_CtxCancelledBeforeBudget(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// Cancel from another goroutine shortly after the probe starts so the
-	// loop hits the ctx.Done() branch rather than the budget branch.
+	// poll loop observes ctx.Done() rather than the budget.
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		cancel()
@@ -243,13 +241,10 @@ func TestProbeTCPReachable_CtxCancelledBeforeBudget(t *testing.T) {
 
 	budget := 30 * time.Second
 	start := time.Now()
-	ok, cancelled := probeTCPReachable(ctx, addr, budget)
+	err = probeTCPReachable(ctx, addr, budget)
 	elapsed := time.Since(start)
-	if ok {
-		t.Fatalf("probeTCPReachable = reachable; want false")
-	}
-	if !cancelled {
-		t.Fatalf("probeTCPReachable cancelled=false; want true on ctx cancel")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("probeTCPReachable err = %v; want context.Canceled", err)
 	}
 	// Must return well before the budget elapses.
 	if elapsed > 5*time.Second {

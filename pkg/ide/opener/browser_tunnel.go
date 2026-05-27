@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/gofrs/flock"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // browserProbeBudget bounds how long openBrowserWhenReachable will wait for
@@ -501,11 +502,10 @@ func openBrowserWhenReachable(ctx context.Context, url string) {
 		pkglog.Warnf("could not parse browser-tunnel URL %q: %v; skipping auto-open", url, err)
 		return
 	}
-	reachable, cancelled := probeTCPReachable(ctx, hostPort, browserProbeBudget)
-	if cancelled {
-		return
-	}
-	if !reachable {
+	if err := probeTCPReachable(ctx, hostPort, browserProbeBudget); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		pkglog.Warnf(
 			"browser-tunnel URL %s never became reachable within %s; "+
 				"skipping browser auto-open (open it manually once the tunnel is up)",
@@ -516,35 +516,33 @@ func openBrowserWhenReachable(ctx context.Context, url string) {
 	openBrowserAsync(ctx, url)
 }
 
-// probeTCPReachable returns (reachable, cancelled). reachable=true means a
-// TCP dial succeeded within the budget. cancelled=true means ctx was
-// cancelled before either success or budget expiry; in that case reachable
-// is false and the caller should NOT log a "never came up" warning.
-// Each dial uses a short timeout so a hung host can't burn the whole
+// probeTCPReachable polls hostPort until a TCP connection succeeds or ctx /
+// budget is exhausted. It returns nil on the first successful dial,
+// context.DeadlineExceeded when the budget elapses with no listener, or
+// context.Canceled when the caller's ctx is cancelled first.
+//
+// Each dial uses its own short timeout so a hung host can't burn the whole
 // budget on one attempt.
 func probeTCPReachable(
 	ctx context.Context,
 	hostPort string,
 	budget time.Duration,
-) (reachable bool, cancelled bool) {
-	deadline := time.Now().Add(budget)
-	ticker := time.NewTicker(browserProbeInterval)
-	defer ticker.Stop()
-	for {
-		conn, err := net.DialTimeout("tcp", hostPort, browserProbeDial)
-		if err == nil {
+) error {
+	return wait.PollUntilContextTimeout(
+		ctx,
+		browserProbeInterval,
+		budget,
+		true, // try once at t=0 before the first interval
+		func(dialCtx context.Context) (bool, error) {
+			d := net.Dialer{Timeout: browserProbeDial}
+			conn, err := d.DialContext(dialCtx, "tcp", hostPort)
+			if err != nil {
+				return false, nil // keep polling until budget/ctx
+			}
 			_ = conn.Close()
-			return true, false
-		}
-		if time.Now().After(deadline) {
-			return false, false
-		}
-		select {
-		case <-ctx.Done():
-			return false, true
-		case <-ticker.C:
-		}
-	}
+			return true, nil
+		},
+	)
 }
 
 // hostPortFromURL extracts a "host:port" suitable for net.DialTimeout from
