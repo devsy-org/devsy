@@ -22,11 +22,13 @@ const (
 func setupTestPathManager(t *testing.T) {
 	t.Helper()
 
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	// Linux and Darwin path managers derive paths from os.UserHomeDir(),
+	// which reads $HOME. Without overriding it, parallel test invocations
+	// (e.g., the macOS release job runs goreleaser hooks once per build
+	// target) collide on the real ~/.devsy and corrupt each other's state.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows fallback used by os.UserHomeDir.
 
 	config.ResetPathManager()
 	t.Cleanup(config.ResetPathManager)
