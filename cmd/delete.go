@@ -54,6 +54,8 @@ If the workspace is not found, you can use the --ignore-not-found flag to treat 
 		StringVar(&cmd.GracePeriod, "grace-period", "", "The amount of time to give the command to delete the workspace")
 	deleteCmd.Flags().
 		BoolVar(&cmd.Force, "force", false, "Delete workspace even if it is not found remotely anymore")
+	deleteCmd.Flags().
+		BoolVar(&cmd.RemoveVolumes, "remove-volumes", false, "Remove named volumes associated with the workspace")
 	return deleteCmd
 }
 

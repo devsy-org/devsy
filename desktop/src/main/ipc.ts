@@ -468,6 +468,10 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       const cliArgs = ["delete", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
       cliArgs.push("--force")
+      // Remove named docker volumes too so a re-create with the same id
+      // starts from a clean slate instead of picking up the old workspace's
+      // /workspaces/<id> contents.
+      cliArgs.push("--remove-volumes")
 
       cli.runStreaming(
         cliArgs,
