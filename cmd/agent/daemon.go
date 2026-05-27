@@ -53,7 +53,7 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	// The agent daemon is a container/machine-side process; the host
 	// never runs `devsy agent daemon`. Reject host invocations explicitly
-	// so we don't silently scan a non-existent legacy glob.
+	// to avoid silently scanning a non-existent legacy glob.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
 		return fmt.Errorf(
 			"`devsy agent daemon` is only valid inside the workspace container or machine",

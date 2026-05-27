@@ -39,8 +39,8 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *LogsCmd) Run(ctx context.Context) error {
 	// `agent workspace logs` returns devcontainer logs from inside the
-	// workspace container/machine. Reject host invocations so we don't
-	// silently look at the wrong place.
+	// workspace container/machine. Reject host invocations explicitly
+	// to avoid silently reading from the wrong place.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
 		return fmt.Errorf(
 			"`devsy agent workspace logs` is only valid inside the workspace container or machine",

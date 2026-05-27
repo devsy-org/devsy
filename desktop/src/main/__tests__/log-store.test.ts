@@ -100,8 +100,8 @@ describe("LogStore", () => {
     const outside = join(tempDir, "sibling.log")
     writeFileSync(outside, "outside-content")
     // basename("../sibling.log") = "sibling.log" → looked up INSIDE the
-    // workspace logs dir, where nothing of that name exists. We must NOT
-    // read the planted file.
+    // workspace logs dir, where nothing of that name exists. The planted
+    // file outside the dir must NOT be reachable.
     expect(() => store.readLog(CTX, "ws-1", "../sibling.log")).toThrow(
       /ENOENT/,
     )

@@ -13,7 +13,7 @@ import { basename, join } from "node:path"
 
 // safeLogFilename strips any directory components from filename so a caller
 // can't traverse out of the per-workspace logs dir with "../" segments.
-// Throws when the cleaned name doesn't look like one of our log files.
+// Throws when the cleaned name doesn't look like a streaming-log file.
 function safeLogFilename(filename: string): string {
   const clean = basename(filename)
   if (clean === "" || clean === "." || clean === "..") {
