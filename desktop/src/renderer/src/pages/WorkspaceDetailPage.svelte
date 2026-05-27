@@ -459,7 +459,7 @@ async function handleRename() {
         </Button>
       {/if}
 
-      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning}>
+      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
         {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
         Open IDE
       </Button>
