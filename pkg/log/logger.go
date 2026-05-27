@@ -31,7 +31,6 @@ func Init(cfg Config) {
 	core := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
 
 	opts := []zap.Option{
-		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.FatalLevel),
 	}
 	logger := zap.New(core, opts...)
