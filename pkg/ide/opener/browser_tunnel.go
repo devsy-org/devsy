@@ -154,17 +154,22 @@ type browserIDEInvocation struct {
 // the tunnel inline because the daemon already runs out-of-process.
 //
 // If a tunnel is already running for this workspace, no new process is
-// spawned; the existing tunnel is reused.
+// spawned; the existing tunnel is reused and its recorded TargetURL is
+// returned (which may differ from tunnelParams.TargetURL when the caller
+// allocated a new port that the existing helper isn't using).
 func startDetachedBrowserTunnel(
 	ctx context.Context,
 	params IDEParams,
 	tunnelParams tunnel.BrowserTunnelParams,
 	inv browserIDEInvocation,
-) error {
+) (string, error) {
 	label := inv.Label
 	openBrowser := inv.OpenBrowser
 	if _, ok := params.Client.(client.DaemonClient); ok {
-		return tunnel.StartBrowserTunnel(ctx, tunnelParams)
+		if openBrowser {
+			go openBrowserAsync(ctx, tunnelParams.TargetURL)
+		}
+		return tunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, tunnelParams)
 	}
 
 	contextName := params.Client.Context()
@@ -174,7 +179,7 @@ func startDetachedBrowserTunnel(
 	// orphaning helper processes by racing on the state file.
 	unlock, err := acquireTunnelLock(contextName, workspaceID)
 	if err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"acquire tunnel lock (refusing to spawn unlocked to avoid orphan helpers): %w",
 			err,
 		)
@@ -182,13 +187,13 @@ func startDetachedBrowserTunnel(
 	defer unlock()
 
 	// Reuse an existing live tunnel if present; clear stale state otherwise.
-	if tryReuseExistingTunnel(ctx, contextName, workspaceID, inv) {
-		return nil
+	if reusedURL, ok := tryReuseExistingTunnel(ctx, contextName, workspaceID, inv); ok {
+		return reusedURL, nil
 	}
 
 	pid, logLocation, err := spawnTunnelHelper(contextName, workspaceID, tunnelParams, label)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	pkglog.Infof(
@@ -201,7 +206,7 @@ func startDetachedBrowserTunnel(
 		go openBrowserAsync(ctx, tunnelParams.TargetURL)
 	}
 
-	return nil
+	return tunnelParams.TargetURL, nil
 }
 
 // spawnTunnelHelper locates the current executable, builds the helper
@@ -400,18 +405,19 @@ func openBrowserAsync(ctx context.Context, url string) {
 }
 
 // tryReuseExistingTunnel reuses an already-running tunnel helper for the
-// workspace, if any. It returns true if an existing live tunnel was found and
-// reused (in which case the caller should not spawn a new helper). If state
-// exists but the recorded PID is dead, the stale state file is removed and
-// false is returned so the caller can proceed with a fresh spawn.
+// workspace, if any. On reuse it returns the recorded TargetURL so the
+// caller can surface the live URL (not its own freshly-computed one).
+// If state exists but the recorded PID is dead, the stale state file is
+// removed and ("", false) is returned so the caller can proceed with a
+// fresh spawn.
 func tryReuseExistingTunnel(
 	ctx context.Context,
 	contextName, workspaceID string,
 	inv browserIDEInvocation,
-) bool {
+) (string, bool) {
 	existing, _ := ReadTunnelState(contextName, workspaceID)
 	if existing == nil {
-		return false
+		return "", false
 	}
 	if helperMatchesState(existing) {
 		pkglog.Infof(
@@ -421,12 +427,12 @@ func tryReuseExistingTunnel(
 		if inv.OpenBrowser {
 			go openBrowserAsync(ctx, existing.TargetURL)
 		}
-		return true
+		return existing.TargetURL, true
 	}
 	if statePath, err := TunnelStateFilePath(contextName, workspaceID); err == nil {
 		_ = os.Remove(statePath)
 	}
-	return false
+	return "", false
 }
 
 // acquireTunnelLock takes an exclusive file lock that serializes concurrent

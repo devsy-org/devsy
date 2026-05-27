@@ -208,6 +208,72 @@ func TestLoadLiveTunnelState_LiveMatch(t *testing.T) {
 	}
 }
 
+func TestTryReuseExistingTunnel_ReturnsRecordedURL(t *testing.T) {
+	setupTempHome(t)
+	cmd := spawnSleepHelper(t)
+	pid := cmd.Process.Pid
+
+	ct, err := helperCreateTime(pid)
+	if err != nil {
+		t.Fatalf("helperCreateTime: %v", err)
+	}
+	const recordedURL = "http://localhost:10800/?folder=/workspaces/x"
+	state := TunnelState{
+		PID:        pid,
+		CreateTime: ct,
+		TargetURL:  recordedURL,
+		Label:      LabelVSCodeBrowser,
+	}
+	if err := WriteTunnelState("ctx", "ws", state); err != nil {
+		t.Fatalf("WriteTunnelState: %v", err)
+	}
+
+	// OpenBrowser=false so the test doesn't spawn an actual browser process.
+	gotURL, ok := tryReuseExistingTunnel(
+		t.Context(),
+		"ctx", "ws",
+		browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: false},
+	)
+	if !ok {
+		t.Fatal("expected tryReuseExistingTunnel to reuse live helper")
+	}
+	if gotURL != recordedURL {
+		t.Errorf("reused URL = %q, want %q", gotURL, recordedURL)
+	}
+}
+
+func TestTryReuseExistingTunnel_DeadHelperReturnsFalse(t *testing.T) {
+	setupTempHome(t)
+
+	// Record state with a deliberately wrong identity for PID 1 so the
+	// match check fails without needing to spawn-and-kill a child.
+	state := TunnelState{
+		PID:        1,
+		CreateTime: 1,
+		TargetURL:  "http://localhost:10800",
+		Label:      LabelVSCodeBrowser,
+	}
+	if err := WriteTunnelState("ctx", "ws", state); err != nil {
+		t.Fatalf("WriteTunnelState: %v", err)
+	}
+	statePath, err := TunnelStateFilePath("ctx", "ws")
+	if err != nil {
+		t.Fatalf("TunnelStateFilePath: %v", err)
+	}
+
+	gotURL, ok := tryReuseExistingTunnel(
+		t.Context(),
+		"ctx", "ws",
+		browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: false},
+	)
+	if ok {
+		t.Errorf("expected reuse=false for non-matching helper, got url=%q", gotURL)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("expected stale state file removed; stat err=%v", err)
+	}
+}
+
 // parentDir returns filepath.Dir(p). Defined locally rather than importing
 // path/filepath to keep this test file's import surface minimal.
 func parentDir(p string) string {
