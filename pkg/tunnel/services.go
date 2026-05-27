@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
+	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
@@ -85,6 +86,7 @@ func createForwarder(
 	}
 	ports := append([]string{}, forwardedPorts...)
 	ports = append(ports, fmt.Sprintf("%d", openvscode.DefaultVSCodePort))
+	ports = append(ports, fmt.Sprintf("%d", codeserver.DefaultCodeServerPort))
 	return newForwarder(opts.ContainerClient, ports, resolver)
 }
 

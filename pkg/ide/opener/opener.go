@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/gpg"
+	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
@@ -71,6 +72,8 @@ func browserIDEOpener(
 	switch ideName {
 	case string(config.IDEOpenVSCode):
 		return openVSCodeBrowser, true
+	case string(config.IDECodeServer):
+		return openCodeServerBrowser, true
 	case string(config.IDEJupyterNotebook):
 		return openJupyterBrowser, true
 	case string(config.IDERStudio):
@@ -274,44 +277,70 @@ func makeDaemonStartFunc(
 	}
 }
 
-func openJupyterBrowser(
-	ctx context.Context,
-	ideOptions map[string]config.OptionValue,
-	params IDEParams,
-) (string, error) {
+// browserIDESpec describes the per-IDE knobs needed to open a browser-based
+// IDE through the detached tunnel. The shared openBrowserIDE function below
+// consumes one of these to dispatch any of the four browser IDEs.
+type browserIDESpec struct {
+	BindAddrOption string
+	DefaultPort    int
+	ForwardPorts   bool
+	Label          string
+	LogName        string
+	// TargetURLFn builds the host-side URL once the bound port is known.
+	// folder is the container workspace folder (relevant for VS Code-style
+	// IDEs that take it as a query param; jupyter / rstudio ignore it).
+	TargetURLFn func(port int, folder string) string
+}
+
+func openBrowserIDE(ctx context.Context, params IDEParams, spec browserIDESpec) (string, error) {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
 			return "", err
 		}
 	}
 
-	addr, jupyterPort, err := ParseAddressAndPort(
-		jupyter.Options.GetValue(ideOptions, jupyter.BindAddressOption),
-		jupyter.DefaultServerPort,
-	)
+	addr, port, err := ParseAddressAndPort(spec.BindAddrOption, spec.DefaultPort)
 	if err != nil {
 		return "", err
 	}
 
-	targetURL := fmt.Sprintf("http://localhost:%d/lab", jupyterPort)
+	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
+	targetURL := spec.TargetURLFn(port, folder)
 	openBrowser := params.Launch == LaunchAuto
 
-	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
-	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
+	pkglog.Infof("Starting %s in browser mode at %s", spec.LogName, targetURL)
+	extraPorts := []string{fmt.Sprintf("%s:%d", addr, spec.DefaultPort)}
 	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
 		TargetURL:        targetURL,
+		ForwardPorts:     spec.ForwardPorts,
 		ExtraPorts:       extraPorts,
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
-		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser})
+		DaemonStartFunc:  makeDaemonStartFunc(params, spec.ForwardPorts, extraPorts),
+	}, browserIDEInvocation{Label: spec.Label, OpenBrowser: openBrowser})
 	if err != nil {
 		return "", err
 	}
 	return effectiveURL, nil
+}
+
+func openJupyterBrowser(
+	ctx context.Context,
+	ideOptions map[string]config.OptionValue,
+	params IDEParams,
+) (string, error) {
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: jupyter.Options.GetValue(ideOptions, jupyter.BindAddressOption),
+		DefaultPort:    jupyter.DefaultServerPort,
+		Label:          "jupyter",
+		LogName:        "jupyter notebook",
+		TargetURLFn: func(port int, _ string) string {
+			return fmt.Sprintf("http://localhost:%d/lab", port)
+		},
+	})
 }
 
 func openRStudioBrowser(
@@ -319,39 +348,15 @@ func openRStudioBrowser(
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
 ) (string, error) {
-	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client); err != nil {
-			return "", err
-		}
-	}
-
-	addr, rsPort, err := ParseAddressAndPort(
-		rstudio.Options.GetValue(ideOptions, rstudio.BindAddressOption),
-		rstudio.DefaultServerPort,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	targetURL := fmt.Sprintf("http://localhost:%d", rsPort)
-	openBrowser := params.Launch == LaunchAuto
-
-	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
-	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
-	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
-		DevsyConfig:      params.DevsyConfig,
-		Client:           params.Client,
-		User:             params.User,
-		TargetURL:        targetURL,
-		ExtraPorts:       extraPorts,
-		AuthSockID:       params.SSHAuthSockID,
-		GitSSHSigningKey: params.GitSSHSigningKey,
-		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser})
-	if err != nil {
-		return "", err
-	}
-	return effectiveURL, nil
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: rstudio.Options.GetValue(ideOptions, rstudio.BindAddressOption),
+		DefaultPort:    rstudio.DefaultServerPort,
+		Label:          "rstudio",
+		LogName:        "RStudio server",
+		TargetURLFn: func(port int, _ string) string {
+			return fmt.Sprintf("http://localhost:%d", port)
+		},
+	})
 }
 
 func openVSCodeBrowser(
@@ -359,45 +364,37 @@ func openVSCodeBrowser(
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
 ) (string, error) {
-	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client); err != nil {
-			return "", err
-		}
-	}
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: openvscode.Options.GetValue(ideOptions, openvscode.BindAddressOption),
+		DefaultPort:    openvscode.DefaultVSCodePort,
+		ForwardPorts: openvscode.Options.GetValue(
+			ideOptions, openvscode.ForwardPortsOption,
+		) == config.BoolTrue,
+		Label:   LabelVSCodeBrowser,
+		LogName: "vscode",
+		TargetURLFn: func(port int, folder string) string {
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+		},
+	})
+}
 
-	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
-	addr, vscodePort, err := ParseAddressAndPort(
-		openvscode.Options.GetValue(ideOptions, openvscode.BindAddressOption),
-		openvscode.DefaultVSCodePort,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	targetURL := fmt.Sprintf("http://localhost:%d/?folder=%s", vscodePort, folder)
-	openBrowser := params.Launch == LaunchAuto
-
-	pkglog.Infof("Starting vscode in browser mode at %s", targetURL)
-	forwardPorts := openvscode.Options.GetValue(
-		ideOptions,
-		openvscode.ForwardPortsOption,
-	) == config.BoolTrue
-	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
-	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
-		DevsyConfig:      params.DevsyConfig,
-		Client:           params.Client,
-		User:             params.User,
-		TargetURL:        targetURL,
-		ForwardPorts:     forwardPorts,
-		ExtraPorts:       extraPorts,
-		AuthSockID:       params.SSHAuthSockID,
-		GitSSHSigningKey: params.GitSSHSigningKey,
-		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser})
-	if err != nil {
-		return "", err
-	}
-	return effectiveURL, nil
+func openCodeServerBrowser(
+	ctx context.Context,
+	ideOptions map[string]config.OptionValue,
+	params IDEParams,
+) (string, error) {
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: codeserver.Options.GetValue(ideOptions, codeserver.BindAddressOption),
+		DefaultPort:    codeserver.DefaultCodeServerPort,
+		ForwardPorts: codeserver.Options.GetValue(
+			ideOptions, codeserver.ForwardPortsOption,
+		) == config.BoolTrue,
+		Label:   LabelCodeServer,
+		LogName: "code-server",
+		TargetURLFn: func(port int, folder string) string {
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+		},
+	})
 }
 
 func startFleet(ctx context.Context, params IDEParams) (string, error) {

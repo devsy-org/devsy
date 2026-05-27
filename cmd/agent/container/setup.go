@@ -31,6 +31,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
@@ -576,6 +577,8 @@ func (cmd *SetupContainerCmd) installIDE(
 		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob)
 	case string(config2.IDEOpenVSCode):
 		return cmd.setupOpenVSCode(setupInfo, ide.Options)
+	case string(config2.IDECodeServer):
+		return cmd.setupCodeServer(setupInfo, ide.Options)
 	case string(config2.IDEGoland):
 		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
@@ -746,6 +749,63 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 
 	// start the server in the background
 	return openVSCode.Start()
+}
+
+func (cmd *SetupContainerCmd) setupCodeServer(
+	setupInfo *config.Result,
+	ideOptions map[string]config2.OptionValue,
+) error {
+	log.Debugf("setup code-server")
+	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
+	settings := ""
+	if len(vsCodeConfiguration.Settings) > 0 {
+		out, err := json.Marshal(vsCodeConfiguration.Settings)
+		if err != nil {
+			return err
+		}
+		settings = string(out)
+	}
+
+	user := config.GetRemoteUser(setupInfo)
+	cs := codeserver.NewCodeServer(codeserver.ServerOptions{
+		Extensions: vsCodeConfiguration.Extensions,
+		Settings:   settings,
+		UserName:   user,
+		Host:       "0.0.0.0",
+		Port:       strconv.Itoa(codeserver.DefaultCodeServerPort),
+		Values:     ideOptions,
+	})
+
+	if err := cs.Install(); err != nil {
+		return err
+	}
+
+	if len(vsCodeConfiguration.Extensions) > 0 {
+		err := command.StartBackgroundOnce("code-server-async", func() (*exec.Cmd, error) {
+			log.Infof(
+				"installing extensions in the background: %s",
+				strings.Join(vsCodeConfiguration.Extensions, ","),
+			)
+			binaryPath, err := os.Executable()
+			if err != nil {
+				return nil, err
+			}
+			//nolint:gosec // binaryPath is from os.Executable(), not user input
+			return exec.Command(
+				binaryPath,
+				"agent",
+				"container",
+				"code-server-async",
+				"--setup-info",
+				cmd.SetupInfo,
+			), nil
+		})
+		if err != nil {
+			return fmt.Errorf("install extensions: %w", err)
+		}
+	}
+
+	return cs.Start()
 }
 
 func configureSystemGitCredentials(

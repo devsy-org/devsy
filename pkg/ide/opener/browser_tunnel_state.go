@@ -30,6 +30,10 @@ const TunnelLogFileName = "tunnel.log"
 // duplicating the literal.
 const LabelVSCodeBrowser = "vscode"
 
+// LabelCodeServer is the TunnelState.Label value used for the code-server
+// (coder.com) browser-IDE tunnel.
+const LabelCodeServer = "code-server"
+
 // TunnelState describes a running browser tunnel for a workspace.
 //
 // CreateTime is the helper process's creation timestamp in milliseconds
