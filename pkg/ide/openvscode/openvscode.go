@@ -51,7 +51,7 @@ var Options = ide.Options{
 	VersionOption: {
 		Name:        VersionOption,
 		Description: "The version for the open vscode binary",
-		Default:     "v1.84.2",
+		Default:     "v1.109.5",
 	},
 	OpenOption: {
 		Name:        OpenOption,
