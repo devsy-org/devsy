@@ -138,18 +138,26 @@ func (c *BinaryCache) atomicWrite(path string, data io.Reader) error {
 type InjectSource struct{}
 
 func (s *InjectSource) GetBinary(ctx context.Context, arch string) (io.ReadCloser, error) {
-	if !s.matchesCurrentRuntime(arch) {
-		return nil, ErrArchMismatch
+	if runtime.GOOS != osLinux {
+		return nil, fmt.Errorf(
+			"%w: host OS %q cannot supply a linux binary for the container",
+			ErrArchMismatch,
+			runtime.GOOS,
+		)
+	}
+	if runtime.GOARCH != arch {
+		return nil, fmt.Errorf(
+			"%w: host GOARCH %q does not match container arch %q",
+			ErrArchMismatch,
+			runtime.GOARCH,
+			arch,
+		)
 	}
 	return s.openCurrentExecutable()
 }
 
 func (s *InjectSource) SourceName() string {
 	return "local executable"
-}
-
-func (s *InjectSource) matchesCurrentRuntime(arch string) bool {
-	return runtime.GOOS == osLinux && runtime.GOARCH == arch
 }
 
 func (s *InjectSource) openCurrentExecutable() (io.ReadCloser, error) {
