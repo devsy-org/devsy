@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+// explicitAgentDir is a representative non-empty --agent-dir value used to
+// exercise the "explicit folder always wins" branch of IsHostAgentInvocation.
+const explicitAgentDir = "/some/dir"
+
 // withContainerDetector swaps the package-level container detector for
 // the duration of the test, restoring the previous value on cleanup.
 func withContainerDetector(t *testing.T, fn func() bool) {
@@ -15,16 +19,16 @@ func withContainerDetector(t *testing.T, fn func() bool) {
 	})
 }
 
-// TestIsHostAgentInvocation covers the matrix of
-// (agentFolder empty/non-empty) x (env unset/"1") x (container indicator yes/no).
-func TestIsHostAgentInvocation(t *testing.T) {
-	tests := []struct {
-		name          string
-		agentFolder   string
-		inContainer   string // empty == unset; "1" == container marker
-		containerSeen bool
-		want          bool
-	}{
+type hostInvocationCase struct {
+	name          string
+	agentFolder   string
+	inContainer   string // empty == unset; "1" == container marker
+	containerSeen bool
+	want          bool
+}
+
+func hostInvocationCases() []hostInvocationCase {
+	return []hostInvocationCase{
 		{
 			name:          "host: no agentFolder, no marker, no indicator",
 			agentFolder:   "",
@@ -55,28 +59,32 @@ func TestIsHostAgentInvocation(t *testing.T) {
 		},
 		{
 			name:          "explicit agentFolder, no marker (legacy/explicit)",
-			agentFolder:   "/some/dir",
+			agentFolder:   explicitAgentDir,
 			inContainer:   "",
 			containerSeen: false,
 			want:          false,
 		},
 		{
 			name:          "explicit agentFolder beats stale env",
-			agentFolder:   "/some/dir",
+			agentFolder:   explicitAgentDir,
 			inContainer:   "1",
 			containerSeen: false,
 			want:          false,
 		},
 		{
 			name:          "explicit agentFolder and marker (container with --agent-dir)",
-			agentFolder:   "/some/dir",
+			agentFolder:   explicitAgentDir,
 			inContainer:   "1",
 			containerSeen: true,
 			want:          false,
 		},
 	}
+}
 
-	for _, tc := range tests {
+// TestIsHostAgentInvocation covers the matrix of
+// (agentFolder empty/non-empty) x (env unset/"1") x (container indicator yes/no).
+func TestIsHostAgentInvocation(t *testing.T) {
+	for _, tc := range hostInvocationCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvAgentInContainer, tc.inContainer)
 			withContainerDetector(t, func() bool { return tc.containerSeen })
