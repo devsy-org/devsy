@@ -55,10 +55,19 @@ type RunServicesOptions struct {
 	// ExtraListeners holds pre-bound listeners keyed by "host:port" so the
 	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
 	ExtraListeners map[string]net.Listener
+	// DisableIdleTimeout forces a zero idle-shutdown duration regardless of
+	// the EXIT_AFTER_TIMEOUT context option. Used by callers reaped
+	// out-of-band rather than by idle activity.
+	DisableIdleTimeout bool
 }
 
-// getExitAfterTimeout calculates the timeout value based on configuration.
-func getExitAfterTimeout(devsyConfig *config.Config) time.Duration {
+// getExitAfterTimeout resolves the per-forward idle-shutdown duration.
+// Returns 0 (no idle shutdown) when disableIdleTimeout is set or when
+// EXIT_AFTER_TIMEOUT is not true in the active context.
+func getExitAfterTimeout(devsyConfig *config.Config, disableIdleTimeout bool) time.Duration {
+	if disableIdleTimeout {
+		return 0
+	}
 	if devsyConfig.ContextOption(config.ContextOptionExitAfterTimeout) != config.BoolTrue {
 		return 0
 	}
@@ -221,7 +230,7 @@ func runServicesIteration(
 // to run the credentials server remotely and the services server locally to
 // communicate with the container.
 func RunServices(ctx context.Context, opts RunServicesOptions) error {
-	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig)
+	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig, opts.DisableIdleTimeout)
 
 	fp := portForwardParams{
 		containerClient:  opts.ContainerClient,

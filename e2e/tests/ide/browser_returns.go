@@ -3,8 +3,13 @@
 package ide
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -187,6 +192,105 @@ var _ = ginkgo.Describe(
 
 				err := f.DevsyStop(ctx, tempDir)
 				framework.ExpectNoError(err)
+			},
+		)
+
+		ginkgo.It(
+			"browser-tunnel port-forward survives past the old 5s idle timeout",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				f, tempDir := setupBrowserIDE(ctx, initialDir)
+				state := upBrowserIDE(ctx, f, tempDir)
+
+				// Parse host:port from state.TargetURL (e.g.
+				// http://localhost:10800/?folder=...).
+				u, err := url.Parse(state.TargetURL)
+				framework.ExpectNoError(err)
+				addr := u.Host
+
+				// First wait for the listener to actually bind. Use Eventually
+				// so a slow cold-start (which the 30s probe budget is sized
+				// for) doesn't race the assertion.
+				gomega.Eventually(func() error {
+					c, dialErr := net.DialTimeout("tcp", addr, 1*time.Second)
+					if dialErr == nil {
+						_ = c.Close()
+					}
+					return dialErr
+				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
+					Should(gomega.Succeed(), "helper port-forward at %s never came up", addr)
+
+				// Now sleep past the OLD 5s idle window with NO connections.
+				time.Sleep(8 * time.Second)
+
+				// And the listener must still accept.
+				conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+				gomega.Expect(err).NotTo(gomega.HaveOccurred(),
+					"expected helper port-forward at %s to still accept after 8s idle", addr)
+				if conn != nil {
+					_ = conn.Close()
+				}
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+			},
+		)
+
+		ginkgo.It(
+			"passes --open-browser to the helper when --ide-launch=auto",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				if runtime.GOOS != "linux" {
+					ginkgo.Skip("/proc/<pid>/cmdline inspection requires Linux")
+				}
+				f, tempDir := setupBrowserIDE(ctx, initialDir)
+
+				err := f.DevsyUpWithIDE(ctx,
+					"--ide=openvscode", "--ide-launch=auto", tempDir,
+				)
+				framework.ExpectNoError(err)
+
+				ws, err := f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+				gomega.Expect(ws).NotTo(gomega.BeNil())
+				state, err := opener.ReadTunnelState(ws.Context, ws.ID)
+				framework.ExpectNoError(err)
+				gomega.Expect(state).NotTo(gomega.BeNil(),
+					"expected tunnel.json to exist for browser IDE")
+				gomega.Expect(state.PID).To(gomega.BeNumerically(">", 0))
+
+				// Read the helper's argv from /proc.
+				cmdlineBytes, err := os.ReadFile(
+					fmt.Sprintf("/proc/%d/cmdline", state.PID),
+				)
+				framework.ExpectNoError(err)
+				cmdlineBytes = bytes.TrimRight(cmdlineBytes, "\x00")
+				args2 := strings.Split(string(cmdlineBytes), "\x00")
+
+				gomega.Expect(args2).To(gomega.ContainElement("--open-browser"),
+					"expected helper to be launched with --open-browser, got args: %v", args2)
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+			},
+		)
+
+		ginkgo.It(
+			"does not log 'setup KubeConfig' on a workspace without kubeconfig forwarding",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				f, tempDir := setupBrowserIDE(ctx, initialDir)
+				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
+					"--ide=openvscode", "--ide-launch=headless", "--debug")
+				framework.ExpectNoError(err)
+				combined := stdout + stderr
+
+				// The line "setup KubeConfig" used to fire unconditionally.
+				// After the fix it only fires when the host actually has a
+				// config to forward, which is not configured for the default
+				// test workspace.
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring("setup KubeConfig"),
+					"should not log 'setup KubeConfig' when host has no kubeconfig to forward")
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
 			},
 		)
 	},

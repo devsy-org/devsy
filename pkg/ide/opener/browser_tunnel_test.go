@@ -36,7 +36,7 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 		AuthSockID:       "sock-abc",
 		User:             "test-user",
 		GitSSHSigningKey: "",
-	})
+	}, false)
 
 	if len(args) < 2 || args[0] != "helper" || args[1] != "browser-tunnel" {
 		t.Fatalf("expected args to start with [helper browser-tunnel], got %v", args)
@@ -57,7 +57,7 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 		}
 	}
 
-	for _, unwanted := range []string{"--forward-ports", "--extra-ports"} {
+	for _, unwanted := range []string{"--forward-ports", "--extra-ports", "--open-browser"} {
 		if containsArg(args, unwanted) {
 			t.Errorf("unexpected %s for default params: %v", unwanted, args)
 		}
@@ -68,7 +68,7 @@ func TestBuildHelperArgs_ForwardPorts(t *testing.T) {
 	args := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
 		TargetURL:    "http://localhost:1234",
 		ForwardPorts: true,
-	})
+	}, false)
 	if !containsArg(args, "--forward-ports") {
 		t.Errorf("expected --forward-ports in %v", args)
 	}
@@ -78,12 +78,30 @@ func TestBuildHelperArgs_ExtraPorts(t *testing.T) {
 	args := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
 		TargetURL:  "http://localhost:1234",
 		ExtraPorts: []string{"localhost:10800", "127.0.0.1:8443"},
-	})
+	}, false)
 	if !containsAdjacent(args, "--extra-ports", "localhost:10800") {
 		t.Errorf("missing --extra-ports localhost:10800 in %v", args)
 	}
 	if !containsAdjacent(args, "--extra-ports", "127.0.0.1:8443") {
 		t.Errorf("missing --extra-ports 127.0.0.1:8443 in %v", args)
+	}
+}
+
+// TestBuildHelperArgs_OpenBrowser asserts the --open-browser flag is
+// emitted iff openBrowser=true.
+func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
+	withFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
+		TargetURL: "http://localhost:1234",
+	}, true)
+	if !containsArg(withFlag, "--open-browser") {
+		t.Errorf("expected --open-browser in %v", withFlag)
+	}
+
+	withoutFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
+		TargetURL: "http://localhost:1234",
+	}, false)
+	if containsArg(withoutFlag, "--open-browser") {
+		t.Errorf("did not expect --open-browser in %v", withoutFlag)
 	}
 }
 
@@ -290,6 +308,80 @@ func TestOpenBrowserWhenReachable_CtxCancelledSilently(t *testing.T) {
 			"openBrowserWhenReachable returned after %s; expected prompt return on ctx cancel",
 			elapsed,
 		)
+	}
+}
+
+// TestProbeTCPReachable_BudgetExceedsFiveSeconds proves the probe can wait
+// past the legacy 5s budget. Brings the listener up 6s into the probe and
+// asserts the probe succeeds rather than timing out.
+func TestProbeTCPReachable_BudgetExceedsFiveSeconds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("test waits >6s")
+	}
+
+	addr := allocateClosedAddr(t)
+	listenErr := relistenAfter(addr, 6*time.Second, 2*time.Second)
+
+	// Use a budget well above 5s but generous enough to handle CI slowness.
+	probeErr := probeTCPReachable(context.Background(), addr, 15*time.Second)
+
+	checkRelistenOrSkip(t, addr, listenErr)
+	if probeErr != nil {
+		t.Fatalf(
+			"probeTCPReachable should succeed once listener comes up at T+6s, got: %v",
+			probeErr,
+		)
+	}
+}
+
+// allocateClosedAddr returns a 127.0.0.1 address that was momentarily bound
+// then released, so the OS knows the port number but nothing is currently
+// listening on it. Used by probe-budget tests to set up a "listener arrives
+// later" scenario.
+func allocateClosedAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return addr
+}
+
+// relistenAfter spawns a goroutine that, after delay, binds addr and holds
+// the listener open for hold before closing. The returned channel surfaces
+// any net.Listen error (e.g. EADDRINUSE) so the caller can convert a port-
+// reuse race into a Skip rather than a hang.
+func relistenAfter(addr string, delay, hold time.Duration) <-chan error {
+	listenErr := make(chan error, 1)
+	go func() {
+		time.Sleep(delay)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			listenErr <- err
+			return
+		}
+		listenErr <- nil
+		time.Sleep(hold)
+		_ = ln.Close()
+	}()
+	return listenErr
+}
+
+// checkRelistenOrSkip drains a non-blocking read from listenErr. A non-nil
+// error means the OS reassigned the port in the close→relisten window;
+// skip rather than fail to avoid spurious CI failures on busy hosts.
+func checkRelistenOrSkip(t *testing.T, addr string, listenErr <-chan error) {
+	t.Helper()
+	select {
+	case lErr := <-listenErr:
+		if lErr != nil {
+			t.Skipf("port %s was reassigned between close and relisten: %v", addr, lErr)
+		}
+	default:
 	}
 }
 

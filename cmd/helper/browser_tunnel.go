@@ -31,6 +31,11 @@ type BrowserTunnelCmd struct {
 	User             string
 	GitSSHSigningKey string
 	InheritListeners []string
+	// OpenBrowser tells the helper to probe TargetURL and open the host
+	// browser once the listener accepts. The parent CLI exits in
+	// milliseconds after spawning the helper, so the auto-open must be
+	// owned by this long-lived process.
+	OpenBrowser bool
 }
 
 // NewBrowserTunnelCmd creates a new browser-tunnel helper command.
@@ -58,6 +63,12 @@ func NewBrowserTunnelCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		"inherit-listener",
 		nil,
 		"Inherited listener fd, format host:port=fd (repeatable, unix only)",
+	)
+	c.Flags().BoolVar(
+		&cmd.OpenBrowser,
+		"open-browser",
+		false,
+		"Open a host browser pointing at --target-url once the local listener is reachable",
 	)
 	return c
 }
@@ -166,6 +177,14 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("parse inherited listeners: %w", err)
 	}
 
+	// Launch the probe-then-open goroutine before the blocking
+	// StartBrowserTunnel call so the TCP probe runs concurrently with
+	// SSH dial + listener bind. The probe observes ctx so it unwinds
+	// when the helper receives a signal.
+	if cmd.OpenBrowser && cmd.TargetURL != "" {
+		go opener.OpenBrowserWhenReachable(ctx, cmd.TargetURL)
+	}
+
 	return tunnel.StartBrowserTunnel(ctx, tunnel.BrowserTunnelParams{
 		DevsyConfig:      devsyConfig,
 		Client:           client,
@@ -176,6 +195,11 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 		AuthSockID:       cmd.AuthSockID,
 		GitSSHSigningKey: cmd.GitSSHSigningKey,
 		ExtraListeners:   extraListeners,
+		// Helper lifecycle is owned by opener.KillBrowserTunnel and
+		// devsy stop/delete; the EXIT_AFTER_TIMEOUT idle shutdown
+		// would otherwise close the port-forward shortly after the
+		// browser tab goes quiet.
+		DisableIdleTimeout: true,
 	})
 }
 
