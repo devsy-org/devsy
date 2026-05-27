@@ -77,24 +77,35 @@ export class DaemonState {
     return { contexts: [...this.contexts], activeContext: this.activeContext }
   }
 
-  // workspaceContext resolves the context name for a workspace, falling back to
-  // "default" when the workspace is unknown or its context field is missing
-  // (e.g. an older workspace.json written before the field existed). The
-  // fallback is noisy on purpose: silently writing logs under the wrong
-  // context dir orphans them from `devsy delete` sweeps.
+  // currentContext returns the active context, defaulting to "default" only
+  // when the watcher has yet to populate state.
+  currentContext(): string {
+    return this.activeContext || "default"
+  }
+
+  // workspaceContext resolves the context name for a workspace. When the
+  // workspace is unknown in state (e.g. workspace_up runs BEFORE the
+  // watcher's first poll picks up the new workspace) the active context is
+  // used instead of a hard-coded "default", so creation logs land alongside
+  // the workspace they're describing rather than orphaned under `default/`.
+  // Both fallback branches emit a console.warn so log misrouting is visible.
   workspaceContext(workspaceId: string): string {
     const ws = this.workspaces.get(workspaceId)
     if (!ws) {
+      const active = this.currentContext()
       console.warn(
-        `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to "default" (logs may be orphaned if it actually lives under another context)`,
+        `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to active context %q`,
+        active,
       )
-      return "default"
+      return active
     }
     if (typeof ws.context !== "string" || ws.context === "") {
+      const active = this.currentContext()
       console.warn(
-        `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to "default" (logs may be orphaned if it actually lives under another context)`,
+        `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to active context %q`,
+        active,
       )
-      return "default"
+      return active
     }
     return ws.context
   }

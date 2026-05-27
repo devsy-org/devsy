@@ -9,7 +9,33 @@ import {
   writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
+
+// safeLogFilename strips any directory components from filename so a caller
+// can't traverse out of the per-workspace logs dir with "../" segments.
+// Throws when the cleaned name doesn't look like one of our log files.
+function safeLogFilename(filename: string): string {
+  const clean = basename(filename)
+  if (clean === "" || clean === "." || clean === "..") {
+    throw new Error(`invalid log filename: ${filename}`)
+  }
+  if (!clean.endsWith(".log")) {
+    throw new Error(`invalid log filename: ${filename}`)
+  }
+  return clean
+}
+
+// isReadableDir returns true only when path exists AND is a regular
+// directory (not a symlink or file). Used by prune to skip non-directory
+// entries that would make readdirSync throw mid-pass.
+function isReadableDir(path: string): boolean {
+  if (!existsSync(path)) return false
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
 
 export interface LogEntry {
   workspaceId: string
@@ -85,31 +111,35 @@ export class LogStore {
 
   readLog(context: string, workspaceId: string, filename: string): string {
     return readFileSync(
-      join(this.workspaceLogDir(context, workspaceId), filename),
+      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
       "utf-8",
     )
   }
 
   deleteLog(context: string, workspaceId: string, filename: string): void {
-    unlinkSync(join(this.workspaceLogDir(context, workspaceId), filename))
+    unlinkSync(
+      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
+    )
   }
 
   // prune walks every <devsyHome>/contexts/<ctx>/workspaces/<id>/logs/ tree
-  // and removes log files older than maxAgeDays. Missing trees are skipped.
+  // and removes log files older than maxAgeDays. Missing trees or
+  // non-directory entries (files, dangling symlinks) are skipped without
+  // aborting the rest of the pass.
   prune(maxAgeDays: number): number {
     const contextsRoot = join(this.devsyHomeDir, "contexts")
-    if (!existsSync(contextsRoot)) return 0
+    if (!isReadableDir(contextsRoot)) return 0
 
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
     let removed = 0
 
     for (const ctx of readdirSync(contextsRoot)) {
       const wsRoot = join(contextsRoot, ctx, "workspaces")
-      if (!existsSync(wsRoot)) continue
+      if (!isReadableDir(wsRoot)) continue
 
       for (const wsDir of readdirSync(wsRoot)) {
         const logDir = join(wsRoot, wsDir, "logs")
-        if (!existsSync(logDir)) continue
+        if (!isReadableDir(logDir)) continue
 
         for (const file of readdirSync(logDir)) {
           if (!file.endsWith(".log")) continue

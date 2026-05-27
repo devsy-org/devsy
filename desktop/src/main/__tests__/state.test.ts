@@ -103,36 +103,47 @@ describe("DaemonState", () => {
       warn.mockRestore()
     })
 
-    it("falls back to default and warns when workspace exists but context is missing", () => {
+    it("falls back to active context and warns when workspace exists but context is missing", () => {
       const state = new DaemonState()
+      state.updateContexts([{ name: "team-prod" }], "team-prod")
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
       state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-01" }])
-      expect(state.workspaceContext("ws1")).toBe("default")
+      expect(state.workspaceContext("ws1")).toBe("team-prod")
       expect(warn).toHaveBeenCalledTimes(1)
       expect(warn.mock.calls[0][0]).toContain("ws1")
       expect(warn.mock.calls[0][0]).toContain("no context field")
       warn.mockRestore()
     })
 
-    it("falls back to default and warns when workspace exists but context is empty string", () => {
+    it("falls back to active context and warns when workspace exists but context is empty string", () => {
       const state = new DaemonState()
+      state.updateContexts([{ name: "team-prod" }], "team-prod")
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
       state.updateWorkspaces([
         { id: "ws1", lastUsed: "2024-01-01", context: "" },
       ])
-      expect(state.workspaceContext("ws1")).toBe("default")
+      expect(state.workspaceContext("ws1")).toBe("team-prod")
       expect(warn).toHaveBeenCalledTimes(1)
       expect(warn.mock.calls[0][0]).toContain("ws1")
       warn.mockRestore()
     })
 
-    it("falls back to default and warns when workspace is unknown", () => {
+    it("falls back to active context and warns when workspace is unknown", () => {
+      const state = new DaemonState()
+      state.updateContexts([{ name: "team-prod" }], "team-prod")
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      expect(state.workspaceContext("missing")).toBe("team-prod")
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toContain("missing")
+      expect(warn.mock.calls[0][0]).toContain("not found")
+      warn.mockRestore()
+    })
+
+    it("falls back to 'default' when the watcher hasn't populated active context yet", () => {
       const state = new DaemonState()
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
       expect(state.workspaceContext("missing")).toBe("default")
       expect(warn).toHaveBeenCalledTimes(1)
-      expect(warn.mock.calls[0][0]).toContain("missing")
-      expect(warn.mock.calls[0][0]).toContain("not found")
       warn.mockRestore()
     })
   })

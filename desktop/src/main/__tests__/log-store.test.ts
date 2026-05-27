@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -80,5 +80,41 @@ describe("LogStore", () => {
     expect(store.listLogs(CTX, "ws-1")).toHaveLength(1)
     expect(store.listLogs("other-ctx", "ws-1")).toHaveLength(1)
     expect(store.listLogs(CTX, "ws-2")).toHaveLength(1)
+  })
+
+  it("rejects non-.log basenames after stripping traversal", () => {
+    // basename("../../etc/passwd") = "passwd" — no .log extension, rejected.
+    expect(() => store.readLog(CTX, "ws-1", "../../etc/passwd")).toThrow(
+      /invalid log filename/,
+    )
+    expect(() => store.deleteLog(CTX, "ws-1", "../../etc/passwd")).toThrow(
+      /invalid log filename/,
+    )
+    expect(() => store.readLog(CTX, "ws-1", "notes.txt")).toThrow(
+      /invalid log filename/,
+    )
+  })
+
+  it("confines traversal-shaped .log filenames to the workspace dir", () => {
+    // Plant a sibling.log OUTSIDE the workspace logs dir.
+    const outside = join(tempDir, "sibling.log")
+    writeFileSync(outside, "outside-content")
+    // basename("../sibling.log") = "sibling.log" → looked up INSIDE the
+    // workspace logs dir, where nothing of that name exists. We must NOT
+    // read the planted file.
+    expect(() => store.readLog(CTX, "ws-1", "../sibling.log")).toThrow(
+      /ENOENT/,
+    )
+  })
+
+  it("prune skips non-directory entries without aborting", () => {
+    // Create a normal log first.
+    store.createLogFile(CTX, "ws-1")
+    // Plant a regular file where prune would expect a workspace dir.
+    const contextsRoot = join(tempDir, "contexts", CTX, "workspaces")
+    const stray = join(contextsRoot, "stray-file")
+    writeFileSync(stray, "")
+    expect(() => store.prune(30)).not.toThrow()
+    expect(store.listLogs(CTX, "ws-1")).toHaveLength(1)
   })
 })
