@@ -542,8 +542,17 @@ func (r *DockerHelper) GetContainerLogs(
 
 func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, r.DockerCommand, args...)
-	if r.Environment != nil {
-		cmd.Env = append(os.Environ(), r.Environment...)
+	// Force English locale so docker CLI emits well-known error strings
+	// regardless of the host's LANG/LC_ALL. The daemon-down classifier in
+	// pkg/driver/docker/docker.go matches English substrings; on a host
+	// with a translated locale, those substrings would miss and a
+	// daemon-down failure would regress to silent success.
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
 	}
+	if r.Environment != nil {
+		cmd.Env = append(cmd.Env, r.Environment...)
+	}
+	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANG=C")
 	return cmd
 }

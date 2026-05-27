@@ -163,6 +163,32 @@ echo null
 	assert.Empty(t, labels)
 }
 
+func TestBuildCmd_ForcesEnglishLocale(t *testing.T) {
+	// buildCmd must append LC_ALL=C and LANG=C so the daemon-down
+	// classifier (which matches English substrings) keeps working on
+	// hosts with non-English LANG/LC_ALL.
+	h := &DockerHelper{DockerCommand: "/bin/true"}
+	cmd := h.buildCmd(context.Background(), "ps")
+
+	require.NotNil(t, cmd.Env, "buildCmd should populate cmd.Env")
+	assert.Contains(t, cmd.Env, "LC_ALL=C")
+	assert.Contains(t, cmd.Env, "LANG=C")
+}
+
+func TestBuildCmd_PreservesExistingEnvironment(t *testing.T) {
+	// When DockerHelper.Environment is set, buildCmd must keep those
+	// entries alongside the forced-locale entries.
+	h := &DockerHelper{
+		DockerCommand: "/bin/true",
+		Environment:   []string{"DOCKER_HOST=tcp://example:2375"},
+	}
+	cmd := h.buildCmd(context.Background(), "ps")
+
+	assert.Contains(t, cmd.Env, "DOCKER_HOST=tcp://example:2375")
+	assert.Contains(t, cmd.Env, "LC_ALL=C")
+	assert.Contains(t, cmd.Env, "LANG=C")
+}
+
 func TestGPUSupportEnabled_CommandFailure(t *testing.T) {
 	tmp := t.TempDir()
 	bin := writeScript(t, tmp, "bad-runtime", `#!/bin/sh
