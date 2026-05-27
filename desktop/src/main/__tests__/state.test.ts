@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { Context, Machine, Provider, Workspace } from "../state.js"
 import { DaemonState } from "../state.js"
 
@@ -89,5 +89,51 @@ describe("DaemonState", () => {
     expect(state.updateContexts(contexts, "default")).toBe(true)
     expect(state.updateContexts(contexts, "default")).toBe(false)
     expect(state.updateContexts(contexts, "staging")).toBe(true)
+  })
+
+  describe("workspaceContext", () => {
+    it("returns the workspace's context when known and set", () => {
+      const state = new DaemonState()
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      state.updateWorkspaces([
+        { id: "ws1", lastUsed: "2024-01-01", context: "team-prod" },
+      ])
+      expect(state.workspaceContext("ws1")).toBe("team-prod")
+      expect(warn).not.toHaveBeenCalled()
+      warn.mockRestore()
+    })
+
+    it("falls back to default and warns when workspace exists but context is missing", () => {
+      const state = new DaemonState()
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-01" }])
+      expect(state.workspaceContext("ws1")).toBe("default")
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toContain("ws1")
+      expect(warn.mock.calls[0][0]).toContain("no context field")
+      warn.mockRestore()
+    })
+
+    it("falls back to default and warns when workspace exists but context is empty string", () => {
+      const state = new DaemonState()
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      state.updateWorkspaces([
+        { id: "ws1", lastUsed: "2024-01-01", context: "" },
+      ])
+      expect(state.workspaceContext("ws1")).toBe("default")
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toContain("ws1")
+      warn.mockRestore()
+    })
+
+    it("falls back to default and warns when workspace is unknown", () => {
+      const state = new DaemonState()
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      expect(state.workspaceContext("missing")).toBe("default")
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toContain("missing")
+      expect(warn.mock.calls[0][0]).toContain("not found")
+      warn.mockRestore()
+    })
   })
 })

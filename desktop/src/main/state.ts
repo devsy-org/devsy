@@ -79,11 +79,24 @@ export class DaemonState {
 
   // workspaceContext resolves the context name for a workspace, falling back to
   // "default" when the workspace is unknown or its context field is missing
-  // (e.g. an older workspace.json written before the field existed).
+  // (e.g. an older workspace.json written before the field existed). The
+  // fallback is noisy on purpose: silently writing logs under the wrong
+  // context dir orphans them from `devsy delete` sweeps.
   workspaceContext(workspaceId: string): string {
     const ws = this.workspaces.get(workspaceId)
-    const ctx = ws && typeof ws.context === "string" ? ws.context : ""
-    return ctx || "default"
+    if (!ws) {
+      console.warn(
+        `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to "default" (logs may be orphaned if it actually lives under another context)`,
+      )
+      return "default"
+    }
+    if (typeof ws.context !== "string" || ws.context === "") {
+      console.warn(
+        `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to "default" (logs may be orphaned if it actually lives under another context)`,
+      )
+      return "default"
+    }
+    return ws.context
   }
 
   private mapsEqual<K, V>(a: Map<K, V>, b: Map<K, V>): boolean {
