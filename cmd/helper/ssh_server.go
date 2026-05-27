@@ -97,7 +97,8 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Sweep auth-agent-conn-* directories left behind by predecessors that
+	// Sweep stale per-connection agent socket directories left behind by
+	// predecessors that
 	// were killed by docker exec / proxy-chain teardown before any internal
 	// SSH cleanup could run. Liveness is decided via a per-directory flock
 	// the owning process holds for its lifetime; the kernel releases the

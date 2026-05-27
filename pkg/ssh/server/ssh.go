@@ -231,14 +231,17 @@ func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {
 // newConnID returns a short hex identifier unique to the connection.
 // Uses crypto/rand; on the unlikely event of a rand.Read failure falls
 // back to a sha256-of-time derivation so the connection still gets an ID.
+// 4 random bytes (8 hex chars) keeps the resulting unix socket path under
+// the macOS 104-byte sun_path limit while leaving ~4B values of headroom
+// against accidental same-host collisions.
 func newConnID(remote string) string {
-	var b [8]byte
+	var b [4]byte
 	_, err := rand.Read(b[:])
 	if err == nil {
 		return hex.EncodeToString(b[:])
 	}
 	sum := sha256.Sum256([]byte(remote + strconv.FormatInt(time.Now().UnixNano(), 10)))
-	return fmt.Sprintf("%x", sum)[:16]
+	return fmt.Sprintf("%x", sum)[:8]
 }
 
 // ensureConnAgentState lazily allocates the per-connection agent listener

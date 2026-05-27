@@ -311,7 +311,7 @@ var _ = ginkgo.Describe(
 				exitCmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+authSock)
 				_ = exitCmd.Run()
 
-				// On a fresh devsy ssh connection, assert no auth-agent-conn-*
+				// On a fresh devsy ssh connection, assert no devsy-ssh-agent-*
 				// directories remain. With lazy allocation, none are ever
 				// created; with the cleanup goroutine, any leftover is removed.
 				gomega.Eventually(func() string {
@@ -320,13 +320,13 @@ var _ = ginkgo.Describe(
 					out, _ := f.DevsySSH(
 						pollCtx,
 						tempDir,
-						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/auth-agent-conn-* 2>/dev/null | wc -l'",
+						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/devsy-ssh-agent-* 2>/dev/null | wc -l'",
 					)
 					return strings.TrimSpace(out)
 				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
 					Should(
 						gomega.Equal("0"),
-						"no auth-agent-conn-* dir must remain after a no-forward connection closes",
+						"no devsy-ssh-agent-* dir must remain after a no-forward connection closes",
 					)
 			},
 		)

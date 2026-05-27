@@ -12,7 +12,21 @@ import (
 	"github.com/devsy-org/ssh"
 )
 
-const agentSocketDirPrefix = "auth-agent-conn-"
+const (
+	agentSocketDirPrefix = "devsy-ssh-agent-"
+
+	// maxAgentSocketPath is the most restrictive Unix-domain socket path
+	// length across supported platforms (macOS/BSD: sun_path[104];
+	// Linux: sun_path[108]). bind(2) returns EINVAL when exceeded, which
+	// surfaces as "invalid argument" — a confusing error far from the cause.
+	// We check eagerly and fail with a clear message instead.
+	maxAgentSocketPath = 104
+
+	// agentListenFile mirrors the socket filename ssh.NewAgentListener
+	// creates inside the directory we pass it. Kept in sync so we can
+	// pre-validate the final socket path length.
+	agentListenFile = "listener.sock"
+)
 
 func setupAgentListener(reuseSock string) (net.Listener, string, error) {
 	runtimeDir, err := config.DefaultPathManager().RuntimeDir()
@@ -32,6 +46,9 @@ func setupAgentListener(reuseSock string) (net.Listener, string, error) {
 	dir := ""
 	if reuseSock != "" {
 		dir = filepath.Join(runtimeDir, fmt.Sprintf("auth-agent-%s", reuseSock))
+		if err := checkAgentSocketPathLen(dir); err != nil {
+			return nil, "", err
+		}
 		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 		err = os.MkdirAll(dir, 0o755)
 		if err != nil {
@@ -64,6 +81,9 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 	}
 
 	dir := filepath.Join(runtimeDir, fmt.Sprintf("%s%s", agentSocketDirPrefix, connID))
+	if err := checkAgentSocketPathLen(dir); err != nil {
+		return nil, "", err
+	}
 	// #nosec G301
 	err = os.MkdirAll(dir, 0o755)
 	if err != nil {
@@ -92,8 +112,8 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 	return l, socketDir, nil
 }
 
-// SweepStaleAgentSockets walks the runtime directory and removes any
-// auth-agent-conn-* directory whose owning process is no longer alive.
+// SweepStaleAgentSockets removes per-connection agent socket directories
+// whose owning process is no longer alive.
 // Liveness is detected via a per-directory flock: the owning process holds
 // an exclusive flock on the lockfile for its lifetime, so any other process
 // that can successfully take the flock knows the original owner is gone.
@@ -126,6 +146,29 @@ func SweepStaleAgentSockets() {
 		}
 		log.Debugf("swept stale agent socket dir: %s", dirPath)
 	}
+}
+
+// checkAgentSocketPathLen verifies the eventual unix socket path fits within
+// the OS sun_path limit. bind(2) returns the unhelpful EINVAL when it does
+// not, so we validate up front and emit a clear, actionable error that
+// names the offending path and the limit.
+func checkAgentSocketPathLen(dir string) error {
+	sockPath := filepath.Join(dir, agentListenFile)
+	if len(sockPath) > maxAgentSocketPath {
+		log.Warnf(
+			"agent socket path exceeds max (%d > %d): %s",
+			len(sockPath),
+			maxAgentSocketPath,
+			sockPath,
+		)
+		return fmt.Errorf(
+			"agent socket path exceeds max (%d > %d): %s",
+			len(sockPath),
+			maxAgentSocketPath,
+			sockPath,
+		)
+	}
+	return nil
 }
 
 // cleanupAgentSocketDir removes the per-connection agent socket directory.
