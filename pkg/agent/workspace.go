@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -232,11 +231,6 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 // os.RemoveAll(WorkspaceDir) wipes it on delete. DEVSY_HOME is NOT
 // consulted here — it is purely a host-side config-dir relocation knob
 // and must not double as a container marker.
-// staleContainerEnvWarnOnce ensures the "stale env on host" warning is
-// emitted at most once per process, so repeated CLI sub-calls in a tight
-// loop don't spam the user's terminal.
-var staleContainerEnvWarnOnce sync.Once
-
 // containerDetector is the package-level seam used by IsHostAgentInvocation
 // to detect whether the process is running inside a container. Tests
 // override this to make the predicate deterministic across platforms.
@@ -250,12 +244,15 @@ func IsHostAgentInvocation(agentFolder string) bool {
 		return true
 	}
 	if !containerDetector() {
-		staleContainerEnvWarnOnce.Do(func() {
-			log.Warnf(
-				"%s=1 is set but no container indicator file found; treating as host invocation",
-				EnvAgentInContainer,
-			)
-		})
+		// Warn every time we detect a stale env on a non-container host.
+		// IsHostAgentInvocation is called once per CLI invocation, so this
+		// won't spam the terminal; long-running parents (test runners,
+		// daemonized supervisors) need every occurrence surfaced, not just
+		// the first.
+		log.Warnf(
+			"%s=1 is set but no container indicator file found; treating as host invocation",
+			EnvAgentInContainer,
+		)
 		return true
 	}
 	return false

@@ -1,13 +1,8 @@
 package agent
 
 import (
-	"sync"
 	"testing"
 )
-
-// resetOnce returns a fresh sync.Once so tests can re-arm the
-// "warn once" latch between runs.
-func resetOnce() sync.Once { return sync.Once{} }
 
 // withContainerDetector swaps the package-level container detector for
 // the duration of the test, restoring the previous value on cleanup.
@@ -17,9 +12,6 @@ func withContainerDetector(t *testing.T, fn func() bool) {
 	containerDetector = fn
 	t.Cleanup(func() {
 		containerDetector = prev
-		// reset the warn-once latch so independent tests can each
-		// exercise the warning branch.
-		staleContainerEnvWarnOnce = resetOnce()
 	})
 }
 
