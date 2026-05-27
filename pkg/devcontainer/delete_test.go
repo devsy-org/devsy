@@ -17,12 +17,13 @@ const (
 )
 
 type mockDriver struct {
-	findResult   *config.ContainerDetails
-	findErr      error
-	stopCalled   bool
-	stopErr      error
-	deleteCalled bool
-	deleteErr    error
+	findResult          *config.ContainerDetails
+	findErr             error
+	stopCalled          bool
+	stopErr             error
+	deleteCalled        bool
+	deleteErr           error
+	deleteRemoveVolumes bool
 }
 
 func (m *mockDriver) FindDevContainer(
@@ -37,8 +38,11 @@ func (m *mockDriver) StopDevContainer(_ context.Context, _ string) error {
 	return m.stopErr
 }
 
-func (m *mockDriver) DeleteDevContainer(_ context.Context, _ string) error {
+func (m *mockDriver) DeleteDevContainer(
+	_ context.Context, _ string, removeVolumes bool,
+) error {
 	m.deleteCalled = true
+	m.deleteRemoveVolumes = removeVolumes
 	return m.deleteErr
 }
 
@@ -168,6 +172,42 @@ func TestDelete_DeleteError_ReturnsError(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error from DeleteDevContainer, got nil")
+	}
+}
+
+func TestDelete_PropagatesRemoveVolumesToDriver(t *testing.T) {
+	d := &mockDriver{
+		findResult: &config.ContainerDetails{
+			ID:     testContainerID,
+			State:  config.ContainerDetailsState{Status: "exited"},
+			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
+		},
+	}
+	r := newTestRunner(d)
+
+	if err := r.Delete(context.Background(), DeleteOptions{RemoveVolumes: true}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !d.deleteRemoveVolumes {
+		t.Error("driver.DeleteDevContainer was called with removeVolumes=false, want true")
+	}
+}
+
+func TestDelete_OmitsRemoveVolumesWhenFlagUnset(t *testing.T) {
+	d := &mockDriver{
+		findResult: &config.ContainerDetails{
+			ID:     testContainerID,
+			State:  config.ContainerDetailsState{Status: "exited"},
+			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
+		},
+	}
+	r := newTestRunner(d)
+
+	if err := r.Delete(context.Background(), DeleteOptions{}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if d.deleteRemoveVolumes {
+		t.Error("driver.DeleteDevContainer was called with removeVolumes=true, want false")
 	}
 }
 

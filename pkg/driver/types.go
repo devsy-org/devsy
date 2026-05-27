@@ -27,8 +27,10 @@ type Driver interface {
 	// TargetArchitecture returns the architecture of the container runtime. e.g. amd64 or arm64
 	TargetArchitecture(ctx context.Context, workspaceID string) (string, error)
 
-	// DeleteDevContainer deletes the devcontainer
-	DeleteDevContainer(ctx context.Context, workspaceID string) error
+	// DeleteDevContainer deletes the devcontainer. When removeVolumes is true,
+	// drivers should also remove any named volumes the container references
+	// (drop "in use"/"not found" errors silently).
+	DeleteDevContainer(ctx context.Context, workspaceID string, removeVolumes bool) error
 
 	// StartDevContainer starts the devcontainer
 	StartDevContainer(ctx context.Context, workspaceID string) error

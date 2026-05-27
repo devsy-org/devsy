@@ -181,19 +181,44 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 	return nil
 }
 
-func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
+// DeleteDevContainer removes the workspace container. When removeVolumes
+// is true it also removes anonymous volumes attached to the container
+// (`docker rm -v`) and each named volume the container referenced. Per-
+// volume errors are logged and skipped because a shared/in-use volume
+// shouldn't block the rest of the delete.
+//
+//nolint:cyclop // short, sequential branches; extracting a helper would trip funcorder.
+func (d *dockerDriver) DeleteDevContainer(
+	ctx context.Context,
+	workspaceId string,
+	removeVolumes bool,
+) error {
 	container, err := d.FindDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
+	}
+	if container == nil {
 		return nil
 	}
-
-	err = d.Docker.Remove(ctx, container.ID)
-	if err != nil {
+	if !removeVolumes {
+		return d.Docker.Remove(ctx, container.ID)
+	}
+	// Snapshot named volumes before removal; the Mounts list is
+	// unrecoverable once the container is gone.
+	var namedVolumes []string
+	for _, m := range container.Mounts {
+		if m.Type == "volume" && m.Source != "" {
+			namedVolumes = append(namedVolumes, m.Source)
+		}
+	}
+	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
 		return err
 	}
-
+	for _, name := range namedVolumes {
+		if err := d.Docker.RemoveVolume(ctx, name); err != nil {
+			log.Debugf("remove volume %s: %v", name, err)
+		}
+	}
 	return nil
 }
 

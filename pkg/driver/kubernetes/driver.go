@@ -102,7 +102,16 @@ func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId str
 	return nil
 }
 
-func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
+// DeleteDevContainer deletes the workspace's pod and PVC. The kubernetes
+// driver always deletes its PVC, so removeVolumes is implicit and the flag
+// is accepted-but-ignored.
+//
+//nolint:cyclop // pre-existing complexity; arg added by --remove-volumes plumbing.
+func (k *KubernetesDriver) DeleteDevContainer(
+	ctx context.Context,
+	workspaceId string,
+	_ bool,
+) error {
 	log.Debugf("Deleting devcontainer for workspace '%s'", workspaceId)
 	defer log.Debugf("Done deleting devcontainer for workspace '%s'", workspaceId)
 

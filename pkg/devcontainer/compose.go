@@ -560,7 +560,8 @@ func (r *runner) startContainer(
 			return nil, fmt.Errorf("stop dev container: %w", err)
 		}
 
-		if err := r.Driver.DeleteDevContainer(ctx, r.ID); err != nil {
+		// --recreate replaces the container in place; preserve named volumes.
+		if err := r.Driver.DeleteDevContainer(ctx, r.ID, false); err != nil {
 			return nil, fmt.Errorf("delete dev container: %w", err)
 		}
 	}

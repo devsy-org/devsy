@@ -131,8 +131,14 @@ func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId strin
 	return targetArchitecture, nil
 }
 
-// DeleteDevContainer deletes the devcontainer.
-func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
+// DeleteDevContainer deletes the devcontainer. removeVolumes is delegated
+// to the user-supplied deleteDevContainer command and is otherwise ignored
+// at the driver level — custom drivers don't have a generic volume concept.
+func (c *customDriver) DeleteDevContainer(
+	ctx context.Context,
+	workspaceId string,
+	_ bool,
+) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 

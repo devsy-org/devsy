@@ -163,6 +163,30 @@ func (r *DockerHelper) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
+// RemoveWithVolumes removes a container along with any anonymous volumes
+// attached to it (docker rm -v). Named volumes are NOT covered — those must
+// be removed separately with RemoveVolume since they may be shared.
+func (r *DockerHelper) RemoveWithVolumes(ctx context.Context, id string) error {
+	out, err := r.buildCmd(ctx, "rm", "-v", id).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", string(out), err)
+	}
+
+	return nil
+}
+
+// RemoveVolume removes a named docker volume. "no such volume" and
+// "volume is in use" are returned as errors so the caller can choose to
+// log-and-continue rather than fail the whole delete.
+func (r *DockerHelper) RemoveVolume(ctx context.Context, name string) error {
+	out, err := r.buildCmd(ctx, "volume", "rm", name).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", string(out), err)
+	}
+
+	return nil
+}
+
 func (r *DockerHelper) Run(
 	ctx context.Context,
 	args []string,

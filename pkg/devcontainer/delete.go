@@ -33,7 +33,7 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 			}
 		}
 
-		err = r.Driver.DeleteDevContainer(ctx, r.ID)
+		err = r.Driver.DeleteDevContainer(ctx, r.ID, options.RemoveVolumes)
 		if err != nil {
 			return err
 		}
