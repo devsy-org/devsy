@@ -99,7 +99,7 @@ const TEMPLATES = [
   { name: "Ruby", source: "https://github.com/skevetter/devsy-quickstart-ruby" },
 ]
 
-const LAUNCH_TIMEOUT_MS = 5 * 60 * 1000
+const LAUNCH_TIMEOUT_MS = 10 * 60 * 1000
 
 let {
   open = $bindable(false),
@@ -314,7 +314,7 @@ async function handleLaunch() {
       if (launchRunning) {
         launchRunning = false
         launchError =
-          "Workspace creation timed out after 5 minutes. The process may still be running in the background."
+          "Workspace creation timed out after 10 minutes. The process may still be running in the background."
         toasts.error(launchError)
         unlisten?.()
         unlisten = null

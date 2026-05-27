@@ -393,7 +393,7 @@ describe("launch watchdog", () => {
     document.body.innerHTML = ""
   })
 
-  it("fires after 5 minutes when no done event arrives", async () => {
+  it("fires after 10 minutes when no done event arrives", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
@@ -407,11 +407,11 @@ describe("launch watchdog", () => {
     await fireEvent.click(launchBtn)
     await flushAsync()
 
-    // Advance past the 5-minute watchdog.
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1)
+    // Advance past the 10-minute watchdog.
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1)
     await flushAsync()
 
-    expect(queryByText(/timed out after 5 minutes/i)).not.toBeNull()
+    expect(queryByText(/timed out after 10 minutes/i)).not.toBeNull()
     expect(queryByText("Open Workspace")).toBeNull()
     expect(queryByText("Retry")).not.toBeNull()
     unmount()
@@ -432,10 +432,10 @@ describe("launch watchdog", () => {
     await flushAsync()
 
     // Trip the watchdog.
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1)
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1)
     await flushAsync()
 
-    expect(queryByText(/timed out after 5 minutes/i)).not.toBeNull()
+    expect(queryByText(/timed out after 10 minutes/i)).not.toBeNull()
 
     // Late done event (the listener should have been disposed, so this is a no-op).
     progressCallback?.({
@@ -446,7 +446,7 @@ describe("launch watchdog", () => {
     await flushAsync()
 
     // Timeout error is still visible; Open Workspace did not appear.
-    expect(queryByText(/timed out after 5 minutes/i)).not.toBeNull()
+    expect(queryByText(/timed out after 10 minutes/i)).not.toBeNull()
     expect(queryByText("Open Workspace")).toBeNull()
     unmount()
   })
