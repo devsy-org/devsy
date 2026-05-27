@@ -40,7 +40,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "launch", label: "Launch" },
 ]
 
-const ideIcon = (name: string) => `/icons/ides/${name}.svg`
+const ideIcon = (name: string) => `./icons/ides/${name}.svg`
 
 const IDE_GROUPS = [
   {
