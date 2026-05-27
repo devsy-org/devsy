@@ -475,24 +475,37 @@ func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, er
 		return reusedURL, nil
 	}
 
+	// Derive a cancellable context for the probe goroutine. When
+	// StartBrowserTunnel returns (success or failure) the deferred
+	// cancelProbe stops the probe so it does not keep polling a port that
+	// will never come up and emit a misleading "didn't come up" warning
+	// alongside the original error.
+	probeCtx, cancelProbe := context.WithCancel(ctx)
+	defer cancelProbe()
+
 	if a.OpenBrowser {
-		go openBrowserWhenReachable(ctx, a.TunnelParams.TargetURL)
+		go openBrowserWhenReachable(probeCtx, a.TunnelParams.TargetURL)
 	}
 	return a.TunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, a.TunnelParams)
 }
 
 // openBrowserWhenReachable polls the target URL's TCP port until it accepts
-// connections, then opens the browser. If the port never becomes reachable
-// within browserProbeBudget the browser is NOT opened and a warning is
-// logged — better than launching a tab to a dead address when
-// tunnel.StartBrowserTunnel fails fast.
+// connections, then opens the browser. If ctx is cancelled before the port
+// is reachable the goroutine exits silently — the caller already gave up
+// (e.g. tunnel.StartBrowserTunnel failed) and warning about an unreachable
+// URL would only duplicate that error. The "didn't come up" warning is
+// reserved for the budget-expired case.
 func openBrowserWhenReachable(ctx context.Context, url string) {
 	hostPort, err := hostPortFromURL(url)
 	if err != nil {
 		pkglog.Warnf("could not parse browser-tunnel URL %q: %v; skipping auto-open", url, err)
 		return
 	}
-	if !probeTCPReachable(hostPort, browserProbeBudget) {
+	reachable, cancelled := probeTCPReachable(ctx, hostPort, browserProbeBudget)
+	if cancelled {
+		return
+	}
+	if !reachable {
 		pkglog.Warnf(
 			"browser-tunnel URL %s never became reachable within %s; "+
 				"skipping browser auto-open (open it manually once the tunnel is up)",
@@ -503,22 +516,34 @@ func openBrowserWhenReachable(ctx context.Context, url string) {
 	openBrowserAsync(ctx, url)
 }
 
-// probeTCPReachable returns true if a TCP connection to hostPort succeeds
-// within the given budget, polling every browserProbeInterval. Each dial
-// uses a short timeout so a hung host can't burn the whole budget on one
-// attempt.
-func probeTCPReachable(hostPort string, budget time.Duration) bool {
+// probeTCPReachable returns (reachable, cancelled). reachable=true means a
+// TCP dial succeeded within the budget. cancelled=true means ctx was
+// cancelled before either success or budget expiry; in that case reachable
+// is false and the caller should NOT log a "never came up" warning.
+// Each dial uses a short timeout so a hung host can't burn the whole
+// budget on one attempt.
+func probeTCPReachable(
+	ctx context.Context,
+	hostPort string,
+	budget time.Duration,
+) (reachable bool, cancelled bool) {
 	deadline := time.Now().Add(budget)
+	ticker := time.NewTicker(browserProbeInterval)
+	defer ticker.Stop()
 	for {
 		conn, err := net.DialTimeout("tcp", hostPort, browserProbeDial)
 		if err == nil {
 			_ = conn.Close()
-			return true
+			return true, false
 		}
 		if time.Now().After(deadline) {
-			return false
+			return false, false
 		}
-		time.Sleep(browserProbeInterval)
+		select {
+		case <-ctx.Done():
+			return false, true
+		case <-ticker.C:
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package opener
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -179,9 +180,12 @@ func TestProbeTCPReachable_Reachable(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 
 	start := time.Now()
-	ok := probeTCPReachable(ln.Addr().String(), 2*time.Second)
+	ok, cancelled := probeTCPReachable(context.Background(), ln.Addr().String(), 2*time.Second)
 	if !ok {
 		t.Fatalf("probeTCPReachable(%s) = false; want true", ln.Addr())
+	}
+	if cancelled {
+		t.Fatalf("probeTCPReachable cancelled=true; want false")
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("probe took %s; expected near-instant success", elapsed)
@@ -201,14 +205,94 @@ func TestProbeTCPReachable_Unreachable(t *testing.T) {
 
 	budget := 600 * time.Millisecond
 	start := time.Now()
-	ok := probeTCPReachable(addr, budget)
+	ok, cancelled := probeTCPReachable(context.Background(), addr, budget)
 	elapsed := time.Since(start)
 	if ok {
 		t.Fatalf("probeTCPReachable(%s) = true; want false (nothing listening)", addr)
 	}
+	if cancelled {
+		t.Fatalf("probeTCPReachable cancelled=true; want false (budget expired)")
+	}
 	// Must respect the budget (allow some slack for slow CI).
 	if elapsed > budget+2*time.Second {
 		t.Errorf("probe took %s; budget was %s", elapsed, budget)
+	}
+}
+
+// TestProbeTCPReachable_CtxCancelledBeforeBudget verifies the probe loop
+// observes ctx cancellation and reports cancelled=true so callers can
+// suppress the "never came up" warning.
+func TestProbeTCPReachable_CtxCancelledBeforeBudget(t *testing.T) {
+	// Allocate and close a port so dials fail immediately.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel from another goroutine shortly after the probe starts so the
+	// loop hits the ctx.Done() branch rather than the budget branch.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	budget := 30 * time.Second
+	start := time.Now()
+	ok, cancelled := probeTCPReachable(ctx, addr, budget)
+	elapsed := time.Since(start)
+	if ok {
+		t.Fatalf("probeTCPReachable = reachable; want false")
+	}
+	if !cancelled {
+		t.Fatalf("probeTCPReachable cancelled=false; want true on ctx cancel")
+	}
+	// Must return well before the budget elapses.
+	if elapsed > 5*time.Second {
+		t.Errorf("probe took %s; expected to return promptly after ctx cancel", elapsed)
+	}
+}
+
+// TestOpenBrowserWhenReachable_CtxCancelledSilently verifies that when ctx
+// is cancelled before the budget expires no warning is emitted (caller
+// already gave up, no need to duplicate the error).
+func TestOpenBrowserWhenReachable_CtxCancelledSilently(t *testing.T) {
+	// Pick a port nothing is listening on.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		openBrowserWhenReachable(ctx, "http://"+addr)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("openBrowserWhenReachable did not return after ctx cancel")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf(
+			"openBrowserWhenReachable returned after %s; expected prompt return on ctx cancel",
+			elapsed,
+		)
 	}
 }
 
