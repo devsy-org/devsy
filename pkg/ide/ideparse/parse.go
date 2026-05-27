@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
@@ -31,8 +32,6 @@ type AllowedIDE struct {
 	Icon string `json:"icon,omitempty"`
 	// IconDark holds an image URL that will be displayed in dark mode
 	IconDark string `json:"iconDark,omitempty"`
-	// Experimental indicates that this IDE is experimental
-	Experimental bool `json:"experimental,omitempty"`
 	// Group this IDE belongs to, e.g. for navigation
 	Group config.IDEGroup `json:"group,omitempty"`
 }
@@ -61,28 +60,32 @@ var AllowedIDEs = []AllowedIDE{
 		Group:       config.IDEGroupPrimary,
 	},
 	{
-		Name:         config.IDECursor,
-		DisplayName:  "Cursor",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/cursor.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDECodeServer,
+		DisplayName: "code-server",
+		Options:     codeserver.Options,
+		Icon:        "https://raw.githubusercontent.com/coder/code-server/main/src/browser/media/favicon.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 	{
-		Name:         config.IDEZed,
-		DisplayName:  "Zed",
-		Options:      ide.Options{},
-		Icon:         config.WebsiteAssetsURL + "/zed.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDECursor,
+		DisplayName: "Cursor",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/cursor.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 	{
-		Name:         config.IDECodium,
-		DisplayName:  "VSCodium",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/codium.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDEZed,
+		DisplayName: "Zed",
+		Options:     ide.Options{},
+		Icon:        config.WebsiteAssetsURL + "/zed.svg",
+		Group:       config.IDEGroupPrimary,
+	},
+	{
+		Name:        config.IDECodium,
+		DisplayName: "VSCodium",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/codium.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 	{
 		Name:        config.IDEIntellij,
@@ -113,12 +116,11 @@ var AllowedIDEs = []AllowedIDE{
 		Group:       config.IDEGroupJetBrains,
 	},
 	{
-		Name:         config.IDEFleet,
-		DisplayName:  "Fleet",
-		Options:      fleet.Options,
-		Icon:         config.WebsiteAssetsURL + "/fleet.svg",
-		Experimental: true,
-		Group:        config.IDEGroupJetBrains,
+		Name:        config.IDEFleet,
+		DisplayName: "Fleet",
+		Options:     fleet.Options,
+		Icon:        config.WebsiteAssetsURL + "/fleet.svg",
+		Group:       config.IDEGroupJetBrains,
 	},
 	{
 		Name:        config.IDEGoland,
@@ -163,61 +165,54 @@ var AllowedIDEs = []AllowedIDE{
 		Group:       config.IDEGroupJetBrains,
 	},
 	{
-		Name:         config.IDEJupyterNotebook,
-		DisplayName:  "Jupyter Notebook",
-		Options:      jupyter.Options,
-		Icon:         config.WebsiteAssetsURL + "/jupyter.svg",
-		IconDark:     config.WebsiteAssetsURL + "/jupyter_dark.svg",
-		Experimental: true,
-		Group:        config.IDEGroupOther,
+		Name:        config.IDEJupyterNotebook,
+		DisplayName: "Jupyter Notebook",
+		Options:     jupyter.Options,
+		Icon:        config.WebsiteAssetsURL + "/jupyter.svg",
+		IconDark:    config.WebsiteAssetsURL + "/jupyter_dark.svg",
+		Group:       config.IDEGroupOther,
 	},
 	{
-		Name:         config.IDEVSCodeInsiders,
-		DisplayName:  "VS Code Insiders",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/vscode_insiders.svg",
-		Experimental: true,
-		Group:        config.IDEGroupOther,
+		Name:        config.IDEVSCodeInsiders,
+		DisplayName: "VS Code Insiders",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/vscode_insiders.svg",
+		Group:       config.IDEGroupOther,
 	},
 	{
-		Name:         config.IDEPositron,
-		DisplayName:  "Positron",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/positron.svg",
-		Experimental: true,
-		Group:        config.IDEGroupOther,
+		Name:        config.IDEPositron,
+		DisplayName: "Positron",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/positron.svg",
+		Group:       config.IDEGroupOther,
 	},
 	{
-		Name:         config.IDERStudio,
-		DisplayName:  "RStudio Server",
-		Options:      rstudio.Options,
-		Icon:         config.WebsiteAssetsURL + "/rstudio.svg",
-		Experimental: true,
-		Group:        config.IDEGroupOther,
+		Name:        config.IDERStudio,
+		DisplayName: "RStudio Server",
+		Options:     rstudio.Options,
+		Icon:        config.WebsiteAssetsURL + "/rstudio.svg",
+		Group:       config.IDEGroupOther,
 	},
 	{
-		Name:         config.IDEWindsurf,
-		DisplayName:  "Windsurf Editor",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/windsurf.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDEWindsurf,
+		DisplayName: "Windsurf Editor",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/windsurf.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 	{
-		Name:         config.IDEAntigravity,
-		DisplayName:  "Google Antigravity",
-		Options:      vscode.Options,
-		Icon:         config.WebsiteAssetsURL + "/antigravity.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDEAntigravity,
+		DisplayName: "Google Antigravity",
+		Options:     vscode.Options,
+		Icon:        config.WebsiteAssetsURL + "/antigravity.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 	{
-		Name:         config.IDEBob,
-		DisplayName:  "IBM Bob",
-		Options:      vscode.Options,
-		Icon:         "https://devsy.sh/assets/bob.svg",
-		Experimental: true,
-		Group:        config.IDEGroupPrimary,
+		Name:        config.IDEBob,
+		DisplayName: "IBM Bob",
+		Options:     vscode.Options,
+		Icon:        "https://devsy.sh/assets/bob.svg",
+		Group:       config.IDEGroupPrimary,
 	},
 }
 

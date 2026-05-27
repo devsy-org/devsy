@@ -40,44 +40,47 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "launch", label: "Launch" },
 ]
 
+const ideIcon = (name: string) => `/icons/ides/${name}.svg`
+
 const IDE_GROUPS = [
   {
     label: "Primary",
     options: [
-      { value: "none", label: "None" },
-      { value: "vscode", label: "VS Code" },
-      { value: "openvscode", label: "VS Code Browser" },
-      { value: "cursor", label: "Cursor" },
-      { value: "zed", label: "Zed" },
-      { value: "codium", label: "VSCodium" },
-      { value: "windsurf", label: "Windsurf Editor" },
-      { value: "antigravity", label: "Google Antigravity" },
-      { value: "bob", label: "IBM Bob" },
+      { value: "none", label: "None", icon: ideIcon("none") },
+      { value: "vscode", label: "VS Code", icon: ideIcon("vscode") },
+      { value: "openvscode", label: "VS Code Browser", icon: ideIcon("vscodebrowser") },
+      { value: "code-server", label: "code-server", icon: ideIcon("code-server") },
+      { value: "cursor", label: "Cursor", icon: ideIcon("cursor") },
+      { value: "zed", label: "Zed", icon: ideIcon("zed") },
+      { value: "codium", label: "VSCodium", icon: ideIcon("codium") },
+      { value: "windsurf", label: "Windsurf Editor", icon: ideIcon("windsurf") },
+      { value: "antigravity", label: "Google Antigravity", icon: ideIcon("antigravity") },
+      { value: "bob", label: "IBM Bob", icon: ideIcon("bob") },
     ],
   },
   {
     label: "JetBrains",
     options: [
-      { value: "intellij", label: "IntelliJ IDEA" },
-      { value: "pycharm", label: "PyCharm" },
-      { value: "phpstorm", label: "PhpStorm" },
-      { value: "rider", label: "Rider" },
-      { value: "fleet", label: "Fleet" },
-      { value: "goland", label: "GoLand" },
-      { value: "webstorm", label: "WebStorm" },
-      { value: "rustrover", label: "RustRover" },
-      { value: "rubymine", label: "RubyMine" },
-      { value: "clion", label: "CLion" },
-      { value: "dataspell", label: "DataSpell" },
+      { value: "intellij", label: "IntelliJ IDEA", icon: ideIcon("intellij") },
+      { value: "pycharm", label: "PyCharm", icon: ideIcon("pycharm") },
+      { value: "phpstorm", label: "PhpStorm", icon: ideIcon("phpstorm") },
+      { value: "rider", label: "Rider", icon: ideIcon("rider") },
+      { value: "fleet", label: "Fleet", icon: ideIcon("fleet") },
+      { value: "goland", label: "GoLand", icon: ideIcon("goland") },
+      { value: "webstorm", label: "WebStorm", icon: ideIcon("webstorm") },
+      { value: "rustrover", label: "RustRover", icon: ideIcon("rustrover") },
+      { value: "rubymine", label: "RubyMine", icon: ideIcon("rubymine") },
+      { value: "clion", label: "CLion", icon: ideIcon("clion") },
+      { value: "dataspell", label: "DataSpell", icon: ideIcon("dataspell") },
     ],
   },
   {
     label: "Other",
     options: [
-      { value: "jupyternotebook", label: "Jupyter Notebook" },
-      { value: "vscode-insiders", label: "VS Code Insiders" },
-      { value: "positron", label: "Positron" },
-      { value: "rstudio", label: "RStudio Server" },
+      { value: "jupyternotebook", label: "Jupyter Notebook", icon: ideIcon("jupyter") },
+      { value: "vscode-insiders", label: "VS Code Insiders", icon: ideIcon("vscode_insiders") },
+      { value: "positron", label: "Positron", icon: ideIcon("positron") },
+      { value: "rstudio", label: "RStudio Server", icon: ideIcon("rstudio") },
     ],
   },
 ]
@@ -136,9 +139,9 @@ let initializedProviders = $derived(
   $providers.filter((p) => p.state?.initialized === true),
 )
 
-const ideLabel = $derived(
-  ALL_IDES.find((i) => i.value === selectedIde)?.label ?? "Select an IDE...",
-)
+const selectedIdeEntry = $derived(ALL_IDES.find((i) => i.value === selectedIde))
+const ideLabel = $derived(selectedIdeEntry?.label ?? "Select an IDE...")
+const ideIconSrc = $derived(selectedIdeEntry?.icon)
 
 let filteredIdes = $derived(
   ideSearch
@@ -540,7 +543,12 @@ function selectTemplate(t: { name: string; source: string }) {
               <Popover.Trigger class="w-full">
                 {#snippet child({ props })}
                   <Button variant="outline" class="h-9 w-full justify-between" {...props}>
-                    <span class="flex-1 truncate text-left">{ideLabel}</span>
+                    <span class="flex items-center gap-2 flex-1 truncate text-left">
+                      {#if ideIconSrc}
+                        <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
+                      {/if}
+                      <span class="truncate">{ideLabel}</span>
+                    </span>
                     <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 {/snippet}
@@ -558,6 +566,7 @@ function selectTemplate(t: { name: string; source: string }) {
                           onSelect={() => { selectedIde = ide.value; ideComboOpen = false; ideSearch = "" }}
                         >
                           <Check class="mr-2 h-4 w-4 {selectedIde === ide.value ? 'opacity-100' : 'opacity-0'}" />
+                          <img src={ide.icon} alt="" class="mr-2 h-4 w-4 shrink-0" />
                           {ide.label}
                         </Command.Item>
                       {/each}
@@ -628,7 +637,12 @@ function selectTemplate(t: { name: string; source: string }) {
             {/if}
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">IDE</span>
-              <span class="font-medium truncate">{ideLabel}</span>
+              <span class="flex items-center gap-2 font-medium truncate">
+                {#if ideIconSrc}
+                  <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
+                {/if}
+                <span class="truncate">{ideLabel}</span>
+              </span>
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">Workspace ID</span>
