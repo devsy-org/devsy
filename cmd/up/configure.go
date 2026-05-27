@@ -62,15 +62,16 @@ func (cmd *UpCmd) configureWorkspace(
 	return nil
 }
 
-// openIDE opens the configured IDE.
+// openIDE opens the configured IDE and returns the IDE URL (empty for desktop
+// IDEs whose URLs are OS-handler URIs, or when launch is skipped).
 func (cmd *UpCmd) openIDE(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
-) error {
-	if !cmd.OpenIDE {
-		return nil
+) (string, error) {
+	if cmd.IDELaunch == opener.LaunchSkip {
+		return "", nil
 	}
 
 	ideConfig := client.WorkspaceConfig().IDE
@@ -83,6 +84,7 @@ func (cmd *UpCmd) openIDE(
 		User:               wctx.user,
 		Result:             wctx.result,
 		TunnelMode:         wctx.tunnelPort > 0,
+		Launch:             cmd.IDELaunch,
 	})
 }
 

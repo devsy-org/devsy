@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	OpenOption        = "OPEN"
 	BindAddressOption = "BIND_ADDRESS"
 )
 
@@ -33,15 +32,6 @@ var Options = ide.Options{
 		Name:        BindAddressOption,
 		Description: "The address to bind the server to locally, e.g. 0.0.0.0:12345",
 		Default:     "",
-	},
-	OpenOption: {
-		Name:        OpenOption,
-		Description: "If Devsy should automatically open the browser",
-		Default:     "true",
-		Enum: []string{
-			"true",
-			"false",
-		},
 	},
 }
 
@@ -382,7 +372,7 @@ func setupPreferences(workspaceFolder, userName string) error {
 		return err
 	}
 
-	prefsPath := filepath.Join(prefsDir, "rstudio-prefs.json")
+	prefsPath := filepath.Join(prefsDir, preferencesFile)
 	err = os.WriteFile(prefsPath, outPrefs, os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("save preferences: %w", err)

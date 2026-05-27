@@ -170,14 +170,14 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			)
 			framework.ExpectNoError(err)
 
-			// --ide-option OPEN=false keeps the openIDE pipeline active (so the
+			// --ide-launch=headless keeps the openIDE pipeline active (so the
 			// success envelope ordering is exercised) but skips the host browser
 			// launch (no display available in CI).
 			stdout, _, err := dtc.f.DevsyUpStreamsRaw(
 				ctx,
 				tempDir,
 				"--ide=openvscode",
-				"--ide-option", "OPEN=false",
+				"--ide-launch=headless",
 				"--result-format", "json",
 			)
 			framework.ExpectNoError(err)

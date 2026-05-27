@@ -161,7 +161,11 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 
 	user := devcconfig.GetRemoteUser(result)
 	log.Infof("lifecycle commands completed for container %s", params.containerID)
-	_ = devcconfig.WriteResultJSON(os.Stderr, params.containerID, user, params.workdir, nil)
+	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+		ContainerID:           params.containerID,
+		RemoteUser:            user,
+		RemoteWorkspaceFolder: params.workdir,
+	})
 	return nil
 }
 
@@ -226,7 +230,11 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 
 	user := devcconfig.GetRemoteUser(result)
 	log.Infof("lifecycle commands completed for container %s", params.containerID)
-	_ = devcconfig.WriteResultJSON(os.Stderr, params.containerID, user, params.workdir, nil)
+	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+		ContainerID:           params.containerID,
+		RemoteUser:            user,
+		RemoteWorkspaceFolder: params.workdir,
+	})
 	return nil
 }
 

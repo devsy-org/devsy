@@ -329,6 +329,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
         workspaceId?: string
         provider?: string
         ide?: string
+        ideLaunch?: "auto" | "headless" | "skip"
         debug?: boolean
         workspaceFolder?: string
       },
@@ -338,6 +339,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
+      if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
       if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
 

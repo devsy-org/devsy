@@ -26,7 +26,6 @@ const (
 
 const (
 	ForwardPortsOption  = "FORWARD_PORTS"
-	OpenOption          = "OPEN"
 	BindAddressOption   = "BIND_ADDRESS"
 	VersionOption       = "VERSION"
 	DownloadAmd64Option = "DOWNLOAD_AMD64"
@@ -52,15 +51,6 @@ var Options = ide.Options{
 		Name:        VersionOption,
 		Description: "The version for the open vscode binary",
 		Default:     "v1.109.5",
-	},
-	OpenOption: {
-		Name:        OpenOption,
-		Description: "If Devsy should automatically open the browser",
-		Default:     "true",
-		Enum: []string{
-			"true",
-			"false",
-		},
 	},
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,

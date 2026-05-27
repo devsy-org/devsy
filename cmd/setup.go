@@ -124,7 +124,11 @@ func (cmd *SetUpCmd) Run(ctx context.Context) error {
 	user := devcconfig.GetRemoteUser(result)
 	log.Infof("set-up completed for container %s", containerDetails.ID)
 	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+			ContainerID:           containerDetails.ID,
+			RemoteUser:            user,
+			RemoteWorkspaceFolder: workdir,
+		})
 	}
 	return nil
 }

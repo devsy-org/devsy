@@ -319,7 +319,13 @@ async function handleOpenIde() {
   const folder = customFolder || undefined
   startStreamingOp("Open IDE")
   try {
-    commandId = await workspaceUp({ source: id, ide, debug: isDebug(), workspaceFolder: folder })
+    commandId = await workspaceUp({
+      source: id,
+      ide,
+      ideLaunch: "auto",
+      debug: isDebug(),
+      workspaceFolder: folder,
+    })
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)

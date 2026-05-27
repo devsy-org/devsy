@@ -38,13 +38,13 @@ func setupBrowserIDE(ctx context.Context, initialDir string) (*framework.Framewo
 	return f, tempDir
 }
 
-// upBrowserIDE runs `devsy up --ide=openvscode --ide-option OPEN=false` against
+// upBrowserIDE runs `devsy up --ide=openvscode --ide-launch=headless` against
 // tempDir, optionally with extra args (e.g. "--recreate"). It returns the
 // resolved workspace's tunnel state, which is asserted non-nil.
 func upBrowserIDE(
 	ctx context.Context, f *framework.Framework, tempDir string, extraArgs ...string,
 ) *opener.TunnelState {
-	args := []string{"--ide=openvscode", "--ide-option", "OPEN=false"}
+	args := []string{"--ide=openvscode", "--ide-launch=headless"}
 	args = append(args, extraArgs...)
 	args = append(args, tempDir)
 	err := f.DevsyUpWithIDE(ctx, args...)
@@ -82,10 +82,10 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				f, tempDir := setupBrowserIDE(ctx, initialDir)
 
-				// Run up with a browser IDE. --ide-option OPEN=false suppresses the
+				// Run up with a browser IDE. --ide-launch=headless suppresses the
 				// host browser launch (no display available in CI) but still runs
 				// openIDE → startDetachedBrowserTunnel → writes tunnel.json.
-				// --open-ide=false would skip openIDE entirely, which is not what
+				// --ide-launch=skip would skip openIDE entirely, which is not what
 				// the test exercises. With the old blocking behavior this would
 				// still hang past SpecTimeout; with the new behavior the CLI
 				// returns.

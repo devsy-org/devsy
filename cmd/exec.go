@@ -196,7 +196,11 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, user, workdir, nil)
+		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+			ContainerID:           containerDetails.ID,
+			RemoteUser:            user,
+			RemoteWorkspaceFolder: workdir,
+		})
 	}
 	return nil
 }
@@ -255,7 +259,10 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, containerDetails.ID, "", workdir, nil)
+		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+			ContainerID:           containerDetails.ID,
+			RemoteWorkspaceFolder: workdir,
+		})
 	}
 	return nil
 }

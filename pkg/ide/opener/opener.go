@@ -37,6 +37,7 @@ type IDEParams struct {
 	User               string
 	Result             *config2.Result
 	TunnelMode         bool
+	Launch             IDELaunchMode
 }
 
 // IsBrowserIDE reports whether the given IDE name uses a browser-based
@@ -48,13 +49,14 @@ func IsBrowserIDE(ideName string) bool {
 	return ok
 }
 
-// Open dispatches to the correct IDE opener based on ideName.
+// Open dispatches to the correct IDE opener based on ideName. It returns the
+// IDE URL (when meaningful — see per-IDE openers) along with any error.
 func Open(
 	ctx context.Context,
 	ideName string,
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
-) error {
+) (string, error) {
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
 	}
@@ -65,7 +67,7 @@ func Open(
 // browserIDEOpener returns a handler for browser-based IDEs if ideName matches.
 func browserIDEOpener(
 	ideName string,
-) (func(context.Context, map[string]config.OptionValue, IDEParams) error, bool) {
+) (func(context.Context, map[string]config.OptionValue, IDEParams) (string, error), bool) {
 	switch ideName {
 	case string(config.IDEOpenVSCode):
 		return openVSCodeBrowser, true
@@ -83,31 +85,43 @@ func openDesktopIDE(
 	ideName string,
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
-) error {
+) (string, error) {
+	// Fleet is special: its opener retrieves a workspace-side URL even in
+	// headless mode (just doesn't pop a host browser). Route to startFleet
+	// before the headless short-circuit so the URL still gets logged.
+	if ideName == string(config.IDEFleet) {
+		return startFleet(ctx, params)
+	}
+
+	// For other desktop IDEs (VSCode flavors, JetBrains, Zed), headless and
+	// skip are equivalent at the opener layer: backend install (if any)
+	// happens during workspace setup; the opener phase only does the host
+	// launch, which headless suppresses.
+	if params.Launch == LaunchHeadless {
+		return "", nil
+	}
+
 	switch ideName {
 	case string(config.IDEVSCode), string(config.IDEVSCodeInsiders), string(config.IDECursor),
 		string(config.IDECodium), string(config.IDEPositron), string(config.IDEWindsurf),
 		string(config.IDEAntigravity), string(config.IDEBob):
-		return openVSCodeFlavor(ctx, ideName, ideOptions, params)
+		return "", openVSCodeFlavor(ctx, ideName, ideOptions, params)
 
 	case string(config.IDERustRover), string(config.IDEGoland), string(config.IDEPyCharm),
 		string(config.IDEPhpStorm), string(config.IDEIntellij), string(config.IDECLion),
 		string(config.IDERider), string(config.IDERubyMine), string(config.IDEWebStorm),
 		string(config.IDEDataSpell):
-		return openJetBrains(ideName, ideOptions, params)
-
-	case string(config.IDEFleet):
-		return startFleet(ctx, params.Client)
+		return "", openJetBrains(ideName, ideOptions, params)
 
 	case string(config.IDEZed):
-		return zed.Open(
+		return "", zed.Open(
 			ctx, ideOptions, params.User,
 			params.Result.SubstitutionContext.ContainerWorkspaceFolder,
 			params.Client.Workspace(),
 		)
 
 	default:
-		return nil
+		return "", nil
 	}
 }
 
@@ -264,10 +278,10 @@ func openJupyterBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
-) error {
+) (string, error) {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -276,15 +290,15 @@ func openJupyterBrowser(
 		jupyter.DefaultServerPort,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d/lab", jupyterPort)
-	openBrowser := jupyter.Options.GetValue(ideOptions, jupyter.OpenOption) == config.BoolTrue
+	openBrowser := params.Launch == LaunchAuto
 
 	pkglog.Infof("Starting jupyter notebook in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, jupyter.DefaultServerPort)}
-	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -293,17 +307,20 @@ func openJupyterBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser})
+	}, browserIDEInvocation{Label: "jupyter", OpenBrowser: openBrowser}); err != nil {
+		return "", err
+	}
+	return targetURL, nil
 }
 
 func openRStudioBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
-) error {
+) (string, error) {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -312,15 +329,15 @@ func openRStudioBrowser(
 		rstudio.DefaultServerPort,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d", rsPort)
-	openBrowser := rstudio.Options.GetValue(ideOptions, rstudio.OpenOption) == config.BoolTrue
+	openBrowser := params.Launch == LaunchAuto
 
 	pkglog.Infof("Starting RStudio server in browser mode at %s", targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, rstudio.DefaultServerPort)}
-	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -329,17 +346,20 @@ func openRStudioBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, false, extraPorts),
-	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser})
+	}, browserIDEInvocation{Label: "rstudio", OpenBrowser: openBrowser}); err != nil {
+		return "", err
+	}
+	return targetURL, nil
 }
 
 func openVSCodeBrowser(
 	ctx context.Context,
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
-) error {
+) (string, error) {
 	if params.GPGAgentForwarding {
 		if err := gpg.ForwardAgent(params.Client); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -349,11 +369,11 @@ func openVSCodeBrowser(
 		openvscode.DefaultVSCodePort,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	targetURL := fmt.Sprintf("http://localhost:%d/?folder=%s", vscodePort, folder)
-	openBrowser := openvscode.Options.GetValue(ideOptions, openvscode.OpenOption) == config.BoolTrue
+	openBrowser := params.Launch == LaunchAuto
 
 	pkglog.Infof("Starting vscode in browser mode at %s", targetURL)
 	forwardPorts := openvscode.Options.GetValue(
@@ -361,7 +381,7 @@ func openVSCodeBrowser(
 		openvscode.ForwardPortsOption,
 	) == config.BoolTrue
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, openvscode.DefaultVSCodePort)}
-	return startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
+	if err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
 		DevsyConfig:      params.DevsyConfig,
 		Client:           params.Client,
 		User:             params.User,
@@ -371,35 +391,47 @@ func openVSCodeBrowser(
 		AuthSockID:       params.SSHAuthSockID,
 		GitSSHSigningKey: params.GitSSHSigningKey,
 		DaemonStartFunc:  makeDaemonStartFunc(params, forwardPorts, extraPorts),
-	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser})
+	}, browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: openBrowser}); err != nil {
+		return "", err
+	}
+	return targetURL, nil
 }
 
-func startFleet(ctx context.Context, client client2.BaseWorkspaceClient) error {
+func startFleet(ctx context.Context, params IDEParams) (string, error) {
 	stdout := &bytes.Buffer{}
 	sshCmd, err := tunnel.CreateSSHCommand(
 		ctx,
-		client,
+		params.Client,
 		[]string{"--command", "cat " + fleet.FleetURLFileName},
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	sshCmd.Stdout = stdout
 	err = sshCmd.Run()
 	if err != nil {
-		return command.WrapCommandError(stdout.Bytes(), err)
+		return "", command.WrapCommandError(stdout.Bytes(), err)
 	}
 
 	url := strings.TrimSpace(stdout.String())
 	if len(url) == 0 {
-		return fmt.Errorf("seems like fleet is not running within the container")
+		return "", fmt.Errorf("seems like fleet is not running within the container")
 	}
 
+	if params.Launch == LaunchHeadless {
+		// Headless: surface the URL so the caller can grab it. Skip the
+		// public-URL warning since the caller explicitly opted out of the
+		// interactive flow.
+		pkglog.Infof("Fleet is available at %s", url)
+		return url, nil
+	}
 	pkglog.Warnf(
 		"Fleet is exposed at a publicly reachable URL, please make sure to not disclose this URL " +
 			"to anyone as they will be able to reach your workspace from that",
 	)
 	pkglog.Infof("Starting Fleet at %s ...", url)
-
-	return open2.Run(url)
+	if err := open2.Run(url); err != nil {
+		return "", err
+	}
+	return url, nil
 }
