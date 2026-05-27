@@ -57,6 +57,10 @@ func Open(
 	ideOptions map[string]config.OptionValue,
 	params IDEParams,
 ) (string, error) {
+	if ideName == string(config.IDENone) {
+		return "", nil
+	}
+
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
 	}

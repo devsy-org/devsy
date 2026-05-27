@@ -307,7 +307,7 @@ function startStreamingOp(label: string) {
 }
 
 async function handleStart() {
-  const ide = currentIde !== "none" ? currentIde : undefined
+  const ide = currentIde
   const folder = customFolder || undefined
   startStreamingOp("Start")
   try {
@@ -324,7 +324,7 @@ async function handleStart() {
 }
 
 async function handleOpenIde() {
-  const ide = currentIde !== "none" ? currentIde : undefined
+  const ide = currentIde
   const folder = customFolder || undefined
   startStreamingOp("Open IDE")
   try {
@@ -560,7 +560,6 @@ async function handleRename() {
                             selectedIde = ide.value
                             ideComboOpen = false
                             ideSearch = ""
-                            if (ide.value === "none") return
                             try {
                               await workspaceSetIde(id, ide.value)
                             } catch (err) {
