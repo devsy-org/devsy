@@ -125,6 +125,7 @@ let connecting = $state(false)
 let ideComboOpen = $state(false)
 let ideSearch = $state("")
 let selectedIde = $state<string | null>(null)
+let ideSetSeq = 0
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
@@ -554,6 +555,7 @@ async function handleRename() {
                           value={ide.value}
                           class="justify-start"
                           onSelect={async () => {
+                            const seq = ++ideSetSeq
                             const prev = selectedIde
                             selectedIde = ide.value
                             ideComboOpen = false
@@ -562,6 +564,7 @@ async function handleRename() {
                             try {
                               await workspaceSetIde(id, ide.value)
                             } catch (err) {
+                              if (seq !== ideSetSeq) return
                               selectedIde = prev
                               toasts.error(`Failed to set IDE: ${extractErrorMessage(err)}`)
                             }
