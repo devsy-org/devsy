@@ -38,6 +38,12 @@ type BrowserTunnelParams struct {
 	// DaemonStartFunc is called when the client is a DaemonClient.
 	// If nil, the SSH tunnel path is always used.
 	DaemonStartFunc func(ctx context.Context) error
+
+	// DisableIdleTimeout opts forwarded ports out of the
+	// EXIT_AFTER_TIMEOUT idle shutdown. Set by callers whose lifecycle
+	// is managed out-of-band (e.g. the detached browser-tunnel helper,
+	// reaped by KillBrowserTunnel and devsy stop/delete).
+	DisableIdleTimeout bool
 }
 
 // StartBrowserTunnel sets up a browser tunnel for IDE access, either via daemon or SSH.
@@ -108,8 +114,9 @@ func runBrowserTunnelServices(
 			ConfigureGitSSHSignatureHelper: p.DevsyConfig.ContextOption(
 				config.ContextOptionGitSSHSignatureForwarding,
 			) == config.BoolTrue,
-			GitSSHSigningKey: p.GitSSHSigningKey,
-			ExtraListeners:   p.ExtraListeners,
+			GitSSHSigningKey:   p.GitSSHSigningKey,
+			ExtraListeners:     p.ExtraListeners,
+			DisableIdleTimeout: p.DisableIdleTimeout,
 		},
 	)
 	if err != nil {

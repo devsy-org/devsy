@@ -22,9 +22,12 @@ import (
 )
 
 // browserProbeBudget bounds how long openBrowserWhenReachable will wait for
-// the target URL's port to accept TCP connections before giving up.
+// the target URL's port to accept TCP connections before giving up. The
+// cold-start path (agent injection + SSH session + listener bind) can take
+// tens of seconds; the reuse path skips the probe entirely, so this only
+// costs latency on the first launch.
 const (
-	browserProbeBudget   = 5 * time.Second
+	browserProbeBudget   = 30 * time.Second
 	browserProbeInterval = 200 * time.Millisecond
 	browserProbeDial     = 300 * time.Millisecond
 )
@@ -205,7 +208,13 @@ func startDetachedBrowserTunnel(
 		return reusedURL, nil
 	}
 
-	pid, logLocation, err := spawnTunnelHelper(contextName, workspaceID, tunnelParams, label)
+	pid, logLocation, err := spawnTunnelHelper(spawnHelperOpts{
+		ContextName:  contextName,
+		WorkspaceID:  workspaceID,
+		TunnelParams: tunnelParams,
+		Label:        label,
+		OpenBrowser:  openBrowser,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -216,11 +225,24 @@ func startDetachedBrowserTunnel(
 		label, pid, logLocation, workspaceID,
 	)
 
-	if openBrowser {
-		go openBrowserAsync(ctx, tunnelParams.TargetURL)
-	}
+	// The browser auto-open is owned by the helper (via --open-browser),
+	// not by this process: the parent CLI exits in milliseconds and would
+	// reap any goroutine started here before the probe could run.
 
 	return tunnelParams.TargetURL, nil
+}
+
+// spawnHelperOpts groups the inputs spawnTunnelHelper needs. OpenBrowser
+// sits here rather than on tunnel.BrowserTunnelParams because the
+// runtime-loaded helper owns the browser-launch end-to-end; threading it
+// through the shared params struct would imply other callers can request
+// auto-open too, which they cannot.
+type spawnHelperOpts struct {
+	ContextName  string
+	WorkspaceID  string
+	TunnelParams tunnel.BrowserTunnelParams
+	Label        string
+	OpenBrowser  bool
 }
 
 // spawnTunnelHelper locates the current executable, builds the helper
@@ -228,17 +250,18 @@ func startDetachedBrowserTunnel(
 // detached helper process, and records its PID in the tunnel state file.
 // It returns the spawned helper PID and the log location that should be
 // reported to the user.
-func spawnTunnelHelper(
-	contextName, workspaceID string,
-	tunnelParams tunnel.BrowserTunnelParams,
-	label string,
-) (int, string, error) {
+func spawnTunnelHelper(opts spawnHelperOpts) (int, string, error) {
+	contextName := opts.ContextName
+	workspaceID := opts.WorkspaceID
+	tunnelParams := opts.TunnelParams
+	label := opts.Label
+
 	execPath, err := os.Executable()
 	if err != nil {
 		return 0, "", fmt.Errorf("locate executable: %w", err)
 	}
 
-	args := buildHelperArgs(contextName, workspaceID, tunnelParams)
+	args := buildHelperArgs(contextName, workspaceID, tunnelParams, opts.OpenBrowser)
 
 	// Pre-bind the host listeners in the parent so the chosen ports are
 	// truly reserved before the helper forks. On Windows this is a no-op.
@@ -347,6 +370,7 @@ func attachHelperStdio(cmd *exec.Cmd, logFile, devNull *os.File) {
 func buildHelperArgs(
 	contextName, workspaceID string,
 	tunnelParams tunnel.BrowserTunnelParams,
+	openBrowser bool,
 ) []string {
 	args := []string{
 		"helper", "browser-tunnel",
@@ -362,6 +386,9 @@ func buildHelperArgs(
 	}
 	for _, p := range tunnelParams.ExtraPorts {
 		args = append(args, "--extra-ports", p)
+	}
+	if openBrowser {
+		args = append(args, "--open-browser")
 	}
 	if pkglog.DebugEnabled() {
 		args = append(args, "--debug")
@@ -490,12 +517,17 @@ func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, er
 	return a.TunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, a.TunnelParams)
 }
 
-// openBrowserWhenReachable polls the target URL's TCP port until it accepts
-// connections, then opens the browser. If ctx is cancelled before the port
-// is reachable the goroutine exits silently — the caller already gave up
-// (e.g. tunnel.StartBrowserTunnel failed) and warning about an unreachable
-// URL would only duplicate that error. The "didn't come up" warning is
-// reserved for the budget-expired case.
+// OpenBrowserWhenReachable polls the target URL's TCP port until it accepts
+// connections, then opens the browser. Exits silently when ctx is cancelled
+// (the caller already gave up — warning would duplicate the underlying
+// error); emits a "didn't come up" warning only when the budget expires.
+//
+// Exported so the long-lived browser-tunnel helper can own the probe-then-
+// open sequence rather than the short-lived parent CLI.
+func OpenBrowserWhenReachable(ctx context.Context, url string) {
+	openBrowserWhenReachable(ctx, url)
+}
+
 func openBrowserWhenReachable(ctx context.Context, url string) {
 	hostPort, err := hostPortFromURL(url)
 	if err != nil {

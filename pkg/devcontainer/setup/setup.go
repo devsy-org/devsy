@@ -382,16 +382,19 @@ func setupKubeConfig(
 	if shouldSkipKubeConfig(tunnelClient) {
 		return nil
 	}
-	log.Info("setup KubeConfig")
 
 	kubeConfigRes, err := tunnelClient.KubeConfig(ctx, &tunnel.Message{})
 	if err != nil {
 		return err
 	}
-	if kubeConfigRes.Message == "" { // no kubeconfig returned, skip
+	if kubeConfigRes.Message == "" {
+		// Empty payload means the host had nothing to forward; trace at
+		// debug so a missing ~/.kube/config is diagnosable on demand.
+		log.Debug("kubeconfig RPC returned empty payload; skipping kubeconfig setup")
 		return nil
 	}
 
+	log.Info("setup KubeConfig")
 	if err := writeKubeConfig(setupInfo, kubeConfigRes.Message); err != nil {
 		return err
 	}

@@ -3,9 +3,56 @@ package tunnel
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
+
+const testCtxName = "default"
+
+// newConfigWithExitAfterTimeout returns a *config.Config whose default
+// context sets EXIT_AFTER_TIMEOUT to the given value.
+func newConfigWithExitAfterTimeout(value string) *config.Config {
+	return &config.Config{
+		DefaultContext: testCtxName,
+		Contexts: map[string]*config.ContextConfig{
+			testCtxName: {
+				Options: map[string]config.OptionValue{
+					config.ContextOptionExitAfterTimeout: {Value: value},
+				},
+			},
+		},
+	}
+}
+
+func TestGetExitAfterTimeout_EnabledByContextOption(t *testing.T) {
+	cfg := newConfigWithExitAfterTimeout(config.BoolTrue)
+	assert.Equal(t, defaultExitTimeout, getExitAfterTimeout(cfg, false))
+}
+
+func TestGetExitAfterTimeout_DisabledByContextOption(t *testing.T) {
+	cfg := newConfigWithExitAfterTimeout(config.BoolFalse)
+	assert.Equal(t, time.Duration(0), getExitAfterTimeout(cfg, false))
+}
+
+func TestGetExitAfterTimeout_DisableIdleTimeoutOverridesEnabled(t *testing.T) {
+	cfg := newConfigWithExitAfterTimeout(config.BoolTrue)
+	assert.Equal(
+		t,
+		time.Duration(0),
+		getExitAfterTimeout(cfg, true),
+	)
+}
+
+func TestGetExitAfterTimeout_DisableIdleTimeoutOverridesDisabled(t *testing.T) {
+	cfg := newConfigWithExitAfterTimeout(config.BoolFalse)
+	assert.Equal(
+		t,
+		time.Duration(0),
+		getExitAfterTimeout(cfg, true),
+	)
+}
 
 const testBaseCommand = "devsy agent container credentials-server --user root"
 

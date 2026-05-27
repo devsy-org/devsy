@@ -3,7 +3,42 @@ package helper
 import (
 	"strings"
 	"testing"
+
+	"github.com/devsy-org/devsy/cmd/flags"
 )
+
+// TestNewBrowserTunnelCmd_OpenBrowserFlag locks down the flag plumbing for
+// --open-browser. Without this wiring the helper has no way to know it
+// should launch a host browser, since the parent CLI no longer owns that.
+func TestNewBrowserTunnelCmd_OpenBrowserFlag(t *testing.T) {
+	gf := &flags.GlobalFlags{}
+	c := NewBrowserTunnelCmd(gf)
+	if err := c.ParseFlags([]string{
+		"--workspace", "ws",
+		"--target-url", "http://localhost:1234",
+		"--open-browser",
+	}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	openFlag := c.Flags().Lookup("open-browser")
+	if openFlag == nil {
+		t.Fatal("--open-browser flag not registered")
+	}
+	if openFlag.Value.String() != "true" {
+		t.Errorf("--open-browser = %q, want true", openFlag.Value.String())
+	}
+
+	// Default (flag absent) is false.
+	gf2 := &flags.GlobalFlags{}
+	c2 := NewBrowserTunnelCmd(gf2)
+	if err := c2.ParseFlags([]string{"--workspace", "ws"}); err != nil {
+		t.Fatalf("ParseFlags (default): %v", err)
+	}
+	if c2.Flags().Lookup("open-browser").Value.String() != "false" {
+		t.Errorf("--open-browser default = %q, want false",
+			c2.Flags().Lookup("open-browser").Value.String())
+	}
+}
 
 func TestParseInheritedListenerEntry_Errors(t *testing.T) {
 	tests := []struct {
