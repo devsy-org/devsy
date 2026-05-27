@@ -35,9 +35,37 @@ var extraSearchLocations = []string{
 	ContainerDataDir + "/agent",
 }
 
+// EnvAgentInContainer is set to "1" by every SSH command builder that
+// launches `devsy agent ...` inside the workspace container or machine.
+// It is the single signal used by IsHostAgentInvocation to distinguish a
+// container-side invocation from a host-side one. The host never sets it.
+const EnvAgentInContainer = "DEVSY_AGENT_IN_CONTAINER"
+
+// EnvAgentInContainerTrue is the value the env var takes when set.
+const EnvAgentInContainerTrue = "1"
+
+// ContainerAgentEnvPrefix is the inline env-var assignment SSH command
+// builders prepend to the shell snippet that launches `devsy agent ...`
+// inside the workspace container or machine. POSIX shells parse leading
+// `NAME=value cmd ...` as a one-shot environment assignment for `cmd`,
+// so this works without requiring the SSH server to honour SetEnv (which
+// is often disabled).
+const ContainerAgentEnvPrefix = EnvAgentInContainer + "=" + EnvAgentInContainerTrue + " "
+
 var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
+// GetAgentDaemonLogFolder returns the folder that holds agent-daemon.log.
+// The daemon is a container/machine-side process: it is started by the
+// inject-and-run path during `devsy up` and the SSH command builder sets
+// DEVSY_AGENT_IN_CONTAINER=1. A host-side invocation has no daemon to
+// inspect and therefore is rejected explicitly instead of silently
+// resolving to the legacy `<DEVSY_HOME>/agent` glob.
 func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
+	if IsHostAgentInvocation(agentFolder) {
+		return "", fmt.Errorf(
+			"agent daemon log folder is only available inside the workspace container or machine",
+		)
+	}
 	return FindAgentHomeFolder(agentFolder)
 }
 
@@ -190,22 +218,28 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 	return "", os.ErrNotExist
 }
 
-// isHostAgentInvocation reports whether this `devsy agent ...` call is
-// running on the user's host (as opposed to inside the workspace container).
-// The signal is implicit: container-side calls always receive an explicit
-// agentFolder via --agent-dir or set DEVSY_HOME, while host-side calls have
-// neither. When true, per-workspace agent state lives under the canonical
-// PathManager.WorkspaceAgentDir so a single os.RemoveAll(WorkspaceDir) wipes
-// it on delete.
-func isHostAgentInvocation(agentFolder string) bool {
-	return agentFolder == "" && os.Getenv(config.EnvHome) == ""
+// IsHostAgentInvocation reports whether this `devsy agent ...` call is
+// running on the user's host (as opposed to inside the workspace container
+// or machine). The signal is explicit: every SSH command builder that
+// launches `devsy agent ...` inside the container sets
+// DEVSY_AGENT_IN_CONTAINER=1; the host never sets it. An explicit
+// --agent-dir (agentFolder != "") also forces a non-host (legacy/explicit)
+// routing, so unit tests and unusual deployments can still pin a folder.
+//
+// When this returns true, per-workspace agent state lives under the
+// canonical PathManager.WorkspaceAgentDir so a single
+// os.RemoveAll(WorkspaceDir) wipes it on delete. DEVSY_HOME is NOT
+// consulted here — it is purely a host-side config-dir relocation knob
+// and must not double as a container marker.
+func IsHostAgentInvocation(agentFolder string) bool {
+	return agentFolder == "" && os.Getenv(EnvAgentInContainer) != EnvAgentInContainerTrue
 }
 
 func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, error) {
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if isHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentFolder) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err
@@ -229,7 +263,7 @@ func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, err
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if isHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentFolder) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err
@@ -261,7 +295,7 @@ func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, 
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if isHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentFolder) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err

@@ -124,7 +124,8 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 			defer func() { _ = session.Close() }()
 
 			agentCommand := fmt.Sprintf(
-				"'%s' agent workspace logs --context '%s' --id '%s'",
+				"%s'%s' agent workspace logs --context '%s' --id '%s'",
+				agent.ContainerAgentEnvPrefix,
 				client.AgentPath(),
 				client.Context(),
 				client.Workspace(),

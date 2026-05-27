@@ -38,6 +38,15 @@ func NewLogsDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
+	// `agent workspace logs-daemon` reads agent-daemon.log, which only
+	// exists inside the workspace container or machine. Reject host
+	// invocations explicitly to surface misconfigurations early.
+	if agent.IsHostAgentInvocation(cmd.AgentDir) {
+		return fmt.Errorf(
+			"`devsy agent workspace logs-daemon` is only valid inside the workspace container or machine",
+		)
+	}
+
 	// get workspace
 	shouldExit, _, err := agent.ReadAgentWorkspaceInfo(
 		cmd.AgentDir,
