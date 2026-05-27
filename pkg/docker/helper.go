@@ -109,6 +109,78 @@ func (r *DockerHelper) FindContainerByID(
 	return nil, nil
 }
 
+// Devsy-managed docker volume labels. Volumes created with these labels
+// are eligible for cleanup on workspace delete. Volumes the user declares
+// in their devcontainer.json `mounts` block will NOT carry these labels
+// and are therefore preserved.
+const (
+	LabelDriverOwned = "devsy.driver-owned"
+	LabelWorkspaceID = "devsy.workspace-id"
+)
+
+// CreateVolume creates a named docker volume with the supplied labels.
+// The call is idempotent: if the volume already exists docker exits 0
+// (and any pre-existing labels are left untouched — docker does not
+// allow updating labels on an existing volume).
+func (r *DockerHelper) CreateVolume(
+	ctx context.Context,
+	name string,
+	labels map[string]string,
+) error {
+	if name == "" {
+		return errors.New("volume name is required")
+	}
+	args := []string{"volume", "create"}
+	for k, v := range labels {
+		args = append(args, "--label", k+"="+v)
+	}
+	args = append(args, name)
+	out, err := r.buildCmd(ctx, args...).CombinedOutput()
+	if err != nil {
+		msg := string(out)
+		// docker volume create returns 0 if the volume already exists, but
+		// some older clients or podman may emit a non-zero status — treat
+		// "already exists" as success either way.
+		if strings.Contains(msg, "already exists") {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return nil
+}
+
+// InspectVolumeLabels returns the labels attached to a named volume.
+// A missing volume returns (nil, nil) so callers can treat absence as
+// "nothing to filter on" rather than as an error.
+func (r *DockerHelper) InspectVolumeLabels(
+	ctx context.Context,
+	name string,
+) (map[string]string, error) {
+	if name == "" {
+		return nil, nil
+	}
+	out, err := r.buildCmd(
+		ctx, "volume", "inspect", "--format", "{{json .Labels}}", name,
+	).CombinedOutput()
+	if err != nil {
+		msg := string(out)
+		if strings.Contains(msg, "no such volume") ||
+			strings.Contains(msg, "No such volume") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s: %w", msg, err)
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" || trimmed == "null" {
+		return map[string]string{}, nil
+	}
+	labels := map[string]string{}
+	if err := json.Unmarshal([]byte(trimmed), &labels); err != nil {
+		return nil, fmt.Errorf("parse volume labels: %w", err)
+	}
+	return labels, nil
+}
+
 func (r *DockerHelper) DeleteVolume(ctx context.Context, volume string) error {
 	if volume == "" {
 		return nil

@@ -1,12 +1,18 @@
 package docker
 
 import (
+	"context"
+	"errors"
+	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -248,6 +254,86 @@ func (s *DockerDriverTestSuite) TestAddCapabilityArgs_CapAddAndSecurityOpt() {
 		"--cap-add", "SYS_PTRACE",
 		testSecurityOptFlag, testSeccompUnconfined,
 	}, args)
+}
+
+func (s *DockerDriverTestSuite) TestIsLegacyDriverOwnedVolume() {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"dockerless-abc123", true},
+		{"devsy-agent-abc123", true},
+		{"node_modules-cache", false},
+		{"my-cargo-cache", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		s.Equal(tc.want, isLegacyDriverOwnedVolume(tc.name), tc.name)
+	}
+}
+
+func (s *DockerDriverTestSuite) TestClassifyVolumeRemoveError() {
+	cases := []struct {
+		msg  string
+		want volumeErrAction
+	}{
+		{"Error response from daemon: volume is in use", volumeErrIgnore},
+		{"Error: no such volume: foo", volumeErrIgnore},
+		{"Error: No such volume: foo", volumeErrIgnore},
+		{"Cannot connect to the Docker daemon at unix:///var/run/docker.sock", volumeErrAbort},
+		{"permission denied while trying to connect", volumeErrAbort},
+		{"some other docker error", volumeErrOther},
+	}
+	for _, tc := range cases {
+		got := classifyVolumeRemoveError(errors.New(tc.msg))
+		s.Equal(tc.want, got, tc.msg)
+	}
+	s.Equal(volumeErrOther, classifyVolumeRemoveError(nil))
+}
+
+func (s *DockerDriverTestSuite) TestCollectNamedVolumes() {
+	c := &config.ContainerDetails{
+		Mounts: []config.ContainerMount{
+			{Type: "volume", Source: "named-1"},
+			{Type: "volume", Source: ""}, // anonymous, skipped
+			{Type: "bind", Source: "/host"},
+			{Type: "volume", Source: "named-2"},
+		},
+	}
+	got := collectNamedVolumes(c)
+	s.Equal([]string{"named-1", "named-2"}, got)
+}
+
+func writeScript(t *testing.T, dir, name, script string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	//nolint:gosec // test helper needs exec bit
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	return path
+}
+
+func (s *DockerDriverTestSuite) TestFilterDriverOwnedVolumes_LabelAndLegacy() {
+	tmp := s.T().TempDir()
+	// script branches on the volume name passed at end of args
+	bin := writeScript(s.T(), tmp, "docker-fake", `#!/bin/sh
+last=
+for a in "$@"; do last=$a; done
+case "$last" in
+  labeled) echo '{"devsy.driver-owned":"true"}'; exit 0;;
+  unlabeled) echo '{}'; exit 0;;
+  bogus) echo 'Error: no such volume: bogus' 1>&2; exit 1;;
+esac
+`)
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	got := d.filterDriverOwnedVolumes(context.Background(), []string{
+		"dockerless-xyz",  // legacy
+		"devsy-agent-xyz", // legacy
+		"labeled",         // labeled
+		"unlabeled",       // not owned, user cache
+		"bogus",           // missing -> excluded
+	})
+	s.Equal([]string{"dockerless-xyz", "devsy-agent-xyz", "labeled"}, got)
 }
 
 func (s *DockerDriverTestSuite) TestStripMountConsistency() {

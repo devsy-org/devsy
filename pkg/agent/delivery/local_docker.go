@@ -12,6 +12,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
 )
@@ -105,9 +106,19 @@ func (d *LocalDockerDelivery) ensureCurrentBinary(
 }
 
 func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) error {
-	out, err := d.cmd(ctx, "volume", "create", name).CombinedOutput()
+	args := []string{
+		"volume", "create",
+		"--label", docker.LabelDriverOwned + "=true",
+		"--label", docker.LabelWorkspaceID + "=" + strings.TrimPrefix(name, volumePrefix),
+		name,
+	}
+	out, err := d.cmd(ctx, args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		msg := string(out)
+		if strings.Contains(msg, "already exists") {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", msg, err)
 	}
 	return nil
 }

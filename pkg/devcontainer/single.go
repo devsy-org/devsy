@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -439,6 +440,11 @@ func (r *runner) runContainer(
 	// check if docker
 	dockerDriver, ok := r.Driver.(driver.DockerDriver)
 	if ok {
+		if buildInfo.Dockerless != nil {
+			if err := r.preCreateDockerlessVolume(ctx, dockerDriver); err != nil {
+				log.Debugf("pre-create dockerless volume: %v", err)
+			}
+		}
 		return dockerDriver.RunDockerDevContainer(ctx, &driver.RunDockerDevContainerParams{
 			WorkspaceID:          r.ID,
 			Options:              runOptions,
@@ -499,7 +505,7 @@ func (r *runner) getDockerlessRunOptions(
 	mounts := mergedConfig.Mounts
 	mounts = append(mounts, &config.Mount{
 		Type:   "volume",
-		Source: "dockerless-" + r.ID,
+		Source: dockerlessVolumeName(r.ID),
 		Target: "/workspaces/.dockerless",
 	})
 
@@ -661,4 +667,27 @@ func GetContainerEntrypointAndArgs(
 		cmd = append(cmd, imageDetails.Config.Cmd...)
 	}
 	return "/bin/sh", cmd
+}
+
+// dockerlessVolumeName returns the named docker volume that backs the
+// dockerless build/cache for a given workspace.
+func dockerlessVolumeName(id string) string {
+	return "dockerless-" + id
+}
+
+// preCreateDockerlessVolume eagerly creates the dockerless volume with
+// devsy-owned labels so that workspace delete can safely target only
+// driver-managed volumes (and not user-declared mounts).
+func (r *runner) preCreateDockerlessVolume(
+	ctx context.Context,
+	d driver.DockerDriver,
+) error {
+	helper, err := d.DockerHelper()
+	if err != nil || helper == nil {
+		return err
+	}
+	return helper.CreateVolume(ctx, dockerlessVolumeName(r.ID), map[string]string{
+		docker.LabelDriverOwned: "true",
+		docker.LabelWorkspaceID: r.ID,
+	})
 }

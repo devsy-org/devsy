@@ -431,28 +431,39 @@ func (d *dockerDriver) UpdateContainerUserUID(
 
 // removeContainerAndVolumes deletes the container along with its anonymous
 // volumes (via `docker rm -v`), then removes each named volume the
-// container referenced. Named volumes are removed AFTER the container so
-// docker doesn't refuse on "volume in use" against the now-dead container.
-// Per-volume errors are logged at debug and skipped — a volume held by
-// another workspace (e.g. shared dockerless cache) shouldn't block delete.
+// container referenced that devsy itself created. User-declared mounts
+// (e.g. `node_modules-cache`, language toolchain caches) are preserved
+// because they lack the `devsy.driver-owned` label.
+//
+// Per-volume errors are classified: "in use" / "no such volume" are
+// expected (debug only); a daemon-connection failure aborts further
+// attempts; any other error is surfaced at warn level but does not stop
+// processing of the remaining volumes.
 func (d *dockerDriver) removeContainerAndVolumes(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
 	// Snapshot named volumes before removal; the Mounts list is
 	// unrecoverable once the container is gone.
-	var namedVolumes []string
-	for _, m := range container.Mounts {
-		if m.Type == "volume" && m.Source != "" {
-			namedVolumes = append(namedVolumes, m.Source)
-		}
-	}
+	candidates := collectNamedVolumes(container)
 	if err := d.Docker.RemoveWithVolumes(ctx, container.ID); err != nil {
 		return err
 	}
-	for _, name := range namedVolumes {
-		if err := d.Docker.RemoveVolume(ctx, name); err != nil {
+	owned := d.filterDriverOwnedVolumes(ctx, candidates)
+	for _, name := range owned {
+		err := d.Docker.RemoveVolume(ctx, name)
+		if err == nil {
+			continue
+		}
+		action := classifyVolumeRemoveError(err)
+		switch action {
+		case volumeErrIgnore:
 			log.Debugf("remove volume %s: %v", name, err)
+		case volumeErrAbort:
+			log.Warnf("docker daemon unavailable, aborting volume cleanup: %v", err)
+			return nil
+		default:
+			log.Warnf("remove volume %s: %v", name, err)
 		}
 	}
 	return nil
@@ -1277,4 +1288,84 @@ func (d *dockerDriver) copyFilesToContainer(
 		return err
 	}
 	return d.copyFileToContainer(ctx, files.groupOut.Name(), containerID, "/etc/group", writer)
+}
+
+// volumeErrAction classifies a docker volume rm error so the caller can
+// decide whether to ignore (expected), abort the whole loop (daemon gone),
+// or surface the issue while still attempting other volumes.
+type volumeErrAction int
+
+const (
+	volumeErrOther volumeErrAction = iota
+	volumeErrIgnore
+	volumeErrAbort
+)
+
+// collectNamedVolumes snapshots the named-volume mounts attached to a
+// container. Anonymous volumes (no Source) are skipped — they're handled
+// by `docker rm -v`.
+func collectNamedVolumes(container *config.ContainerDetails) []string {
+	var out []string
+	for _, m := range container.Mounts {
+		if m.Type == "volume" && m.Source != "" {
+			out = append(out, m.Source)
+		}
+	}
+	return out
+}
+
+// isLegacyDriverOwnedVolume returns true for naming conventions devsy used
+// before label-based ownership was introduced. Pre-upgrade workspaces don't
+// have the `devsy.driver-owned` label, so first-delete-after-upgrade still
+// needs to know which volumes were ours.
+func isLegacyDriverOwnedVolume(name string) bool {
+	return strings.HasPrefix(name, "dockerless-") ||
+		strings.HasPrefix(name, "devsy-agent-")
+}
+
+// filterDriverOwnedVolumes keeps only volumes that carry the
+// `devsy.driver-owned=true` label, falling back to legacy name matching
+// for volumes created by older devsy versions. Inspect failures are
+// logged at debug; the volume is excluded to err on the side of caution
+// (better to leak a volume than to wipe a user's cache).
+func (d *dockerDriver) filterDriverOwnedVolumes(
+	ctx context.Context,
+	names []string,
+) []string {
+	var owned []string
+	for _, name := range names {
+		if isLegacyDriverOwnedVolume(name) {
+			owned = append(owned, name)
+			continue
+		}
+		labels, err := d.Docker.InspectVolumeLabels(ctx, name)
+		if err != nil {
+			log.Debugf("inspect volume %s labels (skipping): %v", name, err)
+			continue
+		}
+		if labels[docker.LabelDriverOwned] == "true" {
+			owned = append(owned, name)
+		}
+	}
+	return owned
+}
+
+// classifyVolumeRemoveError maps a docker CLI error message to a coarse
+// action. We rely on string matching because the docker client doesn't
+// expose structured error codes through the CLI.
+func classifyVolumeRemoveError(err error) volumeErrAction {
+	if err == nil {
+		return volumeErrOther
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Cannot connect to the Docker daemon") ||
+		strings.Contains(msg, "permission denied") {
+		return volumeErrAbort
+	}
+	if strings.Contains(msg, "is in use") ||
+		strings.Contains(msg, "no such volume") ||
+		strings.Contains(msg, "No such volume") {
+		return volumeErrIgnore
+	}
+	return volumeErrOther
 }
