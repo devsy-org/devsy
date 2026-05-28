@@ -28,6 +28,7 @@ const (
 	IDEWindsurf        IDE = "windsurf"
 	IDEAntigravity     IDE = "antigravity"
 	IDEBob             IDE = "bob"
+	IDEMarimo          IDE = "marimo"
 )
 
 type IDEGroup string

@@ -1,4 +1,4 @@
-package jupyter
+package marimo
 
 import (
 	"fmt"
@@ -12,12 +12,19 @@ import (
 )
 
 const (
-	BindAddressOption = "BIND_ADDRESS"
+	BindAddressOption  = "BIND_ADDRESS"
+	ForwardPortsOption = "FORWARD_PORTS"
 )
 
-const DefaultServerPort = 10700
+const DefaultServerPort = 10800
 
 var Options = ide.Options{
+	ForwardPortsOption: {
+		Name:        ForwardPortsOption,
+		Description: "If Devsy should automatically do port-forwarding",
+		Default:     "true",
+		Enum:        []string{"true", "false"},
+	},
 	BindAddressOption: {
 		Name:        BindAddressOption,
 		Description: "The address to bind the server to locally, e.g. 0.0.0.0:12345",
@@ -25,39 +32,38 @@ var Options = ide.Options{
 	},
 }
 
-type JupyterNotbookServer struct {
+type MarimoServer struct {
 	values          map[string]config.OptionValue
 	workspaceFolder string
 	userName        string
 }
 
-func NewJupyterNotebookServer(
+func NewMarimoServer(
 	workspaceFolder string,
 	userName string,
 	values map[string]config.OptionValue,
-) *JupyterNotbookServer {
-	return &JupyterNotbookServer{
+) *MarimoServer {
+	return &MarimoServer{
 		values:          values,
 		workspaceFolder: workspaceFolder,
 		userName:        userName,
 	}
 }
 
-func (o *JupyterNotbookServer) Install() error {
-	if err := o.installNotebook(); err != nil {
+func (o *MarimoServer) Install() error {
+	if err := o.installMarimo(); err != nil {
 		return err
 	}
 	return o.Start()
 }
 
-func (o *JupyterNotbookServer) Start() error {
-	return command.StartBackgroundOnce("jupyter", func() (*exec.Cmd, error) {
-		log.Infof("Starting jupyter notebook in background")
+func (o *MarimoServer) Start() error {
+	return command.StartBackgroundOnce("marimo", func() (*exec.Cmd, error) {
+		log.Infof("Starting marimo in background")
 		runCommand := fmt.Sprintf(
-			"jupyter notebook --ip='*' --NotebookApp.notebook_dir='%s' --NotebookApp.token='' "+
-				"--NotebookApp.password='' --no-browser --port '%s' --allow-root",
-			o.workspaceFolder,
+			"marimo edit --headless --host 0.0.0.0 --port %s --no-token '%s'",
 			strconv.Itoa(DefaultServerPort),
+			o.workspaceFolder,
 		)
 		args := []string{}
 		if o.userName != "" {
@@ -72,12 +78,12 @@ func (o *JupyterNotbookServer) Start() error {
 	})
 }
 
-func (o *JupyterNotbookServer) installNotebook() error {
-	if command.ExistsForUser("jupyter", o.userName) {
+func (o *MarimoServer) installMarimo() error {
+	if command.ExistsForUser("marimo", o.userName) {
 		return nil
 	}
 
-	runCommand, err := ide.PythonInstallCommand(o.userName, "notebook")
+	runCommand, err := ide.PythonInstallCommand(o.userName, "marimo")
 	if err != nil {
 		return err
 	}
@@ -89,16 +95,16 @@ func (o *JupyterNotbookServer) installNotebook() error {
 		args = append(args, "sh", "-c", runCommand)
 	}
 
-	log.Infof("installing jupyter notebook")
+	log.Infof("installing marimo")
 	//nolint:gosec // args are constructed from trusted inputs
 	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(
-			"error installing jupyter notebook: %w",
+			"error installing marimo: %w",
 			command.WrapCommandError(out, err),
 		)
 	}
 
-	log.Info("installed jupyter notebook")
+	log.Info("installed marimo")
 	return nil
 }
