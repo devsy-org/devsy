@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/marimo"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
@@ -80,6 +81,8 @@ func browserIDEOpener(
 		return openCodeServerBrowser, true
 	case string(config.IDEJupyterNotebook):
 		return openJupyterBrowser, true
+	case string(config.IDEMarimo):
+		return openMarimoBrowser, true
 	case string(config.IDERStudio):
 		return openRStudioBrowser, true
 	default:
@@ -343,6 +346,22 @@ func openJupyterBrowser(
 		LogName:        "jupyter notebook",
 		TargetURLFn: func(port int, _ string) string {
 			return fmt.Sprintf("http://localhost:%d/lab", port)
+		},
+	})
+}
+
+func openMarimoBrowser(
+	ctx context.Context,
+	ideOptions map[string]config.OptionValue,
+	params IDEParams,
+) (string, error) {
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: marimo.Options.GetValue(ideOptions, marimo.BindAddressOption),
+		DefaultPort:    marimo.DefaultServerPort,
+		Label:          "marimo",
+		LogName:        "marimo",
+		TargetURLFn: func(port int, _ string) string {
+			return fmt.Sprintf("http://localhost:%d/", port)
 		},
 	})
 }

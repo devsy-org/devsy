@@ -93,6 +93,7 @@ const IDE_GROUPS = [
     label: "Other",
     options: [
       { value: "jupyternotebook", label: "Jupyter Notebook", iconName: "jupyter" },
+      { value: "marimo", label: "marimo", iconName: "marimo" },
       { value: "vscode-insiders", label: "VS Code Insiders", iconName: "vscode_insiders" },
       { value: "positron", label: "Positron", iconName: "positron" },
       { value: "rstudio", label: "RStudio Server", iconName: "rstudio" },

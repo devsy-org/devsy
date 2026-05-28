@@ -81,6 +81,7 @@ const IDE_OPTIONS = [
   { value: "clion", label: "CLion" },
   { value: "dataspell", label: "DataSpell" },
   { value: "jupyternotebook", label: "Jupyter Notebook" },
+  { value: "marimo", label: "marimo" },
   { value: "vscode-insiders", label: "VS Code Insiders" },
   { value: "positron", label: "Positron" },
   { value: "rstudio", label: "RStudio Server" },

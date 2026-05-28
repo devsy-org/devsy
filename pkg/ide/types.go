@@ -55,6 +55,8 @@ func ReusesAuthSock(ide string) bool {
 		return true
 	case string(config.IDEJupyterNotebook):
 		return true
+	case string(config.IDEMarimo):
+		return true
 	default:
 		return false
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/marimo"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
@@ -170,6 +171,14 @@ var AllowedIDEs = []AllowedIDE{
 		Options:     jupyter.Options,
 		Icon:        config.WebsiteAssetsURL + "/jupyter.svg",
 		IconDark:    config.WebsiteAssetsURL + "/jupyter_dark.svg",
+		Group:       config.IDEGroupOther,
+	},
+	{
+		Name:        config.IDEMarimo,
+		DisplayName: "marimo",
+		Options:     marimo.Options,
+		Icon:        config.WebsiteAssetsURL + "/marimo.svg",
+		IconDark:    config.WebsiteAssetsURL + "/marimo_dark.svg",
 		Group:       config.IDEGroupOther,
 	},
 	{

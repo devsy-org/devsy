@@ -35,6 +35,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
+	"github.com/devsy-org/devsy/pkg/ide/marimo"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
@@ -614,6 +615,11 @@ func (cmd *SetupContainerCmd) installIDE(
 			Install(setupInfo.SubstitutionContext.ContainerWorkspaceFolder)
 	case string(config2.IDEJupyterNotebook):
 		return jupyter.NewJupyterNotebookServer(
+			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
+			config.GetRemoteUser(setupInfo), ide.Options).
+			Install()
+	case string(config2.IDEMarimo):
+		return marimo.NewMarimoServer(
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
 			config.GetRemoteUser(setupInfo), ide.Options).
 			Install()
