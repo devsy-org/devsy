@@ -203,7 +203,8 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	}
 
 	agentCommand := fmt.Sprintf(
-		"'%s' agent workspace up --workspace-info '%s'",
+		"%s%q agent workspace up --workspace-info %q",
+		agent.ContainerAgentEnvPrefix,
 		client.AgentPath(),
 		workspaceInfo,
 	)

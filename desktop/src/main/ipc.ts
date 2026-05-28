@@ -310,21 +310,32 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   ipcMain.handle(
     "workspace_logs_list",
     async (_event, args: { workspaceId: string }) => {
-      return logStore.listLogs(args.workspaceId)
+      return logStore.listLogs(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
     },
   )
 
   ipcMain.handle(
     "workspace_log_read",
     async (_event, args: { workspaceId: string; filename: string }) => {
-      return logStore.readLog(args.workspaceId, args.filename)
+      return logStore.readLog(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+        args.filename,
+      )
     },
   )
 
   ipcMain.handle(
     "workspace_log_delete",
     async (_event, args: { workspaceId: string; filename: string }) => {
-      logStore.deleteLog(args.workspaceId, args.filename)
+      logStore.deleteLog(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+        args.filename,
+      )
     },
   )
 
@@ -353,7 +364,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(wsId)
+      const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
       const win = deps.getMainWindow()
       let signalledDone = false
 
@@ -424,7 +435,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
         tunnelProcesses.delete(args.workspaceId)
       }
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(args.workspaceId)
+      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
       const cliArgs = ["stop", args.workspaceId]
@@ -470,7 +481,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
         tunnelProcesses.delete(args.workspaceId)
       }
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(args.workspaceId)
+      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
       const cliArgs = ["delete", args.workspaceId]
@@ -511,7 +522,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_rebuild")
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(args.workspaceId)
+      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
       const cliArgs = ["up", args.workspaceId, "--recreate"]
@@ -551,7 +562,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_reset")
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(args.workspaceId)
+      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
       const cliArgs = ["up", args.workspaceId, "--reset"]

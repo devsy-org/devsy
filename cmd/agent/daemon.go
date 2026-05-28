@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,15 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DaemonCmd) Run(ctx context.Context) error {
+	// The agent daemon is a container/machine-side process; the host
+	// never runs `devsy agent daemon`. Reject host invocations explicitly
+	// to avoid silently scanning a non-existent legacy glob.
+	if agent.IsHostAgentInvocation(cmd.AgentDir) {
+		return fmt.Errorf(
+			"`devsy agent daemon` is only valid inside the workspace container or machine",
+		)
+	}
+
 	logFolder, err := agent.GetAgentDaemonLogFolder(cmd.AgentDir)
 	if err != nil {
 		return err
@@ -93,7 +103,9 @@ func (cmd *DaemonCmd) doOnce(ctx context.Context) {
 	var latestActivity *time.Time
 	var workspace *provider2.AgentWorkspaceInfo
 
-	// get base folder
+	// get base folder — only reachable from Run, which rejects host
+	// invocations, so FindAgentHomeFolder always resolves the legacy
+	// container/machine layout here.
 	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
 	if err != nil {
 		return
@@ -200,7 +212,9 @@ func (cmd *DaemonCmd) runShutdownCommand(
 }
 
 func (cmd *DaemonCmd) initialTouch() {
-	// get base folder
+	// get base folder — only reachable from Run, which rejects host
+	// invocations, so this always resolves the legacy container/machine
+	// layout.
 	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
 	if err != nil {
 		return

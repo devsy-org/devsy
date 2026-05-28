@@ -40,6 +40,8 @@ type PathManager interface {
 	ContextDir(context string) (string, error)
 	WorkspacesDir(context string) (string, error)
 	WorkspaceDir(context, workspaceID string) (string, error)
+	WorkspaceAgentDir(context, workspaceID string) (string, error)
+	WorkspaceLogDir(context, workspaceID string) (string, error)
 	MachinesDir(context string) (string, error)
 	MachineDir(context, machineID string) (string, error)
 	ProvidersDir(context string) (string, error)
@@ -117,6 +119,32 @@ func (b *basePathManager) WorkspaceDir(context, workspaceID string) (string, err
 	}
 
 	return filepath.Join(dir, workspaceID), nil
+}
+
+// WorkspaceAgentDir is where host-side `devsy agent workspace ...` invocations
+// store their per-workspace state. It lives under WorkspaceDir so a single
+// os.RemoveAll(WorkspaceDir) wipes it during workspace delete. Container-side
+// agent invocations still resolve their home via FindAgentHomeFolder and are
+// unaffected.
+func (b *basePathManager) WorkspaceAgentDir(context, workspaceID string) (string, error) {
+	dir, err := b.WorkspaceDir(context, workspaceID)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "agent"), nil
+}
+
+// WorkspaceLogDir is the per-workspace log directory used by the desktop's
+// streaming-log store. Lives under WorkspaceDir for the same reason as
+// WorkspaceAgentDir.
+func (b *basePathManager) WorkspaceLogDir(context, workspaceID string) (string, error) {
+	dir, err := b.WorkspaceDir(context, workspaceID)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "logs"), nil
 }
 
 func (b *basePathManager) MachinesDir(context string) (string, error) {

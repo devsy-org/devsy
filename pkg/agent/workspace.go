@@ -35,9 +35,37 @@ var extraSearchLocations = []string{
 	ContainerDataDir + "/agent",
 }
 
+// EnvAgentInContainer is set to "1" by every SSH command builder that
+// launches `devsy agent ...` inside the workspace container or machine.
+// It is the single signal used by IsHostAgentInvocation to distinguish a
+// container-side invocation from a host-side one. The host never sets it.
+const EnvAgentInContainer = "DEVSY_AGENT_IN_CONTAINER"
+
+// EnvAgentInContainerTrue is the value the env var takes when set.
+const EnvAgentInContainerTrue = "1"
+
+// ContainerAgentEnvPrefix is the inline env-var assignment SSH command
+// builders prepend to the shell snippet that launches `devsy agent ...`
+// inside the workspace container or machine. POSIX shells parse leading
+// `NAME=value cmd ...` as a one-shot environment assignment for `cmd`,
+// so this works without requiring the SSH server to honour SetEnv (which
+// is often disabled).
+const ContainerAgentEnvPrefix = EnvAgentInContainer + "=" + EnvAgentInContainerTrue + " "
+
 var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
+// GetAgentDaemonLogFolder returns the folder that holds agent-daemon.log.
+// The daemon is a container/machine-side process: it is started by the
+// inject-and-run path during `devsy up` and the SSH command builder sets
+// DEVSY_AGENT_IN_CONTAINER=1. A host-side invocation has no daemon to
+// inspect and therefore is rejected explicitly instead of silently
+// resolving to the legacy `<DEVSY_HOME>/agent` glob.
 func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
+	if IsHostAgentInvocation(agentFolder) {
+		return "", fmt.Errorf(
+			"agent daemon log folder is only available inside the workspace container or machine",
+		)
+	}
 	return FindAgentHomeFolder(agentFolder)
 }
 
@@ -190,13 +218,61 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+// IsHostAgentInvocation reports whether this `devsy agent ...` call is
+// running on the user's host (as opposed to inside the workspace container
+// or machine). The signal is explicit: every SSH command builder that
+// launches `devsy agent ...` inside the container sets
+// DEVSY_AGENT_IN_CONTAINER=1; the host never sets it. An explicit
+// --agent-dir (agentFolder != "") also forces a non-host (legacy/explicit)
+// routing, so unit tests and unusual deployments can still pin a folder.
+//
+// When this returns true, per-workspace agent state lives under the
+// canonical PathManager.WorkspaceAgentDir so a single
+// os.RemoveAll(WorkspaceDir) wipes it on delete. DEVSY_HOME is NOT
+// consulted here — it is purely a host-side config-dir relocation knob
+// and must not double as a container marker.
+// containerDetector is the package-level seam used by IsHostAgentInvocation
+// to detect whether the process is running inside a container. Tests
+// override this to make the predicate deterministic across platforms.
+var containerDetector = isLikelyContainer
+
+func IsHostAgentInvocation(agentFolder string) bool {
+	if agentFolder != "" {
+		return false
+	}
+	if os.Getenv(EnvAgentInContainer) != EnvAgentInContainerTrue {
+		return true
+	}
+	if !containerDetector() {
+		// Warn every time we detect a stale env on a non-container host.
+		// IsHostAgentInvocation is called once per CLI invocation, so this
+		// won't spam the terminal; long-running parents (test runners,
+		// daemonized supervisors) need every occurrence surfaced, not just
+		// the first.
+		log.Warnf(
+			"%s=1 is set but no container indicator file found; treating as host invocation",
+			EnvAgentInContainer,
+		)
+		return true
+	}
+	return false
+}
+
 func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if IsHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
+	}
+
 	homeFolder, err := FindAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err
-	}
-	if context == "" {
-		context = config.DefaultContext
 	}
 
 	// workspace folder
@@ -207,12 +283,23 @@ func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, erro
 }
 
 func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if IsHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		if _, statErr := os.Stat(workspaceDir); statErr == nil {
+			return workspaceDir, nil
+		}
+		return "", os.ErrNotExist
+	}
+
 	homeFolder, err := FindAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err
-	}
-	if context == "" {
-		context = config.DefaultContext
 	}
 
 	// workspace folder
@@ -228,6 +315,21 @@ func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, err
 }
 
 func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+	if context == "" {
+		context = config.DefaultContext
+	}
+	if IsHostAgentInvocation(agentFolder) {
+		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
+		if err != nil {
+			return "", err
+		}
+		// #nosec G301 -- mirrors the legacy 0o755 perms below.
+		if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+			return "", err
+		}
+		return workspaceDir, nil
+	}
+
 	homeFolder, err := PrepareAgentHomeFolder(agentFolder)
 	if err != nil {
 		return "", err

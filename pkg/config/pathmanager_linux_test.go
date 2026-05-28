@@ -127,6 +127,16 @@ func TestContextDataSubPaths(t *testing.T) {
 			filepath.Join(base, "workspaces", "ws1"),
 		},
 		{
+			"WorkspaceAgentDir",
+			func() (string, error) { return pm.WorkspaceAgentDir(ctx, "ws1") },
+			filepath.Join(base, "workspaces", "ws1", "agent"),
+		},
+		{
+			"WorkspaceLogDir",
+			func() (string, error) { return pm.WorkspaceLogDir(ctx, "ws1") },
+			filepath.Join(base, "workspaces", "ws1", "logs"),
+		},
+		{
 			"MachinesDir",
 			func() (string, error) { return pm.MachinesDir(ctx) },
 			filepath.Join(base, "machines"),

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -65,13 +66,14 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	command := fmt.Sprintf(
-		"'%s' agent workspace logs-daemon --context '%s' --id '%s'",
+		"%s%q agent workspace logs-daemon --context %q --id %q",
+		agent.ContainerAgentEnvPrefix,
 		workspaceClient.AgentPath(),
 		workspaceClient.Context(),
 		workspaceClient.Workspace(),
 	)
 	if agentInfo.Agent.DataPath != "" {
-		command += fmt.Sprintf(" --agent-dir '%s'", agentInfo.Agent.DataPath)
+		command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
 	}
 
 	// read daemon logs

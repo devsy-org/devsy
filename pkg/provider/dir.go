@@ -72,6 +72,27 @@ func GetWorkspaceDir(context, workspaceID string) (string, error) {
 	return config.DefaultPathManager().WorkspaceDir(context, workspaceID)
 }
 
+// GetWorkspaceAgentDir returns the host-side per-workspace agent dir
+// (.../workspaces/<id>/agent). Container-side agent code keeps using
+// FindAgentHomeFolder.
+func GetWorkspaceAgentDir(context, workspaceID string) (string, error) {
+	if workspaceID == "" {
+		return "", fmt.Errorf("workspace id is empty")
+	}
+
+	return config.DefaultPathManager().WorkspaceAgentDir(context, workspaceID)
+}
+
+// GetWorkspaceLogDir returns the per-workspace log dir
+// (.../workspaces/<id>/logs) used by the desktop's streaming-log store.
+func GetWorkspaceLogDir(context, workspaceID string) (string, error) {
+	if workspaceID == "" {
+		return "", fmt.Errorf("workspace id is empty")
+	}
+
+	return config.DefaultPathManager().WorkspaceLogDir(context, workspaceID)
+}
+
 func GetProInstanceDir(context, proInstanceHost string) (string, error) {
 	if proInstanceHost == "" {
 		return "", fmt.Errorf("pro instance host is empty")

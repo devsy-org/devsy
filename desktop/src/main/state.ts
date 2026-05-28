@@ -77,6 +77,39 @@ export class DaemonState {
     return { contexts: [...this.contexts], activeContext: this.activeContext }
   }
 
+  // currentContext returns the active context, defaulting to "default" only
+  // when the watcher has yet to populate state.
+  currentContext(): string {
+    return this.activeContext || "default"
+  }
+
+  // workspaceContext resolves the context name for a workspace. When the
+  // workspace is unknown in state (e.g. workspace_up runs BEFORE the
+  // watcher's first poll picks up the new workspace) the active context is
+  // used instead of a hard-coded "default", so creation logs land alongside
+  // the workspace they're describing rather than orphaned under `default/`.
+  // Both fallback branches emit a console.warn so log misrouting is visible.
+  workspaceContext(workspaceId: string): string {
+    const ws = this.workspaces.get(workspaceId)
+    if (!ws) {
+      const active = this.currentContext()
+      console.warn(
+        `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to active context %q`,
+        active,
+      )
+      return active
+    }
+    if (typeof ws.context !== "string" || ws.context === "") {
+      const active = this.currentContext()
+      console.warn(
+        `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to active context %q`,
+        active,
+      )
+      return active
+    }
+    return ws.context
+  }
+
   private mapsEqual<K, V>(a: Map<K, V>, b: Map<K, V>): boolean {
     if (a.size !== b.size) return false
     for (const [key, val] of a) {

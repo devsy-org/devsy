@@ -145,7 +145,8 @@ func addGitSSHSigningKey(command string, explicitKey string, workingDir string) 
 // buildCredentialsCommand builds the credentials server command.
 func buildCredentialsCommand(opts RunServicesOptions) string {
 	command := fmt.Sprintf(
-		"%s agent container credentials-server --user %s",
+		"%s%s agent container credentials-server --user %s",
+		agent.ContainerAgentEnvPrefix,
 		shellescape.Quote(agent.ContainerDevsyHelperLocation),
 		shellescape.Quote(opts.User),
 	)
