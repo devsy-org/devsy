@@ -52,7 +52,7 @@ func (o *JupyterNotbookServer) Install() error {
 
 func (o *JupyterNotbookServer) Start() error {
 	return command.StartBackgroundOnce("jupyter", func() (*exec.Cmd, error) {
-		log.Infof("Starting jupyter notebook in background...")
+		log.Infof("Starting jupyter notebook in background")
 		runCommand := fmt.Sprintf(
 			"jupyter notebook --ip='*' --NotebookApp.notebook_dir='%s' --NotebookApp.token='' "+
 				"--NotebookApp.password='' --no-browser --port '%s' --allow-root",
