@@ -258,6 +258,17 @@ func (cmd *UpCmd) executeDevsyUp(
 	if cmd.Platform.Enabled {
 		return nil, nil
 	}
+	// Guard against a result that lacks the substitution context — that
+	// indicates the agent returned a half-populated result (e.g. an inner
+	// container-setup failure that didn't carry through as result.Error).
+	// Without this, downstream openIDE would nil-deref on
+	// SubstitutionContext.ContainerWorkspaceFolder.
+	if result.SubstitutionContext == nil {
+		return nil, fmt.Errorf(
+			"agent returned an incomplete result (missing substitution context); " +
+				"check earlier logs for the underlying setup failure",
+		)
+	}
 
 	user := config2.GetRemoteUser(result)
 	workdir := ""

@@ -153,12 +153,22 @@ func (cmd *UpCmd) up(
 		// receive a result back from agent" fallback.
 		errResult := &config2.Result{Error: err.Error()}
 		if sendErr := cmd.sendResult(ctx, errResult, tunnelClient); sendErr != nil {
-			log.Debugf("failed to send error result back to host: %v", sendErr)
+			log.Errorf("failed to forward up error %q to host: %v", err, sendErr)
 		}
 		return err
 	}
 
-	return cmd.sendResult(ctx, result, tunnelClient)
+	// runner.Up can return (result, nil) where result carries a structured
+	// Error forwarded from the inner container-setup step. Treat that as a
+	// failure so the agent process exits non-zero and the host doesn't try
+	// to proceed with a half-populated result.
+	if err := cmd.sendResult(ctx, result, tunnelClient); err != nil {
+		return err
+	}
+	if result != nil && result.Error != "" {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
 }
 
 func (cmd *UpCmd) sendResult(

@@ -210,16 +210,31 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 
 	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)
 	if err != nil {
-		return err
+		return cmd.reportSetupFailure(sctx, err)
 	}
 
 	if !cmd.Prebuild {
 		if err := cmd.setupPostAttach(sctx, deferred); err != nil {
-			return err
+			return cmd.reportSetupFailure(sctx, err)
 		}
 	}
 
 	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)
+}
+
+// reportSetupFailure forwards a structured error result through the tunnel
+// before returning the original error. Without this, the outer agent only
+// sees the SSH exit code and the underlying cause (e.g. an IDE install
+// failure) gets lost to a generic wrapper on the host side.
+func (cmd *SetupContainerCmd) reportSetupFailure(sctx *setupContext, cause error) error {
+	errResult := &config.Result{Error: cause.Error()}
+	if sendErr := cmd.sendSetupResult(sctx.ctx, errResult, sctx.tunnelClient); sendErr != nil {
+		// Failure-on-failure: the host will see only the SSH exit code, so
+		// log the original cause alongside the send failure to leave a
+		// breadcrumb for debugging.
+		log.Errorf("failed to forward setup error %q to host: %v", cause, sendErr)
+	}
+	return cause
 }
 
 func (cmd *SetupContainerCmd) setupPostAttach(

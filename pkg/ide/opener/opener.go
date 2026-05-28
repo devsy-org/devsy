@@ -62,11 +62,29 @@ func Open(
 		return "", nil
 	}
 
+	if err := validateOpenParams(ideName, params); err != nil {
+		return "", err
+	}
+
 	if fn, ok := browserIDEOpener(ideName); ok {
 		return fn(ctx, ideOptions, params)
 	}
 
 	return openDesktopIDE(ctx, ideName, ideOptions, params)
+}
+
+// validateOpenParams ensures the fields downstream openers depend on are
+// populated. A nil Result or SubstitutionContext means workspace setup did
+// not complete and we should surface a clear error instead of panicking on
+// a field access deep inside an IDE opener.
+func validateOpenParams(ideName string, params IDEParams) error {
+	if params.Result == nil || params.Result.SubstitutionContext == nil {
+		return fmt.Errorf(
+			"cannot open IDE %q: workspace setup did not complete (missing substitution context)",
+			ideName,
+		)
+	}
+	return nil
 }
 
 // browserIDEOpener returns a handler for browser-based IDEs if ideName matches.

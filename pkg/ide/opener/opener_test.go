@@ -2,9 +2,11 @@ package opener
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
 // TestIDEParams_Launch_OpenBrowser asserts the mapping that browser IDE openers
@@ -59,6 +61,42 @@ func TestOpenDesktopIDE_HeadlessShortCircuits(t *testing.T) {
 				t.Errorf("expected empty URL for headless desktop IDE, got %q", url)
 			}
 		})
+	}
+}
+
+// TestOpen_NilResultRejected pins the fix for the panic that occurred when
+// the agent returned a half-populated result (no SubstitutionContext) after
+// an in-container IDE install failure. Previously Open would nil-deref on
+// params.Result.SubstitutionContext.ContainerWorkspaceFolder; now it must
+// return a descriptive error before dispatching to any per-IDE handler.
+func TestOpen_NilResultRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		params IDEParams
+	}{
+		{"nil Result", IDEParams{Result: nil}},
+		{"nil SubstitutionContext", IDEParams{Result: &config2.Result{}}},
+	}
+	ides := []string{
+		string(config.IDEJupyterNotebook),
+		string(config.IDEOpenVSCode),
+		string(config.IDEVSCode),
+	}
+	for _, tt := range tests {
+		for _, ide := range ides {
+			t.Run(tt.name+"/"+ide, func(t *testing.T) {
+				url, err := Open(context.Background(), ide, nil, tt.params)
+				if err == nil {
+					t.Fatalf("expected error, got nil (url=%q)", url)
+				}
+				if !strings.Contains(err.Error(), ide) {
+					t.Errorf("expected error to name IDE %q, got %q", ide, err.Error())
+				}
+				if url != "" {
+					t.Errorf("expected empty url, got %q", url)
+				}
+			})
+		}
 	}
 }
 
