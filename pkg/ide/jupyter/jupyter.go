@@ -15,6 +15,8 @@ const (
 	BindAddressOption = "BIND_ADDRESS"
 )
 
+const DefaultServerPort = 10700
+
 var Options = ide.Options{
 	BindAddressOption: {
 		Name:        BindAddressOption,
@@ -23,7 +25,11 @@ var Options = ide.Options{
 	},
 }
 
-const DefaultServerPort = 10700
+type JupyterNotbookServer struct {
+	values          map[string]config.OptionValue
+	workspaceFolder string
+	userName        string
+}
 
 func NewJupyterNotebookServer(
 	workspaceFolder string,
@@ -37,59 +43,11 @@ func NewJupyterNotebookServer(
 	}
 }
 
-type JupyterNotbookServer struct {
-	values          map[string]config.OptionValue
-	workspaceFolder string
-	userName        string
-}
-
 func (o *JupyterNotbookServer) Install() error {
-	err := o.installNotebook()
-	if err != nil {
+	if err := o.installNotebook(); err != nil {
 		return err
 	}
-
 	return o.Start()
-}
-
-func (o *JupyterNotbookServer) installNotebook() error {
-	if command.ExistsForUser("jupyter", o.userName) {
-		return nil
-	}
-
-	// check if pip3 exists
-	baseCommand := ""
-	if command.ExistsForUser("pip3", o.userName) {
-		baseCommand = "pip3"
-	} else if command.ExistsForUser("pip", o.userName) {
-		baseCommand = "pip"
-	} else {
-		return fmt.Errorf(
-			"seems like neither pip3 nor pip exists, please make sure to install python correctly",
-		)
-	}
-
-	// install notebook command
-	runCommand := fmt.Sprintf("%s install notebook", baseCommand)
-	args := []string{}
-	if o.userName != "" {
-		args = append(args, "su", o.userName, "-c", runCommand)
-	} else {
-		args = append(args, "sh", "-c", runCommand)
-	}
-
-	// install
-	log.Infof("installing jupyter notebook")
-	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf(
-			"error installing jupyter notebook: %w",
-			command.WrapCommandError(out, err),
-		)
-	}
-
-	log.Info("installed jupyter notebook")
-	return nil
 }
 
 func (o *JupyterNotbookServer) Start() error {
@@ -107,8 +65,40 @@ func (o *JupyterNotbookServer) Start() error {
 		} else {
 			args = append(args, "sh", "-l", "-c", runCommand)
 		}
+		//nolint:gosec // args are constructed from trusted inputs
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = o.workspaceFolder
 		return cmd, nil
 	})
+}
+
+func (o *JupyterNotbookServer) installNotebook() error {
+	if command.ExistsForUser("jupyter", o.userName) {
+		return nil
+	}
+
+	runCommand, err := ide.PythonInstallCommand(o.userName, "notebook")
+	if err != nil {
+		return err
+	}
+
+	args := []string{}
+	if o.userName != "" {
+		args = append(args, "su", o.userName, "-c", runCommand)
+	} else {
+		args = append(args, "sh", "-c", runCommand)
+	}
+
+	log.Infof("installing jupyter notebook")
+	//nolint:gosec // args are constructed from trusted inputs
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"error installing jupyter notebook: %w",
+			command.WrapCommandError(out, err),
+		)
+	}
+
+	log.Info("installed jupyter notebook")
+	return nil
 }

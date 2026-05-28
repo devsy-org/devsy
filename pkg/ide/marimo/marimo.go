@@ -76,14 +76,11 @@ func (o *MarimoServer) installMarimo() error {
 		return nil
 	}
 
-	baseCommand := pickPip(o.userName)
-	if baseCommand == "" {
-		return fmt.Errorf(
-			"seems like neither pip3 nor pip exists, please make sure to install python correctly",
-		)
+	runCommand, err := ide.PythonInstallCommand(o.userName, "marimo")
+	if err != nil {
+		return err
 	}
 
-	runCommand := fmt.Sprintf("%s install marimo", baseCommand)
 	args := []string{}
 	if o.userName != "" {
 		args = append(args, "su", o.userName, "-c", runCommand)
@@ -103,15 +100,4 @@ func (o *MarimoServer) installMarimo() error {
 
 	log.Info("installed marimo")
 	return nil
-}
-
-func pickPip(userName string) string {
-	switch {
-	case command.ExistsForUser("pip3", userName):
-		return "pip3"
-	case command.ExistsForUser("pip", userName):
-		return "pip"
-	default:
-		return ""
-	}
 }

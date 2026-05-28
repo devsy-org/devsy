@@ -1,12 +1,29 @@
 package ide
 
 import (
+	"fmt"
 	"io"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
+
+// PythonInstallCommand returns the shell command that installs a Python package
+// for the given user, preferring uv when present and falling back to pip3 then
+// pip. Returns an error if none are available.
+func PythonInstallCommand(userName, pkg string) (string, error) {
+	switch {
+	case command.ExistsForUser("uv", userName):
+		return fmt.Sprintf("uv pip install --system %s", pkg), nil
+	case command.ExistsForUser("pip3", userName):
+		return fmt.Sprintf("pip3 install %s", pkg), nil
+	case command.ExistsForUser("pip", userName):
+		return fmt.Sprintf("pip install %s", pkg), nil
+	}
+	return "", fmt.Errorf("none of uv, pip3, or pip exist; install Python tooling first")
+}
 
 type IDE interface {
 	Install() error
