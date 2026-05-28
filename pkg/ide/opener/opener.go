@@ -358,8 +358,11 @@ func openMarimoBrowser(
 	return openBrowserIDE(ctx, params, browserIDESpec{
 		BindAddrOption: marimo.Options.GetValue(ideOptions, marimo.BindAddressOption),
 		DefaultPort:    marimo.DefaultServerPort,
-		Label:          "marimo",
-		LogName:        "marimo",
+		ForwardPorts: marimo.Options.GetValue(
+			ideOptions, marimo.ForwardPortsOption,
+		) == config.BoolTrue,
+		Label:   "marimo",
+		LogName: "marimo",
 		TargetURLFn: func(port int, _ string) string {
 			return fmt.Sprintf("http://localhost:%d/", port)
 		},

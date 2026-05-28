@@ -12,12 +12,19 @@ import (
 )
 
 const (
-	BindAddressOption = "BIND_ADDRESS"
+	BindAddressOption  = "BIND_ADDRESS"
+	ForwardPortsOption = "FORWARD_PORTS"
 )
 
 const DefaultServerPort = 10800
 
 var Options = ide.Options{
+	ForwardPortsOption: {
+		Name:        ForwardPortsOption,
+		Description: "If Devsy should automatically do port-forwarding",
+		Default:     "true",
+		Enum:        []string{"true", "false"},
+	},
 	BindAddressOption: {
 		Name:        BindAddressOption,
 		Description: "The address to bind the server to locally, e.g. 0.0.0.0:12345",
