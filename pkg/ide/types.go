@@ -13,10 +13,15 @@ import (
 // PythonInstallCommand returns the shell command that installs a Python package
 // for the given user, preferring uv when present and falling back to pip3 then
 // pip. Returns an error if none are available.
+//
+// When uv is used, the package is installed as a uv-managed tool (isolated
+// env, shim binary placed in ~/.local/bin); this avoids touching system
+// Python and sidesteps PEP 668 externally-managed-environment errors. The
+// pip fallbacks preserve the existing system-install behavior.
 func PythonInstallCommand(userName, pkg string) (string, error) {
 	switch {
 	case command.ExistsForUser("uv", userName):
-		return fmt.Sprintf("uv pip install --system %s", pkg), nil
+		return fmt.Sprintf("uv tool install %s", pkg), nil
 	case command.ExistsForUser("pip3", userName):
 		return fmt.Sprintf("pip3 install %s", pkg), nil
 	case command.ExistsForUser("pip", userName):

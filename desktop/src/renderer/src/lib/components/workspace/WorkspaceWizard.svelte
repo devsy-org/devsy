@@ -48,6 +48,7 @@ const IDE_ICON_DARK_VARIANTS = new Set([
   "code-server",
   "cursor",
   "jupyter",
+  "marimo",
   "none",
   "zed",
 ])
