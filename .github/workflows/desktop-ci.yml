@@ -136,11 +136,7 @@ jobs:
         run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.DEVSY_APPLE_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DEVSY_APPLE_CSC_PASSWORD }}
-          APPLE_ID: ${{ secrets.DEVSY_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DEVSY_APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.DEVSY_APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5

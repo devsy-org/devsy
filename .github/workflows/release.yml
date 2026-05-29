@@ -178,7 +178,8 @@ jobs:
         working-directory: desktop
         run: npx electron-vite build
 
-      - name: package and publish with electron-builder
+      - name: package and publish with electron-builder (macOS, signed)
+        if: runner.os == 'macOS'
         working-directory: desktop
         run: npx electron-builder ${{ matrix.builder-args }} --publish always --config electron-builder.yml
         env:
@@ -188,6 +189,13 @@ jobs:
           APPLE_ID: ${{ secrets.DEVSY_APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DEVSY_APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.DEVSY_APPLE_TEAM_ID }}
+
+      - name: package and publish with electron-builder (non-macOS)
+        if: runner.os != 'macOS'
+        working-directory: desktop
+        run: npx electron-builder ${{ matrix.builder-args }} --publish always --config electron-builder.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3
