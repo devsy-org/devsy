@@ -44,6 +44,7 @@ func loadYAML(path string) (map[string]any, error) {
 }
 
 func mergeFileEntries(paths []string) (base map[string]any, files []any, err error) {
+	seen := map[string]int{} // url -> index in files
 	for _, p := range paths {
 		data, err := loadYAML(p)
 		if err != nil {
@@ -55,24 +56,64 @@ func mergeFileEntries(paths []string) (base map[string]any, files []any, err err
 		if base == nil {
 			base = data
 		}
-		if entries, ok := data["files"].([]any); ok {
-			files = append(files, entries...)
+		entries, ok := data["files"].([]any)
+		if !ok {
+			continue
+		}
+		for _, e := range entries {
+			// Defensive: electron-builder always emits maps; skip non-map entries
+			// (prior behavior appended raw entries via variadic spread).
+			entry, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			url, _ := entry["url"].(string)
+			if url == "" {
+				files = append(files, entry)
+				continue
+			}
+			if idx, exists := seen[url]; exists {
+				files[idx] = entry // last-write-wins
+				continue
+			}
+			seen[url] = len(files)
+			files = append(files, entry)
 		}
 	}
 	return base, files, nil
 }
 
+// applyTopLevelFromFirst sets the top-level path/sha512/size from the
+// files[] entry that matches the base file's own preferred path when
+// possible, falling back to the first entry. This avoids electron-updater
+// fallback consumers (e.g. Rosetta) downloading the wrong-arch binary
+// just because dedup iteration happened to land arm64 before x64.
 func applyTopLevelFromFirst(base map[string]any, files []any) {
 	if len(files) == 0 {
 		return
 	}
-	first, ok := files[0].(map[string]any)
-	if !ok {
-		return
+	preferred := pickPreferred(base, files)
+	base["path"] = preferred["url"]
+	base["sha512"] = preferred["sha512"]
+	base["size"] = preferred["size"]
+}
+
+func pickPreferred(base map[string]any, files []any) map[string]any {
+	if want, ok := base["path"].(string); ok && want != "" {
+		for _, e := range files {
+			entry, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			if u, ok := entry["url"].(string); ok && u == want {
+				return entry
+			}
+		}
 	}
-	base["path"] = first["url"]
-	base["sha512"] = first["sha512"]
-	base["size"] = first["size"]
+	if first, ok := files[0].(map[string]any); ok {
+		return first
+	}
+	return map[string]any{}
 }
 
 func writeYAML(path string, data map[string]any) error {

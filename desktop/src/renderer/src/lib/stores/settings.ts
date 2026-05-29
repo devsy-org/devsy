@@ -1,4 +1,5 @@
 import { writable } from "svelte/store"
+import { getAutoDownload, setAutoDownload } from "$lib/ipc/commands.js"
 
 const browser = typeof window !== "undefined"
 
@@ -132,14 +133,43 @@ export function setSidebarPosition(value: SidebarPosition) {
   sidebarPosition.set(value)
 }
 
-// Auto-update
+// Auto-update — main process owns the persistent value. localStorage
+// is a cache for instant first paint; `syncAutoUpdateFromMain` reconciles
+// it with the main-process truth at app boot.
 export const autoUpdate = writable<boolean>(
   getStoredBool(AUTO_UPDATE_KEY, true),
 )
 
-export function setAutoUpdate(value: boolean) {
+// Tracks whether the user has toggled the auto-update setting since boot.
+// If so, syncAutoUpdateFromMain skips its store update so the user's
+// in-flight choice is not clobbered by a slow IPC round-trip.
+let userTouchedAutoUpdate = false
+
+export async function syncAutoUpdateFromMain(): Promise<void> {
+  try {
+    const value = await getAutoDownload()
+    if (userTouchedAutoUpdate) return
+    if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(value))
+    autoUpdate.set(value)
+  } catch (err) {
+    console.warn("[settings] getAutoDownload failed; keeping cached value:", err)
+  }
+}
+
+export async function setAutoUpdate(value: boolean): Promise<void> {
+  userTouchedAutoUpdate = true
+  // Optimistic local update for instant feedback.
+  const previous = getStoredBool(AUTO_UPDATE_KEY, true)
   if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(value))
   autoUpdate.set(value)
+  try {
+    await setAutoDownload(value)
+  } catch (err) {
+    // Rollback so UI and main process stay aligned on IPC failure.
+    if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(previous))
+    autoUpdate.set(previous)
+    console.warn("[settings] setAutoDownload failed; rolled back:", err)
+  }
 }
 
 // Default IDE

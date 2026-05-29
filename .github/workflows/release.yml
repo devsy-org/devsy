@@ -210,6 +210,14 @@ jobs:
             desktop/release/*.deb
             desktop/release/*.rpm
 
+      - name: rewrite manifest URLs to GitHub Release assets
+        if: hashFiles('desktop/release/latest*.yml', 'desktop/release/beta*.yml') != ''
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          go run hack/rewrite_manifest_urls/main.go desktop/release/ "$REPO" "$TAG"
+
       - name: upload update metadata artifact
         uses: actions/upload-artifact@v7
         with:
@@ -256,15 +264,11 @@ jobs:
           pattern: update-metadata-*
           path: metadata/
 
-      - name: fetch existing metadata from live site
-        run: |
-          mkdir -p publish-dir/desktop
-          for file in latest-mac.yml latest-linux.yml latest.yml beta-mac.yml beta-linux.yml beta.yml; do
-            curl -sSf "https://dl.devsy.sh/desktop/$file" -o "publish-dir/desktop/$file" 2>/dev/null || true
-          done
+      - name: prepare publish dir
+        run: mkdir -p publish-dir/desktop
 
       - name: merge macOS metadata from separate arch builds
-        run: go run hack/merge_mac_metadata.go metadata/ publish-dir/desktop/
+        run: go run hack/merge_mac_metadata/main.go metadata/ publish-dir/desktop/
 
       - name: overlay non-mac metadata files (stable release)
         if: ${{ !github.event.release.prerelease }}
@@ -279,6 +283,11 @@ jobs:
         run: |
           find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
           find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
+
+      - name: smoke-test manifest URLs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go run hack/smoke_test_manifests/main.go publish-dir/desktop/
 
       - name: deploy to Netlify (dl.devsy.sh)
         uses: nwtgck/actions-netlify@v3

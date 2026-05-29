@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
-import { ipcMain } from "electron"
+import { app, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
 import { trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
@@ -16,8 +16,11 @@ import {
   type ReleaseChannel,
   checkForUpdates,
   checkForUpdatesWithChannel,
+  downloadUpdate,
+  getAutoDownloadEnabled,
   getReleaseChannel,
   installUpdate,
+  setAutoDownloadEnabled,
   setReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
@@ -787,8 +790,17 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       if (args.channel !== "stable" && args.channel !== "beta") {
         throw new Error(`Invalid release channel: ${args.channel}`)
       }
-      setReleaseChannel(args.channel)
-      await checkForUpdatesWithChannel(args.channel)
+      const channel: ReleaseChannel = args.channel
+      const previous = getReleaseChannel()
+      setReleaseChannel(channel)
+      try {
+        await checkForUpdatesWithChannel(channel)
+      } catch (err) {
+        // Rollback persisted choice so disk + renderer stay in sync if
+        // the renderer reverts its UI state.
+        setReleaseChannel(previous)
+        throw err
+      }
     },
   )
 
@@ -799,6 +811,28 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   ipcMain.handle("install_update", async () => {
     installUpdate()
   })
+
+  ipcMain.handle("download_update", async () => {
+    await downloadUpdate()
+  })
+
+  ipcMain.handle("get_app_version", () => {
+    return app.getVersion()
+  })
+
+  ipcMain.handle("get_auto_download", () => {
+    return getAutoDownloadEnabled()
+  })
+
+  ipcMain.handle(
+    "set_auto_download",
+    async (_event, args: { enabled: boolean }) => {
+      if (typeof args?.enabled !== "boolean") {
+        throw new Error("enabled must be boolean")
+      }
+      setAutoDownloadEnabled(args.enabled)
+    },
+  )
 
   // ── Analytics ──
   ipcMain.handle(

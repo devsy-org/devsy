@@ -13,11 +13,15 @@ import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
 import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
-import { initSettings } from "$lib/stores/settings.js"
+import { initSettings, syncAutoUpdateFromMain, autoUpdate } from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
 import { location } from "$lib/router.js"
+import UpdateBadge from "$lib/components/update/UpdateBadge.svelte"
+import UpdateDialog from "$lib/components/update/UpdateDialog.svelte"
+import { initUpdateStore, disposeUpdateStore } from "$lib/stores/updates.svelte.js"
+import { initUpdateToasts, bindDialogOpener } from "$lib/components/update/update-toasts.js"
 
 import DashboardPage from "./pages/DashboardPage.svelte"
 import WorkspacesPage from "./pages/WorkspacesPage.svelte"
@@ -51,6 +55,9 @@ const routes = {
 }
 
 let destroySettings: (() => void) | undefined
+
+let updateDialogOpen = $state(false)
+let unsubscribeToasts: (() => void) | null = null
 
 const NAV_KEYS: Record<string, string> = {
   1: "/",
@@ -89,7 +96,7 @@ function normalizeAnalyticsPath(path: string): string {
   return path
 }
 
-onMount(() => {
+onMount(async () => {
   initWorkspaces()
   initProviders()
   initMachines()
@@ -104,9 +111,20 @@ onMount(() => {
   appReady().catch((err) => {
     console.warn("[Devsy] appReady failed:", err)
   })
+
+  await initUpdateStore()
+  await syncAutoUpdateFromMain()
+  unsubscribeToasts = initUpdateToasts(() => {
+    let value = true
+    autoUpdate.subscribe((v) => (value = v))()
+    return value
+  })
+  bindDialogOpener(() => (updateDialogOpen = true))
 })
 
 onDestroy(() => {
+  unsubscribeToasts?.()
+  disposeUpdateStore()
   unsubLocation?.()
   destroyWorkspaces()
   destroyProviders()
@@ -128,6 +146,7 @@ onDestroy(() => {
         <Breadcrumbs />
       </div>
       <div class="ml-auto flex items-center gap-1">
+        <UpdateBadge onclick={() => (updateDialogOpen = true)} />
         <NotificationHistory />
         <ThemeSwitcher />
       </div>
@@ -139,5 +158,6 @@ onDestroy(() => {
   </SidebarUI.Inset>
 
   <Toaster richColors closeButton position="bottom-right" />
+  <UpdateDialog bind:open={updateDialogOpen} autoDownloadEnabled={$autoUpdate} />
   <CommandPalette />
 </SidebarUI.Provider>

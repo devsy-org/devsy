@@ -1,6 +1,5 @@
 <script lang="ts">
-import { onMount, onDestroy } from "svelte"
-import { Check } from "@lucide/svelte"
+import { onMount } from "svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
@@ -16,8 +15,6 @@ import {
   setColorScheme,
   uiScale,
   applyUIScale,
-  autoUpdate,
-  setAutoUpdate,
   defaultIde,
   setDefaultIde,
   fixedIde,
@@ -32,18 +29,7 @@ import type {
   UIScale,
   LocalOptions,
 } from "$lib/stores/settings.js"
-import {
-  devsyVersion,
-  devsyUpgrade,
-  devsyUpgradeDryRun,
-  getReleaseChannel,
-  setReleaseChannel as setReleaseChannelIpc,
-  checkForUpdates as checkForUpdatesIpc,
-  installUpdate as installUpdateIpc,
-  type ReleaseChannel,
-} from "$lib/ipc/commands.js"
-import { onUpdateStatus, type UpdateStatus } from "$lib/ipc/events.js"
-import type { UnlistenFn } from "$lib/ipc/types.js"
+import UpdatesSection from "$lib/components/update/UpdatesSection.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -116,7 +102,6 @@ const IDE_OPTIONS = [
 // ── State ───────────────────────────────────────────────────────────
 
 let activeTab = $state("general")
-let cliVersion = $state<string | null>(null)
 let loading = $state(true)
 let saving = $state(false)
 let ideComboOpen = $state(false)
@@ -142,75 +127,6 @@ let local = $state<LocalOptions>({
   experimentalMultiDevcontainer: false,
 })
 
-// ── Version management ──────────────────────────────────────────────
-
-let releaseChannel = $state<ReleaseChannel>("stable")
-let targetVersion = $state("")
-let upgrading = $state(false)
-let upgradeResult = $state<string | null>(null)
-let updateStatus = $state<UpdateStatus | null>(null)
-let unlistenUpdate: UnlistenFn | null = null
-
-async function handleCheckForUpdates() {
-  try {
-    await checkForUpdatesIpc()
-  } catch (err) {
-    toasts.error(`Update check failed: ${extractErrorMessage(err)}`)
-  }
-}
-
-async function handleInstallUpdate() {
-  try {
-    await installUpdateIpc()
-  } catch (err) {
-    toasts.error(`Failed to install update: ${extractErrorMessage(err)}`)
-  }
-}
-
-async function handleChannelChange(channel: ReleaseChannel) {
-  const previous = releaseChannel
-  releaseChannel = channel
-  try {
-    await setReleaseChannelIpc(channel)
-    toasts.success(`Switched to ${channel} update channel`)
-  } catch (err) {
-    releaseChannel = previous
-    toasts.error(`Failed to switch channel: ${extractErrorMessage(err)}`)
-  }
-}
-
-async function handleUpgrade() {
-  if (!targetVersion) return
-  const version = targetVersion.startsWith("v")
-    ? targetVersion
-    : `v${targetVersion}`
-
-  // Dry-run first to validate
-  try {
-    const info = await devsyUpgradeDryRun(version)
-    if (info.includes("already up-to-date")) {
-      toasts.info(`Already running ${version}`)
-      return
-    }
-  } catch (err) {
-    toasts.error(`Invalid version: ${extractErrorMessage(err)}`)
-    return
-  }
-
-  upgrading = true
-  upgradeResult = null
-  try {
-    await devsyUpgrade(version)
-    upgradeResult = version
-    cliVersion = version.trim()
-    toasts.success(`Upgraded to ${version}. Restart the app to complete.`)
-  } catch (err) {
-    toasts.error(`Upgrade failed: ${extractErrorMessage(err)}`)
-  } finally {
-    upgrading = false
-  }
-}
-
 // ── Keyboard shortcuts ──────────────────────────────────────────────
 
 const shortcuts = [
@@ -222,36 +138,11 @@ const shortcuts = [
 
 // ── Load / Save ─────────────────────────────────────────────────────
 
-onMount(async () => {
+onMount(() => {
   local = loadLocalOptions()
   localOptionsStore.set(local)
   loading = false
-  await loadVersion()
-  try {
-    releaseChannel = await getReleaseChannel()
-  } catch {
-    // Ignore — defaults to stable
-  }
-  try {
-    unlistenUpdate = await onUpdateStatus((status) => {
-      updateStatus = status
-    })
-  } catch {
-    // Event listener setup failed
-  }
 })
-
-onDestroy(() => {
-  unlistenUpdate?.()
-})
-
-async function loadVersion() {
-  try {
-    cliVersion = (await devsyVersion()).trim()
-  } catch {
-    cliVersion = null
-  }
-}
 
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
   saveLocalOption(key, value)
@@ -369,136 +260,7 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <Separator />
 
-        <h2 class="text-lg font-semibold">Updates</h2>
-
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <Label>Automatic Updates</Label>
-              <p class="text-xs text-muted-foreground">Download and install updates in the background</p>
-            </div>
-            <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
-          </div>
-
-          <div class="space-y-3">
-            <Label>Release Channel</Label>
-            <div class="grid grid-cols-2 gap-3">
-              <button
-                class="rounded-lg border p-3 text-left transition-colors {releaseChannel === 'stable' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-muted-foreground/50'}"
-                onclick={() => handleChannelChange("stable")}
-              >
-                <div class="flex items-center gap-2">
-                  <span class="font-medium text-sm">Stable</span>
-                  {#if releaseChannel === "stable"}
-                    <Check class="h-3.5 w-3.5 text-primary" />
-                  {/if}
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">Production-ready releases</p>
-              </button>
-              <button
-                class="rounded-lg border p-3 text-left transition-colors {releaseChannel === 'beta' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-muted-foreground/50'}"
-                onclick={() => handleChannelChange("beta")}
-              >
-                <div class="flex items-center gap-2">
-                  <span class="font-medium text-sm">Beta</span>
-                  {#if releaseChannel === "beta"}
-                    <Check class="h-3.5 w-3.5 text-primary" />
-                  {/if}
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">Early access to new features</p>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        <div class="space-y-3">
-          <h2 class="text-lg font-semibold">Version</h2>
-          <div class="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p class="text-sm font-medium">Devsy Desktop</p>
-              {#if cliVersion}
-                <p class="text-xs font-mono text-muted-foreground">{cliVersion}</p>
-              {:else}
-                <p class="text-xs text-muted-foreground">Not available</p>
-              {/if}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onclick={handleCheckForUpdates}
-              disabled={updateStatus?.state === "checking"}
-            >
-              {updateStatus?.state === "checking" ? "Checking..." : "Check for Updates"}
-            </Button>
-          </div>
-
-          {#if updateStatus?.state === "not-available"}
-            <div class="rounded-md border border-border bg-muted/50 p-3">
-              <p class="text-sm text-muted-foreground">You're on the latest version.</p>
-            </div>
-          {/if}
-
-          {#if updateStatus?.state === "available" || updateStatus?.state === "downloaded"}
-            <div class="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium">
-                    {updateStatus.state === "downloaded" ? "Update ready to install" : "Update available"}
-                  </p>
-                  <p class="text-xs text-muted-foreground">Version {updateStatus.version}</p>
-                </div>
-                {#if updateStatus.state === "downloaded"}
-                  <Button size="sm" onclick={handleInstallUpdate}>Restart & Update</Button>
-                {/if}
-              </div>
-              {#if updateStatus.releaseNotes}
-                <div class="border-t border-border/50 pt-2 mt-2">
-                  <p class="text-xs font-medium text-muted-foreground mb-1">Release Notes</p>
-                  <div class="text-xs text-muted-foreground prose prose-sm dark:prose-invert max-h-40 overflow-y-auto">
-                    {@html updateStatus.releaseNotes}
-                  </div>
-                </div>
-              {/if}
-            </div>
-          {/if}
-
-          {#if updateStatus?.state === "error"}
-            <div class="rounded-md border border-destructive/30 bg-destructive/5 p-3">
-              <p class="text-sm text-destructive">Update check failed: {updateStatus.error}</p>
-            </div>
-          {/if}
-
-          <div class="space-y-2">
-            <Label>Install Specific Version</Label>
-            <p class="text-xs text-muted-foreground">Downgrade or pin to a specific CLI version</p>
-            <div class="flex gap-2">
-              <Input
-                value={targetVersion}
-                placeholder="e.g. v1.4.0"
-                oninput={(e) => (targetVersion = e.currentTarget.value)}
-                onkeydown={(e) => { if (e.key === "Enter") handleUpgrade() }}
-                disabled={upgrading}
-                class="max-w-48 font-mono"
-              />
-              <Button
-                onclick={handleUpgrade}
-                disabled={upgrading || !targetVersion}
-                variant="outline"
-              >
-                {upgrading ? "Installing..." : "Install"}
-              </Button>
-            </div>
-          </div>
-          {#if upgradeResult}
-            <div class="rounded-md border border-green-600/30 bg-green-600/10 p-3">
-              <p class="text-sm text-green-700 dark:text-green-400">
-                Switched to {upgradeResult}. Restart to use the new version.
-              </p>
-            </div>
-          {/if}
-        </div>
+        <UpdatesSection />
 
         <Separator />
 
