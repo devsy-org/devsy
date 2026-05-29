@@ -183,6 +183,11 @@ jobs:
         run: npx electron-builder ${{ matrix.builder-args }} --publish always --config electron-builder.yml
         env:
           GH_TOKEN: ${{ github.token }}
+          CSC_LINK: ${{ secrets.DEVSY_APPLE_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DEVSY_APPLE_CSC_PASSWORD }}
+          APPLE_ID: ${{ secrets.DEVSY_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DEVSY_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.DEVSY_APPLE_TEAM_ID }}
 
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3
