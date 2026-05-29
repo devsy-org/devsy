@@ -2,6 +2,22 @@ import { join } from "node:path"
 import type { BrowserWindow } from "electron"
 import { app, Menu, nativeImage, nativeTheme, Tray } from "electron"
 import type { DaemonState } from "./state.js"
+import { getLastStatus, installUpdate, type UpdateStatus } from "./updater.js"
+
+/**
+ * Builds the menu items shown when an update is ready. Returns an empty
+ * array when no install action should be offered. Exported for unit testing.
+ */
+export function buildUpdateMenuItems(
+  status: UpdateStatus,
+  onInstall: () => void,
+): Electron.MenuItemConstructorOptions[] {
+  if (status.state !== "downloaded") return []
+  return [
+    { label: `Install Update v${status.version ?? ""}`, click: onInstall },
+    { type: "separator" },
+  ]
+}
 
 interface TrayDeps {
   state: DaemonState
@@ -86,6 +102,9 @@ export class AppTray {
         : `${count} workspace${count === 1 ? "" : "s"}`
 
     const template: Electron.MenuItemConstructorOptions[] = [
+      ...buildUpdateMenuItems(getLastStatus(), () => {
+        installUpdate().catch(() => {})
+      }),
       { label: statusLabel, enabled: false },
     ]
 

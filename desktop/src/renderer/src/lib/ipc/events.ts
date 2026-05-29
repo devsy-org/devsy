@@ -8,12 +8,37 @@ import type {
 import { listen } from "./bridge.js"
 import type { UnlistenFn } from "./types.js"
 
+export type UpdateStateValue =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "not-available"
+  | "error"
+
+export type UpdateErrorCode =
+  | "dev-mode"
+  | "unsupported"
+  | "network"
+  | "feed-error"
+  | "verification"
+
+export interface UpdateProgress {
+  percent: number
+  bytesPerSecond: number
+  transferred: number
+  total: number
+}
+
 export interface UpdateStatus {
-  state: "checking" | "available" | "not-available" | "downloading" | "downloaded" | "error"
+  state: UpdateStateValue
   version?: string
   releaseNotes?: string
   releaseName?: string
+  progress?: UpdateProgress
   error?: string
+  code?: UpdateErrorCode
 }
 
 export const EVENT_NAMES = {

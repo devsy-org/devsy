@@ -291,6 +291,22 @@ export async function installUpdate(): Promise<void> {
   return invoke("install_update")
 }
 
+export async function downloadUpdate(): Promise<void> {
+  return invoke("download_update")
+}
+
+export async function getAppVersion(): Promise<string> {
+  return invoke<string>("get_app_version")
+}
+
+export async function getAutoDownload(): Promise<boolean> {
+  return invoke<boolean>("get_auto_download")
+}
+
+export async function setAutoDownload(enabled: boolean): Promise<void> {
+  return invoke("set_auto_download", { enabled })
+}
+
 // Analytics
 export function analyticsTrack(
   name: string,
