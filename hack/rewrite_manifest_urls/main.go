@@ -94,7 +94,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage: %s <dir> <owner/repo> <tag>\n", os.Args[0])
 		os.Exit(2)
 	}
-	if err := walkAndRewrite(os.Args[1], os.Args[2], os.Args[3]); err != nil {
+	dir, repo, tag := os.Args[1], os.Args[2], os.Args[3]
+	if repo == "" || tag == "" {
+		fmt.Fprintf(os.Stderr, "owner/repo and tag must be non-empty (repo=%q tag=%q)\n", repo, tag)
+		os.Exit(2)
+	}
+	if err := walkAndRewrite(dir, repo, tag); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
