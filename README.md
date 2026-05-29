@@ -194,9 +194,3 @@ Use the Devsy desktop app for workspace management. Use the CLI for automation a
 </td>
 </tr>
 </table>
-
-## macOS users
-
-Apple requires a paid developer account to distribute code-signed macOS applications. Devsy does not yet ship a signed macOS build. macOS users enable the app in system settings.
-
-<img alt="macOS security settings" width="600px" src="docs/static/media/macos-permissions.png">

@@ -33,8 +33,7 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # macOS auto-update requires code signing and notarization to be enabled
-  notarize: false
+  notarize: true
 
 dmg:
   sign: false
