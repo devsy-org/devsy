@@ -15,22 +15,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// DeleteCmd holds the delete cmd flags.
-type DeleteCmd struct {
+// RemoveCmd holds the remove cmd flags.
+type RemoveCmd struct {
 	*flags.GlobalFlags
 
 	IgnoreNotFound bool
 	Force          bool
 }
 
-// NewDeleteCmd creates a new command.
-func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &DeleteCmd{
+// NewRemoveCmd creates a new command.
+func NewRemoveCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &RemoveCmd{
 		GlobalFlags: flags,
 	}
 	deleteCmd := &cobra.Command{
-		Use:   "delete [name]",
-		Short: "Delete a provider",
+		Use:   "remove [name]",
+		Short: "Remove a provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
@@ -55,7 +55,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return deleteCmd
 }
 
-func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
+func (cmd *RemoveCmd) Run(ctx context.Context, args []string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
