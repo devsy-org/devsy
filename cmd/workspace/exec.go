@@ -1,4 +1,4 @@
-package cmd
+package workspace
 
 import (
 	"bytes"
@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	defaultDockerCommand   = "docker"
-	containerStatusRunning = "running"
+	DefaultDockerCommand   = "docker"
+	ContainerStatusRunning = "running"
 )
 
 type ExecCmd struct {
@@ -155,17 +155,17 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := resolveDockerCommand(workspaceConfig)
+	dockerCommand := ResolveDockerCommand(workspaceConfig)
 
-	containerDetails, err := findRunningContainer(
+	containerDetails, err := FindRunningContainer(
 		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		return err
 	}
 
-	result := loadExecResult(workspaceConfig, containerDetails)
-	workdir := resolveExecWorkdir(result, client.Workspace())
+	result := LoadExecResult(workspaceConfig, containerDetails)
+	workdir := ResolveExecWorkdir(result, client.Workspace())
 	user := devcconfig.GetRemoteUser(result)
 	userEnvProbe := resolveUserEnvProbe(result, cmd.DefaultUserEnvProbe)
 
@@ -206,7 +206,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 }
 
 func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error {
-	dockerCommand := defaultDockerCommand
+	dockerCommand := DefaultDockerCommand
 	if cmd.DockerPath != "" {
 		dockerCommand = cmd.DockerPath
 	}
@@ -221,7 +221,7 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, containerStatusRunning) {
+	if !strings.EqualFold(containerDetails.State.Status, ContainerStatusRunning) {
 		return fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.ContainerID,
@@ -277,11 +277,11 @@ func (cmd *ExecCmd) validateRemoteEnv() error {
 	return nil
 }
 
-func resolveDockerCommand(
+func ResolveDockerCommand(
 	workspace *provider2.Workspace,
 ) string {
 	if workspace == nil || workspace.Context == "" {
-		return defaultDockerCommand
+		return DefaultDockerCommand
 	}
 
 	providerConfig, err := provider2.LoadProviderConfig(
@@ -290,7 +290,7 @@ func resolveDockerCommand(
 	)
 	if err != nil {
 		log.Debugf("Failed to load provider config, defaulting to 'docker': %v", err)
-		return defaultDockerCommand
+		return DefaultDockerCommand
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
@@ -299,10 +299,10 @@ func resolveDockerCommand(
 		}
 	}
 
-	return defaultDockerCommand
+	return DefaultDockerCommand
 }
 
-func findRunningContainer(
+func FindRunningContainer(
 	ctx context.Context,
 	dockerCommand string,
 	workspaceID string,
@@ -324,7 +324,7 @@ func findRunningContainer(
 		)
 	}
 
-	if !strings.EqualFold(container.State.Status, containerStatusRunning) {
+	if !strings.EqualFold(container.State.Status, ContainerStatusRunning) {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			container.ID,
@@ -335,7 +335,7 @@ func findRunningContainer(
 	return container, nil
 }
 
-func loadExecResult(
+func LoadExecResult(
 	workspaceConfig *provider2.Workspace,
 	containerDetails *devcconfig.ContainerDetails,
 ) *devcconfig.Result {
@@ -364,7 +364,7 @@ func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 	return ""
 }
 
-func resolveExecWorkdir(result *devcconfig.Result, workspaceName string) string {
+func ResolveExecWorkdir(result *devcconfig.Result, workspaceName string) string {
 	if result != nil && result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
 		return result.MergedConfig.WorkspaceFolder
 	}

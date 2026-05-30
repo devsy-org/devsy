@@ -17,8 +17,9 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/cmd/templates"
-	"github.com/devsy-org/devsy/cmd/up"
 	"github.com/devsy-org/devsy/cmd/use"
+	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
@@ -35,6 +36,7 @@ import (
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+	groupConfig     = "config"
 )
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -150,36 +152,48 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
 	rootCmd.AddCommand(agent.NewAgentCmd(globalFlags))
-	rootCmd.AddCommand(provider.NewProviderCmd(globalFlags))
+	providerCmd := provider.NewProviderCmd(globalFlags)
+	providerCmd.GroupID = groupConfig
+	rootCmd.AddCommand(providerCmd)
 	rootCmd.AddCommand(use.NewUseCmd(globalFlags))
 	rootCmd.AddCommand(helper.NewHelperCmd(globalFlags))
-	rootCmd.AddCommand(ide.NewIDECmd(globalFlags))
-	rootCmd.AddCommand(machine.NewMachineCmd(globalFlags))
-	rootCmd.AddCommand(context.NewContextCmd(globalFlags))
+	ideCmd := ide.NewIDECmd(globalFlags)
+	ideCmd.GroupID = groupConfig
+	rootCmd.AddCommand(ideCmd)
+	machineCmd := machine.NewMachineCmd(globalFlags)
+	machineCmd.GroupID = "core"
+	rootCmd.AddCommand(machineCmd)
+	contextCmd := context.NewContextCmd(globalFlags)
+	contextCmd.GroupID = groupConfig
+	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(pro.NewProCmd(globalFlags))
-	rootCmd.AddCommand(up.NewUpCmd(globalFlags))
-	rootCmd.AddCommand(NewDeleteCmd(globalFlags))
-	rootCmd.AddCommand(NewSSHCmd(globalFlags))
-	rootCmd.AddCommand(NewStopCmd(globalFlags))
-	rootCmd.AddCommand(NewDownCmd(globalFlags))
-	rootCmd.AddCommand(NewListCmd(globalFlags))
-	rootCmd.AddCommand(NewStatusCmd(globalFlags))
-	rootCmd.AddCommand(NewBuildCmd(globalFlags))
+
+	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
+	wsCmd.GroupID = "core"
+	rootCmd.AddCommand(wsCmd)
+
+	// Root shortcuts — separate factory invocation per parent (a single
+	// *cobra.Command cannot belong to two parents).
+	addShortcut := func(c *cobra.Command) {
+		c.GroupID = "shortcut"
+		rootCmd.AddCommand(c)
+	}
+	addShortcut(up.NewUpCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewStopCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewSSHCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewExecCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewLogsCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewStatusCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewListCmd(globalFlags))
+
 	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
-	rootCmd.AddCommand(NewExportCmd(globalFlags))
-	rootCmd.AddCommand(NewImportCmd(globalFlags))
-	rootCmd.AddCommand(NewLogsCmd(globalFlags))
 	rootCmd.AddCommand(NewSelfUpdateCmd())
-	rootCmd.AddCommand(NewTroubleshootCmd(globalFlags))
-	rootCmd.AddCommand(NewPingCmd(globalFlags))
 	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))
-	rootCmd.AddCommand(NewExecCmd(globalFlags))
 	rootCmd.AddCommand(NewOutdatedCmd(globalFlags))
 	rootCmd.AddCommand(NewUpgradeCmd(globalFlags))
 	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
-	rootCmd.AddCommand(NewRenameCmd(globalFlags))
 	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
 	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
 	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))

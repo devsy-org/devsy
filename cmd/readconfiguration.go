@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/workspace"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -215,7 +216,7 @@ func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context)
 	string,
 	error,
 ) {
-	dockerCommand := defaultDockerCommand
+	dockerCommand := workspace.DefaultDockerCommand
 	if cmd.DockerPath != "" {
 		dockerCommand = cmd.DockerPath
 	}
@@ -261,8 +262,8 @@ func (cmd *ReadConfigurationCmd) resolveConfigFromIDLabels(ctx context.Context) 
 	string,
 	error,
 ) {
-	containerDetails, err := findRunningContainer(
-		ctx, defaultDockerCommand, "", cmd.IDLabels,
+	containerDetails, err := workspace.FindRunningContainer(
+		ctx, workspace.DefaultDockerCommand, "", cmd.IDLabels,
 	)
 	if err != nil {
 		return nil, "", err

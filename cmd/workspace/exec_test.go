@@ -1,4 +1,4 @@
-package cmd
+package workspace
 
 import (
 	"testing"
@@ -12,6 +12,8 @@ const (
 	flagSkipPostCreate  = "--skip-post-create"
 	flagWorkspaceFolder = "--workspace-folder"
 	testTmpDir          = "/tmp"
+	testCmdEcho         = "echo"
+	testCmdHello        = "hello"
 )
 
 func TestValidateRemoteEnv_Valid(t *testing.T) {
@@ -67,7 +69,7 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
-	result := resolveDockerCommand(nil)
+	result := ResolveDockerCommand(nil)
 	assert.Equal(t, "docker", result)
 }
 

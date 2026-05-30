@@ -123,6 +123,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_status",
     async (_event, args: { workspaceId: string }) => {
       return cli.runRaw([
+        "workspace",
         "status",
         args.workspaceId,
         "--result-format",
@@ -140,7 +141,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       args: { workspaceId: string; newWorkspaceId: string },
     ) => {
       trackEvent("workspace_rename", { workspaceId: args.workspaceId })
-      await cli.runRaw(["rename", args.workspaceId, args.newWorkspaceId])
+      await cli.runRaw(["workspace", "rename", args.workspaceId, args.newWorkspaceId])
     },
   )
 
@@ -454,7 +455,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
-      const cliArgs = ["up", args.source]
+      const cliArgs = ["workspace", "up", args.source]
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
@@ -538,7 +539,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["stop", args.workspaceId]
+      const cliArgs = ["workspace", "stop", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(
@@ -584,7 +585,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["delete", args.workspaceId]
+      const cliArgs = ["workspace", "delete", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
       cliArgs.push("--force")
 
@@ -625,7 +626,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["up", args.workspaceId, "--recreate"]
+      const cliArgs = ["workspace", "up", args.workspaceId, "--recreate"]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(
@@ -665,7 +666,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["up", args.workspaceId, "--reset"]
+      const cliArgs = ["workspace", "up", args.workspaceId, "--reset"]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(

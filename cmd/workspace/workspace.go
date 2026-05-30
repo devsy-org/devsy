@@ -2,16 +2,32 @@ package workspace
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/spf13/cobra"
 )
 
-// NewWorkspaceCmd builds the `devsy workspace` parent command.
-// Subcommands are attached by the caller, since some of the same factories
-// are also wired as root shortcuts (devsy up == devsy workspace up).
+// NewWorkspaceCmd builds the 'devsy workspace' parent command.
+// Subcommands are attached here; the same factory functions are also
+// invoked separately by cmd/root.go to provide root-level shortcuts
+// (devsy up == devsy workspace up).
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
 		Short: "Manage devcontainer workspaces",
 	}
+	cmd.AddCommand(up.NewUpCmd(globalFlags))
+	cmd.AddCommand(NewStopCmd(globalFlags))
+	cmd.AddCommand(NewDeleteCmd(globalFlags))
+	cmd.AddCommand(NewSSHCmd(globalFlags))
+	cmd.AddCommand(NewExecCmd(globalFlags))
+	cmd.AddCommand(NewListCmd(globalFlags))
+	cmd.AddCommand(NewStatusCmd(globalFlags))
+	cmd.AddCommand(NewLogsCmd(globalFlags))
+	cmd.AddCommand(NewBuildCmd(globalFlags))
+	cmd.AddCommand(NewRenameCmd(globalFlags))
+	cmd.AddCommand(NewExportCmd(globalFlags))
+	cmd.AddCommand(NewImportCmd(globalFlags))
+	cmd.AddCommand(NewPingCmd(globalFlags))
+	cmd.AddCommand(NewTroubleshootCmd(globalFlags))
 	return cmd
 }

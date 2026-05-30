@@ -131,7 +131,7 @@ export class Watcher {
         this.deps.daemon
           ? () => this.deps.daemon!.listWorkspaces<unknown[]>()
           : undefined,
-        () => this.deps.cli.run<unknown[]>(["list", "--skip-pro"]),
+        () => this.deps.cli.run<unknown[]>(["workspace", "list", "--skip-pro"]),
       )
       const changed = this.deps.state.updateWorkspaces(workspaces as any[])
       if (changed) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/copy"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
@@ -137,7 +138,7 @@ func (cmd *SetUpCmd) resolveDockerPath() string {
 	if cmd.DockerPath != "" {
 		return cmd.DockerPath
 	}
-	return defaultDockerCommand
+	return workspace.DefaultDockerCommand
 }
 
 func (cmd *SetUpCmd) inspectRunningContainer(
@@ -153,7 +154,7 @@ func (cmd *SetUpCmd) inspectRunningContainer(
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, containerStatusRunning) {
+	if !strings.EqualFold(containerDetails.State.Status, workspace.ContainerStatusRunning) {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.Container,

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,7 +137,7 @@ func TestBuildDockerExecArgs_WithUser(t *testing.T) {
 
 func TestSetUpCmd_ResolveDockerPath_Default(t *testing.T) {
 	cmd := &SetUpCmd{GlobalFlags: &flags.GlobalFlags{}}
-	assert.Equal(t, defaultDockerCommand, cmd.resolveDockerPath())
+	assert.Equal(t, workspace.DefaultDockerCommand, cmd.resolveDockerPath())
 }
 
 func TestSetUpCmd_ResolveDockerPath_Custom(t *testing.T) {
