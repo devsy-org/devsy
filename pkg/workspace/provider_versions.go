@@ -72,7 +72,6 @@ func classifyVersionSource(canonical string) sourceKind {
 	}
 }
 
-// nolint:unused // will be used in subsequent version-selection tasks
 func splitSourceAndTag(canonical string) (base, tag string) {
 	if before, after, ok := strings.Cut(canonical, "@"); ok {
 		return before, after
