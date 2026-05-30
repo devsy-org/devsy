@@ -38,99 +38,7 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "build [flags] [workspace-path|workspace-name]",
 		Short: "Builds a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			ctx := cobraCmd.Context()
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-
-			// validate flags
-			// PushDuringBuild and SkipPush are mutually exclusive: one enables pushing during
-			// build, the other disables all pushing. Using both together is contradictory.
-			if cmd.PushDuringBuild && cmd.SkipPush {
-				return fmt.Errorf("cannot use --push and --skip-push together")
-			}
-			// PushDuringBuild requires a repository because it pushes directly to a registry.
-			if cmd.PushDuringBuild && cmd.Repository == "" {
-				return fmt.Errorf("--push requires --repository to be specified")
-			}
-
-			// check permissions
-			if !cmd.SkipPush && cmd.Repository != "" {
-				if err := image.CheckPushPermissions(ctx, cmd.Repository); err != nil {
-					return fmt.Errorf(
-						"cannot push to %s, please make sure you have push permissions to repository: %w",
-						cmd.Repository,
-						err,
-					)
-				}
-			}
-
-			// validate tags
-			if len(cmd.Tag) > 0 {
-				if err := image.ValidateTags(cmd.Tag); err != nil {
-					return fmt.Errorf("cannot build image: %w", err)
-				}
-			}
-
-			if devsyConfig.ContextOption(
-				config.ContextOptionSSHStrictHostKeyChecking,
-			) == config.BoolTrue {
-				cmd.StrictHostKeyChecking = true
-			}
-
-			// create a temporary workspace
-			exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
-			sshConfigFile, err := os.CreateTemp("", config.BinaryName+"ssh.config")
-			if err != nil {
-				return err
-			}
-			sshConfigPath := sshConfigFile.Name()
-			// defer removal of temporary ssh config file
-			defer func() { _ = os.Remove(sshConfigPath) }()
-
-			baseWorkspaceClient, err := workspace2.Resolve(
-				ctx,
-				devsyConfig,
-				workspace2.ResolveParams{
-					IDE:                  "",
-					IDEOptions:           nil,
-					Args:                 args,
-					DesiredID:            "",
-					DesiredMachine:       cmd.Machine,
-					ProviderUserOptions:  cmd.ProviderOptions,
-					ReconfigureProvider:  false,
-					DevContainerImage:    cmd.DevContainerImage,
-					DevContainerPath:     cmd.DevContainerPath,
-					SSHConfigPath:        sshConfigPath,
-					SSHConfigIncludePath: "",
-					Source:               nil,
-					UID:                  cmd.UID,
-					ChangeLastUsed:       false,
-					Owner:                cmd.Owner,
-				},
-			)
-			if err != nil {
-				return err
-			}
-
-			// delete workspace if we have created it
-			if exists == "" && !cmd.SkipDelete {
-				defer func() {
-					err = baseWorkspaceClient.Delete(ctx, client.DeleteOptions{Force: true})
-					if err != nil {
-						log.Errorf("Error deleting workspace: %v", err)
-					}
-				}()
-			}
-
-			// check if regular workspace client
-			workspaceClient, ok := baseWorkspaceClient.(client.WorkspaceClient)
-			if !ok {
-				return fmt.Errorf("building is currently not supported for proxy providers")
-			}
-
-			return cmd.Run(ctx, workspaceClient)
+			return cmd.execute(cobraCmd.Context(), args)
 		},
 	}
 
@@ -204,6 +112,111 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *BuildCmd) Run(ctx context.Context, client client.WorkspaceClient) error {
 	return cmd.build(ctx, client)
+}
+
+func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
+	devsyConfig, err := cmd.prepareBuild(ctx)
+	if err != nil {
+		return err
+	}
+
+	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
+	sshConfigPath, cleanup, err := newTempSSHConfig()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	baseWorkspaceClient, err := workspace2.Resolve(ctx, devsyConfig, workspace2.ResolveParams{
+		Args:                args,
+		DesiredMachine:      cmd.Machine,
+		ProviderUserOptions: cmd.ProviderOptions,
+		DevContainerImage:   cmd.DevContainerImage,
+		DevContainerPath:    cmd.DevContainerPath,
+		SSHConfigPath:       sshConfigPath,
+		UID:                 cmd.UID,
+		Owner:               cmd.Owner,
+	})
+	if err != nil {
+		return err
+	}
+
+	if exists == "" && !cmd.SkipDelete {
+		defer cmd.cleanupTempWorkspace(ctx, baseWorkspaceClient)
+	}
+
+	workspaceClient, ok := baseWorkspaceClient.(client.WorkspaceClient)
+	if !ok {
+		return fmt.Errorf("building is currently not supported for proxy providers")
+	}
+
+	return cmd.Run(ctx, workspaceClient)
+}
+
+// prepareBuild loads config and validates flags/permissions before resolving a workspace.
+func (cmd *BuildCmd) prepareBuild(ctx context.Context) (*config.Config, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.validateBuildFlags(); err != nil {
+		return nil, err
+	}
+	if err := cmd.checkPushPermissions(ctx); err != nil {
+		return nil, err
+	}
+	if len(cmd.Tag) > 0 {
+		if err := image.ValidateTags(cmd.Tag); err != nil {
+			return nil, fmt.Errorf("cannot build image: %w", err)
+		}
+	}
+	if devsyConfig.ContextOption(
+		config.ContextOptionSSHStrictHostKeyChecking,
+	) == config.BoolTrue {
+		cmd.StrictHostKeyChecking = true
+	}
+	return devsyConfig, nil
+}
+
+func (cmd *BuildCmd) validateBuildFlags() error {
+	if cmd.PushDuringBuild && cmd.SkipPush {
+		return fmt.Errorf("cannot use --push and --skip-push together")
+	}
+	if cmd.PushDuringBuild && cmd.Repository == "" {
+		return fmt.Errorf("--push requires --repository to be specified")
+	}
+	return nil
+}
+
+func (cmd *BuildCmd) checkPushPermissions(ctx context.Context) error {
+	if cmd.SkipPush || cmd.Repository == "" {
+		return nil
+	}
+	if err := image.CheckPushPermissions(ctx, cmd.Repository); err != nil {
+		return fmt.Errorf(
+			"cannot push to %s, please make sure you have push permissions to repository: %w",
+			cmd.Repository, err,
+		)
+	}
+	return nil
+}
+
+func (cmd *BuildCmd) cleanupTempWorkspace(
+	ctx context.Context, c client.BaseWorkspaceClient,
+) {
+	if err := c.Delete(ctx, client.DeleteOptions{Force: true}); err != nil {
+		log.Errorf("Error deleting workspace: %v", err)
+	}
+}
+
+// newTempSSHConfig creates a temporary ssh config file and returns its path and a cleanup func.
+func newTempSSHConfig() (string, func(), error) {
+	f, err := os.CreateTemp("", config.BinaryName+"ssh.config")
+	if err != nil {
+		return "", nil, err
+	}
+	path := f.Name()
+	return path, func() { _ = os.Remove(path) }, nil
 }
 
 func (cmd *BuildCmd) build(

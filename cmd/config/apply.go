@@ -34,7 +34,6 @@ const (
 	hookPostAttach    = "postAttachCommand"
 )
 
-// ApplyCmd holds the 'config apply' command flags.
 type ApplyCmd struct {
 	*flags.GlobalFlags
 
@@ -44,7 +43,6 @@ type ApplyCmd struct {
 	DockerPath      string
 }
 
-// NewApplyCmd creates a new 'config apply' command.
 func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ApplyCmd{GlobalFlags: f}
 	applyCmd := &cobra.Command{
@@ -68,7 +66,6 @@ func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
 	return applyCmd
 }
 
-// Run executes the 'config apply' command logic.
 func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {

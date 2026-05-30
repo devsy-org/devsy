@@ -177,8 +177,6 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	wsCmd.GroupID = groupCore
 	rootCmd.AddCommand(wsCmd)
 
-	// Root shortcuts — separate factory invocation per parent (a single
-	// *cobra.Command cannot belong to two parents).
 	addShortcut := func(c *cobra.Command) {
 		c.GroupID = groupShortcut
 		rootCmd.AddCommand(c)

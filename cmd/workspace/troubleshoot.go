@@ -52,8 +52,6 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
-	// (ThomasK33): We're creating an anonymous struct here, so that we group
-	// everything so that we can serialize it in one call.
 	var info struct {
 		CLIVersion            string
 		Config                *config.Config
@@ -68,8 +66,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	}
 	info.CLIVersion = version.GetVersion()
 
-	// (ThomasK33): We are defering the printing here, as we want to make sure
-	// that we will always print, even in the case of a panic.
+	// Print on every exit path, including panics.
 	defer func() {
 		out, err := json.MarshalIndent(info, "", "  ")
 		if err == nil {
@@ -80,17 +77,13 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		}
 	}()
 
-	// NOTE(ThomasK33): Since this is a troubleshooting command, we want to
-	// collect as many relevant information as possible.
-	// For this reason we may not return with an error early.
-	// We are fine with a partially filled TrbouelshootInfo struct, as this
-	// already provides us with more information then before.
+	// Collect as much as possible — partial info beats no info, so do not
+	// return early on errors except where downstream steps require the result.
 	var err error
 	info.Config, err = config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("load config: %w", err)})
-		// (ThomasK33): It's fine to return early here, as without the devsy config
-		// we cannot do any further troubleshooting.
+		// Without the devsy config no further troubleshooting is possible.
 		return
 	}
 
@@ -123,8 +116,8 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		}
 
 		if info.Workspace.Pro != nil {
-			// (ThomasK33): As there can be multiple pro instances configured
-			// we want to iterate over all and find the host that this workspace belongs to.
+			// Multiple pro instances may be configured; locate the one that
+			// owns this workspace.
 			var proInstance DevsyProInstance
 
 			for _, instance := range info.DevsyProInstances {
@@ -279,8 +272,7 @@ func collectPlatformInfo(
 	return proInstances, combinedErrs
 }
 
-// (ThomasK33): Little type embedding here, so that we can
-// serialize the error strings when invoking json.Marshal.
+// PrintableError serialises a wrapped error's message via json.Marshal.
 type PrintableError struct{ error }
 
 func (p PrintableError) MarshalJSON() ([]byte, error) { return json.Marshal(p.Error()) }
