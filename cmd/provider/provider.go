@@ -12,14 +12,15 @@ func NewProviderCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Devsy Provider commands",
 	}
 
+	providerCmd.AddCommand(NewAddCmd(flags))
+	providerCmd.AddCommand(NewConfigureCmd(flags))
+	providerCmd.AddCommand(NewDeleteCmd(flags))
 	providerCmd.AddCommand(NewListCmd(flags))
 	providerCmd.AddCommand(NewListAvailableCmd(flags))
-	providerCmd.AddCommand(NewUseCmd(flags))
 	providerCmd.AddCommand(NewOptionsCmd(flags))
-	providerCmd.AddCommand(NewDeleteCmd(flags))
-	providerCmd.AddCommand(NewAddCmd(flags))
-	providerCmd.AddCommand(NewUpdateCmd(flags))
-	providerCmd.AddCommand(NewSetOptionsCmd(flags))
 	providerCmd.AddCommand(NewRenameCmd(flags))
+	providerCmd.AddCommand(NewSetOptionsCmd(flags))
+	providerCmd.AddCommand(NewUpdateCmd(flags))
+	providerCmd.AddCommand(NewUseCmd(flags))
 	return providerCmd
 }

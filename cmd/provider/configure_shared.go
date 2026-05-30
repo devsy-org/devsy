@@ -105,6 +105,18 @@ func configureProviderOptions(
 	return devsyConfig, nil
 }
 
+// resolveProviderName returns the provider name from args[0] if present, else the fallback
+// (typically the active context's DefaultProvider). Errors when neither is available.
+func resolveProviderName(args []string, defaultProvider string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	if defaultProvider == "" {
+		return "", fmt.Errorf("please specify a provider")
+	}
+	return defaultProvider, nil
+}
+
 type initIO struct {
 	stdout io.Writer
 	stderr io.Writer

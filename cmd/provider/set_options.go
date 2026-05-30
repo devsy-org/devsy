@@ -105,16 +105,6 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func resolveProviderName(args []string, defaultProvider string) (string, error) {
-	if len(args) > 0 {
-		return args[0], nil
-	}
-	if defaultProvider == "" {
-		return "", fmt.Errorf("please specify a provider")
-	}
-	return defaultProvider, nil
-}
-
 func (cmd *SetOptionsCmd) saveOrPrintConfig(
 	devsyConfig *config.Config,
 	providerWithOptions *workspace.ProviderWithOptions,
