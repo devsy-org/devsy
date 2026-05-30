@@ -134,6 +134,15 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "core", Title: "Core commands:"},
+		&cobra.Group{ID: "config", Title: "Configuration commands:"},
+		&cobra.Group{ID: "platform", Title: "Platform commands:"},
+		&cobra.Group{ID: "devcontainer", Title: "Devcontainer commands:"},
+		&cobra.Group{ID: "shortcut", Title: "Workspace shortcuts:"},
+		&cobra.Group{ID: "meta", Title: "Meta:"},
+	)
+
 	registerSubcommands(rootCmd, globalFlags)
 
 	return rootCmd, globalFlags
