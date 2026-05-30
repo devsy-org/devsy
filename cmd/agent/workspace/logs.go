@@ -43,7 +43,7 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 	// to avoid silently reading from the wrong place.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
 		return fmt.Errorf(
-			"`devsy agent workspace logs` is only valid inside the workspace container or machine",
+			"`devsy internal agent workspace logs` is only valid inside the workspace container or machine",
 		)
 	}
 

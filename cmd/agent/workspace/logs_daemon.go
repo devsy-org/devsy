@@ -43,7 +43,7 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
 	// invocations explicitly to surface misconfigurations early.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
 		return fmt.Errorf(
-			"`devsy agent workspace logs-daemon` is only valid inside the workspace container or machine",
+			"`devsy internal agent workspace logs-daemon` is only valid inside the workspace container or machine",
 		)
 	}
 
