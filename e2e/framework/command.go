@@ -226,10 +226,10 @@ func (f *Framework) DevsyProviderUse(
 	provider string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"provider", "use", provider}
+	baseArgs := []string{"provider", "configure", provider}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devsy provider use failed: %s", err.Error())
+		return fmt.Errorf("devsy provider configure failed: %s", err.Error())
 	}
 	return nil
 }
@@ -290,7 +290,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
-	baseArgs := []string{"provider", "delete"}
+	baseArgs := []string{"provider", "remove"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
