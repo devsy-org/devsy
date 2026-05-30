@@ -156,8 +156,8 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return nil
 	}
 
-	log.Infof("To use the provider, please run the following command:")
-	log.Infof("devsy provider use %s", providerConfig.Name)
+	log.Infof("To configure the provider, please run the following command:")
+	log.Infof("devsy provider configure %s", providerConfig.Name)
 	return nil
 }
 

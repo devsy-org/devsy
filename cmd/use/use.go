@@ -3,7 +3,6 @@ package use
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/ide"
-	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -13,11 +12,6 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "use",
 		Short: "Use Devsy resources",
 	}
-
-	// use provider
-	useProviderCmd := provider.NewUseCmd(flags)
-	useProviderCmd.Use = "provider"
-	useCmd.AddCommand(useProviderCmd)
 
 	// use ide
 	useIDECmd := ide.NewUseCmd(flags)
