@@ -1,4 +1,4 @@
-package reset
+package user
 
 import (
 	"context"
@@ -29,8 +29,8 @@ type PasswordCmd struct {
 	Force    bool
 }
 
-// NewPasswordCmd creates a new command.
-func NewPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+// NewResetPasswordCmd creates a new command.
+func NewResetPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &PasswordCmd{
 		GlobalFlags: globalFlags,
 	}
@@ -38,12 +38,12 @@ func NewPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 Resets the password of a user.
 
 Example:
-devsy pro reset password
-devsy pro reset password --user admin
+devsy pro user reset-password
+devsy pro user reset-password --user admin
 #######################################################
 	`
 	c := &cobra.Command{
-		Use:   "password",
+		Use:   "reset-password",
 		Short: "Resets the password of a user",
 		Long:  description,
 		Args:  cobra.NoArgs,

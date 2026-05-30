@@ -1,4 +1,4 @@
-package pro
+package project
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -22,17 +23,17 @@ type ListProjectsCmd struct {
 	Host string
 }
 
-// NewListProjectsCmd creates a new command.
-func NewListProjectsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+// NewListCmd creates a new command.
+func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ListProjectsCmd{
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "list-projects",
+		Use:    "list",
 		Short:  "List projects",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -73,7 +74,7 @@ func (cmd *ListProjectsCmd) Run(
 		return fmt.Errorf("watch workspaces with provider \"%s\": %w", provider.Name, err)
 	}
 
-	headers := []string{headerName, headerDisplayName, "Description"}
+	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Description"}
 	if buf.Len() == 0 {
 		table.Print(headers, nil)
 		return nil

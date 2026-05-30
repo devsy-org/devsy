@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -31,7 +32,7 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Check platform provider update",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

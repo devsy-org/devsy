@@ -1,4 +1,4 @@
-package pro
+package cluster
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -16,25 +17,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ListTemplatesCmd holds the cmd flags.
-type ListTemplatesCmd struct {
+// ListClustersCmd holds the cmd flags.
+type ListClustersCmd struct {
 	*flags.GlobalFlags
 
 	Host    string
 	Project string
 }
 
-// NewListTemplatesCmd creates a new command.
-func NewListTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	cmd := &ListTemplatesCmd{
+// NewListCmd creates a new command.
+func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+	cmd := &ListClustersCmd{
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "list-templates",
-		Short:  "List templates",
+		Use:    "list",
+		Short:  "List clusters",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -58,7 +59,7 @@ func NewListTemplatesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
-func (cmd *ListTemplatesCmd) Run(
+func (cmd *ListClustersCmd) Run(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
@@ -69,34 +70,34 @@ func (cmd *ListTemplatesCmd) Run(
 	var buf bytes.Buffer
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listTemplates",
-		Command: provider.Exec.Proxy.List.Templates,
+		Name:    "listClusters",
+		Command: provider.Exec.Proxy.List.Clusters,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,
 		Config:  provider,
 		Stdout:  &buf,
 	})
 	if err != nil {
-		return fmt.Errorf("list templates with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("list clusters with provider \"%s\": %w", provider.Name, err)
 	}
 
-	headers := []string{headerName, headerDisplayName, "Description"}
+	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Online"}
 	if buf.Len() == 0 {
 		table.Print(headers, nil)
 		return nil
 	}
 
-	templates := managementv1.ProjectTemplates{}
-	if err := json.Unmarshal(buf.Bytes(), &templates); err != nil {
-		return fmt.Errorf("parse templates output: %w", err)
+	clusters := managementv1.ProjectClusters{}
+	if err := json.Unmarshal(buf.Bytes(), &clusters); err != nil {
+		return fmt.Errorf("parse clusters output: %w", err)
 	}
 
-	rows := make([][]string, 0, len(templates.DevsyWorkspaceTemplates))
-	for _, t := range templates.DevsyWorkspaceTemplates {
+	rows := make([][]string, 0, len(clusters.Clusters))
+	for _, c := range clusters.Clusters {
 		rows = append(rows, []string{
-			t.GetName(),
-			t.Spec.DisplayName,
-			t.Spec.Description,
+			c.GetName(),
+			c.Spec.DisplayName,
+			fmt.Sprintf("%t", c.Status.Online),
 		})
 	}
 	table.Print(headers, rows)

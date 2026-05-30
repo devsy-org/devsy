@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -29,7 +30,7 @@ func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Get self",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

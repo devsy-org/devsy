@@ -465,7 +465,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro reset password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -557,7 +557,7 @@ func (cmd *StartCmd) successLocal() error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro reset password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -1256,7 +1256,7 @@ func (cmd *StartCmd) successLoftRouter(url string) error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro reset password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s

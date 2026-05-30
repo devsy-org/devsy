@@ -1,4 +1,4 @@
-package add
+package cluster
 
 import (
 	"cmp"
@@ -42,15 +42,15 @@ type ClusterCmd struct {
 	Host             string
 }
 
-// NewClusterCmd creates a new command.
-func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+// NewAddCmd creates a new command.
+func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &ClusterCmd{
 		GlobalFlags: globalFlags,
 	}
 
 	c := &cobra.Command{
-		Use:   "cluster <cluster-name>",
-		Short: "add current cluster to Devsy Pro",
+		Use:   "add <cluster-name>",
+		Short: "Add current cluster to Devsy Pro",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)

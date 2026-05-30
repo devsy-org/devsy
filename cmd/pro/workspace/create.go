@@ -1,4 +1,4 @@
-package pro
+package workspace
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -22,17 +23,19 @@ type CreateWorkspaceCmd struct {
 	Instance string
 }
 
-// NewCreateWorkspaceCmd creates a new command.
-func NewCreateWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+// NewCreateCmd creates a new command.
+//
+//nolint:dupl // structurally similar to NewUpdateCmd; intentional sibling factory
+func NewCreateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CreateWorkspaceCmd{
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "create-workspace",
+		Use:    "create",
 		Short:  "Create workspace instance",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

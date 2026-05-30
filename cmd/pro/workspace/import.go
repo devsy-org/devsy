@@ -1,4 +1,4 @@
-package pro
+package workspace
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	}
 
 	importCmd := &cobra.Command{
-		Use:   "import-workspace",
+		Use:   "import",
 		Short: "Imports a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
@@ -60,7 +60,7 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: devsy pro import-workspace <devsy-pro-host>")
+		return fmt.Errorf("usage: devsy pro workspace import <devsy-pro-host>")
 	}
 
 	devsyProHost := args[0]

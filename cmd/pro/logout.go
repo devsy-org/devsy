@@ -20,32 +20,33 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// DeleteCmd holds the delete cmd flags.
-type DeleteCmd struct {
+// LogoutCmd holds the logout cmd flags.
+type LogoutCmd struct {
 	*proflags.GlobalFlags
 
 	IgnoreNotFound bool
 }
 
-// NewDeleteCmd creates a new command.
-func NewDeleteCmd(flags *proflags.GlobalFlags) *cobra.Command {
-	cmd := &DeleteCmd{
+// NewLogoutCmd creates a new command.
+func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
+	cmd := &LogoutCmd{
 		GlobalFlags: flags,
 	}
-	deleteCmd := &cobra.Command{
-		Use:   "delete",
-		Short: "Delete or logout from a Devsy Pro Instance",
+	logoutCmd := &cobra.Command{
+		Use:   "logout",
+		Short: "Log out of a Devsy Pro instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
 
-	deleteCmd.Flags().
-		BoolVar(&cmd.IgnoreNotFound, "ignore-not-found", false, "Treat \"pro instance not found\" as a successful delete")
-	return deleteCmd
+	logoutCmd.Flags().
+		BoolVar(&cmd.IgnoreNotFound, "ignore-not-found", false, "Treat \"pro instance not found\" as a successful logout")
+	return logoutCmd
 }
 
-func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
+//nolint:cyclop,funlen // logout sequences provider/daemon teardown; complexity reflects domain workflow
+func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("please specify an pro instance to delete")
 	}

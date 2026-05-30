@@ -1,4 +1,4 @@
-package pro
+package workspace
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -24,17 +25,17 @@ type WatchWorkspacesCmd struct {
 	FilterByOwner bool
 }
 
-// NewWatchWorkspacesCmd creates a new command.
-func NewWatchWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+// NewWatchCmd creates a new command.
+func NewWatchCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &WatchWorkspacesCmd{
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "watch-workspaces",
+		Use:    "watch",
 		Short:  "Watch workspaces",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
