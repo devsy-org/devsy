@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -30,7 +31,7 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "status",
 		Short: "Get the status of the daemon",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
