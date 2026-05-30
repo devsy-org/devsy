@@ -62,7 +62,7 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *UpCmd) Run( //nolint:cyclop
+func (cmd *UpCmd) Run(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
@@ -78,75 +78,109 @@ func (cmd *UpCmd) Run( //nolint:cyclop
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		if emitJSON {
-			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
+		return reportErr(err, emitJSON)
 	}
-	if wctx == nil {
-		return nil // Platform mode
+	if wctx == nil || cmd.Prebuild {
+		return nil // Platform mode or prebuild-only run.
+	}
+	return cmd.finalizeUp(ctx, &finalizeUpArgs{
+		devsyConfig: devsyConfig,
+		client:      client,
+		wctx:        wctx,
+		emitJSON:    emitJSON,
+	})
+}
+
+type finalizeUpArgs struct {
+	devsyConfig *config.Config
+	client      client2.BaseWorkspaceClient
+	wctx        *workspaceContext
+	emitJSON    bool
+}
+
+// finalizeUp performs the post-up steps: workspace configuration, optional SSH
+// tunnel, IDE launch, and JSON envelope emission. Split out to keep Run small.
+func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
+	if err := cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx); err != nil {
+		return reportErr(err, args.emitJSON)
 	}
 
-	if cmd.Prebuild {
-		return nil
+	if cleanup := cmd.maybeStartTunnel(
+		ctx,
+		args.devsyConfig,
+		args.client,
+		args.wctx,
+	); cleanup != nil {
+		defer cleanup()
 	}
-
-	if err := cmd.configureWorkspace(devsyConfig, client, wctx); err != nil {
-		if emitJSON {
-			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
-	}
-
-	// Start TCP tunnel if enabled
-	useTunnel := cmd.SSHTunnelMode ||
-		devsyConfig.ContextOption(config.ContextOptionSSHTunnelMode) == config.BoolTrue
-	if useTunnel {
-		tunnelPort, tunnelCleanup, err := cmd.startTunnel(ctx, devsyConfig, client, wctx)
-		if err != nil {
-			log.Warnf("Failed to start SSH tunnel, falling back to ProxyCommand: %v", err)
-		} else {
-			defer tunnelCleanup()
-			wctx.tunnelPort = tunnelPort
-		}
-	}
-
-	// Re-write SSH config with tunnel port if tunnel started successfully
-	if err := cmd.reconfigureSSHWithTunnel(devsyConfig, client, wctx); err != nil {
+	if err := cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx); err != nil {
 		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
 	}
 
-	ideURL, err := cmd.openIDE(ctx, devsyConfig, client, wctx)
+	ideURL, err := cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
 	if err != nil {
-		if emitJSON {
-			_ = config2.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
+		return reportErr(err, args.emitJSON)
 	}
-
-	if emitJSON {
-		containerID := ""
-		var warnings []string
-		if wctx.result != nil {
-			if wctx.result.ContainerDetails != nil {
-				containerID = wctx.result.ContainerDetails.ID
-			}
-			warnings = wctx.result.HostWarnings
-		}
-		_ = config2.WriteResultJSON(os.Stdout, config2.ResultEnvelope{
-			ContainerID:           containerID,
-			RemoteUser:            wctx.user,
-			RemoteWorkspaceFolder: wctx.workdir,
-			URL:                   ideURL,
-			Warnings:              warnings,
-		})
+	if args.emitJSON {
+		emitUpResult(args.wctx, ideURL)
 	}
-
-	if wctx.tunnelPort > 0 {
-		log.Infof("SSH tunnel active on port %d, waiting for shutdown signal...", wctx.tunnelPort)
+	if args.wctx.tunnelPort > 0 {
+		log.Infof(
+			"SSH tunnel active on port %d, waiting for shutdown signal...",
+			args.wctx.tunnelPort,
+		)
 		<-ctx.Done()
 	}
 	return nil
+}
+
+// maybeStartTunnel starts the SSH tunnel when enabled and returns its cleanup
+// func, or nil if no tunnel is active. Failures are logged and demoted to a
+// fallback ProxyCommand path.
+func (cmd *UpCmd) maybeStartTunnel(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	wctx *workspaceContext,
+) func() {
+	if !cmd.SSHTunnelMode &&
+		devsyConfig.ContextOption(config.ContextOptionSSHTunnelMode) != config.BoolTrue {
+		return nil
+	}
+	tunnelPort, tunnelCleanup, err := cmd.startTunnel(ctx, devsyConfig, client, wctx)
+	if err != nil {
+		log.Warnf("Failed to start SSH tunnel, falling back to ProxyCommand: %v", err)
+		return nil
+	}
+	wctx.tunnelPort = tunnelPort
+	return tunnelCleanup
+}
+
+// reportErr writes the error to JSON output when requested and returns it for the caller.
+func reportErr(err error, emitJSON bool) error {
+	if emitJSON {
+		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+	}
+	return err
+}
+
+// emitUpResult writes the JSON result envelope for a completed `up` invocation.
+func emitUpResult(wctx *workspaceContext, ideURL string) {
+	containerID := ""
+	var warnings []string
+	if wctx.result != nil {
+		if wctx.result.ContainerDetails != nil {
+			containerID = wctx.result.ContainerDetails.ID
+		}
+		warnings = wctx.result.HostWarnings
+	}
+	_ = config2.WriteResultJSON(os.Stdout, config2.ResultEnvelope{
+		ContainerID:           containerID,
+		RemoteUser:            wctx.user,
+		RemoteWorkspaceFolder: wctx.workdir,
+		URL:                   ideURL,
+		Warnings:              warnings,
+	})
 }
 
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {

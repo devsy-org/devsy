@@ -64,7 +64,7 @@ var inheritedEnvironmentVariables = []string{
 	"GIT_COMMITTER_DATE",
 }
 
-func (cmd *UpCmd) prepareClient( //nolint:funlen
+func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
@@ -72,62 +72,60 @@ func (cmd *UpCmd) prepareClient( //nolint:funlen
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return nil, err
 	}
-
 	if cmd.Platform.Enabled {
 		log.Debug("Running in platform mode")
 		log.Debug("Using error output stream")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
-
 	if err := cmd.prepareSecrets(); err != nil {
 		return nil, err
 	}
-
 	source, err := cmd.parseWorkspaceSource()
 	if err != nil {
 		return nil, err
 	}
-
 	cmd.resolveSSHConfig(devsyConfig)
 
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
-
 	client, err := workspace2.Resolve(
 		ctx,
 		devsyConfig,
-		workspace2.ResolveParams{
-			IDE:                 cmd.IDE,
-			IDEOptions:          cmd.IDEOptions,
-			Args:                args,
-			DesiredID:           cmd.ID,
-			DesiredMachine:      cmd.Machine,
-			ProviderUserOptions: cmd.ProviderOptions,
-			ReconfigureProvider: cmd.Reconfigure,
-			DevContainerImage:   cmd.DevContainerImage,
-			DevContainerPath:    cmd.DevContainerPath,
-			SSHConfigPath:       cmd.SSHConfigPath,
-			SSHConfigIncludePath: devsyConfig.ContextOption(
-				config.ContextOptionSSHConfigIncludePath,
-			),
-			Source:         source,
-			UID:            cmd.UID,
-			ChangeLastUsed: true,
-			Owner:          cmd.Owner,
-		},
+		cmd.resolveParams(args, source, devsyConfig),
 	)
 	if err != nil {
 		return nil, err
 	}
-
 	if !cmd.Platform.Enabled {
 		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-		err = workspace2.CheckProviderUpdate(devsyConfig, proInstance)
-		if err != nil {
+		if err := workspace2.CheckProviderUpdate(devsyConfig, proInstance); err != nil {
 			return nil, err
 		}
 	}
-
 	return client, nil
+}
+
+func (cmd *UpCmd) resolveParams(
+	args []string, source *provider2.WorkspaceSource, devsyConfig *config.Config,
+) workspace2.ResolveParams {
+	return workspace2.ResolveParams{
+		IDE:                 cmd.IDE,
+		IDEOptions:          cmd.IDEOptions,
+		Args:                args,
+		DesiredID:           cmd.ID,
+		DesiredMachine:      cmd.Machine,
+		ProviderUserOptions: cmd.ProviderOptions,
+		ReconfigureProvider: cmd.Reconfigure,
+		DevContainerImage:   cmd.DevContainerImage,
+		DevContainerPath:    cmd.DevContainerPath,
+		SSHConfigPath:       cmd.SSHConfigPath,
+		SSHConfigIncludePath: devsyConfig.ContextOption(
+			config.ContextOptionSSHConfigIncludePath,
+		),
+		Source:         source,
+		UID:            cmd.UID,
+		ChangeLastUsed: true,
+		Owner:          cmd.Owner,
+	}
 }
 
 func (cmd *UpCmd) prepareSecrets() error {
