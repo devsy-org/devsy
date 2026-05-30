@@ -111,7 +111,7 @@ type proxyCommandBuilder struct {
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
 	return &proxyCommandBuilder{
 		baseCommand: fmt.Sprintf(
-			"\"%s\" ssh --stdio --context %s --user %s %s",
+			"\"%s\" workspace ssh --stdio --context %s --user %s %s",
 			execPath,
 			context,
 			user,

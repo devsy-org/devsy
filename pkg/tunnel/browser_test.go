@@ -23,7 +23,7 @@ func exitError(t *testing.T, code int) error {
 
 func baseSSHArgs(ctx, ws string) []string {
 	return []string{
-		"ssh", "--user=root", "--agent-forwarding=false",
+		"workspace", "ssh", "--user=root", "--agent-forwarding=false",
 		"--start-services=false", "--context", ctx, ws,
 	}
 }

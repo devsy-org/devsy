@@ -122,6 +122,7 @@ type buildDotCmdParams struct {
 
 func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	sshCmd := []string{
+		"workspace",
 		"ssh",
 		"--agent-forwarding=true",
 		"--start-services=true",

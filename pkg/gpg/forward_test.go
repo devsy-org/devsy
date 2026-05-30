@@ -9,6 +9,7 @@ import (
 func TestBuildForwardArgs(t *testing.T) {
 	got := buildForwardArgs("root", "test-context", "test-workspace")
 	expected := []string{
+		"workspace",
 		"ssh",
 		"--gpg-agent-forwarding=true",
 		"--agent-forwarding=true",
