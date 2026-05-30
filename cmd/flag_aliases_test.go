@@ -67,7 +67,7 @@ func TestLogFormatAlias_IsHidden(t *testing.T) {
 
 func TestConfigAlias_E2E(t *testing.T) {
 	rootCmd, _ := BuildRoot()
-	rootCmd.SetArgs([]string{"workspace", "up", flagConfig, "/tmp/test.json", "--help"})
+	rootCmd.SetArgs([]string{cmdWorkspace, "up", flagConfig, "/tmp/test.json", "--help"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
 }

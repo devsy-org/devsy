@@ -21,6 +21,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	cmdWorkspace = "workspace"
+	flagCommand  = "--command"
+)
+
 type baseTestContext struct {
 	f            *framework.Framework
 	dockerHelper *docker.DockerHelper

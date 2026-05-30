@@ -77,7 +77,7 @@ var _ = ginkgo.Describe(
 
 			devsyUpOutput, _, err := tc.f.ExecCommandCapture(
 				ctx,
-				[]string{"workspace", "up", "--debug", "--ide", "none", tempDir},
+				[]string{cmdWorkspace, "up", "--debug", "--ide", "none", tempDir},
 			)
 			framework.ExpectNoError(err)
 
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"BAR",
-				[]string{"workspace", "ssh", "--command", "echo $FOO", workspace.ID},
+				[]string{cmdWorkspace, "ssh", flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -187,7 +187,7 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"root",
-				[]string{"workspace", "ssh", "--command", "ps u -p 1", workspace.ID},
+				[]string{cmdWorkspace, "ssh", flagCommand, "ps u -p 1", workspace.ID},
 			)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -396,7 +396,7 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"/home/vscode/remote-env.out",
-				[]string{"workspace", "ssh", "--command", "ls $HOME/remote-env.out", workspace.ID},
+				[]string{cmdWorkspace, "ssh", flagCommand, "ls $HOME/remote-env.out", workspace.ID},
 			)
 			framework.ExpectNoError(err)
 
@@ -405,7 +405,13 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"BAR",
-				[]string{"workspace", "ssh", "--command", "cat $HOME/remote-env.out", workspace.ID},
+				[]string{
+					cmdWorkspace,
+					"ssh",
+					flagCommand,
+					"cat $HOME/remote-env.out",
+					workspace.ID,
+				},
 			)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -437,7 +443,7 @@ var _ = ginkgo.Describe(
 				true,
 				"SET=hello",
 				[]string{
-					"workspace", "ssh", "--command",
+					cmdWorkspace, "ssh", flagCommand,
 					"head -1 $HOME/remote-env-null.out",
 					workspace.ID,
 				},
@@ -451,7 +457,7 @@ var _ = ginkgo.Describe(
 				true,
 				"UNSET=true",
 				[]string{
-					"workspace", "ssh", "--command",
+					cmdWorkspace, "ssh", flagCommand,
 					"tail -1 $HOME/remote-env-null.out",
 					workspace.ID,
 				},
@@ -482,9 +488,9 @@ var _ = ginkgo.Describe(
 				true,
 				"root",
 				[]string{
-					"workspace",
+					cmdWorkspace,
 					"ssh",
-					"--command",
+					flagCommand,
 					"cat $HOME/remote-user.out",
 					workspace.ID,
 				},

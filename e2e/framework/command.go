@@ -15,9 +15,13 @@ import (
 
 const (
 	flagResultFormat = "--result-format"
+	flagIDE          = "--ide"
+	flagDebug        = "--debug"
+	flagCommand      = "--command"
 	formatJSON       = "json"
 	cmdList          = "list"
 	cmdGet           = "get"
+	cmdDelete        = "delete"
 	cmdProvider      = "provider"
 	cmdWorkspace     = "workspace"
 )
@@ -69,7 +73,7 @@ func (f *Framework) DevsyUpStreams(
 	workspace string,
 	additionalArgs ...string,
 ) (string, string, error) {
-	upArgs := []string{cmdWorkspace, "up", "--ide", "none", workspace}
+	upArgs := []string{cmdWorkspace, "up", flagIDE, "none", workspace}
 	upArgs = append(upArgs, additionalArgs...)
 
 	stdout, stderr, err := execWithDockerRetry(
@@ -110,7 +114,7 @@ func (f *Framework) DevsyUpStreamsRaw(
 
 // DevsyUp executes the `devsy up` command in the test framework.
 func (f *Framework) DevsyUpWithIDE(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--debug"}
+	upArgs := []string{cmdWorkspace, "up", flagDebug}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -123,7 +127,7 @@ func (f *Framework) DevsyUpWithIDE(ctx context.Context, additionalArgs ...string
 }
 
 func (f *Framework) DevsyBuild(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "build", "--debug"}
+	upArgs := []string{cmdWorkspace, "build", flagDebug}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := f.ExecCommandCapture(ctx, upArgs)
@@ -134,7 +138,7 @@ func (f *Framework) DevsyBuild(ctx context.Context, additionalArgs ...string) er
 }
 
 func (f *Framework) DevsyUp(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--debug", "--ide", "none"}
+	upArgs := []string{cmdWorkspace, "up", flagDebug, flagIDE, "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -147,7 +151,7 @@ func (f *Framework) DevsyUp(ctx context.Context, additionalArgs ...string) error
 }
 
 func (f *Framework) DevsyUpRecreate(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--recreate", "--debug", "--ide", "none"}
+	upArgs := []string{cmdWorkspace, "up", "--recreate", flagDebug, flagIDE, "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -160,7 +164,7 @@ func (f *Framework) DevsyUpRecreate(ctx context.Context, additionalArgs ...strin
 }
 
 func (f *Framework) DevsyUpReset(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--reset", "--debug", "--ide", "none"}
+	upArgs := []string{cmdWorkspace, "up", "--reset", flagDebug, flagIDE, "none"}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -180,7 +184,7 @@ func (f *Framework) DevsySSH(
 	out, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, string, error) {
 		return f.ExecCommandCapture(
 			ctx,
-			[]string{cmdWorkspace, "ssh", workspace, "--command", command},
+			[]string{cmdWorkspace, "ssh", workspace, flagCommand, command},
 		)
 	})
 	if err != nil {
@@ -198,7 +202,7 @@ func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string
 		[]string{
 			cmdWorkspace,
 			"ssh",
-			"--command",
+			flagCommand,
 			"echo 'bVl0RXNUc1RySW5H' | base64 -d",
 			workspace,
 		},
@@ -293,7 +297,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
-	baseArgs := []string{cmdProvider, "delete"}
+	baseArgs := []string{cmdProvider, cmdDelete}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
@@ -369,7 +373,7 @@ func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error
 }
 
 func (f *Framework) DevsyMachineDelete(ctx context.Context, args []string) error {
-	baseArgs := []string{"machine", "delete"}
+	baseArgs := []string{"machine", cmdDelete}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
@@ -389,7 +393,7 @@ func (f *Framework) DevsyWorkspaceDelete(
 	workspace string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{cmdWorkspace, "delete", workspace, "--ignore-not-found"}
+	baseArgs := []string{cmdWorkspace, cmdDelete, workspace, "--ignore-not-found"}
 	baseArgs = append(baseArgs, extraArgs...)
 
 	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
@@ -439,7 +443,7 @@ func (f *Framework) DevsySSHGpgTestKey(ctx context.Context, workspace string) er
 		"ssh",
 		"--agent-forwarding",
 		"--gpg-agent-forwarding",
-		"--command",
+		flagCommand,
 		"gpg -k --with-colons 2>/dev/null |grep sec |  base64 -w0", workspace,
 	})
 	if err != nil {
@@ -508,7 +512,7 @@ func (f *Framework) DevsyContextDelete(
 	name string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"context", "delete", name}
+	baseArgs := []string{"context", cmdDelete, name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context delete failed: %s", err.Error())
