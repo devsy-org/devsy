@@ -21,3 +21,25 @@ func TestProviderVersionFields(t *testing.T) {
 		t.Fatal("fields must round-trip")
 	}
 }
+
+func TestClassifyVersionSource(t *testing.T) {
+	cases := []struct {
+		in   string
+		kind sourceKind
+	}{
+		{"github.com/devsy-org/devsy-provider-aws@v1.2.0", sourceGitHub},
+		{"github.com/devsy-org/devsy-provider-aws", sourceGitHub},
+		{"https://example.com/foo/provider.yaml", sourceManifestURL},
+		{"https://example.com/foo/provider.yaml@v1.0.0", sourceManifestURL},
+		{"/abs/path/provider.yaml", sourceLocal},
+		{"./relative/provider.yaml", sourceLocal},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			got := classifyVersionSource(c.in)
+			if got != c.kind {
+				t.Fatalf("got %v, want %v", got, c.kind)
+			}
+		})
+	}
+}

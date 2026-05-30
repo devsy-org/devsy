@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -40,4 +41,41 @@ type ListVersionsOptions struct {
 // SetProviderVersion switches the provider to the given tag.
 func SetProviderVersion(devsyConfig *config.Config, providerName, tag string) error {
 	return errors.New("not implemented")
+}
+
+type sourceKind int
+
+const (
+	sourceUnknown sourceKind = iota
+	sourceGitHub
+	sourceManifestURL
+	sourceLocal
+)
+
+func classifyVersionSource(canonical string) sourceKind {
+	// Strip @version suffix if present; only the leftmost @ counts as a tag separator.
+	bare := canonical
+	if before, _, ok := strings.Cut(canonical, "@"); ok {
+		bare = before
+	}
+	switch {
+	case strings.HasPrefix(bare, "github.com/"):
+		return sourceGitHub
+	case strings.HasPrefix(bare, "https://"), strings.HasPrefix(bare, "http://"):
+		return sourceManifestURL
+	case strings.HasPrefix(bare, "/"),
+		strings.HasPrefix(bare, "./"),
+		strings.HasPrefix(bare, "../"):
+		return sourceLocal
+	default:
+		return sourceUnknown
+	}
+}
+
+// nolint:unused // will be used in subsequent version-selection tasks
+func splitSourceAndTag(canonical string) (base, tag string) {
+	if before, after, ok := strings.Cut(canonical, "@"); ok {
+		return before, after
+	}
+	return canonical, ""
 }
