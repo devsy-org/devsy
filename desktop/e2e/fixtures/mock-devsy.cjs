@@ -314,7 +314,7 @@ const parsed = parseArgs(rawArgs)
 const sub = parsed.positional[1] || ""
 const extra = parsed.positional[2] || ""
 const extra2 = parsed.positional[3] || ""
-const { idFlag, providerFlag, ideFlag, nameFlag } = parsed
+const { nameFlag } = parsed
 
 switch (cmd) {
   case "provider":
@@ -496,11 +496,6 @@ switch (cmd) {
     break
 
   default:
-    // Suppress unused-variable lint by referencing flags.
-    void idFlag
-    void providerFlag
-    void ideFlag
-    void nameFlag
     process.stderr.write(`mock-devsy: unknown command '${cmd}'\n`)
     process.exit(1)
 }

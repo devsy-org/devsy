@@ -36,7 +36,13 @@ import (
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
-	groupConfig     = "config"
+
+	groupCore         = "core"
+	groupConfig       = "config"
+	groupPlatform     = "platform"
+	groupDevcontainer = "devcontainer"
+	groupShortcut     = "shortcut"
+	groupMeta         = "meta"
 )
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -137,12 +143,12 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	}
 
 	rootCmd.AddGroup(
-		&cobra.Group{ID: "core", Title: "Core commands:"},
-		&cobra.Group{ID: "config", Title: "Configuration commands:"},
-		&cobra.Group{ID: "platform", Title: "Platform commands:"},
-		&cobra.Group{ID: "devcontainer", Title: "Devcontainer commands:"},
-		&cobra.Group{ID: "shortcut", Title: "Workspace shortcuts:"},
-		&cobra.Group{ID: "meta", Title: "Meta:"},
+		&cobra.Group{ID: groupCore, Title: "Core commands:"},
+		&cobra.Group{ID: groupConfig, Title: "Configuration commands:"},
+		&cobra.Group{ID: groupPlatform, Title: "Platform commands:"},
+		&cobra.Group{ID: groupDevcontainer, Title: "Devcontainer commands:"},
+		&cobra.Group{ID: groupShortcut, Title: "Workspace shortcuts:"},
+		&cobra.Group{ID: groupMeta, Title: "Meta:"},
 	)
 
 	registerSubcommands(rootCmd, globalFlags)
@@ -161,7 +167,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	ideCmd.GroupID = groupConfig
 	rootCmd.AddCommand(ideCmd)
 	machineCmd := machine.NewMachineCmd(globalFlags)
-	machineCmd.GroupID = "core"
+	machineCmd.GroupID = groupCore
 	rootCmd.AddCommand(machineCmd)
 	contextCmd := context.NewContextCmd(globalFlags)
 	contextCmd.GroupID = groupConfig
@@ -169,13 +175,13 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(pro.NewProCmd(globalFlags))
 
 	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
-	wsCmd.GroupID = "core"
+	wsCmd.GroupID = groupCore
 	rootCmd.AddCommand(wsCmd)
 
 	// Root shortcuts — separate factory invocation per parent (a single
 	// *cobra.Command cannot belong to two parents).
 	addShortcut := func(c *cobra.Command) {
-		c.GroupID = "shortcut"
+		c.GroupID = groupShortcut
 		rootCmd.AddCommand(c)
 	}
 	addShortcut(up.NewUpCmd(globalFlags))

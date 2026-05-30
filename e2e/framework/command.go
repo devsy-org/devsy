@@ -266,15 +266,6 @@ func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 	return nil
 }
 
-func (f *Framework) DevsyDown(ctx context.Context, workspace string) error {
-	baseArgs := []string{"down", workspace}
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
-	if err != nil {
-		return fmt.Errorf("devsy down failed: %s", err.Error())
-	}
-	return nil
-}
-
 func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, "add"}
 	baseArgs = append(baseArgs, args...)

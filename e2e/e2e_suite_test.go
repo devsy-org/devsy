@@ -12,7 +12,6 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/context"
 	_ "github.com/devsy-org/devsy/e2e/tests/delivery"
 	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
-	_ "github.com/devsy-org/devsy/e2e/tests/down"
 	_ "github.com/devsy-org/devsy/e2e/tests/exec"
 	_ "github.com/devsy-org/devsy/e2e/tests/extends"
 	_ "github.com/devsy-org/devsy/e2e/tests/extends-up"
