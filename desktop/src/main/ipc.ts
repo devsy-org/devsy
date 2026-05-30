@@ -292,7 +292,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
   // ── System ──
   ipcMain.handle("devsy_version", async () => {
-    return cli.runRaw(["version"])
+    return cli.runRaw(["--version"])
   })
 
   ipcMain.handle(

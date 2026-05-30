@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -98,9 +99,11 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	rootCmd := &cobra.Command{
 		Use:           config.BinaryName,
 		Short:         "Devsy",
+		Version:       version.GetVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	persistentFlags := rootCmd.PersistentFlags()
 	globalFlags := flags.SetGlobalFlags(persistentFlags)
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
@@ -148,7 +151,6 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(up.NewUpCmd(globalFlags))
 	rootCmd.AddCommand(NewDeleteCmd(globalFlags))
 	rootCmd.AddCommand(NewSSHCmd(globalFlags))
-	rootCmd.AddCommand(NewVersionCmd())
 	rootCmd.AddCommand(NewStopCmd(globalFlags))
 	rootCmd.AddCommand(NewDownCmd(globalFlags))
 	rootCmd.AddCommand(NewListCmd(globalFlags))

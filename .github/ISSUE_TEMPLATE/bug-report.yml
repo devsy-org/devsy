@@ -115,7 +115,7 @@ body:
     id: version
     attributes:
       label: Devsy version
-      description: Output of `devsy version`
+      description: Output of `devsy --version`
       placeholder: v0.6.0
     validations:
       required: true

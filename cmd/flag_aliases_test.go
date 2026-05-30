@@ -44,7 +44,7 @@ func TestBuildCmd_ConfigAlias(t *testing.T) {
 
 func TestGlobalFlags_LogFormatAlias(t *testing.T) {
 	rootCmd, globalFlags := BuildRoot()
-	rootCmd.SetArgs([]string{flagLogFormat, formatJSON, "version"})
+	rootCmd.SetArgs([]string{flagLogFormat, formatJSON, "--version"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
 	assert.Equal(t, formatJSON, globalFlags.LogOutput)

@@ -129,7 +129,7 @@ func (d *LocalDockerDelivery) expectedVersion() string {
 func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeName string) string {
 	binaryPath := volumeMountPath + "/" + binaryName()
 	script := fmt.Sprintf(
-		`[ -x "%s" ] && "%s" version 2>/dev/null || true`,
+		`[ -x "%s" ] && "%s" --version 2>/dev/null || true`,
 		binaryPath, binaryPath,
 	)
 	args := []string{

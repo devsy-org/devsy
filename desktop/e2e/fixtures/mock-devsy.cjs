@@ -95,6 +95,11 @@ const state = loadState()
 
 const args = process.argv.slice(2)
 
+if (args[0] === "--version") {
+  process.stdout.write("v0.1.0-test\n")
+  process.exit(0)
+}
+
 // Collect positional args and named flag values
 const positional = []
 let idFlag = ""

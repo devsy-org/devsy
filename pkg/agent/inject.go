@@ -347,7 +347,7 @@ func (vc *versionChecker) buildExistsCheck(agentPath string) string {
 	if vc.skipCheck {
 		return fmt.Sprintf(`! [ -x "%s" ]`, agentPath)
 	}
-	return fmt.Sprintf(`! { [ -x "%s" ] && [ "$("%s" version 2>/dev/null)" = "%s" ]; }`,
+	return fmt.Sprintf(`! { [ -x "%s" ] && [ "$("%s" --version 2>/dev/null)" = "%s" ]; }`,
 		agentPath, agentPath, vc.remoteVersion)
 }
 
@@ -357,7 +357,7 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 	agentPath string,
 ) (string, error) {
 	buf := &bytes.Buffer{}
-	versionCmd := fmt.Sprintf("%s version", agentPath)
+	versionCmd := fmt.Sprintf("%s --version", agentPath)
 	err := exec(ctx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		return "", fmt.Errorf("failed to get remote agent version: %w", err)
