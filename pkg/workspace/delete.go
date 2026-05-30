@@ -49,30 +49,29 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	}
 	defer unlock()
 
-	if err := stopIfRunning(ctx, client, status); err != nil {
-		return "", err
-	}
+	stopIfRunning(ctx, client, status)
 
 	return deleteWorkspace(ctx, client, opts)
 }
 
 // stopIfRunning stops the workspace before deletion when it is currently
 // running so the lifecycle ordering (running -> stopped -> deleted) is
-// predictable for both CLI and programmatic callers.
+// predictable for both CLI and programmatic callers. The stop is
+// best-effort: Delete will force-remove the container anyway, so a failed
+// stop must not block the delete (e.g. when the container is unhealthy or
+// the agent inside is unresponsive).
 func stopIfRunning(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
 	status client2.Status,
-) error {
+) {
 	if status != client2.StatusRunning {
-		return nil
+		return
 	}
 
 	if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
-		return fmt.Errorf("stop workspace before delete: %w", err)
+		log.Debugf("stop workspace before delete failed, proceeding: %v", err)
 	}
-
-	return nil
 }
 
 // checkBeforeDelete acquires the lock and verifies the workspace exists
