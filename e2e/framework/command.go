@@ -26,6 +26,7 @@ const (
 	cmdProvider      = "provider"
 	cmdWorkspace     = "workspace"
 	ideNone          = "none"
+	cmdUse           = "use"
 )
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
@@ -244,7 +245,7 @@ func (f *Framework) DevsyProviderUse(
 	provider string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{cmdProvider, "use", provider}
+	baseArgs := []string{cmdProvider, cmdUse, provider}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())
@@ -502,7 +503,7 @@ func (f *Framework) DevsyContextCreate(
 }
 
 func (f *Framework) DevsyContextUse(ctx context.Context, name string, extraArgs ...string) error {
-	baseArgs := []string{"context", "use", name}
+	baseArgs := []string{"context", cmdUse, name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context use failed: %s", err.Error())
@@ -524,7 +525,7 @@ func (f *Framework) DevsyContextDelete(
 }
 
 func (f *Framework) DevsyIDEUse(ctx context.Context, ide string, extraArgs ...string) error {
-	baseArgs := []string{"ide", "use", ide}
+	baseArgs := []string{"ide", cmdUse, ide}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy ide use failed %s", err.Error())
