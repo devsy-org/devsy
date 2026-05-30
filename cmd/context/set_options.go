@@ -22,7 +22,7 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	setOptionsCmd := &cobra.Command{
-		Use:   "set-options",
+		Use:   "set",
 		Short: "Set options for a Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {

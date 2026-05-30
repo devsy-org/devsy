@@ -174,7 +174,7 @@ func (cmd *SSHCmd) Run(
 	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
 		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
 		log.Debug(
-			"adding ssh keys to agent, disable via 'devsy context set-options -o SSH_ADD_PRIVATE_KEYS=false'",
+			"adding ssh keys to agent, disable via 'devsy context set -o SSH_ADD_PRIVATE_KEYS=false'",
 		)
 		err := devssh.AddPrivateKeysToAgent(ctx)
 		if err != nil {

@@ -24,7 +24,7 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	optionsCmd := &cobra.Command{
-		Use:   "options",
+		Use:   "get",
 		Short: "Show options of a context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)

@@ -490,7 +490,7 @@ switch (cmd) {
           { name: "staging", default: false },
         ])
         break
-      case "options":
+      case "get":
         out({
           TELEMETRY: { value: "true" },
           AGENT_URL: { value: "" },
@@ -511,7 +511,7 @@ switch (cmd) {
         })
         break
       case "use":
-      case "set-options":
+      case "set":
       case "create":
       case "delete":
         out("")

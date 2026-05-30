@@ -6,7 +6,7 @@ sidebar_label: Reduce build times
 Devsy provides the ability to use a registry as a remote backend cache for your container builds. To enable it perform
 
 ```
-devsy context set-options -o REGISTRY_CACHE={registry}
+devsy context set -o REGISTRY_CACHE={registry}
 ```
 
 where registry follows the syntax "\{domain\}/\{project\}/\{repo\}", such as gcr.io/my-project/my-dev-env

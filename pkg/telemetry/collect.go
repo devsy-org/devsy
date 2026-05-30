@@ -36,7 +36,7 @@ var UIEventsExceptions []string = []string{
 	config.BinaryName + " ide list",
 	config.BinaryName + " ide use",
 	config.BinaryName + " version",
-	config.BinaryName + " context options",
+	config.BinaryName + " context get",
 }
 
 // skip everything in pro mode.
