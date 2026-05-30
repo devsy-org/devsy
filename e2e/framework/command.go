@@ -245,9 +245,20 @@ func (f *Framework) DevsyProviderUse(
 	provider string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{cmdProvider, cmdUse, provider}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
-	if err != nil {
+	if len(extraArgs) > 0 {
+		configureArgs := []string{cmdProvider, "configure", provider}
+		if err := f.ExecCommand(
+			ctx,
+			false,
+			true,
+			"",
+			append(configureArgs, extraArgs...),
+		); err != nil {
+			return fmt.Errorf("devsy provider configure failed: %s", err.Error())
+		}
+	}
+	useArgs := []string{cmdProvider, cmdUse, provider}
+	if err := f.ExecCommand(ctx, false, true, "", useArgs); err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
