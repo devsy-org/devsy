@@ -101,6 +101,16 @@ async function onInstall() {
 		{:else if s.state === "not-available"}
 			{#if s.code === "dev-mode"}
 				<p class="text-sm text-muted-foreground">Updates are available in packaged builds.</p>
+			{:else if s.code === "channel-missing"}
+				<div class="space-y-2">
+					<p class="text-sm text-muted-foreground">No releases are available on this channel yet.</p>
+					{#if lastChecked}
+						<p class="text-xs text-muted-foreground">Last checked at {fmtTime(lastChecked)}</p>
+					{/if}
+					<Button variant="outline" size="sm" onclick={onCheck} disabled={isChecking()}>
+						Check Again
+					</Button>
+				</div>
 			{:else}
 				<div class="space-y-2">
 					<p class="text-sm text-muted-foreground">You're on the latest version.</p>
