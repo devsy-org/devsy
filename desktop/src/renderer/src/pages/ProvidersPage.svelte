@@ -6,6 +6,7 @@ import {
   Plug,
   SearchX,
 } from "@lucide/svelte"
+import { onMount } from "svelte"
 import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
@@ -13,9 +14,14 @@ import { Input } from "$lib/components/ui/input/index.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ProviderCard from "$lib/components/provider/ProviderCard.svelte"
 import { providers, providersLoading } from "$lib/stores/providers.js"
+import { refreshUpdates } from "$lib/stores/providerVersions.js"
 
 let search = $state("")
 let sortBy = $state<"name" | "version">("name")
+
+onMount(() => {
+  refreshUpdates().catch(() => {})
+})
 
 let filtered = $derived.by(() => {
   const q = search.toLowerCase()
