@@ -13,12 +13,18 @@ import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { providers } from "$lib/stores/providers.js"
 import {
+  providerVersions,
+  loadVersionsFor,
+  refreshUpdates,
+} from "$lib/stores/providerVersions.js"
+import {
   providerInit,
   providerUse,
   providerUpdate,
   providerDelete,
   providerOptions,
   providerSetOptions,
+  providerSetVersion,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
@@ -43,6 +49,22 @@ let loading = $state(true)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 let initializing = $state(false)
+let confirmSwitchOpen = $state(false)
+let targetTag = $state("")
+let switching = $state(false)
+
+function openVersionSwitch(tag: string) {
+  targetTag = tag
+  confirmSwitchOpen = true
+}
+
+let deleteDescription = $derived.by(() => {
+  const others = $providers.filter((p) => p.name !== id && p.state?.initialized)
+  if (provider?.isDefault && others.length > 0) {
+    return `Deleting '${id}' will leave no default provider. Pick a new default from the list after deletion, or use the \`--provider\` flag on CLI commands.`
+  }
+  return `This will remove provider '${id}' and its configuration. Any workspaces using this provider will need a new one.`
+})
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -105,6 +127,7 @@ onMount(async () => {
   } finally {
     loading = false
   }
+  loadVersionsFor(id).catch(() => {})
 })
 
 async function handleSetDefault() {
@@ -181,24 +204,57 @@ async function handleSaveOptions() {
     </Button>
     <ProviderIcon name={id} class="size-8" />
     <h1 class="text-2xl font-bold">{id}</h1>
-    {#if provider?.version}
+    {#if $providerVersions.byProvider[id] && !$providerVersions.byProvider[id].unsupported && ($providerVersions.byProvider[id].versions?.length ?? 0) > 0}
+      {@const entry = $providerVersions.byProvider[id]}
+      {@const currentTag = provider?.version ?? entry.versions.find((v) => v.current)?.tag ?? ""}
+      <Select.Root
+        type="single"
+        value={currentTag}
+        onValueChange={(v) => {
+          if (v && v !== currentTag) openVersionSwitch(v)
+        }}
+      >
+        <Select.Trigger class="w-[160px] h-7">
+          <span>{currentTag || "Select version"}</span>
+        </Select.Trigger>
+        <Select.Content>
+          {#each entry.versions as v (v.tag)}
+            <Select.Item value={v.tag} label={v.tag} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    {:else if provider?.version}
       <span class={badgeVariants({ variant: "secondary" })}>{provider.version}</span>
     {/if}
     {#if provider?.state?.initialized}
       <span class={badgeVariants({ variant: "default" })}>initialized</span>
     {/if}
+    {#if provider?.isDefault}
+      <span class={badgeVariants({ variant: "default" })}>Default</span>
+    {/if}
   </div>
 
   {#if provider}
+    {#if $providerVersions.updates[id]?.updateAvailable === true}
+      <Alert.Root class="border-amber-500/50 bg-amber-500/10">
+        <Alert.Title>Update available: {$providerVersions.updates[id].latest}</Alert.Title>
+        <Alert.Description>
+          <Button size="sm" class="mt-2" onclick={() => openVersionSwitch($providerVersions.updates[id].latest)}>
+            Install update
+          </Button>
+        </Alert.Description>
+      </Alert.Root>
+    {/if}
     <div class="flex gap-2">
       {#if !isInitialized}
         <Button size="sm" onclick={handleInitialize} disabled={initializing}>
           {initializing ? 'Initializing...' : 'Initialize'}
         </Button>
-      {:else}
+      {:else if !provider?.isDefault}
         <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
       {/if}
       <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
+      <Button variant="outline" size="sm" onclick={async () => { await refreshUpdates(); await loadVersionsFor(id) }}>Check for updates</Button>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
     </div>
   {/if}
@@ -321,8 +377,30 @@ async function handleSaveOptions() {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete provider"
-  description="This will remove provider '{id}' and its configuration. Any workspaces using this provider will need a new one."
+  description={deleteDescription}
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}
+/>
+
+<ConfirmDialog
+  bind:open={confirmSwitchOpen}
+  title={`Switch '${id}' from ${provider?.version ?? ""} to ${targetTag}`}
+  description={`Workspaces created with ${provider?.version ?? ""} may behave differently after this change. Existing workspaces will run against ${targetTag} the next time they're used.`}
+  confirmLabel="Switch"
+  loading={switching}
+  onconfirm={async () => {
+    switching = true
+    try {
+      await providerSetVersion(id, targetTag)
+      toasts.success(`Switched ${id} to ${targetTag}`)
+      await loadVersionsFor(id)
+      await refreshUpdates()
+    } catch (err) {
+      toasts.error(`Failed to switch version: ${extractErrorMessage(err)}`)
+    } finally {
+      switching = false
+      confirmSwitchOpen = false
+    }
+  }}
 />
