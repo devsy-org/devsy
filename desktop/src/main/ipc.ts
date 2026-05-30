@@ -28,6 +28,17 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
+// Cache for provider update checks. Seeded on launch and refreshed every 6 hours.
+type UpdateInfo = {
+  current: string
+  latest: string
+  updateAvailable: boolean
+  unsupported: boolean
+  error?: string
+}
+
+let providerUpdateCache: Record<string, UpdateInfo> = {}
+
 interface SshKeyInfo {
   name: string
   keyType: string
@@ -51,9 +62,55 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
 }
 
-export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: Map<string, import("node:child_process").ChildProcess> } {
+export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: Map<string, import("node:child_process").ChildProcess>; scheduleProviderUpdateCheck: typeof scheduleProviderUpdateCheck } {
   const { cli, state, logStore } = deps
   const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
+
+  /**
+   * Compute provider update information by querying the CLI for all installed providers.
+   */
+  async function computeUpdateChecks(): Promise<Record<string, UpdateInfo>> {
+    const providers = state.providerList()
+    const out: Record<string, UpdateInfo> = {}
+    await Promise.all(
+      providers.map(async (p) => {
+        const version = typeof p.version === "string" ? p.version : ""
+        try {
+          const versions = await cli.run<Array<{ tag: string; current?: boolean }>>(
+            ["provider", "versions", p.name, "--json", "--no-cache"],
+          )
+          const list = versions ?? []
+          const current = list.find((v) => v.current)?.tag ?? version
+          const latest = list[0]?.tag ?? ""
+          out[p.name] = {
+            current,
+            latest,
+            updateAvailable: latest !== "" && latest !== current,
+            unsupported: false,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes("does not support version listing")) {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: true,
+            }
+          } else {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: false,
+              error: msg,
+            }
+          }
+        }
+      }),
+    )
+    return out
+  }
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
@@ -227,52 +284,13 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   )
 
   ipcMain.handle("provider_check_updates", async () => {
-    const providers = state.providerList()
-    const out: Record<string, {
-      current: string
-      latest: string
-      updateAvailable: boolean
-      unsupported: boolean
-      error?: string
-    }> = {}
-    await Promise.all(
-      providers.map(async (p) => {
-        const version = typeof p.version === "string" ? p.version : ""
-        try {
-          const versions = await cli.run<Array<{ tag: string; current?: boolean }>>(
-            ["provider", "versions", p.name, "--json", "--no-cache"],
-          )
-          const list = versions ?? []
-          const current = list.find((v) => v.current)?.tag ?? version
-          const latest = list[0]?.tag ?? ""
-          out[p.name] = {
-            current,
-            latest,
-            updateAvailable: latest !== "" && latest !== current,
-            unsupported: false,
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          if (msg.includes("does not support version listing")) {
-            out[p.name] = {
-              current: version,
-              latest: "",
-              updateAvailable: false,
-              unsupported: true,
-            }
-          } else {
-            out[p.name] = {
-              current: version,
-              latest: "",
-              updateAvailable: false,
-              unsupported: false,
-              error: msg,
-            }
-          }
-        }
-      }),
-    )
+    const out = await computeUpdateChecks()
+    providerUpdateCache = out
     return out
+  })
+
+  ipcMain.handle("provider_get_update_cache", async () => {
+    return providerUpdateCache
   })
 
   // ── Machines ──
@@ -937,7 +955,30 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     },
   )
 
-  return { tunnelProcesses }
+  // Wrap computeUpdateChecks for scheduling. This closure captures it safely.
+  function scheduleUpdates(): void {
+    // Run immediately on launch.
+    void (async () => {
+      try {
+        providerUpdateCache = await computeUpdateChecks()
+      } catch {
+        // Silently swallow background errors.
+      }
+    })()
+
+    // Then schedule every 6 hours.
+    setInterval(() => {
+      void (async () => {
+        try {
+          providerUpdateCache = await computeUpdateChecks()
+        } catch {
+          // Silently swallow background errors.
+        }
+      })()
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  return { tunnelProcesses, scheduleProviderUpdateCheck: scheduleUpdates }
 }
 
 function sanitizeAnalyticsProperties(
