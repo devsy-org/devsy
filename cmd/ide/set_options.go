@@ -24,8 +24,8 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	setOptionsCmd := &cobra.Command{
-		Use:   "set-options",
-		Short: "Configure ide options",
+		Use:   "set",
+		Short: "Set IDE options",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("please specify the ide")
