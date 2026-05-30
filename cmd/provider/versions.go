@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 
@@ -76,7 +77,7 @@ func completeProviderName(
 	}
 }
 
-func renderVersionsTable(w *os.File, versions []workspace.ProviderVersion) error {
+func renderVersionsTable(w io.Writer, versions []workspace.ProviderVersion) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "TAG\tPUBLISHED\tSTATUS"); err != nil {
 		return err

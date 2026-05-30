@@ -97,17 +97,6 @@ func TestRewriteSourceTag(t *testing.T) {
 	}
 }
 
-func TestRewriteSourceTag_RejectsAmbiguousAt(t *testing.T) {
-	// If splitSourceAndTag yields a base that itself contains @, we cannot safely swap.
-	// Construct such a case: source with two @ signs.
-	// splitSourceAndTag splits on the FIRST @, so for "a@b@c", base="a", tag="b@c".
-	// base="a" does NOT contain @ — so this case passes. To get a base WITH @ we'd need a
-	// source like "a@@b" — base="a", tag="@b". Still base has no @.
-	// The check is defensive; without splitSourceAndTag changing semantics, this branch
-	// is hard to trigger naturally. Skip if not triggerable.
-	t.Skip("base-with-@ branch is defensive; not triggerable via splitSourceAndTag")
-}
-
 func TestListVersionsForSource_CachesResults(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DEVSY_HOME", dir)

@@ -178,11 +178,23 @@ func (cmd *ListCmd) runAvailable(ctx context.Context) error {
 }
 
 func fetchProviderRepos(ctx context.Context) ([]map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx,
-		"GET",
-		config.GitHubAPIUserURL+"/repos?per_page=100",
-		nil,
-	)
+	const perPage = 100
+	var all []map[string]any
+	for page := 1; ; page++ {
+		pageRepos, err := fetchProviderReposPage(ctx, page, perPage)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, pageRepos...)
+		if len(pageRepos) < perPage {
+			return all, nil
+		}
+	}
+}
+
+func fetchProviderReposPage(ctx context.Context, page, perPage int) ([]map[string]any, error) {
+	url := fmt.Sprintf("%s/repos?per_page=%d&page=%d", config.GitHubAPIUserURL, perPage, page)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -192,19 +204,17 @@ func fetchProviderRepos(ctx context.Context) ([]map[string]any, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	result, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(result))
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
 	}
 
-	var jsonResult []map[string]any
-	if err := json.Unmarshal(result, &jsonResult); err != nil {
+	var pageRepos []map[string]any
+	if err := json.Unmarshal(body, &pageRepos); err != nil {
 		return nil, err
 	}
-
-	return jsonResult, nil
+	return pageRepos, nil
 }

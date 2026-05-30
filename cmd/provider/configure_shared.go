@@ -105,6 +105,20 @@ func configureProviderOptions(
 	return devsyConfig, nil
 }
 
+// writeDefaultProvider reloads the config for the given context and writes providerName
+// as the active context's DefaultProvider.
+func writeDefaultProvider(contextName, providerName string) error {
+	cfg, err := config.LoadConfig(contextName, "")
+	if err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	cfg.Current().DefaultProvider = providerName
+	if err := config.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("save default provider: %w", err)
+	}
+	return nil
+}
+
 // resolveProviderName returns the provider name from args[0] if present, else the fallback
 // (typically the active context's DefaultProvider). Errors when neither is available.
 func resolveProviderName(args []string, defaultProvider string) (string, error) {

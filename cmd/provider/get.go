@@ -33,6 +33,7 @@ func NewGetCmd(flags *flags.GlobalFlags) *cobra.Command {
 	getCmd := &cobra.Command{
 		Use:   "get [provider]",
 		Short: "Show provider info and current options",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

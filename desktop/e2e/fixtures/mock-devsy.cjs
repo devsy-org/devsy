@@ -204,6 +204,9 @@ switch (cmd) {
       case "add": {
         const provName = extra
         if (provName) {
+          for (const key of Object.keys(state.providers)) {
+            state.providers[key].default = false
+          }
           state.providers[provName] = {
             config: {
               name: provName,
@@ -215,7 +218,7 @@ switch (cmd) {
               optionGroups: [],
             },
             state: { initialized: false },
-            default: false,
+            default: true,
           }
           saveState(state)
         }

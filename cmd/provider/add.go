@@ -143,17 +143,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			return fmt.Errorf("configure provider: %w", configureErr)
 		}
 
-		// Write DefaultProvider explicitly after successful configure
-		freshConfig, err := config.LoadConfig(cmd.Context, "")
-		if err != nil {
-			return fmt.Errorf("reload config: %w", err)
-		}
-		freshConfig.Current().DefaultProvider = providerConfig.Name
-		if err := config.SaveConfig(freshConfig); err != nil {
-			return fmt.Errorf("save default provider: %w", err)
-		}
-
-		return nil
+		return writeDefaultProvider(cmd.Context, providerConfig.Name)
 	}
 
 	log.Infof("To configure the provider, please run the following command:")

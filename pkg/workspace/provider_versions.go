@@ -15,11 +15,6 @@ var ErrVersionListUnsupported = errors.New("provider source does not support ver
 // ErrVersionListRateLimited indicates upstream rate-limiting hit the lister.
 var ErrVersionListRateLimited = errors.New("provider version list rate-limited")
 
-// ErrInvalidProviderSourceForVersionSwap indicates a source string cannot be safely rewritten with a version tag.
-var ErrInvalidProviderSourceForVersionSwap = errors.New(
-	"provider source cannot be safely rewritten with a version tag",
-)
-
 // githubAPIBaseURL is the base URL for GitHub API calls; overridden in tests.
 var githubAPIBaseURL = "https://api.github.com"
 
@@ -128,15 +123,11 @@ type ListVersionsOptions struct {
 }
 
 // rewriteSourceTag returns the source with its version tag replaced by the given one.
-// Errors if the tag is empty or the source contains multiple @ signs in non-version positions.
 func rewriteSourceTag(source, tag string) (string, error) {
 	if tag == "" {
 		return "", fmt.Errorf("version tag must not be empty")
 	}
 	base, _ := splitSourceAndTag(source)
-	if strings.Contains(base, "@") {
-		return "", ErrInvalidProviderSourceForVersionSwap
-	}
 	return base + "@" + tag, nil
 }
 
