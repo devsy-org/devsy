@@ -11,16 +11,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// DefaultCmd holds the cmd flags.
-type DefaultCmd struct {
+// UseCmd holds the cmd flags.
+type UseCmd struct {
 	*flags.GlobalFlags
 }
 
-// NewDefaultCmd creates the cobra command for `provider default`.
-func NewDefaultCmd(f *flags.GlobalFlags) *cobra.Command {
-	cmd := &DefaultCmd{GlobalFlags: f}
+// NewUseCmd creates the cobra command for `provider use`.
+func NewUseCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &UseCmd{GlobalFlags: f}
 	defaultCmd := &cobra.Command{
-		Use:   "default <name>",
+		Use:   "use <name>",
 		Short: "Set the default provider for the active context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {

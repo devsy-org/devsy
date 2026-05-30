@@ -283,7 +283,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
-	baseArgs := []string{cmdProvider, "remove"}
+	baseArgs := []string{cmdProvider, "delete"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {

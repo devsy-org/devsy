@@ -6,10 +6,10 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 )
 
-func TestNewDefaultCmd_Wiring(t *testing.T) {
-	cmd := NewDefaultCmd(&flags.GlobalFlags{})
-	if cmd.Use != "default <name>" {
-		t.Errorf("Use: got %q want %q", cmd.Use, "default <name>")
+func TestNewUseCmd_Wiring(t *testing.T) {
+	cmd := NewUseCmd(&flags.GlobalFlags{})
+	if cmd.Use != "use <name>" {
+		t.Errorf("Use: got %q want %q", cmd.Use, "use <name>")
 	}
 	if cmd.Short == "" {
 		t.Error("Short must be set")
