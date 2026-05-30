@@ -12,7 +12,10 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const cmdConfig = "config"
+const (
+	cmdConfig = "config"
+	cmdRead   = "read"
+)
 
 var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func() {
 	var initialDir string
@@ -32,7 +35,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -74,7 +77,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 			"--include-features-configuration",
 		})
@@ -102,7 +105,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -127,7 +130,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		_, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", "/nonexistent/path/that/does/not/exist",
 		})
 		framework.ExpectError(err)
@@ -137,7 +140,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		_, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 		})
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -152,7 +155,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -194,7 +197,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -234,7 +237,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -261,7 +264,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 			"--include-merged-configuration",
 		})
@@ -289,7 +292,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdConfig, "read",
+			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -325,7 +328,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--id-label", "devsy.readconfig.test=custom",
 				"--include-merged-configuration",
 			})
@@ -362,7 +365,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--container-id", containerID,
 			})
 			framework.ExpectNoError(err)
@@ -388,7 +391,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--container-id", "nonexistent-container-id-12345",
 			})
 			framework.ExpectError(err)
@@ -415,7 +418,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--container-id", containerID,
 			})
 			if err == nil {
@@ -448,7 +451,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--container-id", containerID,
 				"--docker-path", "docker",
 			})
@@ -470,7 +473,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--container-id", "any-container",
 				"--docker-path", "/nonexistent/path/to/docker",
 			})
@@ -486,7 +489,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdConfig, "read",
+				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})

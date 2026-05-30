@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	cmdInternal = "internal"
-	cmdAgent    = "agent"
+	cmdInternal     = "internal"
+	cmdAgent        = "agent"
+	cmdInstallDotfs = "install-dotfiles"
 )
 
 // SetupParams holds all parameters needed for dotfiles setup.
@@ -89,7 +90,7 @@ func buildDotCmdAgentArguments(
 		cmdInternal,
 		cmdAgent,
 		"workspace",
-		"install-dotfiles",
+		cmdInstallDotfs,
 		"--repository",
 		dotfilesRepo,
 	}
