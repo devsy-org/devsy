@@ -173,4 +173,32 @@ describe("ProviderSheet", () => {
     expect(elapsed).toBeLessThan(TIMING_BUDGET_MS)
     unmount()
   })
+
+  it("hides 'Set Default' button when provider is default", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh", { isDefault: true }), open: true },
+    })
+
+    await flushAsync()
+
+    // Find the "Set Default" button by exact text match
+    const buttons = Array.from(document.querySelectorAll("button"))
+    const setDefaultButton = buttons.find((btn) => btn.textContent?.trim() === "Set Default")
+    expect(setDefaultButton).toBeUndefined()
+    unmount()
+  })
+
+  it("shows 'Set Default' button when provider is not default", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+
+    await flushAsync()
+
+    // Find the "Set Default" button by exact text match
+    const buttons = Array.from(document.querySelectorAll("button"))
+    const setDefaultButton = buttons.find((btn) => btn.textContent?.trim() === "Set Default")
+    expect(setDefaultButton).toBeDefined()
+    unmount()
+  })
 })

@@ -294,7 +294,9 @@ async function handleSaveOptions() {
       {/if}
       <ButtonGroup.Root>
         <Button variant="outline" size="sm" onclick={startRename}>Rename</Button>
-        <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+        {#if !provider.isDefault}
+          <Button variant="outline" size="sm" onclick={handleSetDefault}>Set Default</Button>
+        {/if}
         <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
       </ButtonGroup.Root>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
