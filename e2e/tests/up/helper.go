@@ -34,7 +34,7 @@ func (btc *baseTestContext) execSSHCapture(
 ) (string, error) {
 	output, _, err := btc.f.ExecCommandCapture(
 		ctx,
-		[]string{"ssh", "--command", command, projectName},
+		[]string{"workspace", "ssh", "--command", command, projectName},
 	)
 	return strings.TrimSpace(output), err
 }

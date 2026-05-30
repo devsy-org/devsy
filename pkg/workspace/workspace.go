@@ -27,8 +27,8 @@ import (
 )
 
 var errProvideWorkspaceArg = errors.New(
-	"please provide a workspace name, e.g. 'devsy up ./my-folder', " +
-		"'devsy up github.com/my-org/my-repo' or 'devsy up ubuntu'")
+	"please provide a workspace name, e.g. 'devsy workspace up ./my-folder', " +
+		"'devsy workspace up github.com/my-org/my-repo' or 'devsy workspace up ubuntu'")
 
 // ErrWorkspaceNotFound is returned by Get when the requested workspace is not
 // present in the local store or any configured provider. Callers should use

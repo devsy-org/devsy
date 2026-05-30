@@ -221,7 +221,7 @@ func startDetachedBrowserTunnel(
 
 	pkglog.Infof(
 		"%s browser tunnel running in background (PID %d). Logs: %s. "+
-			"Run 'devsy stop %s' to terminate.",
+			"Run 'devsy workspace stop %s' to terminate.",
 		label, pid, logLocation, workspaceID,
 	)
 

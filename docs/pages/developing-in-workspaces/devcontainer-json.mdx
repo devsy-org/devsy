@@ -45,7 +45,7 @@ The `devcontainer.json` can be located at the following places within your proje
 
 You can specify a specific file to use via the `--devcontainer-path` CLI flag:
 ```
-devsy up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
+devsy workspace up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
 ```
 
 A `devcontainer.json` is not able to import or inherit any settings from other `devcontainer.json` files, so make sure all dependent files and folders are available within the configuration subdirectory.
@@ -104,7 +104,7 @@ field of the `devcontainer.json` file as follows:
 
 When working on the `devcontainer.json` itself, it's important to understand when Devsy will apply new configuration.
 
-A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but Devsy allows you to make changes to the configuration on the fly and reapply them via `devsy up my-workspace --recreate`.
+A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but Devsy allows you to make changes to the configuration on the fly and reapply them via `devsy workspace up my-workspace --recreate`.
 This will apply **ALL** new configurations including Dockerfile changes as well as new mounts, new features or any other configuration that is not included in the above command. Devsy will only replace the existing running container if the command has succeeded, so if there is a mistake in the new configuration, the existing workspace should not be impacted.
 
 :::warning Recreating / Rebuilding

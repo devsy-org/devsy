@@ -140,7 +140,7 @@ func handleDeleteLoadError(
 	if len(opts.Args) == 0 {
 		return "", fmt.Errorf(
 			"failed to load workspace: %w, "+
-				"specify the workspace id to delete, e.g. 'devsy delete my-workspace --force'",
+				"specify the workspace id to delete, e.g. 'devsy workspace delete my-workspace --force'",
 			loadErr,
 		)
 	}

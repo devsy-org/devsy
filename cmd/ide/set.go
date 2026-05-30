@@ -32,7 +32,7 @@ func NewSetCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Long: `Set the IDE for an existing workspace without starting it.
 
 The change is persisted to the workspace config and will be used on the next
-'devsy up'. Available IDEs can be listed with 'devsy ide list'.`,
+'devsy workspace up'. Available IDEs can be listed with 'devsy ide list'.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return fmt.Errorf("usage: devsy ide set-workspace <workspace> <ide>")

@@ -329,22 +329,6 @@ if (cmd === "workspace") {
   process.exit(0)
 }
 
-// Root shortcuts: only verbs that the desktop still emits at the top level.
-const rootShortcuts = new Set([
-  "up",
-  "stop",
-  "ssh",
-  "exec",
-  "ls",
-  "list",
-  "logs",
-  "status",
-])
-if (rootShortcuts.has(cmd)) {
-  workspaceHandlers[cmd](rawArgs.slice(1))
-  process.exit(0)
-}
-
 // Non-workspace top-level commands (preserved verbatim).
 const parsed = parseArgs(rawArgs)
 const sub = parsed.positional[1] || ""

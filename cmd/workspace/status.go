@@ -87,7 +87,7 @@ func (cmd *StatusCmd) Run(
 		switch instanceStatus {
 		case client2.StatusStopped:
 			log.Infof(
-				"Workspace '%s' is '%s', you can start it via 'devsy up %s'",
+				"Workspace '%s' is '%s', you can start it via 'devsy workspace up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
@@ -101,7 +101,7 @@ func (cmd *StatusCmd) Run(
 			)
 		case client2.StatusNotFound:
 			log.Infof(
-				"Workspace '%s' is '%s', you can create it via 'devsy up %s'",
+				"Workspace '%s' is '%s', you can create it via 'devsy workspace up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),

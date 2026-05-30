@@ -214,7 +214,7 @@ devsy://command?param1=value1&param2=value2
 
 ### Open Workspace
 
-Open a workspace based on a source (similar to `devsy up`, but shareable):
+Open a workspace based on a source (similar to `devsy workspace up`, but shareable):
 
 ```
 devsy://open?source=<url-encoded-source>&workspace=<name>&provider=<provider>&ide=<ide>

@@ -6,7 +6,7 @@ sidebar_label: Deploying machines
 
 In Devsy, machines are the infrastructure that run your devcontainer. Providers like GCP, AWS, and DigitalOcean are considered "machine" providers because they first set up a virtual machine (VM) to host your container.
 
-When you start a workspace with Devsy, such as running `devsy up`, Devsy uses a selected provider and starts your devcontainer.
+When you start a workspace with Devsy, such as running `devsy workspace up`, Devsy uses a selected provider and starts your devcontainer.
 If the provider requires a virtual machine (VM), Devsy determines whether to create one. It uses your local environment's credentials and the corresponding CLI tool (e.g., `aws` for AWS or `az` for Azure) to set up the VM.
 Once the VM is running, Devsy connects to it through the provider's secure tunnel. Below are examples of providers and their secure tunnels.
 

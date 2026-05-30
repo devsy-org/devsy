@@ -26,7 +26,7 @@ cat /etc/docker/daemon.json
 Then prebuild your image, this will populate the registry cache so that developers that need to build updates can build on top of the existing pre build.
 
 ```
-devsy build my-workspace
+devsy workspace build my-workspace
 ```
 
 Now the next time you or anyone in your team needs to build an image, it can pull from the cache. If you've made changes to your environment, then Devsy will detect these changes and are

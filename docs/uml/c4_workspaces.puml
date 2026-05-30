@@ -28,7 +28,7 @@ System_Boundary(cluster, "Machine / Cluster") {
   }
 }
 
-BiRel(user, prov, "devsy up ...")
+BiRel(user, prov, "devsy workspace up ...")
 BiRel(prov, controlPlane, "")
 BiRel(controlPlane, agent, " gRPC")
 BiRel_Left(agent, ssh, "Tunnelled STDIO")

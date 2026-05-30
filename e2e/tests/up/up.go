@@ -177,7 +177,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		containerEnvPath, _, err := f.ExecCommandCapture(
 			ctx,
-			[]string{"ssh", "--command", "cat " + devcontainerPath, projectName},
+			[]string{"workspace", "ssh", "--command", "cat " + devcontainerPath, projectName},
 		)
 		framework.ExpectNoError(err)
 		expectedImageName := language.MapConfig[language.Go].Image

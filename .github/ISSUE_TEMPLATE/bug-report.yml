@@ -35,7 +35,7 @@ body:
       label: Steps to reproduce
       description: Minimal steps to reproduce. The more precise, the faster the issue can be investigated.
       placeholder: |
-        1. Run `devsy up ...`
+        1. Run `devsy workspace up ...`
         2. Click on ...
         3. See error ...
     validations:

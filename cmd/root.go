@@ -19,7 +19,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
-	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
@@ -41,7 +40,6 @@ const (
 	groupConfig       = "config"
 	groupPlatform     = "platform"
 	groupDevcontainer = "devcontainer"
-	groupShortcut     = "shortcut"
 	groupMeta         = "meta"
 )
 
@@ -147,7 +145,6 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		&cobra.Group{ID: groupConfig, Title: "Configuration commands:"},
 		&cobra.Group{ID: groupPlatform, Title: "Platform commands:"},
 		&cobra.Group{ID: groupDevcontainer, Title: "Devcontainer commands:"},
-		&cobra.Group{ID: groupShortcut, Title: "Workspace shortcuts:"},
 		&cobra.Group{ID: groupMeta, Title: "Meta:"},
 	)
 
@@ -176,21 +173,6 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
 	wsCmd.GroupID = groupCore
 	rootCmd.AddCommand(wsCmd)
-
-	addShortcut := func(c *cobra.Command) {
-		c.GroupID = groupShortcut
-		rootCmd.AddCommand(c)
-	}
-	addShortcut(up.NewUpCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewStopCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewSSHCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewExecCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewLogsCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewStatusCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewListCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewBuildCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewDeleteCmd(globalFlags))
-	addShortcut(wsCmdPkg.NewRenameCmd(globalFlags))
 
 	selfCmd := self.NewSelfCmd(globalFlags)
 	selfCmd.GroupID = groupMeta

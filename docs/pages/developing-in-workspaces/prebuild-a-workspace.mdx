@@ -17,7 +17,7 @@ You can then reference docker image repositories, where Devsy will search this t
 To prebuild a workspace, you can run the following command:
 ```
 # Prebuild the docker image for github.com/my-org/my-repo and save it in image registry ghcr.io/my-org/my-repo
-devsy build github.com/my-org/my-repo --repository ghcr.io/my-org/my-repo
+devsy workspace build github.com/my-org/my-repo --repository ghcr.io/my-org/my-repo
 ```
 
 :::info Detecting existing Prebuilds
@@ -38,7 +38,7 @@ If a prebuild cannot be found in the given repository or credentials are missing
 
 When creating a new workspace, you can define the prebuild repository via the `--prebuild-repository` flag:
 ```
-devsy up github.com/my-org/my-repo --prebuild-repository ghcr.io/my-org/my-repo
+devsy workspace up github.com/my-org/my-repo --prebuild-repository ghcr.io/my-org/my-repo
 ```
 
 ### Reference Prebuild Repository in devcontainer.json

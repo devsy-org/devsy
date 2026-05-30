@@ -7,9 +7,6 @@ import (
 )
 
 // NewWorkspaceCmd builds the 'devsy workspace' parent command.
-// Subcommands are attached here; the same factory functions are also
-// invoked separately by cmd/root.go to provide root-level shortcuts
-// (devsy up == devsy workspace up).
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",

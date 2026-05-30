@@ -28,10 +28,10 @@ System_Boundary(registry, "Container Registry") {
     System(cacheRepo, "Cached Layer Repositories", "")
 }
 
-Rel(user, prov, " devsy up ...")
+Rel(user, prov, " devsy workspace up ...")
 Rel(prov, controlPlane, " kubectl ...")
 Rel(controlPlane, kb1, " ")
-Rel(user, registry, "devsy build ...")
+Rel(user, registry, "devsy workspace build ...")
 Rel(registry, kb1, "")
 Rel(kb1, kr1, " image")
 @enduml
