@@ -16,7 +16,7 @@ import (
 const (
 	HelperScript = `#!/bin/bash
 
-devsy agent git-ssh-signature "$@"
+devsy internal agent git-ssh-signature "$@"
 `
 )
 

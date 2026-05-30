@@ -373,7 +373,7 @@ func buildHelperArgs(
 	openBrowser bool,
 ) []string {
 	args := []string{
-		"helper", "browser-tunnel",
+		"internal", "helper", "browser-tunnel",
 		"--context", contextName,
 		"--workspace", workspaceID,
 		"--target-url", tunnelParams.TargetURL,

@@ -500,7 +500,7 @@ func Tunnel(
 	}
 
 	// build command
-	command := fmt.Sprintf("'%s' helper ssh-server --stdio", ContainerDevsyHelperLocation)
+	command := fmt.Sprintf("'%s' internal helper ssh-server --stdio", ContainerDevsyHelperLocation)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}

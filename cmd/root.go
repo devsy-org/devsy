@@ -6,14 +6,13 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
 	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/helper"
 	"github.com/devsy-org/devsy/cmd/ide"
+	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
@@ -159,12 +158,10 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 }
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
-	rootCmd.AddCommand(agent.NewAgentCmd(globalFlags))
 	providerCmd := provider.NewProviderCmd(globalFlags)
 	providerCmd.GroupID = groupConfig
 	rootCmd.AddCommand(providerCmd)
 	rootCmd.AddCommand(use.NewUseCmd(globalFlags))
-	rootCmd.AddCommand(helper.NewHelperCmd(globalFlags))
 	ideCmd := ide.NewIDECmd(globalFlags)
 	ideCmd.GroupID = groupConfig
 	rootCmd.AddCommand(ideCmd)
@@ -194,20 +191,17 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	addShortcut(wsCmdPkg.NewStatusCmd(globalFlags))
 	addShortcut(wsCmdPkg.NewListCmd(globalFlags))
 
-	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
 	selfCmd := self.NewSelfCmd(globalFlags)
 	selfCmd.GroupID = groupMeta
 	rootCmd.AddCommand(selfCmd)
 	configCmd := cliconfig.NewConfigCmd(globalFlags)
 	configCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
-	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
 	featureCmd := feature.NewFeatureCmd(globalFlags)
 	featureCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(featureCmd)
 	templateCmd := template.NewTemplateCmd(globalFlags)
 	templateCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(templateCmd)
-	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))
+	rootCmd.AddCommand(cmdinternal.NewInternalCmd(globalFlags))
 }

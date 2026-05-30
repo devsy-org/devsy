@@ -248,7 +248,7 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 		return err
 	}
 
-	args := []string{"agent", "container", "ssh-server"}
+	args := []string{"internal", "agent", "container", "ssh-server"}
 	if cmd.Config.Ssh.Workdir != "" {
 		args = append(args, "--workdir", cmd.Config.Ssh.Workdir)
 	}

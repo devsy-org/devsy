@@ -33,7 +33,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				_, _, err = f.ExecCommandCapture(ctx, []string{
-					"run-user-commands",
+					"internal", "run-user-commands",
 					"--workspace-folder", tempDir,
 				})
 				framework.ExpectNoError(err)

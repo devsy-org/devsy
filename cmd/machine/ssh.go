@@ -140,7 +140,10 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 			InstallTerminfo: cmd.InstallTerminfo,
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			command := fmt.Sprintf("'%s' helper ssh-server --stdio", machineClient.AgentPath())
+			command := fmt.Sprintf(
+				"'%s' internal helper ssh-server --stdio",
+				machineClient.AgentPath(),
+			)
 			if cmd.Debug {
 				command += " --debug"
 			}

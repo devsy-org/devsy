@@ -57,7 +57,7 @@ export class DaemonManager {
   private spawnDaemon(): void {
     const child = spawn(
       this.binaryPath,
-      [...this.prefixArgs, "daemon-local"],
+      [...this.prefixArgs, "internal", "daemon-local"],
       { detached: true, stdio: "ignore" },
     )
     child.unref()

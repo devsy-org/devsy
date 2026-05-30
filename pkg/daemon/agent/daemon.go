@@ -191,7 +191,7 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 }
 
 func buildDaemonArgs(executable, agentDir, interval, shutdownAction string) []string {
-	args := []string{executable, "agent", "daemon"}
+	args := []string{executable, "internal", "agent", "daemon"}
 	if agentDir != "" {
 		args = append(args, "--agent-dir", agentDir)
 	}

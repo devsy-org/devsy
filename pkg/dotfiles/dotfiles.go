@@ -81,6 +81,7 @@ func buildDotCmdAgentArguments(
 	strictHostKey, debug bool,
 ) []string {
 	agentArguments := []string{
+		"internal",
 		"agent",
 		"workspace",
 		"install-dotfiles",

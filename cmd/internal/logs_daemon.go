@@ -1,4 +1,4 @@
-package cmd
+package cmdinternal
 
 import (
 	"context"
@@ -66,7 +66,7 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	command := fmt.Sprintf(
-		"%s%q agent workspace logs-daemon --context %q --id %q",
+		"%s%q internal agent workspace logs-daemon --context %q --id %q",
 		agent.ContainerAgentEnvPrefix,
 		workspaceClient.AgentPath(),
 		workspaceClient.Context(),

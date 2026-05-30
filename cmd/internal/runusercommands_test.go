@@ -1,4 +1,4 @@
-package cmd
+package cmdinternal
 
 import (
 	"testing"
@@ -35,17 +35,17 @@ func TestNewRunUserCommandsCmdAlias_IsHidden(t *testing.T) {
 	assert.True(t, cmd.Hidden, "camelCase alias should be hidden")
 }
 
-func TestNewRunUserCommandsCmdAlias_RegisteredInRoot(t *testing.T) {
-	rootCmd, _ := BuildRoot()
+func TestNewRunUserCommandsCmdAlias_RegisteredInInternal(t *testing.T) {
+	internalCmd := NewInternalCmd(&flags.GlobalFlags{})
 	found := false
-	for _, sub := range rootCmd.Commands() {
+	for _, sub := range internalCmd.Commands() {
 		if sub.Use == "runUserCommands" {
 			found = true
 			assert.True(t, sub.Hidden)
 			break
 		}
 	}
-	assert.True(t, found, "runUserCommands alias should be registered in root")
+	assert.True(t, found, "runUserCommands alias should be registered under internal")
 }
 
 func TestNewRunUserCommandsCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
@@ -407,16 +407,16 @@ func TestBuildLifecycleEnvArgs_NilValueSkipped(t *testing.T) {
 	assert.NotContains(t, args, "REMOVE")
 }
 
-func TestRunUserCommandsCmd_RegisteredInRoot(t *testing.T) {
-	rootCmd, _ := BuildRoot()
+func TestRunUserCommandsCmd_RegisteredInInternal(t *testing.T) {
+	internalCmd := NewInternalCmd(&flags.GlobalFlags{})
 	found := false
-	for _, sub := range rootCmd.Commands() {
+	for _, sub := range internalCmd.Commands() {
 		if sub.Use == "run-user-commands" {
 			found = true
 			break
 		}
 	}
-	assert.True(t, found, "run-user-commands should be registered in root")
+	assert.True(t, found, "run-user-commands should be registered under internal")
 }
 
 func TestRunUserCommandsCmd_BuildCLIRemoteEnvArgs(t *testing.T) {

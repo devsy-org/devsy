@@ -41,7 +41,7 @@ func ConfigureHelper(binaryPath, userName string, port int) error {
 		return err
 	}
 
-	helper := fmt.Sprintf(`helper = !'%s' agent git-credentials`, binaryPath)
+	helper := fmt.Sprintf(`helper = !'%s' internal agent git-credentials`, binaryPath)
 	if port != -1 {
 		helper += fmt.Sprintf(` --port %d`, port)
 	}
@@ -226,7 +226,16 @@ func GetCredentials(requestObj *GitCredentials) (*GitCredentials, error) {
 			return nil, err
 		}
 
-		c := exec.Command(binaryPath, "agent", "git-credentials", "--port", gitHelperPort, "get")
+		//nolint:gosec // binaryPath is from os.Executable(), not user input
+		c := exec.Command(
+			binaryPath,
+			"internal",
+			"agent",
+			"git-credentials",
+			"--port",
+			gitHelperPort,
+			"get",
+		)
 
 		c.Stdin = strings.NewReader(ToString(requestObj))
 		stdout, err := c.Output()

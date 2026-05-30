@@ -311,7 +311,7 @@ func buildDeferredHooksCmd(
 	}
 
 	args := []string{
-		"agent", "container", "deferred-hooks",
+		"internal", "agent", "container", "deferred-hooks",
 		"--setup-info", setupInfo,
 	}
 	if prebuild {
@@ -480,7 +480,7 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 		}
 
 		args := []string{
-			"agent", "container", "daemon",
+			"internal", "agent", "container", "daemon",
 			"--timeout", workspaceInfo.ContainerTimeout,
 		}
 		if shutdownAction != "" {
@@ -508,7 +508,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 		}
 
 		args := []string{
-			"agent", "container", "post-attach",
+			"internal", "agent", "container", "post-attach",
 			"--setup-info", cmd.SetupInfo,
 		}
 		if len(sctx.workspaceInfo.CLIOptions.SecretsEnv) > 0 {
@@ -700,7 +700,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 			}
 
 			args := []string{
-				"agent", "container", "vscode-async",
+				"internal", "agent", "container", "vscode-async",
 				"--setup-info", cmd.SetupInfo,
 				"--flavor", string(flavor),
 			}
@@ -756,6 +756,7 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 
 			return exec.Command(
 				binaryPath,
+				"internal",
 				"agent",
 				"container",
 				"openvscode-async",
@@ -814,6 +815,7 @@ func (cmd *SetupContainerCmd) setupCodeServer(
 			//nolint:gosec // binaryPath is from os.Executable(), not user input
 			return exec.Command(
 				binaryPath,
+				"internal",
 				"agent",
 				"container",
 				"code-server-async",
@@ -847,7 +849,11 @@ func configureSystemGitCredentials(
 		return nil, err
 	}
 
-	gitCredentials := fmt.Sprintf("!'%s' agent git-credentials --port %d", binaryPath, serverPort)
+	gitCredentials := fmt.Sprintf(
+		"!'%s' internal agent git-credentials --port %d",
+		binaryPath,
+		serverPort,
+	)
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
 	err = git.CommandContext(ctx, git.GetDefaultExtraEnv(false), "config", "--system", "--add",

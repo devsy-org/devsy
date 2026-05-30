@@ -714,7 +714,7 @@ func configureCredentials(cfg credentialsConfig) (string, string, error) {
 	gitCredentials := ""
 	if cfg.workspaceInfo.Agent.InjectGitCredentials == config.BoolTrue {
 		gitCredentials = fmt.Sprintf(
-			"!'%s' agent git-credentials --port %d",
+			"!'%s' internal agent git-credentials --port %d",
 			binaryPath,
 			serverPort,
 		)

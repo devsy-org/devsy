@@ -38,8 +38,9 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 		GitSSHSigningKey: "",
 	}, false)
 
-	if len(args) < 2 || args[0] != "helper" || args[1] != "browser-tunnel" {
-		t.Fatalf("expected args to start with [helper browser-tunnel], got %v", args)
+	if len(args) < 3 || args[0] != "internal" || args[1] != "helper" ||
+		args[2] != "browser-tunnel" {
+		t.Fatalf("expected args to start with [internal helper browser-tunnel], got %v", args)
 	}
 
 	checkPairs := []struct {

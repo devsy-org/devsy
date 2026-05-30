@@ -37,13 +37,13 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 		},
 		{cmdPath: "pro cluster list", flagName: "project", envName: envDevsyProject, want: "demo"},
 		{
-			cmdPath:  "agent container setup",
+			cmdPath:  "internal agent container setup",
 			flagName: "access-key",
 			envName:  "DEVSY_ACCESS_KEY",
 			want:     "secret",
 		},
 		{
-			cmdPath:  "agent container setup",
+			cmdPath:  "internal agent container setup",
 			flagName: "platform-host",
 			envName:  "DEVSY_PLATFORM_HOST",
 			want:     "p.example.com",

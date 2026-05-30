@@ -545,6 +545,7 @@ func (cmd *SSHCmd) startTunnel(
 	log.Debugf("Run outer container tunnel")
 	commandArgs := []string{
 		agent.ContainerDevsyHelperLocation,
+		"internal",
 		"helper",
 		"ssh-server",
 		"--track-activity",
@@ -707,6 +708,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 	// Now we forward the agent socket to the remote, and setup remote gpg to use it
 	forwardAgent := []string{
 		agent.ContainerDevsyHelperLocation,
+		"internal",
 		"agent",
 		"workspace",
 		"setup-gpg",
