@@ -78,7 +78,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			name:         "basic repo only",
 			dotfilesRepo: "https://github.com/user/dotfiles",
 			expected: []string{
-				cmdInternal, cmdAgent, "workspace", cmdInstallDotfs,
+				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				"--repository", "https://github.com/user/dotfiles",
 			},
 		},
@@ -87,7 +87,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			dotfilesRepo:   "https://github.com/user/dotfiles",
 			dotfilesScript: "install.sh",
 			expected: []string{
-				cmdInternal, cmdAgent, "workspace", cmdInstallDotfs,
+				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				"--repository", "https://github.com/user/dotfiles",
 				"--install-script", "install.sh",
 			},
@@ -99,7 +99,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			strictHostKey:  true,
 			debug:          true,
 			expected: []string{
-				cmdInternal, cmdAgent, "workspace", cmdInstallDotfs,
+				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				"--repository", "https://github.com/user/dotfiles",
 				"--strict-host-key-checking", "--debug",
 				"--install-script", "setup.sh",

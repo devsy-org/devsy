@@ -17,6 +17,7 @@ import (
 const (
 	cmdInternal     = "internal"
 	cmdAgent        = "agent"
+	cmdWorkspace    = "workspace"
 	cmdInstallDotfs = "install-dotfiles"
 )
 
@@ -89,7 +90,7 @@ func buildDotCmdAgentArguments(
 	agentArguments := []string{
 		cmdInternal,
 		cmdAgent,
-		"workspace",
+		cmdWorkspace,
 		cmdInstallDotfs,
 		"--repository",
 		dotfilesRepo,
