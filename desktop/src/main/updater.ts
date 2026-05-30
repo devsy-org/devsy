@@ -89,11 +89,15 @@ export function getLastStatus(): UpdateStatus {
 }
 
 function normalizeReleaseNotes(
-  notes: string | { note: string }[] | null | undefined,
+  notes: string | { note: string | null }[] | null | undefined,
 ): string | undefined {
   if (!notes) return undefined
   if (typeof notes === "string") return notes
-  if (Array.isArray(notes)) return notes.map((n) => n.note).join("\n")
+  if (Array.isArray(notes))
+    return notes
+      .map((n) => n.note)
+      .filter((n): n is string => !!n)
+      .join("\n")
   return undefined
 }
 
@@ -119,14 +123,25 @@ export function setAutoDownloadEnabled(enabled: boolean): void {
   // Update the live autoUpdater too so the change takes effect this session.
   // electron-updater reads autoDownload at the moment update-available fires.
   if (app.isPackaged) {
-    import("electron-updater")
-      .then(({ autoUpdater }) => {
-        if (autoUpdater && typeof autoUpdater === "object") {
+    loadAutoUpdater()
+      .then((autoUpdater) => {
+        if (autoUpdater) {
           autoUpdater.autoDownload = enabled
         }
       })
       .catch(() => {})
   }
+}
+
+// electron-updater exposes `autoUpdater` via a CJS getter that Node's
+// cjs-module-lexer doesn't surface as a named export under ESM. We have to
+// reach it through `default` (the CJS module.exports), which invokes the
+// getter and returns the platform-specific updater instance.
+async function loadAutoUpdater(): Promise<
+  (typeof import("electron-updater"))["autoUpdater"] | null
+> {
+  const mod = await import("electron-updater")
+  return mod.default?.autoUpdater ?? mod.autoUpdater ?? null
 }
 
 export function getAutoDownloadEnabled(): boolean {
@@ -147,7 +162,7 @@ export async function initAutoUpdater(
     return
   }
 
-  const { autoUpdater } = await import("electron-updater")
+  const autoUpdater = await loadAutoUpdater()
 
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
@@ -230,7 +245,7 @@ async function getUpdater() {
     setStatus({ state: "not-available", code: "dev-mode" })
     return null
   }
-  const { autoUpdater } = await import("electron-updater")
+  const autoUpdater = await loadAutoUpdater()
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
