@@ -23,7 +23,11 @@ import (
 
 const (
 	cmdWorkspace = "workspace"
+	cmdSSH       = "ssh"
 	flagCommand  = "--command"
+	flagIDE      = "--ide"
+	flagDebug    = "--debug"
+	ideNone      = "none"
 )
 
 type baseTestContext struct {

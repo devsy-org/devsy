@@ -77,7 +77,7 @@ var _ = ginkgo.Describe(
 
 			devsyUpOutput, _, err := tc.f.ExecCommandCapture(
 				ctx,
-				[]string{cmdWorkspace, "up", "--debug", "--ide", "none", tempDir},
+				[]string{cmdWorkspace, "up", flagDebug, flagIDE, ideNone, tempDir},
 			)
 			framework.ExpectNoError(err)
 
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"BAR",
-				[]string{cmdWorkspace, "ssh", flagCommand, "echo $FOO", workspace.ID},
+				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -187,7 +187,7 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"root",
-				[]string{cmdWorkspace, "ssh", flagCommand, "ps u -p 1", workspace.ID},
+				[]string{cmdWorkspace, cmdSSH, flagCommand, "ps u -p 1", workspace.ID},
 			)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -396,7 +396,13 @@ var _ = ginkgo.Describe(
 				true,
 				true,
 				"/home/vscode/remote-env.out",
-				[]string{cmdWorkspace, "ssh", flagCommand, "ls $HOME/remote-env.out", workspace.ID},
+				[]string{
+					cmdWorkspace,
+					cmdSSH,
+					flagCommand,
+					"ls $HOME/remote-env.out",
+					workspace.ID,
+				},
 			)
 			framework.ExpectNoError(err)
 
@@ -407,7 +413,7 @@ var _ = ginkgo.Describe(
 				"BAR",
 				[]string{
 					cmdWorkspace,
-					"ssh",
+					cmdSSH,
 					flagCommand,
 					"cat $HOME/remote-env.out",
 					workspace.ID,
@@ -443,7 +449,7 @@ var _ = ginkgo.Describe(
 				true,
 				"SET=hello",
 				[]string{
-					cmdWorkspace, "ssh", flagCommand,
+					cmdWorkspace, cmdSSH, flagCommand,
 					"head -1 $HOME/remote-env-null.out",
 					workspace.ID,
 				},
@@ -457,7 +463,7 @@ var _ = ginkgo.Describe(
 				true,
 				"UNSET=true",
 				[]string{
-					cmdWorkspace, "ssh", flagCommand,
+					cmdWorkspace, cmdSSH, flagCommand,
 					"tail -1 $HOME/remote-env-null.out",
 					workspace.ID,
 				},
@@ -489,7 +495,7 @@ var _ = ginkgo.Describe(
 				"root",
 				[]string{
 					cmdWorkspace,
-					"ssh",
+					cmdSSH,
 					flagCommand,
 					"cat $HOME/remote-user.out",
 					workspace.ID,
