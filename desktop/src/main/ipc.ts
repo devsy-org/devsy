@@ -149,7 +149,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_set_ide",
     async (_event, args: { workspaceId: string; ide: string }) => {
       trackEvent("workspace_set_ide", { ide: args.ide })
-      await cli.runRaw(["ide", "set-workspace", args.workspaceId, args.ide])
+      await cli.runRaw(["ide", "set", args.ide, "--workspace", args.workspaceId])
     },
   )
 
