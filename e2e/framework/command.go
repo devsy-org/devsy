@@ -244,10 +244,10 @@ func (f *Framework) DevsyProviderUse(
 	provider string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{cmdProvider, "configure", provider}
+	baseArgs := []string{cmdProvider, "use", provider}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devsy provider configure failed: %s", err.Error())
+		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
 }
