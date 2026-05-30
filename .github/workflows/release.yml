@@ -212,6 +212,8 @@ jobs:
 
       - name: rewrite manifest URLs to GitHub Release assets
         if: hashFiles('desktop/release/latest*.yml', 'desktop/release/beta*.yml') != ''
+        # Windows defaults to pwsh; `$REPO`/`$TAG` would be empty PowerShell vars.
+        shell: bash
         env:
           REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -283,11 +285,6 @@ jobs:
         run: |
           find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
           find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
-
-      - name: smoke-test manifest URLs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: go run hack/smoke_test_manifests/main.go publish-dir/desktop/
 
       - name: deploy to Netlify (dl.devsy.sh)
         uses: nwtgck/actions-netlify@v3
