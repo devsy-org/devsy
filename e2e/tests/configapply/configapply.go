@@ -26,7 +26,7 @@ const (
 
 var _ = ginkgo.Describe(
 	"devsy config apply command",
-	ginkgo.Label("setup"),
+	ginkgo.Label("config-apply"),
 	ginkgo.Ordered,
 	func() {
 		var initialDir string

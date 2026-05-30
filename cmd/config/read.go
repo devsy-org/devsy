@@ -9,7 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/workspace"
-	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/spf13/cobra"
@@ -91,10 +91,10 @@ func NewReadCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 type readConfigurationOutput struct {
-	Configuration *config2.DevContainerConfig       `json:"configuration"`
-	Workspace     readConfigurationWorkspace        `json:"workspace"`
-	Features      map[string]any                    `json:"features,omitempty"`
-	Merged        *config2.MergedDevContainerConfig `json:"mergedConfiguration,omitempty"`
+	Configuration *devcconfig.DevContainerConfig       `json:"configuration"`
+	Workspace     readConfigurationWorkspace           `json:"workspace"`
+	Features      map[string]any                       `json:"features,omitempty"`
+	Merged        *devcconfig.MergedDevContainerConfig `json:"mergedConfiguration,omitempty"`
 }
 
 type readConfigurationWorkspace struct {
@@ -106,7 +106,7 @@ func (cmd *ReadCmd) Run(
 	c *cobra.Command,
 	_ []string,
 ) error {
-	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
+	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
 	}
 
@@ -146,7 +146,7 @@ func (cmd *ReadCmd) Run(
 }
 
 func (cmd *ReadCmd) resolve(ctx context.Context) (
-	*config2.DevContainerConfig,
+	*devcconfig.DevContainerConfig,
 	string,
 	error,
 ) {
@@ -165,7 +165,7 @@ func (cmd *ReadCmd) resolve(ctx context.Context) (
 }
 
 func (cmd *ReadCmd) resolveConfig() (
-	*config2.DevContainerConfig,
+	*devcconfig.DevContainerConfig,
 	string,
 	error,
 ) {
@@ -189,11 +189,11 @@ func (cmd *ReadCmd) resolveConfig() (
 		)
 	}
 
-	var parsedConfig *config2.DevContainerConfig
+	var parsedConfig *devcconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = config2.ParseDevContainerJSONFile(cmd.Config)
+		parsedConfig, err = devcconfig.ParseDevContainerJSONFile(cmd.Config)
 	} else {
-		parsedConfig, err = config2.ParseDevContainerJSON(
+		parsedConfig, err = devcconfig.ParseDevContainerJSON(
 			workspaceFolder,
 			"",
 		)
@@ -212,7 +212,7 @@ func (cmd *ReadCmd) resolveConfig() (
 }
 
 func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
-	*config2.DevContainerConfig,
+	*devcconfig.DevContainerConfig,
 	string,
 	error,
 ) {
@@ -231,7 +231,7 @@ func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 	}
 
 	containerDetails := &details[0]
-	subCtx := &config2.SubstitutionContext{}
+	subCtx := &devcconfig.SubstitutionContext{}
 
 	imageMetadata, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
@@ -241,7 +241,7 @@ func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 		return nil, "", fmt.Errorf("get image metadata from container: %w", err)
 	}
 
-	parsedConfig := &config2.DevContainerConfig{}
+	parsedConfig := &devcconfig.DevContainerConfig{}
 	if len(imageMetadata.Config) > 0 {
 		last := imageMetadata.Config[len(imageMetadata.Config)-1]
 		parsedConfig.DevContainerConfigBase = last.DevContainerConfigBase
@@ -258,7 +258,7 @@ func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 }
 
 func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
-	*config2.DevContainerConfig,
+	*devcconfig.DevContainerConfig,
 	string,
 	error,
 ) {
@@ -269,7 +269,7 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 		return nil, "", err
 	}
 
-	subCtx := &config2.SubstitutionContext{}
+	subCtx := &devcconfig.SubstitutionContext{}
 	imageMetadata, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		subCtx,
@@ -278,7 +278,7 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 		return nil, "", fmt.Errorf("get image metadata from container: %w", err)
 	}
 
-	parsedConfig := &config2.DevContainerConfig{}
+	parsedConfig := &devcconfig.DevContainerConfig{}
 	if len(imageMetadata.Config) > 0 {
 		last := imageMetadata.Config[len(imageMetadata.Config)-1]
 		parsedConfig.DevContainerConfigBase = last.DevContainerConfigBase
@@ -295,12 +295,12 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 }
 
 func buildMergedConfig(
-	parsedConfig *config2.DevContainerConfig,
-) (*config2.MergedDevContainerConfig, error) {
-	imageMetadataConfig := &config2.ImageMetadataConfig{}
-	config2.AddConfigToImageMetadata(parsedConfig, imageMetadataConfig)
+	parsedConfig *devcconfig.DevContainerConfig,
+) (*devcconfig.MergedDevContainerConfig, error) {
+	imageMetadataConfig := &devcconfig.ImageMetadataConfig{}
+	devcconfig.AddConfigToImageMetadata(parsedConfig, imageMetadataConfig)
 
-	mergedConfig, err := config2.MergeConfiguration(
+	mergedConfig, err := devcconfig.MergeConfiguration(
 		parsedConfig,
 		imageMetadataConfig.Config,
 	)

@@ -47,7 +47,7 @@ type ApplyCmd struct {
 // NewApplyCmd creates a new 'config apply' command.
 func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ApplyCmd{GlobalFlags: f}
-	setupCmd := &cobra.Command{
+	applyCmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply devcontainer configuration to a running container",
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
@@ -55,17 +55,17 @@ func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	setupCmd.Flags().StringVar(&cmd.Container, flagApplyContainer, "",
+	applyCmd.Flags().StringVar(&cmd.Container, flagApplyContainer, "",
 		"The container ID or name to apply configuration to (required)")
-	_ = setupCmd.MarkFlagRequired(flagApplyContainer)
-	setupCmd.Flags().StringVar(&cmd.Config, flagApplyConfig, "",
+	_ = applyCmd.MarkFlagRequired(flagApplyContainer)
+	applyCmd.Flags().StringVar(&cmd.Config, flagApplyConfig, "",
 		"Path to devcontainer.json (defaults to auto-detection in current workspace)")
-	setupCmd.Flags().StringVar(&cmd.WorkspaceFolder, flagApplyWorkspaceFolder, "",
+	applyCmd.Flags().StringVar(&cmd.WorkspaceFolder, flagApplyWorkspaceFolder, "",
 		"Workspace folder path inside the container")
-	setupCmd.Flags().StringVar(&cmd.DockerPath, flagApplyDockerPath, "",
+	applyCmd.Flags().StringVar(&cmd.DockerPath, flagApplyDockerPath, "",
 		"Path to the docker/podman executable (defaults to 'docker')")
 
-	return setupCmd
+	return applyCmd
 }
 
 // Run executes the 'config apply' command logic.
