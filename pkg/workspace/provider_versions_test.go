@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestErrVersionListUnsupported(t *testing.T) {
@@ -104,4 +105,61 @@ func TestRewriteSourceTag_RejectsAmbiguousAt(t *testing.T) {
 	// The check is defensive; without splitSourceAndTag changing semantics, this branch
 	// is hard to trigger naturally. Skip if not triggerable.
 	t.Skip("base-with-@ branch is defensive; not triggerable via splitSourceAndTag")
+}
+
+func TestListVersionsForSource_CachesResults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DEVSY_HOME", dir)
+
+	source := "github.com/foo/bar@v1.0.0"
+	hash := hashProviderSource(source)
+
+	// Prime cache with a synthetic entry that doesn't match any real upstream.
+	cached := providerVersionCache{
+		"myprov": {
+			SourceHash: hash,
+			Versions:   []ProviderVersion{{Tag: "v9.9.9"}},
+			FetchedAt:  time.Now(),
+		},
+	}
+	if err := SaveProviderVersionCache(cached); err != nil {
+		t.Fatal(err)
+	}
+
+	// listVersionsForSourceCached must read the cache when UseCache is set and the entry is fresh.
+	got, err := listVersionsForSourceCached("myprov", source, ListVersionsOptions{UseCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Tag != "v9.9.9" {
+		t.Fatalf("expected cache hit, got %+v", got)
+	}
+}
+
+func TestListVersionsForSource_BypassesCache(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DEVSY_HOME", dir)
+
+	source := "/local/path/provider.yaml"
+	hash := hashProviderSource(source)
+	cached := providerVersionCache{
+		"myprov": {
+			SourceHash: hash,
+			Versions:   []ProviderVersion{{Tag: "v9.9.9"}},
+			FetchedAt:  time.Now(),
+		},
+	}
+	if err := SaveProviderVersionCache(cached); err != nil {
+		t.Fatal(err)
+	}
+
+	// With UseCache=false the cache is ignored and the underlying classifier runs.
+	// Local source → ErrVersionListUnsupported.
+	_, err := listVersionsForSourceCached("myprov", source, ListVersionsOptions{UseCache: false})
+	if !errors.Is(err, ErrVersionListUnsupported) {
+		t.Fatalf(
+			"expected ErrVersionListUnsupported when bypassing cache for local source, got %v",
+			err,
+		)
+	}
 }
