@@ -178,7 +178,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   )
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
-    trackEvent("provider_remove")
+    trackEvent("provider_delete")
     await cli.runRaw(["provider", "delete", args.name])
   })
 
