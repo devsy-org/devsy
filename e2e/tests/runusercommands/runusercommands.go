@@ -39,7 +39,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"exec",
+					"workspace", "exec",
 					"--workspace-folder", tempDir,
 					"--", "cat", "/tmp/lifecycle-test.txt",
 				})

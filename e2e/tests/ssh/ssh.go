@@ -214,6 +214,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			// The signing key must be passed on each SSH invocation so the
 			// credentials server can configure the helper inside the container.
 			sshBase := []string{
+				"workspace",
 				"ssh",
 				"--agent-forwarding",
 				"--start-services",
@@ -381,6 +382,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}, " && ")
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+				"workspace",
 				"ssh",
 				"--agent-forwarding",
 				"--start-services",
@@ -441,7 +443,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			defer serverCancel()
 			// #nosec G204 -- test command with controlled arguments
 			serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-				"ssh", tempDir, "--command",
+				"workspace", "ssh", tempDir, "--command",
 				"go run /workspaces/"+filepath.Base(tempDir)+"/server.go "+strconv.Itoa(port),
 			)
 			err = serverCmd.Start()
