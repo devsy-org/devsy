@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -161,5 +162,33 @@ func TestListVersionsForSource_BypassesCache(t *testing.T) {
 			"expected ErrVersionListUnsupported when bypassing cache for local source, got %v",
 			err,
 		)
+	}
+}
+
+func TestProviderVersionCheckResult_UnsupportedShape(t *testing.T) {
+	// Verify the struct shape and JSON tags by marshalling.
+	r := ProviderVersionCheckResult{
+		Current:     "v1.0.0",
+		Unsupported: true,
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"current":"v1.0.0","latest":"","updateAvailable":false,"unsupported":true}`
+	if string(data) != expected {
+		t.Fatalf("JSON shape wrong:\ngot:  %s\nwant: %s", data, expected)
+	}
+}
+
+func TestProviderVersionCheckResult_ErrorShape(t *testing.T) {
+	r := ProviderVersionCheckResult{Error: "boom"}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"current":"","latest":"","updateAvailable":false,"unsupported":false,"error":"boom"}`
+	if string(data) != expected {
+		t.Fatalf("JSON shape wrong:\ngot:  %s\nwant: %s", data, expected)
 	}
 }

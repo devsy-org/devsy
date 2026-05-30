@@ -189,3 +189,67 @@ func splitSourceAndTag(canonical string) (base, tag string) {
 	}
 	return canonical, ""
 }
+
+// ProviderVersionCheckResult is the per-provider result from CheckAllProviderVersions.
+type ProviderVersionCheckResult struct {
+	Current         string `json:"current"`
+	Latest          string `json:"latest"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	Unsupported     bool   `json:"unsupported"`
+	Error           string `json:"error,omitempty"`
+}
+
+// CheckAllProviderVersions queries the latest version for every installed provider whose
+// source supports version listing. Per-provider errors are recorded in the result map, not
+// returned as a fatal error. Bypasses the cache so callers always see the freshest data.
+func CheckAllProviderVersions(
+	devsyConfig *config.Config,
+) (map[string]ProviderVersionCheckResult, error) {
+	providers, err := LoadAllProviders(devsyConfig)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]ProviderVersionCheckResult{}
+	for name, p := range providers {
+		out[name] = checkOneProviderVersion(devsyConfig, name, p)
+	}
+	return out, nil
+}
+
+func checkOneProviderVersion(
+	devsyConfig *config.Config,
+	name string,
+	p *ProviderWithOptions,
+) ProviderVersionCheckResult {
+	source, err := ResolveProviderSource(devsyConfig, name)
+	if err != nil {
+		return ProviderVersionCheckResult{Error: err.Error()}
+	}
+	_, currentTag := splitSourceAndTag(source)
+	if currentTag == "" && p != nil && p.Config != nil {
+		currentTag = p.Config.Version
+	}
+	versions, err := ListProviderVersions(devsyConfig, name, ListVersionsOptions{UseCache: false})
+	if errors.Is(err, ErrVersionListUnsupported) {
+		return ProviderVersionCheckResult{Current: currentTag, Unsupported: true}
+	}
+	if err != nil {
+		return ProviderVersionCheckResult{Current: currentTag, Error: err.Error()}
+	}
+	return buildVersionCheckResult(currentTag, versions)
+}
+
+func buildVersionCheckResult(
+	currentTag string,
+	versions []ProviderVersion,
+) ProviderVersionCheckResult {
+	latest := ""
+	if len(versions) > 0 {
+		latest = versions[0].Tag
+	}
+	return ProviderVersionCheckResult{
+		Current:         currentTag,
+		Latest:          latest,
+		UpdateAvailable: latest != "" && latest != currentTag,
+	}
+}
