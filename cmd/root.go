@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
+	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
 	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -194,8 +195,9 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 
 	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
 	rootCmd.AddCommand(NewSelfUpdateCmd())
-	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))
-	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
+	configCmd := cliconfig.NewConfigCmd(globalFlags)
+	configCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
 	featureCmd := feature.NewFeatureCmd(globalFlags)

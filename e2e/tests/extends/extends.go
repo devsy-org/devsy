@@ -461,7 +461,7 @@ func readConfiguration(
 	workspaceFolder string,
 ) (string, string, error) {
 	return f.ExecCommandCapture(ctx, []string{
-		"read-configuration",
+		"config", "read",
 		"--workspace-folder", workspaceFolder,
 	})
 }

@@ -1,4 +1,4 @@
-package cmd
+package config
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ReadConfigurationCmd holds the read-configuration cmd flags.
-type ReadConfigurationCmd struct {
+// ReadCmd holds the 'config read' command flags.
+type ReadCmd struct {
 	*flags.GlobalFlags
 
 	WorkspaceFolder              string
@@ -28,11 +28,11 @@ type ReadConfigurationCmd struct {
 	IncludeMergedConfiguration   bool
 }
 
-// NewReadConfigurationCmd creates a new read-configuration command.
-func NewReadConfigurationCmd(f *flags.GlobalFlags) *cobra.Command {
-	cmd := &ReadConfigurationCmd{GlobalFlags: f}
+// NewReadCmd creates a new 'config read' command.
+func NewReadCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &ReadCmd{GlobalFlags: f}
 	readConfigCmd := &cobra.Command{
-		Use:   "read-configuration",
+		Use:   "read",
 		Short: "Reads and outputs the merged devcontainer configuration as JSON",
 		RunE:  cmd.Run,
 	}
@@ -101,8 +101,8 @@ type readConfigurationWorkspace struct {
 	Folder string `json:"workspaceFolder"`
 }
 
-// Run executes the read-configuration command.
-func (cmd *ReadConfigurationCmd) Run(
+// Run executes the 'config read' command.
+func (cmd *ReadCmd) Run(
 	c *cobra.Command,
 	_ []string,
 ) error {
@@ -145,7 +145,7 @@ func (cmd *ReadConfigurationCmd) Run(
 	return nil
 }
 
-func (cmd *ReadConfigurationCmd) resolve(ctx context.Context) (
+func (cmd *ReadCmd) resolve(ctx context.Context) (
 	*config2.DevContainerConfig,
 	string,
 	error,
@@ -164,7 +164,7 @@ func (cmd *ReadConfigurationCmd) resolve(ctx context.Context) (
 	return cmd.resolveConfig()
 }
 
-func (cmd *ReadConfigurationCmd) resolveConfig() (
+func (cmd *ReadCmd) resolveConfig() (
 	*config2.DevContainerConfig,
 	string,
 	error,
@@ -211,7 +211,7 @@ func (cmd *ReadConfigurationCmd) resolveConfig() (
 	return parsedConfig, workspaceFolder, nil
 }
 
-func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context) (
+func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 	*config2.DevContainerConfig,
 	string,
 	error,
@@ -257,7 +257,7 @@ func (cmd *ReadConfigurationCmd) resolveConfigFromContainer(ctx context.Context)
 	return parsedConfig, workspaceFolder, nil
 }
 
-func (cmd *ReadConfigurationCmd) resolveConfigFromIDLabels(ctx context.Context) (
+func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 	*config2.DevContainerConfig,
 	string,
 	error,

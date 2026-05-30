@@ -302,7 +302,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: read-configuration
+          - label: config-read
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false

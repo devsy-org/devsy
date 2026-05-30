@@ -1,4 +1,4 @@
-package readconfiguration
+package configread
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configuration"), func() {
+var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {
@@ -24,13 +24,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("outputs valid JSON with expected fields", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/readconfiguration/testdata",
+			"tests/configread/testdata",
 		)
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -66,13 +66,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("includes features with --include-features-configuration", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/readconfiguration/testdata",
+			"tests/configread/testdata",
 		)
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", tempDir,
 			"--include-features-configuration",
 		})
@@ -94,13 +94,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/readconfiguration/testdata",
+				"tests/configread/testdata",
 			)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -125,7 +125,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		_, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", "/nonexistent/path/that/does/not/exist",
 		})
 		framework.ExpectError(err)
@@ -135,7 +135,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		_, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 		})
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -144,13 +144,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/readconfiguration/testdata-port-range",
+				"tests/configread/testdata-port-range",
 			)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -186,13 +186,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/readconfiguration/testdata-port-attributes",
+				"tests/configread/testdata-port-attributes",
 			)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -226,13 +226,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("preserves containerEnv in configuration output", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/readconfiguration/testdata-container-env",
+			"tests/configread/testdata-container-env",
 		)
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -253,13 +253,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("preserves containerEnv in merged configuration", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/readconfiguration/testdata-container-env",
+			"tests/configread/testdata-container-env",
 		)
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", tempDir,
 			"--include-merged-configuration",
 		})
@@ -281,13 +281,13 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("preserves hostRequirements in configuration output", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/readconfiguration/testdata-host-requirements",
+			"tests/configread/testdata-host-requirements",
 		)
 		framework.ExpectNoError(err)
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			"read-configuration",
+			"config", "read",
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -309,7 +309,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 	ginkgo.It("should read configuration using custom id-label",
 		func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/readconfiguration/testdata",
+				"tests/configread/testdata",
 			)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
@@ -323,7 +323,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--id-label", "devsy.readconfig.test=custom",
 				"--include-merged-configuration",
 			})
@@ -360,7 +360,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--container-id", containerID,
 			})
 			framework.ExpectNoError(err)
@@ -386,7 +386,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--container-id", "nonexistent-container-id-12345",
 			})
 			framework.ExpectError(err)
@@ -413,7 +413,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--container-id", containerID,
 			})
 			if err == nil {
@@ -446,7 +446,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--container-id", containerID,
 				"--docker-path", "docker",
 			})
@@ -468,7 +468,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--container-id", "any-container",
 				"--docker-path", "/nonexistent/path/to/docker",
 			})
@@ -476,7 +476,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.DescribeTable("resolves shutdownAction per devcontainer spec",
-		ginkgo.Label("read-configuration"),
+		ginkgo.Label("config-read"),
 		func(ctx context.Context, testdataDir, expected string) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir, err := framework.CopyToTempDirWithoutChdir(testdataDir)
@@ -484,7 +484,7 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"read-configuration",
+				"config", "read",
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
@@ -501,17 +501,17 @@ var _ = ginkgo.Describe("read-configuration command", ginkgo.Label("read-configu
 			)
 		},
 		ginkgo.Entry("defaults to stopContainer for image-based config",
-			"tests/readconfiguration/testdata-shutdown-action",
+			"tests/configread/testdata-shutdown-action",
 			"stopContainer",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		),
 		ginkgo.Entry("defaults to stopCompose for docker-compose config",
-			"tests/readconfiguration/testdata-shutdown-action-compose",
+			"tests/configread/testdata-shutdown-action-compose",
 			"stopCompose",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		),
 		ginkgo.Entry("preserves explicit none",
-			"tests/readconfiguration/testdata-shutdown-action-explicit",
+			"tests/configread/testdata-shutdown-action-explicit",
 			"none",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		),

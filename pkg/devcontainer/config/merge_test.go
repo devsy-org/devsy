@@ -554,7 +554,7 @@ func TestMergeConfiguration_ShutdownActionDefault_ComposeConfig(t *testing.T) {
 // TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks asserts that
 // lifecycle commands declared directly in the user's devcontainer.json are
 // carried into MergedDevContainerConfig even when no image metadata entries
-// are supplied. Regression test for the case where `devsy set-up` (and other
+// are supplied. Regression test for the case where `devsy config apply` (and other
 // callers passing nil metadata) silently dropped the user's postCreateCommand.
 func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
 	postCreate := types.LifecycleHook{"": {testTouchHook}}
@@ -591,7 +591,7 @@ func TestMergeConfiguration_NilMetadata_PropagatesLifecycleHooks(t *testing.T) {
 }
 
 // TestMergeConfiguration_NilMetadata_ParsedFromJSONFile exercises the full
-// parse-then-merge path used by `devsy set-up`'s loadConfig.
+// parse-then-merge path used by `devsy config apply`'s loadConfig.
 func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/devcontainer.json"

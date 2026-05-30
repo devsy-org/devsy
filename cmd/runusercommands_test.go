@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/workspace"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,6 +14,14 @@ const (
 	flagContainerID    = "--container-id"
 	testContainerID    = "abc"
 	testContainerIDHex = "abc123"
+	testEnvFoo         = "FOO=bar"
+	testEnvBaz         = "BAZ=qux"
+
+	hookOnCreate      = "onCreateCommand"
+	hookUpdateContent = "updateContentCommand"
+	hookPostCreate    = "postCreateCommand"
+	hookPostStart     = "postStartCommand"
+	hookPostAttach    = "postAttachCommand"
 )
 
 func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {
@@ -343,13 +352,13 @@ func TestResolveWaitForBoundary_NilResult(t *testing.T) {
 }
 
 func TestBuildLifecycleEnvArgs_Nil(t *testing.T) {
-	args := buildLifecycleEnvArgs(nil)
+	args := workspace.BuildLifecycleEnvArgs(nil)
 	assert.Nil(t, args)
 }
 
 func TestBuildLifecycleEnvArgs_NilMergedConfig(t *testing.T) {
 	result := &devcconfig.Result{}
-	args := buildLifecycleEnvArgs(result)
+	args := workspace.BuildLifecycleEnvArgs(result)
 	assert.Nil(t, args)
 }
 
@@ -361,7 +370,7 @@ func TestBuildLifecycleEnvArgs_EmptyEnv(t *testing.T) {
 			},
 		},
 	}
-	args := buildLifecycleEnvArgs(result)
+	args := workspace.BuildLifecycleEnvArgs(result)
 	assert.Nil(t, args)
 }
 
@@ -376,7 +385,7 @@ func TestBuildLifecycleEnvArgs_WithValues(t *testing.T) {
 			},
 		},
 	}
-	args := buildLifecycleEnvArgs(result)
+	args := workspace.BuildLifecycleEnvArgs(result)
 	assert.Equal(t, []string{"-e", testEnvFoo}, args)
 }
 
@@ -392,7 +401,7 @@ func TestBuildLifecycleEnvArgs_NilValueSkipped(t *testing.T) {
 			},
 		},
 	}
-	args := buildLifecycleEnvArgs(result)
+	args := workspace.BuildLifecycleEnvArgs(result)
 	assert.Contains(t, args, "-e")
 	assert.Contains(t, args, "KEEP=keep")
 	assert.NotContains(t, args, "REMOVE")

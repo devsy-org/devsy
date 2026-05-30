@@ -1,4 +1,4 @@
-package cmd
+package config
 
 import (
 	"context"
@@ -22,11 +22,10 @@ import (
 )
 
 const (
-	flagSetUpContainer       = "container"
-	flagSetUpConfig          = "config"
-	flagSetUpWorkspaceFolder = "workspace-folder"
-	flagSetUpDockerPath      = "docker-path"
-	dockerExecSubcommand     = "exec"
+	flagApplyContainer       = "container"
+	flagApplyConfig          = "config"
+	flagApplyWorkspaceFolder = "workspace-folder"
+	flagApplyDockerPath      = "docker-path"
 
 	hookOnCreate      = "onCreateCommand"
 	hookUpdateContent = "updateContentCommand"
@@ -35,8 +34,8 @@ const (
 	hookPostAttach    = "postAttachCommand"
 )
 
-// SetUpCmd holds the set-up command flags.
-type SetUpCmd struct {
+// ApplyCmd holds the 'config apply' command flags.
+type ApplyCmd struct {
 	*flags.GlobalFlags
 
 	Container       string
@@ -45,32 +44,32 @@ type SetUpCmd struct {
 	DockerPath      string
 }
 
-// NewSetUpCmd creates a new set-up command.
-func NewSetUpCmd(f *flags.GlobalFlags) *cobra.Command {
-	cmd := &SetUpCmd{GlobalFlags: f}
+// NewApplyCmd creates a new 'config apply' command.
+func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &ApplyCmd{GlobalFlags: f}
 	setupCmd := &cobra.Command{
-		Use:   "set-up",
+		Use:   "apply",
 		Short: "Apply devcontainer configuration to a running container",
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
 
-	setupCmd.Flags().StringVar(&cmd.Container, flagSetUpContainer, "",
+	setupCmd.Flags().StringVar(&cmd.Container, flagApplyContainer, "",
 		"The container ID or name to apply configuration to (required)")
-	_ = setupCmd.MarkFlagRequired(flagSetUpContainer)
-	setupCmd.Flags().StringVar(&cmd.Config, flagSetUpConfig, "",
+	_ = setupCmd.MarkFlagRequired(flagApplyContainer)
+	setupCmd.Flags().StringVar(&cmd.Config, flagApplyConfig, "",
 		"Path to devcontainer.json (defaults to auto-detection in current workspace)")
-	setupCmd.Flags().StringVar(&cmd.WorkspaceFolder, flagSetUpWorkspaceFolder, "",
+	setupCmd.Flags().StringVar(&cmd.WorkspaceFolder, flagApplyWorkspaceFolder, "",
 		"Workspace folder path inside the container")
-	setupCmd.Flags().StringVar(&cmd.DockerPath, flagSetUpDockerPath, "",
+	setupCmd.Flags().StringVar(&cmd.DockerPath, flagApplyDockerPath, "",
 		"Path to the docker/podman executable (defaults to 'docker')")
 
 	return setupCmd
 }
 
-// Run executes the set-up command logic.
-func (cmd *SetUpCmd) Run(ctx context.Context) error {
+// Run executes the 'config apply' command logic.
+func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
@@ -79,69 +78,78 @@ func (cmd *SetUpCmd) Run(ctx context.Context) error {
 
 	helper := &docker.DockerHelper{DockerCommand: cmd.resolveDockerPath()}
 
-	containerDetails, err := cmd.inspectRunningContainer(ctx, helper)
+	containerDetails, result, err := cmd.prepareContainer(ctx, helper, emitJSON)
 	if err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
-		return err
-	}
-
-	result, err := cmd.loadConfig(containerDetails)
-	if err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
 		return err
 	}
 
 	workdir := cmd.resolveWorkdir(containerDetails, result)
-	envArgs := buildLifecycleEnvArgs(result)
+	envArgs := workspace.BuildLifecycleEnvArgs(result)
 	envArgs = append(envArgs, buildContainerEnvArgs(result.MergedConfig.ContainerEnv)...)
 
 	if err := cmd.installFeatures(ctx, helper, result); err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
+		emitErr(emitJSON, err)
 		return fmt.Errorf("feature installation: %w", err)
 	}
 
-	params := &lifecycleExecParams{
-		ctx:         ctx,
-		helper:      helper,
-		containerID: containerDetails.ID,
-		envArgs:     envArgs,
-		workdir:     workdir,
-		user:        devcconfig.GetRemoteUser(result),
+	params := &workspace.LifecycleExecParams{
+		Ctx:         ctx,
+		Helper:      helper,
+		ContainerID: containerDetails.ID,
+		EnvArgs:     envArgs,
+		Workdir:     workdir,
+		User:        devcconfig.GetRemoteUser(result),
 	}
 
-	if err := cmd.runSetUpLifecycleHooks(params, result); err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
+	if err := cmd.runApplyLifecycleHooks(params, result); err != nil {
+		emitErr(emitJSON, err)
 		return err
 	}
 
-	user := devcconfig.GetRemoteUser(result)
-	log.Infof("set-up completed for container %s", containerDetails.ID)
+	log.Infof("apply completed for container %s", containerDetails.ID)
 	if emitJSON {
 		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
 			ContainerID:           containerDetails.ID,
-			RemoteUser:            user,
+			RemoteUser:            devcconfig.GetRemoteUser(result),
 			RemoteWorkspaceFolder: workdir,
 		})
 	}
 	return nil
 }
 
-func (cmd *SetUpCmd) resolveDockerPath() string {
+func (cmd *ApplyCmd) prepareContainer(
+	ctx context.Context,
+	helper *docker.DockerHelper,
+	emitJSON bool,
+) (*devcconfig.ContainerDetails, *devcconfig.Result, error) {
+	containerDetails, err := cmd.inspectRunningContainer(ctx, helper)
+	if err != nil {
+		emitErr(emitJSON, err)
+		return nil, nil, err
+	}
+
+	result, err := cmd.loadConfig(containerDetails)
+	if err != nil {
+		emitErr(emitJSON, err)
+		return nil, nil, err
+	}
+	return containerDetails, result, nil
+}
+
+func emitErr(emitJSON bool, err error) {
+	if emitJSON {
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+	}
+}
+
+func (cmd *ApplyCmd) resolveDockerPath() string {
 	if cmd.DockerPath != "" {
 		return cmd.DockerPath
 	}
 	return workspace.DefaultDockerCommand
 }
 
-func (cmd *SetUpCmd) inspectRunningContainer(
+func (cmd *ApplyCmd) inspectRunningContainer(
 	ctx context.Context,
 	helper *docker.DockerHelper,
 ) (*devcconfig.ContainerDetails, error) {
@@ -164,7 +172,7 @@ func (cmd *SetUpCmd) inspectRunningContainer(
 	return containerDetails, nil
 }
 
-func (cmd *SetUpCmd) loadConfig(
+func (cmd *ApplyCmd) loadConfig(
 	containerDetails *devcconfig.ContainerDetails,
 ) (*devcconfig.Result, error) {
 	var devContainerConfig *devcconfig.DevContainerConfig
@@ -197,7 +205,7 @@ func (cmd *SetUpCmd) loadConfig(
 	}, nil
 }
 
-func (cmd *SetUpCmd) resolveWorkdir(
+func (cmd *ApplyCmd) resolveWorkdir(
 	containerDetails *devcconfig.ContainerDetails,
 	result *devcconfig.Result,
 ) string {
@@ -210,7 +218,7 @@ func (cmd *SetUpCmd) resolveWorkdir(
 	return containerDetails.Config.WorkingDir
 }
 
-func (cmd *SetUpCmd) installFeatures(
+func (cmd *ApplyCmd) installFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
 	result *devcconfig.Result,
@@ -251,7 +259,7 @@ func (cmd *SetUpCmd) installFeatures(
 	return nil
 }
 
-func (cmd *SetUpCmd) resolveFeatureSets(
+func (cmd *ApplyCmd) resolveFeatureSets(
 	result *devcconfig.Result,
 ) ([]*devcconfig.FeatureSet, error) {
 	devContainerConfig := &devcconfig.DevContainerConfig{}
@@ -266,7 +274,7 @@ func (cmd *SetUpCmd) resolveFeatureSets(
 	return featureSets, nil
 }
 
-func (cmd *SetUpCmd) copyAndExecFeatures(
+func (cmd *ApplyCmd) copyAndExecFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
 	featureSets []*devcconfig.FeatureSet,
@@ -286,9 +294,9 @@ func (cmd *SetUpCmd) copyAndExecFeatures(
 			containerFeaturesPath,
 			i,
 		)
-		execArgs := buildDockerExecArgs(dockerExecArgs{
-			container: cmd.Container,
-			command:   []string{installCmd},
+		execArgs := workspace.BuildDockerExecArgs(workspace.DockerExecArgs{
+			Container: cmd.Container,
+			Command:   []string{installCmd},
 		})
 		if err := helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("install feature %s: %w", fs.ConfigID, err)
@@ -298,7 +306,7 @@ func (cmd *SetUpCmd) copyAndExecFeatures(
 	return nil
 }
 
-func (cmd *SetUpCmd) stageFeatures(
+func (cmd *ApplyCmd) stageFeatures(
 	featureSets []*devcconfig.FeatureSet,
 	stageDir string,
 	remoteUser string,
@@ -341,8 +349,8 @@ func (cmd *SetUpCmd) stageFeatures(
 	return nil
 }
 
-func (cmd *SetUpCmd) runSetUpLifecycleHooks(
-	params *lifecycleExecParams,
+func (cmd *ApplyCmd) runApplyLifecycleHooks(
+	params *workspace.LifecycleExecParams,
 	result *devcconfig.Result,
 ) error {
 	hooks := []struct {
@@ -358,44 +366,12 @@ func (cmd *SetUpCmd) runSetUpLifecycleHooks(
 
 	for _, hook := range hooks {
 		for _, h := range hook.cmds {
-			if err := execLifecycleHook(params, hook.name, h); err != nil {
+			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
 		}
 	}
 	return nil
-}
-
-// dockerExecArgs collects the inputs for buildDockerExecArgs.
-// User is optional; when set the lifecycle hook runs as that user, per
-// the devcontainer spec (remoteUser). Without it, root-default exec cannot
-// overwrite files previously created by the remoteUser on storage backends
-// that do not honour CAP_DAC_OVERRIDE across UIDs.
-// See https://containers.dev/implementors/json_reference/ (lifecycle-scripts).
-type dockerExecArgs struct {
-	container       string
-	user            string
-	envArgs         []string
-	workspaceFolder string
-	command         []string
-}
-
-func buildDockerExecArgs(a dockerExecArgs) []string {
-	args := []string{dockerExecSubcommand}
-	args = append(args, a.envArgs...)
-	if a.workspaceFolder != "" {
-		args = append(args, "--workdir", a.workspaceFolder)
-	}
-	if a.user != "" {
-		args = append(args, "--user", a.user)
-	}
-	args = append(args, a.container)
-	if len(a.command) == 1 {
-		args = append(args, "sh", "-c", a.command[0])
-	} else {
-		args = append(args, a.command...)
-	}
-	return args
 }
 
 func buildContainerEnvArgs(containerEnv map[string]string) []string {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -132,15 +131,6 @@ func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
 
 const updateContentCommand = "updateContentCommand"
 
-type lifecycleExecParams struct {
-	ctx         context.Context
-	helper      *docker.DockerHelper
-	containerID string
-	envArgs     []string
-	workdir     string
-	user        string
-}
-
 // Run executes the run-user-commands logic.
 func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	if err := cmd.validate(); err != nil {
@@ -161,11 +151,11 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	}
 
 	user := devcconfig.GetRemoteUser(result)
-	log.Infof("lifecycle commands completed for container %s", params.containerID)
+	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
 	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
-		ContainerID:           params.containerID,
+		ContainerID:           params.ContainerID,
 		RemoteUser:            user,
-		RemoteWorkspaceFolder: params.workdir,
+		RemoteWorkspaceFolder: params.Workdir,
 	})
 	return nil
 }
@@ -213,16 +203,16 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 		workdir = result.MergedConfig.WorkspaceFolder
 	}
 
-	envArgs := buildLifecycleEnvArgs(result)
+	envArgs := workspace.BuildLifecycleEnvArgs(result)
 	envArgs = append(envArgs, cmd.buildCLIRemoteEnvArgs()...)
 
-	params := &lifecycleExecParams{
-		ctx:         ctx,
-		helper:      helper,
-		containerID: containerDetails.ID,
-		envArgs:     envArgs,
-		workdir:     workdir,
-		user:        devcconfig.GetRemoteUser(result),
+	params := &workspace.LifecycleExecParams{
+		Ctx:         ctx,
+		Helper:      helper,
+		ContainerID: containerDetails.ID,
+		EnvArgs:     envArgs,
+		Workdir:     workdir,
+		User:        devcconfig.GetRemoteUser(result),
 	}
 
 	if err := cmd.runLifecycleHooks(params, result); err != nil {
@@ -230,11 +220,11 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 	}
 
 	user := devcconfig.GetRemoteUser(result)
-	log.Infof("lifecycle commands completed for container %s", params.containerID)
+	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
 	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
-		ContainerID:           params.containerID,
+		ContainerID:           params.ContainerID,
 		RemoteUser:            user,
-		RemoteWorkspaceFolder: params.workdir,
+		RemoteWorkspaceFolder: params.Workdir,
 	})
 	return nil
 }
@@ -325,7 +315,7 @@ func (cmd *RunUserCommandsCmd) buildCLIRemoteEnvArgs() []string {
 
 func (cmd *RunUserCommandsCmd) resolveContainer(
 	ctx context.Context,
-) (*lifecycleExecParams, *devcconfig.Result, error) {
+) (*workspace.LifecycleExecParams, *devcconfig.Result, error) {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return nil, nil, err
@@ -374,22 +364,22 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		}
 	}
 
-	envArgs := buildLifecycleEnvArgs(result)
+	envArgs := workspace.BuildLifecycleEnvArgs(result)
 	envArgs = append(envArgs, cmd.buildCLIRemoteEnvArgs()...)
 
-	params := &lifecycleExecParams{
-		ctx:         ctx,
-		helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
-		containerID: containerDetails.ID,
-		envArgs:     envArgs,
-		workdir:     workspace.ResolveExecWorkdir(result, client.Workspace()),
-		user:        devcconfig.GetRemoteUser(result),
+	params := &workspace.LifecycleExecParams{
+		Ctx:         ctx,
+		Helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
+		ContainerID: containerDetails.ID,
+		EnvArgs:     envArgs,
+		Workdir:     workspace.ResolveExecWorkdir(result, client.Workspace()),
+		User:        devcconfig.GetRemoteUser(result),
 	}
 	return params, result, nil
 }
 
 func (cmd *RunUserCommandsCmd) runLifecycleHooks(
-	params *lifecycleExecParams,
+	params *workspace.LifecycleExecParams,
 	result *devcconfig.Result,
 ) error {
 	hooks := []struct {
@@ -423,7 +413,7 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 			continue
 		}
 		for _, h := range hook.cmds {
-			if err := execLifecycleHook(params, hook.name, h); err != nil {
+			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
 				_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
@@ -453,55 +443,4 @@ func resolveWaitForBoundary(result *devcconfig.Result) int {
 		}
 	}
 	return 1
-}
-
-func execLifecycleHook(params *lifecycleExecParams, name string, hook types.LifecycleHook) error {
-	if len(hook) == 0 {
-		return nil
-	}
-
-	for key, command := range hook {
-		if len(command) == 0 {
-			continue
-		}
-		log.Infof("running %s: %s %v", name, key, command)
-
-		args := buildDockerExecArgs(dockerExecArgs{
-			container:       params.containerID,
-			user:            params.user,
-			envArgs:         params.envArgs,
-			workspaceFolder: params.workdir,
-			command:         command,
-		})
-		if err := params.helper.Run(params.ctx, args, os.Stdin, os.Stdout, os.Stderr); err != nil {
-			return fmt.Errorf("command %q failed: %w", key, err)
-		}
-	}
-
-	return nil
-}
-
-func buildLifecycleEnvArgs(result *devcconfig.Result) []string {
-	if result == nil || result.MergedConfig == nil {
-		return nil
-	}
-
-	env := result.MergedConfig.RemoteEnv
-	if len(env) == 0 {
-		return nil
-	}
-
-	keys := make([]string, 0, len(env))
-	for k, v := range env {
-		if v != nil {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	args := make([]string, 0, len(keys)*2)
-	for _, k := range keys {
-		args = append(args, "-e", k+"="+*env[k])
-	}
-	return args
 }
