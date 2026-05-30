@@ -128,7 +128,7 @@ onMount(async () => {
     </Button>
   </div>
 
-  {#if liveStatus.state !== "idle"}
+  {#if liveStatus.state !== "idle" && liveStatus.state !== "not-available"}
     <div class="rounded-md border p-3 flex items-center justify-between">
       <p class="text-sm">
         {#if liveStatus.state === "checking"}
@@ -139,8 +139,6 @@ onMount(async () => {
           Downloading v{liveStatus.version} · {(liveStatus.progress?.percent ?? 0).toFixed(0)}%
         {:else if liveStatus.state === "downloaded"}
           Update v{liveStatus.version} ready to install
-        {:else if liveStatus.state === "not-available"}
-          {liveStatus.code === "dev-mode" ? "Updates available in packaged builds" : "You're on the latest version"}
         {:else if liveStatus.state === "error"}
           Update error: {liveStatus.error}
         {/if}
