@@ -59,9 +59,13 @@ function fireError(s: UpdateStatus): void {
   userInitiated = false
 }
 
-function fireNotAvailable(): void {
+function fireNotAvailable(s: UpdateStatus): void {
   if (!userInitiated) return
-  toast.success("You're on the latest version.")
+  if (s.code === "channel-missing") {
+    toast.info("No releases are available on this channel yet.")
+  } else {
+    toast.success("You're on the latest version.")
+  }
   userInitiated = false
 }
 
@@ -74,6 +78,6 @@ export function initUpdateToasts(getAutoDownload: () => boolean): () => void {
     if (s.state === "available") fireAvailable(s, getAutoDownload())
     else if (s.state === "downloaded") fireDownloaded(s)
     else if (s.state === "error") fireError(s)
-    else if (s.state === "not-available") fireNotAvailable()
+    else if (s.state === "not-available") fireNotAvailable(s)
   })
 }

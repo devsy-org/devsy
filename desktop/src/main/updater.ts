@@ -20,6 +20,7 @@ export type UpdateErrorCode =
   | "network"
   | "feed-error"
   | "verification"
+  | "channel-missing"
 
 export interface UpdateProgress {
   percent: number
@@ -103,6 +104,9 @@ function normalizeReleaseNotes(
 
 function classifyError(err: Error): UpdateErrorCode {
   const m = err.message.toLowerCase()
+  if (m.includes("cannot find channel") || (m.includes("404") && m.includes(".yml"))) {
+    return "channel-missing"
+  }
   if (m.includes("net::") || m.includes("network") || m.includes("enotfound")) return "network"
   if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity")) return "verification"
   return "feed-error"
@@ -224,10 +228,19 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("error", (err) => {
+    const code = classifyError(err)
     trackEvent("update_error", { error_type: err.name })
+    if (code === "channel-missing") {
+      setStatus({
+        state: "not-available",
+        code,
+      })
+      console.warn("Auto-update: channel manifest missing:", err.message)
+      return
+    }
     setStatus({
       state: "error",
-      code: classifyError(err),
+      code,
       error: err.message,
     })
     console.error("Auto-update error:", err.message)
@@ -271,7 +284,15 @@ export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promi
   if (!autoUpdater) return
   autoUpdater.allowPrerelease = channel === "beta"
   autoUpdater.channel = channel === "beta" ? "beta" : "latest"
-  await autoUpdater.checkForUpdates()
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    // A missing channel manifest is surfaced via the 'error' event as a
+    // friendly not-available status; don't let the rejected promise bubble
+    // up and trigger a channel rollback in the IPC caller.
+    if (err instanceof Error && classifyError(err) === "channel-missing") return
+    throw err
+  }
 }
 
 export async function downloadUpdate(): Promise<void> {
