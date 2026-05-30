@@ -35,7 +35,6 @@ var UIEventsExceptions []string = []string{
 	config.BinaryName + " pro check-update",
 	config.BinaryName + " ide list",
 	config.BinaryName + " ide use",
-	config.BinaryName + " provider use",
 	config.BinaryName + " version",
 	config.BinaryName + " context options",
 }

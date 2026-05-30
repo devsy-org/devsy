@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// SetOptionsCmd holds the use cmd flags.
-type SetOptionsCmd struct {
+// SetCmd holds the set cmd flags.
+type SetCmd struct {
 	*flags.GlobalFlags
 
 	Dry      bool
@@ -25,14 +25,14 @@ type SetOptionsCmd struct {
 	Options       []string
 }
 
-// NewSetOptionsCmd creates a new command.
-func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
-	cmd := &SetOptionsCmd{
+// NewSetCmd creates a new command.
+func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &SetCmd{
 		GlobalFlags: f,
 	}
-	setOptionsCmd := &cobra.Command{
-		Use:   "set-options [provider]",
-		Short: "Sets options for the given provider. Similar to 'devsy provider use', but does not switch the default provider.",
+	setCmd := &cobra.Command{
+		Use:   "set [provider]",
+		Short: "Set provider options",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -48,37 +48,21 @@ func NewSetOptionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	setOptionsCmd.Flags().
+	setCmd.Flags().
 		BoolVar(&cmd.SingleMachine, "single-machine", false, "If enabled will use a single machine for all workspaces")
-	setOptionsCmd.Flags().
+	setCmd.Flags().
 		BoolVar(&cmd.Reconfigure, "reconfigure", false, "If enabled will not merge existing provider config")
-	setOptionsCmd.Flags().
+	setCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-	setOptionsCmd.Flags().
+	setCmd.Flags().
 		BoolVar(&cmd.Dry, "dry", false, "Dry will not persist the options to file and instead return the new filled options")
-	setOptionsCmd.Flags().
+	setCmd.Flags().
 		BoolVar(&cmd.SkipInit, "skip-init", false, "If true will skip running the provider init command")
-	return setOptionsCmd
+	return setCmd
 }
 
-func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-	if err != nil {
-		return err
-	}
-
-	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
-	if err != nil {
-		return err
-	}
-	log.Debugf("providerName=%+v", providerName)
-
-	if os.Getenv(config.EnvUI) == "" && len(cmd.Options) == 0 {
-		return fmt.Errorf("please specify option")
-	}
-	log.Debugf("Options=%+v", cmd.Options)
-
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
+func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
+	devsyConfig, providerWithOptions, err := cmd.loadProvider(args)
 	if err != nil {
 		return err
 	}
@@ -105,17 +89,33 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func resolveProviderName(args []string, defaultProvider string) (string, error) {
-	if len(args) > 0 {
-		return args[0], nil
+func (cmd *SetCmd) loadProvider(
+	args []string,
+) (*config.Config, *workspace.ProviderWithOptions, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
 	}
-	if defaultProvider == "" {
-		return "", fmt.Errorf("please specify a provider")
+
+	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return nil, nil, err
 	}
-	return defaultProvider, nil
+	log.Debugf("providerName=%+v", providerName)
+
+	if os.Getenv(config.EnvUI) == "" && len(cmd.Options) == 0 {
+		return nil, nil, fmt.Errorf("please specify option")
+	}
+	log.Debugf("Options=%+v", cmd.Options)
+
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
+	if err != nil {
+		return nil, nil, err
+	}
+	return devsyConfig, providerWithOptions, nil
 }
 
-func (cmd *SetOptionsCmd) saveOrPrintConfig(
+func (cmd *SetCmd) saveOrPrintConfig(
 	devsyConfig *config.Config,
 	providerWithOptions *workspace.ProviderWithOptions,
 ) error {

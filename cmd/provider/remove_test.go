@@ -6,11 +6,11 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 )
 
-func TestDeleteCmd_RejectsMultipleArgs(t *testing.T) {
+func TestRemoveCmd_RejectsMultipleArgs(t *testing.T) {
 	globalFlags := &flags.GlobalFlags{}
-	cmd := NewDeleteCmd(globalFlags)
+	cmd := NewRemoveCmd(globalFlags)
 	err := cmd.Args(cmd, []string{"provider1", "provider2"})
 	if err == nil {
-		t.Fatal("expected error when passing multiple arguments to delete, got nil")
+		t.Fatal("expected error when passing multiple arguments to remove, got nil")
 	}
 }

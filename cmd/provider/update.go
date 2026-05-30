@@ -16,6 +16,7 @@ type UpdateCmd struct {
 	*flags.GlobalFlags
 
 	Use     bool
+	Version string
 	Options []string
 }
 
@@ -41,11 +42,29 @@ func NewUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	updateCmd.Flags().
 		BoolVar(&cmd.Use, "use", true, "If enabled will automatically activate the provider")
 	updateCmd.Flags().
+		StringVar(&cmd.Version, "version", "", "Pin the provider to a specific version tag")
+	updateCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
 	return updateCmd
 }
 
 func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
+	if cmd.Version != "" {
+		if len(args) == 0 {
+			return fmt.Errorf("provider name must be provided when using --version")
+		}
+		if len(args) > 1 {
+			return fmt.Errorf("--version and a source argument are mutually exclusive")
+		}
+		providerName := args[0]
+		if err := workspace.SetProviderVersion(devsyConfig, providerName, cmd.Version); err != nil {
+			return err
+		}
+		log.Infof("pinned provider %s to version %s", providerName, cmd.Version)
+		return nil
+	}
+
+	// Standard update mode: requires provider name and optional source
 	if len(args) != 1 && len(args) != 2 {
 		return fmt.Errorf("please specify either a local file, URL or Git repository. " +
 			"E.g. devsy provider update my-provider " + config.ProviderPrefix + "gcloud")
@@ -79,16 +98,16 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		})
 		if err != nil {
 			log.Errorf(
-				"Error configuring provider, please retry with 'devsy provider use %s --reconfigure'",
+				"Error configuring provider, please retry with 'devsy provider configure %s --reconfigure'",
 				providerConfig.Name,
 			)
 			return fmt.Errorf("configure provider: %w", err)
 		}
 
-		return nil
+		return writeDefaultProvider(cmd.Context, providerConfig.Name)
 	}
 
-	log.Infof("To use the provider, please run the following command:")
-	log.Infof("devsy provider use %s", providerConfig.Name)
+	log.Infof("To configure the provider, please run the following command:")
+	log.Infof("devsy provider configure %s", providerConfig.Name)
 	return nil
 }

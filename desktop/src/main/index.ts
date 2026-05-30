@@ -156,7 +156,11 @@ app.whenReady().then(() => {
   })
 
   // Register IPC handlers
-  const { tunnelProcesses } = registerIpcHandlers({
+  const {
+    tunnelProcesses,
+    scheduleProviderUpdateCheck,
+    runInitialProviderUpdateCheck,
+  } = registerIpcHandlers({
     cli,
     state,
     logStore,
@@ -171,7 +175,8 @@ app.whenReady().then(() => {
     state,
     getMainWindow: () => mainWindow,
   })
-  watcher.start()
+  void watcher.start().then(runInitialProviderUpdateCheck)
+  scheduleProviderUpdateCheck()
 
   // Set up system tray
   const appTray = new AppTray({

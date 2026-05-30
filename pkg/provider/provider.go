@@ -259,7 +259,7 @@ type ProviderBinary struct {
 }
 
 type ProviderCommands struct {
-	// Init is run directly after `devsy provider use`
+	// Init is run directly after `devsy provider configure`
 	Init types.StrArray `json:"init,omitempty"`
 
 	// Command executes a command on the server

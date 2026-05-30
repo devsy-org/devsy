@@ -58,7 +58,7 @@ export class Watcher {
 
   constructor(private deps: WatcherDeps) {}
 
-  start(): void {
+  start(): Promise<void> {
     this.pollTimer = setInterval(() => this.schedulePoll(), 3000)
 
     const devsyDir = join(homedir(), ".devsy")
@@ -71,7 +71,7 @@ export class Watcher {
       this.fsWatcher.on("all", () => this.schedulePoll())
     }
 
-    this.schedulePoll()
+    return this.pollOnce()
   }
 
   stop(): void {

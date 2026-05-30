@@ -91,7 +91,7 @@ describe("CliRunner", () => {
       )
 
       const rejection = await cli
-        .run(["provider", "set-options", "aws"])
+        .run(["provider", "set", "aws"])
         .catch((e) => e as Error & { cliError?: typeof cliErrorPayload })
       expect(rejection).toBeInstanceOf(Error)
       expect(rejection.cliError).toEqual(cliErrorPayload)

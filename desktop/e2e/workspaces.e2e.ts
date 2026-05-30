@@ -65,16 +65,14 @@ test.describe.serial("Create Workspace Wizard", () => {
       timeout: 10000,
     })
 
-    // Continue is disabled until a provider is selected
+    // The default provider is pre-selected, so Continue is enabled
     const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeDisabled()
+    await expect(continueBtn).toBeEnabled()
   })
 
   test("should advance to source step with templates", async () => {
     const dialog = page.locator('[role="dialog"]').first()
-    // Select the docker provider (the initialized one from the mock)
-    await dialog.locator("button", { hasText: "docker" }).first().click()
-
+    // Default provider (docker) is already pre-selected; just continue
     const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
     await expect(continueBtn).toBeEnabled()
     await continueBtn.click()

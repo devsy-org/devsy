@@ -22,7 +22,7 @@ devsy provider add docker
 You can get a list of available 1st party providers by using the command:
 
 ```
-devsy provider list-available
+devsy provider list --available
 ```
 
 ## Via Devsy Desktop Application
@@ -109,7 +109,7 @@ To manage options from the app, head over the `Providers` section, and click
 
 ### Managing options from Devsy CLI
 
-Options for providers can be set during the `use` or `add` phase:
+Options for providers can be set during the `configure` or `add` phase:
 
 ```sh
 devsy provider add <provider-name> -o KEY=value
@@ -118,7 +118,7 @@ devsy provider add <provider-name> -o KEY=value
 or
 
 ```sh
-devsy provider use <provider-name> -o KEY=value
+devsy provider configure <provider-name> -o KEY=value
 ```
 
 
@@ -126,7 +126,7 @@ Else, to can manage options afterwards from CLI, you can list the table of provi
 
 
 ```sh
-devsy provider options <provider-name>
+devsy provider get <provider-name>
 ```
 
 An example output for the AWS Provider is:
@@ -158,16 +158,16 @@ INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true     
 You can see this table as an overview, you can change each option using:
 
 ```sh
-devsy provider set-options <provider-name> --option <KEY>=<VALUE>
+devsy provider set <provider-name> --option <KEY>=<VALUE>
 ```
 
 So for example, to change the default disk size from 40gb to 120gb, you could use:
 
 ```sh
-devsy provider set-options aws --option AWS_DISK_SIZE=120
+devsy provider set aws --option AWS_DISK_SIZE=120
 ```
 
-And check again the options for the provider using `devsy provider options aws`:
+And check again the options for the provider using `devsy provider get aws`:
 
 ```
           NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
@@ -204,7 +204,7 @@ In **the desktop app** the option is available in the option management interfac
 In **the CLI** you can set this option using:
 
 ```sh
-devsy provider use <provider-name> --single-machine
+devsy provider configure <provider-name> --single-machine
 ```
 
 ## Default Provider
@@ -219,7 +219,7 @@ In **the desktop app**, you can set a provider to be default in the option manag
 In **the CLI** you can set this option using:
 
 ```sh
-devsy provider use <provider-name>
+devsy provider default <provider-name>
 ```
 
 ## Community Providers

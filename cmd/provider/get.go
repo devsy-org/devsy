@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"maps"
 	"os"
 	"sort"
@@ -12,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -20,21 +18,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// OptionsCmd holds the options cmd flags.
-type OptionsCmd struct {
+// GetCmd holds the get cmd flags.
+type GetCmd struct {
 	*flags.GlobalFlags
 
 	Hidden bool
 }
 
-// NewOptionsCmd creates a new command.
-func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &OptionsCmd{
+// NewGetCmd creates a new command.
+func NewGetCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &GetCmd{
 		GlobalFlags: flags,
 	}
-	optionsCmd := &cobra.Command{
-		Use:   "options [provider]",
-		Short: "Show options of an existing provider",
+	getCmd := &cobra.Command{
+		Use:   "get [provider]",
+		Short: "Show provider info and current options",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -50,9 +49,9 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	optionsCmd.Flags().
+	getCmd.Flags().
 		BoolVar(&cmd.Hidden, "hidden", false, "If true, will also show hidden options.")
-	return optionsCmd
+	return getCmd
 }
 
 type optionWithValue struct {
@@ -63,25 +62,18 @@ type optionWithValue struct {
 }
 
 // Run runs the command logic.
-func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
+func (cmd *GetCmd) Run(ctx context.Context, args []string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	providerName := devsyConfig.Current().DefaultProvider
-	if len(args) > 0 {
-		providerName = args[0]
-	} else if providerName == "" {
-		return fmt.Errorf("please specify a provider")
+	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return err
 	}
-
-	if providerName != "" && cmd.Provider != "" {
-		if providerName != cmd.Provider {
-			log.Infof("providerName=%+v", providerName)
-			log.Infof("GlobalFlags.Provider=%+v", cmd.Provider)
-			return fmt.Errorf("ambiguous provider configuration detected")
-		}
+	if err := assertProviderMatchesGlobal(providerName, cmd.Provider); err != nil {
+		return err
 	}
 
 	providerWithOptions, err := workspace.FindProvider(

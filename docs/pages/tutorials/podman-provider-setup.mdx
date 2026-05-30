@@ -87,13 +87,13 @@ The Podman provider exposes three options:
 Set options after adding the provider using `--option` flags:
 
 ```bash
-devsy provider set-options podman --option PODMAN_PATH=/usr/local/bin/podman
+devsy provider set podman --option PODMAN_PATH=/usr/local/bin/podman
 ```
 
 To see available options before setting them:
 
 ```bash
-devsy provider options podman
+devsy provider get podman
 ```
 
 Or pass options inline at add time:
@@ -168,7 +168,7 @@ ls -la $XDG_RUNTIME_DIR/podman/podman.sock
 If the socket path differs from the default, set `PODMAN_HOST` to the correct path:
 
 ```bash
-devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
 ### Dockerfile features not supported during image build

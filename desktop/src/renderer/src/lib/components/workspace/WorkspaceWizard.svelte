@@ -17,6 +17,7 @@ import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
 import { Progress } from "$lib/components/ui/progress/index.js"
+import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
@@ -129,7 +130,9 @@ let {
 let currentStep = $state<Step>("provider")
 
 // Form state
-let selectedProvider = $state("")
+let selectedProvider = $state(
+  $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
+)
 let source = $state("")
 let workspaceFolder = $state("")
 let advancedOpen = $state(false)
@@ -224,7 +227,7 @@ function clearWatchdog() {
 
 function reset() {
   currentStep = "provider"
-  selectedProvider = ""
+  selectedProvider = $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
   source = ""
   workspaceFolder = ""
   advancedOpen = false
@@ -465,7 +468,12 @@ function selectTemplate(t: { name: string; source: string }) {
                 >
                   <Check class="h-4 w-4 {selectedProvider === p.name ? 'opacity-100 text-primary' : 'opacity-0'}" />
                   <div class="flex-1">
-                    <div class="text-sm font-medium">{p.name}</div>
+                    <div class="flex items-center gap-2">
+                      <div class="text-sm font-medium">{p.name}</div>
+                      {#if p.isDefault}
+                        <span class={badgeVariants({ variant: "default" })}>Default</span>
+                      {/if}
+                    </div>
                     {#if p.description}
                       <div class="text-xs text-muted-foreground">{p.description}</div>
                     {/if}

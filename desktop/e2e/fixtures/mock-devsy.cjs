@@ -180,6 +180,7 @@ switch (cmd) {
       case "list":
         out(state.providers)
         break
+      case "get":
       case "options":
         out({
           DOCKER_HOST: {
@@ -203,6 +204,9 @@ switch (cmd) {
       case "add": {
         const provName = extra
         if (provName) {
+          for (const key of Object.keys(state.providers)) {
+            state.providers[key].default = false
+          }
           state.providers[provName] = {
             config: {
               name: provName,
@@ -214,13 +218,14 @@ switch (cmd) {
               optionGroups: [],
             },
             state: { initialized: false },
-            default: false,
+            default: true,
           }
           saveState(state)
         }
         out("")
         break
       }
+      case "remove":
       case "delete": {
         const provName = extra
         if (provName && state.providers[provName]) {
@@ -243,19 +248,32 @@ switch (cmd) {
         out("")
         break
       }
-      case "use": {
+      case "use":
+      case "configure": {
+        const provName = extra
+        if (provName && state.providers[provName]) {
+          state.providers[provName].state.initialized = true
+          saveState(state)
+        }
+        out("")
+        break
+      }
+      case "default": {
         const provName = extra
         if (provName && state.providers[provName]) {
           for (const key of Object.keys(state.providers)) {
             state.providers[key].default = false
           }
-          state.providers[provName].state.initialized = true
           state.providers[provName].default = true
           saveState(state)
         }
         out("")
         break
       }
+      case "versions":
+        out([])
+        break
+      case "set":
       case "set-options":
       case "update":
         out("")

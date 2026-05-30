@@ -20,7 +20,6 @@ import {
   providerList,
   providerOptions,
   providerSetOptions,
-  providerUse,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import { providers } from "$lib/stores/providers.js"
@@ -293,17 +292,6 @@ async function refreshAndComplete() {
 
 function handleSkipInit() {
   refreshAndComplete()
-}
-
-async function handleSetDefault() {
-  try {
-    await providerUse(providerName)
-    const updated = await providerList()
-    providers.set(updated)
-    toasts.success(`Set ${providerName} as default provider`)
-  } catch (err) {
-    toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
-  }
 }
 
 function handleDone() {
@@ -591,14 +579,9 @@ function handleDone() {
             </div>
           </div>
 
-          <div class="flex gap-2">
-            <Button variant="outline" class="flex-1" onclick={handleSetDefault}>
-              Set as Default
-            </Button>
-            <Button class="flex-1" onclick={handleDone}>
-              Done
-            </Button>
-          </div>
+          <Button class="w-full" onclick={handleDone}>
+            Done
+          </Button>
         </div>
       {/if}
     </div>

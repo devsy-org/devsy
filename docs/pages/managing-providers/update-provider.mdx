@@ -10,10 +10,17 @@ To update a provider to its latest version, you can use:
 devsy provider update <name>
 ```
 
-:::info
-Be aware at this time, the desktop application does not have an update button
-for a provider.
-:::
+To update to a specific version, pass `--version <tag>`:
+
+```sh
+devsy provider update <name> --version v0.2.0
+```
+
+To list the available versions for an installed provider, use:
+
+```sh
+devsy provider versions <name>
+```
 
 ## From GitHub
 

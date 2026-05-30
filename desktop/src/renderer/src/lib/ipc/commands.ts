@@ -6,6 +6,8 @@ import type {
   OptionValue,
   Provider,
   ProviderOption,
+  ProviderVersion,
+  ProviderVersionCheckResult,
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
@@ -136,6 +138,21 @@ export async function providerRename(
   newName: string,
 ): Promise<void> {
   return invoke("provider_rename", { name, newName })
+}
+
+export async function providerListVersions(name: string, noCache?: boolean) {
+  return invoke<{ versions: ProviderVersion[]; unsupported: boolean; error?: string }>(
+    "provider_list_versions",
+    { name, noCache },
+  )
+}
+
+export async function providerSetVersion(name: string, tag: string): Promise<void> {
+  return invoke("provider_set_version", { name, tag })
+}
+
+export async function providerCheckUpdates() {
+  return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
 }
 
 // Machine commands

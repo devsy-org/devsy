@@ -6,122 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/devsy-org/devsy/cmd/completion"
-	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/workspace"
-	"github.com/spf13/cobra"
 )
-
-// UseCmd holds the use cmd flags.
-type UseCmd struct {
-	*flags.GlobalFlags
-
-	Reconfigure   bool
-	SingleMachine bool
-	Options       []string
-
-	// only for testing
-	SkipInit bool
-}
-
-// NewUseCmd creates a new command.
-func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &UseCmd{
-		GlobalFlags: flags,
-	}
-	useCmd := &cobra.Command{
-		Use:   "use [name]",
-		Short: "Configure an existing provider and set as default",
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf("please specify the provider to use")
-			}
-
-			return cmd.Run(cobraCmd.Context(), args[0])
-		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return completion.GetProviderSuggestions(
-				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
-			)
-		},
-	}
-
-	AddFlags(useCmd, cmd)
-	return useCmd
-}
-
-func AddFlags(useCmd *cobra.Command, cmd *UseCmd) {
-	useCmd.Flags().
-		BoolVar(&cmd.SingleMachine, "single-machine", false, "If enabled will use a single machine for all workspaces")
-	useCmd.Flags().
-		BoolVar(&cmd.Reconfigure, "reconfigure", false, "If enabled will not merge existing provider config")
-	useCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-
-	useCmd.Flags().
-		BoolVar(&cmd.SkipInit, "skip-init", false, "ONLY FOR TESTING: If true will skip init")
-	_ = useCmd.Flags().MarkHidden("skip-init")
-}
-
-// Run runs the command logic.
-func (cmd *UseCmd) Run(ctx context.Context, providerName string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-	if err != nil {
-		return err
-	}
-
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
-	if err != nil {
-		return err
-	}
-
-	// should reconfigure?
-	shouldReconfigure := cmd.Reconfigure || len(cmd.Options) > 0 ||
-		providerWithOptions.State == nil ||
-		cmd.SingleMachine
-	if shouldReconfigure {
-		return ConfigureProvider(ctx, ProviderOptionsConfig{
-			Provider:       providerWithOptions.Config,
-			Context:        devsyConfig.DefaultContext,
-			UserOptions:    cmd.Options,
-			Reconfigure:    cmd.Reconfigure,
-			SkipRequired:   false,
-			SkipInit:       cmd.SkipInit,
-			SkipSubOptions: false,
-			SingleMachine:  &cmd.SingleMachine,
-		})
-	} else {
-		log.Infof(
-			"To reconfigure provider %s, run with '--reconfigure' to reconfigure the provider",
-			providerWithOptions.Config.Name,
-		)
-	}
-
-	// set options
-	defaultContext := devsyConfig.Current()
-	defaultContext.DefaultProvider = providerWithOptions.Config.Name
-
-	// save provider config
-	err = config.SaveConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-
-	// print success message
-	log.Infof("switched default provider: providerName=%s", providerWithOptions.Config.Name)
-	return nil
-}
 
 type ProviderOptionsConfig struct {
 	Provider       *provider2.ProviderConfig
@@ -140,11 +31,8 @@ func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
 		return err
 	}
 
-	// set options
-	defaultContext := devsyConfig.Current()
-	defaultContext.DefaultProvider = cfg.Provider.Name
-
-	// save provider config
+	// save provider config (configureProviderOptions may have mutated state,
+	// e.g. via initProvider marking the provider Initialized)
 	err = config.SaveConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
@@ -208,7 +96,7 @@ func configureProviderOptions(
 		stderr := log.Writer(log.LevelError)
 		defer func() { _ = stderr.Close() }()
 
-		err = initProvider(ctx, devsyConfig, cfg.Provider, stdout, stderr)
+		err = initProvider(ctx, devsyConfig, cfg.Provider, initIO{stdout: stdout, stderr: stderr})
 		if err != nil {
 			return nil, err
 		}
@@ -217,11 +105,53 @@ func configureProviderOptions(
 	return devsyConfig, nil
 }
 
+// writeDefaultProvider reloads the config for the given context and writes providerName
+// as the active context's DefaultProvider.
+func writeDefaultProvider(contextName, providerName string) error {
+	cfg, err := config.LoadConfig(contextName, "")
+	if err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	cfg.Current().DefaultProvider = providerName
+	if err := config.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("save default provider: %w", err)
+	}
+	return nil
+}
+
+// resolveProviderName returns the provider name from args[0] if present, else the fallback
+// (typically the active context's DefaultProvider). Errors when neither is available.
+func resolveProviderName(args []string, defaultProvider string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	if defaultProvider == "" {
+		return "", fmt.Errorf("please specify a provider")
+	}
+	return defaultProvider, nil
+}
+
+// assertProviderMatchesGlobal returns an error when both the resolved provider name and
+// the --provider global flag are set but disagree.
+func assertProviderMatchesGlobal(resolved, globalFlag string) error {
+	if resolved == "" || globalFlag == "" || resolved == globalFlag {
+		return nil
+	}
+	log.Infof("providerName=%+v", resolved)
+	log.Infof("GlobalFlags.Provider=%+v", globalFlag)
+	return fmt.Errorf("ambiguous provider configuration detected")
+}
+
+type initIO struct {
+	stdout io.Writer
+	stderr io.Writer
+}
+
 func initProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider *provider2.ProviderConfig,
-	stdout, stderr io.Writer,
+	io2 initIO,
 ) error {
 	// Capture the sub-binary's stderr in parallel with forwarding it to the
 	// regular log sink so that errors.Classify has the real provider output
@@ -234,8 +164,8 @@ func initProvider(
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),
 		Config:  provider,
-		Stdout:  stdout,
-		Stderr:  io.MultiWriter(stderr, stderrBuf),
+		Stdout:  io2.stdout,
+		Stderr:  io.MultiWriter(io2.stderr, stderrBuf),
 	})
 	if err != nil {
 		return cliErrors.Classify(fmt.Errorf("init: %w", err), cliErrors.ClassifyContext{

@@ -334,7 +334,7 @@ func createWorkspace(
 		return nil, nil, nil, err
 	} else if provider.State == nil || !provider.State.Initialized {
 		return nil, nil, nil, fmt.Errorf(
-			"provider '%s' is not initialized, please make sure to run 'devsy provider use %s' "+
+			"provider '%s' is not initialized, please make sure to run 'devsy provider configure %s' "+
 				"at least once before using this provider",
 			provider.Config.Name,
 			provider.Config.Name,

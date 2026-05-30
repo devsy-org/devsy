@@ -81,6 +81,21 @@ export interface Provider {
   }
 }
 
+export interface ProviderVersion {
+  tag: string
+  publishedAt: string
+  prerelease: boolean
+  current: boolean
+}
+
+export interface ProviderVersionCheckResult {
+  current: string
+  latest: string
+  updateAvailable: boolean
+  unsupported: boolean
+  error?: string
+}
+
 export interface MachineProviderConfig {
   name?: string
 }

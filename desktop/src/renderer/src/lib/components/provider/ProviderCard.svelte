@@ -2,6 +2,7 @@
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import ProviderIcon from "./ProviderIcon.svelte"
 import ProviderSheet from "./ProviderSheet.svelte"
+import { providerVersions } from "$lib/stores/providerVersions.js"
 import type { Provider } from "$lib/types/index.js"
 
 let { provider }: { provider: Provider } = $props()
@@ -17,9 +18,15 @@ function sourceDisplay(p: Provider): string {
 
 <button
   type="button"
-  class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full"
+  class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full relative"
   onclick={() => (sheetOpen = true)}
 >
+  {#if $providerVersions.updates[provider.name]?.updateAvailable}
+    <span
+      class="absolute top-3 right-3 size-2 rounded-full bg-amber-500"
+      title="Update available: {$providerVersions.updates[provider.name]?.latest}"
+    />
+  {/if}
   <div class="flex items-start justify-between gap-3">
     <div class="flex items-center gap-3 min-w-0">
       <ProviderIcon name={provider.name} class="size-8 shrink-0" />

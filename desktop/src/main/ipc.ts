@@ -28,6 +28,17 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
+// Cache for provider update checks. Seeded on launch and refreshed every 6 hours.
+type UpdateInfo = {
+  current: string
+  latest: string
+  updateAvailable: boolean
+  unsupported: boolean
+  error?: string
+}
+
+let providerUpdateCache: Record<string, UpdateInfo> = {}
+
 interface SshKeyInfo {
   name: string
   keyType: string
@@ -51,9 +62,59 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
 }
 
-export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: Map<string, import("node:child_process").ChildProcess> } {
+export function registerIpcHandlers(deps: IpcDependencies): {
+  tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
+  scheduleProviderUpdateCheck: () => void
+  runInitialProviderUpdateCheck: () => void
+} {
   const { cli, state, logStore } = deps
   const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
+
+  /**
+   * Compute provider update information by querying the CLI for all installed providers.
+   */
+  async function computeUpdateChecks(): Promise<Record<string, UpdateInfo>> {
+    const providers = state.providerList()
+    const out: Record<string, UpdateInfo> = {}
+    await Promise.all(
+      providers.map(async (p) => {
+        const version = typeof p.version === "string" ? p.version : ""
+        try {
+          const versions = await cli.run<Array<{ tag: string; current?: boolean }>>(
+            ["provider", "versions", p.name, "--json", "--no-cache"],
+          )
+          const list = versions ?? []
+          const current = list.find((v) => v.current)?.tag ?? version
+          const latest = list[0]?.tag ?? ""
+          out[p.name] = {
+            current,
+            latest,
+            updateAvailable: latest !== "" && latest !== current,
+            unsupported: false,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes("does not support version listing")) {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: true,
+            }
+          } else {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: false,
+              error: msg,
+            }
+          }
+        }
+      }),
+    )
+    return out
+  }
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
@@ -117,11 +178,11 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_remove")
-    await cli.runRaw(["provider", "delete", args.name])
+    await cli.runRaw(["provider", "remove", args.name])
   })
 
   ipcMain.handle("provider_use", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "use", args.name])
+    await cli.runRaw(["provider", "default", args.name])
   })
 
   // Returns an envelope rather than throwing so a structured cliError survives
@@ -130,7 +191,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   // own-properties, so a thrown Error with a .cliError attached would lose it.
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
     try {
-      await cli.runRaw(["provider", "set-options", args.name])
+      await cli.runRaw(["provider", "configure", args.name])
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError
@@ -146,7 +207,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       const win = deps.getMainWindow()
 
       await cli.runStreaming(
-        ["provider", "set-options", args.name],
+        ["provider", "configure", args.name],
         (line, _stream, meta) => {
           const formatted = formatLogLine(line)
           win?.webContents.send("command-progress", {
@@ -180,13 +241,13 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
-    return cli.run(["provider", "options", args.name])
+    return cli.run(["provider", "get", args.name])
   })
 
   ipcMain.handle(
     "provider_set_options",
     async (_event, args: { name: string; options: string[] }) => {
-      const cliArgs = ["provider", "set-options", args.name, "--skip-init"]
+      const cliArgs = ["provider", "set", args.name, "--skip-init"]
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }
@@ -200,6 +261,41 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       await cli.runRaw(["provider", "rename", args.name, args.newName])
     },
   )
+
+  ipcMain.handle(
+    "provider_list_versions",
+    async (_event, args: { name: string; noCache?: boolean }) => {
+      const cliArgs = ["provider", "versions", args.name, "--json"]
+      if (args.noCache) cliArgs.push("--no-cache")
+      try {
+        const versions = await cli.run<unknown[]>(cliArgs)
+        return { versions: versions ?? [], unsupported: false }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes("does not support version listing")) {
+          return { versions: [], unsupported: true }
+        }
+        return { versions: [], unsupported: false, error: msg }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "provider_set_version",
+    async (_event, args: { name: string; tag: string }) => {
+      await cli.runRaw(["provider", "update", args.name, "--version", args.tag])
+    },
+  )
+
+  ipcMain.handle("provider_check_updates", async () => {
+    const out = await computeUpdateChecks()
+    providerUpdateCache = out
+    return out
+  })
+
+  ipcMain.handle("provider_get_update_cache", async () => {
+    return providerUpdateCache
+  })
 
   // ── Machines ──
   ipcMain.handle("machine_list", () => state.machineList())
@@ -863,7 +959,25 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     },
   )
 
-  return { tunnelProcesses }
+  function runUpdateCheck(): void {
+    void (async () => {
+      try {
+        providerUpdateCache = await computeUpdateChecks()
+      } catch {
+        // Silently swallow background errors.
+      }
+    })()
+  }
+
+  function scheduleUpdates(): void {
+    setInterval(runUpdateCheck, 6 * 60 * 60 * 1000)
+  }
+
+  return {
+    tunnelProcesses,
+    scheduleProviderUpdateCheck: scheduleUpdates,
+    runInitialProviderUpdateCheck: runUpdateCheck,
+  }
 }
 
 function sanitizeAnalyticsProperties(
