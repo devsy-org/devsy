@@ -1,4 +1,4 @@
-package templates
+package template
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ type GenerateDocsFlags struct {
 func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	docsFlags := &GenerateDocsFlags{}
 	docsCmd := &cobra.Command{
-		Use:   "generate-docs",
+		Use:   "docs",
 		Short: "Generate markdown docs from template metadata",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGenerateDocs(docsFlags)

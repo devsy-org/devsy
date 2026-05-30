@@ -5,10 +5,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewTemplateCmd builds the 'devsy template' parent command for working with devcontainer templates.
 func NewTemplateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	return &cobra.Command{
-		Use:   "template",
-		Short: "Work with devcontainer templates",
+	templateCmd := &cobra.Command{
+		Use:           "template",
+		Short:         "Devcontainer template commands",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.NoArgs,
 	}
+
+	templateCmd.AddCommand(NewApplyCmd(globalFlags))
+	templateCmd.AddCommand(NewPublishCmd(globalFlags))
+	templateCmd.AddCommand(NewMetadataCmd(globalFlags))
+	templateCmd.AddCommand(NewGenerateDocsCmd(globalFlags))
+
+	return templateCmd
 }

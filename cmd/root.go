@@ -16,7 +16,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
-	"github.com/devsy-org/devsy/cmd/templates"
+	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/use"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/cmd/workspace/up"
@@ -201,6 +201,8 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	featureCmd := feature.NewFeatureCmd(globalFlags)
 	featureCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(featureCmd)
-	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
+	templateCmd := template.NewTemplateCmd(globalFlags)
+	templateCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(templateCmd)
 	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 }

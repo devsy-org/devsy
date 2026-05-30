@@ -29,7 +29,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/selfupdate"
 	_ "github.com/devsy-org/devsy/e2e/tests/setup"
 	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
-	_ "github.com/devsy-org/devsy/e2e/tests/templates"
+	_ "github.com/devsy-org/devsy/e2e/tests/template"
 	_ "github.com/devsy-org/devsy/e2e/tests/tunnel"
 	_ "github.com/devsy-org/devsy/e2e/tests/up"
 	_ "github.com/devsy-org/devsy/e2e/tests/up-features"

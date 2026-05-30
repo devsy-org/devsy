@@ -1,4 +1,4 @@
-package templates
+package template
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	cmdTemplates        = "templates"
+	cmdTemplates        = "template"
 	flagTemplateID      = "--template-id"
 	flagWorkspaceFolder = "--workspace-folder"
 	subCmdApply         = "apply"
