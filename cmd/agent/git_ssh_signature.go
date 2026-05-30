@@ -15,7 +15,7 @@ import (
 // NewGitSSHSignatureCmd creates new git-ssh-signature command
 // This agent command can be used as git ssh program by setting
 //
-//	> git config --global gpg.ssh.program "devsy agent git-ssh-signature"
+//	> git config --global gpg.ssh.program "devsy internal agent git-ssh-signature"
 //
 // Git by default uses ssh-keygen for signing commits with ssh. This CLI command is a drop-in
 // replacement for ssh-keygen and hence needs to support ssh-keygen interface that git uses.

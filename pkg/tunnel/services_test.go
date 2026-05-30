@@ -54,7 +54,7 @@ func TestGetExitAfterTimeout_DisableIdleTimeoutOverridesDisabled(t *testing.T) {
 	)
 }
 
-const testBaseCommand = "devsy agent container credentials-server --user root"
+const testBaseCommand = "devsy internal agent container credentials-server --user root"
 
 func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 	command := testBaseCommand

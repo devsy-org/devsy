@@ -160,7 +160,7 @@ type browserIDEInvocation struct {
 	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
 }
 
-// startDetachedBrowserTunnel spawns `devsy helper browser-tunnel ...` as a
+// startDetachedBrowserTunnel spawns `devsy internal helper browser-tunnel ...` as a
 // detached background process so the CLI can return to the prompt while the
 // tunnel remains running.
 //

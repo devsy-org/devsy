@@ -169,7 +169,9 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	contextCmd := context.NewContextCmd(globalFlags)
 	contextCmd.GroupID = groupConfig
 	rootCmd.AddCommand(contextCmd)
-	rootCmd.AddCommand(pro.NewProCmd(globalFlags))
+	proCmd := pro.NewProCmd(globalFlags)
+	proCmd.GroupID = groupPlatform
+	rootCmd.AddCommand(proCmd)
 
 	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
 	wsCmd.GroupID = groupCore
