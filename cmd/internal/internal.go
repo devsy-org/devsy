@@ -1,4 +1,4 @@
-package internal
+package cmdinternal
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -9,7 +9,6 @@ import (
 // processes (the daemon, the desktop app, container init scripts).
 // Subcommands here are not part of the user-facing CLI contract.
 func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	_ = globalFlags
 	return &cobra.Command{
 		Use:    "internal",
 		Short:  "Internal plumbing commands (not for direct use)",

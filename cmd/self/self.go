@@ -5,8 +5,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewSelfCmd builds the 'devsy self' parent command for managing the devsy CLI itself.
 func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	_ = globalFlags
 	return &cobra.Command{
 		Use:   "self",
 		Short: "Manage the devsy CLI itself",

@@ -5,8 +5,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewConfigCmd builds the 'devsy config' parent command for reading and applying devcontainer configuration.
 func NewConfigCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	_ = globalFlags
 	return &cobra.Command{
 		Use:   "config",
 		Short: "Read and apply devcontainer configuration",
