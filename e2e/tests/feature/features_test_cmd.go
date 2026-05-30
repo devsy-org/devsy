@@ -1,4 +1,4 @@
-package features
+package feature
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	cmdFeatures           = "features"
+	cmdFeatures           = "feature"
 	cmdTest               = "test"
 	featureNameA          = "feat-a"
 	flagProjectFolder     = "--project-folder"
@@ -25,7 +25,7 @@ const (
 	featureNameBadFeature = "bad-feature"
 )
 
-var _ = ginkgo.Describe("features test", ginkgo.Label("features"), func() {
+var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {

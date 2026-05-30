@@ -1,4 +1,4 @@
-package features
+package feature
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const (
 	fileInstallShell = "install.sh"
 )
 
-var _ = ginkgo.Describe("features publish", ginkgo.Label("features"), func() {
+var _ = ginkgo.Describe("feature publish", ginkgo.Label("feature"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {

@@ -1,4 +1,4 @@
-package features
+package feature
 
 import (
 	"archive/tar"
@@ -29,7 +29,7 @@ const (
 	subCmdTags     = "tags"
 )
 
-var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
+var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 	var initialDir string
 
 	ginkgo.BeforeEach(func() {
@@ -38,7 +38,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 		framework.ExpectNoError(err)
 	})
 
-	ginkgo.Describe("features resolve-dependencies", func() {
+	ginkgo.Describe("feature resolve-dependencies", func() {
 		ginkgo.It("outputs install order for features", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -81,7 +81,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "resolve-dependencies",
+				"feature", "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
 				flagOutput, outputPlain,
 			})
@@ -121,7 +121,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "resolve-dependencies",
+				"feature", "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
 				flagOutput, outputJSON,
 			})
@@ -132,7 +132,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	})
 
-	ginkgo.Describe("features generate-docs", func() {
+	ginkgo.Describe("feature docs", func() {
 		ginkgo.It("generates markdown files from feature metadata", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "generate-docs",
+				"feature", "docs",
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
 				flagOutput, outputPlain,
@@ -207,7 +207,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"features", "generate-docs",
+				"feature", "docs",
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
 				"--namespace", "ghcr.io/test/features",
@@ -221,7 +221,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 	})
 
-	ginkgo.Describe("features info", func() {
+	ginkgo.Describe("feature info", func() {
 		ginkgo.It("displays feature metadata from a registry", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -239,7 +239,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "info", featureRef,
+				"feature", "info", featureRef,
 				flagOutput, outputPlain,
 			})
 			framework.ExpectNoError(err)
@@ -263,7 +263,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "info", featureRef, flagOutput, outputJSON,
+				"feature", "info", featureRef, flagOutput, outputJSON,
 			})
 			framework.ExpectNoError(err)
 
@@ -286,7 +286,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 			pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"features", "info", featureRepo + ":1.0.0", "--show-tags",
+				"feature", "info", featureRepo + ":1.0.0", "--show-tags",
 			})
 			framework.ExpectNoError(err)
 
@@ -309,7 +309,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef,
+					"feature", "info", subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -333,7 +333,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRef, nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef, flagOutput, outputPlain,
+					"feature", "info", subCmdManifest, featureRef, flagOutput, outputPlain,
 				})
 				framework.ExpectNoError(err)
 
@@ -358,7 +358,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef,
+					"feature", "info", subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -376,7 +376,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, "not a valid ref!!!",
+					"feature", "info", subCmdManifest, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
@@ -392,7 +392,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				featureRef := regHost + "/test/features/nonexistent:1.0.0"
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdManifest, featureRef,
+					"feature", "info", subCmdManifest, featureRef,
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("fetch manifest"))
@@ -414,7 +414,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRepo+":latest", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdTags, featureRepo + ":1.0.0",
+					"feature", "info", subCmdTags, featureRepo + ":1.0.0",
 					flagOutput, outputPlain,
 				})
 				framework.ExpectNoError(err)
@@ -438,7 +438,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdTags, featureRepo + ":1.0.0",
+					"feature", "info", subCmdTags, featureRepo + ":1.0.0",
 					flagOutput, outputJSON,
 				})
 				framework.ExpectNoError(err)
@@ -461,7 +461,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				regHost := strings.TrimPrefix(srv.URL, "http://")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdTags,
+					"feature", "info", subCmdTags,
 					regHost + "/test/features/empty:latest",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
@@ -472,7 +472,7 @@ var _ = ginkgo.Describe("features commands", ginkgo.Label("features"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"features", "info", subCmdTags, "not a valid ref!!!",
+					"feature", "info", subCmdTags, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
