@@ -5,6 +5,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	cmdInternal  = "internal"
+	cmdAgent     = "agent"
+	cmdContainer = "container"
+)
+
 // NewContainerCmd returns a new command.
 func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	containerCmd := &cobra.Command{

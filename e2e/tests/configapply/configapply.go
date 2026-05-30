@@ -22,6 +22,8 @@ const (
 	dockerBin      = "docker"
 	imageKey       = "image"
 	devcontainerFn = "devcontainer.json"
+
+	postCreateCommandKey = "postCreateCommand"
 )
 
 var _ = ginkgo.Describe(
@@ -47,8 +49,8 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
 
 				devcontainerJSON := map[string]any{
-					imageKey:            alpineImage,
-					"postCreateCommand": "touch /tmp/setup-test-marker",
+					imageKey:             alpineImage,
+					postCreateCommandKey: "touch /tmp/setup-test-marker",
 				}
 				writeDevcontainerJSON(tmpDir, devcontainerJSON)
 
@@ -101,9 +103,9 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
 
 				devcontainerJSON := map[string]any{
-					imageKey:            alpineImage,
-					"containerEnv":      map[string]string{"MY_VAR": "hello_world"},
-					"postCreateCommand": "sh -c 'echo -n $MY_VAR > /tmp/env-marker'",
+					imageKey:             alpineImage,
+					"containerEnv":       map[string]string{"MY_VAR": "hello_world"},
+					postCreateCommandKey: "sh -c 'echo -n $MY_VAR > /tmp/env-marker'",
 				}
 				writeDevcontainerJSON(tmpDir, devcontainerJSON)
 
@@ -211,9 +213,9 @@ var _ = ginkgo.Describe(
 
 				remoteEnvValue := "remote_env_works"
 				devcontainerJSON := map[string]any{
-					imageKey:            alpineImage,
-					"remoteEnv":         map[string]string{"REMOTE_VAR": remoteEnvValue},
-					"postCreateCommand": "sh -c 'echo -n $REMOTE_VAR > /tmp/remoteenv-marker'",
+					imageKey:             alpineImage,
+					"remoteEnv":          map[string]string{"REMOTE_VAR": remoteEnvValue},
+					postCreateCommandKey: "sh -c 'echo -n $REMOTE_VAR > /tmp/remoteenv-marker'",
 				}
 				writeDevcontainerJSON(tmpDir, devcontainerJSON)
 
@@ -242,7 +244,7 @@ var _ = ginkgo.Describe(
 					imageKey:               alpineImage,
 					"onCreateCommand":      "sh -c 'echo -n 1 >> /tmp/order-marker'",
 					"updateContentCommand": "sh -c 'echo -n 2 >> /tmp/order-marker'",
-					"postCreateCommand":    "sh -c 'echo -n 3 >> /tmp/order-marker'",
+					postCreateCommandKey:   "sh -c 'echo -n 3 >> /tmp/order-marker'",
 					"postStartCommand":     "sh -c 'echo -n 4 >> /tmp/order-marker'",
 					"postAttachCommand":    "sh -c 'echo -n 5 >> /tmp/order-marker'",
 				}

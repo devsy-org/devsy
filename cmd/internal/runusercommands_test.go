@@ -22,6 +22,8 @@ const (
 	hookPostCreate    = "postCreateCommand"
 	hookPostStart     = "postStartCommand"
 	hookPostAttach    = "postAttachCommand"
+
+	tmpDir = "/tmp"
 )
 
 func TestNewRunUserCommandsCmd_CommandName(t *testing.T) {
@@ -159,7 +161,7 @@ func TestRunUserCommandsCmd_SkipUpdateContentFlag(t *testing.T) {
 func TestRunUserCommandsCmd_SkipFlagsParseValues(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
 	err := cmd.ParseFlags([]string{
-		"--workspace-folder", "/tmp",
+		"--workspace-folder", tmpDir,
 		"--skip-post-create",
 		"--skip-post-start",
 		"--skip-post-attach",
@@ -192,7 +194,7 @@ func TestRunUserCommandsCmd_SkipFlagsParseValues(t *testing.T) {
 func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
 	err := cmd.ParseFlags([]string{
-		"--workspace-folder", "/tmp",
+		"--workspace-folder", tmpDir,
 		"--docker-path", "/usr/local/bin/podman",
 		"--config", ".devcontainer/devcontainer.json",
 		"--override-config", "/tmp/override.json",
@@ -271,7 +273,7 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 	}{
 		{
 			"workspace-folder only",
-			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: "/tmp"},
+			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: tmpDir},
 			false, "",
 		},
 		{
@@ -289,7 +291,7 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 			&RunUserCommandsCmd{
 				GlobalFlags:     &flags.GlobalFlags{},
 				ContainerID:     testContainerID,
-				WorkspaceFolder: "/tmp",
+				WorkspaceFolder: tmpDir,
 			},
 			false,
 			"",

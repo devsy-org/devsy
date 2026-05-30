@@ -13,6 +13,7 @@ import (
 
 const (
 	cmdFeatures           = "feature"
+	cmdInfo               = "info"
 	cmdTest               = "test"
 	featureNameA          = "feat-a"
 	flagProjectFolder     = "--project-folder"

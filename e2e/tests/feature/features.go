@@ -81,7 +81,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "resolve-dependencies",
+				cmdFeatures, "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
 				flagOutput, outputPlain,
 			})
@@ -121,7 +121,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			))
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "resolve-dependencies",
+				cmdFeatures, "resolve-dependencies",
 				"--workspace-folder", workspaceDir,
 				flagOutput, outputJSON,
 			})
@@ -160,7 +160,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "docs",
+				cmdFeatures, "docs",
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
 				flagOutput, outputPlain,
@@ -207,7 +207,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(outputDir) })
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
-				"feature", "docs",
+				cmdFeatures, "docs",
 				"--project-folder", projectDir,
 				"--output-folder", outputDir,
 				"--namespace", "ghcr.io/test/features",
@@ -239,7 +239,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "info", featureRef,
+				cmdFeatures, cmdInfo, featureRef,
 				flagOutput, outputPlain,
 			})
 			framework.ExpectNoError(err)
@@ -263,7 +263,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "info", featureRef, flagOutput, outputJSON,
+				cmdFeatures, cmdInfo, featureRef, flagOutput, outputJSON,
 			})
 			framework.ExpectNoError(err)
 
@@ -286,7 +286,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				"feature", "info", featureRepo + ":1.0.0", "--show-tags",
+				cmdFeatures, cmdInfo, featureRepo + ":1.0.0", "--show-tags",
 			})
 			framework.ExpectNoError(err)
 
@@ -309,7 +309,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdManifest, featureRef,
+					cmdFeatures, cmdInfo, subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -333,7 +333,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				pushFeatureWithAnnotations(featureRef, nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdManifest, featureRef, flagOutput, outputPlain,
+					cmdFeatures, cmdInfo, subCmdManifest, featureRef, flagOutput, outputPlain,
 				})
 				framework.ExpectNoError(err)
 
@@ -358,7 +358,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdManifest, featureRef,
+					cmdFeatures, cmdInfo, subCmdManifest, featureRef,
 				})
 				framework.ExpectNoError(err)
 
@@ -376,7 +376,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdManifest, "not a valid ref!!!",
+					cmdFeatures, cmdInfo, subCmdManifest, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))
@@ -392,7 +392,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				featureRef := regHost + "/test/features/nonexistent:1.0.0"
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdManifest, featureRef,
+					cmdFeatures, cmdInfo, subCmdManifest, featureRef,
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("fetch manifest"))
@@ -414,7 +414,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				pushFeatureWithAnnotations(featureRepo+":latest", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdTags, featureRepo + ":1.0.0",
+					cmdFeatures, cmdInfo, subCmdTags, featureRepo + ":1.0.0",
 					flagOutput, outputPlain,
 				})
 				framework.ExpectNoError(err)
@@ -438,7 +438,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				pushFeatureWithAnnotations(featureRepo+":2.0.0", nil)
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdTags, featureRepo + ":1.0.0",
+					cmdFeatures, cmdInfo, subCmdTags, featureRepo + ":1.0.0",
 					flagOutput, outputJSON,
 				})
 				framework.ExpectNoError(err)
@@ -461,7 +461,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				regHost := strings.TrimPrefix(srv.URL, "http://")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdTags,
+					cmdFeatures, cmdInfo, subCmdTags,
 					regHost + "/test/features/empty:latest",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
@@ -472,7 +472,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				_, stderr, err := f.ExecCommandCapture(ctx, []string{
-					"feature", "info", subCmdTags, "not a valid ref!!!",
+					cmdFeatures, cmdInfo, subCmdTags, "not a valid ref!!!",
 				})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("invalid feature reference"))

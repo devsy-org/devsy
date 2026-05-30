@@ -311,7 +311,7 @@ func buildDeferredHooksCmd(
 	}
 
 	args := []string{
-		"internal", "agent", "container", "deferred-hooks",
+		cmdInternal, cmdAgent, cmdContainer, "deferred-hooks",
 		"--setup-info", setupInfo,
 	}
 	if prebuild {
@@ -480,7 +480,7 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 		}
 
 		args := []string{
-			"internal", "agent", "container", "daemon",
+			cmdInternal, cmdAgent, cmdContainer, "daemon",
 			"--timeout", workspaceInfo.ContainerTimeout,
 		}
 		if shutdownAction != "" {
@@ -508,7 +508,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 		}
 
 		args := []string{
-			"internal", "agent", "container", "post-attach",
+			cmdInternal, cmdAgent, cmdContainer, "post-attach",
 			"--setup-info", cmd.SetupInfo,
 		}
 		if len(sctx.workspaceInfo.CLIOptions.SecretsEnv) > 0 {
@@ -700,7 +700,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 			}
 
 			args := []string{
-				"internal", "agent", "container", "vscode-async",
+				cmdInternal, cmdAgent, cmdContainer, "vscode-async",
 				"--setup-info", cmd.SetupInfo,
 				"--flavor", string(flavor),
 			}
@@ -756,9 +756,9 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 
 			return exec.Command(
 				binaryPath,
-				"internal",
-				"agent",
-				"container",
+				cmdInternal,
+				cmdAgent,
+				cmdContainer,
 				"openvscode-async",
 				"--setup-info",
 				cmd.SetupInfo,
@@ -815,9 +815,9 @@ func (cmd *SetupContainerCmd) setupCodeServer(
 			//nolint:gosec // binaryPath is from os.Executable(), not user input
 			return exec.Command(
 				binaryPath,
-				"internal",
-				"agent",
-				"container",
+				cmdInternal,
+				cmdAgent,
+				cmdContainer,
 				"code-server-async",
 				"--setup-info",
 				cmd.SetupInfo,

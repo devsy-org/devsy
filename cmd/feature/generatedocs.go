@@ -14,6 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	colStatus      = "Status"
+	colProperty    = "Property"
+	colDescription = "Description"
+)
+
 type GenerateDocsCmd struct {
 	*flags.GlobalFlags
 
@@ -226,10 +232,10 @@ func (cmd *GenerateDocsCmd) writeMetadataTable(
 		rows = append(rows, []string{"Documentation", f.config.DocumentationURL})
 	}
 	if f.config.Deprecated {
-		rows = append(rows, []string{"Status", "**DEPRECATED**"})
+		rows = append(rows, []string{colStatus, "**DEPRECATED**"})
 	}
 	sb.WriteString("## Metadata\n\n")
-	sb.WriteString(table.Markdown([]string{"Property", "Value"}, rows))
+	sb.WriteString(table.Markdown([]string{colProperty, "Value"}, rows))
 	sb.WriteString("\n")
 }
 
@@ -261,7 +267,7 @@ func writeOptionsTable(
 		})
 	}
 	sb.WriteString("## Options\n\n")
-	sb.WriteString(table.Markdown([]string{"Name", "Type", "Default", "Description"}, rows))
+	sb.WriteString(table.Markdown([]string{"Name", "Type", "Default", colDescription}, rows))
 	sb.WriteString("\n")
 }
 
@@ -309,7 +315,7 @@ func (cmd *GenerateDocsCmd) generateIndex(features []*featureDoc) string {
 		})
 	}
 	sb.WriteString("## Features\n\n")
-	sb.WriteString(table.Markdown([]string{"Feature", "Description"}, rows))
+	sb.WriteString(table.Markdown([]string{"Feature", colDescription}, rows))
 	sb.WriteString("\n")
 	return sb.String()
 }
