@@ -18,7 +18,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
-	"github.com/devsy-org/devsy/cmd/use"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -161,7 +160,6 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	providerCmd := provider.NewProviderCmd(globalFlags)
 	providerCmd.GroupID = groupConfig
 	rootCmd.AddCommand(providerCmd)
-	rootCmd.AddCommand(use.NewUseCmd(globalFlags))
 	ideCmd := ide.NewIDECmd(globalFlags)
 	ideCmd.GroupID = groupConfig
 	rootCmd.AddCommand(ideCmd)
