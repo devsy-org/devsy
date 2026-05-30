@@ -43,3 +43,40 @@ func TestClassifyVersionSource(t *testing.T) {
 		})
 	}
 }
+
+func TestListVersionsForSource_LocalUnsupported(t *testing.T) {
+	_, err := listVersionsForSource("/abs/path/provider.yaml", ListVersionsOptions{})
+	if !errors.Is(err, ErrVersionListUnsupported) {
+		t.Fatalf("local source must be unsupported, got %v", err)
+	}
+}
+
+func TestListVersionsForSource_UnknownUnsupported(t *testing.T) {
+	_, err := listVersionsForSource("totally-bogus-source", ListVersionsOptions{})
+	if !errors.Is(err, ErrVersionListUnsupported) {
+		t.Fatalf("unknown source must be unsupported, got %v", err)
+	}
+}
+
+func TestListVersionsForSource_GitHubInvalid(t *testing.T) {
+	_, err := listVersionsForSource("github.com/missingrepo", ListVersionsOptions{})
+	if err == nil || errors.Is(err, ErrVersionListUnsupported) {
+		t.Fatalf("github source missing repo segment must error (not unsupported): %v", err)
+	}
+}
+
+func TestMarkCurrent(t *testing.T) {
+	versions := []ProviderVersion{{Tag: "v1.0.0"}, {Tag: "v0.9.0"}}
+	got := markCurrent(versions, "github.com/foo/bar@v1.0.0")
+	if !got[0].Current || got[1].Current {
+		t.Fatalf("only v1.0.0 should be marked current: %+v", got)
+	}
+}
+
+func TestMarkCurrent_NoTag(t *testing.T) {
+	versions := []ProviderVersion{{Tag: "v1.0.0"}}
+	got := markCurrent(versions, "github.com/foo/bar")
+	if got[0].Current {
+		t.Fatal("no pinned tag → none current")
+	}
+}

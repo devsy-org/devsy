@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,6 +14,9 @@ var ErrVersionListUnsupported = errors.New("provider source does not support ver
 
 // ErrVersionListRateLimited indicates upstream rate-limiting hit the lister.
 var ErrVersionListRateLimited = errors.New("provider version list rate-limited")
+
+// githubAPIBaseURL is the base URL for GitHub API calls; overridden in tests.
+var githubAPIBaseURL = "https://api.github.com"
 
 // ProviderVersion describes one upstream release.
 type ProviderVersion struct {
@@ -29,7 +33,47 @@ func ListProviderVersions(
 	providerName string,
 	opts ListVersionsOptions,
 ) ([]ProviderVersion, error) {
+	source, err := ResolveProviderSource(devsyConfig, providerName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider source: %w", err)
+	}
+	versions, err := listVersionsForSource(source, opts)
+	if err != nil {
+		return nil, err
+	}
+	return markCurrent(versions, source), nil
+}
+
+// listVersionsForSource dispatches to the appropriate lister based on source shape.
+// Separated from ListProviderVersions so it can be tested without a real Config.
+func listVersionsForSource(source string, opts ListVersionsOptions) ([]ProviderVersion, error) {
+	switch classifyVersionSource(source) {
+	case sourceGitHub:
+		org, repo, ok := parseGitHubSourcePath(source)
+		if !ok {
+			return nil, fmt.Errorf("invalid github source: %s", source)
+		}
+		return listGitHubReleases(githubAPIBaseURL, org, repo, opts.IncludePrerelease)
+	case sourceManifestURL:
+		return listManifestVersions(source, opts.IncludePrerelease)
+	case sourceLocal, sourceUnknown:
+		return nil, ErrVersionListUnsupported
+	}
 	return nil, ErrVersionListUnsupported
+}
+
+// markCurrent flags the version whose tag matches the source's pinned tag.
+func markCurrent(versions []ProviderVersion, canonicalSource string) []ProviderVersion {
+	_, currentTag := splitSourceAndTag(canonicalSource)
+	if currentTag == "" {
+		return versions
+	}
+	for i := range versions {
+		if versions[i].Tag == currentTag {
+			versions[i].Current = true
+		}
+	}
+	return versions
 }
 
 // ListVersionsOptions tunes the lister.
