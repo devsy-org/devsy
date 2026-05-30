@@ -201,6 +201,80 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     },
   )
 
+  ipcMain.handle(
+    "provider_list_versions",
+    async (_event, args: { name: string; noCache?: boolean }) => {
+      const cliArgs = ["provider", "versions", args.name, "--json"]
+      if (args.noCache) cliArgs.push("--no-cache")
+      try {
+        const versions = await cli.run<unknown[]>(cliArgs)
+        return { versions: versions ?? [], unsupported: false }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes("does not support version listing")) {
+          return { versions: [], unsupported: true }
+        }
+        return { versions: [], unsupported: false, error: msg }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "provider_set_version",
+    async (_event, args: { name: string; tag: string }) => {
+      await cli.runRaw(["provider", "update", args.name, "--version", args.tag])
+    },
+  )
+
+  ipcMain.handle("provider_check_updates", async () => {
+    const providers = state.providerList()
+    const out: Record<string, {
+      current: string
+      latest: string
+      updateAvailable: boolean
+      unsupported: boolean
+      error?: string
+    }> = {}
+    await Promise.all(
+      providers.map(async (p) => {
+        const version = typeof p.version === "string" ? p.version : ""
+        try {
+          const versions = await cli.run<Array<{ tag: string; current?: boolean }>>(
+            ["provider", "versions", p.name, "--json", "--no-cache"],
+          )
+          const list = versions ?? []
+          const current = list.find((v) => v.current)?.tag ?? version
+          const latest = list[0]?.tag ?? ""
+          out[p.name] = {
+            current,
+            latest,
+            updateAvailable: latest !== "" && latest !== current,
+            unsupported: false,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes("does not support version listing")) {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: true,
+            }
+          } else {
+            out[p.name] = {
+              current: version,
+              latest: "",
+              updateAvailable: false,
+              unsupported: false,
+              error: msg,
+            }
+          }
+        }
+      }),
+    )
+    return out
+  })
+
   // ── Machines ──
   ipcMain.handle("machine_list", () => state.machineList())
 
