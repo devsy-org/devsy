@@ -110,7 +110,7 @@ describe("CliRunner", () => {
         },
       )
 
-      const result = await cli.runRaw(["version"])
+      const result = await cli.runRaw(["--version"])
       expect(result).toBe("v0.6.0-dev\n")
     })
   })
