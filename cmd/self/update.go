@@ -1,4 +1,4 @@
-package cmd
+package self
 
 import (
 	"fmt"
@@ -12,18 +12,18 @@ const (
 	channelBeta   = "beta"
 )
 
-// SelfUpdateCmd is a struct that defines a command call for "self-update".
-type SelfUpdateCmd struct {
+// UpdateCmd is a struct that defines a command call for "self update".
+type UpdateCmd struct {
 	Version string
 	Channel string
 	DryRun  bool
 }
 
-// NewSelfUpdateCmd creates a new self-update command.
-func NewSelfUpdateCmd() *cobra.Command {
-	cmd := &SelfUpdateCmd{}
+// NewUpdateCmd creates a new update command.
+func NewUpdateCmd() *cobra.Command {
+	cmd := &UpdateCmd{}
 	selfUpdateCmd := &cobra.Command{
-		Use:   "self-update",
+		Use:   "update",
 		Short: "Update the Devsy CLI to the newest version",
 		Args:  cobra.NoArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error {

@@ -1,4 +1,4 @@
-package selfupdate
+package self
 
 import (
 	"context"
@@ -21,8 +21,8 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err, "getting current working directory should not error")
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
-				output, err := f.ExecCommandOutput(ctx, []string{"self-update", "--dry-run"})
-				framework.ExpectNoError(err, "self-update --dry-run should not error")
+				output, err := f.ExecCommandOutput(ctx, []string{"self", "update", "--dry-run"})
+				framework.ExpectNoError(err, "self update --dry-run should not error")
 
 				ginkgo.By("Parsing dry-run key=value output")
 				lines := strings.Split(strings.TrimSpace(output), "\n")

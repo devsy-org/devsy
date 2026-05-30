@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
+	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/use"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
@@ -194,7 +195,9 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	addShortcut(wsCmdPkg.NewListCmd(globalFlags))
 
 	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
-	rootCmd.AddCommand(NewSelfUpdateCmd())
+	selfCmd := self.NewSelfCmd(globalFlags)
+	selfCmd.GroupID = groupMeta
+	rootCmd.AddCommand(selfCmd)
 	configCmd := cliconfig.NewConfigCmd(globalFlags)
 	configCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(configCmd)
