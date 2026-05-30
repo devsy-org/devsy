@@ -117,11 +117,11 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_remove")
-    await cli.runRaw(["provider", "delete", args.name])
+    await cli.runRaw(["provider", "remove", args.name])
   })
 
   ipcMain.handle("provider_use", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "use", args.name])
+    await cli.runRaw(["provider", "default", args.name])
   })
 
   // Returns an envelope rather than throwing so a structured cliError survives
@@ -130,7 +130,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   // own-properties, so a thrown Error with a .cliError attached would lose it.
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
     try {
-      await cli.runRaw(["provider", "set-options", args.name])
+      await cli.runRaw(["provider", "configure", args.name])
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError
@@ -146,7 +146,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
       const win = deps.getMainWindow()
 
       await cli.runStreaming(
-        ["provider", "set-options", args.name],
+        ["provider", "configure", args.name],
         (line, _stream, meta) => {
           const formatted = formatLogLine(line)
           win?.webContents.send("command-progress", {
@@ -180,13 +180,13 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
-    return cli.run(["provider", "options", args.name])
+    return cli.run(["provider", "get", args.name])
   })
 
   ipcMain.handle(
     "provider_set_options",
     async (_event, args: { name: string; options: string[] }) => {
-      const cliArgs = ["provider", "set-options", args.name, "--skip-init"]
+      const cliArgs = ["provider", "set", args.name, "--skip-init"]
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }
