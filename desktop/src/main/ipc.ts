@@ -62,7 +62,11 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
 }
 
-export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: Map<string, import("node:child_process").ChildProcess>; scheduleProviderUpdateCheck: typeof scheduleProviderUpdateCheck } {
+export function registerIpcHandlers(deps: IpcDependencies): {
+  tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
+  scheduleProviderUpdateCheck: () => void
+  runInitialProviderUpdateCheck: () => void
+} {
   const { cli, state, logStore } = deps
   const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
 
@@ -955,9 +959,7 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
     },
   )
 
-  // Wrap computeUpdateChecks for scheduling. This closure captures it safely.
-  function scheduleUpdates(): void {
-    // Run immediately on launch.
+  function runUpdateCheck(): void {
     void (async () => {
       try {
         providerUpdateCache = await computeUpdateChecks()
@@ -965,20 +967,17 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
         // Silently swallow background errors.
       }
     })()
-
-    // Then schedule every 6 hours.
-    setInterval(() => {
-      void (async () => {
-        try {
-          providerUpdateCache = await computeUpdateChecks()
-        } catch {
-          // Silently swallow background errors.
-        }
-      })()
-    }, 6 * 60 * 60 * 1000)
   }
 
-  return { tunnelProcesses, scheduleProviderUpdateCheck: scheduleUpdates }
+  function scheduleUpdates(): void {
+    setInterval(runUpdateCheck, 6 * 60 * 60 * 1000)
+  }
+
+  return {
+    tunnelProcesses,
+    scheduleProviderUpdateCheck: scheduleUpdates,
+    runInitialProviderUpdateCheck: runUpdateCheck,
+  }
 }
 
 function sanitizeAnalyticsProperties(

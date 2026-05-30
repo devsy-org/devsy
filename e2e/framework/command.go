@@ -334,7 +334,7 @@ func (f *Framework) DevsyRename(
 	return nil
 }
 
-// DevsyProviderOptionsJSON executes `devsy provider get --output json` and returns the raw JSON.
+// DevsyProviderOptionsJSON executes `devsy provider get --result-format json` and returns the raw JSON.
 func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
 	providerName string,
@@ -472,7 +472,7 @@ func (f *Framework) DevsyProviderFindOption(
 	baseArgs := []string{cmdProvider, cmdGet, provider}
 	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
 	if err != nil {
-		return fmt.Errorf("devsy provider use failed: %s", err.Error())
+		return fmt.Errorf("devsy provider get failed: %s", err.Error())
 	}
 	return nil
 }

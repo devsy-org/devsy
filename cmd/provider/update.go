@@ -50,8 +50,10 @@ func NewUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	if cmd.Version != "" {
-		// --version mode: mutually exclusive with source argument
-		if len(args) != 1 {
+		if len(args) == 0 {
+			return fmt.Errorf("provider name must be provided when using --version")
+		}
+		if len(args) > 1 {
 			return fmt.Errorf("--version and a source argument are mutually exclusive")
 		}
 		providerName := args[0]
