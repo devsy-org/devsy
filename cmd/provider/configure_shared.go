@@ -117,6 +117,17 @@ func resolveProviderName(args []string, defaultProvider string) (string, error) 
 	return defaultProvider, nil
 }
 
+// assertProviderMatchesGlobal returns an error when both the resolved provider name and
+// the --provider global flag are set but disagree.
+func assertProviderMatchesGlobal(resolved, globalFlag string) error {
+	if resolved == "" || globalFlag == "" || resolved == globalFlag {
+		return nil
+	}
+	log.Infof("providerName=%+v", resolved)
+	log.Infof("GlobalFlags.Provider=%+v", globalFlag)
+	return fmt.Errorf("ambiguous provider configuration detected")
+}
+
 type initIO struct {
 	stdout io.Writer
 	stderr io.Writer

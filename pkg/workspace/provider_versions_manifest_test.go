@@ -17,13 +17,13 @@ func TestListManifestVersions_Success(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(versionsManifest{
 			Versions: []versionsManifestEntry{
-				{Tag: "v1.0.0", PublishedAt: time.Now(), Prerelease: false},
+				{Tag: testTagV100, PublishedAt: time.Now(), Prerelease: false},
 			},
 		})
 	}))
 	defer server.Close()
 	got, err := listManifestVersions(server.URL+"/foo/provider.yaml", false)
-	if err != nil || len(got) != 1 || got[0].Tag != "v1.0.0" {
+	if err != nil || len(got) != 1 || got[0].Tag != testTagV100 {
 		t.Fatalf("got %+v err %v", got, err)
 	}
 }

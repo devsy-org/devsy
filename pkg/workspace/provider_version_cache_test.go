@@ -13,8 +13,8 @@ func TestCacheRoundtrip(t *testing.T) {
 
 	c := providerVersionCache{
 		"foo": providerVersionCacheEntry{
-			SourceHash: "abc",
-			Versions:   []ProviderVersion{{Tag: "v1.0.0", PublishedAt: time.Now()}},
+			SourceHash: testNameABC,
+			Versions:   []ProviderVersion{{Tag: testTagV100, PublishedAt: time.Now()}},
 			FetchedAt:  time.Now(),
 		},
 	}
@@ -25,7 +25,7 @@ func TestCacheRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded["foo"].SourceHash != "abc" {
+	if loaded["foo"].SourceHash != testNameABC {
 		t.Fatalf("roundtrip mismatch: %+v", loaded)
 	}
 	if _, err := os.Stat(
@@ -43,16 +43,16 @@ func TestCacheRoundtrip(t *testing.T) {
 
 func TestCacheGet_FreshVsStale(t *testing.T) {
 	c := providerVersionCache{
-		"foo": providerVersionCacheEntry{SourceHash: "abc", FetchedAt: time.Now()},
-		"bar": providerVersionCacheEntry{
-			SourceHash: "abc",
+		"foo": providerVersionCacheEntry{SourceHash: testNameABC, FetchedAt: time.Now()},
+		testNameBar: providerVersionCacheEntry{
+			SourceHash: testNameABC,
 			FetchedAt:  time.Now().Add(-7 * time.Hour),
 		},
 	}
-	if _, fresh := c.Get("foo", "abc"); !fresh {
+	if _, fresh := c.Get("foo", testNameABC); !fresh {
 		t.Fatal("expected fresh for foo")
 	}
-	if _, fresh := c.Get("bar", "abc"); fresh {
+	if _, fresh := c.Get(testNameBar, testNameABC); fresh {
 		t.Fatal("expected stale for bar (older than TTL)")
 	}
 	if _, fresh := c.Get("foo", "different-hash"); fresh {

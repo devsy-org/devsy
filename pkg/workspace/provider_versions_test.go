@@ -18,8 +18,8 @@ func TestErrVersionListUnsupported(t *testing.T) {
 }
 
 func TestProviderVersionFields(t *testing.T) {
-	v := ProviderVersion{Tag: "v1.0.0", Prerelease: false, Current: true}
-	if v.Tag != "v1.0.0" || !v.Current {
+	v := ProviderVersion{Tag: testTagV100, Current: true}
+	if v.Tag != testTagV100 || !v.Current {
 		t.Fatal("fields must round-trip")
 	}
 }
@@ -68,7 +68,7 @@ func TestListVersionsForSource_GitHubInvalid(t *testing.T) {
 }
 
 func TestMarkCurrent(t *testing.T) {
-	versions := []ProviderVersion{{Tag: "v1.0.0"}, {Tag: "v0.9.0"}}
+	versions := []ProviderVersion{{Tag: testTagV100}, {Tag: "v0.9.0"}}
 	got := markCurrent(versions, "github.com/foo/bar@v1.0.0")
 	if !got[0].Current || got[1].Current {
 		t.Fatalf("only v1.0.0 should be marked current: %+v", got)
@@ -76,7 +76,7 @@ func TestMarkCurrent(t *testing.T) {
 }
 
 func TestMarkCurrent_NoTag(t *testing.T) {
-	versions := []ProviderVersion{{Tag: "v1.0.0"}}
+	versions := []ProviderVersion{{Tag: testTagV100}}
 	got := markCurrent(versions, "github.com/foo/bar")
 	if got[0].Current {
 		t.Fatal("no pinned tag → none current")
@@ -119,7 +119,7 @@ func TestListVersionsForSource_CachesResults(t *testing.T) {
 	cached := providerVersionCache{
 		"myprov": {
 			SourceHash: hash,
-			Versions:   []ProviderVersion{{Tag: "v9.9.9"}},
+			Versions:   []ProviderVersion{{Tag: testTagV999}},
 			FetchedAt:  time.Now(),
 		},
 	}
@@ -132,7 +132,7 @@ func TestListVersionsForSource_CachesResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Tag != "v9.9.9" {
+	if len(got) != 1 || got[0].Tag != testTagV999 {
 		t.Fatalf("expected cache hit, got %+v", got)
 	}
 }
@@ -146,7 +146,7 @@ func TestListVersionsForSource_BypassesCache(t *testing.T) {
 	cached := providerVersionCache{
 		"myprov": {
 			SourceHash: hash,
-			Versions:   []ProviderVersion{{Tag: "v9.9.9"}},
+			Versions:   []ProviderVersion{{Tag: testTagV999}},
 			FetchedAt:  time.Now(),
 		},
 	}
@@ -168,7 +168,7 @@ func TestListVersionsForSource_BypassesCache(t *testing.T) {
 func TestProviderVersionCheckResult_UnsupportedShape(t *testing.T) {
 	// Verify the struct shape and JSON tags by marshalling.
 	r := ProviderVersionCheckResult{
-		Current:     "v1.0.0",
+		Current:     testTagV100,
 		Unsupported: true,
 	}
 	data, err := json.Marshal(r)

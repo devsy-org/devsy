@@ -17,6 +17,8 @@ const (
 	flagResultFormat = "--result-format"
 	formatJSON       = "json"
 	cmdList          = "list"
+	cmdGet           = "get"
+	cmdProvider      = "provider"
 )
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
@@ -201,7 +203,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 	ctx context.Context,
 	provider, searchStr string,
 ) error {
-	err := f.ExecCommand(ctx, true, true, searchStr, []string{"provider", "get", provider})
+	err := f.ExecCommand(ctx, true, true, searchStr, []string{cmdProvider, cmdGet, provider})
 	if err != nil {
 		return fmt.Errorf(
 			"did not found value %s in devsy provider options output. error: %s",
@@ -213,7 +215,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 }
 
 func (f *Framework) DevsyProviderList(ctx context.Context, extraArgs ...string) error {
-	baseArgs := []string{"provider", cmdList}
+	baseArgs := []string{cmdProvider, cmdList}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider list failed: %s", err.Error())
@@ -226,7 +228,7 @@ func (f *Framework) DevsyProviderUse(
 	provider string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"provider", "configure", provider}
+	baseArgs := []string{cmdProvider, "configure", provider}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider configure failed: %s", err.Error())
@@ -274,7 +276,7 @@ func (f *Framework) DevsyDown(ctx context.Context, workspace string) error {
 }
 
 func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error {
-	baseArgs := []string{"provider", "add"}
+	baseArgs := []string{cmdProvider, "add"}
 	baseArgs = append(baseArgs, args...)
 	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
@@ -290,7 +292,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
-	baseArgs := []string{"provider", "remove"}
+	baseArgs := []string{cmdProvider, "remove"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
@@ -306,7 +308,7 @@ func (f *Framework) DevsyProviderRename(
 	oldName, newName string,
 	args ...string,
 ) error {
-	baseArgs := []string{"provider", "rename", oldName, newName}
+	baseArgs := []string{cmdProvider, "rename", oldName, newName}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
@@ -337,7 +339,7 @@ func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
 	providerName string,
 ) (string, error) {
-	args := []string{"provider", "get", providerName, flagResultFormat, formatJSON}
+	args := []string{cmdProvider, cmdGet, providerName, flagResultFormat, formatJSON}
 	stdout, _, err := f.ExecCommandCapture(ctx, args)
 	if err != nil {
 		return "", fmt.Errorf("devsy provider options failed: %s", err.Error())
@@ -346,7 +348,7 @@ func (f *Framework) DevsyProviderOptionsJSON(
 }
 
 func (f *Framework) DevsyProviderUpdate(ctx context.Context, args ...string) error {
-	baseArgs := []string{"provider", "update"}
+	baseArgs := []string{cmdProvider, "update"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
@@ -467,7 +469,7 @@ func (f *Framework) DevsyProviderFindOption(
 	searchStr string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"provider", "get", provider}
+	baseArgs := []string{cmdProvider, cmdGet, provider}
 	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())

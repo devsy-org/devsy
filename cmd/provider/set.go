@@ -62,23 +62,7 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-	if err != nil {
-		return err
-	}
-
-	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
-	if err != nil {
-		return err
-	}
-	log.Debugf("providerName=%+v", providerName)
-
-	if os.Getenv(config.EnvUI) == "" && len(cmd.Options) == 0 {
-		return fmt.Errorf("please specify option")
-	}
-	log.Debugf("Options=%+v", cmd.Options)
-
-	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
+	devsyConfig, providerWithOptions, err := cmd.loadProvider(args)
 	if err != nil {
 		return err
 	}
@@ -103,6 +87,32 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 
 	log.Infof("set options for provider: providerName=%s", providerWithOptions.Config.Name)
 	return nil
+}
+
+func (cmd *SetCmd) loadProvider(
+	args []string,
+) (*config.Config, *workspace.ProviderWithOptions, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Debugf("providerName=%+v", providerName)
+
+	if os.Getenv(config.EnvUI) == "" && len(cmd.Options) == 0 {
+		return nil, nil, fmt.Errorf("please specify option")
+	}
+	log.Debugf("Options=%+v", cmd.Options)
+
+	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
+	if err != nil {
+		return nil, nil, err
+	}
+	return devsyConfig, providerWithOptions, nil
 }
 
 func (cmd *SetCmd) saveOrPrintConfig(

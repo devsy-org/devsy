@@ -18,10 +18,10 @@ func TestNewDefaultCmd_Wiring(t *testing.T) {
 	if err := cmd.Args(cmd, []string{}); err == nil {
 		t.Error("expected error for 0 args")
 	}
-	if err := cmd.Args(cmd, []string{"foo"}); err != nil {
+	if err := cmd.Args(cmd, []string{testProviderFoo}); err != nil {
 		t.Errorf("expected no error for 1 arg, got %v", err)
 	}
-	if err := cmd.Args(cmd, []string{"foo", "bar"}); err == nil {
+	if err := cmd.Args(cmd, []string{testProviderFoo, testProviderBar}); err == nil {
 		t.Error("expected error for 2 args")
 	}
 }

@@ -27,7 +27,8 @@ func TestNewConfigureCmd(t *testing.T) {
 }
 
 func TestResolveProviderName(t *testing.T) {
-	if got, err := resolveProviderName([]string{"foo"}, "fallback"); err != nil || got != "foo" {
+	if got, err := resolveProviderName([]string{testProviderFoo}, "fallback"); err != nil ||
+		got != testProviderFoo {
 		t.Fatalf("explicit arg should win: got %q err %v", got, err)
 	}
 	if got, err := resolveProviderName([]string{}, "fallback"); err != nil || got != "fallback" {

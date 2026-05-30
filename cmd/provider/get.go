@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"maps"
 	"os"
 	"sort"
@@ -12,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -69,19 +67,12 @@ func (cmd *GetCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	providerName := devsyConfig.Current().DefaultProvider
-	if len(args) > 0 {
-		providerName = args[0]
-	} else if providerName == "" {
-		return fmt.Errorf("please specify a provider")
+	providerName, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return err
 	}
-
-	if providerName != "" && cmd.Provider != "" {
-		if providerName != cmd.Provider {
-			log.Infof("providerName=%+v", providerName)
-			log.Infof("GlobalFlags.Provider=%+v", cmd.Provider)
-			return fmt.Errorf("ambiguous provider configuration detected")
-		}
+	if err := assertProviderMatchesGlobal(providerName, cmd.Provider); err != nil {
+		return err
 	}
 
 	providerWithOptions, err := workspace.FindProvider(
