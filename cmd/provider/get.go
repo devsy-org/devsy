@@ -20,21 +20,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// OptionsCmd holds the options cmd flags.
-type OptionsCmd struct {
+// GetCmd holds the get cmd flags.
+type GetCmd struct {
 	*flags.GlobalFlags
 
 	Hidden bool
 }
 
-// NewOptionsCmd creates a new command.
-func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &OptionsCmd{
+// NewGetCmd creates a new command.
+func NewGetCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &GetCmd{
 		GlobalFlags: flags,
 	}
-	optionsCmd := &cobra.Command{
-		Use:   "options [provider]",
-		Short: "Show options of an existing provider",
+	getCmd := &cobra.Command{
+		Use:   "get [provider]",
+		Short: "Show provider info and current options",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -50,9 +50,9 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	optionsCmd.Flags().
+	getCmd.Flags().
 		BoolVar(&cmd.Hidden, "hidden", false, "If true, will also show hidden options.")
-	return optionsCmd
+	return getCmd
 }
 
 type optionWithValue struct {
@@ -63,7 +63,7 @@ type optionWithValue struct {
 }
 
 // Run runs the command logic.
-func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
+func (cmd *GetCmd) Run(ctx context.Context, args []string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err

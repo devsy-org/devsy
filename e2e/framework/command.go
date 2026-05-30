@@ -201,7 +201,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 	ctx context.Context,
 	provider, searchStr string,
 ) error {
-	err := f.ExecCommand(ctx, true, true, searchStr, []string{"provider", "options", provider})
+	err := f.ExecCommand(ctx, true, true, searchStr, []string{"provider", "get", provider})
 	if err != nil {
 		return fmt.Errorf(
 			"did not found value %s in devsy provider options output. error: %s",
@@ -332,12 +332,12 @@ func (f *Framework) DevsyRename(
 	return nil
 }
 
-// DevsyProviderOptionsJSON executes `devsy provider options --output json` and returns the raw JSON.
+// DevsyProviderOptionsJSON executes `devsy provider get --output json` and returns the raw JSON.
 func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
 	providerName string,
 ) (string, error) {
-	args := []string{"provider", "options", providerName, flagResultFormat, formatJSON}
+	args := []string{"provider", "get", providerName, flagResultFormat, formatJSON}
 	stdout, _, err := f.ExecCommandCapture(ctx, args)
 	if err != nil {
 		return "", fmt.Errorf("devsy provider options failed: %s", err.Error())
@@ -467,7 +467,7 @@ func (f *Framework) DevsyProviderFindOption(
 	searchStr string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"provider", "options", provider}
+	baseArgs := []string{"provider", "get", provider}
 	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())
