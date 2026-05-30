@@ -46,15 +46,10 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		GlobalFlags: *flags,
 	}
 	loginCmd := &cobra.Command{
-		Use:   "login",
+		Use:   "login HOST",
 		Short: "Log into a Devsy Pro instance",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf(
-					"please specify the Devsy Pro host, e.g. devsy pro login my-pro.my-domain.com",
-				)
-			}
-
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},
 	}

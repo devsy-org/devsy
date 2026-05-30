@@ -74,26 +74,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		Use:   "ssh [flags] [workspace-folder|workspace-name]",
 		Short: "Starts a new ssh session to a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-
-			localOnly := cmd.Stdio
-
-			ctx := cobraCmd.Context()
-			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevsyConfig:    devsyConfig,
-				Args:           args,
-				ChangeLastUsed: true,
-				Owner:          cmd.Owner,
-				LocalOnly:      localOnly,
-			})
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(ctx, devsyConfig, client)
+			return cmd.execute(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -214,6 +195,24 @@ func (cmd *SSHCmd) Run(
 	}
 
 	return nil
+}
+
+func (cmd *SSHCmd) execute(ctx context.Context, args []string) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	client, err := workspace2.Get(ctx, workspace2.GetOptions{
+		DevsyConfig:    devsyConfig,
+		Args:           args,
+		ChangeLastUsed: true,
+		Owner:          cmd.Owner,
+		LocalOnly:      cmd.Stdio,
+	})
+	if err != nil {
+		return err
+	}
+	return cmd.Run(ctx, devsyConfig, client)
 }
 
 func (cmd *SSHCmd) jumpContainerTailscale(

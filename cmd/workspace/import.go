@@ -42,13 +42,8 @@ func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Imports a workspace configuration",
 		Args:   cobra.NoArgs,
 		Hidden: true,
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(cobraCmd.Context(), devsyConfig)
+		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			return cmd.execute(cobraCmd.Context())
 		},
 	}
 
@@ -88,6 +83,14 @@ func (cmd *ImportCmd) Run(
 	}
 
 	return cmd.importWorkspace(devsyConfig, exportConfig)
+}
+
+func (cmd *ImportCmd) execute(ctx context.Context) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	return cmd.Run(ctx, devsyConfig)
 }
 
 func (cmd *ImportCmd) parseExportConfig() (*provider.ExportConfig, error) {

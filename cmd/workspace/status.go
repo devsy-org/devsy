@@ -34,30 +34,7 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "status [flags] [workspace-path|workspace-name]",
 		Short: "Shows the status of a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			_, err := clientimplementation.DecodeOptionsFromEnv(
-				config.EnvFlagsStatus,
-				&cmd.StatusOptions,
-			)
-			if err != nil {
-				return fmt.Errorf("decode status options: %w", err)
-			}
-
-			ctx := cobraCmd.Context()
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-
-			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevsyConfig: devsyConfig,
-				Args:        args,
-				Owner:       cmd.Owner,
-			})
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(ctx, client)
+			return cmd.execute(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -147,4 +124,25 @@ func (cmd *StatusCmd) Run(
 	}
 
 	return nil
+}
+
+func (cmd *StatusCmd) execute(ctx context.Context, args []string) error {
+	if _, err := clientimplementation.DecodeOptionsFromEnv(
+		config.EnvFlagsStatus, &cmd.StatusOptions,
+	); err != nil {
+		return fmt.Errorf("decode status options: %w", err)
+	}
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	client, err := workspace2.Get(ctx, workspace2.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+	})
+	if err != nil {
+		return err
+	}
+	return cmd.Run(ctx, client)
 }
