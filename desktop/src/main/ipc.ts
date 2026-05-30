@@ -18,6 +18,7 @@ import {
   checkForUpdatesWithChannel,
   downloadUpdate,
   getAutoDownloadEnabled,
+  getLastStatus,
   getReleaseChannel,
   installUpdate,
   setAutoDownloadEnabled,
@@ -806,6 +807,16 @@ export function registerIpcHandlers(deps: IpcDependencies): { tunnelProcesses: M
 
   ipcMain.handle("check_for_updates", async () => {
     await checkForUpdates()
+  })
+
+  // Deferred so the renderer's update-status listener (registered after this
+  // call resolves) is attached before the replay arrives.
+  ipcMain.handle("app_ready", (event) => {
+    setImmediate(() => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("update-status", getLastStatus())
+      }
+    })
   })
 
   ipcMain.handle("install_update", async () => {
