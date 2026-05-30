@@ -20,7 +20,10 @@ const electronUpdaterMock = {
   },
 }
 
-vi.mock("electron-updater", () => electronUpdaterMock)
+vi.mock("electron-updater", () => ({
+  ...electronUpdaterMock,
+  default: electronUpdaterMock,
+}))
 vi.mock("electron", () => ({
   app: {
     isPackaged: true,
