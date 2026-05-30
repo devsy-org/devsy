@@ -396,14 +396,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "devsy_upgrade",
     async (_event, args: { version: string }) => {
-      return cli.runRaw(["upgrade", "--version", args.version])
+      return cli.runRaw(["feature", "upgrade", "--version", args.version])
     },
   )
 
   ipcMain.handle(
     "devsy_upgrade_dry_run",
     async (_event, args: { version: string }) => {
-      return cli.runRaw(["upgrade", "--version", args.version, "--dry-run"])
+      return cli.runRaw(["feature", "upgrade", "--version", args.version, "--dry-run"])
     },
   )
 

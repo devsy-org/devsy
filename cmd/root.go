@@ -9,7 +9,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/context"
-	"github.com/devsy-org/devsy/cmd/features"
+	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/helper"
 	"github.com/devsy-org/devsy/cmd/ide"
@@ -195,12 +195,12 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
 	rootCmd.AddCommand(NewSelfUpdateCmd())
 	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))
-	rootCmd.AddCommand(NewOutdatedCmd(globalFlags))
-	rootCmd.AddCommand(NewUpgradeCmd(globalFlags))
 	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
 	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
-	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
+	featureCmd := feature.NewFeatureCmd(globalFlags)
+	featureCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(featureCmd)
 	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
 	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 }

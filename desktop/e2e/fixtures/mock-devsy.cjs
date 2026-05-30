@@ -279,7 +279,43 @@ const workspaceHandlers = {
   troubleshoot: handleNoop,
 }
 
+// Feature verb handlers.
+function handleFeatureUpgrade() {
+  out("Already up to date.")
+  process.exit(0)
+}
+
+function handleFeatureNoop() {
+  out("")
+  process.exit(0)
+}
+
+const featureHandlers = {
+  upgrade: handleFeatureUpgrade,
+  outdated: handleFeatureNoop,
+  info: handleFeatureNoop,
+  manifest: handleFeatureNoop,
+  tags: handleFeatureNoop,
+  package: handleFeatureNoop,
+  publish: handleFeatureNoop,
+  test: handleFeatureNoop,
+  "resolve-deps": handleFeatureNoop,
+  docs: handleFeatureNoop,
+}
+
 const cmd = rawArgs[0] || ""
+
+// Canonical form: `devsy feature <verb> ...`
+if (cmd === "feature") {
+  const verb = rawArgs[1]
+  const handler = featureHandlers[verb]
+  if (!handler) {
+    process.stderr.write(`mock-devsy: unknown feature subcommand '${verb}'\n`)
+    process.exit(2)
+  }
+  handler(rawArgs.slice(2))
+  process.exit(0)
+}
 
 // Canonical form: `devsy workspace <verb> ...`
 if (cmd === "workspace") {
@@ -488,11 +524,6 @@ switch (cmd) {
 
   case "version":
     out("v0.1.0-test")
-    break
-
-  case "upgrade":
-    out("Already up to date.")
-    process.exit(0)
     break
 
   default:

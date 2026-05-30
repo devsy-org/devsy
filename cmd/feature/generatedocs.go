@@ -1,4 +1,4 @@
-package features
+package feature
 
 import (
 	"encoding/json"
@@ -24,7 +24,7 @@ type GenerateDocsCmd struct {
 func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &GenerateDocsCmd{GlobalFlags: globalFlags}
 	generateDocsCmd := &cobra.Command{
-		Use:   "generate-docs",
+		Use:   "docs",
 		Short: "Generate markdown documentation from feature metadata",
 		Long: `Scan a feature project's src/ directory and generate markdown
 documentation for each feature based on its devcontainer-feature.json.`,
