@@ -188,6 +188,9 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	addShortcut(wsCmdPkg.NewLogsCmd(globalFlags))
 	addShortcut(wsCmdPkg.NewStatusCmd(globalFlags))
 	addShortcut(wsCmdPkg.NewListCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewBuildCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewDeleteCmd(globalFlags))
+	addShortcut(wsCmdPkg.NewRenameCmd(globalFlags))
 
 	selfCmd := self.NewSelfCmd(globalFlags)
 	selfCmd.GroupID = groupMeta
