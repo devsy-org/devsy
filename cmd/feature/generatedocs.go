@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -211,22 +212,24 @@ func (cmd *GenerateDocsCmd) generateFeatureDoc(f *featureDoc) string {
 func (cmd *GenerateDocsCmd) writeMetadataTable(
 	sb *strings.Builder, f *featureDoc,
 ) {
-	sb.WriteString("## Metadata\n\n")
-	sb.WriteString("| Property | Value |\n")
-	sb.WriteString("|----------|-------|\n")
-	fmt.Fprintf(sb, "| ID | `%s` |\n", f.config.ID)
+	rows := [][]string{{"ID", fmt.Sprintf("`%s`", f.config.ID)}}
 	if f.config.Version != "" {
-		fmt.Fprintf(sb, "| Version | `%s` |\n", f.config.Version)
+		rows = append(rows, []string{"Version", fmt.Sprintf("`%s`", f.config.Version)})
 	}
 	if cmd.Namespace != "" {
-		fmt.Fprintf(sb, "| Registry | `%s/%s` |\n", cmd.Namespace, f.config.ID)
+		rows = append(
+			rows,
+			[]string{"Registry", fmt.Sprintf("`%s/%s`", cmd.Namespace, f.config.ID)},
+		)
 	}
 	if f.config.DocumentationURL != "" {
-		fmt.Fprintf(sb, "| Documentation | %s |\n", f.config.DocumentationURL)
+		rows = append(rows, []string{"Documentation", f.config.DocumentationURL})
 	}
 	if f.config.Deprecated {
-		sb.WriteString("| Status | **DEPRECATED** |\n")
+		rows = append(rows, []string{"Status", "**DEPRECATED**"})
 	}
+	sb.WriteString("## Metadata\n\n")
+	sb.WriteString(table.Markdown([]string{"Property", "Value"}, rows))
 	sb.WriteString("\n")
 }
 
@@ -236,9 +239,7 @@ func writeOptionsTable(
 	if len(options) == 0 {
 		return
 	}
-	sb.WriteString("## Options\n\n")
-	sb.WriteString("| Name | Type | Default | Description |\n")
-	sb.WriteString("|------|------|---------|-------------|\n")
+	rows := make([][]string, 0, len(options))
 	for optName, opt := range options {
 		defaultVal := string(opt.Default)
 		if defaultVal == "" {
@@ -252,9 +253,15 @@ func writeOptionsTable(
 		if optType == "" {
 			optType = "string"
 		}
-		fmt.Fprintf(sb, "| `%s` | %s | `%s` | %s |\n",
-			optName, optType, defaultVal, desc)
+		rows = append(rows, []string{
+			fmt.Sprintf("`%s`", optName),
+			optType,
+			fmt.Sprintf("`%s`", defaultVal),
+			desc,
+		})
 	}
+	sb.WriteString("## Options\n\n")
+	sb.WriteString(table.Markdown([]string{"Name", "Type", "Default", "Description"}, rows))
 	sb.WriteString("\n")
 }
 
@@ -286,10 +293,7 @@ func (cmd *GenerateDocsCmd) generateIndex(features []*featureDoc) string {
 		fmt.Fprintf(&sb, "Registry: `%s`\n\n", cmd.Namespace)
 	}
 
-	sb.WriteString("## Features\n\n")
-	sb.WriteString("| Feature | Description |\n")
-	sb.WriteString("|---------|-------------|\n")
-
+	rows := make([][]string, 0, len(features))
 	for _, f := range features {
 		name := f.config.Name
 		if name == "" {
@@ -299,9 +303,13 @@ func (cmd *GenerateDocsCmd) generateIndex(features []*featureDoc) string {
 		if desc == "" {
 			desc = "-"
 		}
-		fmt.Fprintf(&sb, "| [%s](./%s.md) | %s |\n", name, f.dir, desc)
+		rows = append(rows, []string{
+			fmt.Sprintf("[%s](./%s.md)", name, f.dir),
+			desc,
+		})
 	}
-
+	sb.WriteString("## Features\n\n")
+	sb.WriteString(table.Markdown([]string{"Feature", "Description"}, rows))
 	sb.WriteString("\n")
 	return sb.String()
 }

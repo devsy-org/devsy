@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -168,26 +169,23 @@ func writeOptionsTable(sb *strings.Builder, metadata *TemplateMetadata) {
 		return
 	}
 
-	sb.WriteString("## Options\n\n")
-	sb.WriteString("| Option | Type | Default | Description |\n")
-	sb.WriteString("|--------|------|---------|-------------|\n")
-
 	keys := make([]string, 0, len(metadata.Options))
 	for key := range metadata.Options {
 		keys = append(keys, key)
 	}
-
 	sort.Strings(keys)
 
+	rows := make([][]string, 0, len(keys))
 	for _, key := range keys {
 		opt := metadata.Options[key]
 		defaultVal := ""
 		if opt.Default != nil {
 			defaultVal = fmt.Sprintf("%v", opt.Default)
 		}
-
-		fmt.Fprintf(sb, "| %s | %s | %s | %s |\n", key, opt.Type, defaultVal, opt.Description)
+		rows = append(rows, []string{key, opt.Type, defaultVal, opt.Description})
 	}
 
+	sb.WriteString("## Options\n\n")
+	sb.WriteString(table.Markdown([]string{"Option", "Type", "Default", "Description"}, rows))
 	sb.WriteString("\n")
 }

@@ -38,3 +38,14 @@ func TestRenderEmpty(t *testing.T) {
 		t.Errorf("expected output to contain header 'Name', got:\n%s", out)
 	}
 }
+
+func TestMarkdown(t *testing.T) {
+	got := Markdown(
+		[]string{"Name", "Age"},
+		[][]string{{"Alice", "30"}, {"Bob", "25"}},
+	)
+	want := "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |\n"
+	if got != want {
+		t.Errorf("Markdown output mismatch:\nwant: %q\ngot:  %q", want, got)
+	}
+}
