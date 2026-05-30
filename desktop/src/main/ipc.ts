@@ -179,11 +179,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_remove")
-    await cli.runRaw(["provider", "remove", args.name])
+    await cli.runRaw(["provider", "delete", args.name])
   })
 
   ipcMain.handle("provider_use", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "default", args.name])
+    await cli.runRaw(["provider", "use", args.name])
   })
 
   // Returns an envelope rather than throwing so a structured cliError survives

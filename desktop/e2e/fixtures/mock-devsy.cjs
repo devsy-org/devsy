@@ -426,7 +426,6 @@ switch (cmd) {
         out("")
         break
       }
-      case "use":
       case "configure": {
         const provName = extra
         if (provName && state.providers[provName]) {
@@ -436,7 +435,8 @@ switch (cmd) {
         out("")
         break
       }
-      case "default": {
+      case "default":
+      case "use": {
         const provName = extra
         if (provName && state.providers[provName]) {
           for (const key of Object.keys(state.providers)) {
