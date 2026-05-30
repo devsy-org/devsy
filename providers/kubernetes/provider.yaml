@@ -131,4 +131,4 @@ agent:
     strictSecurity: ${STRICT_SECURITY}
 exec:
   command: |-
-    "${DEVSY}" helper sh -c "${COMMAND}"
+    "${DEVSY}" internal helper sh -c "${COMMAND}"
