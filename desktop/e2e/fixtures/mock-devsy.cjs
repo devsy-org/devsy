@@ -387,7 +387,6 @@ switch (cmd) {
         out("")
         break
       }
-      case "remove":
       case "delete": {
         const provName = extra
         if (provName && state.providers[provName]) {
@@ -419,7 +418,6 @@ switch (cmd) {
         out("")
         break
       }
-      case "default":
       case "use": {
         const provName = extra
         if (provName && state.providers[provName]) {
