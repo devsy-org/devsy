@@ -88,7 +88,7 @@ See the [Structured CLI errors](./troubleshooting.mdx) reference for the full li
 Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, you will see the structured error code `PODMAN_SOCKET_UNAVAILABLE`. Either start the user socket with `systemctl --user start podman.socket`, or set `PODMAN_HOST` explicitly:
 
 ```bash
-devsy provider set-options podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
 #### `podman compose` vs `docker-compose`

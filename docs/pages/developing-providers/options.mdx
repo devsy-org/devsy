@@ -59,16 +59,16 @@ Options will also be passed to the agent and can be used in the `agent.exec` sec
 Each option has a set of attributes that can modify how Devsy interprets it when
 configuring or adding the provider:
 
-- `description`: Description shown in `devsy provider options` and in the Desktop App
+- `description`: Description shown in `devsy provider get` and in the Desktop App
 - `default`: Default value of the option provided as a string. Can also reference other variables, e.g. `${MY_OTHER_VAR}-suffix`
 - `required`: Boolean if this option needs to be non-empty before using the provider. Devsy will ask in the CLI and make sure that this option is filled in the Desktop application.
-- `password`: Boolean to indicate this is a sensitive value. Prevents this value from showing up in the `devsy provider options` command and will be a password field in the Desktop application.
+- `password`: Boolean to indicate this is a sensitive value. Prevents this value from showing up in the `devsy provider get` command and will be a password field in the Desktop application.
 - `suggestions`: An array of suggestions for this option. Will be shown as auto complete options in the Devsy desktop application
 - `command`: A command to retrieve the option value automatically. Can also reference other variables in the command, e.g. `echo ${MY_OTHER_VAR}-suffix`. For compatibility reasons, this command will be executed in an emulated shell on Windows.
 - `local`: If true, the option will be filled individually for each machine / workspace
 - `global`: If true, the option will be reused for each machine / workspace
 - `cache`: If non-empty, Devsy will re-execute the command after the given timeout, e.g. if this is 5m, Devsy will re-execute the command after 5 minutes to re-fill this value. This is useful if you want to store a token or something that expires locally in a variable.
-- `hidden`: If true, Devsy will not show this option in the Desktop application or through `devsy provider options`. Can be used to calculate variables internally or save tokens or other things internally.
+- `hidden`: If true, Devsy will not show this option in the Desktop application or through `devsy provider get`. Can be used to calculate variables internally or save tokens or other things internally.
 
 ### Default values
 
@@ -97,7 +97,7 @@ won't be shown when listing options.
 Example:
 
 ```sh
-~$ devsy provider options civo
+~$ devsy provider get civo
 
           NAME            | REQUIRED |          DESCRIPTION           |               DEFAULT                |                VALUE
 ----------------------------+----------+--------------------------------+--------------------------------------+---------------------------------------
