@@ -247,15 +247,11 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Use {
+		// Post-login: preserve user values; resolver prunes anything stale.
 		err := providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
-			Provider:       providerConfig,
-			Context:        devsyConfig.DefaultContext,
-			UserOptions:    cmd.Options,
-			Reconfigure:    false,
-			SkipRequired:   false,
-			SkipInit:       false,
-			SkipSubOptions: false,
-			SingleMachine:  nil,
+			Provider:    providerConfig,
+			ContextName: devsyConfig.DefaultContext,
+			UserOptions: cmd.Options,
 		})
 		if err != nil {
 			return fmt.Errorf("configure provider: %w", err)

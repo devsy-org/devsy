@@ -77,15 +77,14 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("update provider %s: %w", provider.Name, err)
 	}
 
+	// Automated version bump: re-resolve from the new schema's defaults
+	// without prompting and without re-running init.
 	err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
-		Provider:       provider,
-		Context:        devsyConfig.DefaultContext,
-		UserOptions:    []string{},
-		Reconfigure:    true,
-		SkipRequired:   true,
-		SkipInit:       true,
-		SkipSubOptions: false,
-		SingleMachine:  nil,
+		Provider:           provider,
+		ContextName:        devsyConfig.DefaultContext,
+		DiscardPriorValues: true,
+		SkipRequired:       true,
+		SkipInit:           true,
 	})
 	if err != nil {
 		return fmt.Errorf(

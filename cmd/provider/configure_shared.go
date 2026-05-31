@@ -14,15 +14,26 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
+// ProviderOptionsConfig parameterizes ConfigureProvider.
+//
+// DiscardPriorValues controls whether previously user-provided option
+// values are carried forward as defaults for prompts in the new option
+// resolution. When false (default), values the user set previously seed
+// the new prompts; when true, the user is asked from scratch.
+//
+// Note: this does NOT control stale-data pruning. The downstream
+// resolver (pkg/options/resolver) always prunes keys absent from the
+// new schema and re-resolves values that fail validation, regardless
+// of this flag.
 type ProviderOptionsConfig struct {
-	Provider       *provider2.ProviderConfig
-	Context        string
-	UserOptions    []string
-	Reconfigure    bool
-	SkipRequired   bool
-	SkipInit       bool
-	SkipSubOptions bool
-	SingleMachine  *bool
+	Provider           *provider2.ProviderConfig
+	ContextName        string
+	UserOptions        []string
+	DiscardPriorValues bool
+	SkipRequired       bool
+	SkipInit           bool
+	SkipSubOptions     bool
+	SingleMachine      *bool
 }
 
 func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
@@ -57,7 +68,7 @@ func configureProviderOptions(
 	ctx context.Context,
 	cfg ProviderOptionsConfig,
 ) (*config.Config, error) {
-	devsyConfig, err := config.LoadConfig(cfg.Context, "")
+	devsyConfig, err := config.LoadConfig(cfg.ContextName, "")
 	if err != nil {
 		return nil, err
 	}
@@ -74,8 +85,10 @@ func configureProviderOptions(
 		return nil, fmt.Errorf("parse options: %w", err)
 	}
 
-	// merge with old values
-	if !cfg.Reconfigure {
+	// Seed prompts with the user's previous answers unless the caller
+	// explicitly wants a fresh slate. Stale keys are pruned downstream
+	// by the resolver regardless of this branch.
+	if !cfg.DiscardPriorValues {
 		mergeExistingOptions(options, devsyConfig.ProviderOptions(cfg.Provider.Name))
 	}
 
