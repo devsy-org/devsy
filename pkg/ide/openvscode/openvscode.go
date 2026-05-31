@@ -180,7 +180,7 @@ func (o *OpenVSCodeServer) installExtensions() error {
 
 	binaryPath := filepath.Join(location, "bin", "openvscode-server")
 	for _, extension := range o.extensions {
-		log.Info("Install extension " + extension + "")
+		log.Info("Install extension " + extension)
 		runCommand := fmt.Sprintf("%s --install-extension %q", binaryPath, extension)
 		args := []string{}
 		if o.userName != "" {
