@@ -32,7 +32,7 @@ func IsGpgTunnelRunning(
 
 	command := "gpg -K"
 	if user != "" && user != "root" {
-		command = fmt.Sprintf("su -c %q %q", command, user)
+		command = fmt.Sprintf("su -c \"%s\" '%s'", command, user)
 	}
 
 	// capture the output, if it's empty it means we don't have gpg-forwarding

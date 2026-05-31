@@ -850,7 +850,7 @@ func configureSystemGitCredentials(
 	}
 
 	gitCredentials := fmt.Sprintf(
-		"!%q internal agent git-credentials --port %d",
+		"!'%s' internal agent git-credentials --port %d",
 		binaryPath,
 		serverPort,
 	)

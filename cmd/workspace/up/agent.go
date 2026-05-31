@@ -197,7 +197,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
-	sshTunnelCmd := fmt.Sprintf("%q internal helper ssh-server --stdio", client.AgentPath())
+	sshTunnelCmd := fmt.Sprintf("'%s' internal helper ssh-server --stdio", client.AgentPath())
 	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}

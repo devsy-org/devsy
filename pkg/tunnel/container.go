@@ -95,7 +95,7 @@ func (c *ContainerTunnel) runHostTunnel(
 	defer func() { _ = writer.Close() }()
 	defer log.Debugf("Tunnel to host closed")
 
-	command := fmt.Sprintf("%q internal helper ssh-server --stdio", c.client.AgentPath())
+	command := fmt.Sprintf("'%s' internal helper ssh-server --stdio", c.client.AgentPath())
 	if log.DebugEnabled() {
 		command += " --debug"
 	}

@@ -41,7 +41,7 @@ func ConfigureHelper(binaryPath, userName string, port int) error {
 		return err
 	}
 
-	helper := fmt.Sprintf(`helper = !%q internal agent git-credentials`, binaryPath)
+	helper := fmt.Sprintf(`helper = !'%s' internal agent git-credentials`, binaryPath)
 	if port != -1 {
 		helper += fmt.Sprintf(` --port %d`, port)
 	}

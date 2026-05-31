@@ -101,7 +101,7 @@ func configureCredentials(
 	if runtime.GOOS == windowsOS {
 		escapedPath := strings.ReplaceAll(binaryPath, "%", "%%")
 		script := fmt.Sprintf(
-			"@echo off\r\n%q internal agent docker-credentials --port %d %%*\r\n",
+			"@echo off\r\n\"%s\" internal agent docker-credentials --port %d %%*\r\n",
 			escapedPath,
 			port,
 		)

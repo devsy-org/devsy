@@ -72,7 +72,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("this command is not supported for proxy providers")
 	}
 
-	sshServerCmd := fmt.Sprintf("%q internal helper ssh-server --stdio", client.AgentPath())
+	sshServerCmd := fmt.Sprintf("'%s' internal helper ssh-server --stdio", client.AgentPath())
 	if log.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
