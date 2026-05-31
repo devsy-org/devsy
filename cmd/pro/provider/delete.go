@@ -24,10 +24,11 @@ func NewDeleteCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Hidden: true,
-		Use:    "delete",
-		Short:  "Runs delete on a workspace",
-		Args:   cobra.NoArgs,
+		Hidden:  true,
+		Use:     "delete",
+		Aliases: []string{"rm"},
+		Short:   "Runs delete on a workspace",
+		Args:    cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), os.Stdin, os.Stdout, os.Stderr)
 		},
