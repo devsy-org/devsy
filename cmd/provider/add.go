@@ -146,8 +146,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return writeDefaultProvider(cmd.Context, providerConfig.Name)
 	}
 
-	log.Infof("To configure the provider, run the following command:")
-	log.Infof("devsy provider configure %s", providerConfig.Name)
+	log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
 	return nil
 }
 
