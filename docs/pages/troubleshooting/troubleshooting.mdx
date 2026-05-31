@@ -18,7 +18,7 @@ exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
 ### Port forwarding not working when NOT using an ide
 
 Devsy relies on an active SSH session to perform port forwarding to the local host. When running Devsy without an IDE, such as `--ide none`,
-an active SSH session needs to be open using `devsy ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
+an active SSH session needs to be open using `devsy workspace ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
 
 ### Structured CLI errors
 
@@ -52,4 +52,4 @@ Re-run with `--debug` to see the original error chain, and pass `--result-format
 
 ### VS Code Browser workspace fails to open on first create
 
-Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail immediately after `devsy up --ide openvscode`. This has been fixed — if you previously hit this, simply re-run `devsy up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry automatically.
+Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail immediately after `devsy workspace up --ide openvscode`. This has been fixed — if you previously hit this, simply re-run `devsy workspace up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry automatically.

@@ -24,7 +24,7 @@ Navigate to the 'Workspaces' view and click on the 'Create' button in the title 
 5. **Launch**: Devsy creates the workspace and streams progress. The workspace is launched in the chosen IDE on success.
 
 :::info
-Under the hood, the Desktop Application will call the CLI command `devsy up REPOSITORY`
+Under the hood, the Desktop Application will call the CLI command `devsy workspace up REPOSITORY`
 :::
 
 :::info Note
@@ -50,14 +50,14 @@ Run the following command in a terminal to start a new workspace:
 
 ```
 # Create from Git repository
-devsy up github.com/microsoft/vscode-remote-try-node
+devsy workspace up github.com/microsoft/vscode-remote-try-node
 ```
 
 You can check out specific states of the repository by appending a commit hash, branch or Pull Request slug to the repository url:
 ```
-Branch: devsy up github.com/microsoft/vscode-remote-try-node@main
-Commit: devsy up github.com/microsoft/vscode-remote-try-node@sha256:15ba80171af11374143288fd3d54898860107323
-PR:     devsy up github.com/microsoft/vscode-remote-try-node@pull/108/head # Only works for GitHub!
+Branch: devsy workspace up github.com/microsoft/vscode-remote-try-node@main
+Commit: devsy workspace up github.com/microsoft/vscode-remote-try-node@sha256:15ba80171af11374143288fd3d54898860107323
+PR:     devsy workspace up github.com/microsoft/vscode-remote-try-node@pull/108/head # Only works for GitHub!
 ```
 
 :::info Private Git Repositories
@@ -76,7 +76,7 @@ Run the following command in a terminal to create a new workspace:
 
 ```
 # Create from a local path
-devsy up ./path/to/my-folder
+devsy workspace up ./path/to/my-folder
 ```
 
 Devsy will sync the folder into the remote machine and create a development environment from the `devcontainer.json`.
@@ -87,7 +87,7 @@ Run the following command in a terminal to create a new workspace from a docker 
 
 ```
 # Create from a docker image
-devsy up ghcr.io/my-org/my-repo:latest
+devsy workspace up ghcr.io/my-org/my-repo:latest
 ```
 
 Devsy will create the following `.devcontainer.json`:
@@ -101,7 +101,7 @@ Devsy will create the following `.devcontainer.json`:
 
 If you have a local container running, you can create a workspace from it by running:
 ```
-devsy up my-workspace --source container:$CONTAINER_ID
+devsy workspace up my-workspace --source container:$CONTAINER_ID
 ```
 
 This only works with the `docker` provider.
@@ -120,7 +120,7 @@ When recreating a workspace, changes only to the project path or mounted volumes
 
 Run the following command to rebuild an existing workspace:
 ```
-devsy up my-workspace --recreate
+devsy workspace up my-workspace --recreate
 ```
 
 ## Resetting a workspace
@@ -133,5 +133,5 @@ Some scenarios require pulling in the latest changes from a Git repository or re
 
 Run the following command to reset an existing workspace:
 ```
-devsy up my-workspace --reset
+devsy workspace up my-workspace --reset
 ```

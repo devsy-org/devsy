@@ -34,4 +34,4 @@ agent:
       DOCKER_HOST: ${DOCKER_HOST}
 exec:
   command: |-
-    "${DEVSY}" helper sh -c "${COMMAND}"
+    "${DEVSY}" internal helper sh -c "${COMMAND}"

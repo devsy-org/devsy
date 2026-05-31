@@ -253,7 +253,7 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 	log.Infof("setting up container")
 	args := []string{
 		shellescape.Quote(agent.ContainerDevsyHelperLocation),
-		"agent", "container", "setup",
+		"internal", "agent", "container", "setup",
 		"--setup-info", shellescape.Quote(compressed),
 		"--container-workspace-info", shellescape.Quote(workspaceConfigCompressed),
 	}
@@ -376,7 +376,7 @@ func (r *runner) executeSetup(
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
 		shellescape.Quote(agent.ContainerDevsyHelperLocation),
-		"helper", "ssh-server", "--stdio",
+		"internal", "helper", "ssh-server", "--stdio",
 	}
 
 	if ide.ReusesAuthSock(r.WorkspaceConfig.Workspace.IDE.Name) {

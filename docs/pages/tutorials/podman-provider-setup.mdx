@@ -130,19 +130,19 @@ After switching to rootful mode on macOS or Windows, update the `PODMAN_HOST` op
 
 ## Creating a Workspace with Podman
 
-Start a workspace using the Podman provider by passing `--provider podman` to `devsy up`:
+Start a workspace using the Podman provider by passing `--provider podman` to `devsy workspace up`:
 
 ```bash
-devsy up --provider podman --id my-workspace https://github.com/my-org/my-repo
+devsy workspace up --provider podman --id my-workspace https://github.com/my-org/my-repo
 ```
 
 Devsy builds the workspace image using `podman build` and starts the container. When the workspace is ready, connect to it:
 
 ```bash
-devsy ssh my-workspace
+devsy workspace ssh my-workspace
 ```
 
-A successful `devsy ssh` connection confirms the workspace is running under Podman. To verify the Podman binary inside the workspace:
+A successful `devsy workspace ssh` connection confirms the workspace is running under Podman. To verify the Podman binary inside the workspace:
 
 ```bash
 podman --version

@@ -61,7 +61,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 				// Start server on the allowed port (9500, label=TestService, protocol=http)
 				// #nosec G204 -- test command with controlled arguments
 				serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-					"ssh", tempDir, "--command",
+					"workspace", "ssh", tempDir, "--command",
 					"go run /workspaces/"+workspaceName+"/server.go "+strconv.Itoa(allowedPort),
 				)
 				err = serverCmd.Start()
@@ -70,7 +70,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 				// Start server on the ignored port (9501)
 				// #nosec G204 -- test command with controlled arguments
 				ignoredCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-					"ssh", tempDir, "--command",
+					"workspace", "ssh", tempDir, "--command",
 					"go run /workspaces/"+workspaceName+"/server.go "+strconv.Itoa(ignoredPort),
 				)
 				err = ignoredCmd.Start()
@@ -162,7 +162,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 
 				// #nosec G204 -- test command with controlled arguments
 				serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-					"ssh", tempDir, "--command",
+					"workspace", "ssh", tempDir, "--command",
 					"go run /workspaces/"+workspaceName+"/server.go "+strconv.Itoa(notifyPort),
 				)
 				err = serverCmd.Start()
@@ -249,7 +249,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 				// Start server inside the container on port 9503
 				// #nosec G204 -- test command with controlled arguments
 				serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-					"ssh", tempDir, "--command",
+					"workspace", "ssh", tempDir, "--command",
 					"go run /workspaces/"+workspaceName+"/server.go "+strconv.Itoa(requirePort),
 				)
 				err = serverCmd.Start()

@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/up"
+	"github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,7 +76,7 @@ func TestUpCmd_TerminalRowsFlagParsesValue(t *testing.T) {
 
 func TestUpCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	upCmd := up.NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{flagSkipPostCreate})
+	err := upCmd.ParseFlags([]string{"--skip-post-create"})
 	require.NoError(t, err)
 	val, err := upCmd.Flags().GetBool("skip-post-create")
 	require.NoError(t, err)
@@ -115,13 +116,13 @@ func TestUpCmd_DotfilesTargetPathFlagParsesValue(t *testing.T) {
 }
 
 func TestBuildCmd_LabelFlag(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	flag := buildCmd.Flags().Lookup("label")
 	require.NotNil(t, flag)
 }
 
 func TestBuildCmd_LabelFlagParsesValue(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	labelVal := "org.opencontainers.image.source=https://github.com/example"
 	err := buildCmd.ParseFlags([]string{"--label", labelVal})
 	require.NoError(t, err)
@@ -131,14 +132,14 @@ func TestBuildCmd_LabelFlagParsesValue(t *testing.T) {
 }
 
 func TestBuildCmd_OutputFlag(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	flag := buildCmd.Flags().Lookup("output")
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestBuildCmd_OutputFlagParsesValue(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	err := buildCmd.ParseFlags([]string{"--output", "oci"})
 	require.NoError(t, err)
 	val, err := buildCmd.Flags().GetString("output")
@@ -147,14 +148,14 @@ func TestBuildCmd_OutputFlagParsesValue(t *testing.T) {
 }
 
 func TestBuildCmd_ExperimentalLockfileFlag(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	flag := buildCmd.Flags().Lookup("experimental-lockfile")
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestBuildCmd_ExperimentalLockfileFlagParsesValue(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	err := buildCmd.ParseFlags([]string{"--experimental-lockfile", "/path/to/lockfile"})
 	require.NoError(t, err)
 	val, err := buildCmd.Flags().GetString("experimental-lockfile")
@@ -163,14 +164,14 @@ func TestBuildCmd_ExperimentalLockfileFlagParsesValue(t *testing.T) {
 }
 
 func TestExecCmd_ContainerIDFlag(t *testing.T) {
-	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd := workspace.NewExecCmd(&flags.GlobalFlags{})
 	flag := execCmd.Flags().Lookup("container-id")
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestExecCmd_ContainerIDFlagParsesValue(t *testing.T) {
-	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd := workspace.NewExecCmd(&flags.GlobalFlags{})
 	err := execCmd.ParseFlags([]string{"--container-id", "abc123"})
 	require.NoError(t, err)
 	val, err := execCmd.Flags().GetString("container-id")

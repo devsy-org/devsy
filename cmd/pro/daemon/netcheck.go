@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -32,7 +33,7 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "netcheck",
 		Short: "Get the status of the current network",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

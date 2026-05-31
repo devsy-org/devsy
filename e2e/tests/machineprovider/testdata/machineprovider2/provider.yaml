@@ -24,7 +24,7 @@ exec:
     docker start devsy-${MACHINE_ID}
     sleep 5
   status: |-
-    STATUS=$(docker inspect devsy-${MACHINE_ID} 2>/dev/null | ${DEVSY} helper json get "[0].State.Status" || true)
+    STATUS=$(docker inspect devsy-${MACHINE_ID} 2>/dev/null | ${DEVSY} internal helper json get "[0].State.Status" || true)
     if [ -z $STATUS ]; then
       echo "NOTFOUND"
     else

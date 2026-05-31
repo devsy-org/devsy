@@ -64,13 +64,13 @@ Agent --> Devsy:
 deactivate Agent
 
 alt if using browser based IDE (openvscode, jupyter)
-Devsy -> ContainerAgent: devsy ssh --reuse-ssh-auth-sock
+Devsy -> ContainerAgent: devsy workspace ssh --reuse-ssh-auth-sock
 end
 
 Devsy -> IDE: Start
 
 alt if using normal IDE (vscode, intilliJ)
-IDE -> ContainerAgent: devsy ssh
+IDE -> ContainerAgent: devsy workspace ssh
 ContainerAgent --> IDE: ssh close
 end
 

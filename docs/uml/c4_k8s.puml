@@ -29,7 +29,7 @@ System_Boundary(cluster, "Kubernetes Cluster") {
   }
 }
 
-BiRel_Right(user, prov, "devsy up ...")
+BiRel_Right(user, prov, "devsy workspace up ...")
 BiRel(prov, controlPlane, " kubectl ...")
 BiRel(controlPlane, agent, " ")
 BiRel_Left(agent, ssh, "Tunnelled STDIO")

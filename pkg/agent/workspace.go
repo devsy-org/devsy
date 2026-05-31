@@ -591,7 +591,7 @@ func setupSSHKey(keys []string, agentPath string) ([]string, func(), error) {
 	}
 
 	env := []string{"GIT_TERMINAL_PROMPT=0"}
-	gitSSHCmd := []string{agentPath, "helper", "ssh-git-clone"}
+	gitSSHCmd := []string{agentPath, "internal", "helper", "ssh-git-clone"}
 	for _, keyFile := range keyFiles {
 		gitSSHCmd = append(gitSSHCmd, "--key-file="+keyFile)
 	}

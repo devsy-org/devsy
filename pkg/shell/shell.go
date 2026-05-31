@@ -149,7 +149,7 @@ func GetShell(userName string) ([]string, error) {
 		return nil, err
 	}
 
-	return []string{executable, "helper", "sh"}, nil
+	return []string{executable, "internal", "helper", "sh"}, nil
 }
 
 func getUserShell(userName string) (string, error) {

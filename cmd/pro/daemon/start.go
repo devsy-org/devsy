@@ -12,6 +12,7 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -36,7 +37,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Use:   "start",
 		Short: "Start the client daemon",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := findProProvider(
+			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

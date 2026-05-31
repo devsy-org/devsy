@@ -12,6 +12,7 @@ import (
 const (
 	envDevsyHost    = "DEVSY_HOST"
 	envDevsyProject = "DEVSY_PROJECT"
+	cmdWorkspace    = "workspace"
 )
 
 // TestOptInEnvFlags_AppliesEnvValueToFlag verifies that for each opt-in flag,
@@ -30,20 +31,20 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 		{flagName: "provider", envName: "DEVSY_PROVIDER", want: "docker", persistent: true},
 		{flagName: "debug", envName: "DEVSY_DEBUG", want: "true", persistent: true},
 		{
-			cmdPath:  "pro list-workspaces",
+			cmdPath:  "pro workspace list",
 			flagName: "host",
 			envName:  envDevsyHost,
 			want:     "pro.example.com",
 		},
-		{cmdPath: "pro list-clusters", flagName: "project", envName: envDevsyProject, want: "demo"},
+		{cmdPath: "pro cluster list", flagName: "project", envName: envDevsyProject, want: "demo"},
 		{
-			cmdPath:  "agent container setup",
+			cmdPath:  "internal agent container setup",
 			flagName: "access-key",
 			envName:  "DEVSY_ACCESS_KEY",
 			want:     "secret",
 		},
 		{
-			cmdPath:  "agent container setup",
+			cmdPath:  "internal agent container setup",
 			flagName: "platform-host",
 			envName:  "DEVSY_PLATFORM_HOST",
 			want:     "p.example.com",
@@ -85,7 +86,7 @@ func TestOptInEnvFlags_NoEnvLeavesDefault(t *testing.T) {
 func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
-	cmd := resolveCommand(t, rootCmd, "pro list-workspaces")
+	cmd := resolveCommand(t, rootCmd, "pro workspace list")
 	f := cmd.Flags().Lookup("host")
 	require.NotNil(t, f)
 	assert.False(t, f.Changed, "empty env value must not mark flag as Changed")
@@ -100,13 +101,13 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 	// Replace the leaf command's RunE so Execute() doesn't try to actually
 	// talk to a pro instance; we only care that flag resolution put cli-value
 	// in cmd.Host.
-	leaf := resolveCommand(t, rootCmd, "pro list-workspaces")
+	leaf := resolveCommand(t, rootCmd, "pro workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
 		seen, _ = c.Flags().GetString("host")
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", "list-workspaces", "--host", "cli-value"})
+	rootCmd.SetArgs([]string{"pro", cmdWorkspace, "list", "--host", "cli-value"})
 	require.NoError(t, rootCmd.Execute())
 	assert.Equal(t, "cli-value", seen, "CLI flag must override env value")
 }
@@ -117,13 +118,13 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	t.Setenv(envDevsyHost, "from-env.example.com")
 	rootCmd, _ := BuildRoot()
-	leaf := resolveCommand(t, rootCmd, "pro list-workspaces")
+	leaf := resolveCommand(t, rootCmd, "pro workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
 		seen, _ = c.Flags().GetString("host")
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", "list-workspaces"})
+	rootCmd.SetArgs([]string{"pro", cmdWorkspace, "list"})
 	require.NoError(t, rootCmd.Execute(), "required --host must be satisfied by env")
 	assert.Equal(t, "from-env.example.com", seen)
 }

@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	cmdFeature          = "feature"
 	cmdOutdated         = "outdated"
 	flagWorkspaceFolder = "--workspace-folder"
 )
@@ -57,7 +58,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 		stdout, _, err := f.ExecCommandCapture(ctx, []string{
-			cmdOutdated,
+			cmdFeature, cmdOutdated,
 			flagWorkspaceFolder, tempDir,
 		})
 		framework.ExpectNoError(err)
@@ -87,7 +88,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdOutdated,
+				cmdFeature, cmdOutdated,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
@@ -108,7 +109,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdOutdated,
+				cmdFeature, cmdOutdated,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)

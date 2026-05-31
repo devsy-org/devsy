@@ -156,6 +156,7 @@ func SetupBackhaul(
 		//nolint:gosec // execPath is the current binary, arguments are controlled
 		cmd := exec.CommandContext(ctx,
 			execPath,
+			"workspace",
 			"ssh",
 			"--agent-forwarding=true",
 			fmt.Sprintf("--reuse-ssh-auth-sock=%s", authSockID),
@@ -251,6 +252,7 @@ func CreateSSHCommand(
 // buildSSHCommandArgs constructs the argument list for `devsy ssh`.
 func buildSSHCommandArgs(clientContext, workspace string, debug bool, extraArgs []string) []string {
 	args := []string{
+		"workspace",
 		"ssh",
 		"--user=root",
 		"--agent-forwarding=false",

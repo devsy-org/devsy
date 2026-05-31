@@ -64,8 +64,9 @@ var _ = ginkgo.Describe(
 			_, _, err = tc.f.ExecCommandCapture(
 				ctx,
 				[]string{
-					"ssh",
-					"--command",
+					cmdWorkspace,
+					cmdSSH,
+					flagCommand,
 					"touch /home/vscode/mnt1/foo.txt",
 					workspace.ID,
 					"--user",
@@ -77,8 +78,9 @@ var _ = ginkgo.Describe(
 			_, _, err = tc.f.ExecCommandCapture(
 				ctx,
 				[]string{
-					"ssh",
-					"--command",
+					cmdWorkspace,
+					cmdSSH,
+					flagCommand,
 					"echo -n BAR > /home/vscode/mnt1/foo.txt",
 					workspace.ID,
 					"--user",
@@ -121,9 +123,10 @@ var _ = ginkgo.Describe(
 				cmd := exec.CommandContext(
 					sshContext,
 					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),
-					"ssh",
+					cmdWorkspace,
+					cmdSSH,
 					workspace.ID,
-					"--command",
+					flagCommand,
 					"sleep 30",
 				)
 
@@ -191,7 +194,8 @@ var _ = ginkgo.Describe(
 				cmd := exec.CommandContext(
 					sshContext,
 					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),
-					"ssh",
+					cmdWorkspace,
+					cmdSSH,
 					"--forward-ports",
 					fmt.Sprintf("%d:nginx:8080", localPort),
 					workspace.ID,
@@ -581,7 +585,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			_, stderr, err := tc.f.ExecCommandCapture(ctx, []string{
-				"up", "--debug", "--ide", "none", tempDir,
+				cmdWorkspace, "up", flagDebug, flagIDE, ideNone, tempDir,
 			})
 			gomega.Expect(err).To(gomega.HaveOccurred())
 			gomega.Expect(stderr).To(gomega.ContainSubstring("nonexistent-service"))

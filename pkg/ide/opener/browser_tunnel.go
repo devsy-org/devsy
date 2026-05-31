@@ -160,7 +160,7 @@ type browserIDEInvocation struct {
 	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
 }
 
-// startDetachedBrowserTunnel spawns `devsy helper browser-tunnel ...` as a
+// startDetachedBrowserTunnel spawns `devsy internal helper browser-tunnel ...` as a
 // detached background process so the CLI can return to the prompt while the
 // tunnel remains running.
 //
@@ -221,7 +221,7 @@ func startDetachedBrowserTunnel(
 
 	pkglog.Infof(
 		"%s browser tunnel running in background (PID %d). Logs: %s. "+
-			"Run 'devsy stop %s' to terminate.",
+			"Run 'devsy workspace stop %s' to terminate.",
 		label, pid, logLocation, workspaceID,
 	)
 
@@ -373,7 +373,7 @@ func buildHelperArgs(
 	openBrowser bool,
 ) []string {
 	args := []string{
-		"helper", "browser-tunnel",
+		"internal", "helper", "browser-tunnel",
 		"--context", contextName,
 		"--workspace", workspaceID,
 		"--target-url", tunnelParams.TargetURL,

@@ -1,0 +1,85 @@
+package cmdinternal
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/spf13/cobra"
+)
+
+// LogsDaemonCmd holds the configuration.
+type LogsDaemonCmd struct {
+	*flags.GlobalFlags
+}
+
+// NewLogsDaemonCmd creates a new destroy command.
+func NewLogsDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &LogsDaemonCmd{
+		GlobalFlags: flags,
+	}
+	startCmd := &cobra.Command{
+		Use:   "logs-daemon",
+		Short: "Prints the daemon logs on the machine",
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.Run(cobraCmd.Context(), args)
+		},
+	}
+
+	return startCmd
+}
+
+// Run runs the command logic.
+func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+
+	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+	})
+	if err != nil {
+		return err
+	} else if baseClient.WorkspaceConfig().Machine.ID == "" {
+		return fmt.Errorf(
+			"selected workspace is not a machine provider, there is not daemon running",
+		)
+	}
+
+	workspaceClient, ok := baseClient.(client.WorkspaceClient)
+	if !ok {
+		return fmt.Errorf("this command is not supported for proxy providers")
+	}
+
+	_, agentInfo, err := workspaceClient.AgentInfo(provider2.CLIOptions{})
+	if err != nil {
+		return err
+	}
+
+	command := fmt.Sprintf(
+		"%s%q internal agent workspace logs-daemon --context %q --id %q",
+		agent.ContainerAgentEnvPrefix,
+		workspaceClient.AgentPath(),
+		workspaceClient.Context(),
+		workspaceClient.Workspace(),
+	)
+	if agentInfo.Agent.DataPath != "" {
+		command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
+	}
+
+	// read daemon logs
+	return workspaceClient.Command(ctx, client.CommandOptions{
+		Command: command,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+	})
+}

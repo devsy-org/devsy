@@ -31,11 +31,11 @@ describe("CliRunner", () => {
         },
       )
 
-      const result = await cli.run<{ id: string }[]>(["list", "--skip-pro"])
+      const result = await cli.run<{ id: string }[]>(["workspace", "list", "--skip-pro"])
       expect(result).toEqual([{ id: "ws-1" }])
       expect(mockExecFile).toHaveBeenCalledWith(
         "/usr/local/bin/devsy",
-        ["list", "--skip-pro", "--result-format", "json", "--log-output", "json"],
+        ["workspace", "list", "--skip-pro", "--result-format", "json", "--log-output", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )
@@ -57,7 +57,7 @@ describe("CliRunner", () => {
         },
       )
 
-      await expect(cli.run(["list"])).rejects.toThrow("workspace not found")
+      await expect(cli.run(["workspace", "list"])).rejects.toThrow("workspace not found")
     })
 
     it("extracts cliError from a zap JSON stderr line and attaches it to the thrown Error", async () => {

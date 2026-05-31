@@ -1,0 +1,816 @@
+package workspace
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path"
+	"strings"
+	"time"
+
+	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/cmd/completion"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/machine"
+	"github.com/devsy-org/devsy/pkg/agent"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/gpg"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/provider"
+	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/tunnel"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
+)
+
+const (
+	DisableSSHKeepAlive time.Duration = 0 * time.Second
+)
+
+// SSHCmd holds the ssh cmd flags.
+type SSHCmd struct {
+	*flags.GlobalFlags
+
+	ForwardPortsTimeout string
+	ForwardPorts        []string
+	ReverseForwardPorts []string
+	SendEnvVars         []string
+	SetEnvVars          []string
+
+	Stdio                     bool
+	JumpContainer             bool
+	ReuseSSHAuthSock          string
+	AgentForwarding           bool
+	GPGAgentForwarding        bool
+	GitSSHSignatureForwarding bool
+	GitSSHSigningKey          string
+
+	// ssh keepalive options
+	SSHKeepAliveInterval time.Duration `json:"sshKeepAliveInterval,omitempty"`
+
+	StartServices   bool
+	TermMode        string
+	InstallTerminfo bool
+
+	Command string
+	User    string
+	WorkDir string
+}
+
+// NewSSHCmd creates a new ssh command.
+func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &SSHCmd{
+		GlobalFlags: f,
+	}
+	sshCmd := &cobra.Command{
+		Use:   "ssh [flags] [workspace-folder|workspace-name]",
+		Short: "Starts a new ssh session to a workspace",
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.execute(cobraCmd.Context(), args)
+		},
+		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return completion.GetWorkspaceSuggestions(
+				rootCmd,
+				cmd.Context,
+				cmd.Provider,
+				args,
+				toComplete,
+				cmd.Owner,
+			)
+		},
+	}
+
+	sshCmd.Flags().
+		StringArrayVarP(&cmd.ForwardPorts, "forward-ports", "L", []string{},
+			"Specifies that connections to the given TCP port or Unix socket on the local (client) "+
+				"host are to be forwarded to the given host and port, or Unix socket, on the remote side.")
+	sshCmd.Flags().
+		StringArrayVarP(&cmd.ReverseForwardPorts, "reverse-forward-ports", "R", []string{},
+			"Specifies that connections to the given TCP port or Unix socket on the local (client) "+
+				"host are to be reverse forwarded to the given host and port, or Unix socket, on the remote side.")
+	sshCmd.Flags().
+		StringArrayVarP(&cmd.SendEnvVars, "send-env", "", []string{},
+			"Specifies which local env variables shall be sent to the container.")
+	sshCmd.Flags().
+		StringArrayVarP(&cmd.SetEnvVars, "set-env", "", []string{}, "Specifies env variables to be set in the container.")
+	sshCmd.Flags().
+		StringVar(&cmd.ForwardPortsTimeout, "forward-ports-timeout", "",
+			"Specifies the timeout after which the command should terminate when the ports are unused.")
+	sshCmd.Flags().
+		StringVar(&cmd.Command, "command", "", "The command to execute within the workspace")
+	sshCmd.Flags().StringVar(&cmd.User, "user", "", "The user of the workspace to use")
+	sshCmd.Flags().StringVar(&cmd.WorkDir, "workdir", "", "The working directory in the container")
+	sshCmd.Flags().
+		BoolVar(&cmd.AgentForwarding, "agent-forwarding", true, "If true forward the local ssh keys to the remote machine")
+	sshCmd.Flags().
+		StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+			"If set, the SSH_AUTH_SOCK is expected to already be available in the workspace "+
+				"(under /tmp using the key provided) and the connection reuses this instead of creating a new one")
+	_ = sshCmd.Flags().MarkHidden("reuse-ssh-auth-sock")
+	sshCmd.Flags().
+		BoolVar(&cmd.GPGAgentForwarding, "gpg-agent-forwarding", false,
+			"If true forward the local gpg-agent to the remote machine")
+	sshCmd.Flags().
+		BoolVar(&cmd.Stdio, "stdio", false, "If true will tunnel connection through stdout and stdin")
+	sshCmd.Flags().
+		BoolVar(&cmd.StartServices, "start-services", true,
+			"If false will not start any port-forwarding or git / docker credentials helper")
+	sshCmd.Flags().
+		DurationVar(&cmd.SSHKeepAliveInterval, "ssh-keepalive-interval", 55*time.Second,
+			"How often should keepalive request be made (55s)")
+	sshCmd.Flags().
+		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "",
+			"The SSH signing key to use for git commit signing inside the workspace")
+	sshCmd.Flags().StringVar(
+		&cmd.TermMode,
+		"term-mode",
+		machine.TermModeAuto,
+		"PTY TERM selection mode: auto, strict, fallback",
+	)
+	sshCmd.Flags().BoolVar(
+		&cmd.InstallTerminfo,
+		"install-terminfo",
+		false,
+		"Install local TERM terminfo on remote before PTY",
+	)
+
+	return sshCmd
+}
+
+// Run runs the command logic.
+func (cmd *SSHCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	// add ssh keys to agent
+	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
+		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
+		log.Debug(
+			"adding ssh keys to agent, disable via 'devsy context set -o SSH_ADD_PRIVATE_KEYS=false'",
+		)
+		err := devssh.AddPrivateKeysToAgent(ctx)
+		if err != nil {
+			log.Debugf("Error adding private keys to ssh-agent: %v", err)
+		}
+	}
+
+	// get user
+	if cmd.User == "" {
+		var err error
+		cmd.User, err = devssh.GetUser(
+			client.WorkspaceConfig().ID,
+			client.WorkspaceConfig().SSHConfigPath,
+			client.WorkspaceConfig().SSHConfigIncludePath,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// set default context if needed
+	if cmd.Context == "" {
+		cmd.Context = devsyConfig.DefaultContext
+	}
+
+	workspaceClient, ok := client.(client2.WorkspaceClient)
+	if ok {
+		return cmd.jumpContainer(ctx, devsyConfig, workspaceClient)
+	}
+	proxyClient, ok := client.(client2.ProxyClient)
+	if ok {
+		return cmd.startProxyTunnel(ctx, devsyConfig, proxyClient)
+	}
+	daemonClient, ok := client.(client2.DaemonClient)
+	if ok {
+		return cmd.jumpContainerTailscale(ctx, devsyConfig, daemonClient)
+	}
+
+	return nil
+}
+
+func (cmd *SSHCmd) execute(ctx context.Context, args []string) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	client, err := workspace2.Get(ctx, workspace2.GetOptions{
+		DevsyConfig:    devsyConfig,
+		Args:           args,
+		ChangeLastUsed: true,
+		Owner:          cmd.Owner,
+		LocalOnly:      cmd.Stdio,
+	})
+	if err != nil {
+		return err
+	}
+	return cmd.Run(ctx, devsyConfig, client)
+}
+
+func (cmd *SSHCmd) jumpContainerTailscale(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.DaemonClient,
+) error {
+	log.Debugf("Starting tailscale connection")
+
+	err := client.CheckWorkspaceReachable(ctx)
+	if err != nil {
+		return err
+	}
+
+	toolSSHClient, sshClient, err := client.SSHClients(ctx, cmd.User)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = toolSSHClient.Close() }()
+	defer func() { _ = sshClient.Close() }()
+
+	// Forward ports if specified
+	if len(cmd.ForwardPorts) > 0 {
+		return cmd.forwardPorts(ctx, toolSSHClient)
+	}
+
+	// Reverse forward ports if specified
+	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
+		return cmd.reverseForwardPorts(ctx, toolSSHClient)
+	}
+
+	if cmd.StartServices {
+		go func() {
+			err = clientimplementation.StartServicesDaemon(
+				ctx,
+				clientimplementation.StartServicesDaemonOptions{
+					DevsyConfig:  devsyConfig,
+					Client:       client,
+					SSHClient:    toolSSHClient,
+					User:         cmd.User,
+					ForwardPorts: false,
+					ExtraPorts:   nil,
+				},
+			)
+			if err != nil {
+				log.Errorf("Error starting services: %v", err)
+			}
+		}()
+	}
+
+	// Handle GPG agent forwarding
+	if cmd.GPGAgentForwarding ||
+		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient) {
+			log.Debugf("[GPG] exporting already running, skipping")
+		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient); err != nil {
+			return err
+		}
+	}
+
+	// Handle ssh stdio mode
+	if cmd.Stdio {
+		if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
+			go startSSHKeepAlive(ctx, toolSSHClient, cmd.SSHKeepAliveInterval)
+		}
+
+		return client.DirectTunnel(ctx, os.Stdin, os.Stdout)
+	}
+
+	// Connect to the inner server and handle user session
+	return machine.RunSSHSession(
+		ctx,
+		sshClient,
+		machine.RunSSHSessionOptions{
+			AgentForwarding: cmd.AgentForwarding,
+			Command:         cmd.Command,
+			SessionOptions: machine.SSHSessionOptions{
+				TermMode:        cmd.TermMode,
+				InstallTerminfo: cmd.InstallTerminfo,
+			},
+			Stderr: os.Stderr,
+		},
+	)
+}
+
+func (cmd *SSHCmd) startProxyTunnel(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.ProxyClient,
+) error {
+	log.Debugf("Start proxy tunnel")
+	return tunnel.NewTunnel(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return client.Ssh(ctx, client2.SshOptions{
+				User:   cmd.User,
+				Stdin:  stdin,
+				Stdout: stdout,
+			})
+		},
+		func(ctx context.Context, containerClient *ssh.Client) error {
+			return cmd.startTunnel(ctx, devsyConfig, containerClient, client)
+		},
+	)
+}
+
+func (cmd *SSHCmd) retrieveEnVars() (map[string]string, error) {
+	envVars := make(map[string]string)
+	for _, envVar := range cmd.SendEnvVars {
+		envVarValue, exist := os.LookupEnv(envVar)
+		if exist {
+			envVars[envVar] = envVarValue
+		}
+	}
+	for _, envVar := range cmd.SetEnvVars {
+		parts := strings.Split(envVar, "=")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid env var: %s", envVar)
+		}
+		envVars[parts[0]] = parts[1]
+	}
+
+	return envVars, nil
+}
+
+func (cmd *SSHCmd) jumpContainer(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.WorkspaceClient,
+) error {
+	// lock the workspace as long as we init the connection
+	err := client.Lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Unlock()
+
+	// start the workspace
+	err = clientimplementation.StartWait(ctx, client, false)
+	if err != nil {
+		return err
+	}
+
+	envVars, err := cmd.retrieveEnVars()
+	if err != nil {
+		return err
+	}
+
+	// tunnel to container
+	return tunnel.NewContainerTunnel(client).
+		Run(ctx, func(ctx context.Context, containerClient *ssh.Client) error {
+			// we have a connection to the container, make sure others can connect as well
+			client.Unlock()
+
+			// start ssh tunnel
+			return cmd.startTunnel(ctx, devsyConfig, containerClient, client)
+		}, devsyConfig, envVars)
+}
+
+func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
+	timeout := time.Duration(0)
+	if cmd.ForwardPortsTimeout != "" {
+		timeout, err := time.ParseDuration(cmd.ForwardPortsTimeout)
+		if err != nil {
+			return timeout, fmt.Errorf("parse forward ports timeout: %w", err)
+		}
+
+		log.Infof("Using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
+	}
+
+	return timeout, nil
+}
+
+func (cmd *SSHCmd) reverseForwardPorts(
+	ctx context.Context,
+	containerClient *ssh.Client,
+) error {
+	timeout, err := cmd.forwardTimeout()
+	if err != nil {
+		return fmt.Errorf("parse forward ports timeout: %w", err)
+	}
+
+	errChan := make(chan error, len(cmd.ReverseForwardPorts))
+	for _, portMapping := range cmd.ReverseForwardPorts {
+		mapping, err := port.ParsePortSpec(portMapping)
+		if err != nil {
+			return fmt.Errorf("parse port mapping: %w", err)
+		}
+
+		// start the forwarding
+		log.Infof(
+			"Reverse forwarding local %s/%s to remote %s/%s",
+			mapping.Host.Protocol,
+			mapping.Host.Address,
+			mapping.Container.Protocol,
+			mapping.Container.Address,
+		)
+		go func(portMapping string) {
+			err := devssh.ReversePortForward(
+				ctx,
+				containerClient,
+				mapping.Host.Protocol,
+				mapping.Host.Address,
+				mapping.Container.Protocol,
+				mapping.Container.Address,
+				timeout,
+			)
+			if errors.Is(err, devssh.ErrIdleTimeout) {
+				log.Infof("reverse port-forward %s exited due to idle timeout", portMapping)
+				errChan <- nil
+				return
+			}
+			if !errors.Is(err, io.EOF) {
+				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
+			}
+		}(portMapping)
+	}
+
+	return <-errChan
+}
+
+func (cmd *SSHCmd) forwardPorts(
+	ctx context.Context,
+	containerClient *ssh.Client,
+) error {
+	timeout, err := cmd.forwardTimeout()
+	if err != nil {
+		return fmt.Errorf("parse forward ports timeout: %w", err)
+	}
+
+	errChan := make(chan error, len(cmd.ForwardPorts))
+	for _, portMapping := range cmd.ForwardPorts {
+		mapping, err := port.ParsePortSpec(portMapping)
+		if err != nil {
+			return fmt.Errorf("parse port mapping: %w", err)
+		}
+
+		// start the forwarding
+		log.Infof(
+			"Forwarding local %s/%s to remote %s/%s",
+			mapping.Host.Protocol,
+			mapping.Host.Address,
+			mapping.Container.Protocol,
+			mapping.Container.Address,
+		)
+		go func(portMapping string) {
+			err := devssh.PortForward(
+				ctx,
+				containerClient,
+				mapping.Host.Protocol,
+				mapping.Host.Address,
+				mapping.Container.Protocol,
+				mapping.Container.Address,
+				timeout,
+			)
+			if errors.Is(err, devssh.ErrIdleTimeout) {
+				log.Infof("port-forward %s exited due to idle timeout", portMapping)
+				errChan <- nil
+				return
+			}
+			if !errors.Is(err, io.EOF) {
+				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
+			}
+		}(portMapping)
+	}
+
+	return <-errChan
+}
+
+func (cmd *SSHCmd) startTunnel(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	containerClient *ssh.Client,
+	workspaceClient client2.BaseWorkspaceClient,
+) error {
+	// check if we should forward ports
+	if len(cmd.ForwardPorts) > 0 {
+		return cmd.forwardPorts(ctx, containerClient)
+	}
+
+	// check if we should reverse forward ports
+	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
+		return cmd.reverseForwardPorts(ctx, containerClient)
+	}
+
+	if cmd.StartServices {
+		configureDockerCredentials := devsyConfig.ContextOption(
+			config.ContextOptionSSHInjectDockerCredentials,
+		) == config.BoolTrue
+		configureGitCredentials := devsyConfig.ContextOption(
+			config.ContextOptionSSHInjectGitCredentials,
+		) == config.BoolTrue
+		configureGitSSHSignatureHelper := devsyConfig.ContextOption(
+			config.ContextOptionGitSSHSignatureForwarding,
+		) == config.BoolTrue
+
+		go cmd.startServices(
+			ctx,
+			devsyConfig,
+			containerClient,
+			workspaceClient.WorkspaceConfig(),
+			configureDockerCredentials,
+			configureGitCredentials,
+			configureGitSSHSignatureHelper,
+			cmd.GitSSHSigningKey,
+		)
+	}
+	// start ssh
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+
+	// check if we should do gpg agent forwarding
+	if cmd.GPGAgentForwarding ||
+		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		// Check if a forwarding is already enabled and running, in that case
+		// we skip the forwarding and keep using the original one
+		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient) {
+			log.Debugf("[GPG] exporting already running, skipping")
+		} else {
+			err := cmd.setupGPGAgent(ctx, containerClient)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
+
+	log.Debugf("Run outer container tunnel")
+	commandArgs := []string{
+		agent.ContainerDevsyHelperLocation,
+		"internal",
+		"helper",
+		"ssh-server",
+		"--track-activity",
+		"--stdio",
+		"--workdir",
+		workdir,
+	}
+	if cmd.ReuseSSHAuthSock != "" {
+		log.Debug("Reusing SSH_AUTH_SOCK")
+		commandArgs = append(commandArgs, "--reuse-ssh-auth-sock", cmd.ReuseSSHAuthSock)
+	}
+	if cmd.Debug {
+		commandArgs = append(commandArgs, "--debug")
+	}
+	command := shellescape.QuoteCommand(commandArgs)
+	if cmd.User != "" && cmd.User != "root" {
+		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
+	}
+
+	envVars, err := cmd.retrieveEnVars()
+	if err != nil {
+		return err
+	}
+
+	// Traffic is coming in from the outside, we need to forward it to the container
+	if cmd.Stdio {
+		return devssh.Run(ctx, devssh.RunOptions{
+			Client:  containerClient,
+			Command: command,
+			Stdin:   os.Stdin,
+			Stdout:  os.Stdout,
+			Stderr:  writer,
+			EnvVars: envVars,
+		})
+	}
+
+	return machine.StartSSHSession(ctx, machine.StartSSHSessionOptions{
+		User:    cmd.User,
+		Command: cmd.Command,
+		AgentForwarding: cmd.AgentForwarding &&
+			devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue,
+		SessionOptions: machine.SSHSessionOptions{
+			TermMode:        cmd.TermMode,
+			InstallTerminfo: cmd.InstallTerminfo,
+		},
+		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+			if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
+				go startSSHKeepAlive(ctx, containerClient, cmd.SSHKeepAliveInterval)
+			}
+			return devssh.Run(ctx, devssh.RunOptions{
+				Client:  containerClient,
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+				EnvVars: envVars,
+			})
+		},
+		Stderr: writer,
+	})
+}
+
+func resolveWorkdir(
+	workdir string,
+	workspaceClient client2.BaseWorkspaceClient,
+) string {
+	if workdir != "" {
+		return workdir
+	}
+
+	if workspaceFolder := resolveMergedWorkspaceFolder(
+		workspaceClient,
+	); workspaceFolder != "" {
+		return workspaceFolder
+	}
+
+	return path.Join("/workspaces", workspaceClient.Workspace())
+}
+
+func resolveMergedWorkspaceFolder(
+	workspaceClient client2.BaseWorkspaceClient,
+) string {
+	workspaceConfig := workspaceClient.WorkspaceConfig()
+	if workspaceConfig == nil || workspaceConfig.Context == "" || workspaceConfig.ID == "" {
+		return ""
+	}
+
+	result, err := provider.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
+	if err != nil {
+		log.Warnf("Error loading workspace result for workdir resolution: %v", err)
+		return ""
+	}
+	if result == nil || result.MergedConfig == nil {
+		return ""
+	}
+
+	return result.MergedConfig.WorkspaceFolder
+}
+
+func (cmd *SSHCmd) startServices(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	containerClient *ssh.Client,
+	workspace *provider.Workspace,
+	configureDockerCredentials, configureGitCredentials, configureGitSSHSignatureHelper bool,
+	gitSSHSigningKey string,
+) {
+	if cmd.User != "" {
+		err := tunnel.RunServices(
+			ctx,
+			tunnel.RunServicesOptions{
+				DevsyConfig:                    devsyConfig,
+				ContainerClient:                containerClient,
+				User:                           cmd.User,
+				ForwardPorts:                   false,
+				ExtraPorts:                     nil,
+				PlatformOptions:                nil,
+				Workspace:                      workspace,
+				ConfigureDockerCredentials:     configureDockerCredentials,
+				ConfigureGitCredentials:        configureGitCredentials,
+				ConfigureGitSSHSignatureHelper: configureGitSSHSignatureHelper,
+				GitSSHSigningKey:               gitSSHSigningKey,
+			},
+		)
+		if err != nil {
+			log.Debugf("Error running credential server: %v", err)
+		}
+	}
+}
+
+// setupGPGAgent will forward a local gpg-agent into the remote container
+// this works by using cmd/agent/workspace/setup_gpg.
+func (cmd *SSHCmd) setupGPGAgent(
+	ctx context.Context,
+	containerClient *ssh.Client,
+) error {
+	log.Debugf("[GPG] exporting gpg owner trust from host")
+	ownerTrustExport, err := gpg.GetHostOwnerTrust()
+	if err != nil {
+		return fmt.Errorf("export local ownertrust from GPG: %w", err)
+	}
+	ownerTrustArgument := base64.StdEncoding.EncodeToString(ownerTrustExport)
+
+	log.Debugf("[GPG] detecting gpg-agent socket path on host")
+	// Detect local agent extra socket, this will be forwarded to the remote and
+	// symlinked in multiple paths
+	gpgExtraSocketBytes, err := exec.Command("gpgconf", []string{"--list-dir", "agent-extra-socket"}...).
+		Output()
+	if err != nil {
+		return err
+	}
+
+	gpgExtraSocketPath := strings.TrimSpace(string(gpgExtraSocketBytes))
+	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
+
+	gitKey := gpgSigningKey()
+
+	cmd.ReverseForwardPorts = append(cmd.ReverseForwardPorts, gpgExtraSocketPath)
+
+	// Now we forward the agent socket to the remote, and setup remote gpg to use it
+	forwardAgent := []string{
+		agent.ContainerDevsyHelperLocation,
+		"internal",
+		"agent",
+		"workspace",
+		"setup-gpg",
+		"--ownertrust",
+		ownerTrustArgument,
+		"--socketpath",
+		gpgExtraSocketPath,
+	}
+
+	if log.DebugEnabled() {
+		forwardAgent = append(forwardAgent, "--debug")
+	}
+
+	if gitKey != "" {
+		forwardAgent = append(forwardAgent, "--gitkey")
+		forwardAgent = append(forwardAgent, gitKey)
+	}
+
+	command := shellescape.QuoteCommand(forwardAgent)
+	if cmd.User != "" && cmd.User != "root" {
+		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
+	}
+
+	log.Debugf(
+		"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
+		gpgExtraSocketPath,
+	)
+
+	go func() {
+		log.Error(cmd.reverseForwardPorts(ctx, containerClient))
+	}()
+
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+	err = devssh.Run(ctx, devssh.RunOptions{
+		Client:  containerClient,
+		Command: command,
+		Stdout:  writer,
+		Stderr:  writer,
+	})
+	if err != nil {
+		return fmt.Errorf("run gpg agent setup command: %w", err)
+	}
+
+	return nil
+}
+
+// gpgSigningKey returns the user's GPG signing key from git config,
+// or empty string if no key is configured or the signing format is SSH
+// (SSH signing keys are handled by the separate SSH signature helper).
+func gpgSigningKey() string {
+	format, err := exec.Command("git", "config", "--get", "gpg.format").Output()
+	formatStr := ""
+	if err == nil {
+		formatStr = strings.TrimSpace(string(format))
+	}
+	if formatStr == "ssh" {
+		log.Debugf(
+			"[GPG] gpg.format is ssh, skipping GPG signing key (handled by SSH signing helper)",
+		)
+		return ""
+	}
+
+	key, err := exec.Command("git", "config", "--get", "user.signingKey").Output()
+	if err != nil {
+		log.Debugf("[GPG] no git signkey detected, skipping")
+		return ""
+	}
+
+	result := strings.TrimSpace(string(key))
+
+	// GPG key IDs are hex fingerprints, not file paths. If the signing key
+	// looks like a file path and the format isn't x509 (which legitimately
+	// uses certificate file paths via gpgsm), it's an SSH key.
+	if (strings.HasPrefix(result, "/") || strings.HasPrefix(result, "~")) && formatStr != "x509" {
+		log.Debugf(
+			"[GPG] signing key %s looks like a file path, skipping (not a GPG key ID)",
+			result,
+		)
+		return ""
+	}
+
+	log.Debugf("[GPG] detected git sign key %s", result)
+	return result
+}
+
+func startSSHKeepAlive(
+	ctx context.Context,
+	client *ssh.Client,
+	interval time.Duration,
+) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				log.Errorf("Failed to send keepalive: %v", err)
+			}
+		}
+	}
+}

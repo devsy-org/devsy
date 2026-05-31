@@ -43,6 +43,7 @@ func ForwardAgent(client client2.BaseWorkspaceClient) error {
 
 func buildForwardArgs(user, context, workspace string) []string {
 	return []string{
+		"workspace",
 		"ssh",
 		"--gpg-agent-forwarding=true",
 		"--agent-forwarding=true",

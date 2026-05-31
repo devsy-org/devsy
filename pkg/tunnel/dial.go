@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	sshSubcommand = "ssh"
-	sshStdioFlag  = "--stdio"
+	workspaceSubcommand = "workspace"
+	sshSubcommand       = "ssh"
+	sshStdioFlag        = "--stdio"
 )
 
 type WorkspaceDialer struct {
@@ -80,7 +81,7 @@ func (d *WorkspaceDialer) buildCommand() (string, []string, error) {
 		}
 	}
 
-	args := []string{sshSubcommand, sshStdioFlag}
+	args := []string{workspaceSubcommand, sshSubcommand, sshStdioFlag}
 	if d.Context != "" {
 		args = append(args, "--context", d.Context)
 	}

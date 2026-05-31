@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	cmdFeature          = "feature"
 	cmdUpgrade          = "upgrade"
 	flagWorkspaceFolder = "--workspace-folder"
 	flagDryRun          = "--dry-run"
@@ -60,7 +61,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdUpgrade,
+				cmdFeature, cmdUpgrade,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
@@ -94,7 +95,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdUpgrade,
+				cmdFeature, cmdUpgrade,
 				flagDryRun,
 				flagWorkspaceFolder, tempDir,
 			})
@@ -137,7 +138,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdUpgrade,
+				cmdFeature, cmdUpgrade,
 				flagWorkspaceFolder, tempDir,
 				featureA,
 			})
@@ -174,7 +175,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdUpgrade,
+				cmdFeature, cmdUpgrade,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)
@@ -208,7 +209,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			_, _, err := f.ExecCommandCapture(ctx, []string{
-				cmdUpgrade,
+				cmdFeature, cmdUpgrade,
 				flagWorkspaceFolder, tempDir,
 			})
 			framework.ExpectNoError(err)

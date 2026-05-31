@@ -121,7 +121,7 @@ func (b *basePathManager) WorkspaceDir(context, workspaceID string) (string, err
 	return filepath.Join(dir, workspaceID), nil
 }
 
-// WorkspaceAgentDir is where host-side `devsy agent workspace ...` invocations
+// WorkspaceAgentDir is where host-side `devsy internal agent workspace ...` invocations
 // store their per-workspace state. It lives under WorkspaceDir so a single
 // os.RemoveAll(WorkspaceDir) wipes it during workspace delete. Container-side
 // agent invocations still resolve their home via FindAgentHomeFolder and are

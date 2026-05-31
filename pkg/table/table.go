@@ -2,6 +2,7 @@ package table
 
 import (
 	"os"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -37,4 +38,30 @@ func Render(headers []string, rows [][]string) string {
 // Print renders a table to stdout.
 func Print(headers []string, rows [][]string) {
 	_, _ = os.Stdout.WriteString(Render(headers, rows) + "\n") //nolint:gosec // G104
+}
+
+// Markdown renders headers and rows as a GitHub-flavored Markdown table.
+// Cell contents are written verbatim — callers must pre-escape pipes if needed.
+func Markdown(headers []string, rows [][]string) string {
+	var sb strings.Builder
+	writeMarkdownRow(&sb, headers)
+	separator := make([]string, len(headers))
+	for i := range separator {
+		separator[i] = "---"
+	}
+	writeMarkdownRow(&sb, separator)
+	for _, row := range rows {
+		writeMarkdownRow(&sb, row)
+	}
+	return sb.String()
+}
+
+func writeMarkdownRow(sb *strings.Builder, cells []string) {
+	sb.WriteString("|")
+	for _, c := range cells {
+		sb.WriteString(" ")
+		sb.WriteString(c)
+		sb.WriteString(" |")
+	}
+	sb.WriteString("\n")
 }

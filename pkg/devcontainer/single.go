@@ -31,7 +31,7 @@ while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do
   echo "waiting for devsy agent to be available"
   sleep 1
 done
-exec /usr/local/bin/devsy agent container daemon
+exec /usr/local/bin/devsy internal agent container daemon
 `
 )
 

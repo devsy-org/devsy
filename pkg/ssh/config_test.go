@@ -51,7 +51,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost`,
 		},
@@ -76,7 +76,7 @@ Host testhost
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
   ConnectTimeout 60
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost`,
 		},
@@ -93,6 +93,7 @@ Host testhost
 			gpgagent:  false,
 			devsyHome: "C:\\\\W S\\d",
 			provider:  "",
+			//nolint:lll // long ProxyCommand expected output
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -100,7 +101,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --home "C:\\W S\d"
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace --home "C:\\W S\d"
   User testuser
 # Devsy End testhost`,
 		},
@@ -117,6 +118,7 @@ Host testhost
 			gpgagent:  false,
 			devsyHome: "",
 			provider:  "",
+			//nolint:lll // long ProxyCommand expected output
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -124,7 +126,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --workdir "/path/to/workdir"
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace --workdir "/path/to/workdir"
   User testuser
 # Devsy End testhost`,
 		},
@@ -141,6 +143,7 @@ Host testhost
 			gpgagent:  true,
 			devsyHome: "",
 			provider:  "",
+			//nolint:lll // long ProxyCommand expected output
 			expected: `# Devsy Start testhost
 Host testhost
   ForwardAgent yes
@@ -148,7 +151,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace --gpg-agent-forwarding
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace --gpg-agent-forwarding
   User testuser
 # Devsy End testhost`,
 		},
@@ -197,7 +200,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost
 Host existinghost
@@ -212,7 +215,7 @@ Host existingtesthost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost
 
@@ -235,7 +238,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost
 # Devsy Start existingtesthost
@@ -245,7 +248,7 @@ Host existingtesthost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost
 
@@ -285,7 +288,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" ssh --stdio --context testcontext --user testuser testworkspace
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
   User testuser
 # Devsy End testhost`,
 		},

@@ -1,24 +1,16 @@
 package pro
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/pro/add"
+	procluster "github.com/devsy-org/devsy/cmd/pro/cluster"
 	"github.com/devsy-org/devsy/cmd/pro/daemon"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	proproject "github.com/devsy-org/devsy/cmd/pro/project"
 	"github.com/devsy-org/devsy/cmd/pro/provider"
-	"github.com/devsy-org/devsy/cmd/pro/reset"
-	"github.com/devsy-org/devsy/pkg/config"
-	providerpkg "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/workspace"
+	protemplate "github.com/devsy-org/devsy/cmd/pro/template"
+	prouser "github.com/devsy-org/devsy/cmd/pro/user"
+	proworkspace "github.com/devsy-org/devsy/cmd/pro/workspace"
 	"github.com/spf13/cobra"
-)
-
-const (
-	headerName        = "Name"
-	headerDisplayName = "Display Name"
 )
 
 // NewProCmd returns a new command.
@@ -37,45 +29,21 @@ func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	proCmd.AddCommand(NewLoginCmd(globalFlags))
+	proCmd.AddCommand(NewLogoutCmd(globalFlags))
 	proCmd.AddCommand(NewListCmd(globalFlags))
-	proCmd.AddCommand(NewDeleteCmd(globalFlags))
-	proCmd.AddCommand(NewImportCmd(globalFlags))
 	proCmd.AddCommand(NewStartCmd(globalFlags))
-	proCmd.AddCommand(NewRebuildCmd(globalFlags))
-	proCmd.AddCommand(NewSleepCmd(globalFlags))
-	proCmd.AddCommand(NewWakeupCmd(globalFlags))
-	proCmd.AddCommand(reset.NewResetCmd(globalFlags))
-	proCmd.AddCommand(provider.NewProProviderCmd(globalFlags))
-	proCmd.AddCommand(daemon.NewCmd(globalFlags))
-	proCmd.AddCommand(add.NewAddCmd(globalFlags))
-	proCmd.AddCommand(NewWatchWorkspacesCmd(globalFlags))
 	proCmd.AddCommand(NewSelfCmd(globalFlags))
 	proCmd.AddCommand(NewVersionCmd(globalFlags))
-	proCmd.AddCommand(NewListProjectsCmd(globalFlags))
-	proCmd.AddCommand(NewListWorkspacesCmd(globalFlags))
-	proCmd.AddCommand(NewListTemplatesCmd(globalFlags))
-	proCmd.AddCommand(NewListClustersCmd(globalFlags))
-	proCmd.AddCommand(NewCreateWorkspaceCmd(globalFlags))
-	proCmd.AddCommand(NewUpdateWorkspaceCmd(globalFlags))
-	proCmd.AddCommand(NewCheckHealthCmd(globalFlags))
+	proCmd.AddCommand(NewHealthCmd(globalFlags))
 	proCmd.AddCommand(NewCheckUpdateCmd(globalFlags))
 	proCmd.AddCommand(NewUpdateProviderCmd(globalFlags))
+
+	proCmd.AddCommand(procluster.NewClusterCmd(globalFlags))
+	proCmd.AddCommand(proproject.NewProjectCmd(globalFlags))
+	proCmd.AddCommand(protemplate.NewTemplateCmd(globalFlags))
+	proCmd.AddCommand(prouser.NewUserCmd(globalFlags))
+	proCmd.AddCommand(proworkspace.NewWorkspaceCmd(globalFlags))
+	proCmd.AddCommand(daemon.NewCmd(globalFlags))
+	proCmd.AddCommand(provider.NewProProviderCmd(globalFlags))
 	return proCmd
-}
-
-func findProProvider(
-	ctx context.Context,
-	context, provider, host string,
-) (*config.Config, *providerpkg.ProviderConfig, error) {
-	devsyConfig, err := config.LoadConfig(context, provider)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pCfg, err := workspace.ProviderFromHost(ctx, devsyConfig, host)
-	if err != nil {
-		return devsyConfig, nil, fmt.Errorf("load provider: %w", err)
-	}
-
-	return devsyConfig, pCfg, nil
 }

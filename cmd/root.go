@@ -6,19 +6,19 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/devsy-org/devsy/cmd/agent"
 	"github.com/devsy-org/devsy/cmd/completion"
+	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
-	"github.com/devsy-org/devsy/cmd/features"
+	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/helper"
 	"github.com/devsy-org/devsy/cmd/ide"
+	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
-	"github.com/devsy-org/devsy/cmd/templates"
-	"github.com/devsy-org/devsy/cmd/up"
-	"github.com/devsy-org/devsy/cmd/use"
+	"github.com/devsy-org/devsy/cmd/self"
+	"github.com/devsy-org/devsy/cmd/template"
+	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
@@ -35,6 +35,12 @@ import (
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+
+	groupCore         = "core"
+	groupConfig       = "config"
+	groupPlatform     = "platform"
+	groupDevcontainer = "devcontainer"
+	groupMeta         = "meta"
 )
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -134,44 +140,51 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
+	rootCmd.AddGroup(
+		&cobra.Group{ID: groupCore, Title: "Core commands:"},
+		&cobra.Group{ID: groupConfig, Title: "Configuration commands:"},
+		&cobra.Group{ID: groupPlatform, Title: "Platform commands:"},
+		&cobra.Group{ID: groupDevcontainer, Title: "Devcontainer commands:"},
+		&cobra.Group{ID: groupMeta, Title: "Meta:"},
+	)
+
 	registerSubcommands(rootCmd, globalFlags)
 
 	return rootCmd, globalFlags
 }
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
-	rootCmd.AddCommand(agent.NewAgentCmd(globalFlags))
-	rootCmd.AddCommand(provider.NewProviderCmd(globalFlags))
-	rootCmd.AddCommand(use.NewUseCmd(globalFlags))
-	rootCmd.AddCommand(helper.NewHelperCmd(globalFlags))
-	rootCmd.AddCommand(ide.NewIDECmd(globalFlags))
-	rootCmd.AddCommand(machine.NewMachineCmd(globalFlags))
-	rootCmd.AddCommand(context.NewContextCmd(globalFlags))
-	rootCmd.AddCommand(pro.NewProCmd(globalFlags))
-	rootCmd.AddCommand(up.NewUpCmd(globalFlags))
-	rootCmd.AddCommand(NewDeleteCmd(globalFlags))
-	rootCmd.AddCommand(NewSSHCmd(globalFlags))
-	rootCmd.AddCommand(NewStopCmd(globalFlags))
-	rootCmd.AddCommand(NewDownCmd(globalFlags))
-	rootCmd.AddCommand(NewListCmd(globalFlags))
-	rootCmd.AddCommand(NewStatusCmd(globalFlags))
-	rootCmd.AddCommand(NewBuildCmd(globalFlags))
-	rootCmd.AddCommand(NewLogsDaemonCmd(globalFlags))
-	rootCmd.AddCommand(NewExportCmd(globalFlags))
-	rootCmd.AddCommand(NewImportCmd(globalFlags))
-	rootCmd.AddCommand(NewLogsCmd(globalFlags))
-	rootCmd.AddCommand(NewSelfUpdateCmd())
-	rootCmd.AddCommand(NewTroubleshootCmd(globalFlags))
-	rootCmd.AddCommand(NewPingCmd(globalFlags))
-	rootCmd.AddCommand(NewReadConfigurationCmd(globalFlags))
-	rootCmd.AddCommand(NewExecCmd(globalFlags))
-	rootCmd.AddCommand(NewOutdatedCmd(globalFlags))
-	rootCmd.AddCommand(NewUpgradeCmd(globalFlags))
-	rootCmd.AddCommand(NewSetUpCmd(globalFlags))
-	rootCmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
-	rootCmd.AddCommand(NewRunUserCommandsCmdAlias(globalFlags))
-	rootCmd.AddCommand(NewRenameCmd(globalFlags))
-	rootCmd.AddCommand(features.NewFeaturesCmd(globalFlags))
-	rootCmd.AddCommand(templates.NewTemplatesCmd(globalFlags))
-	rootCmd.AddCommand(NewDaemonLocalCmd(globalFlags))
+	providerCmd := provider.NewProviderCmd(globalFlags)
+	providerCmd.GroupID = groupConfig
+	rootCmd.AddCommand(providerCmd)
+	ideCmd := ide.NewIDECmd(globalFlags)
+	ideCmd.GroupID = groupConfig
+	rootCmd.AddCommand(ideCmd)
+	machineCmd := machine.NewMachineCmd(globalFlags)
+	machineCmd.GroupID = groupCore
+	rootCmd.AddCommand(machineCmd)
+	contextCmd := context.NewContextCmd(globalFlags)
+	contextCmd.GroupID = groupConfig
+	rootCmd.AddCommand(contextCmd)
+	proCmd := pro.NewProCmd(globalFlags)
+	proCmd.GroupID = groupPlatform
+	rootCmd.AddCommand(proCmd)
+
+	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
+	wsCmd.GroupID = groupCore
+	rootCmd.AddCommand(wsCmd)
+
+	selfCmd := self.NewSelfCmd(globalFlags)
+	selfCmd.GroupID = groupMeta
+	rootCmd.AddCommand(selfCmd)
+	configCmd := cliconfig.NewConfigCmd(globalFlags)
+	configCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(configCmd)
+	featureCmd := feature.NewFeatureCmd(globalFlags)
+	featureCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(featureCmd)
+	templateCmd := template.NewTemplateCmd(globalFlags)
+	templateCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(templateCmd)
+	rootCmd.AddCommand(cmdinternal.NewInternalCmd(globalFlags))
 }

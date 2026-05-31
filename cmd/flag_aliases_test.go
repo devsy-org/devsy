@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/up"
+	"github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/cmd/workspace/up"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestUpCmd_ConfigAlias(t *testing.T) {
 }
 
 func TestBuildCmd_ConfigAlias(t *testing.T) {
-	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd := workspace.NewBuildCmd(&flags.GlobalFlags{})
 	err := buildCmd.ParseFlags([]string{flagConfig, "path/to/devcontainer.json"})
 	require.NoError(t, err)
 
@@ -66,7 +67,7 @@ func TestLogFormatAlias_IsHidden(t *testing.T) {
 
 func TestConfigAlias_E2E(t *testing.T) {
 	rootCmd, _ := BuildRoot()
-	rootCmd.SetArgs([]string{"up", flagConfig, "/tmp/test.json", "--help"})
+	rootCmd.SetArgs([]string{cmdWorkspace, "up", flagConfig, "/tmp/test.json", "--help"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
 }

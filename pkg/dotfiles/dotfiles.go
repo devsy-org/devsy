@@ -14,6 +14,13 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
+const (
+	cmdInternal     = "internal"
+	cmdAgent        = "agent"
+	cmdWorkspace    = "workspace"
+	cmdInstallDotfs = "install-dotfiles"
+)
+
 // SetupParams holds all parameters needed for dotfiles setup.
 type SetupParams struct {
 	Source       string
@@ -81,9 +88,10 @@ func buildDotCmdAgentArguments(
 	strictHostKey, debug bool,
 ) []string {
 	agentArguments := []string{
-		"agent",
-		"workspace",
-		"install-dotfiles",
+		cmdInternal,
+		cmdAgent,
+		cmdWorkspace,
+		cmdInstallDotfs,
 		"--repository",
 		dotfilesRepo,
 	}
@@ -114,6 +122,7 @@ type buildDotCmdParams struct {
 
 func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	sshCmd := []string{
+		"workspace",
 		"ssh",
 		"--agent-forwarding=true",
 		"--start-services=true",

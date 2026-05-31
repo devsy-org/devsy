@@ -67,7 +67,7 @@ the SSH binary explicitly in vscode.
 
 ### Docker socket permission denied
 
-If `devsy up` exits with the structured error code `DOCKER_PERMISSION_DENIED`, your user is not a member of the `docker` group. Add yourself and re-login:
+If `devsy workspace up` exits with the structured error code `DOCKER_PERMISSION_DENIED`, your user is not a member of the `docker` group. Add yourself and re-login:
 
 ```bash
 sudo usermod -aG docker $USER
@@ -99,7 +99,7 @@ Podman v4+ ships `podman compose` as a built-in subcommand. If your `devcontaine
 alias docker-compose='podman compose'
 ```
 
-`devsy up` handles this automatically — Devsy's compose helper detects Podman via the `ContainerRuntime` interface. The alias is only needed for scripts that run inside the workspace itself.
+`devsy workspace up` handles this automatically — Devsy's compose helper detects Podman via the `ContainerRuntime` interface. The alias is only needed for scripts that run inside the workspace itself.
 
 #### BuildKit not available
 

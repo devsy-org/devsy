@@ -31,4 +31,4 @@ exec:
     cat ${LOCATION}/${MACHINE_ID}/status.txt 2>/dev/null || echo "NOTFOUND"
 
   command: |-
-    "${DEVSY}" helper sh -c "${COMMAND}"
+    "${DEVSY}" internal helper sh -c "${COMMAND}"

@@ -383,7 +383,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 				return fmt.Errorf("agent info")
 			}
 			command := fmt.Sprintf(
-				"%s%q agent workspace delete --workspace-info %q",
+				"%s%q internal agent workspace delete --workspace-info %q",
 				agent.ContainerAgentEnvPrefix,
 				info.Agent.Path,
 				compressed,
@@ -492,7 +492,7 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 			return fmt.Errorf("agent info")
 		}
 		command := fmt.Sprintf(
-			"%s%q agent workspace stop --workspace-info %q",
+			"%s%q internal agent workspace stop --workspace-info %q",
 			agent.ContainerAgentEnvPrefix,
 			info.Agent.Path,
 			compressed,
@@ -661,7 +661,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 		return "", fmt.Errorf("get agent info")
 	}
 	command := fmt.Sprintf(
-		"%s%q agent workspace status --workspace-info %q",
+		"%s%q internal agent workspace status --workspace-info %q",
 		agent.ContainerAgentEnvPrefix,
 		info.Agent.Path,
 		compressed,
@@ -993,7 +993,7 @@ func buildAgentCommand(
 	agentCommand, workspaceInfo string,
 ) string {
 	command := fmt.Sprintf(
-		"%s%q agent workspace %s --workspace-info %q",
+		"%s%q internal agent workspace %s --workspace-info %q",
 		agent.ContainerAgentEnvPrefix,
 		workspaceClient.AgentPath(),
 		agentCommand,

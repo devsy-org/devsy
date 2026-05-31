@@ -117,7 +117,7 @@ func portForwarding(
 	counter := newConnectionCounter(fwdCtx, exitAfterTimeout, func() {
 		log.Infof(
 			"Stopping port-forward on %s: idle for a while. "+
-				"You can disable this via 'devsy context set-options -o EXIT_AFTER_TIMEOUT=false'",
+				"You can disable this via 'devsy context set -o EXIT_AFTER_TIMEOUT=false'",
 			srcAddr,
 		)
 		cancel(ErrIdleTimeout)

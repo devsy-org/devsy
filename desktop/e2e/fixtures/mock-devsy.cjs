@@ -93,74 +93,12 @@ function saveState(state) {
 
 const state = loadState()
 
-const args = process.argv.slice(2)
+const rawArgs = process.argv.slice(2)
 
-if (args[0] === "--version") {
+if (rawArgs[0] === "--version") {
   process.stdout.write("v0.1.0-test\n")
   process.exit(0)
 }
-
-// Collect positional args and named flag values
-const positional = []
-let idFlag = ""
-let providerFlag = ""
-let ideFlag = ""
-let nameFlag = ""
-let i = 0
-while (i < args.length) {
-  const arg = args[i]
-  if (arg === "--result-format") {
-    i += 2
-    continue
-  }
-  if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
-    i++
-    continue
-  }
-  if (arg === "-o" || arg === "--option") {
-    i += 2
-    continue
-  }
-  if (arg === "--id") {
-    idFlag = args[i + 1] || ""
-    i += 2
-    continue
-  }
-  if (arg === "--provider") {
-    providerFlag = args[i + 1] || ""
-    i += 2
-    continue
-  }
-  if (arg === "--ide") {
-    ideFlag = args[i + 1] || ""
-    i += 2
-    continue
-  }
-  if (arg === "--name") {
-    nameFlag = args[i + 1] || ""
-    i += 2
-    continue
-  }
-  if (["--version", "--timeout"].includes(arg)) {
-    i += 2
-    continue
-  }
-  if (arg === "--recreate" || arg === "--reset" || arg === "--dry-run") {
-    i++
-    continue
-  }
-  if (arg.startsWith("-")) {
-    i++
-    continue
-  }
-  positional.push(arg)
-  i++
-}
-
-const cmd = positional[0] || ""
-const sub = positional[1] || ""
-const extra = positional[2] || ""
-const extra2 = positional[3] || ""
 
 function out(data) {
   process.stdout.write(
@@ -170,11 +108,235 @@ function out(data) {
   )
 }
 
-switch (cmd) {
-  case "list":
-    out(state.workspaces)
-    break
+// Parse a slice of args (positional + recognized flags) into a result object.
+function parseArgs(args) {
+  const positional = []
+  let idFlag = ""
+  let providerFlag = ""
+  let ideFlag = ""
+  let nameFlag = ""
+  let i = 0
+  while (i < args.length) {
+    const arg = args[i]
+    if (arg === "--result-format") {
+      i += 2
+      continue
+    }
+    if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
+      i++
+      continue
+    }
+    if (arg === "-o" || arg === "--option") {
+      i += 2
+      continue
+    }
+    if (arg === "--id") {
+      idFlag = args[i + 1] || ""
+      i += 2
+      continue
+    }
+    if (arg === "--provider") {
+      providerFlag = args[i + 1] || ""
+      i += 2
+      continue
+    }
+    if (arg === "--ide") {
+      ideFlag = args[i + 1] || ""
+      i += 2
+      continue
+    }
+    if (arg === "--name") {
+      nameFlag = args[i + 1] || ""
+      i += 2
+      continue
+    }
+    if (["--version", "--timeout"].includes(arg)) {
+      i += 2
+      continue
+    }
+    if (arg === "--recreate" || arg === "--reset" || arg === "--dry-run") {
+      i++
+      continue
+    }
+    if (arg.startsWith("-")) {
+      i++
+      continue
+    }
+    positional.push(arg)
+    i++
+  }
+  return { positional, idFlag, providerFlag, ideFlag, nameFlag }
+}
 
+// Workspace verb handlers. Each accepts the slice of args AFTER its verb,
+// so handlers behave identically whether invoked as `<verb> ...` (root
+// shortcut) or `workspace <verb> ...` (canonical form).
+function handleList() {
+  out(state.workspaces)
+}
+
+function handleStatus(args) {
+  const { positional } = parseArgs(args)
+  const target = positional[0]
+  const ws = state.workspaces.find((w) => w.id === target)
+  if (ws) {
+    out({ state: ws.status })
+  } else {
+    out({ state: "NotFound" })
+  }
+}
+
+function handleSsh() {
+  process.exit(0)
+}
+
+function handleUp(args) {
+  const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
+  const source = positional[0]
+  out("Resolving source...")
+  out("Pulling image...")
+  out("Starting workspace...")
+  out("Workspace ready.")
+  const wsId =
+    idFlag ||
+    (source ? source.split("/").pop().replace(".git", "") : "") ||
+    "workspace"
+  state.workspaces.push({
+    id: wsId,
+    uid: `ws-${Date.now()}`,
+    source: { gitRepository: source },
+    provider: { name: providerFlag || "docker" },
+    ide: { name: ideFlag || "none" },
+    status: "Running",
+    lastUsed: new Date().toISOString(),
+    created: new Date().toISOString(),
+    context: "default",
+  })
+  saveState(state)
+  process.exit(0)
+}
+
+function handleStop(args) {
+  const { positional } = parseArgs(args)
+  const wsId = positional[0]
+  out("Stopping workspace...")
+  out("Workspace stopped.")
+  const ws = state.workspaces.find((w) => w.id === wsId)
+  if (ws) {
+    ws.status = "Stopped"
+    saveState(state)
+  }
+  process.exit(0)
+}
+
+function handleDelete(args) {
+  const { positional } = parseArgs(args)
+  const wsId = positional[0]
+  out("Deleting workspace...")
+  out("Workspace deleted.")
+  const idx = state.workspaces.findIndex((w) => w.id === wsId)
+  if (idx !== -1) {
+    state.workspaces.splice(idx, 1)
+    saveState(state)
+  }
+  process.exit(0)
+}
+
+function handleRename(args) {
+  const { positional } = parseArgs(args)
+  const oldId = positional[0]
+  const newId = positional[1]
+  if (oldId && newId) {
+    const idx = state.workspaces.findIndex((w) => w.id === oldId)
+    if (idx !== -1) {
+      state.workspaces[idx].id = newId
+      saveState(state)
+    }
+  }
+  out("")
+}
+
+// Unimplemented workspace verbs: exit 0 with empty output.
+function handleNoop() {
+  out("")
+}
+
+const workspaceHandlers = {
+  list: handleList,
+  ls: handleList,
+  status: handleStatus,
+  ssh: handleSsh,
+  up: handleUp,
+  stop: handleStop,
+  delete: handleDelete,
+  rename: handleRename,
+  logs: handleNoop,
+  exec: handleNoop,
+  build: handleNoop,
+  export: handleNoop,
+  import: handleNoop,
+  ping: handleNoop,
+  troubleshoot: handleNoop,
+}
+
+// Feature verb handlers.
+function handleFeatureUpgrade() {
+  out("Already up to date.")
+  process.exit(0)
+}
+
+function handleFeatureNoop() {
+  out("")
+  process.exit(0)
+}
+
+const featureHandlers = {
+  upgrade: handleFeatureUpgrade,
+  outdated: handleFeatureNoop,
+  info: handleFeatureNoop,
+  manifest: handleFeatureNoop,
+  tags: handleFeatureNoop,
+  package: handleFeatureNoop,
+  publish: handleFeatureNoop,
+  test: handleFeatureNoop,
+  "resolve-deps": handleFeatureNoop,
+  docs: handleFeatureNoop,
+}
+
+const cmd = rawArgs[0] || ""
+
+// Canonical form: `devsy feature <verb> ...`
+if (cmd === "feature") {
+  const verb = rawArgs[1]
+  const handler = featureHandlers[verb]
+  if (!handler) {
+    process.stderr.write(`mock-devsy: unknown feature subcommand '${verb}'\n`)
+    process.exit(2)
+  }
+  handler(rawArgs.slice(2))
+  process.exit(0)
+}
+
+// Canonical form: `devsy workspace <verb> ...`
+if (cmd === "workspace") {
+  const verb = rawArgs[1]
+  const handler = workspaceHandlers[verb]
+  if (!handler) {
+    process.stderr.write(`mock-devsy: unknown workspace subcommand '${verb}'\n`)
+    process.exit(2)
+  }
+  handler(rawArgs.slice(2))
+  process.exit(0)
+}
+
+// Non-workspace top-level commands (preserved verbatim).
+const parsed = parseArgs(rawArgs)
+const sub = parsed.positional[1] || ""
+const extra = parsed.positional[2] || ""
+const extra2 = parsed.positional[3] || ""
+const { nameFlag } = parsed
+
+switch (cmd) {
   case "provider":
     switch (sub) {
       case "list":
@@ -225,7 +387,6 @@ switch (cmd) {
         out("")
         break
       }
-      case "remove":
       case "delete": {
         const provName = extra
         if (provName && state.providers[provName]) {
@@ -248,7 +409,6 @@ switch (cmd) {
         out("")
         break
       }
-      case "use":
       case "configure": {
         const provName = extra
         if (provName && state.providers[provName]) {
@@ -258,7 +418,7 @@ switch (cmd) {
         out("")
         break
       }
-      case "default": {
+      case "use": {
         const provName = extra
         if (provName && state.providers[provName]) {
           for (const key of Object.keys(state.providers)) {
@@ -312,7 +472,7 @@ switch (cmd) {
           { name: "staging", default: false },
         ])
         break
-      case "options":
+      case "get":
         out({
           TELEMETRY: { value: "true" },
           AGENT_URL: { value: "" },
@@ -333,7 +493,7 @@ switch (cmd) {
         })
         break
       case "use":
-      case "set-options":
+      case "set":
       case "create":
       case "delete":
         out("")
@@ -344,94 +504,8 @@ switch (cmd) {
     }
     break
 
-  case "status": {
-    const ws = state.workspaces.find((w) => w.id === sub)
-    if (ws) {
-      out({ state: ws.status })
-    } else {
-      out({ state: "NotFound" })
-    }
-    break
-  }
-
   case "version":
     out("v0.1.0-test")
-    break
-
-  case "ssh":
-    // In tests, just exit cleanly
-    process.exit(0)
-    break
-
-  case "up": {
-    const source = sub
-    out("Resolving source...")
-    out("Pulling image...")
-    out("Starting workspace...")
-    out("Workspace ready.")
-    const wsId =
-      idFlag ||
-      (source ? source.split("/").pop().replace(".git", "") : "") ||
-      "workspace"
-    state.workspaces.push({
-      id: wsId,
-      uid: `ws-${Date.now()}`,
-      source: { gitRepository: source },
-      provider: { name: providerFlag || "docker" },
-      ide: { name: ideFlag || "none" },
-      status: "Running",
-      lastUsed: new Date().toISOString(),
-      created: new Date().toISOString(),
-      context: "default",
-    })
-    saveState(state)
-    process.exit(0)
-    break
-  }
-
-  case "stop": {
-    const wsId = sub
-    out("Stopping workspace...")
-    out("Workspace stopped.")
-    const ws = state.workspaces.find((w) => w.id === wsId)
-    if (ws) {
-      ws.status = "Stopped"
-      saveState(state)
-    }
-    process.exit(0)
-    break
-  }
-
-  case "delete": {
-    const wsId = sub
-    out("Deleting workspace...")
-    out("Workspace deleted.")
-    const idx = state.workspaces.findIndex((w) => w.id === wsId)
-    if (idx !== -1) {
-      state.workspaces.splice(idx, 1)
-      saveState(state)
-    }
-    process.exit(0)
-    break
-  }
-
-  case "rename": {
-    const oldId = sub
-    const newId = extra
-    if (oldId && newId) {
-      const idx = state.workspaces.findIndex((w) => w.id === oldId)
-      if (idx !== -1) {
-        state.workspaces[idx].id = newId
-        saveState(state)
-      }
-    }
-    out("")
-    break
-  }
-
-  case "upgrade":
-    out("Already up to date.")
-    process.exit(0)
     break
 
   default:

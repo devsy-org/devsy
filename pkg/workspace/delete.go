@@ -7,6 +7,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 )
@@ -22,7 +23,10 @@ type DeleteOptions struct {
 }
 
 // Delete deletes a workspace, handling imported workspaces, single-machine
-// cleanup, and force-deletion of broken workspaces.
+// cleanup, and force-deletion of broken workspaces. When the workspace is
+// running it is stopped first so callers see a predictable
+// running -> stopped -> deleted lifecycle, and any detached browser tunnel
+// helper is reaped so its host ports do not outlive the workspace.
 func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	client, err := Get(ctx, GetOptions{
 		DevsyConfig: opts.DevsyConfig,
@@ -33,52 +37,78 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 		return handleDeleteLoadError(ctx, opts, err)
 	}
 
+	defer opener.KillBrowserTunnel(client.Context(), client.Workspace())
+
 	if id, done, err := deleteImportedWorkspace(client, opts); done {
 		return id, err
 	}
 
-	unlock, err := checkBeforeDelete(ctx, client, opts)
+	unlock, status, err := checkBeforeDelete(ctx, client, opts)
 	if err != nil {
 		return "", err
 	}
 	defer unlock()
 
+	stopIfRunning(ctx, client, status)
+
 	return deleteWorkspace(ctx, client, opts)
+}
+
+// stopIfRunning stops the workspace before deletion when it is currently
+// running so the lifecycle ordering (running -> stopped -> deleted) is
+// predictable for both CLI and programmatic callers. The stop is
+// best-effort: Delete will force-remove the container anyway, so a failed
+// stop must not block the delete (e.g. when the container is unhealthy or
+// the agent inside is unresponsive).
+func stopIfRunning(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	status client2.Status,
+) {
+	if status != client2.StatusRunning {
+		return
+	}
+
+	if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
+		log.Debugf("stop workspace before delete failed, proceeding: %v", err)
+	}
 }
 
 // checkBeforeDelete acquires the lock and verifies the workspace exists
 // unless force-deletion is requested. It returns an unlock function that
-// must be called by the caller (typically deferred) to release the lock.
+// must be called by the caller (typically deferred) to release the lock,
+// and the resolved workspace status so the caller can decide whether a
+// stop is required before delete.
 func checkBeforeDelete(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
 	opts DeleteOptions,
-) (func(), error) {
+) (func(), client2.Status, error) {
 	force := opts.Force || opts.ClientDelete.Force
 	if force {
-		return func() {}, nil
+		return func() {}, "", nil
 	}
 
 	unlock, err := lockIfNeeded(ctx, client, opts)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	status, err := client.Status(ctx, client2.StatusOptions{})
 	if err != nil {
 		unlock()
-		return nil, err
+		return nil, "", err
 	}
 
 	ignoreNotFound := opts.IgnoreNotFound || opts.ClientDelete.IgnoreNotFound
 	if status == client2.StatusNotFound && !ignoreNotFound {
 		unlock()
-		return nil, fmt.Errorf(
+		return nil, "", fmt.Errorf(
 			"workspace not found, use --force to delete anyway",
 		)
 	}
 
-	return unlock, nil
+	return unlock, status, nil
 }
 
 // lockIfNeeded acquires the workspace lock when not running on a platform and
@@ -110,7 +140,7 @@ func handleDeleteLoadError(
 	if len(opts.Args) == 0 {
 		return "", fmt.Errorf(
 			"failed to load workspace: %w, "+
-				"specify the workspace id to delete, e.g. 'devsy delete my-workspace --force'",
+				"specify the workspace id to delete, e.g. 'devsy workspace delete my-workspace --force'",
 			loadErr,
 		)
 	}

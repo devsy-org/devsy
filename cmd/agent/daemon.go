@@ -56,7 +56,7 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	// to avoid silently scanning a non-existent legacy glob.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
 		return fmt.Errorf(
-			"`devsy agent daemon` is only valid inside the workspace container or machine",
+			"`devsy internal agent daemon` is only valid inside the workspace container or machine",
 		)
 	}
 

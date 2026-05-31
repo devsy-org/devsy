@@ -123,6 +123,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_status",
     async (_event, args: { workspaceId: string }) => {
       return cli.runRaw([
+        "workspace",
         "status",
         args.workspaceId,
         "--result-format",
@@ -140,7 +141,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       args: { workspaceId: string; newWorkspaceId: string },
     ) => {
       trackEvent("workspace_rename", { workspaceId: args.workspaceId })
-      await cli.runRaw(["rename", args.workspaceId, args.newWorkspaceId])
+      await cli.runRaw(["workspace", "rename", args.workspaceId, args.newWorkspaceId])
     },
   )
 
@@ -148,7 +149,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_set_ide",
     async (_event, args: { workspaceId: string; ide: string }) => {
       trackEvent("workspace_set_ide", { ide: args.ide })
-      await cli.runRaw(["ide", "set", args.workspaceId, args.ide])
+      await cli.runRaw(["ide", "set", args.ide, "--workspace", args.workspaceId])
     },
   )
 
@@ -177,12 +178,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   )
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
-    trackEvent("provider_remove")
-    await cli.runRaw(["provider", "remove", args.name])
+    trackEvent("provider_delete")
+    await cli.runRaw(["provider", "delete", args.name])
   })
 
   ipcMain.handle("provider_use", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "default", args.name])
+    await cli.runRaw(["provider", "use", args.name])
   })
 
   // Returns an envelope rather than throwing so a structured cliError survives
@@ -355,7 +356,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "context_options",
     async (_event, args: { context?: string }) => {
-      const cliArgs = ["context", "options"]
+      const cliArgs = ["context", "get"]
       if (args.context) cliArgs.push("--context", args.context)
       return cli.run(cliArgs)
     },
@@ -364,7 +365,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "context_set_options",
     async (_event, args: { options: string[]; context?: string }) => {
-      const cliArgs: string[] = ["context", "set-options"]
+      const cliArgs: string[] = ["context", "set"]
       if (args.context) cliArgs.push(args.context)
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
@@ -395,14 +396,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "devsy_upgrade",
     async (_event, args: { version: string }) => {
-      return cli.runRaw(["upgrade", "--version", args.version])
+      return cli.runRaw(["feature", "upgrade", "--version", args.version])
     },
   )
 
   ipcMain.handle(
     "devsy_upgrade_dry_run",
     async (_event, args: { version: string }) => {
-      return cli.runRaw(["upgrade", "--version", args.version, "--dry-run"])
+      return cli.runRaw(["feature", "upgrade", "--version", args.version, "--dry-run"])
     },
   )
 
@@ -454,7 +455,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
-      const cliArgs = ["up", args.source]
+      const cliArgs = ["workspace", "up", args.source]
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
@@ -538,7 +539,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["stop", args.workspaceId]
+      const cliArgs = ["workspace", "stop", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(
@@ -584,7 +585,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["delete", args.workspaceId]
+      const cliArgs = ["workspace", "delete", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
       cliArgs.push("--force")
 
@@ -625,7 +626,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["up", args.workspaceId, "--recreate"]
+      const cliArgs = ["workspace", "up", args.workspaceId, "--recreate"]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(
@@ -665,7 +666,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
 
-      const cliArgs = ["up", args.workspaceId, "--reset"]
+      const cliArgs = ["workspace", "up", args.workspaceId, "--reset"]
       if (args.debug) cliArgs.push("--debug")
 
       cli.runStreaming(

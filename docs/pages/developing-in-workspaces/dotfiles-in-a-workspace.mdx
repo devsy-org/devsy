@@ -39,13 +39,13 @@ If a custom install script is specified, Devsy will directly run that one instea
 Run the following command to a workspace with a dotfiles repo:
 
 ```
-devsy up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo
+devsy workspace up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo
 ```
 
 Specifying a custom install script:
 
 ```
-devsy up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo --dotfiles-script custom/location/install.sh
+devsy workspace up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo --dotfiles-script custom/location/install.sh
 ```
 
 #### For all Workspaces
@@ -56,7 +56,7 @@ dotfiles ad dotfiles-script for each single workspace:
 Example with a real repository:
 
 ```
-devsy context set-options -o DOTFILES_URL=https://github.com/89luca89/dotfiles -o DOTFILES_SCRIPT=bin/.local/bin/dotfiles
+devsy context set -o DOTFILES_URL=https://github.com/89luca89/dotfiles -o DOTFILES_SCRIPT=bin/.local/bin/dotfiles
 ```
 
 All new Workspaces will be created with that dotfile repository and install script.

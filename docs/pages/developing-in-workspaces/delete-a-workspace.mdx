@@ -17,12 +17,12 @@ In the 'Workspaces' view, open the actions menu for the workspace and choose 'De
 
 Run the following command to delete a workspace:
 ```
-devsy delete my-workspace
+devsy workspace delete my-workspace
 ```
 
 If deletion fails because the Provider is not reachable anymore or another error has occurred, you can also force delete a workspace via:
 ```
-devsy delete my-workspace --force
+devsy workspace delete my-workspace --force
 ```
 
 However, this means the workspace will only be deleted on the Devsy side locally, and any error raised by the used provider will be ignored. Only use this option with caution as this might leave previously created resources behind.

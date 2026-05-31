@@ -211,7 +211,7 @@ func (o *FleetServer) startMonitor() error {
 
 	return command.StartBackgroundOnce("fleet-monitor", func() (*exec.Cmd, error) {
 		log.Infof("starting fleet monitor in background")
-		runCommand := fmt.Sprintf("%s helper fleet-server --workspaceid %s", self, "test")
+		runCommand := fmt.Sprintf("%s internal helper fleet-server --workspaceid %s", self, "test")
 		args := []string{}
 		if o.userName != "" {
 			args = append(args, "su", o.userName, "-c", runCommand)

@@ -35,7 +35,7 @@ func TestProcessFeatureID_LocalPath_ResolvesRelativeToConfigOrigin(t *testing.T)
 }
 
 // TestProcessFeatureID_LocalPath_ViaMergedOrigin verifies that the full
-// parse-then-merge-then-resolve flow used by `devsy set-up` carries Origin
+// parse-then-merge-then-resolve flow used by `devsy config apply` carries Origin
 // through MergeConfiguration so that local feature paths resolve correctly.
 func TestProcessFeatureID_LocalPath_ViaMergedOrigin(t *testing.T) {
 	originDir := filepath.Join("/abs/path", ".devcontainer")
