@@ -7,7 +7,7 @@ curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/de
 Update the provider
 
 ```bash
-devsy provider update kubernetes kubernetes
+devsy provider set-source kubernetes kubernetes
 ```
 
 Version deployed and version of source code matters. Make sure they match. Pull the latest version of the source code. And copy the devcontainer.json file to the source code. Or you can use the latest version of `gcr.io/istio-testing/build-tools` image.
