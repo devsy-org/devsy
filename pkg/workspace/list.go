@@ -130,7 +130,11 @@ func ListLocalWorkspaces(
 
 		workspaceConfig, err := providerpkg.LoadWorkspaceConfig(contextName, entry.Name())
 		if err != nil {
-			log.Warnf("could not load workspace: workspace=%s, error=%v", entry.Name(), err)
+			if os.IsNotExist(err) {
+				log.Debugf("skipping workspace without config: workspace=%s", entry.Name())
+			} else {
+				log.Warnf("could not load workspace: workspace=%s, error=%v", entry.Name(), err)
+			}
 			continue
 		}
 
