@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/ideparse"
+	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	"github.com/spf13/cobra"
 )
@@ -27,18 +28,14 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	useCmd := &cobra.Command{
-		Use:   "use",
+		Use:   "use <ide>",
 		Short: "Configure the default IDE to use (list available IDEs with 'devsy ide list')",
 		Long: `Configure the default IDE to use
 
 Available IDEs can be listed with 'devsy ide list'`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf(
-					"specify the ide to use, list available IDEs with 'devsy ide list'",
-				)
-			}
-
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},
 	}
@@ -75,6 +72,7 @@ func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
+	log.Infof("default IDE set to %q", ide)
 	return nil
 }
 

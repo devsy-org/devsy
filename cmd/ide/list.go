@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
-	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -59,9 +59,13 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	case output.ModePlain:
 		tableEntries := [][]string{}
 		for _, entry := range ideparse.AllowedIDEs {
+			marker := ""
+			if devsyConfig.Current().DefaultIDE == string(entry.Name) {
+				marker = "*"
+			}
 			tableEntries = append(tableEntries, []string{
 				string(entry.Name),
-				strconv.FormatBool(devsyConfig.Current().DefaultIDE == string(entry.Name)),
+				marker,
 			})
 		}
 		sort.SliceStable(tableEntries, func(i, j int) bool {
@@ -85,7 +89,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Print(string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 	}
 
 	return nil
