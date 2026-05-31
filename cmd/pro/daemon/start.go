@@ -131,7 +131,7 @@ func withGracefulShutdown(ctx context.Context) (context.Context, func()) {
 		for {
 			select {
 			case sig := <-sigChan:
-				log.Infof("Received signal %s, starting graceful shutdown...", sig)
+				log.Infof("Received signal %s, starting graceful shutdown", sig)
 
 				cancel()
 			case <-ctx.Done():

@@ -124,7 +124,7 @@ func (r *runner) getDefaultConfig(
 			Image: options.FallbackImage,
 		}
 	} else {
-		log.Infof("Try detecting project programming language...")
+		log.Infof("Try detecting project programming language")
 		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder)
 	}
 

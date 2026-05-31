@@ -347,7 +347,7 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	}
 
 	// wait for pod running
-	log.Infof("Waiting for DevContainer Pod %q to come up...", id)
+	log.Infof("Waiting for DevContainer Pod %q to come up", id)
 	_, err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err

@@ -417,7 +417,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// get login link
-	log.Info("Checking Devsy status...")
+	log.Info("Checking Devsy status")
 	host, err := getIngressHost(ctx, cmd.KubeClient, cmd.Namespace)
 	if err != nil {
 		return err
@@ -576,7 +576,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
-	log.Infof("Starting Devsy Pro in Docker...")
+	log.Infof("Starting Devsy Pro in Docker")
 	name := config.ProReleaseName
 
 	// prepare installation
@@ -644,7 +644,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait for domain to become reachable
-	log.Infof("Wait for Devsy Pro to become available at %s...", host)
+	log.Infof("Wait for Devsy Pro to become available at %s", host)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -701,7 +701,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
-	log.Info("Wait for Devsy Pro to become available...")
+	log.Info("Wait for Devsy Pro to become available")
 
 	// check for local port
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
@@ -771,7 +771,7 @@ func (cmd *StartCmd) prepareDocker() error {
 }
 
 func (cmd *StartCmd) uninstallDocker(ctx context.Context, id string) error {
-	log.Infof("Uninstalling...")
+	log.Infof("Uninstalling")
 
 	// stop container
 	out, err := cmd.buildDockerCmd(ctx, "stop", id).Output()
@@ -1619,7 +1619,7 @@ func ensureIngressController(
 		}
 		fmt.Fprint(os.Stderr, "\n")
 		log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-		log.Info("Waiting for ingress controller deployment, this can take several minutes...")
+		log.Info("Waiting for ingress controller deployment, this can take several minutes")
 		helmCmd := exec.CommandContext(
 			ctx,
 			"helm",
@@ -1893,7 +1893,7 @@ func upgradeRelease(
 
 	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-	log.Info("Waiting for helm command, this can take up to several minutes...")
+	log.Info("Waiting for helm command, this can take up to several minutes")
 	helmCmd := exec.CommandContext(
 		ctx,
 		"helm",

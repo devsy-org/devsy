@@ -34,7 +34,7 @@ func NewOpenVSCodeAsyncCmd() *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *OpenVSCodeAsyncCmd) Run(_ *cobra.Command, _ []string) error {
-	log.Debugf("Start setting up container...")
+	log.Debugf("Start setting up container")
 	decompressed, err := compress.Decompress(cmd.SetupInfo)
 	if err != nil {
 		return err

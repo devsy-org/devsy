@@ -37,7 +37,7 @@ func (k *KubernetesDriver) EnsurePullSecret(
 		}
 
 		log.Debugf(
-			"Pull secret %q already exists, but is outdated. Recreating...",
+			"Pull secret %q already exists, but is outdated. Recreating",
 			pullSecretName,
 		)
 		err := k.DeleteSecret(ctx, pullSecretName)

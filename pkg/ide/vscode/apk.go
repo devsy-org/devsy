@@ -27,7 +27,7 @@ func InstallAPKRequirements() {
 		// Wolfi-based distros don't need this, and Wolfi doesn't have it.
 		dependencies = append(dependencies, "gcompat")
 	}
-	log.Debugf("Install apk requirements...")
+	log.Debugf("Install apk requirements")
 	if !command.Exists("git") {
 		dependencies = append(dependencies, "git")
 	}

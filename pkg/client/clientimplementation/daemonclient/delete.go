@@ -101,7 +101,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 	}
 
 	// wait until the workspace is deleted
-	log.Debugf("Waiting for workspace to get deleted...")
+	log.Debugf("Waiting for workspace to get deleted")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -121,7 +121,7 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 				return true, nil
 			}
 
-			log.Debugf("Workspace is not deleted yet, waiting again...")
+			log.Debugf("Workspace is not deleted yet, waiting again")
 			return false, nil
 		},
 	)

@@ -277,7 +277,7 @@ func (cmd *LoginCmd) addLoftProvider(
 	}
 
 	// add the provider
-	log.Infof("Add Devsy Pro provider...")
+	log.Infof("Add Devsy Pro provider")
 
 	// is development?
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {

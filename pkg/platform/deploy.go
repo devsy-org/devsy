@@ -49,7 +49,7 @@ func WaitForPodReady(
 				return false, nil
 			} else if len(pods.Items) == 0 {
 				if time.Now().After(now.Add(time.Second * 10)) {
-					log.Infof("Still waiting for a %s pod...", pkgconfig.ProductNamePro)
+					log.Infof("Still waiting for a %s pod", pkgconfig.ProductNamePro)
 					now = time.Now()
 				}
 				return false, nil
@@ -132,7 +132,7 @@ func WaitForPodReady(
 						)
 					} else {
 						log.Infof(
-							"Keep waiting, %s container is still starting up...",
+							"Keep waiting, %s container is still starting up",
 							pkgconfig.ProductNamePro,
 						)
 					}

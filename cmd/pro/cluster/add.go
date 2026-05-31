@@ -269,7 +269,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		helmCmd.Stderr = log.Writer(log.LevelDebug)
 		helmCmd.Stdin = os.Stdin
 
-		log.Info("Installing agent...")
+		log.Info("Installing agent")
 		log.Debugf("Running helm command: %v", helmCmd.Args)
 
 		err = helmCmd.Run()
@@ -286,7 +286,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	if cmd.Wait {
-		log.Info("Waiting for the cluster to be initialized...")
+		log.Info("Waiting for the cluster to be initialized")
 		waitErr := wait.PollUntilContextTimeout(
 			ctx,
 			time.Second,

@@ -329,7 +329,7 @@ func (c *client) Login(host string, insecure bool) error {
 		}
 		msg += "'"
 		log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
-		log.Infof("Logging into Devsy Pro...")
+		log.Infof("Logging into Devsy Pro")
 
 		key = <-keyChannel
 	}

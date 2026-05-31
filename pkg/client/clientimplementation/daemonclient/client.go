@@ -178,7 +178,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		return fmt.Errorf("reach host: %w", err)
 	}
 
-	log.Debugf("Host %s is reachable. Proceeding with SSH session...", wAddr.Host())
+	log.Debugf("Host %s is reachable. Proceeding with SSH session", wAddr.Host())
 	return nil
 }
 

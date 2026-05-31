@@ -115,7 +115,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// wait for sleeping
-	log.Info("Wait until workspace is sleeping...")
+	log.Info("Wait until workspace is sleeping")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,

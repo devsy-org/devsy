@@ -26,7 +26,7 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 		}
 
 		log.Debugf(
-			"Daemon config secret %q already exists, but is outdated. Recreating...",
+			"Daemon config secret %q already exists, but is outdated. Recreating",
 			secretName,
 		)
 		err := k.DeleteSecret(ctx, secretName)

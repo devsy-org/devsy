@@ -17,7 +17,7 @@ func Open(
 	values map[string]config.OptionValue,
 	userName, workspaceFolder, workspaceID string,
 ) error {
-	log.Info("Opening Zed editor...")
+	log.Info("Opening Zed editor")
 
 	if len(workspaceFolder) == 0 || workspaceFolder[0] != '/' {
 		workspaceFolder = fmt.Sprintf("/%s", workspaceFolder)
