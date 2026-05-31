@@ -128,7 +128,7 @@ func (s *ValidatorTestSuite) TestValidateDistro_Unsupported() {
 	distro := &Distro{ID: "arch", Version: "rolling"}
 	err := validator.ValidateDistro(distro)
 	s.Error(err)
-	s.Contains(s.stderr.String(), "Unsupported distribution 'arch'")
+	s.Contains(s.stderr.String(), `Unsupported distribution "arch"`)
 }
 
 func (s *ValidatorTestSuite) TestSleep_DryRun() {
