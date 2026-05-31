@@ -119,15 +119,15 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 
 	log.Infof("installed provider: providerName=%s", providerConfig.Name)
 	if cmd.Use {
+		// First add: there are no prior user values to merge, so
+		// DiscardPriorValues is moot. Set it explicitly so future readers
+		// don't wonder whether merging matters here.
 		configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
-			Provider:       providerConfig,
-			Context:        devsyConfig.DefaultContext,
-			UserOptions:    options,
-			Reconfigure:    true,
-			SkipRequired:   false,
-			SkipInit:       false,
-			SkipSubOptions: false,
-			SingleMachine:  &cmd.SingleMachine,
+			Provider:           providerConfig,
+			ContextName:        devsyConfig.DefaultContext,
+			UserOptions:        options,
+			DiscardPriorValues: true,
+			SingleMachine:      &cmd.SingleMachine,
 		})
 		if configureErr != nil {
 			devsyConfig, err := config.LoadConfig(cmd.Context, "")

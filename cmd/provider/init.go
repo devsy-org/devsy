@@ -11,7 +11,7 @@ import (
 // InitCmd holds flags for the `provider init` subcommand.
 type InitCmd struct {
 	*flags.GlobalFlags
-	Reconfigure   bool
+	Reset         bool
 	SingleMachine bool
 	Options       []string
 	SkipInit      bool
@@ -38,14 +38,12 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 			return ConfigureProvider(cobraCmd.Context(), ProviderOptionsConfig{
-				Provider:       p.Config,
-				Context:        devsyConfig.DefaultContext,
-				UserOptions:    cmd.Options,
-				Reconfigure:    cmd.Reconfigure,
-				SkipRequired:   false,
-				SkipInit:       cmd.SkipInit,
-				SkipSubOptions: false,
-				SingleMachine:  &cmd.SingleMachine,
+				Provider:           p.Config,
+				ContextName:        devsyConfig.DefaultContext,
+				UserOptions:        cmd.Options,
+				DiscardPriorValues: cmd.Reset,
+				SkipInit:           cmd.SkipInit,
+				SingleMachine:      &cmd.SingleMachine,
 			})
 		},
 		ValidArgsFunction: func(
@@ -64,7 +62,7 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 	initCmd.Flags().
-		BoolVar(&cmd.Reconfigure, "reconfigure", false, "Force re-resolution of all options")
+		BoolVar(&cmd.Reset, "reset", false, "Discard previously stored option answers and re-prompt from scratch")
 	initCmd.Flags().
 		BoolVar(&cmd.SingleMachine, "single-machine", false, "Use a single machine for all workspaces")
 	initCmd.Flags().

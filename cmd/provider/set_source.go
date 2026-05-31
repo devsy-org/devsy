@@ -74,15 +74,14 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return nil
 	}
 
+	// Preserve previously user-provided values (default DiscardPriorValues=false).
+	// The resolver prunes keys absent from the new schema and re-resolves values
+	// that fail validation, so stale data cannot leak through this path.
 	if err := ConfigureProvider(ctx, ProviderOptionsConfig{
 		Provider:    providerConfig,
-		Context:     devsyConfig.DefaultContext,
+		ContextName: devsyConfig.DefaultContext,
 		UserOptions: cmd.Options,
 	}); err != nil {
-		log.Errorf(
-			"Error initializing provider, retry with 'devsy provider init %s --reconfigure'",
-			providerConfig.Name,
-		)
 		return fmt.Errorf("configure provider: %w", err)
 	}
 

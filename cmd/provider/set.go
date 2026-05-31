@@ -20,7 +20,6 @@ type SetCmd struct {
 	Dry      bool
 	SkipInit bool
 
-	Reconfigure   bool
 	SingleMachine bool
 	Options       []string
 }
@@ -51,8 +50,6 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 	setCmd.Flags().
 		BoolVar(&cmd.SingleMachine, "single-machine", false, "If enabled will use a single machine for all workspaces")
 	setCmd.Flags().
-		BoolVar(&cmd.Reconfigure, "reconfigure", false, "If enabled will not merge existing provider config")
-	setCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
 	setCmd.Flags().
 		BoolVar(&cmd.Dry, "dry", false, "Dry will not persist the options to file and instead return the new filled options")
@@ -68,14 +65,12 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	devsyConfig, err = configureProviderOptions(ctx, ProviderOptionsConfig{
-		Provider:       providerWithOptions.Config,
-		Context:        devsyConfig.DefaultContext,
-		UserOptions:    cmd.Options,
-		Reconfigure:    cmd.Reconfigure,
-		SkipRequired:   cmd.Dry,
-		SkipInit:       cmd.Dry || cmd.SkipInit,
-		SkipSubOptions: false,
-		SingleMachine:  &cmd.SingleMachine,
+		Provider:      providerWithOptions.Config,
+		ContextName:   devsyConfig.DefaultContext,
+		UserOptions:   cmd.Options,
+		SkipRequired:  cmd.Dry,
+		SkipInit:      cmd.Dry || cmd.SkipInit,
+		SingleMachine: &cmd.SingleMachine,
 	})
 	if err != nil {
 		return err

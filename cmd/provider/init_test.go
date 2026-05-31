@@ -15,7 +15,7 @@ func TestNewInitCmd(t *testing.T) {
 		t.Error("Short must be set")
 	}
 	// Verify flags exist
-	for _, flag := range []string{"reconfigure", "single-machine", "option", "skip-init"} {
+	for _, flag := range []string{"reset", "single-machine", "option", "skip-init"} {
 		if cmd.Flag(flag) == nil {
 			t.Errorf("missing flag %q", flag)
 		}
