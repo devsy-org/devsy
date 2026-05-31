@@ -1,19 +1,19 @@
 ---
-title: Update a Provider
-sidebar_label: Update a Provider
+title: Set a provider's source
+sidebar_label: Set a provider's source
 ---
 
 
 To update a provider to its latest version, you can use:
 
 ```sh
-devsy provider update <name>
+devsy provider set-source <name>
 ```
 
 To update to a specific version, pass `--version <tag>`:
 
 ```sh
-devsy provider update <name> --version v0.2.0
+devsy provider set-source <name> --version v0.2.0
 ```
 
 To list the available versions for an installed provider, use:
@@ -26,12 +26,12 @@ devsy provider versions <name>
 
 Similar to adding a provider, you can update via:
 ```sh
-devsy provider update <provider-name> my-org/my-repo
+devsy provider set-source <provider-name> my-org/my-repo
 ```
 
 If you want to update (or downgrade) a specific version, you can do:
 ```sh
-devsy provider update <provider-name> github.com/my-org/my-repo@v0.2.0
+devsy provider set-source <provider-name> github.com/my-org/my-repo@v0.2.0
 ```
 
 ## From URL
@@ -39,12 +39,12 @@ devsy provider update <provider-name> github.com/my-org/my-repo@v0.2.0
 You can also specify the URL to the `provider.yaml` file, for example:
 
 ```sh
-devsy provider update <provider-name> http://path/to/my/provider.yaml
+devsy provider set-source <provider-name> http://path/to/my/provider.yaml
 ```
 
 ### From File
 
 Run the following command to update provider `provider-name`:
 ```sh
-devsy provider update <provider-name> ../path-to-updated/provider.yaml
+devsy provider set-source <provider-name> ../path-to-updated/provider.yaml
 ```

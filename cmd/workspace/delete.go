@@ -26,8 +26,9 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	deleteCmd := &cobra.Command{
-		Use:   "delete [flags] [workspace-path|workspace-name]",
-		Short: "Deletes an existing workspace",
+		Use:     "delete [flags] [workspace-path|workspace-name]",
+		Aliases: []string{"rm"},
+		Short:   "Deletes an existing workspace",
 		Long: `Deletes an existing workspace. You can specify the workspace by its path or name.
 If the workspace is not found, you can use the --ignore-not-found flag to treat it as a successful delete.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {

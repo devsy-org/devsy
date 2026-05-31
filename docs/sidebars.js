@@ -133,7 +133,7 @@ module.exports = {
         },
         {
           type: "doc",
-          id: "managing-providers/update-provider",
+          id: "managing-providers/set-source",
         },
         {
           type: "doc",

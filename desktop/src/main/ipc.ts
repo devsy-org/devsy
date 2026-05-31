@@ -192,7 +192,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // own-properties, so a thrown Error with a .cliError attached would lose it.
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
     try {
-      await cli.runRaw(["provider", "configure", args.name])
+      await cli.runRaw(["provider", "init", args.name])
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError
@@ -208,7 +208,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const win = deps.getMainWindow()
 
       await cli.runStreaming(
-        ["provider", "configure", args.name],
+        ["provider", "init", args.name],
         (line, _stream, meta) => {
           const formatted = formatLogLine(line)
           win?.webContents.send("command-progress", {
@@ -238,7 +238,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   )
 
   ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "update", args.name, "--use=false"])
+    await cli.runRaw(["provider", "set-source", args.name, "--use=false"])
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
@@ -284,7 +284,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "provider_set_version",
     async (_event, args: { name: string; tag: string }) => {
-      await cli.runRaw(["provider", "update", args.name, "--version", args.tag])
+      await cli.runRaw(["provider", "set-source", args.name, "--version", args.tag])
     },
   )
 

@@ -94,7 +94,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				cancel()
 
-				err = f.DevsyProviderUpdate(
+				err = f.DevsyProviderSetSource(
 					ctx,
 					"provider2",
 					tempDir+"/provider2-update.yaml",
