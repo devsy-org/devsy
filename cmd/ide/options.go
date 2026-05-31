@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -26,13 +27,11 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	optionsCmd := &cobra.Command{
-		Use:   "get",
-		Short: "Get IDE options",
+		Use:               "get <ide>",
+		Short:             "Get IDE options (list available IDEs with 'devsy ide list')",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf("specify the ide")
-			}
-
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},
 	}
@@ -94,11 +93,11 @@ func (cmd *OptionsCmd) Run(ctx context.Context, ide string) error {
 			}
 		}
 
-		out, err := json.Marshal(options)
+		out, err := json.MarshalIndent(options, "", "  ")
 		if err != nil {
 			return err
 		}
-		fmt.Print(string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 	}
 
 	return nil

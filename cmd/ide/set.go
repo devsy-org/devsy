@@ -8,8 +8,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide/ideparse"
-	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -17,28 +15,29 @@ import (
 type SetCmd struct {
 	*flags.GlobalFlags
 
-	Options   []string
-	Workspace string
+	Options []string
 }
 
-// NewSetCmd creates the 'devsy ide set' command. Without --workspace it sets
-// global options for the named IDE; with --workspace it assigns the IDE to an
-// existing workspace without starting it.
+// NewSetCmd creates the 'devsy ide set' command. It sets global options for
+// the named IDE. To assign an IDE to a specific workspace, use
+// 'devsy workspace set-ide <workspace> <ide>'.
 func NewSetCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SetCmd{
 		GlobalFlags: flags,
 	}
 	setCmd := &cobra.Command{
 		Use:   "set <ide>",
-		Short: "Set IDE options, or assign an IDE to a workspace with --workspace",
-		Long: `Set IDE options for the named IDE.
+		Short: "Set global IDE options",
+		Long: `Set global options for the named IDE.
 
-With --workspace <name>, assigns the IDE to an existing workspace without
-starting it. The change is persisted to the workspace config and used on the
-next 'devsy workspace up'. Available IDEs can be listed with 'devsy ide list'.`,
+To assign an IDE to a specific workspace, use
+'devsy workspace set-ide <workspace> <ide>'. Available IDEs can be listed
+with 'devsy ide list'.`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return fmt.Errorf("specify the ide")
+			if len(cmd.Options) == 0 {
+				return fmt.Errorf("nothing to do: pass --option KEY=VALUE")
 			}
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},
@@ -46,8 +45,6 @@ next 'devsy workspace up'. Available IDEs can be listed with 'devsy ide list'.`,
 
 	setCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "IDE option in the form KEY=VALUE")
-	setCmd.Flags().
-		StringVar(&cmd.Workspace, "workspace", "", "Assign the IDE to this workspace instead of setting global options")
 	return setCmd
 }
 
@@ -64,38 +61,12 @@ func (cmd *SetCmd) Run(_ context.Context, ideName string) error {
 		return err
 	}
 
-	if cmd.Workspace != "" {
-		return cmd.runWorkspace(devsyConfig, ideName)
-	}
-
-	if len(cmd.Options) > 0 {
-		if err := setOptions(devsyConfig, ideName, cmd.Options, ideOptions); err != nil {
-			return err
-		}
+	if err := setOptions(devsyConfig, ideName, cmd.Options, ideOptions); err != nil {
+		return err
 	}
 
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	return nil
-}
-
-func (cmd *SetCmd) runWorkspace(devsyConfig *config.Config, ideName string) error {
-	contextName := devsyConfig.DefaultContext
-	if !provider.WorkspaceExists(contextName, cmd.Workspace) {
-		return fmt.Errorf("workspace %q not found in context %q", cmd.Workspace, contextName)
-	}
-
-	workspace, err := provider.LoadWorkspaceConfig(contextName, cmd.Workspace)
-	if err != nil {
-		return fmt.Errorf("load workspace config: %w", err)
-	}
-
-	workspace, err = ideparse.RefreshIDEOptions(devsyConfig, workspace, ideName, cmd.Options)
-	if err != nil {
-		return fmt.Errorf("refresh ide options: %w", err)
-	}
-
-	log.Infof("set IDE for workspace %q to %q", workspace.ID, workspace.IDE.Name)
 	return nil
 }
