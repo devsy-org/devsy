@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ConfigureCmd holds flags for the `provider configure` subcommand.
-type ConfigureCmd struct {
+// InitCmd holds flags for the `provider init` subcommand.
+type InitCmd struct {
 	*flags.GlobalFlags
 	Reconfigure   bool
 	SingleMachine bool
@@ -17,12 +17,12 @@ type ConfigureCmd struct {
 	SkipInit      bool
 }
 
-// NewConfigureCmd creates the cobra command for `provider configure`.
-func NewConfigureCmd(f *flags.GlobalFlags) *cobra.Command {
-	cmd := &ConfigureCmd{GlobalFlags: f}
-	configureCmd := &cobra.Command{
-		Use:   "configure [name]",
-		Short: "Re-run init and option resolution for an existing provider",
+// NewInitCmd creates the cobra command for `provider init`.
+func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
+	cmd := &InitCmd{GlobalFlags: f}
+	initCmd := &cobra.Command{
+		Use:   "init [name]",
+		Short: "Run or re-run init and option resolution for an existing provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
@@ -63,14 +63,14 @@ func NewConfigureCmd(f *flags.GlobalFlags) *cobra.Command {
 			)
 		},
 	}
-	configureCmd.Flags().
+	initCmd.Flags().
 		BoolVar(&cmd.Reconfigure, "reconfigure", false, "Force re-resolution of all options")
-	configureCmd.Flags().
+	initCmd.Flags().
 		BoolVar(&cmd.SingleMachine, "single-machine", false, "Use a single machine for all workspaces")
-	configureCmd.Flags().
+	initCmd.Flags().
 		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-	configureCmd.Flags().
+	initCmd.Flags().
 		BoolVar(&cmd.SkipInit, "skip-init", false, "Skip provider init (testing only)")
-	_ = configureCmd.Flags().MarkHidden("skip-init")
-	return configureCmd
+	_ = initCmd.Flags().MarkHidden("skip-init")
+	return initCmd
 }

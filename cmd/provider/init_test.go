@@ -6,10 +6,10 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 )
 
-func TestNewConfigureCmd(t *testing.T) {
-	cmd := NewConfigureCmd(&flags.GlobalFlags{})
-	if cmd.Use != "configure [name]" {
-		t.Errorf("Use: got %q want %q", cmd.Use, "configure [name]")
+func TestNewInitCmd(t *testing.T) {
+	cmd := NewInitCmd(&flags.GlobalFlags{})
+	if cmd.Use != "init [name]" {
+		t.Errorf("Use: got %q want %q", cmd.Use, "init [name]")
 	}
 	if cmd.Short == "" {
 		t.Error("Short must be set")
