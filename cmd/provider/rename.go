@@ -26,9 +26,10 @@ func NewRenameCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	return &cobra.Command{
-		Use:   "rename <current-name> <new-name>",
-		Short: "Rename a provider",
-		Args:  cobra.ExactArgs(2),
+		Use:     "rename <current-name> <new-name>",
+		Aliases: []string{"mv"},
+		Short:   "Rename a provider",
+		Args:    cobra.ExactArgs(2),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
