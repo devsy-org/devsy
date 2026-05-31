@@ -7,10 +7,10 @@ on:
   pull_request:
 
 # Cancel in-flight runs for the same PR when a new commit is pushed.
-# main-branch pushes are not cancelled — each commit on main should
-# run independently so historical results remain bisection-friendly.
+# Non-PR events (main pushes, workflow_dispatch) get a unique group per
+# run so they bypass concurrency entirely and run independently.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
