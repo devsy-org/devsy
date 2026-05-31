@@ -256,7 +256,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 				)
 			}
 			log.Debugf(
-				"WaitContainerRunning: container %s status=%s, waiting...",
+				"WaitContainerRunning: container %s status=%s, waiting",
 				containerID,
 				status,
 			)

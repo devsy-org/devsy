@@ -73,7 +73,7 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 			i.opts.downloadURL, i.distro.ID,
 		),
 		"chmod a+r /etc/apt/keyrings/docker.gpg",
-		fmt.Sprintf("echo \"%s\" > /etc/apt/sources.list.d/docker.list", aptRepo),
+		fmt.Sprintf("echo %q > /etc/apt/sources.list.d/docker.list", aptRepo),
 		"apt-get update -qq >/dev/null",
 	}
 
@@ -109,7 +109,7 @@ func (i *DebianInstaller) findPackageVersion(pkgName string) (string, error) {
 	pkgPattern = strings.ReplaceAll(pkgPattern, "-", ".*")
 	pkgPattern = strings.ReplaceAll(pkgPattern, ".", "\\.")
 	searchCmd := fmt.Sprintf(
-		"apt-cache madison '%s' | grep '%s' | head -1 | awk '{$1=$1};1' | cut -d' ' -f 3",
+		"apt-cache madison %q | grep %q | head -1 | awk '{$1=$1};1' | cut -d' ' -f 3",
 		pkgName, pkgPattern,
 	)
 
@@ -124,7 +124,7 @@ func (i *DebianInstaller) findPackageVersion(pkgName string) (string, error) {
 	}
 	if len(out) == 0 {
 		return "", fmt.Errorf(
-			"version '%s' not found in apt-cache madison results for %s",
+			"version %q not found in apt-cache madison results for %s",
 			i.opts.version,
 			pkgName,
 		)

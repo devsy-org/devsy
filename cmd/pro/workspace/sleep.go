@@ -58,7 +58,7 @@ func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("please provide a workspace name")
+		return fmt.Errorf("provide a workspace name")
 	}
 	targetWorkspace := args[0]
 
@@ -115,7 +115,7 @@ func (cmd *SleepCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// wait for sleeping
-	log.Info("Wait until workspace is sleeping...")
+	log.Info("Wait until workspace is sleeping")
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,

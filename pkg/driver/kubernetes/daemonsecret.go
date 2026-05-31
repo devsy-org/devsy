@@ -21,12 +21,12 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 
 	if k.secretExists(ctx, secretName) {
 		if !k.shouldRecreateDaemonConfigSecret(ctx, data, secretName) {
-			log.Debugf("Daemon config secret '%s' already exists and is up to date", secretName)
+			log.Debugf("Daemon config secret %q already exists and is up to date", secretName)
 			return nil
 		}
 
 		log.Debugf(
-			"Daemon config secret '%s' already exists, but is outdated. Recreating...",
+			"Daemon config secret %q already exists, but is outdated. Recreating",
 			secretName,
 		)
 		err := k.DeleteSecret(ctx, secretName)
@@ -46,7 +46,7 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 		return fmt.Errorf("create daemon config secret: %w", err)
 	}
 
-	log.Infof("Daemon config secret '%s' created", secretName)
+	log.Infof("Daemon config secret %q created", secretName)
 	return nil
 }
 

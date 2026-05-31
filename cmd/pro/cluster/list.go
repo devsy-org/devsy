@@ -78,7 +78,7 @@ func (cmd *ListClustersCmd) Run(
 		Stdout:  &buf,
 	})
 	if err != nil {
-		return fmt.Errorf("list clusters with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("list clusters with provider %q: %w", provider.Name, err)
 	}
 
 	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Online"}

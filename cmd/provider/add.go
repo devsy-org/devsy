@@ -106,7 +106,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		)
 	} else {
 		if len(args) != 1 {
-			return fmt.Errorf("please specify either a URL or path, " +
+			return fmt.Errorf("specify either a URL or path, " +
 				"e.g. devsy provider add https://path/to/my/provider.yaml")
 		}
 		c, err := workspace.AddProvider(devsyConfig, providerName, args[0])
@@ -146,7 +146,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return writeDefaultProvider(cmd.Context, providerConfig.Name)
 	}
 
-	log.Infof("To configure the provider, please run the following command:")
+	log.Infof("To configure the provider, run the following command:")
 	log.Infof("devsy provider configure %s", providerConfig.Name)
 	return nil
 }

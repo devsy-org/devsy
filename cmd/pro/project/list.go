@@ -71,7 +71,7 @@ func (cmd *ListProjectsCmd) Run(
 		Stdout:  &buf,
 	})
 	if err != nil {
-		return fmt.Errorf("watch workspaces with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("watch workspaces with provider %q: %w", provider.Name, err)
 	}
 
 	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Description"}

@@ -61,7 +61,7 @@ func (o *MarimoServer) Start() error {
 	return command.StartBackgroundOnce("marimo", func() (*exec.Cmd, error) {
 		log.Infof("Starting marimo in background")
 		runCommand := fmt.Sprintf(
-			"marimo edit --headless --host 0.0.0.0 --port %s --no-token '%s'",
+			"marimo edit --headless --host 0.0.0.0 --port %s --no-token %q",
 			strconv.Itoa(DefaultServerPort),
 			o.workspaceFolder,
 		)

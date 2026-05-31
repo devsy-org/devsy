@@ -170,12 +170,12 @@ func (c *CodeServer) Start() error {
 	userDataDir := filepath.Join(homeFolder, ".local", "share", "code-server")
 
 	return command.StartBackgroundOnce("code-server", func() (*exec.Cmd, error) {
-		log.Infof("Starting code-server in background...")
+		log.Infof("Starting code-server in background")
 		// --auth none is safe for clients outside the container because the
 		// only published path is the devsy port-forward tunnel, which is
 		// itself authenticated. Intra-container access is still unauthenticated.
 		runCommand := fmt.Sprintf(
-			"%s --bind-addr '%s' --user-data-dir '%s' --auth none "+
+			"%s --bind-addr %q --user-data-dir %q --auth none "+
 				"--disable-telemetry --disable-update-check",
 			binaryPath, c.host+":"+c.port, userDataDir,
 		)
@@ -217,8 +217,8 @@ func (c *CodeServer) installExtensions() error {
 	binaryPath := filepath.Join(location, "bin", "code-server")
 	var failed []string
 	for _, extension := range c.extensions {
-		log.Info("Install extension " + extension + "...")
-		runCommand := fmt.Sprintf("%s --install-extension '%s'", binaryPath, extension)
+		log.Info("Install extension " + extension)
+		runCommand := fmt.Sprintf("%s --install-extension %q", binaryPath, extension)
 		cmd := suOrSh(c.userName, runCommand, "")
 		cmd.Stdout = out
 		cmd.Stderr = out

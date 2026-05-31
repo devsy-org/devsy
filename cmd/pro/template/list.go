@@ -78,7 +78,7 @@ func (cmd *ListTemplatesCmd) Run(
 		Stdout:  &buf,
 	})
 	if err != nil {
-		return fmt.Errorf("list templates with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("list templates with provider %q: %w", provider.Name, err)
 	}
 
 	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Description"}

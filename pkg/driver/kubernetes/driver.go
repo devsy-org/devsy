@@ -20,10 +20,10 @@ func NewKubernetesDriver(
 ) (driver.ReprovisioningDriver, error) {
 	options := workspaceInfo.Agent.Kubernetes
 	if options.KubernetesConfig != "" {
-		log.Debugf("Use Kubernetes Config '%s'", options.KubernetesConfig)
+		log.Debugf("Use Kubernetes Config %q", options.KubernetesConfig)
 	}
 	if options.KubernetesContext != "" {
-		log.Debugf("Use Kubernetes Context '%s'", options.KubernetesContext)
+		log.Debugf("Use Kubernetes Context %q", options.KubernetesContext)
 	}
 
 	client, namespace, err := NewClient(options.KubernetesConfig, options.KubernetesContext)
@@ -35,7 +35,7 @@ func NewKubernetesDriver(
 		log.Debugf("Using Explicit Kubernetes Namespace")
 		namespace = options.KubernetesNamespace
 	}
-	log.Debugf("Use Kubernetes Namespace '%s'", namespace)
+	log.Debugf("Use Kubernetes Namespace %q", namespace)
 
 	return &KubernetesDriver{
 		client:      client,
@@ -88,8 +88,8 @@ func (k *KubernetesDriver) getDevContainerPvc(
 }
 
 func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	log.Debugf("Stopping devcontainer for workspace '%s'", workspaceId)
-	defer log.Debugf("Done stopping devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Stopping devcontainer for workspace %q", workspaceId)
+	defer log.Debugf("Done stopping devcontainer for workspace %q", workspaceId)
 
 	workspaceId = getID(workspaceId)
 
@@ -103,20 +103,20 @@ func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId str
 }
 
 func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
-	log.Debugf("Deleting devcontainer for workspace '%s'", workspaceId)
-	defer log.Debugf("Done deleting devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Deleting devcontainer for workspace %q", workspaceId)
+	defer log.Debugf("Done deleting devcontainer for workspace %q", workspaceId)
 
 	workspaceId = getID(workspaceId)
 
 	// delete pod
-	log.Infof("Delete pod '%s'...", workspaceId)
+	log.Infof("Delete pod %q", workspaceId)
 	err := k.waitPodDeleted(ctx, workspaceId)
 	if err != nil {
 		return err
 	}
 
 	// delete pvc
-	log.Infof("Delete persistent volume claim '%s'...", workspaceId)
+	log.Infof("Delete persistent volume claim %q", workspaceId)
 	err = k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).
@@ -129,7 +129,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete role binding & service account
 	if k.options.ClusterRole != "" {
-		log.Infof("Delete role binding '%s'...", workspaceId)
+		log.Infof("Delete role binding %q", workspaceId)
 		err = k.client.Client().
 			RbacV1().
 			RoleBindings(k.namespace).
@@ -141,7 +141,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete daemon config secret
 	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
-		log.Infof("Delete daemon config secret '%s'...", workspaceId)
+		log.Infof("Delete daemon config secret %q", workspaceId)
 		err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId))
 		if err != nil {
 			return err
@@ -150,7 +150,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 	// delete pull secret
 	if k.options.KubernetesPullSecretsEnabled != "" {
-		log.Infof("Delete pull secret '%s'...", workspaceId)
+		log.Infof("Delete pull secret %q", workspaceId)
 		err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId))
 		if err != nil {
 			return err

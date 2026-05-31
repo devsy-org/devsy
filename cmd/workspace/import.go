@@ -297,12 +297,12 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 		for _, workspace := range workspaces {
 			if workspace.ID == cmd.WorkspaceID {
 				return fmt.Errorf(
-					"existing workspace with id %s found, please use --workspace-id to override the workspace id",
+					"existing workspace with id %s found, use --workspace-id to override the workspace id",
 					cmd.WorkspaceID,
 				)
 			} else if workspace.UID == exportConfig.Workspace.UID {
 				return fmt.Errorf(
-					"existing workspace %s with uid %s found, please use --workspace-id to override the workspace id",
+					"existing workspace %s with uid %s found, use --workspace-id to override the workspace id",
 					workspace.ID,
 					workspace.UID,
 				)
@@ -314,7 +314,7 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 	if !cmd.MachineReuse && exportConfig.Machine != nil {
 		if provider.MachineExists(devsyConfig.DefaultContext, cmd.MachineID) {
 			return fmt.Errorf(
-				"existing machine with id %s found, please use --machine-reuse to skip importing "+
+				"existing machine with id %s found, use --machine-reuse to skip importing "+
 					"the machine or --machine-id to override the machine id",
 				cmd.MachineID,
 			)
@@ -325,7 +325,7 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 	if !cmd.ProviderReuse && exportConfig.Provider != nil {
 		if provider.ProviderExists(devsyConfig.DefaultContext, cmd.ProviderID) {
 			return fmt.Errorf(
-				"existing provider with id %s found, please use --provider-reuse to skip importing "+
+				"existing provider with id %s found, use --provider-reuse to skip importing "+
 					"the provider or --provider-id to override the provider id",
 				cmd.ProviderID,
 			)

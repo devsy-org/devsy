@@ -21,6 +21,6 @@ func NewDriver(workspaceInfo *provider2.AgentWorkspaceInfo) (driver.Driver, erro
 		return kubernetes.NewKubernetesDriver(workspaceInfo)
 	}
 
-	return nil, fmt.Errorf("unrecognized driver '%s', possible values are %s, %s or %s",
+	return nil, fmt.Errorf("unrecognized driver %q, possible values are %s, %s or %s",
 		driver, provider2.DockerDriver, provider2.CustomDriver, provider2.KubernetesDriver)
 }

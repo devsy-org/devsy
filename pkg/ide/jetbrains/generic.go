@@ -84,7 +84,7 @@ type GenericJetBrainsServer struct {
 }
 
 func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string) error {
-	log.Infof("Starting %s through JetBrains Gateway...", o.options.DisplayName)
+	log.Infof("Starting %s through JetBrains Gateway", o.options.DisplayName)
 	err := devsyopen.Run(
 		`jetbrains-gateway://connect#idePath=` + url.QueryEscape(
 			o.getDirectory(path.Join("/", "home", o.userName)),
@@ -98,7 +98,7 @@ func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string
 		log.Debugf("Error opening jetbrains-gateway: %v", err)
 		log.Errorf(
 			"Seems like you don't have JetBrains Gateway installed on your computer. " +
-				"Please install JetBrains Gateway via https://www.jetbrains.com/remote-development/gateway/",
+				"Install JetBrains Gateway via https://www.jetbrains.com/remote-development/gateway/",
 		)
 		return err
 	}

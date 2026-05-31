@@ -100,7 +100,7 @@ func findMessage(reader io.Reader, message string) error {
 			}
 		}
 	}
-	return fmt.Errorf("couldn't find message '%s' in log", message)
+	return fmt.Errorf("couldn't find message %q in log", message)
 }
 
 func verifyLogStream(reader io.Reader) error {

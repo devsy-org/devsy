@@ -96,7 +96,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 
 func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
 	if strings.HasPrefix(fullURL, "http://") {
-		return "", fmt.Errorf("http is not supported for Devsy Pro, please use https:// instead")
+		return "", fmt.Errorf("http is not supported for Devsy Pro, use https:// instead")
 	}
 	if !strings.HasPrefix(fullURL, "https://") {
 		return "https://" + fullURL, nil
@@ -163,7 +163,7 @@ func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host str
 		cmd.Provider = provider.ToProInstanceID(config.BinaryName + "-" + host)
 		if providers[cmd.Provider] != nil {
 			return fmt.Errorf(
-				"provider %s already exists, please choose a different name via --provider",
+				"provider %s already exists, choose a different name via --provider",
 				cmd.Provider,
 			)
 		}
@@ -277,7 +277,7 @@ func (cmd *LoginCmd) addLoftProvider(
 	}
 
 	// add the provider
-	log.Infof("Add Devsy Pro provider...")
+	log.Infof("Add Devsy Pro provider")
 
 	// is development?
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {

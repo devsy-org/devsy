@@ -83,7 +83,7 @@ func (r *runner) getRawConfig(options provider2.CLIOptions) (*config.DevContaine
 						return match, nil
 					}
 				}
-				return "", fmt.Errorf("devcontainer with ID '%s' not found", options.DevContainerID)
+				return "", fmt.Errorf("devcontainer with ID %q not found", options.DevContainerID)
 			},
 		)
 	} else {
@@ -124,7 +124,7 @@ func (r *runner) getDefaultConfig(
 			Image: options.FallbackImage,
 		}
 	} else {
-		log.Infof("Try detecting project programming language...")
+		log.Infof("Try detecting project programming language")
 		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder)
 	}
 

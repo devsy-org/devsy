@@ -122,7 +122,7 @@ func (o *RStudioServer) Install() error {
 
 func (o *RStudioServer) Start() error {
 	return command.StartBackgroundOnce("rstudio", func() (*exec.Cmd, error) {
-		log.Info("Starting RStudio...")
+		log.Info("Starting RStudio")
 		runCommand := "rstudio-server start"
 		args := []string{}
 		if o.userName != "" {

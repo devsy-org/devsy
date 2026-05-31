@@ -32,12 +32,12 @@ func (k *KubernetesDriver) EnsurePullSecret(
 
 	if k.secretExists(ctx, pullSecretName) {
 		if !k.shouldRecreateSecret(ctx, dockerCredentials, pullSecretName, host) {
-			log.Debugf("Pull secret '%s' already exists and is up to date", pullSecretName)
+			log.Debugf("Pull secret %q already exists and is up to date", pullSecretName)
 			return true, nil
 		}
 
 		log.Debugf(
-			"Pull secret '%s' already exists, but is outdated. Recreating...",
+			"Pull secret %q already exists, but is outdated. Recreating",
 			pullSecretName,
 		)
 		err := k.DeleteSecret(ctx, pullSecretName)
@@ -51,7 +51,7 @@ func (k *KubernetesDriver) EnsurePullSecret(
 		return false, err
 	}
 
-	log.Infof("Pull secret '%s' created", pullSecretName)
+	log.Infof("Pull secret %q created", pullSecretName)
 	return true, nil
 }
 

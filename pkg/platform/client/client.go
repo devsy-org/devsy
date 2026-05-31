@@ -36,7 +36,7 @@ var CacheFolder string
 var DefaultCacheConfig string
 
 // Copied from platform `pkg/authentication/registry.go`.
-var ErrAccessKeyNotFound = fmt.Errorf("platform access key not found. Please login again")
+var ErrAccessKeyNotFound = fmt.Errorf("platform access key not found. Login again")
 
 const (
 	VersionPath   = "%s/version"
@@ -261,7 +261,7 @@ type keyStruct struct {
 func verifyHost(host string) error {
 	if !strings.HasPrefix(host, "https") {
 		return fmt.Errorf(
-			"cannot log into a non https loft instance '%s', please make sure you have TLS enabled",
+			"cannot log into a non https loft instance %q, make sure you have TLS enabled",
 			host,
 		)
 	}
@@ -315,20 +315,21 @@ func (c *client) Login(host string, insecure bool) error {
 	err = devsyopen.Run(fmt.Sprintf(LoginPath, host))
 	if err != nil {
 		return fmt.Errorf(
-			"couldn't open the login page in a browser: %w. Please use the --access-key flag for the login command. "+
+			"couldn't open the login page in a browser: %w. Use the --access-key flag for the login command. "+
 				"You can generate an access key here: %s",
 			err,
 			fmt.Sprintf(AccessKeyPath, host),
 		)
 	} else {
-		log.Infof("If the browser does not open automatically, please navigate to %s", loginUrl)
-		msg := "If you have problems logging in, please navigate to %s/profile/access-keys, click on 'Create Access Key' and then login via '%s %s --access-key ACCESS_KEY"
+		log.Infof("If the browser does not open automatically, navigate to %s", loginUrl)
+		msg := "If you have problems logging in, navigate to %s/profile/access-keys, " +
+			"click on 'Create Access Key' and then login via '%s %s --access-key ACCESS_KEY"
 		if insecure {
 			msg += " --insecure"
 		}
 		msg += "'"
 		log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
-		log.Infof("Logging into Devsy Pro...")
+		log.Infof("Logging into Devsy Pro")
 
 		key = <-keyChannel
 	}
@@ -403,7 +404,7 @@ func (c *client) LoginWithAccessKey(host, accessKey string, insecure bool, force
 			var err x509.UnknownAuthorityError
 			if errors.As(urlError.Err, &err) {
 				return fmt.Errorf(
-					"unsafe login endpoint '%s', if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
+					"unsafe login endpoint %q, if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
 					c.config.Host,
 				)
 			}
@@ -442,7 +443,7 @@ func VerifyVersion(baseClient Client) error {
 
 	if int(cliVersion.Major) > backendMajor {
 		return fmt.Errorf(
-			"unsupported %[1]s version %[2]s. Please downgrade your CLI to below v%[3]d.0.0 to support this version, "+
+			"unsupported %[1]s version %[2]s. Downgrade your CLI to below v%[3]d.0.0 to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
 			pkgconfig.ProductNamePro,
 			v.Version,
@@ -451,7 +452,7 @@ func VerifyVersion(baseClient Client) error {
 		)
 	} else if int(cliVersion.Major) < backendMajor {
 		return fmt.Errorf(
-			"unsupported %[1]s version %[2]s. Please upgrade your CLI to v%[3]d.0.0 or above to support this version, "+
+			"unsupported %[1]s version %[2]s. Upgrade your CLI to v%[3]d.0.0 or above to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
 			pkgconfig.ProductNamePro,
 			v.Version,

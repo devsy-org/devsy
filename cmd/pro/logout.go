@@ -48,7 +48,7 @@ func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
 //nolint:cyclop,funlen // logout sequences provider/daemon teardown; complexity reflects domain workflow
 func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("please specify a pro instance to log out of")
+		return fmt.Errorf("specify a pro instance to log out of")
 	}
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)

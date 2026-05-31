@@ -64,7 +64,7 @@ func WaitHostReachable(
 			_ = conn.Close()
 			return nil // Host is reachable
 		}
-		log.Debugf("Host %s not reachable, retrying... (%d/%d)", addr.String(), i+1, maxRetries)
+		log.Debugf("Host %s not reachable, retrying (%d/%d)", addr.String(), i+1, maxRetries)
 		time.Sleep(200 * time.Millisecond)
 
 		select {

@@ -49,7 +49,7 @@ func Setup(p SetupParams) error {
 	}
 
 	log.Infof("Dotfiles Git repository %s specified", dotfilesRepo)
-	log.Debug("Cloning dotfiles into the devcontainer...")
+	log.Debug("Cloning dotfiles into the devcontainer")
 
 	dotCmd, err := buildDotCmd(buildDotCmdParams{
 		devsyConfig:      p.DevsyConfig,

@@ -84,7 +84,7 @@ func (cmd *HealthCmd) Run(
 		Stderr:  log.Writer(log.LevelError),
 	})
 	if err != nil {
-		return fmt.Errorf("check health with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("check health with provider %q: %w", provider.Name, err)
 	}
 
 	fmt.Println(buf.String())

@@ -99,8 +99,8 @@ func GetImageConfig(
 	ctx context.Context,
 	image string,
 ) (*v1.ConfigFile, v1.Image, error) {
-	log.Debugf("Getting image config for image '%s'", image)
-	defer log.Debugf("Done getting image config for image '%s'", image)
+	log.Debugf("Getting image config for image %q", image)
+	defer log.Debugf("Done getting image config for image %q", image)
 
 	img, err := GetImage(ctx, image)
 	if err != nil {
@@ -136,8 +136,8 @@ func GetImageConfigForArch(
 	ctx context.Context,
 	image, arch string,
 ) (*v1.ConfigFile, v1.Image, error) {
-	log.Debugf("Getting image config for image '%s' with architecture '%s'", image, arch)
-	defer log.Debugf("Done getting image config for image '%s' with architecture '%s'", image, arch)
+	log.Debugf("Getting image config for image %q with architecture %q", image, arch)
+	defer log.Debugf("Done getting image config for image %q with architecture %q", image, arch)
 
 	img, err := GetImageForArch(ctx, image, arch)
 	if err != nil {

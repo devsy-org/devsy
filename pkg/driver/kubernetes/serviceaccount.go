@@ -24,7 +24,7 @@ func (k *KubernetesDriver) createServiceAccount(
 		return fmt.Errorf("get service account: %w", err)
 	} else if kerrors.IsNotFound(err) {
 		// create service account if it does not exist
-		log.Infof("Create Service Account '%s'", serviceAccount)
+		log.Infof("Create Service Account %q", serviceAccount)
 		_, err := k.client.Client().
 			CoreV1().
 			ServiceAccounts(k.namespace).
@@ -49,7 +49,7 @@ func (k *KubernetesDriver) createServiceAccount(
 			return fmt.Errorf("get role binding: %w", err)
 		} else if kerrors.IsNotFound(err) {
 			// create role binding
-			log.Infof("Create Role Binding '%s'", serviceAccount)
+			log.Infof("Create Role Binding %q", serviceAccount)
 			_, err := k.client.Client().
 				RbacV1().
 				RoleBindings(k.namespace).

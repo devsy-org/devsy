@@ -387,7 +387,7 @@ func CloneRepositoryForWorkspace(
 		local, _ := agentConfig.Local.Bool()
 		if local {
 			return fmt.Errorf(
-				"seems like git isn't installed on your system. Please make sure to install git and make it available in the PATH",
+				"seems like git isn't installed on your system. Make sure to install git and make it available in the PATH",
 			)
 		}
 		if err := git.InstallBinary(); err != nil {

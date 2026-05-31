@@ -366,7 +366,7 @@ func (w *workspaceInitializer) tryConfigureDockerDaemon() {
 	if err := configureDockerDaemon(w.ctx); err != nil {
 		log.Warn(
 			"could not find docker daemon config file, if using the registry cache, " +
-				"please ensure the daemon is configured with containerd-snapshotter=true, " +
+				"ensure the daemon is configured with containerd-snapshotter=true, " +
 				"more info at https://docs.docker.com/engine/storage/containerd/",
 		)
 	}

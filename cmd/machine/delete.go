@@ -67,8 +67,8 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	for _, workspace := range workspaces {
 		if workspace.Machine.ID == machineClient.Machine() {
 			return fmt.Errorf(
-				"cannot delete machine '%s', because workspace '%s' is still using it. "+
-					"Please delete the workspace '%s' before deleting the machine",
+				"cannot delete machine %q, because workspace %q is still using it. "+
+					"Delete the workspace %q before deleting the machine",
 				workspace.Machine.ID,
 				workspace.ID,
 				workspace.ID,

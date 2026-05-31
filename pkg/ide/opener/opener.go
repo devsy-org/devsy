@@ -470,10 +470,10 @@ func startFleet(ctx context.Context, params IDEParams) (string, error) {
 		return url, nil
 	}
 	pkglog.Warnf(
-		"Fleet is exposed at a publicly reachable URL, please make sure to not disclose this URL " +
+		"Fleet is exposed at a publicly reachable URL, make sure to not disclose this URL " +
 			"to anyone as they will be able to reach your workspace from that",
 	)
-	pkglog.Infof("Starting Fleet at %s ...", url)
+	pkglog.Infof("Starting Fleet at %s ", url)
 	if err := open2.Run(url); err != nil {
 		return "", err
 	}

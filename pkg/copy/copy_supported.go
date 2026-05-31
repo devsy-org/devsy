@@ -16,7 +16,7 @@ func IsUID(info os.FileInfo, uid uint32) bool {
 func Lchown(info os.FileInfo, sourcePath, destPath string) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return fmt.Errorf("failed to get raw syscall.Stat_t data for '%s'", sourcePath)
+		return fmt.Errorf("failed to get raw syscall.Stat_t data for %q", sourcePath)
 	}
 	if err := os.Lchown(destPath, int(stat.Uid), int(stat.Gid)); err != nil {
 		return err

@@ -41,7 +41,7 @@ func InstallBinary() error {
 }
 
 func installGitWithApt(writer, errwriter io.Writer) error {
-	log.Infof("Git command is missing, try to install git with apt...")
+	log.Infof("Git command is missing, try to install git with apt")
 
 	if err := runCmd(writer, errwriter, "apt", "update"); err != nil {
 		return fmt.Errorf("run apt update: %w", err)
@@ -55,7 +55,7 @@ func installGitWithApt(writer, errwriter io.Writer) error {
 }
 
 func installGitWithApk(writer, errwriter io.Writer) error {
-	log.Infof("Git command is missing, try to install git with apk...")
+	log.Infof("Git command is missing, try to install git with apk")
 
 	if err := runCmd(writer, errwriter, "apk", "update"); err != nil {
 		return fmt.Errorf("run apk update: %w", err)

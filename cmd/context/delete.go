@@ -24,7 +24,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Delete a Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
-				return fmt.Errorf("please specify the context to delete")
+				return fmt.Errorf("specify the context to delete")
 			}
 
 			devsyContext := ""
@@ -50,7 +50,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 	if context == "" {
 		context = devsyConfig.DefaultContext
 	} else if devsyConfig.Contexts[context] == nil {
-		return fmt.Errorf("context '%s' doesn't exist", context)
+		return fmt.Errorf("context %q doesn't exist", context)
 	}
 
 	// check for default context

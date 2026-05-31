@@ -36,7 +36,7 @@ func NewUserEnvProbe(probe string) (UserEnvProbe, error) {
 	case "":
 		return DefaultUserEnvProbe, nil
 	default:
-		return "", fmt.Errorf("invalid userEnvProbe \"%s\", supported are \"%s\"", probe,
+		return "", fmt.Errorf("invalid userEnvProbe %q, supported are %q", probe,
 			strings.Join([]string{
 				string(LoginInteractiveShellProbe),
 				string(LoginShellProbe),
@@ -67,7 +67,7 @@ func ProbeUserEnv(
 	}
 
 	log.Debugf(
-		"running user env probe with shell \"%s\", probe \"%s\", user \"%s\" and command \"%s\"",
+		"running user env probe with shell %q, probe %q, user %q and command %q",
 		strings.Join(preferredShell, " "),
 		string(userEnvProbe),
 		userName,
@@ -84,7 +84,7 @@ func ProbeUserEnv(
 	)
 	if err != nil {
 		log.Debugf(
-			"running user env probe with shell \"%s\", probe \"%s\", user \"%s\" and command \"%s\"",
+			"running user env probe with shell %q, probe %q, user %q and command %q",
 			strings.Join(preferredShell, " "),
 			string(userEnvProbe),
 			userName,

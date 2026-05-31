@@ -89,7 +89,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf(
-			"configure provider, please retry with 'devsy provider use %s --reconfigure': %w",
+			"configure provider, retry with 'devsy provider use %s --reconfigure': %w",
 			provider.Name, err,
 		)
 	}

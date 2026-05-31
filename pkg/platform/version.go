@@ -53,7 +53,7 @@ func GetDevsyVersion(url string) (string, error) {
 	}
 	if version.DevsyVersion == "" {
 		return "", fmt.Errorf(
-			"unexpected version '%s', please use --version to define a provider version",
+			"unexpected version %q, use --version to define a provider version",
 			version.DevsyVersion,
 		)
 	}

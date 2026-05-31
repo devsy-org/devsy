@@ -417,7 +417,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// get login link
-	log.Info("Checking Devsy status...")
+	log.Info("Checking Devsy status")
 	host, err := getIngressHost(ctx, cmd.KubeClient, cmd.Namespace)
 	if err != nil {
 		return err
@@ -428,7 +428,7 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	if !reachable || err != nil {
 		const (
 			YesOption = "Yes"
-			NoOption  = "No, please re-run the DNS check"
+			NoOption  = "No, re-run the DNS check"
 		)
 
 		answer, err := log.QuestionDefault(&survey.QuestionOptions{
@@ -576,7 +576,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
-	log.Infof("Starting Devsy Pro in Docker...")
+	log.Infof("Starting Devsy Pro in Docker")
 	name := config.ProReleaseName
 
 	// prepare installation
@@ -644,7 +644,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait for domain to become reachable
-	log.Infof("Wait for Devsy Pro to become available at %s...", host)
+	log.Infof("Wait for Devsy Pro to become available at %s", host)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -701,7 +701,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
-	log.Info("Wait for Devsy Pro to become available...")
+	log.Info("Wait for Devsy Pro to become available")
 
 	// check for local port
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
@@ -758,7 +758,7 @@ func (cmd *StartCmd) prepareDocker() error {
 	if err != nil {
 		return fmt.Errorf(
 			"seems like docker is not installed. Docker is required for the installation of loft. " +
-				"Please visit https://docs.docker.com/engine/install/ for install instructions",
+				"Visit https://docs.docker.com/engine/install/ for install instructions",
 		)
 	}
 
@@ -771,7 +771,7 @@ func (cmd *StartCmd) prepareDocker() error {
 }
 
 func (cmd *StartCmd) uninstallDocker(ctx context.Context, id string) error {
-	log.Infof("Uninstalling...")
+	log.Infof("Uninstalling")
 
 	// stop container
 	out, err := cmd.buildDockerCmd(ctx, "stop", id).Output()
@@ -943,7 +943,7 @@ func (cmd *StartCmd) prepare(ctx context.Context) error {
 	cmd.RestConfig, err = kubeClientConfig.ClientConfig()
 	if err != nil {
 		return fmt.Errorf(
-			"there is an error loading your current kube config (%w), please make sure you have access "+
+			"there is an error loading your current kube config (%w), make sure you have access "+
 				"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 			err,
 		)
@@ -951,7 +951,7 @@ func (cmd *StartCmd) prepare(ctx context.Context) error {
 	cmd.KubeClient, err = kubernetes.NewForConfig(cmd.RestConfig)
 	if err != nil {
 		return fmt.Errorf(
-			"there is an error loading your current kube config (%w), please make sure you have access "+
+			"there is an error loading your current kube config (%w), make sure you have access "+
 				"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 			err,
 		)
@@ -963,7 +963,7 @@ func (cmd *StartCmd) prepare(ctx context.Context) error {
 		Get(ctx, "cluster-admin", metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf(
-			"error retrieving cluster role 'cluster-admin': %w. Please make sure RBAC is correctly configured in your cluster",
+			"error retrieving cluster role 'cluster-admin': %w. Make sure RBAC is correctly configured in your cluster",
 			err,
 		)
 	}
@@ -984,7 +984,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 	kubeConfig, err := kubeClientConfig.RawConfig()
 	if err != nil {
 		return nil, fmt.Errorf(
-			"there is an error loading your current kube config (%w), please make sure you have access "+
+			"there is an error loading your current kube config (%w), make sure you have access "+
 				"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 			err,
 		)
@@ -995,7 +995,8 @@ func (cmd *StartCmd) resolveKubeConfig(
 		contextToLoad = cmd.Context
 	} else if loftConfig.LastInstallContext != "" && loftConfig.LastInstallContext != contextToLoad {
 		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
-			Question:     "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. Please choose which kubernetes context you want to use",
+			Question: "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. " +
+				"Choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, loftConfig.LastInstallContext},
 		})
@@ -1021,7 +1022,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	if err != nil {
 		return fmt.Errorf(
 			"seems like helm is not installed. Helm is required for the installation of loft. " +
-				"Please visit https://helm.sh/docs/intro/install/ for install instructions",
+				"Visit https://helm.sh/docs/intro/install/ for install instructions",
 		)
 	}
 
@@ -1034,7 +1035,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	if err != nil {
 		return fmt.Errorf(
 			"seems like kubectl is not installed. Kubectl is required for the installation of loft. " +
-				"Please visit https://kubernetes.io/docs/tasks/tools/install-kubectl/ for install instructions",
+				"Visit https://kubernetes.io/docs/tasks/tools/install-kubectl/ for install instructions",
 		)
 	}
 
@@ -1369,7 +1370,7 @@ func (cmd *StartCmd) loginUI(url string) error {
 		return fmt.Errorf("couldn't open the login page in a browser: %w", err)
 	}
 
-	log.Infof("If the browser does not open automatically, please navigate to %s", loginURL)
+	log.Infof("If the browser does not open automatically, navigate to %s", loginURL)
 
 	return nil
 }
@@ -1567,7 +1568,7 @@ func enterHostNameQuestion() (string, error) {
 			u, err := netUrl.Parse("https://" + answer)
 			if err != nil || u.Path != "" || u.Port() != "" || len(strings.Split(answer, ".")) < 2 {
 				return fmt.Errorf(
-					"please enter a valid hostname without protocol (https://), without path and without port, " +
+					"enter a valid hostname without protocol (https://), without path and without port, " +
 						"e.g. loft.my-domain.tld",
 				)
 			}
@@ -1618,7 +1619,7 @@ func ensureIngressController(
 		}
 		fmt.Fprint(os.Stderr, "\n")
 		log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-		log.Info("Waiting for ingress controller deployment, this can take several minutes...")
+		log.Info("Waiting for ingress controller deployment, this can take several minutes")
 		helmCmd := exec.CommandContext(
 			ctx,
 			"helm",
@@ -1815,7 +1816,7 @@ func getIngressHost(
 
 	return "", fmt.Errorf(
 		"couldn't find any host in loft ingress '%s/loft-ingress', "+
-			"please make sure you have not changed any deployed resources",
+			"make sure you have not changed any deployed resources",
 		namespace,
 	)
 }
@@ -1892,7 +1893,7 @@ func upgradeRelease(
 
 	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-	log.Info("Waiting for helm command, this can take up to several minutes...")
+	log.Info("Waiting for helm command, this can take up to several minutes")
 	helmCmd := exec.CommandContext(
 		ctx,
 		"helm",
@@ -1963,7 +1964,7 @@ func getHelmWorkdir(chartName string) (string, error) {
 			tempDir, err = os.MkdirTemp(tempDir, chartName)
 			if err != nil {
 				return "", errors.New(
-					"problematic directory `" + chartName + "` found: please execute command in a different folder",
+					"problematic directory `" + chartName + "` found: execute command in a different folder",
 				)
 			}
 		}

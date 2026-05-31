@@ -94,7 +94,7 @@ func (cmd *WatchWorkspacesCmd) Run(
 		Stderr:  log.Writer(log.LevelError),
 	})
 	if err != nil {
-		return fmt.Errorf("watch workspaces with provider \"%s\": %w", providerConfig.Name, err)
+		return fmt.Errorf("watch workspaces with provider %q: %w", providerConfig.Name, err)
 	}
 
 	return nil

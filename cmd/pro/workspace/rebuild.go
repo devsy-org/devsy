@@ -47,7 +47,7 @@ func NewRebuildCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("please provide a workspace name")
+		return fmt.Errorf("provide a workspace name")
 	}
 	targetWorkspace := args[0]
 
@@ -58,7 +58,7 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 
 	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host)
 	if err != nil {
-		return fmt.Errorf("resolve host \"%s\": %w", cmd.Host, err)
+		return fmt.Errorf("resolve host %q: %w", cmd.Host, err)
 	}
 
 	instanceOpts := platform.FindInstanceOptions{Name: targetWorkspace, ProjectName: cmd.Project}

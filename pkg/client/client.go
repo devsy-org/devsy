@@ -197,7 +197,7 @@ func ParseStatus(in string) (Status, error) {
 		return StatusNotFound, nil
 	default:
 		return StatusNotFound, fmt.Errorf(
-			"error parsing status: '%s' unrecognized status, needs to be one of: %s",
+			"error parsing status: %q unrecognized status, needs to be one of: %v",
 			in,
 			[]string{StatusRunning, StatusBusy, StatusStopped, StatusNotFound},
 		)

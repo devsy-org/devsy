@@ -76,7 +76,7 @@ func resolveMachine(
 ) (client.Client, error) {
 	// check if we have no args
 	if len(args) == 0 {
-		return nil, fmt.Errorf("please specify the machine name")
+		return nil, fmt.Errorf("specify the machine name")
 	}
 
 	// convert to id
@@ -188,7 +188,7 @@ func selectMachine(devsyConfig *config.Config) (client.MachineClient, error) {
 	}
 
 	answer, err := log.QuestionDefault(&survey.QuestionOptions{
-		Question:     "Please select a machine from the list below",
+		Question:     "Select a machine from the list below",
 		DefaultValue: machineIDs[0],
 		Options:      machineIDs,
 		Sort:         true,

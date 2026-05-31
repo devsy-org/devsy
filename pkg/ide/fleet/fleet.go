@@ -82,7 +82,7 @@ func (o *FleetServer) Install(projectDir string) error {
 	}
 
 	// download binary
-	log.Infof("Downloading fleet...")
+	log.Infof("Downloading fleet")
 	resp, err := devsyhttp.GetHTTPClient().Get(url)
 	if err != nil {
 		return err
@@ -126,20 +126,21 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 	stderrBuffer := &bytes.Buffer{}
 
 	err := command.StartBackgroundOnce("fleet", func() (*exec.Cmd, error) {
-		log.Infof("Starting fleet in background...")
+		log.Infof("Starting fleet in background")
 		// Determine version of fleet to use
 		var runCommand string
 		version := Options.GetValue(o.values, VersionOption)
 		if version == "latest" {
 			runCommand = fmt.Sprintf(
-				"%s launch workspace -- --projectDir '%s' --cache-path '%s' --auth=accept-everyone --publish --enableSmartMode",
+				"%s launch workspace -- --projectDir %q --cache-path %q --auth=accept-everyone --publish --enableSmartMode",
 				binaryPath,
 				projectDir,
 				location,
 			)
 		} else {
 			runCommand = fmt.Sprintf(
-				"%s launch workspace --workspace-version %s -- --projectDir '%s' --cache-path '%s' --auth=accept-everyone --publish --enableSmartMode",
+				"%s launch workspace --workspace-version %s -- --projectDir %q --cache-path %q "+
+					"--auth=accept-everyone --publish --enableSmartMode",
 				binaryPath,
 				version,
 				projectDir,

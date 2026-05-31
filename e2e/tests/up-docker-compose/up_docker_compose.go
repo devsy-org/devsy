@@ -347,7 +347,7 @@ var _ = ginkgo.Describe(
 				ghLookupOutput, err := tc.execSSH(
 					ctx,
 					tempDirB,
-					fmt.Sprintf("sh -lc '%s'", commandPresenceCheck("gh")),
+					fmt.Sprintf("sh -lc %q", commandPresenceCheck("gh")),
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(ghLookupOutput)).
@@ -361,7 +361,7 @@ var _ = ginkgo.Describe(
 				nodeLookupOutput, err := tc.execSSH(
 					ctx,
 					tempDirA,
-					fmt.Sprintf("sh -lc '%s'", commandPresenceCheck("node")),
+					fmt.Sprintf("sh -lc %q", commandPresenceCheck("node")),
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(nodeLookupOutput)).

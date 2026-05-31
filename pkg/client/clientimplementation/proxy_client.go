@@ -109,12 +109,12 @@ func (s *proxyClient) Lock(ctx context.Context) error {
 	s.initLock()
 
 	// try to lock workspace
-	log.Debugf("Acquire workspace lock...")
+	log.Debugf("Acquire workspace lock")
 	err := tryLock(ctx, s.workspaceLock, "workspace")
 	if err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
-	log.Debugf("Acquired workspace lock...")
+	log.Debugf("Acquired workspace lock")
 
 	return nil
 }
@@ -330,7 +330,7 @@ func (s *proxyClient) checkPlatformVersion(
 	if parsedVersion.GE(semver.MustParse("0.6.99")) {
 		return fmt.Errorf(
 			"you are using an outdated provider version for this platform. " +
-				"Please disconnect and reconnect the platform to update the provider",
+				"Disconnect and reconnect the platform to update the provider",
 		)
 	}
 

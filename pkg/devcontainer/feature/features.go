@@ -494,7 +494,7 @@ func processDirectTarFeature(
 	downloadBase := id[strings.LastIndex(id, "/"):]
 	if !directTarballRegEx.MatchString(downloadBase) {
 		return "", fmt.Errorf(
-			"expected tarball name to follow 'devcontainer-feature-<feature-id>.tgz' format.  Received '%s' ",
+			"expected tarball name to follow 'devcontainer-feature-<feature-id>.tgz' format.  Received %q ",
 			downloadBase,
 		)
 	}

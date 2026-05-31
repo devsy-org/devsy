@@ -65,7 +65,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		provider = args[0]
 	} else if provider == "" {
-		return fmt.Errorf("please specify a provider to delete")
+		return fmt.Errorf("specify a provider to delete")
 	}
 
 	// delete the provider
@@ -94,7 +94,7 @@ func DeleteProvider(
 		for _, instance := range proInstances {
 			if instance.Provider == provider {
 				return fmt.Errorf(
-					"cannot delete provider '%s', because it is connected to Pro instance '%s'. "+
+					"cannot delete provider %q, because it is connected to Pro instance %q. "+
 						"Removing the Pro instance will automatically delete this provider",
 					instance.Provider,
 					instance.Host,
@@ -112,8 +112,8 @@ func DeleteProvider(
 		for _, workspace := range workspaces {
 			if workspace.Provider.Name == provider {
 				return fmt.Errorf(
-					"cannot delete provider '%s', because workspace '%s' is still using it. "+
-						"Please delete the workspace '%s' before deleting the provider",
+					"cannot delete provider %q, because workspace %q is still using it. "+
+						"Delete the workspace %q before deleting the provider",
 					workspace.Provider.Name,
 					workspace.ID,
 					workspace.ID,
@@ -146,7 +146,7 @@ func DeleteProviderConfig(devsyConfig *config.Config, provider string, ignoreNot
 				return nil
 			}
 
-			return fmt.Errorf("provider '%s' does not exist", provider)
+			return fmt.Errorf("provider %q does not exist", provider)
 		}
 
 		return err

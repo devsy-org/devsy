@@ -23,7 +23,7 @@ func (k *KubernetesDriver) createPersistentVolumeClaim(
 		return err
 	}
 
-	log.Infof("Create Persistent Volume Claim '%s'", id)
+	log.Infof("Create Persistent Volume Claim %q", id)
 	_, err = k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).
@@ -47,7 +47,7 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	size := k.options.DiskSize
 	quantity, err := resource.ParseQuantity(size)
 	if err != nil {
-		return nil, fmt.Errorf("parse persistent volume size '%s': %w", size, err)
+		return nil, fmt.Errorf("parse persistent volume size %q: %w", size, err)
 	}
 
 	var storageClassName *string

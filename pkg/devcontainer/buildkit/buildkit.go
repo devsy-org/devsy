@@ -82,7 +82,7 @@ func Build(
 			return fmt.Errorf("failed to get build context %v: %w", k, err)
 		}
 		if !st.IsDir() {
-			return fmt.Errorf("build context '%s' is not a directory", v)
+			return fmt.Errorf("build context %q is not a directory", v)
 		}
 		localName := k
 		if k == "context" || k == "dockerfile" {

@@ -126,7 +126,7 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	}
 	if args.wctx.tunnelPort > 0 {
 		log.Infof(
-			"SSH tunnel active on port %d, waiting for shutdown signal...",
+			"SSH tunnel active on port %d, waiting for shutdown signal",
 			args.wctx.tunnelPort,
 		)
 		<-ctx.Done()

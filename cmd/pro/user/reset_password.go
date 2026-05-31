@@ -191,7 +191,7 @@ func (cmd *PasswordCmd) fillPasswordRef(user *storagev1.User) error {
 
 	if !cmd.Force {
 		return fmt.Errorf(
-			"user %s had no password. If you want to force password creation, please run with the '--force' flag",
+			"user %s had no password. If you want to force password creation, run with the '--force' flag",
 			cmd.User,
 		)
 	}
@@ -223,7 +223,7 @@ func (cmd *PasswordCmd) resolvePassword() (string, error) {
 
 	for {
 		password, err := log.QuestionDefault(&survey.QuestionOptions{
-			Question:   "Please enter a new password",
+			Question:   "Enter a new password",
 			IsPassword: true,
 		})
 		if err != nil {
@@ -235,7 +235,7 @@ func (cmd *PasswordCmd) resolvePassword() (string, error) {
 			return password, nil
 		}
 
-		log.Error("Please enter a password")
+		log.Error("Enter a password")
 	}
 }
 
