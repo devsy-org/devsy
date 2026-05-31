@@ -87,27 +87,27 @@ func (cmd *StatusCmd) Run(
 		switch instanceStatus {
 		case client2.StatusStopped:
 			log.Infof(
-				"Workspace '%s' is '%s', you can start it via 'devsy workspace up %s'",
+				"Workspace %q is %q, you can start it via 'devsy workspace up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		case client2.StatusBusy:
 			log.Infof(
-				"Workspace '%s' is '%s', which means its currently unaccessible. "+
+				"Workspace %q is %q, which means its currently unaccessible. "+
 					"This is usually resolved by waiting a couple of minutes",
 				client.Workspace(),
 				instanceStatus,
 			)
 		case client2.StatusNotFound:
 			log.Infof(
-				"Workspace '%s' is '%s', you can create it via 'devsy workspace up %s'",
+				"Workspace %q is %q, you can create it via 'devsy workspace up %s'",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		default:
-			log.Infof("Workspace '%s' is '%s'", client.Workspace(), instanceStatus)
+			log.Infof("Workspace %q is %q", client.Workspace(), instanceStatus)
 		}
 	case output.ModeJSON:
 		out, err := json.Marshal(&client2.WorkspaceStatus{

@@ -170,7 +170,7 @@ func (cmd *UpCmd) parseWorkspaceSource() (*provider2.WorkspaceSource, error) {
 	}
 	if source.LocalFolder != "" && cmd.Platform.Enabled {
 		return nil, fmt.Errorf("local folder is not supported in platform mode. " +
-			"Please specify a Git repository instead")
+			"Specify a Git repository instead")
 	}
 
 	return source, nil

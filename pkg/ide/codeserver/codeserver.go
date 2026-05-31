@@ -175,7 +175,7 @@ func (c *CodeServer) Start() error {
 		// only published path is the devsy port-forward tunnel, which is
 		// itself authenticated. Intra-container access is still unauthenticated.
 		runCommand := fmt.Sprintf(
-			"%s --bind-addr '%s' --user-data-dir '%s' --auth none "+
+			"%s --bind-addr %q --user-data-dir %q --auth none "+
 				"--disable-telemetry --disable-update-check",
 			binaryPath, c.host+":"+c.port, userDataDir,
 		)
@@ -218,7 +218,7 @@ func (c *CodeServer) installExtensions() error {
 	var failed []string
 	for _, extension := range c.extensions {
 		log.Info("Install extension " + extension + "...")
-		runCommand := fmt.Sprintf("%s --install-extension '%s'", binaryPath, extension)
+		runCommand := fmt.Sprintf("%s --install-extension %q", binaryPath, extension)
 		cmd := suOrSh(c.userName, runCommand, "")
 		cmd.Stdout = out
 		cmd.Stderr = out

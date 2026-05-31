@@ -26,7 +26,7 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Set options for a Devsy context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
-				return fmt.Errorf("please specify the context")
+				return fmt.Errorf("specify the context")
 			}
 
 			devsyContext := ""
@@ -54,7 +54,7 @@ func (cmd *SetOptionsCmd) Run(ctx context.Context, context string) error {
 	if context == "" {
 		context = devsyConfig.DefaultContext
 	} else if devsyConfig.Contexts[context] == nil {
-		return fmt.Errorf("context '%s' doesn't exist", context)
+		return fmt.Errorf("context %q doesn't exist", context)
 	}
 
 	// check if there are setOptions options set

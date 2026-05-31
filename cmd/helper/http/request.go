@@ -50,7 +50,7 @@ func (cmd *RequestCmd) Run(ctx context.Context, args []string) error {
 	for _, header := range cmd.Headers {
 		splitted := strings.Split(header, ":")
 		if len(splitted) == 1 {
-			return fmt.Errorf("unexpected header '%s', expected form 'HEADER: VALUE'", header)
+			return fmt.Errorf("unexpected header %q, expected form 'HEADER: VALUE'", header)
 		}
 
 		httpHeader.Add(

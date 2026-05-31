@@ -44,7 +44,7 @@ func validateUserValue(optionName, userValue string, option *types.Option) error
 			}
 
 			return fmt.Errorf(
-				"invalid value '%s' for option '%s', has to match the following regEx: %s",
+				"invalid value %q for option %q, has to match the following regEx: %s",
 				userValue,
 				optionName,
 				option.ValidationPattern,
@@ -62,7 +62,7 @@ func validateUserValue(optionName, userValue string, option *types.Option) error
 		}
 		if !found {
 			return fmt.Errorf(
-				"invalid value '%s' for option '%s', has to match one of the following values: %v",
+				"invalid value %q for option %q, has to match one of the following values: %v",
 				userValue,
 				optionName,
 				option.Enum,
@@ -76,7 +76,7 @@ func validateUserValue(optionName, userValue string, option *types.Option) error
 			_, err := strconv.ParseInt(userValue, 10, 64)
 			if err != nil {
 				return fmt.Errorf(
-					"invalid value '%s' for option '%s', must be a number",
+					"invalid value %q for option %q, must be a number",
 					userValue,
 					optionName,
 				)
@@ -85,7 +85,7 @@ func validateUserValue(optionName, userValue string, option *types.Option) error
 			_, err := strconv.ParseBool(userValue)
 			if err != nil {
 				return fmt.Errorf(
-					"invalid value '%s' for option '%s', must be a boolean",
+					"invalid value %q for option %q, must be a boolean",
 					userValue,
 					optionName,
 				)
@@ -94,7 +94,7 @@ func validateUserValue(optionName, userValue string, option *types.Option) error
 			_, err := time.ParseDuration(userValue)
 			if err != nil {
 				return fmt.Errorf(
-					"invalid value '%s' for option '%s', must be a duration like 10s, 5m or 24h",
+					"invalid value %q for option %q, must be a duration like 10s, 5m or 24h",
 					userValue,
 					optionName,
 				)

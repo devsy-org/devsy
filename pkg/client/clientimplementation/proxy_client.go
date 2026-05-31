@@ -330,7 +330,7 @@ func (s *proxyClient) checkPlatformVersion(
 	if parsedVersion.GE(semver.MustParse("0.6.99")) {
 		return fmt.Errorf(
 			"you are using an outdated provider version for this platform. " +
-				"Please disconnect and reconnect the platform to update the provider",
+				"Disconnect and reconnect the platform to update the provider",
 		)
 	}
 

@@ -707,5 +707,5 @@ func optionsToSubCommand(optionDefinitions config.OptionDefinitions) string {
 	out, _ := json.Marshal(&provider.SubOptions{
 		Options: optionDefinitions,
 	})
-	return fmt.Sprintf("echo '%s' | base64 --decode", base64.StdEncoding.EncodeToString(out))
+	return fmt.Sprintf("echo %q | base64 --decode", base64.StdEncoding.EncodeToString(out))
 }

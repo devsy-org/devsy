@@ -132,14 +132,15 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 		version := Options.GetValue(o.values, VersionOption)
 		if version == "latest" {
 			runCommand = fmt.Sprintf(
-				"%s launch workspace -- --projectDir '%s' --cache-path '%s' --auth=accept-everyone --publish --enableSmartMode",
+				"%s launch workspace -- --projectDir %q --cache-path %q --auth=accept-everyone --publish --enableSmartMode",
 				binaryPath,
 				projectDir,
 				location,
 			)
 		} else {
 			runCommand = fmt.Sprintf(
-				"%s launch workspace --workspace-version %s -- --projectDir '%s' --cache-path '%s' --auth=accept-everyone --publish --enableSmartMode",
+				"%s launch workspace --workspace-version %s -- --projectDir %q --cache-path %q "+
+					"--auth=accept-everyone --publish --enableSmartMode",
 				binaryPath,
 				version,
 				projectDir,

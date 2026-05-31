@@ -154,7 +154,7 @@ func (r *Resolver) resolveOption(
 		// check if there is only one option
 		log.Info(option.Description)
 		answer, err := log.QuestionDefault(&survey.QuestionOptions{
-			Question:               fmt.Sprintf("Please enter a value for %s", optionName),
+			Question:               fmt.Sprintf("Enter a value for %s", optionName),
 			Options:                questionOpts,
 			ValidationRegexPattern: option.ValidationPattern,
 			ValidationMessage:      option.ValidationMessage,

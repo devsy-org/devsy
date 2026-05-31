@@ -17,8 +17,8 @@ func (k *KubernetesDriver) TargetArchitecture(
 		return k.options.Architecture, nil
 	}
 
-	log.Debugf("Getting target architecture for workspace '%s'", workspaceId)
-	defer log.Debugf("Done getting target architecture for workspace '%s'", workspaceId)
+	log.Debugf("Getting target architecture for workspace %q", workspaceId)
+	defer log.Debugf("Done getting target architecture for workspace %q", workspaceId)
 
 	// get all nodes
 	nodes, err := k.client.Client().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
@@ -26,7 +26,7 @@ func (k *KubernetesDriver) TargetArchitecture(
 		if kerrors.IsForbidden(err) {
 			return "", fmt.Errorf(
 				"you don't have permission to list nodes in the Kubernetes cluster, " +
-					"please set the cluster architecture manually via provider options",
+					"set the cluster architecture manually via provider options",
 			)
 		}
 
@@ -40,7 +40,7 @@ func (k *KubernetesDriver) TargetArchitecture(
 			architecture = node.Status.NodeInfo.Architecture
 		} else if architecture != node.Status.NodeInfo.Architecture {
 			return "", fmt.Errorf(
-				"mixed architectures in the Kubernetes cluster, please set the cluster architecture manually via provider options",
+				"mixed architectures in the Kubernetes cluster, set the cluster architecture manually via provider options",
 			)
 		}
 	}

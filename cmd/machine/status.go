@@ -62,22 +62,22 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 		switch machineStatus {
 		case client.StatusStopped:
 			log.Infof(
-				"Machine '%s' is '%s', you can start it via 'devsy machine start %s'",
+				"Machine %q is %q, you can start it via 'devsy machine start %s'",
 				machineClient.Machine(),
 				machineStatus,
 				machineClient.Machine(),
 			)
 		case client.StatusBusy:
 			log.Infof(
-				"Machine '%s' is '%s', which means its currently unaccessible. "+
+				"Machine %q is %q, which means its currently unaccessible. "+
 					"This is usually resolved by waiting a couple of minutes",
 				machineClient.Machine(),
 				machineStatus,
 			)
 		case client.StatusNotFound:
-			log.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
+			log.Infof("Machine %q is %q", machineClient.Machine(), machineStatus)
 		default:
-			log.Infof("Machine '%s' is '%s'", machineClient.Machine(), machineStatus)
+			log.Infof("Machine %q is %q", machineClient.Machine(), machineStatus)
 		}
 	case output.ModeJSON:
 		out, err := json.Marshal(struct {

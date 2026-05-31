@@ -83,7 +83,7 @@ func (r *runner) getRawConfig(options provider2.CLIOptions) (*config.DevContaine
 						return match, nil
 					}
 				}
-				return "", fmt.Errorf("devcontainer with ID '%s' not found", options.DevContainerID)
+				return "", fmt.Errorf("devcontainer with ID %q not found", options.DevContainerID)
 			},
 		)
 	} else {

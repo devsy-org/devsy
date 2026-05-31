@@ -59,7 +59,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("list projects: %w", err)
 	} else if len(projectList.Items) == 0 {
 		return fmt.Errorf(
-			"you don't have access to any projects within Devsy Pro, please make sure you have at least access to 1 project",
+			"you don't have access to any projects within Devsy Pro, make sure you have at least access to 1 project",
 		)
 	}
 

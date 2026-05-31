@@ -38,7 +38,7 @@ starting it. The change is persisted to the workspace config and used on the
 next 'devsy workspace up'. Available IDEs can be listed with 'devsy ide list'.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("please specify the ide")
+				return fmt.Errorf("specify the ide")
 			}
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},

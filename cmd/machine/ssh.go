@@ -141,7 +141,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			command := fmt.Sprintf(
-				"'%s' internal helper ssh-server --stdio",
+				"%q internal helper ssh-server --stdio",
 				machineClient.AgentPath(),
 			)
 			if cmd.Debug {

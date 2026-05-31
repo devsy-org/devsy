@@ -163,13 +163,13 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 			return fmt.Errorf("couldn't get workspace: %w", getWorkspaceErr)
 		} else if instance.Status.Phase != storagev1.InstanceReady {
 			return fmt.Errorf(
-				"workspace is '%s', please run `devsy workspace up %s` to start it again",
+				"workspace is %q, run `devsy workspace up %s` to start it again",
 				instance.Status.Phase,
 				c.workspace.ID,
 			)
 		} else if instance.Status.LastWorkspaceStatus != storagev1.WorkspaceStatusRunning {
 			return fmt.Errorf(
-				"workspace is '%s', please run `devsy workspace up %s` to start it again",
+				"workspace is %q, run `devsy workspace up %s` to start it again",
 				instance.Status.LastWorkspaceStatus,
 				c.workspace.ID,
 			)

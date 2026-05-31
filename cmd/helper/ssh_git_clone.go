@@ -36,7 +36,7 @@ func NewSSHGitCloneCmd() *cobra.Command {
 func (cmd *SSHGitClone) Run(ctx context.Context, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf(
-			"expected args in format: {user}@{host} {commands...}, received \"%s\"",
+			"expected args in format: {user}@{host} {commands...}, received %q",
 			strings.Join(args, " "),
 		)
 	}

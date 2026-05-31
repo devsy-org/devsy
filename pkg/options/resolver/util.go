@@ -55,14 +55,14 @@ func addDependency(
 		if childExists && childOption != nil {
 			if !option.Global && childOption.Global {
 				return fmt.Errorf(
-					"cannot use a global option as a dependency of a non-global option. Option '%s' used in children of option '%s'",
+					"cannot use a global option as a dependency of a non-global option. Option %q used in children of option %q",
 					childName,
 					optionName,
 				)
 			}
 			if option.Local && !childOption.Local {
 				return fmt.Errorf(
-					"cannot use a non-local option as a dependency of a local option. Option '%s' used in children of option '%s'",
+					"cannot use a non-local option as a dependency of a local option. Option %q used in children of option %q",
 					childName,
 					optionName,
 				)
@@ -81,14 +81,14 @@ func addDependency(
 		if depExists && depOption != nil {
 			if option.Global && !depOption.Global {
 				return fmt.Errorf(
-					"cannot use a non-global option as a dependency of a global option. Option '%s' used in default of option '%s'",
+					"cannot use a non-global option as a dependency of a global option. Option %q used in default of option %q",
 					dep,
 					optionName,
 				)
 			}
 			if !option.Local && depOption.Local {
 				return fmt.Errorf(
-					"cannot use a local option as a dependency of a non-local option. Option '%s' used in default of option '%s'",
+					"cannot use a local option as a dependency of a non-local option. Option %q used in default of option %q",
 					dep,
 					optionName,
 				)
@@ -107,14 +107,14 @@ func addDependency(
 		if depExists && depOption != nil {
 			if option.Global && !depOption.Global {
 				return fmt.Errorf(
-					"cannot use a non-global option as a dependency of a global option. Option '%s' used in command of option '%s'",
+					"cannot use a non-global option as a dependency of a global option. Option %q used in command of option %q",
 					dep,
 					optionName,
 				)
 			}
 			if !option.Local && depOption.Local {
 				return fmt.Errorf(
-					"cannot use a local option as a dependency of a non-local option. Option '%s' used in command of option '%s'",
+					"cannot use a local option as a dependency of a non-local option. Option %q used in command of option %q",
 					dep,
 					optionName,
 				)

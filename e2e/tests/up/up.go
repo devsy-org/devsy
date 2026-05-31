@@ -183,7 +183,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		expectedImageName := language.MapConfig[language.Go].Image
 
 		gomega.Expect(containerEnvPath).
-			To(gomega.Equal(fmt.Sprintf("{\"image\":\"%s\"}", expectedImageName)))
+			To(gomega.Equal(fmt.Sprintf("{\"image\":%q}", expectedImageName)))
 
 		err = f.DevsyWorkspaceDelete(ctx, tempDir)
 		framework.ExpectNoError(err)

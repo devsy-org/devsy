@@ -194,7 +194,7 @@ func (cmd *BuildCmd) checkPushPermissions(ctx context.Context) error {
 	}
 	if err := image.CheckPushPermissions(ctx, cmd.Repository); err != nil {
 		return fmt.Errorf(
-			"cannot push to %s, please make sure you have push permissions to repository: %w",
+			"cannot push to %s, make sure you have push permissions to repository: %w",
 			cmd.Repository, err,
 		)
 	}

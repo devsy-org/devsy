@@ -500,7 +500,7 @@ func Tunnel(
 	}
 
 	// build command
-	command := fmt.Sprintf("'%s' internal helper ssh-server --stdio", ContainerDevsyHelperLocation)
+	command := fmt.Sprintf("%q internal helper ssh-server --stdio", ContainerDevsyHelperLocation)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
@@ -526,7 +526,7 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 	if !command.Exists(docker) {
 		// if docker is overridden, we assume that there is an error as we don't know how to install the command provided
 		if dockerOverride != "" {
-			return false, fmt.Errorf("docker command '%s' not found", dockerOverride)
+			return false, fmt.Errorf("docker command %q not found", dockerOverride)
 		}
 		// we need root to install docker
 		return true, nil

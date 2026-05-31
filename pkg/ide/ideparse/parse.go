@@ -302,7 +302,7 @@ func GetIDEOptions(ide string) (ide.Options, error) {
 			allowedIDEArray = append(allowedIDEArray, string(a.Name))
 		}
 
-		return nil, fmt.Errorf("unrecognized ide '%s', please use one of: %v", ide, allowedIDEArray)
+		return nil, fmt.Errorf("unrecognized ide %q, use one of: %v", ide, allowedIDEArray)
 	}
 
 	return match.Options, nil
@@ -322,7 +322,7 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 	for _, option := range options {
 		splitted := strings.Split(option, "=")
 		if len(splitted) == 1 {
-			return nil, fmt.Errorf("invalid option '%s', expected format KEY=VALUE", option)
+			return nil, fmt.Errorf("invalid option %q, expected format KEY=VALUE", option)
 		}
 
 		key := strings.ToUpper(strings.TrimSpace(splitted[0]))
@@ -330,7 +330,7 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 		ideOption, ok := ideOptions[key]
 		if !ok {
 			return nil, fmt.Errorf(
-				"invalid option '%s', allowed options are: %v",
+				"invalid option %q, allowed options are: %v",
 				key,
 				allowedOptions,
 			)
@@ -348,7 +348,7 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 				}
 
 				return nil, fmt.Errorf(
-					"invalid value '%s' for option '%s', has to match the following regEx: %s",
+					"invalid value %q for option %q, has to match the following regEx: %s",
 					value,
 					key,
 					ideOption.ValidationPattern,
@@ -360,7 +360,7 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 			found := slices.Contains(ideOption.Enum, value)
 			if !found {
 				return nil, fmt.Errorf(
-					"invalid value '%s' for option '%s', has to match one of the following values: %v",
+					"invalid value %q for option %q, has to match one of the following values: %v",
 					value,
 					key,
 					ideOption.Enum,

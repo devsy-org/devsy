@@ -83,7 +83,7 @@ func createHelperScript() error {
 		"sudo",
 		"bash",
 		"-c",
-		fmt.Sprintf("echo '%s' > %s", HelperScript, pkgconfig.SSHSignatureHelperPath),
+		fmt.Sprintf("echo %q > %s", HelperScript, pkgconfig.SSHSignatureHelperPath),
 	)
 	if err := cmd.Run(); err != nil {
 		return err

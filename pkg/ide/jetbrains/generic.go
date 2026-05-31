@@ -98,7 +98,7 @@ func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string
 		log.Debugf("Error opening jetbrains-gateway: %v", err)
 		log.Errorf(
 			"Seems like you don't have JetBrains Gateway installed on your computer. " +
-				"Please install JetBrains Gateway via https://www.jetbrains.com/remote-development/gateway/",
+				"Install JetBrains Gateway via https://www.jetbrains.com/remote-development/gateway/",
 		)
 		return err
 	}

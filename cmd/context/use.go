@@ -26,7 +26,7 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Set a Devsy context as the default",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("please specify the context to use")
+				return fmt.Errorf("specify the context to use")
 			}
 
 			return cmd.Run(cobraCmd.Context(), args[0])
@@ -44,7 +44,7 @@ func (cmd *UseCmd) Run(ctx context.Context, context string) error {
 	if err != nil {
 		return err
 	} else if devsyConfig.Contexts[context] == nil {
-		return fmt.Errorf("context '%s' doesn't exist", context)
+		return fmt.Errorf("context %q doesn't exist", context)
 	}
 
 	// check if there are use options set

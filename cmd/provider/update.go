@@ -66,7 +66,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 
 	// Standard update mode: requires provider name and optional source
 	if len(args) != 1 && len(args) != 2 {
-		return fmt.Errorf("please specify either a local file, URL or Git repository. " +
+		return fmt.Errorf("specify either a local file, URL or Git repository. " +
 			"E.g. devsy provider update my-provider " + config.ProviderPrefix + "gcloud")
 	}
 
@@ -98,7 +98,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		})
 		if err != nil {
 			log.Errorf(
-				"Error configuring provider, please retry with 'devsy provider configure %s --reconfigure'",
+				"Error configuring provider, retry with 'devsy provider configure %s --reconfigure'",
 				providerConfig.Name,
 			)
 			return fmt.Errorf("configure provider: %w", err)
@@ -107,7 +107,7 @@ func (cmd *UpdateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		return writeDefaultProvider(cmd.Context, providerConfig.Name)
 	}
 
-	log.Infof("To configure the provider, please run the following command:")
+	log.Infof("To configure the provider, run the following command:")
 	log.Infof("devsy provider configure %s", providerConfig.Name)
 	return nil
 }

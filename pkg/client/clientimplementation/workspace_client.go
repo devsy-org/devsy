@@ -850,7 +850,7 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 
 	err = ssh.RemoveFromConfig(params.WorkspaceID, sshConfigPath, sshConfigIncludePath)
 	if err != nil {
-		log.Errorf("Remove workspace '%s' from ssh config: %v", params.WorkspaceID, err)
+		log.Errorf("Remove workspace %q from ssh config: %v", params.WorkspaceID, err)
 	}
 
 	workspaceFolder, err := provider.GetWorkspaceDir(params.Context, params.WorkspaceID)

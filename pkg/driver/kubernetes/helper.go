@@ -103,7 +103,7 @@ func parseLabels(str string) (map[string]string, error) {
 		label = strings.TrimSpace(label)
 		splitted := strings.SplitN(label, "=", 2)
 		if len(splitted) != 2 {
-			return nil, fmt.Errorf("invalid label '%s', expected format label=value", label)
+			return nil, fmt.Errorf("invalid label %q, expected format label=value", label)
 		}
 
 		retMap[splitted[0]] = splitted[1]

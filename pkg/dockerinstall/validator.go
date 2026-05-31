@@ -19,7 +19,7 @@ func (v *Validator) ValidateOS(os string) error {
 	if os == "darwin" {
 		fprintln(v.opts.stderr, `
 ERROR: Unsupported operating system 'macOS'
-Please get Docker Desktop from https://www.docker.com/products/docker-desktop`)
+Get Docker Desktop from https://www.docker.com/products/docker-desktop`)
 		return fmt.Errorf("unsupported OS")
 	}
 
@@ -55,7 +55,7 @@ func (v *Validator) CheckWSL(isWSL bool) {
 
 	fprintln(v.opts.stdout, `
 WSL DETECTED: We recommend using Docker Desktop for Windows.
-Please get Docker Desktop from https://www.docker.com/products/docker-desktop`)
+Get Docker Desktop from https://www.docker.com/products/docker-desktop`)
 	fprintln(v.opts.stderr, `
 You may press Ctrl+C now to abort this script.`)
 	v.sleep(WSLWarningDelay)
@@ -110,7 +110,7 @@ ERROR: Unable to detect distribution`)
 
 	if !supported[distro.ID] {
 		fprintf(v.opts.stderr, `
-ERROR: Unsupported distribution '%s'`, distro.ID)
+ERROR: Unsupported distribution %q`, distro.ID)
 		return fmt.Errorf("unsupported distribution")
 	}
 

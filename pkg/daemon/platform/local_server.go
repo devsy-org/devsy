@@ -366,7 +366,7 @@ func (l *localServer) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if len(projectList.Items) == 0 {
 		err := fmt.Errorf(
-			"you don't have access to any projects, please make sure you have at least access to 1 project",
+			"you don't have access to any projects, make sure you have at least access to 1 project",
 		)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
@@ -396,7 +396,7 @@ func (l *localServer) projectTemplates(
 	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		err := fmt.Errorf(
 			"seems like there is no template allowed in project %s, "+
-				"please make sure to at least have a single template available",
+				"make sure to at least have a single template available",
 			projectName,
 		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -426,7 +426,7 @@ func (l *localServer) projectClusters(
 		return
 	} else if len(clusterList.Clusters) == 0 {
 		err := fmt.Errorf(
-			"seems like there is no cluster allowed in project %s, please make sure to at least have a single cluster available",
+			"seems like there is no cluster allowed in project %s, make sure to at least have a single cluster available",
 			projectName,
 		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -498,7 +498,7 @@ func (l *localServer) listWorkspace(
 		return
 	} else if len(projectList.Items) == 0 {
 		err := fmt.Errorf(
-			"you don't have access to any projects, please make sure you have at least access to 1 project",
+			"you don't have access to any projects, make sure you have at least access to 1 project",
 		)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

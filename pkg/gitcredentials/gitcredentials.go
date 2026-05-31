@@ -41,7 +41,7 @@ func ConfigureHelper(binaryPath, userName string, port int) error {
 		return err
 	}
 
-	helper := fmt.Sprintf(`helper = !'%s' internal agent git-credentials`, binaryPath)
+	helper := fmt.Sprintf(`helper = !%q internal agent git-credentials`, binaryPath)
 	if port != -1 {
 		helper += fmt.Sprintf(` --port %d`, port)
 	}
@@ -158,7 +158,7 @@ func SetUser(userName string, user *GitUser) error {
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf(
-				"set user.name '%s': %w",
+				"set user.name %q: %w",
 				strings.Join(args, " "),
 				command.WrapCommandError(out, err),
 			)
@@ -176,7 +176,7 @@ func SetUser(userName string, user *GitUser) error {
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf(
-				"set user.email '%s': %w",
+				"set user.email %q: %w",
 				strings.Join(args, " "),
 				command.WrapCommandError(out, err),
 			)

@@ -49,12 +49,12 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		if os.Getenv(devsyconfig.EnvUI) == devsyconfig.BoolTrue {
 			return nil, fmt.Errorf(
 				"workspace %s is migrated and needs to be rebuild or reset. "+
-					"Please click on rebuild or reset on the workspace to do this",
+					"Click on rebuild or reset on the workspace to do this",
 				c.workspace.ID,
 			)
 		} else {
 			return nil, fmt.Errorf(
-				"workspace %s is migrated and needs to be recreated or reset. Please use the recreate or reset flag to do this",
+				"workspace %s is migrated and needs to be recreated or reset. Use the recreate or reset flag to do this",
 				c.workspace.ID,
 			)
 		}

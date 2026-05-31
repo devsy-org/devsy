@@ -45,7 +45,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 	if err != nil {
 		return err
 	} else if devsyConfig.Contexts[context] != nil {
-		return fmt.Errorf("context '%s' already exists", context)
+		return fmt.Errorf("context %q already exists", context)
 	}
 
 	// verify name
@@ -78,7 +78,7 @@ func setOptions(devsyConfig *config.Config, context string, options []string) er
 	if err != nil {
 		return err
 	} else if devsyConfig.Contexts[context] == nil {
-		return fmt.Errorf("context '%s' doesn't exist", context)
+		return fmt.Errorf("context %q doesn't exist", context)
 	}
 
 	newValues := map[string]config.OptionValue{}
@@ -103,7 +103,7 @@ func parseOptions(options []string) (map[string]config.OptionValue, error) {
 	for _, option := range options {
 		splitted := strings.Split(option, "=")
 		if len(splitted) == 1 {
-			return nil, fmt.Errorf("invalid option '%s', expected format KEY=VALUE", option)
+			return nil, fmt.Errorf("invalid option %q, expected format KEY=VALUE", option)
 		}
 
 		key := strings.ToUpper(strings.TrimSpace(splitted[0]))
@@ -111,7 +111,7 @@ func parseOptions(options []string) (map[string]config.OptionValue, error) {
 		contextOption, ok := contextOptions[key]
 		if !ok {
 			return nil, fmt.Errorf(
-				"invalid option '%s', allowed options are: %v",
+				"invalid option %q, allowed options are: %v",
 				key,
 				allowedOptions,
 			)
@@ -121,7 +121,7 @@ func parseOptions(options []string) (map[string]config.OptionValue, error) {
 			found := slices.Contains(contextOption.Enum, value)
 			if !found {
 				return nil, fmt.Errorf(
-					"invalid value '%s' for option '%s', has to match one of the following values: %v",
+					"invalid value %q for option %q, has to match one of the following values: %v",
 					value,
 					key,
 					contextOption.Enum,

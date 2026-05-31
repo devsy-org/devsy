@@ -458,7 +458,7 @@ func (r *runner) buildDevImageCompose(
 	composeService, err := project.GetService(service)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"service '%s' configured in devcontainer.json not found in Docker Compose configuration",
+			"service %q configured in devcontainer.json not found in Docker Compose configuration",
 			service,
 		)
 	}

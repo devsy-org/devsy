@@ -388,7 +388,7 @@ func addMultiContexts(solveOpts *client.SolveOpt, buildOpts *build.BuildOptions)
 			return fmt.Errorf("get build context %v: %w", k, err)
 		}
 		if !st.IsDir() {
-			return fmt.Errorf("build context '%s' is not a directory", v)
+			return fmt.Errorf("build context %q is not a directory", v)
 		}
 
 		localName := k

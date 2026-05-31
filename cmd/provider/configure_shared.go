@@ -126,7 +126,7 @@ func resolveProviderName(args []string, defaultProvider string) (string, error) 
 		return args[0], nil
 	}
 	if defaultProvider == "" {
-		return "", fmt.Errorf("please specify a provider")
+		return "", fmt.Errorf("specify a provider")
 	}
 	return defaultProvider, nil
 }

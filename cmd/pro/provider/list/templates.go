@@ -86,7 +86,7 @@ func Templates(
 	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		return templateList, fmt.Errorf(
 			"seems like there is no template allowed in project %s, "+
-				"please make sure to at least have a single template available",
+				"make sure to at least have a single template available",
 			projectName,
 		)
 	}
@@ -108,7 +108,7 @@ func FindTemplate(
 	} else if len(templateList.DevsyWorkspaceTemplates) == 0 {
 		return nil, fmt.Errorf(
 			"seems like there is no Devsy template allowed in project %s, "+
-				"please make sure to at least have a single template available",
+				"make sure to at least have a single template available",
 			projectName,
 		)
 	}

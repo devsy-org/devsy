@@ -27,7 +27,7 @@ import (
 )
 
 var errProvideWorkspaceArg = errors.New(
-	"please provide a workspace name, e.g. 'devsy workspace up ./my-folder', " +
+	"provide a workspace name, e.g. 'devsy workspace up ./my-folder', " +
 		"'devsy workspace up github.com/my-org/my-repo' or 'devsy workspace up ubuntu'")
 
 // ErrWorkspaceNotFound is returned by Get when the requested workspace is not
@@ -334,7 +334,7 @@ func createWorkspace(
 		return nil, nil, nil, err
 	} else if provider.State == nil || !provider.State.Initialized {
 		return nil, nil, nil, fmt.Errorf(
-			"provider '%s' is not initialized, please make sure to run 'devsy provider configure %s' "+
+			"provider %q is not initialized, make sure to run 'devsy provider configure %s' "+
 				"at least once before using this provider",
 			provider.Config.Name,
 			provider.Config.Name,
@@ -447,7 +447,7 @@ func createWorkspace(
 			}
 		} else {
 			log.Infof(
-				"Reuse existing machine '%s' for workspace '%s'",
+				"Reuse existing machine %q for workspace %q",
 				workspace.Machine.ID,
 				workspace.ID,
 			)
@@ -740,7 +740,7 @@ func selectWorkspace(
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[*providerpkg.Workspace]().
-				Title("Please select a workspace from the list below").
+				Title("Select a workspace from the list below").
 				Options(options...).
 				Value(&selectedWorkspace),
 		),
@@ -764,7 +764,7 @@ func selectWorkspace(
 			workspace.Imported = true
 			if err := providerpkg.SaveWorkspaceConfig(workspace); err != nil {
 				return nil, nil, nil, fmt.Errorf(
-					"save workspace config for workspace \"%s\": %w",
+					"save workspace config for workspace %q: %w",
 					workspace.ID,
 					err,
 				)
@@ -776,7 +776,7 @@ func selectWorkspace(
 			)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf(
-					"load provider config for workspace \"%s\" with provider \"%s\": %w",
+					"load provider config for workspace %q with provider %q: %w",
 					workspace.ID,
 					workspace.Provider.Name,
 					err,

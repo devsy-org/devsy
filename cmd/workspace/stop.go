@@ -87,7 +87,7 @@ func (cmd *StopCmd) Run(
 	if err != nil {
 		return err
 	} else if instanceStatus != client2.StatusRunning {
-		return fmt.Errorf("cannot stop workspace because it is '%s'", instanceStatus)
+		return fmt.Errorf("cannot stop workspace because it is %q", instanceStatus)
 	}
 
 	// stop if single machine provider

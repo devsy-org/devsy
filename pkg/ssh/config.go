@@ -111,7 +111,7 @@ type proxyCommandBuilder struct {
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
 	return &proxyCommandBuilder{
 		baseCommand: fmt.Sprintf(
-			"\"%s\" workspace ssh --stdio --context %s --user %s %s",
+			"%q workspace ssh --stdio --context %s --user %s %s",
 			execPath,
 			context,
 			user,
@@ -122,14 +122,14 @@ func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCom
 
 func (b *proxyCommandBuilder) withDevsyHome(home string) *proxyCommandBuilder {
 	if home != "" {
-		b.options = append(b.options, fmt.Sprintf("--home \"%s\"", home))
+		b.options = append(b.options, fmt.Sprintf("--home %q", home))
 	}
 	return b
 }
 
 func (b *proxyCommandBuilder) withWorkdir(workdir string) *proxyCommandBuilder {
 	if workdir != "" {
-		b.options = append(b.options, fmt.Sprintf("--workdir \"%s\"", workdir))
+		b.options = append(b.options, fmt.Sprintf("--workdir %q", workdir))
 	}
 	return b
 }
@@ -210,7 +210,7 @@ func (b *sshConfigBuilder) build() []string {
 // buildProxyCommand creates the ProxyCommand string.
 func buildProxyCommand(execPath string, params addHostParams) string {
 	if params.command != "" {
-		return fmt.Sprintf("  ProxyCommand \"%s\"", params.command)
+		return fmt.Sprintf("  ProxyCommand %q", params.command)
 	}
 
 	return newProxyCommandBuilder(execPath, params.context, params.user, params.workspace).

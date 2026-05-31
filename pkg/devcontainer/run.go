@@ -97,7 +97,7 @@ func (r *runner) Up(
 	timeout time.Duration,
 ) (*config.Result, error) {
 	log.Debugf(
-		"Up devcontainer for workspace '%s' with timeout %s",
+		"Up devcontainer for workspace %q with timeout %s",
 		r.WorkspaceConfig.Workspace.ID,
 		timeout,
 	)
@@ -292,7 +292,7 @@ func (c *initCmdContext) runSingle(name string, cmd []string) error {
 	}
 
 	log.Infof(
-		"Running initializeCommand %q from devcontainer.json: '%s'",
+		"Running initializeCommand %q from devcontainer.json: %q",
 		name,
 		strings.Join(args, " "),
 	)

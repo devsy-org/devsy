@@ -446,7 +446,7 @@ func (t *tunnelServer) StreamWorkspace(
 	if t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions {
 		return fmt.Errorf(
 			"streaming workspace from local computer to platform workspace is not supported. " +
-				"Please specify a Git repository to clone instead",
+				"Specify a Git repository to clone instead",
 		)
 	}
 	if t.workspace == nil {
@@ -480,7 +480,7 @@ func (t *tunnelServer) StreamMount(
 	if t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions {
 		return fmt.Errorf(
 			"streaming mounts from local computer to platform workspace is not supported. " +
-				"Please specify a Git repository to clone instead",
+				"Specify a Git repository to clone instead",
 		)
 	}
 

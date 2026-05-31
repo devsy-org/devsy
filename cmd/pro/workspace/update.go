@@ -79,7 +79,7 @@ func (cmd *UpdateWorkspaceCmd) Run(
 		Stderr:  log.Writer(log.LevelError),
 	})
 	if err != nil {
-		return fmt.Errorf("update workspace with provider \"%s\": %w", provider.Name, err)
+		return fmt.Errorf("update workspace with provider %q: %w", provider.Name, err)
 	}
 
 	fmt.Println(buf.String())

@@ -69,7 +69,7 @@ func validate(config *ProviderConfig) error {
 	for optionName, optionValue := range config.Options {
 		if optionNameRegEx.MatchString(optionName) {
 			return fmt.Errorf(
-				"provider option '%s' can only consist of upper case letters, numbers or underscores, "+
+				"provider option %q can only consist of upper case letters, numbers or underscores, "+
 					"e.g. MY_OPTION, MY_OTHER_OPTION",
 				optionName,
 			)
@@ -80,7 +80,7 @@ func validate(config *ProviderConfig) error {
 			_, err := regexp.Compile(optionValue.ValidationPattern)
 			if err != nil {
 				return fmt.Errorf(
-					"error parsing validation pattern '%s' for option '%s': %w",
+					"error parsing validation pattern %q for option %q: %w",
 					optionValue.ValidationPattern, optionName, err,
 				)
 			}
@@ -88,18 +88,18 @@ func validate(config *ProviderConfig) error {
 
 		if optionValue.Default != "" && optionValue.Command != "" {
 			return fmt.Errorf(
-				"default and command cannot be used together in option '%s'",
+				"default and command cannot be used together in option %q",
 				optionName,
 			)
 		}
 
 		if optionValue.Global && optionValue.Cache != "" {
-			return fmt.Errorf("global and cache cannot be used together in option '%s'", optionName)
+			return fmt.Errorf("global and cache cannot be used together in option %q", optionName)
 		}
 
 		if optionValue.Global && optionValue.Mutable {
 			return fmt.Errorf(
-				"global and mutable cannot be used together in option '%s'",
+				"global and mutable cannot be used together in option %q",
 				optionName,
 			)
 		}
@@ -107,20 +107,20 @@ func validate(config *ProviderConfig) error {
 		if optionValue.Cache != "" {
 			_, err := time.ParseDuration(optionValue.Cache)
 			if err != nil {
-				return fmt.Errorf("invalid cache value for option '%s': %w", optionName, err)
+				return fmt.Errorf("invalid cache value for option %q: %w", optionName, err)
 			}
 		}
 
 		if optionValue.Type != "" && !contains(allowedTypes, optionValue.Type) {
 			return fmt.Errorf(
-				"type can only be one of in option '%s': %v",
+				"type can only be one of in option %q: %v",
 				optionName,
 				allowedTypes,
 			)
 		}
 
 		if optionValue.Cache != "" && optionValue.Command == "" {
-			return fmt.Errorf("cache can only be used with command in option '%s'", optionName)
+			return fmt.Errorf("cache can only be used with command in option %q", optionName)
 		}
 	}
 
@@ -318,7 +318,7 @@ func validateBinaries(prefix string, binaries map[string][]*ProviderBinary) erro
 	for binaryName, binaryArr := range binaries {
 		if optionNameRegEx.MatchString(binaryName) {
 			return fmt.Errorf(
-				"binary name '%s' can only consist of upper case letters, numbers or underscores, e.g. MY_BINARY, KUBECTL",
+				"binary name %q can only consist of upper case letters, numbers or underscores, e.g. MY_BINARY, KUBECTL",
 				binaryName,
 			)
 		}
@@ -326,7 +326,7 @@ func validateBinaries(prefix string, binaries map[string][]*ProviderBinary) erro
 		for _, binary := range binaryArr {
 			if binary.OS != "linux" && binary.OS != "darwin" && binary.OS != "windows" {
 				return fmt.Errorf(
-					"unsupported binary operating system '%s', must be 'linux', 'darwin' or 'windows'",
+					"unsupported binary operating system %q, must be 'linux', 'darwin' or 'windows'",
 					binary.OS,
 				)
 			}
@@ -360,7 +360,7 @@ func ParseOptions(options []string) (map[string]string, error) {
 	for _, option := range options {
 		splitted := strings.Split(option, "=")
 		if len(splitted) == 1 {
-			return nil, fmt.Errorf("invalid option '%s', expected format KEY=VALUE", option)
+			return nil, fmt.Errorf("invalid option %q, expected format KEY=VALUE", option)
 		}
 
 		key := strings.ToUpper(strings.TrimSpace(splitted[0]))

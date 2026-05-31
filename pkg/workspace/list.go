@@ -230,21 +230,21 @@ func listProWorkspacesForProvider(
 	retWorkspaces := []*providerpkg.Workspace{}
 	for _, instance := range instances {
 		if instance.GetLabels() == nil {
-			log.Debugf("no labels for pro workspace \"%s\" found, skipping", instance.GetName())
+			log.Debugf("no labels for pro workspace %q found, skipping", instance.GetName())
 			continue
 		}
 
 		// id
 		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
 		if id == "" {
-			log.Debugf("no ID label for pro workspace \"%s\" found, skipping", instance.GetName())
+			log.Debugf("no ID label for pro workspace %q found, skipping", instance.GetName())
 			continue
 		}
 
 		// uid
 		uid := instance.GetLabels()[storagev1.DevsyWorkspaceUIDLabel]
 		if uid == "" {
-			log.Debugf("no UID label for pro workspace \"%s\" found, skipping", instance.GetName())
+			log.Debugf("no UID label for pro workspace %q found, skipping", instance.GetName())
 			continue
 		}
 

@@ -49,7 +49,7 @@ func (k *KubernetesDriver) RunDevContainer(
 	workspaceId string,
 	options *driver.RunOptions,
 ) error {
-	log.Debugf("Running devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Running devcontainer for workspace %q", workspaceId)
 	workspaceId = getID(workspaceId)
 
 	// namespace
@@ -68,7 +68,7 @@ func (k *KubernetesDriver) RunDevContainer(
 	} else if pvc == nil {
 		if options == nil {
 			return fmt.Errorf(
-				"no options provided and no persistent volume claim found for workspace '%s'",
+				"no options provided and no persistent volume claim found for workspace %q",
 				workspaceId,
 			)
 		}
@@ -158,7 +158,7 @@ func (k *KubernetesDriver) runContainer(
 			volumeMounts = append(volumeMounts, volumeMount)
 		} else {
 			log.Warnf(
-				"Unsupported mount type '%s' in mount '%s', will skip",
+				"Unsupported mount type %q in mount %q, will skip",
 				mount.Type,
 				mount.String(),
 			)
@@ -294,7 +294,7 @@ func (k *KubernetesDriver) runContainer(
 		// Nothing changed, can safely return
 		if optionsEqual(existingOptions, k.options) {
 			log.Infof(
-				"Pod '%s' already exists and nothing changed, skipping update",
+				"Pod %q already exists and nothing changed, skipping update",
 				existingPod.Name,
 			)
 			return nil
@@ -340,14 +340,14 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	log.Debugf("Create pod with: %s", string(podRaw))
 
 	// create the pod
-	log.Infof("Create Pod '%s'", id)
+	log.Infof("Create Pod %q", id)
 	_, err = k.client.Client().CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
 
 	// wait for pod running
-	log.Infof("Waiting for DevContainer Pod '%s' to come up...", id)
+	log.Infof("Waiting for DevContainer Pod %q to come up...", id)
 	_, err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
@@ -507,15 +507,15 @@ func getNodeSelector(pod *corev1.Pod, rawNodeSelector string) (map[string]string
 }
 
 func (k *KubernetesDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	log.Debugf("Starting devcontainer for workspace '%s'", workspaceId)
-	defer log.Debugf("Done starting devcontainer for workspace '%s'", workspaceId)
+	log.Debugf("Starting devcontainer for workspace %q", workspaceId)
+	defer log.Debugf("Done starting devcontainer for workspace %q", workspaceId)
 
 	workspaceId = getID(workspaceId)
 	_, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
 	if err != nil {
 		return err
 	} else if containerInfo == nil {
-		return fmt.Errorf("persistent volume '%s' not found", workspaceId)
+		return fmt.Errorf("persistent volume %q not found", workspaceId)
 	}
 
 	return k.runContainer(
@@ -557,7 +557,7 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
 	_, err := k.client.Client().CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
-		log.Infof("Create namespace '%s'", k.namespace)
+		log.Infof("Create namespace %q", k.namespace)
 		_, err := k.client.Client().CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: k.namespace,

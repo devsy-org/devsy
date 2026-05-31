@@ -30,7 +30,7 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Get IDE options",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
-				return fmt.Errorf("please specify the ide")
+				return fmt.Errorf("specify the ide")
 			}
 
 			return cmd.Run(cobraCmd.Context(), args[0])

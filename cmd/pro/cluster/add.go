@@ -232,7 +232,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		kubeConfig, err := kubeClientConfig.RawConfig()
 		if err != nil {
 			return fmt.Errorf(
-				"there is an error loading your current kube config (%w), please make sure you have access "+
+				"there is an error loading your current kube config (%w), make sure you have access "+
 					"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 				err,
 			)
@@ -249,7 +249,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 	config, err := kubeClientConfig.ClientConfig()
 	if err != nil {
 		return fmt.Errorf(
-			"there is an error loading your current kube config (%w), please make sure you have access "+
+			"there is an error loading your current kube config (%w), make sure you have access "+
 				"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 			err,
 		)

@@ -143,7 +143,7 @@ func DefaultConfig(startPath string) *config.DevContainerConfig {
 		return MapConfig[None]
 	}
 
-	log.Infof("Detected project language '%s'", language)
+	log.Infof("Detected project language %q", language)
 	return MapConfig[language]
 }
 
