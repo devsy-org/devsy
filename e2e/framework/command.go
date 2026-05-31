@@ -246,7 +246,7 @@ func (f *Framework) DevsyProviderUse(
 	extraArgs ...string,
 ) error {
 	if len(extraArgs) > 0 {
-		configureArgs := []string{cmdProvider, "configure", provider}
+		configureArgs := []string{cmdProvider, "init", provider}
 		if err := f.ExecCommand(
 			ctx,
 			false,
@@ -254,7 +254,7 @@ func (f *Framework) DevsyProviderUse(
 			"",
 			append(configureArgs, extraArgs...),
 		); err != nil {
-			return fmt.Errorf("devsy provider configure failed: %s", err.Error())
+			return fmt.Errorf("devsy provider init failed: %s", err.Error())
 		}
 	}
 	useArgs := []string{cmdProvider, cmdUse, provider}
@@ -366,12 +366,12 @@ func (f *Framework) DevsyProviderOptionsJSON(
 	return stdout, nil
 }
 
-func (f *Framework) DevsyProviderUpdate(ctx context.Context, args ...string) error {
-	baseArgs := []string{cmdProvider, "update"}
+func (f *Framework) DevsyProviderSetSource(ctx context.Context, args ...string) error {
+	baseArgs := []string{cmdProvider, "set-source"}
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
-		return fmt.Errorf("devsy provider update failed: %s", err.Error())
+		return fmt.Errorf("devsy provider set-source failed: %s", err.Error())
 	}
 	return nil
 }
