@@ -87,6 +87,8 @@ let hasUnfilledRequired = $derived.by(() => {
   return requiredOptions.some(([key]) => !optionValues[key]?.trim())
 })
 
+let versionEntry = $derived($providerVersions.byProvider[provider.name])
+
 let groupedOptions = $derived.by(() => {
   const groups: Record<string, [string, ProviderOption][]> = {}
   for (const [key, opt] of Object.entries(options)) {
@@ -165,6 +167,21 @@ async function runUpdate() {
   } finally {
     updating = false
     confirmUpdateOpen = false
+  }
+}
+
+async function runSwitch() {
+  switching = true
+  try {
+    await providerSetVersion(provider.name, targetTag)
+    toasts.success(`Switched ${provider.name} to ${targetTag}`)
+    await loadVersionsFor(provider.name)
+    await refreshUpdates()
+  } catch (err) {
+    toasts.error(`Failed to switch version: ${extractErrorMessage(err)}`)
+  } finally {
+    switching = false
+    confirmSwitchOpen = false
   }
 }
 
@@ -298,9 +315,8 @@ async function handleSaveOptions() {
         {:else}
           {provider.name}
         {/if}
-        {#if $providerVersions.byProvider[provider.name] && !$providerVersions.byProvider[provider.name].unsupported && ($providerVersions.byProvider[provider.name].versions?.length ?? 0) > 0}
-          {@const entry = $providerVersions.byProvider[provider.name]}
-          {@const currentTag = provider.version ?? entry.versions.find((v) => v.current)?.tag ?? ""}
+        {#if versionEntry && !versionEntry.unsupported && (versionEntry.versions?.length ?? 0) > 0}
+          {@const currentTag = provider.version ?? versionEntry.versions.find((v) => v.current)?.tag ?? ""}
           <Select.Root
             type="single"
             value={currentTag}
@@ -312,7 +328,7 @@ async function handleSaveOptions() {
               <span>{currentTag || "Select version"}</span>
             </Select.Trigger>
             <Select.Content>
-              {#each entry.versions as v (v.tag)}
+              {#each versionEntry.versions as v (v.tag)}
                 <Select.Item value={v.tag} label={v.tag} />
               {/each}
             </Select.Content>
@@ -469,18 +485,5 @@ async function handleSaveOptions() {
   description={`Workspaces created with ${provider.version ?? ""} may behave differently after this change. Existing workspaces will run against ${targetTag} the next time they're used.`}
   confirmLabel="Switch"
   loading={switching}
-  onconfirm={async () => {
-    switching = true
-    try {
-      await providerSetVersion(provider.name, targetTag)
-      toasts.success(`Switched ${provider.name} to ${targetTag}`)
-      await loadVersionsFor(provider.name)
-      await refreshUpdates()
-    } catch (err) {
-      toasts.error(`Failed to switch version: ${extractErrorMessage(err)}`)
-    } finally {
-      switching = false
-      confirmSwitchOpen = false
-    }
-  }}
+  onconfirm={runSwitch}
 />
