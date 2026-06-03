@@ -120,7 +120,9 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 		args = append(args, "--use")
 	}
 	for k, v := range in.Options {
-		args = append(args, "--option", fmt.Sprintf("%s=%s", k, v))
+		// Use --flag=value single-token form so a key starting with "-" cannot
+		// be reparsed by pflag as a separate flag.
+		args = append(args, fmt.Sprintf("--option=%s=%s", k, v))
 	}
 	args = append(args, "--")
 	args = append(args, in.Source)
