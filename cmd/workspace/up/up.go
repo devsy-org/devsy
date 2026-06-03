@@ -328,23 +328,38 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+
+	// done is closed by the returned cleanup so both goroutines exit when the
+	// caller finishes — signal.Stop alone is not enough because a goroutine
+	// already blocked on <-signals will never unblock once Stop is called.
+	done := make(chan struct{})
+
 	go func() {
 		select {
 		case <-signals:
 			cancel()
 		case <-ctx.Done():
+		case <-done:
 		}
 	}()
 
 	go func() {
-		<-ctx.Done()
-		<-signals
-		// force shutdown if context is done and another signal arrives
-		os.Exit(1)
+		select {
+		case <-ctx.Done():
+		case <-done:
+			return
+		}
+		select {
+		case <-signals:
+			// force shutdown if context is done and another signal arrives
+			os.Exit(1)
+		case <-done:
+		}
 	}()
 
 	return ctx, func() {
 		cancel()
 		signal.Stop(signals)
+		close(done)
 	}
 }
