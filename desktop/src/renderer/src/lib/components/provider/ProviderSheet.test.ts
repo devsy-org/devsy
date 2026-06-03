@@ -11,6 +11,9 @@ const providerInit = vi.fn()
 const providerList = vi.fn()
 const providerSetOptions = vi.fn()
 const providerRename = vi.fn()
+const providerSetVersion = vi.fn()
+const loadVersionsFor = vi.fn()
+const refreshUpdates = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerOptions: (...args: unknown[]) => providerOptions(...args),
@@ -21,11 +24,35 @@ vi.mock("$lib/ipc/commands.js", () => ({
   providerList: (...args: unknown[]) => providerList(...args),
   providerSetOptions: (...args: unknown[]) => providerSetOptions(...args),
   providerRename: (...args: unknown[]) => providerRename(...args),
+  providerSetVersion: (...args: unknown[]) => providerSetVersion(...args),
 }))
 
 vi.mock("$lib/stores/providers.js", async () => {
   const { writable } = await import("svelte/store")
   return { providers: writable([]) }
+})
+
+vi.mock("$lib/stores/providerVersions.js", async () => {
+  const { writable } = await import("svelte/store")
+  return {
+    providerVersions: writable({
+      byProvider: {
+        ssh: {
+          versions: [
+            { tag: "0.1.0", current: true },
+            { tag: "0.2.0", current: false },
+          ],
+          unsupported: false,
+        },
+      },
+      updates: {
+        ssh: { updateAvailable: true, current: "0.1.0", latest: "0.2.0" },
+      },
+      lastCheckedAt: null,
+    }),
+    loadVersionsFor: (...args: unknown[]) => loadVersionsFor(...args),
+    refreshUpdates: (...args: unknown[]) => refreshUpdates(...args),
+  }
 })
 
 vi.mock("$lib/stores/toasts.js", () => ({
@@ -78,6 +105,9 @@ describe("ProviderSheet", () => {
     providerList.mockResolvedValue([])
     providerSetOptions.mockResolvedValue(undefined)
     providerRename.mockResolvedValue(undefined)
+    providerSetVersion.mockResolvedValue(undefined)
+    loadVersionsFor.mockResolvedValue(undefined)
+    refreshUpdates.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -199,6 +229,71 @@ describe("ProviderSheet", () => {
     const buttons = Array.from(document.querySelectorAll("button"))
     const setDefaultButton = buttons.find((btn) => btn.textContent?.trim() === "Set Default")
     expect(setDefaultButton).toBeDefined()
+    unmount()
+  })
+
+  it("renders the version selector when versions are known", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+
+    await flushAsync()
+
+    // Select trigger contains the current tag.
+    const triggers = Array.from(document.querySelectorAll("button"))
+    const versionTrigger = triggers.find((b) => b.textContent?.includes("0.1.0"))
+    expect(versionTrigger).toBeDefined()
+    unmount()
+  })
+
+  it("clicking Update opens the update confirm dialog", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+
+    await flushAsync()
+
+    const updateBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Update",
+    )
+    updateBtn?.click()
+    await tick()
+
+    // Confirm dialog title mentions the latest tag from the mocked store.
+    const dialogs = Array.from(document.querySelectorAll("[role='dialog']"))
+    const confirmDialog = dialogs.find((d) =>
+      d.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    expect(confirmDialog).toBeDefined()
+    expect(providerUpdate).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it("confirming the update dialog calls providerUpdate exactly once", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+
+    await flushAsync()
+
+    const updateBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Update",
+    )
+    updateBtn?.click()
+    await tick()
+
+    const dialogs2 = Array.from(document.querySelectorAll("[role='dialog']"))
+    const confirmDialog = dialogs2.find((d) =>
+      d.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    const confirmBtn = Array.from(
+      confirmDialog?.querySelectorAll("button") ?? [],
+    ).find((b) => b.textContent?.trim() === "Update")
+    confirmBtn?.click()
+    await flushAsync()
+
+    expect(providerUpdate).toHaveBeenCalledTimes(1)
+    expect(providerUpdate).toHaveBeenCalledWith("ssh")
     unmount()
   })
 })

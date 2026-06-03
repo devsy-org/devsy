@@ -1,16 +1,19 @@
 <script lang="ts">
 import { onMount } from "svelte"
+import { Star } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
+import * as Alert from "$lib/components/ui/alert/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Sheet from "$lib/components/ui/sheet/index.js"
 import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import ErrorCard from "$lib/components/ErrorCard.svelte"
+import UpdateConfirmDialog from "./UpdateConfirmDialog.svelte"
 import type { CLIError } from "$shared/cli-error.js"
 import {
   providerUse,
@@ -21,8 +24,14 @@ import {
   providerOptions,
   providerSetOptions,
   providerRename,
+  providerSetVersion,
 } from "$lib/ipc/commands.js"
 import { providers } from "$lib/stores/providers.js"
+import {
+  providerVersions,
+  loadVersionsFor,
+  refreshUpdates,
+} from "$lib/stores/providerVersions.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Provider, ProviderOption } from "$lib/types/index.js"
@@ -50,6 +59,16 @@ let renameSaving = $state(false)
 let initializing = $state(false)
 let initError = $state<CLIError | null>(null)
 let loadedFor = $state<string | null>(null)
+let confirmUpdateOpen = $state(false)
+let updating = $state(false)
+let confirmSwitchOpen = $state(false)
+let targetTag = $state("")
+let switching = $state(false)
+
+function openVersionSwitch(tag: string) {
+  targetTag = tag
+  confirmSwitchOpen = true
+}
 
 let isDirty = $derived.by(() => {
   for (const key of Object.keys(optionValues)) {
@@ -117,6 +136,7 @@ $effect(() => {
   if (loadedFor !== provider.name) {
     loadedFor = provider.name
     loadOptions()
+    loadVersionsFor(provider.name).catch(() => {})
   }
 })
 
@@ -129,12 +149,22 @@ async function handleSetDefault() {
   }
 }
 
-async function handleUpdate() {
+function handleUpdate() {
+  confirmUpdateOpen = true
+}
+
+async function runUpdate() {
+  updating = true
   try {
     await providerUpdate(provider.name)
     toasts.success(`Updated ${provider.name}`)
+    await loadVersionsFor(provider.name)
+    await refreshUpdates()
   } catch (err) {
     toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
+  } finally {
+    updating = false
+    confirmUpdateOpen = false
   }
 }
 
@@ -268,11 +298,33 @@ async function handleSaveOptions() {
         {:else}
           {provider.name}
         {/if}
-        {#if provider.version}
+        {#if $providerVersions.byProvider[provider.name] && !$providerVersions.byProvider[provider.name].unsupported && ($providerVersions.byProvider[provider.name].versions?.length ?? 0) > 0}
+          {@const entry = $providerVersions.byProvider[provider.name]}
+          {@const currentTag = provider.version ?? entry.versions.find((v) => v.current)?.tag ?? ""}
+          <Select.Root
+            type="single"
+            value={currentTag}
+            onValueChange={(v) => {
+              if (v && v !== currentTag) openVersionSwitch(v)
+            }}
+          >
+            <Select.Trigger class="w-[140px] h-7">
+              <span>{currentTag || "Select version"}</span>
+            </Select.Trigger>
+            <Select.Content>
+              {#each entry.versions as v (v.tag)}
+                <Select.Item value={v.tag} label={v.tag} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        {:else if provider.version}
           <span class={badgeVariants({ variant: "outline" })}>{provider.version}</span>
         {/if}
         {#if provider.isDefault}
-          <span class={badgeVariants({ variant: "default" })}>default</span>
+          <span class="{badgeVariants({ variant: 'default' })} gap-1">
+            <Star class="size-3" />
+            Default
+          </span>
         {/if}
         {#if provider.state?.initialized}
           <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
@@ -301,6 +353,19 @@ async function handleSaveOptions() {
       </ButtonGroup.Root>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
     </div>
+
+    {#if $providerVersions.updates[provider.name]?.updateAvailable === true}
+      <div class="px-6 pb-2">
+        <Alert.Root class="border-amber-500/50 bg-amber-500/10">
+          <Alert.Title>Update available: {$providerVersions.updates[provider.name].latest}</Alert.Title>
+          <Alert.Description>
+            <Button size="sm" class="mt-2" onclick={handleUpdate}>
+              Install update
+            </Button>
+          </Alert.Description>
+        </Alert.Root>
+      </div>
+    {/if}
 
     <Separator />
 
@@ -387,4 +452,35 @@ async function handleSaveOptions() {
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}
+/>
+
+<UpdateConfirmDialog
+  bind:open={confirmUpdateOpen}
+  providerName={provider.name}
+  currentVersion={provider.version}
+  latestVersion={$providerVersions.updates[provider.name]?.latest}
+  loading={updating}
+  onconfirm={runUpdate}
+/>
+
+<ConfirmDialog
+  bind:open={confirmSwitchOpen}
+  title={`Switch '${provider.name}' from ${provider.version ?? ""} to ${targetTag}`}
+  description={`Workspaces created with ${provider.version ?? ""} may behave differently after this change. Existing workspaces will run against ${targetTag} the next time they're used.`}
+  confirmLabel="Switch"
+  loading={switching}
+  onconfirm={async () => {
+    switching = true
+    try {
+      await providerSetVersion(provider.name, targetTag)
+      toasts.success(`Switched ${provider.name} to ${targetTag}`)
+      await loadVersionsFor(provider.name)
+      await refreshUpdates()
+    } catch (err) {
+      toasts.error(`Failed to switch version: ${extractErrorMessage(err)}`)
+    } finally {
+      switching = false
+      confirmSwitchOpen = false
+    }
+  }}
 />
