@@ -41,6 +41,7 @@ require (
 	github.com/moby/buildkit v0.29.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/term v0.5.2
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/pkg/sftp v1.13.10
