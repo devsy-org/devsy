@@ -6,6 +6,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/version"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +44,20 @@ func NewServeCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 func (cmd *ServeCmd) Run(ctx context.Context) error {
 	log.Debugf("starting MCP server (timeout default=%s max=%s cap=%dB)",
 		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap)
-	// Tool registration and stdio loop are added in later tasks.
-	_ = ctx
-	return nil
+
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{
+		Name:    "devsy",
+		Version: version.GetVersion(),
+	}, nil)
+
+	cmd.registerTools(server)
+
+	transport := &sdkmcp.StdioTransport{}
+	return server.Run(ctx, transport)
+}
+
+func (cmd *ServeCmd) registerTools(s *sdkmcp.Server) {
+	registerWorkspaceTools(s, cmd.GlobalFlags)
+	registerExecTool(s, cmd)
+	registerProviderTools(s, cmd.GlobalFlags)
 }
