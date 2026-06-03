@@ -27,7 +27,7 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	optionsCmd := &cobra.Command{
 		Use:         "get",
 		Short:       "Show options of a context",
-		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

@@ -32,7 +32,7 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:         "check-update",
 		Short:       "Check platform provider update",
 		Hidden:      true,
-		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),

@@ -34,7 +34,7 @@ func NewHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:         "health",
 		Short:       "Check platform health",
 		Hidden:      true,
-		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),

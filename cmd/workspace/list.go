@@ -33,7 +33,7 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Aliases:     []string{"ls"},
 		Short:       "Lists existing workspaces",
 		Args:        cobra.NoArgs,
-		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},

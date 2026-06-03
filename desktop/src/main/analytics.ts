@@ -4,8 +4,11 @@ import { PostHog } from "posthog-node"
 import { app } from "electron"
 import { machineIdSync } from "./machine-id.js"
 
-declare const __DEVSY_POSTHOG_API_KEY__: string
-const DEVSY_POSTHOG_API_KEY = __DEVSY_POSTHOG_API_KEY__
+declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
+// `typeof` guard keeps the module loadable under vitest, which doesn't
+// apply Vite's `define` replacement at test time.
+const DEVSY_POSTHOG_API_KEY =
+  typeof __DEVSY_POSTHOG_API_KEY__ === "string" ? __DEVSY_POSTHOG_API_KEY__ : ""
 const POSTHOG_HOST = "https://us.i.posthog.com"
 
 let client: PostHog | null = null

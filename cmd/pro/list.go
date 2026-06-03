@@ -34,7 +34,7 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		Aliases:     []string{"ls"},
 		Short:       "List available Devsy Pro instances",
 		Args:        cobra.NoArgs,
-		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},

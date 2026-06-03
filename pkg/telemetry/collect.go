@@ -21,6 +21,12 @@ import (
 // don't drown out meaningful CLI activity.
 const AnnotationSkipInUI = "telemetry.skip-in-ui"
 
+// SkipInUIAnnotation returns the cobra Annotations map that flags a command
+// as one the desktop polls frequently.
+func SkipInUIAnnotation() map[string]string {
+	return map[string]string{AnnotationSkipInUI: config.BoolTrue}
+}
+
 type ErrorSeverityType string
 
 const (
@@ -109,7 +115,7 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 	cmd := d.cmd.CommandPath()
 	isUI := os.Getenv(config.EnvUI) == config.BoolTrue
-	if isUI && d.cmd.Annotations[AnnotationSkipInUI] == "true" {
+	if isUI && d.cmd.Annotations[AnnotationSkipInUI] == config.BoolTrue {
 		return
 	}
 
