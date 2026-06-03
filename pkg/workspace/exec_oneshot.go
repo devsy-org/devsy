@@ -109,6 +109,10 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 		res.ExitCode = -1
 		return res, nil
 	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		res.ExitCode = -1
+		return res, ctx.Err()
+	}
 	if runErr != nil {
 		return res, runErr
 	}
