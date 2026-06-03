@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/workspace"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/docker"
+	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -216,7 +216,7 @@ func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 	string,
 	error,
 ) {
-	dockerCommand := workspace.DefaultDockerCommand
+	dockerCommand := pkgworkspace.DefaultDockerCommand
 	if cmd.DockerPath != "" {
 		dockerCommand = cmd.DockerPath
 	}
@@ -262,8 +262,8 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 	string,
 	error,
 ) {
-	containerDetails, err := workspace.FindRunningContainer(
-		ctx, workspace.DefaultDockerCommand, "", cmd.IDLabels,
+	containerDetails, err := pkgworkspace.FindRunningContainer(
+		ctx, pkgworkspace.DefaultDockerCommand, "", cmd.IDLabels,
 	)
 	if err != nil {
 		return nil, "", err

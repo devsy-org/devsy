@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/types"
+	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -143,7 +144,7 @@ func (cmd *ApplyCmd) resolveDockerPath() string {
 	if cmd.DockerPath != "" {
 		return cmd.DockerPath
 	}
-	return workspace.DefaultDockerCommand
+	return pkgworkspace.DefaultDockerCommand
 }
 
 func (cmd *ApplyCmd) inspectRunningContainer(
@@ -159,7 +160,7 @@ func (cmd *ApplyCmd) inspectRunningContainer(
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, workspace.ContainerStatusRunning) {
+	if !strings.EqualFold(containerDetails.State.Status, pkgworkspace.ContainerStatusRunning) {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.Container,
