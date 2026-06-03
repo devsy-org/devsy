@@ -16,6 +16,9 @@ func NewBoundedBuffer(cap int) *BoundedBuffer {
 	if cap < 8 {
 		cap = 8
 	}
+	if cap%2 != 0 {
+		cap++
+	}
 	return &BoundedBuffer{cap: cap}
 }
 

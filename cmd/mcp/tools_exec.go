@@ -31,7 +31,9 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 		Name: "workspace_exec",
 		Description: "Run a one-shot command in a workspace container. Output is capped " +
 			"per stream; excess is truncated in the middle. The command is argv, not a shell string.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in execInput) (*sdkmcp.CallToolResult, execOutput, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in execInput,
+	) (*sdkmcp.CallToolResult, execOutput, error) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), execOutput{}, nil
 		}
@@ -67,5 +69,5 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 			TimedOut:   res.TimedOut,
 			Clamped:    res.Clamped,
 		}, nil
-	})
+	}))
 }

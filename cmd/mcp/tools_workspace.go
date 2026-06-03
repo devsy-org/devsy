@@ -9,6 +9,7 @@ import (
 	up "github.com/devsy-org/devsy/cmd/workspace/up"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -36,25 +37,27 @@ func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_list",
 		Description: "List all Devsy workspaces.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ workspaceListInput,
+	}, safeHandler(func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ workspaceListInput,
 	) (*sdkmcp.CallToolResult, workspaceListOutput, error) {
 		out, err := handleWorkspaceList(ctx, g)
 		if err != nil {
 			return errorResult(err), workspaceListOutput{}, nil
 		}
 		return nil, out, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_status",
 		Description: "Get detailed status for a workspace by name.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in workspaceStatusInput) (*sdkmcp.CallToolResult, any, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in workspaceStatusInput,
+	) (*sdkmcp.CallToolResult, any, error) {
 		out, err := handleWorkspaceStatus(ctx, g, in.Name)
 		if err != nil {
 			return errorResult(err), nil, nil
 		}
 		return nil, out, nil
-	})
+	}))
 
 	registerWorkspaceLifecycleTools(s, g)
 }
@@ -101,7 +104,9 @@ func handleWorkspaceStatus(ctx context.Context, g *flags.GlobalFlags, name strin
 }
 
 // errorResult builds an isError CallToolResult carrying our structured payload.
+// The raw error is logged so operators can see the unclassified failure detail.
 func errorResult(err error) *sdkmcp.CallToolResult {
+	log.Errorf("mcp tool error: %v", err)
 	payload := ClassifyError(err)
 	return &sdkmcp.CallToolResult{
 		IsError:           true,
@@ -132,43 +137,51 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_start",
 		Description: "Start (or resume) an existing workspace by name.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := startWorkspace(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_stop",
 		Description: "Stop a running workspace by name.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := stopWorkspace(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_delete",
 		Description: "Delete a workspace by name. Pass force=true to force-delete even if not found remotely.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := deleteWorkspace(ctx, g, in.Name, in.Force); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_create",
 		Description: "Create and start a new workspace from a git URL, local path, or container image.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in createInput) (*sdkmcp.CallToolResult, any, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in createInput,
+	) (*sdkmcp.CallToolResult, any, error) {
 		out, err := createWorkspace(ctx, g, in)
 		if err != nil {
 			return errorResult(err), nil, nil
 		}
 		return nil, out, nil
-	})
+	}))
 }
 
 func startWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) error {
@@ -247,6 +260,7 @@ func runUp(ctx context.Context, g *flags.GlobalFlags, in createInput) error {
 	if in.Name != "" {
 		args = append(args, "--id", in.Name)
 	}
+	args = append(args, "--")
 	args = append(args, in.Source)
 
 	cobraCmd := up.NewUpCmd(g)

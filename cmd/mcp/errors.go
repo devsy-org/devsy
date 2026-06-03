@@ -22,20 +22,17 @@ func ClassifyError(err error) ErrorPayload {
 	if err == nil {
 		return ErrorPayload{}
 	}
-	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-		return ErrorPayload{
-			Code:    "workspace_not_found",
-			Message: err.Error(),
-		}
-	}
 	classified := cliErrors.Classify(err, cliErrors.ClassifyContext{})
 	code := "internal_error"
 	if classified.Code != "" {
 		code = string(classified.Code)
 	}
+	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+		code = "workspace_not_found"
+	}
 	return ErrorPayload{
 		Code:    code,
-		Message: classified.Message,
+		Message: err.Error(),
 		Hint:    classified.Hint,
 		DocURL:  classified.DocURL,
 	}

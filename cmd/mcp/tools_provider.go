@@ -37,44 +37,50 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "provider_list",
 		Description: "List configured Devsy providers.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{},
+	}, safeHandler(func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{},
 	) (*sdkmcp.CallToolResult, providerListOutput, error) {
 		out, err := handleProviderList(ctx, g)
 		if err != nil {
 			return errorResult(err), providerListOutput{}, nil
 		}
 		return nil, out, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "provider_add",
 		Description: "Add a provider from a source (registry name, URL, or local path).",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := runProviderAdd(ctx, g, in); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "provider_delete",
 		Description: "Delete a configured provider.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := runProviderDelete(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "provider_use",
 		Description: "Set a provider as the default for new workspaces.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput) (*sdkmcp.CallToolResult, opOK, error) {
+	}, safeHandler(func(
+		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
+	) (*sdkmcp.CallToolResult, opOK, error) {
 		if err := runProviderUse(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
 		return nil, opOK{OK: true}, nil
-	})
+	}))
 }
 
 func handleProviderList(_ context.Context, g *flags.GlobalFlags) (providerListOutput, error) {
@@ -116,6 +122,7 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 	for k, v := range in.Options {
 		args = append(args, "--option", fmt.Sprintf("%s=%s", k, v))
 	}
+	args = append(args, "--")
 	args = append(args, in.Source)
 
 	cobraCmd := cmdprovider.NewAddCmd(g)
@@ -126,14 +133,14 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 
 func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
 	cobraCmd := cmdprovider.NewDeleteCmd(g)
-	cobraCmd.SetArgs([]string{name})
+	cobraCmd.SetArgs([]string{"--", name})
 	cobraCmd.SetContext(ctx)
 	return cobraCmd.Execute()
 }
 
 func runProviderUse(ctx context.Context, g *flags.GlobalFlags, name string) error {
 	cobraCmd := cmdprovider.NewUseCmd(g)
-	cobraCmd.SetArgs([]string{name})
+	cobraCmd.SetArgs([]string{"--", name})
 	cobraCmd.SetContext(ctx)
 	return cobraCmd.Execute()
 }

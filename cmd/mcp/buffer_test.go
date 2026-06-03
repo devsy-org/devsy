@@ -40,3 +40,18 @@ func TestBoundedBuffer_MultipleWritesAccumulate(t *testing.T) {
 		t.Fatal("expected truncated after 20 bytes into cap 10")
 	}
 }
+
+func TestBoundedBuffer_OddCap(t *testing.T) {
+	// Odd cap should be rounded up so head+tail covers everything when
+	// written exactly cap bytes.
+	b2 := NewBoundedBuffer(101) // odd, > floor; rounded up to 102
+	for range 101 {
+		_, _ = b2.Write([]byte("a"))
+	}
+	if b2.Truncated() {
+		t.Fatal("at exactly 101 bytes into cap 102, should not be truncated")
+	}
+	if got := b2.String(); len(got) != 101 {
+		t.Fatalf("expected 101 bytes, got %d", len(got))
+	}
+}
