@@ -46,10 +46,8 @@ func (cmd *ServeCmd) Run(ctx context.Context) error {
 	log.Debugf("starting MCP server (timeout default=%s max=%s cap=%dB)",
 		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap)
 
-	// Capture the real stdout before any redirection. StdioTransport.Connect
-	// reads os.Stdin/os.Stdout lazily (at server.Run time), so we use IOTransport
-	// with explicit file references instead. Then we redirect os.Stdout → os.Stderr
-	// so any code path that writes to os.Stdout cannot corrupt the MCP JSON-RPC frame.
+	// Reserve the real stdout for the JSON-RPC frame and redirect os.Stdout to
+	// stderr so stray writes elsewhere in the process cannot corrupt it.
 	realStdout := os.Stdout
 	os.Stdout = os.Stderr
 	defer func() { os.Stdout = realStdout }()
