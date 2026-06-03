@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +70,7 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
-	result := ResolveDockerCommand(nil)
+	result := workspace2.ResolveDockerCommand(nil)
 	assert.Equal(t, "docker", result)
 }
 

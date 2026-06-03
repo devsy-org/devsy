@@ -32,13 +32,18 @@ type ExecOneShotOptions struct {
 	Stderr                io.Writer
 }
 
+// defaultExecTimeoutSeconds is used when neither the caller nor the configured
+// default supplies a positive timeout. Kept short enough to surface hung calls
+// quickly while long enough to allow typical build/test commands to complete.
+const defaultExecTimeoutSeconds = 300
+
 // ExecOneShotResult is the structured outcome of an exec.
 type ExecOneShotResult struct {
-	ExitCode      int
-	DurationMS    int64
-	TimedOut      bool
-	TimeoutSecond int
-	Clamped       bool
+	ExitCode       int
+	DurationMS     int64
+	TimedOut       bool
+	TimeoutSeconds int
+	Clamped        bool
 }
 
 // ResolveTimeout returns the effective timeout and whether the caller's
@@ -67,13 +72,13 @@ func (o ExecOneShotOptions) ResolveTimeout(fallbackDefault int) (time.Duration, 
 // It never reads stdin and never allocates a TTY.
 func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResult, error) {
 	if opts.WorkspaceName == "" {
-		return nil, fmt.Errorf("WorkspaceName is required")
+		return nil, fmt.Errorf("workspace name is required")
 	}
 	if len(opts.Command) == 0 {
 		return nil, fmt.Errorf("command is required")
 	}
 
-	timeout, clamped := opts.ResolveTimeout(300)
+	timeout, clamped := opts.ResolveTimeout(defaultExecTimeoutSeconds)
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -94,10 +99,10 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	duration := time.Since(start)
 
 	res := &ExecOneShotResult{
-		ExitCode:      exitCode,
-		DurationMS:    duration.Milliseconds(),
-		Clamped:       clamped,
-		TimeoutSecond: int(timeout.Seconds()),
+		ExitCode:       exitCode,
+		DurationMS:     duration.Milliseconds(),
+		Clamped:        clamped,
+		TimeoutSeconds: int(timeout.Seconds()),
 	}
 	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 		res.TimedOut = true

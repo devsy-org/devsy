@@ -18,25 +18,6 @@ import (
 	"golang.org/x/term"
 )
 
-// Re-exports so that code within this package (including tests) can reference
-// symbols that have moved to pkg/workspace without an import alias.
-const (
-	DefaultDockerCommand   = workspace2.DefaultDockerCommand
-	ContainerStatusRunning = workspace2.ContainerStatusRunning
-)
-
-// ResolveDockerCommand is a re-export of the pkg/workspace function.
-var ResolveDockerCommand = workspace2.ResolveDockerCommand
-
-// FindRunningContainer is a re-export of the pkg/workspace function.
-var FindRunningContainer = workspace2.FindRunningContainer
-
-// LoadExecResult is a re-export of the pkg/workspace function.
-var LoadExecResult = workspace2.LoadExecResult
-
-// ResolveExecWorkdir is a re-export of the pkg/workspace function.
-var ResolveExecWorkdir = workspace2.ResolveExecWorkdir
-
 type ExecCmd struct {
 	*flags.GlobalFlags
 
