@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ide"
 	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/machine"
+	"github.com/devsy-org/devsy/cmd/mcp"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/cmd/self"
@@ -177,6 +178,9 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	selfCmd := self.NewSelfCmd(globalFlags)
 	selfCmd.GroupID = groupMeta
 	rootCmd.AddCommand(selfCmd)
+	mcpCmd := mcp.NewMCPCmd(globalFlags)
+	mcpCmd.GroupID = groupMeta
+	rootCmd.AddCommand(mcpCmd)
 	configCmd := cliconfig.NewConfigCmd(globalFlags)
 	configCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(configCmd)
