@@ -28,6 +28,13 @@ const (
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
+	// EnvProRunner is set by the Devsy Pro runner pod to mark runner-side CLI invocations.
+	EnvProRunner = "DEVSY_PRO_RUNNER"
+
+	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
+	// processes so their events share the desktop's analytics identity.
+	EnvTelemetryDistinctID = "DEVSY_TELEMETRY_DISTINCT_ID"
+
 	// EnvAgentURL overrides the agent download URL.
 	EnvAgentURL = "DEVSY_AGENT_URL"
 

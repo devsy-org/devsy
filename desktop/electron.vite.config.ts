@@ -3,9 +3,15 @@ import { svelte } from "@sveltejs/vite-plugin-svelte"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig, externalizeDepsPlugin } from "electron-vite"
 
+// Empty in local builds, which makes the analytics module no-op.
+const posthogApiKeyDefine = {
+  __DEVSY_POSTHOG_API_KEY__: JSON.stringify(process.env.DEVSY_POSTHOG_API_KEY ?? ""),
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    define: posthogApiKeyDefine,
     build: {
       outDir: "dist/main",
       rollupOptions: {

@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -24,8 +25,9 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	optionsCmd := &cobra.Command{
-		Use:   "get",
-		Short: "Show options of a context",
+		Use:         "get",
+		Short:       "Show options of a context",
+		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

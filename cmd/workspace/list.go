@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -28,10 +29,11 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	listCmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "Lists existing workspaces",
-		Args:    cobra.NoArgs,
+		Use:         "list",
+		Aliases:     []string{"ls"},
+		Short:       "Lists existing workspaces",
+		Args:        cobra.NoArgs,
+		Annotations: map[string]string{telemetry.AnnotationSkipInUI: "true"},
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},

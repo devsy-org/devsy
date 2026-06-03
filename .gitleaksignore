@@ -1,4 +1,0 @@
-# PostHog project tokens are public write-only keys safe to commit.
-# See: https://posthog.com/docs/libraries/js#config
-pkg/telemetry/analytics/client.go:generic-api-key:9
-desktop/src/main/analytics.ts:generic-api-key:7

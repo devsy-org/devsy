@@ -208,7 +208,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("extra devcontainer file is only supported with local provider")
 	}
 
-	telemetry.CollectorCLI.SetClient(client)
+	telemetry.FromContext(cobraCmd.Context()).SetClient(client)
 	return cmd.Run(ctx, devsyConfig, client, args)
 }
 
