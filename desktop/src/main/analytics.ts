@@ -4,11 +4,19 @@ import { PostHog } from "posthog-node"
 import { app } from "electron"
 import { machineIdSync } from "./machine-id.js"
 
-const POSTHOG_API_KEY = "phc_u3TY39zxfrRcyXJoqZ5WRFVTr75gZBHi2AUrfqJ6GCj2"
+declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
+// `typeof` guard keeps the module loadable under vitest, which doesn't
+// apply Vite's `define` replacement at test time.
+const DEVSY_POSTHOG_API_KEY =
+  typeof __DEVSY_POSTHOG_API_KEY__ === "string" ? __DEVSY_POSTHOG_API_KEY__ : ""
 const POSTHOG_HOST = "https://us.i.posthog.com"
 
 let client: PostHog | null = null
 let distinctId = ""
+
+export function getAnalyticsDistinctId(): string {
+  return distinctId || getDistinctId()
+}
 
 function getDistinctId(): string {
   const id = machineIdSync()
@@ -24,13 +32,13 @@ function isTelemetryDisabled(): boolean {
 
 export function initAnalytics(): void {
   if (isTelemetryDisabled()) return
-  if (!POSTHOG_API_KEY || POSTHOG_API_KEY === "phc_PLACEHOLDER") {
+  if (!DEVSY_POSTHOG_API_KEY) {
     console.warn("[telemetry] PostHog API key not configured; analytics disabled")
     return
   }
 
   distinctId = getDistinctId()
-  client = new PostHog(POSTHOG_API_KEY, {
+  client = new PostHog(DEVSY_POSTHOG_API_KEY, {
     host: POSTHOG_HOST,
     flushAt: 20,
     flushInterval: 30_000,

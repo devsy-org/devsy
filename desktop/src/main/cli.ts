@@ -3,6 +3,7 @@ import { execFile as execFileCb, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { promisify } from "node:util"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
+import { getAnalyticsDistinctId } from "./analytics.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
@@ -76,7 +77,13 @@ function parseStderrLine(line: string): CliLogLine | undefined {
  * We augment PATH so all spawned CLI processes can find these tools.
  */
 function buildEnv(): NodeJS.ProcessEnv {
-  if (process.platform !== "darwin") return { ...process.env, DEVSY_UI: "true" }
+  const baseEnv = {
+    ...process.env,
+    DEVSY_UI: "true",
+    DEVSY_TELEMETRY_DISTINCT_ID: getAnalyticsDistinctId(),
+  }
+
+  if (process.platform !== "darwin") return baseEnv
 
   const currentPath = process.env.PATH ?? ""
   const extraDirs = [
@@ -85,11 +92,10 @@ function buildEnv(): NodeJS.ProcessEnv {
     "/opt/homebrew/sbin",
   ]
   const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
-  if (missing.length === 0) return { ...process.env, DEVSY_UI: "true" }
+  if (missing.length === 0) return baseEnv
 
   return {
-    ...process.env,
-    DEVSY_UI: "true",
+    ...baseEnv,
     PATH: `${missing.join(":")}:${currentPath}`,
   }
 }

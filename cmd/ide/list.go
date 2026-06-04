@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/ideparse"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -26,10 +27,11 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: flags,
 	}
 	listCmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List available IDEs",
-		Args:    cobra.NoArgs,
+		Use:         "list",
+		Aliases:     []string{"ls"},
+		Short:       "List available IDEs",
+		Args:        cobra.NoArgs,
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},

@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -30,9 +31,10 @@ func NewHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "health",
-		Short:  "Check platform health",
-		Hidden: true,
+		Use:         "health",
+		Short:       "Check platform health",
+		Hidden:      true,
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),

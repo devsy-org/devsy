@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	gocontext "context"
 	"errors"
 	"fmt"
 	"os"
@@ -55,9 +56,27 @@ func isMachineLogFormat(format string) bool {
 func Execute() {
 	rootCmd, globalFlags := BuildRoot()
 
+	// Bootstrap pre-Execute so subcommands that override PersistentPreRunE
+	// without chaining (e.g. pro, agent) still get telemetry.
+	target := rootCmd
+	if found, _, findErr := rootCmd.Find(os.Args[1:]); findErr == nil && found != nil {
+		target = found
+	}
+	collector := telemetry.BootstrapCLI(target)
+	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+
 	err := rootCmd.Execute()
-	telemetry.CollectorCLI.RecordCLI(err)
-	telemetry.CollectorCLI.Flush()
+
+	// Re-apply opt-out post-Execute for the same PreRunE-bypass case.
+	if devsyConfig, cfgErr := config.LoadConfig(
+		globalFlags.Context,
+		globalFlags.Provider,
+	); cfgErr == nil {
+		collector = telemetry.ApplyCLIConfig(devsyConfig, collector)
+	}
+
+	collector.RecordCLI(err)
+	collector.Flush()
 	if err != nil {
 		//nolint:all
 		if sshExitErr, ok := err.(*ssh.ExitError); ok {
@@ -129,7 +148,11 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 
 		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 		if err == nil {
-			telemetry.StartCLI(devsyConfig, cobraCmd)
+			current := telemetry.FromContext(cobraCmd.Context())
+			cobraCmd.SetContext(telemetry.WithCollector(
+				cobraCmd.Context(),
+				telemetry.ApplyCLIConfig(devsyConfig, current),
+			))
 		}
 		return nil
 	}
