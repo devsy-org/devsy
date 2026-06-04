@@ -13,11 +13,26 @@ import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ProviderCard from "$lib/components/provider/ProviderCard.svelte"
+import ProviderSheet from "$lib/components/provider/ProviderSheet.svelte"
 import { providers, providersLoading } from "$lib/stores/providers.js"
 import { refreshUpdates } from "$lib/stores/providerVersions.js"
 
+let { params = {} }: { params?: Record<string, string> } = $props()
+
 let search = $state("")
 let sortBy = $state<"name" | "version">("name")
+
+let activeId = $derived(decodeURIComponent(params.id ?? ""))
+let activeProvider = $derived($providers.find((p) => p.name === activeId))
+let sheetOpen = $derived(activeId !== "" && activeProvider !== undefined)
+
+function openProvider(name: string) {
+  goto(`/providers/${encodeURIComponent(name)}`)
+}
+
+function closeSheet() {
+  if (activeId) goto("/providers")
+}
 
 onMount(() => {
   refreshUpdates().catch(() => {})
@@ -103,8 +118,21 @@ let filtered = $derived.by(() => {
   {:else}
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each filtered as provider (provider.name)}
-        <ProviderCard {provider} />
+        <ProviderCard {provider} onopen={() => openProvider(provider.name)} />
       {/each}
     </div>
   {/if}
 </div>
+
+{#if activeProvider}
+  <ProviderSheet
+    provider={activeProvider}
+    bind:open={
+      () => sheetOpen,
+      (v) => {
+        if (!v) closeSheet()
+      }
+    }
+    ondeleted={closeSheet}
+  />
+{/if}

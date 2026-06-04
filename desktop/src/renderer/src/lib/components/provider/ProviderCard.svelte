@@ -2,12 +2,13 @@
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { Star } from "@lucide/svelte"
 import ProviderIcon from "./ProviderIcon.svelte"
-import ProviderSheet from "./ProviderSheet.svelte"
 import { providerVersions } from "$lib/stores/providerVersions.js"
 import type { Provider } from "$lib/types/index.js"
 
-let { provider }: { provider: Provider } = $props()
-let sheetOpen = $state(false)
+let {
+  provider,
+  onopen,
+}: { provider: Provider; onopen?: () => void } = $props()
 
 function sourceDisplay(p: Provider): string {
   if (p.source?.github) return p.source.github
@@ -20,7 +21,7 @@ function sourceDisplay(p: Provider): string {
 <button
   type="button"
   class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full relative"
-  onclick={() => (sheetOpen = true)}
+  onclick={() => onopen?.()}
 >
   {#if $providerVersions.updates[provider.name]?.updateAvailable}
     <span
@@ -59,5 +60,3 @@ function sourceDisplay(p: Provider): string {
     <p class="mt-1 text-xs text-muted-foreground truncate">{sourceDisplay(provider)}</p>
   {/if}
 </button>
-
-<ProviderSheet {provider} bind:open={sheetOpen} />
