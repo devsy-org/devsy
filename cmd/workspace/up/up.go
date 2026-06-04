@@ -49,11 +49,11 @@ type UpCmd struct {
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 
-	// Out receives result/error JSON envelopes; nil falls back to os.Stdout (CLI default).
+	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
 	Out io.Writer
 }
 
-// Options is the structured input form of the up command, for non-CLI callers.
+// Options is the structured input form of the up command.
 type Options struct {
 	Source           string // git URL, local path, image, or workspace name
 	Name             string // explicit workspace ID override
@@ -62,22 +62,20 @@ type Options struct {
 	DevcontainerPath string // path to devcontainer.json, relative to project
 }
 
-// RunFromOptions runs the up logic without cobra, for callers with structured
-// input and their own context cancellation. WithSignals is intentionally skipped.
+// RunFromOptions runs the up logic without cobra. Callers own ctx cancellation;
+// WithSignals is intentionally skipped.
 func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
 	cmd := buildUpCmd(g, opts)
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	// Read from cmd.GlobalFlags (the copy) so opts.Provider overrides take effect.
+	// Read from the copy in cmd.GlobalFlags so opts.Provider overrides take effect.
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
 	cmd.applyConfig(devsyConfig)
 
-	// Surface the missing-provider case here so non-CLI callers don't see a
-	// confusing downstream lookup error.
 	if cmd.Provider == "" && devsyConfig.Current().DefaultProvider == "" {
 		return fmt.Errorf("no provider specified and no default provider configured for context %q",
 			cmd.Context)
@@ -95,7 +93,6 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 	return cmd.Run(ctx, devsyConfig, client, args)
 }
 
-// buildUpCmd constructs an UpCmd from structured options for non-CLI callers.
 func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	ide := opts.IDE
 	if ide == "" {
@@ -111,17 +108,14 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	}
 	cmd := &UpCmd{
 		GlobalFlags: &gCopy,
-		// Discard JSON envelopes so they can't corrupt a shared stdout (e.g.
-		// an MCP stdio transport).
-		Out: io.Discard,
+		Out:         io.Discard, // any callers wanting envelopes can set this themselves.
 	}
 	cmd.IDE = ide
 	cmd.DevContainerPath = opts.DevcontainerPath
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}
-	// Mirror CLI flag defaults that ship as *bool so non-CLI callers don't
-	// silently get nil-pointer or false-default behavior.
+	// *bool flags lose their CLI default when the cobra registration is skipped.
 	mountGitRootDefault := true
 	cmd.MountWorkspaceGitRoot = &mountGitRootDefault
 	return cmd
@@ -171,8 +165,6 @@ func (cmd *UpCmd) Run(
 	})
 }
 
-// applyConfig sets config-derived fields after loading the devsy config.
-// Used by both execute() and RunFromOptions().
 func (cmd *UpCmd) applyConfig(devsyConfig *config.Config) {
 	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
 		cmd.StrictHostKeyChecking = true
@@ -246,8 +238,6 @@ func (cmd *UpCmd) maybeStartTunnel(
 	return tunnelCleanup
 }
 
-// stdout returns the output writer for structured JSON envelopes.
-// Falls back to os.Stdout when no explicit writer is set, matching CLI behaviour.
 func (cmd *UpCmd) stdout() io.Writer {
 	if cmd.Out != nil {
 		return cmd.Out
