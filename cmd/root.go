@@ -42,7 +42,16 @@ const (
 	groupPlatform     = "platform"
 	groupDevcontainer = "devcontainer"
 	groupMeta         = "meta"
+
+	// envProEnabled gates registration of the `pro` command tree. The pro
+	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
+	// expose it (e.g. for internal testing).
+	envProEnabled = "DEVSY_PRO_ENABLED"
 )
+
+func proEnabled() bool {
+	return os.Getenv(envProEnabled) == "true"
+}
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
 // a structured, machine-parseable stream (json or logfmt). Callers use this to
@@ -163,13 +172,16 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
-	rootCmd.AddGroup(
-		&cobra.Group{ID: groupCore, Title: "Core commands:"},
-		&cobra.Group{ID: groupConfig, Title: "Configuration commands:"},
-		&cobra.Group{ID: groupPlatform, Title: "Platform commands:"},
-		&cobra.Group{ID: groupDevcontainer, Title: "Devcontainer commands:"},
-		&cobra.Group{ID: groupMeta, Title: "Meta:"},
-	)
+	groups := []*cobra.Group{
+		{ID: groupCore, Title: "Core commands:"},
+		{ID: groupConfig, Title: "Configuration commands:"},
+		{ID: groupDevcontainer, Title: "Devcontainer commands:"},
+		{ID: groupMeta, Title: "Meta:"},
+	}
+	if proEnabled() {
+		groups = append(groups, &cobra.Group{ID: groupPlatform, Title: "Platform commands:"})
+	}
+	rootCmd.AddGroup(groups...)
 
 	registerSubcommands(rootCmd, globalFlags)
 
@@ -189,10 +201,11 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	contextCmd := context.NewContextCmd(globalFlags)
 	contextCmd.GroupID = groupConfig
 	rootCmd.AddCommand(contextCmd)
-	proCmd := pro.NewProCmd(globalFlags)
-	proCmd.GroupID = groupPlatform
-	rootCmd.AddCommand(proCmd)
-
+	if proEnabled() {
+		proCmd := pro.NewProCmd(globalFlags)
+		proCmd.GroupID = groupPlatform
+		rootCmd.AddCommand(proCmd)
+	}
 	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
 	wsCmd.GroupID = groupCore
 	rootCmd.AddCommand(wsCmd)
