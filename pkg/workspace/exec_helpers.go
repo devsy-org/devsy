@@ -2,16 +2,12 @@ package workspace
 
 import (
 	"bytes"
-	"context"
-	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path"
 	"strings"
 
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
@@ -20,13 +16,6 @@ const (
 	DefaultDockerCommand   = "docker"
 	ContainerStatusRunning = "running"
 )
-
-// ContainerTarget bundles the docker helper, container ID, and user for exec operations.
-type ContainerTarget struct {
-	Helper      *docker.DockerHelper
-	ContainerID string
-	User        string
-}
 
 // ResolveDockerCommand returns the docker binary to invoke. Precedence:
 // caller-supplied override → provider config (agent.docker.path) → default.
@@ -59,39 +48,6 @@ func ResolveDockerCommand(
 	}
 
 	return DefaultDockerCommand
-}
-
-func FindRunningContainer(
-	ctx context.Context,
-	dockerCommand string,
-	workspaceID string,
-	idLabels []string,
-) (*devcconfig.ContainerDetails, error) {
-	dockerHelper := &docker.DockerHelper{
-		DockerCommand: dockerCommand,
-	}
-
-	labels := devcconfig.GetIDLabels(workspaceID, idLabels)
-	container, err := dockerHelper.FindDevContainer(ctx, labels)
-	if err != nil {
-		return nil, fmt.Errorf("find container: %w", err)
-	}
-	if container == nil {
-		return nil, fmt.Errorf(
-			"no running container found for workspace %q",
-			workspaceID,
-		)
-	}
-
-	if !strings.EqualFold(container.State.Status, ContainerStatusRunning) {
-		return nil, fmt.Errorf(
-			"container %s is not running (status: %s)",
-			container.ID,
-			container.State.Status,
-		)
-	}
-
-	return container, nil
 }
 
 func LoadExecResult(
@@ -163,31 +119,8 @@ func applyRemoteEnv(env map[string]string, remoteEnv map[string]*string) {
 	}
 }
 
-// ProbeContainerEnv probes the container's environment via the given probe strategy.
-func ProbeContainerEnv(
-	ctx context.Context,
-	target ContainerTarget,
-	probe string,
-) map[string]string {
-	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
-	if err != nil {
-		log.Warnf("Invalid userEnvProbe %q, using default: %v", probe, err)
-		userEnvProbe = devcconfig.DefaultUserEnvProbe
-	}
-	if userEnvProbe == devcconfig.NoneProbe {
-		return map[string]string{}
-	}
-
-	shellFlag := probeShellFlag(userEnvProbe)
-
-	out, sep, err := runProbeCommand(ctx, target, shellFlag)
-	if err != nil {
-		log.Warnf("Failed to probe user env: %v", err)
-		return map[string]string{}
-	}
-	return parseEnvOutput(out, sep)
-}
-
+// probeShellFlag returns the shell flag for the given probe mode.
+// Kept as a package-level helper so DockerRuntime can use it.
 func probeShellFlag(probe devcconfig.UserEnvProbe) string {
 	switch probe {
 	case devcconfig.LoginInteractiveShellProbe:
@@ -201,28 +134,8 @@ func probeShellFlag(probe devcconfig.UserEnvProbe) string {
 	}
 }
 
-func runProbeCommand(
-	ctx context.Context,
-	target ContainerTarget,
-	shellFlag string,
-) ([]byte, byte, error) {
-	args := buildProbeArgs(target, shellFlag, "cat /proc/self/environ")
-	var stdout bytes.Buffer
-	err := target.Helper.Run(ctx, args, nil, &stdout, io.Discard)
-	if err == nil {
-		return stdout.Bytes(), 0, nil
-	}
-
-	log.Debugf("Env probe with /proc/self/environ failed: %v, trying printenv", err)
-	args = buildProbeArgs(target, shellFlag, "printenv")
-	stdout.Reset()
-	err = target.Helper.Run(ctx, args, nil, &stdout, io.Discard)
-	if err != nil {
-		return nil, 0, fmt.Errorf("probe user env: %w", err)
-	}
-	return stdout.Bytes(), '\n', nil
-}
-
+// buildProbeArgs constructs the docker exec arguments for env probing.
+// Kept as a package-level helper so DockerRuntime can use it.
 func buildProbeArgs(target ContainerTarget, shellFlag string, cmd string) []string {
 	args := []string{"exec"}
 	if target.User != "" {
@@ -232,6 +145,7 @@ func buildProbeArgs(target ContainerTarget, shellFlag string, cmd string) []stri
 	return args
 }
 
+// parseEnvOutput parses the output of an env probe command.
 func parseEnvOutput(out []byte, sep byte) map[string]string {
 	entries := bytes.Split(out, []byte{sep})
 	env := make(map[string]string, len(entries))

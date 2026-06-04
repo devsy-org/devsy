@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/platform"
 )
 
@@ -86,13 +84,13 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	defer cancel()
 
 	start := time.Now()
-	exitCode, runErr := runCapture(execCtx, captureArgs{
-		target:  resolved.target,
-		workdir: resolved.workdir,
-		env:     resolved.envMap,
-		command: opts.Command,
-		stdout:  opts.Stdout,
-		stderr:  opts.Stderr,
+	exitCode, runErr := execOneShotWithRuntime(execCtx, resolved.runtime, ExecRequest{
+		Target:  resolved.target,
+		Workdir: resolved.workdir,
+		Env:     resolved.envMap,
+		Argv:    opts.Command,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
 	})
 	duration := time.Since(start)
 
@@ -119,14 +117,28 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	return res, nil
 }
 
-// resolvedExecTarget bundles the resolved container target, workdir, and env for an exec.
+// execOneShotWithRuntime is the low-level exec path; it accepts an already-
+// resolved runtime and request so tests can inject a fake runtime without
+// touching workspace resolution.
+func execOneShotWithRuntime(
+	ctx context.Context,
+	runtime ContainerRuntime,
+	req ExecRequest,
+) (int, error) {
+	return runtime.Exec(ctx, req)
+}
+
+// resolvedExecTarget bundles the resolved runtime, target, workdir, and env
+// for an exec — kept as a struct to stay within revive's function-result-limit.
 type resolvedExecTarget struct {
+	runtime ContainerRuntime
 	target  ContainerTarget
 	workdir string
 	envMap  map[string]string
 }
 
-// resolveExecTarget resolves the container target, workdir, and env map from options.
+// resolveExecTarget resolves the container runtime, target, workdir, and env
+// map from options.
 func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedExecTarget, error) {
 	devsyConfig, err := config.LoadConfig(opts.Context, opts.Provider)
 	if err != nil {
@@ -143,10 +155,10 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := ResolveDockerCommand(workspaceConfig, "")
+	runtime := NewDockerRuntime(workspaceConfig, "")
 
-	containerDetails, err := FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,
+	containerDetails, err := runtime.FindRunning(
+		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,
 	)
 	if err != nil {
 		return resolvedExecTarget{}, err
@@ -164,63 +176,24 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	}
 
 	target := ContainerTarget{
-		Helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
 		ContainerID: containerDetails.ID,
 		User:        user,
 	}
+
 	userEnvProbe := ""
 	if execResult != nil && execResult.MergedConfig != nil {
 		userEnvProbe = execResult.MergedConfig.UserEnvProbe
 	}
-	probedEnv := ProbeContainerEnv(ctx, target, userEnvProbe)
+	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
 	envSlice := envMapToSlice(opts.Env)
 	envMap := BuildExecEnv(execResult, envSlice, probedEnv)
 
-	return resolvedExecTarget{target: target, workdir: workdir, envMap: envMap}, nil
-}
-
-// captureArgs bundles the arguments for runCapture.
-type captureArgs struct {
-	target  ContainerTarget
-	workdir string
-	env     map[string]string
-	command []string
-	stdout  io.Writer
-	stderr  io.Writer
-}
-
-func runCapture(ctx context.Context, args captureArgs) (int, error) {
-	execArgs := []string{"exec", "-i"}
-	for k, v := range args.env {
-		execArgs = append(execArgs, "-e", k+"="+v)
-	}
-	if args.workdir != "" {
-		execArgs = append(execArgs, "--workdir", args.workdir)
-	}
-	if args.target.User != "" {
-		execArgs = append(execArgs, "--user", args.target.User)
-	}
-	execArgs = append(execArgs, args.target.ContainerID)
-	execArgs = append(execArgs, args.command...)
-
-	stdout := args.stdout
-	if stdout == nil {
-		stdout = io.Discard
-	}
-	stderr := args.stderr
-	if stderr == nil {
-		stderr = io.Discard
-	}
-
-	err := args.target.Helper.Run(ctx, execArgs, nil, stdout, stderr)
-	if err == nil {
-		return 0, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), nil
-	}
-	return -1, fmt.Errorf("exec in container %s: %w", args.target.ContainerID, err)
+	return resolvedExecTarget{
+		runtime: runtime,
+		target:  target,
+		workdir: workdir,
+		envMap:  envMap,
+	}, nil
 }
 
 func envMapToSlice(m map[string]string) []string {

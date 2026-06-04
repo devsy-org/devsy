@@ -332,10 +332,10 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig, cmd.DockerPath)
+	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
 
-	containerDetails, err := workspace2.FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
+	containerDetails, err := runtime.FindRunning(
+		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
@@ -366,7 +366,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 
 	params := &workspace.LifecycleExecParams{
 		Ctx:         ctx,
-		Helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
+		Helper:      &docker.DockerHelper{DockerCommand: runtime.DockerCommand()},
 		ContainerID: containerDetails.ID,
 		EnvArgs:     envArgs,
 		Workdir:     workspace2.ResolveExecWorkdir(result, client.Workspace()),

@@ -262,13 +262,8 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 	string,
 	error,
 ) {
-	dockerCommand := pkgworkspace.DefaultDockerCommand
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
-	containerDetails, err := pkgworkspace.FindRunningContainer(
-		ctx, dockerCommand, "", cmd.IDLabels,
-	)
+	runtime := pkgworkspace.NewDockerRuntime(nil, cmd.DockerPath)
+	containerDetails, err := runtime.FindRunning(ctx, "", cmd.IDLabels)
 	if err != nil {
 		return nil, "", err
 	}

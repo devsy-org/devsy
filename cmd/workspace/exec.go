@@ -145,10 +145,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig, cmd.DockerPath)
+	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
 
-	containerDetails, err := workspace2.FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
+	containerDetails, err := runtime.FindRunning(
+		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		return err
@@ -160,11 +160,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	userEnvProbe := resolveUserEnvProbe(result, cmd.DefaultUserEnvProbe)
 
 	target := workspace2.ContainerTarget{
-		Helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
 		ContainerID: containerDetails.ID,
 		User:        user,
 	}
-	probedEnv := workspace2.ProbeContainerEnv(ctx, target, userEnvProbe)
+	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
 	envMap := workspace2.BuildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
 	mode, err := output.ResolveMode(cmd.ResultFormat)
@@ -174,9 +173,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		target:  target,
-		workdir: workdir,
-		envMap:  envMap,
+		dockerCmd: runtime.DockerCommand(),
+		target:    target,
+		workdir:   workdir,
+		envMap:    envMap,
 	}, args)
 	if err != nil {
 		if emitJSON {
@@ -196,11 +196,8 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 }
 
 func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error {
-	dockerCommand := workspace2.DefaultDockerCommand
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
-	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
+	runtime := workspace2.NewDockerRuntime(nil, cmd.DockerPath)
+	helper := &docker.DockerHelper{DockerCommand: runtime.DockerCommand()}
 
 	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
 	if err != nil {
@@ -221,11 +218,10 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 
 	userEnvProbe := cmd.DefaultUserEnvProbe
 	target := workspace2.ContainerTarget{
-		Helper:      helper,
 		ContainerID: containerDetails.ID,
 		User:        "",
 	}
-	probedEnv := workspace2.ProbeContainerEnv(ctx, target, userEnvProbe)
+	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
 	envMap := workspace2.BuildExecEnv(nil, cmd.RemoteEnv, probedEnv)
 
 	workdir := containerDetails.Config.WorkingDir
@@ -237,9 +233,10 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		target:  target,
-		workdir: workdir,
-		envMap:  envMap,
+		dockerCmd: runtime.DockerCommand(),
+		target:    target,
+		workdir:   workdir,
+		envMap:    envMap,
 	}, args)
 	if err != nil {
 		if emitJSON {
@@ -278,9 +275,10 @@ func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 }
 
 type execOpts struct {
-	target  workspace2.ContainerTarget
-	workdir string
-	envMap  map[string]string
+	dockerCmd string
+	target    workspace2.ContainerTarget
+	workdir   string
+	envMap    map[string]string
 }
 
 func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []string) error {
@@ -301,8 +299,10 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	execArgs = append(execArgs, args...)
 
 	redacted := strings.Join(redactExecArgs(execArgs), " ")
-	log.Debugf("Executing in container: %s %s", opts.target.Helper.DockerCommand, redacted)
-	return opts.target.Helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
+	log.Debugf("Executing in container: %s %s", opts.dockerCmd, redacted)
+
+	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd}
+	return helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func redactExecArgs(args []string) []string {
