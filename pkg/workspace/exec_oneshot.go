@@ -22,6 +22,7 @@ type ExecOneShotOptions struct {
 	Command               []string
 	Workdir               string
 	Env                   map[string]string
+	IDLabels              []string // additional id-labels for container lookup; nil uses defaults
 	TimeoutSeconds        int
 	TimeoutSecondsDefault int
 	TimeoutSecondsMax     int
@@ -79,13 +80,17 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	}
 
 	timeout, clamped := opts.ResolveTimeout(defaultExecTimeoutSeconds)
-	execCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	resolved, err := resolveExecTarget(execCtx, opts)
+	// Resolve the container target with the parent context so a slow Docker
+	// daemon lookup doesn't consume the user's exec time budget.
+	resolved, err := resolveExecTarget(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	// Apply the timeout only to the actual command execution.
+	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	start := time.Now()
 	exitCode, runErr := runCapture(execCtx, captureArgs{
@@ -150,7 +155,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	dockerCommand := ResolveDockerCommand(workspaceConfig)
 
 	containerDetails, err := FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), nil,
+		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,
 	)
 	if err != nil {
 		return resolvedExecTarget{}, err

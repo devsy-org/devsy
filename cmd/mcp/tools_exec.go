@@ -25,6 +25,7 @@ type execInput struct {
 	Command        []string          `json:"command"                   jsonschema:"required"`
 	Workdir        string            `json:"workdir,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
+	IDLabels       []string          `json:"id_labels,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
 }
 
@@ -60,6 +61,7 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 			Command:               in.Command,
 			Workdir:               in.Workdir,
 			Env:                   in.Env,
+			IDLabels:              in.IDLabels,
 			TimeoutSeconds:        in.TimeoutSeconds,
 			TimeoutSecondsDefault: durationToSeconds(cmd.ExecTimeoutDefault),
 			TimeoutSecondsMax:     durationToSeconds(cmd.ExecTimeoutMax),
@@ -69,17 +71,22 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 			Stdout:                stdout,
 			Stderr:                stderr,
 		})
-		if err != nil {
-			return errorResult(err), execOutput{}, nil
+		// Populate output from whatever result we got, even on error (e.g.
+		// cancelled / timed-out exec may have written partial output that is
+		// useful to the caller).
+		out := execOutput{}
+		if res != nil {
+			out.Stdout = stdout.String()
+			out.Stderr = stderr.String()
+			out.ExitCode = res.ExitCode
+			out.DurationMS = res.DurationMS
+			out.Truncated = stdout.Truncated() || stderr.Truncated()
+			out.TimedOut = res.TimedOut
+			out.Clamped = res.Clamped
 		}
-		return nil, execOutput{
-			Stdout:     stdout.String(),
-			Stderr:     stderr.String(),
-			ExitCode:   res.ExitCode,
-			DurationMS: res.DurationMS,
-			Truncated:  stdout.Truncated() || stderr.Truncated(),
-			TimedOut:   res.TimedOut,
-			Clamped:    res.Clamped,
-		}, nil
+		if err != nil {
+			return errorResult(err), out, nil
+		}
+		return nil, out, nil
 	}))
 }

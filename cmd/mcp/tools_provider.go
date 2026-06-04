@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/cobra"
 )
 
 type providerSummary struct {
@@ -142,16 +143,21 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 	return cobraCmd.Execute()
 }
 
-func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	cobraCmd := cmdprovider.NewDeleteCmd(g)
+func runProviderCobraCmd(ctx context.Context, name string, newCmd func() *cobra.Command) error {
+	cobraCmd := newCmd()
 	cobraCmd.SetArgs([]string{"--", name})
 	cobraCmd.SetContext(ctx)
 	return cobraCmd.Execute()
 }
 
+func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
+	return runProviderCobraCmd(
+		ctx,
+		name,
+		func() *cobra.Command { return cmdprovider.NewDeleteCmd(g) },
+	)
+}
+
 func runProviderUse(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	cobraCmd := cmdprovider.NewUseCmd(g)
-	cobraCmd.SetArgs([]string{"--", name})
-	cobraCmd.SetContext(ctx)
-	return cobraCmd.Execute()
+	return runProviderCobraCmd(ctx, name, func() *cobra.Command { return cmdprovider.NewUseCmd(g) })
 }

@@ -22,8 +22,7 @@ func safeHandler[In any, Out any](
 			if r := recover(); r != nil {
 				log.Errorf("mcp handler panic: %v\n%s", r, debug.Stack())
 				result = errorResult(fmt.Errorf("handler panicked: %v", r))
-				var zero Out
-				out = zero
+				out = *new(Out) // reset to zero value; named returns are zero-initialized but may have been modified
 				err = nil
 			}
 		}()
