@@ -29,6 +29,12 @@ interface PtyDeps {
 
 export class PtyManager {
   private sessions = new Map<string, IPty>()
+  /**
+   * Reverse index from workspace ID to its active session IDs, so a workspace
+   * delete can terminate every SSH session tied to that workspace before the
+   * CLI unlinks the workspace state directory.
+   */
+  private sessionsByWorkspace = new Map<string, Set<string>>()
   private env: Record<string, string>
 
   constructor(private deps: PtyDeps) {
@@ -73,15 +79,40 @@ export class PtyManager {
   createSshSession(workspaceId: string, cols: number, rows: number): string {
     const pty = requirePty()
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(this.deps.binaryPath, ["ssh", workspaceId], {
+    const proc = pty.spawn(this.deps.binaryPath, ["workspace", "ssh", workspaceId], {
       name: "xterm-256color",
       cols,
       rows,
       env: this.env,
     })
 
-    this.wire(sessionId, proc)
+    this.wire(sessionId, proc, workspaceId)
     return sessionId
+  }
+
+  /**
+   * Kill every SSH session for a workspace and resolve once all PTY children
+   * have exited. Resolves immediately if no sessions are tracked.
+   */
+  async cancelFor(workspaceId: string): Promise<void> {
+    const sessionIds = this.sessionsByWorkspace.get(workspaceId)
+    if (!sessionIds || sessionIds.size === 0) return
+
+    const waits: Promise<void>[] = []
+    for (const id of sessionIds) {
+      const proc = this.sessions.get(id)
+      if (!proc) continue
+      waits.push(
+        new Promise<void>((resolve) => {
+          const disposable = proc.onExit(() => {
+            disposable.dispose()
+            resolve()
+          })
+        }),
+      )
+      proc.kill()
+    }
+    await Promise.all(waits)
   }
 
   writeToSession(sessionId: string, data: string): void {
@@ -114,8 +145,16 @@ export class PtyManager {
     }
   }
 
-  private wire(sessionId: string, proc: IPty): void {
+  private wire(sessionId: string, proc: IPty, workspaceId?: string): void {
     this.sessions.set(sessionId, proc)
+    if (workspaceId) {
+      let bucket = this.sessionsByWorkspace.get(workspaceId)
+      if (!bucket) {
+        bucket = new Set()
+        this.sessionsByWorkspace.set(workspaceId, bucket)
+      }
+      bucket.add(sessionId)
+    }
 
     proc.onData((data) => {
       this.send("terminal:output", {
@@ -126,6 +165,13 @@ export class PtyManager {
 
     proc.onExit(({ exitCode, signal }) => {
       this.sessions.delete(sessionId)
+      if (workspaceId) {
+        const bucket = this.sessionsByWorkspace.get(workspaceId)
+        if (bucket) {
+          bucket.delete(sessionId)
+          if (bucket.size === 0) this.sessionsByWorkspace.delete(workspaceId)
+        }
+      }
       this.send("terminal:exit", { sessionId, exitCode, signal })
     })
   }

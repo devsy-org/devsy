@@ -67,8 +67,31 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
 } {
-  const { cli, state, logStore } = deps
+  const { cli, state, logStore, pty } = deps
   const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
+
+  /**
+   * Terminate every desktop-spawned process tied to a workspace and wait for
+   * them to actually exit. Called before stop/delete so destructive CLI runs
+   * don't race with in-flight children that are still appending to the
+   * workspace's log directory.
+   */
+  async function quiesceWorkspace(workspaceId: string): Promise<void> {
+    const tunnelProc = tunnelProcesses.get(workspaceId)
+    if (tunnelProc) {
+      tunnelProcesses.delete(workspaceId)
+      const tunnelExit = new Promise<void>((resolve) => {
+        if (tunnelProc.exitCode !== null || tunnelProc.signalCode !== null) {
+          resolve()
+          return
+        }
+        tunnelProc.once("close", () => resolve())
+      })
+      tunnelProc.kill("SIGTERM")
+      await tunnelExit
+    }
+    await Promise.all([cli.cancelFor(workspaceId), pty.cancelFor(workspaceId)])
+  }
 
   /**
    * Compute provider update information by querying the CLI for all installed providers.
@@ -519,6 +542,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: true,
           })
         },
+        wsId,
       )
 
       return cmdId
@@ -529,12 +553,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_stop",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_stop")
-      // Kill tunnel process for this workspace
-      const tunnelProc = tunnelProcesses.get(args.workspaceId)
-      if (tunnelProc) {
-        tunnelProc.kill("SIGTERM")
-        tunnelProcesses.delete(args.workspaceId)
-      }
+      await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
@@ -565,6 +584,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: true,
           })
         },
+        args.workspaceId,
       )
 
       return cmdId
@@ -575,12 +595,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_delete",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
       trackEvent("workspace_delete")
-      // Kill tunnel process for this workspace
-      const tunnelProc = tunnelProcesses.get(args.workspaceId)
-      if (tunnelProc) {
-        tunnelProc.kill("SIGTERM")
-        tunnelProcesses.delete(args.workspaceId)
-      }
+      // Replaces the old `devsy down` command which the CLI overhaul removed:
+      // before invoking delete, terminate every desktop-spawned child tied to
+      // this workspace and wait for them to actually exit. Otherwise late
+      // stdout/stderr lands on a log file the CLI is about to unlink, causing
+      // an ENOENT crash in the main process.
+      await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
       const win = deps.getMainWindow()
@@ -612,6 +632,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: true,
           })
         },
+        args.workspaceId,
       )
 
       return cmdId
@@ -652,6 +673,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: true,
           })
         },
+        args.workspaceId,
       )
 
       return cmdId
@@ -692,6 +714,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: true,
           })
         },
+        args.workspaceId,
       )
 
       return cmdId

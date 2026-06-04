@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -19,11 +19,9 @@ describe("LogStore", () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
-  it("creates a log file under the per-workspace dir", () => {
+  it("creates a log file under the desktop-owned per-workspace dir", () => {
     const logPath = store.createLogFile(CTX, "ws-1")
-    expect(logPath).toContain(
-      join("contexts", CTX, "workspaces", "ws-1", "logs"),
-    )
+    expect(logPath).toContain(join("workspaces", CTX, "ws-1"))
     expect(logPath).toMatch(/\.log$/)
   })
 
@@ -34,6 +32,12 @@ describe("LogStore", () => {
     const content = store.readLogByPath(logPath)
     expect(content).toContain("line 1")
     expect(content).toContain("line 2")
+  })
+
+  it("silently drops appends when the log file is gone", () => {
+    const logPath = store.createLogFile(CTX, "ws-1")
+    unlinkSync(logPath)
+    expect(() => store.appendLog(logPath, "late output")).not.toThrow()
   })
 
   it("lists logs for a workspace, newest first", () => {
@@ -83,7 +87,6 @@ describe("LogStore", () => {
   })
 
   it("rejects non-.log basenames after stripping traversal", () => {
-    // basename("../../etc/passwd") = "passwd" — no .log extension, rejected.
     expect(() => store.readLog(CTX, "ws-1", "../../etc/passwd")).toThrow(
       /invalid log filename/,
     )
@@ -96,24 +99,17 @@ describe("LogStore", () => {
   })
 
   it("confines traversal-shaped .log filenames to the workspace dir", () => {
-    // Plant a sibling.log OUTSIDE the workspace logs dir.
     const outside = join(tempDir, "sibling.log")
     writeFileSync(outside, "outside-content")
-    // basename("../sibling.log") = "sibling.log" → looked up INSIDE the
-    // workspace logs dir, where nothing of that name exists. The planted
-    // file outside the dir must NOT be reachable.
     expect(() => store.readLog(CTX, "ws-1", "../sibling.log")).toThrow(
       /ENOENT/,
     )
   })
 
   it("prune skips non-directory entries without aborting", () => {
-    // Create a normal log first.
     store.createLogFile(CTX, "ws-1")
-    // Plant a regular file where prune would expect a workspace dir.
-    const contextsRoot = join(tempDir, "contexts", CTX, "workspaces")
-    const stray = join(contextsRoot, "stray-file")
-    writeFileSync(stray, "")
+    const root = join(tempDir, "workspaces", CTX)
+    writeFileSync(join(root, "stray-file"), "")
     expect(() => store.prune(30)).not.toThrow()
     expect(store.listLogs(CTX, "ws-1")).toHaveLength(1)
   })
