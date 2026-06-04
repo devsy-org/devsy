@@ -28,7 +28,6 @@ import WorkspacesPage from "./pages/WorkspacesPage.svelte"
 import WorkspaceDetailPage from "./pages/WorkspaceDetailPage.svelte"
 import ProvidersPage from "./pages/ProvidersPage.svelte"
 import ProviderAddPage from "./pages/ProviderAddPage.svelte"
-import ProviderDetailPage from "./pages/ProviderDetailPage.svelte"
 import MachinesPage from "./pages/MachinesPage.svelte"
 import MachineDetailPage from "./pages/MachineDetailPage.svelte"
 import ContextsPage from "./pages/ContextsPage.svelte"
@@ -44,7 +43,7 @@ const routes = {
   "/workspaces/:id": WorkspaceDetailPage,
   "/providers": ProvidersPage,
   "/providers/add": ProviderAddPage,
-  "/providers/:id": ProviderDetailPage,
+  "/providers/:id": ProvidersPage,
   "/machines": MachinesPage,
   "/machines/:id": MachineDetailPage,
   "/contexts": ContextsPage,
