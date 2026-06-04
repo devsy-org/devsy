@@ -3,10 +3,22 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// durationToSeconds converts a Duration to a positive whole number of seconds,
+// rounding up so that any non-zero sub-second value resolves to at least 1s
+// rather than truncating to 0 (which would silently fall through to defaults).
+func durationToSeconds(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int(math.Ceil(d.Seconds()))
+}
 
 type execInput struct {
 	Name           string            `json:"name"                      jsonschema:"required"`
@@ -49,8 +61,8 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 			Workdir:               in.Workdir,
 			Env:                   in.Env,
 			TimeoutSeconds:        in.TimeoutSeconds,
-			TimeoutSecondsDefault: int(cmd.ExecTimeoutDefault.Seconds()),
-			TimeoutSecondsMax:     int(cmd.ExecTimeoutMax.Seconds()),
+			TimeoutSecondsDefault: durationToSeconds(cmd.ExecTimeoutDefault),
+			TimeoutSecondsMax:     durationToSeconds(cmd.ExecTimeoutMax),
 			Owner:                 cmd.Owner,
 			Context:               cmd.Context,
 			Provider:              cmd.Provider,
