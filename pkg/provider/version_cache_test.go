@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"os"
@@ -11,8 +11,8 @@ func TestCacheRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DEVSY_HOME", dir)
 
-	c := providerVersionCache{
-		"foo": providerVersionCacheEntry{
+	c := ProviderVersionCache{
+		"foo": ProviderVersionCacheEntry{
 			SourceHash: testNameABC,
 			Versions:   []ProviderVersion{{Tag: testTagV100, PublishedAt: time.Now()}},
 			FetchedAt:  time.Now(),
@@ -42,9 +42,9 @@ func TestCacheRoundtrip(t *testing.T) {
 }
 
 func TestCacheGet_FreshVsStale(t *testing.T) {
-	c := providerVersionCache{
-		"foo": providerVersionCacheEntry{SourceHash: testNameABC, FetchedAt: time.Now()},
-		testNameBar: providerVersionCacheEntry{
+	c := ProviderVersionCache{
+		"foo": ProviderVersionCacheEntry{SourceHash: testNameABC, FetchedAt: time.Now()},
+		testNameBar: ProviderVersionCacheEntry{
 			SourceHash: testNameABC,
 			FetchedAt:  time.Now().Add(-7 * time.Hour),
 		},
@@ -61,8 +61,8 @@ func TestCacheGet_FreshVsStale(t *testing.T) {
 }
 
 func TestHashProviderSource_Stable(t *testing.T) {
-	a := hashProviderSource("github.com/foo/bar@v1.0.0")
-	b := hashProviderSource("github.com/foo/bar@v1.0.0")
+	a := HashProviderSource("github.com/foo/bar@v1.0.0")
+	b := HashProviderSource("github.com/foo/bar@v1.0.0")
 	if a != b || a == "" {
 		t.Fatalf("hash must be stable and non-empty: %q vs %q", a, b)
 	}

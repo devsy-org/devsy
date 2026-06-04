@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"encoding/json"
@@ -22,11 +22,11 @@ type versionsManifest struct {
 	Versions []versionsManifestEntry `json:"versions"`
 }
 
-func listManifestVersions(
+func ListManifestVersions(
 	canonicalSource string,
 	includePrerelease bool,
 ) ([]ProviderVersion, error) {
-	base, _ := splitSourceAndTag(canonicalSource)
+	base, _ := SplitSourceAndTag(canonicalSource)
 	u, err := url.Parse(base)
 	if err != nil {
 		return nil, err

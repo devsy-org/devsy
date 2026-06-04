@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"crypto/sha256"
@@ -7,20 +7,51 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
 
+// ErrVersionListUnsupported indicates the provider's source type does not expose a list of versions.
+var ErrVersionListUnsupported = errors.New("provider source does not support version listing")
+
+// ErrVersionListRateLimited indicates upstream rate-limiting hit the lister.
+var ErrVersionListRateLimited = errors.New("provider version list rate-limited")
+
+// ProviderVersion describes one upstream release.
+type ProviderVersion struct {
+	Tag         string    `json:"tag"`
+	PublishedAt time.Time `json:"publishedAt"`
+	Prerelease  bool      `json:"prerelease"`
+	Current     bool      `json:"current"`
+}
+
+// ListVersionsOptions tunes the lister.
+type ListVersionsOptions struct {
+	UseCache          bool
+	IncludePrerelease bool
+}
+
+// SplitSourceAndTag splits a canonical provider source into its base and optional @tag suffix.
+func SplitSourceAndTag(canonical string) (base, tag string) {
+	if before, after, ok := strings.Cut(canonical, "@"); ok {
+		return before, after
+	}
+	return canonical, ""
+}
+
 const providerVersionCacheTTL = 6 * time.Hour
 
-type providerVersionCacheEntry struct {
+// ProviderVersionCacheEntry is one provider's cached version list.
+type ProviderVersionCacheEntry struct {
 	SourceHash string            `json:"sourceHash"`
 	Versions   []ProviderVersion `json:"versions"`
 	FetchedAt  time.Time         `json:"fetchedAt"`
 }
 
-type providerVersionCache map[string]providerVersionCacheEntry
+// ProviderVersionCache maps provider names to their cached version entries.
+type ProviderVersionCache map[string]ProviderVersionCacheEntry
 
 func providerVersionCachePath() (string, error) {
 	// Check for DEVSY_HOME override (primarily used in tests).
@@ -34,7 +65,7 @@ func providerVersionCachePath() (string, error) {
 	return filepath.Join(dir, "cache", "provider-versions.json"), nil
 }
 
-func LoadProviderVersionCache() (providerVersionCache, error) {
+func LoadProviderVersionCache() (ProviderVersionCache, error) {
 	path, err := providerVersionCachePath()
 	if err != nil {
 		return nil, err
@@ -43,19 +74,19 @@ func LoadProviderVersionCache() (providerVersionCache, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return providerVersionCache{}, nil
+			return ProviderVersionCache{}, nil
 		}
 		return nil, err
 	}
-	cache := providerVersionCache{}
+	cache := ProviderVersionCache{}
 	if err := json.Unmarshal(data, &cache); err != nil {
 		// Corrupt cache → start fresh.
-		return providerVersionCache{}, nil
+		return ProviderVersionCache{}, nil
 	}
 	return cache, nil
 }
 
-func SaveProviderVersionCache(c providerVersionCache) error {
+func SaveProviderVersionCache(c ProviderVersionCache) error {
 	path, err := providerVersionCachePath()
 	if err != nil {
 		return err
@@ -72,10 +103,10 @@ func SaveProviderVersionCache(c providerVersionCache) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-func (c providerVersionCache) Get(name, sourceHash string) (providerVersionCacheEntry, bool) {
+func (c ProviderVersionCache) Get(name, sourceHash string) (ProviderVersionCacheEntry, bool) {
 	entry, ok := c[name]
 	if !ok {
-		return providerVersionCacheEntry{}, false
+		return ProviderVersionCacheEntry{}, false
 	}
 	if entry.SourceHash != sourceHash {
 		return entry, false
@@ -86,7 +117,7 @@ func (c providerVersionCache) Get(name, sourceHash string) (providerVersionCache
 	return entry, true
 }
 
-func hashProviderSource(source string) string {
+func HashProviderSource(source string) string {
 	sum := sha256.Sum256([]byte(source))
 	return hex.EncodeToString(sum[:])
 }

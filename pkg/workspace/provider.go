@@ -5,20 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/download"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/devsy-org/devsy/providers"
 )
 
 var ErrNoWorkspaceFound = errors.New("no workspace found")
@@ -112,7 +107,7 @@ func AddProvider(
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw)
+	providerRaw, providerSource, err := provider.ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +158,7 @@ func UpdateProvider(
 		providerSourceRaw = s
 	}
 
-	providerRaw, providerSource, err := ResolveProvider(providerSourceRaw)
+	providerRaw, providerSource, err := provider.ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -209,112 +204,12 @@ func ResolveProviderSource(
 		return "", fmt.Errorf("find provider: %w", err)
 	}
 
-	source := getProviderSource(providerConfig.Config.Source, providerConfig.Config.Name)
+	source := provider.GetProviderSource(providerConfig.Config.Source, providerConfig.Config.Name)
 	if source == "" {
 		return "", fmt.Errorf("provider %s source is missing", providerName)
 	}
 
 	return source, nil
-}
-
-func ResolveProvider(
-	providerSource string,
-) ([]byte, *provider.ProviderSource, error) {
-	retSource := &provider.ProviderSource{Raw: strings.TrimSpace(providerSource)}
-
-	if out, ok := resolveInternalProvider(providerSource, retSource); ok {
-		return out, retSource, nil
-	}
-
-	if out, err := tryResolveURLProvider(
-		providerSource,
-		retSource,
-	); hasOutputOrError(
-		out,
-		err,
-	) {
-		return out, retSource, err
-	}
-
-	if out, err := tryResolveFileProvider(providerSource, retSource); hasOutputOrError(out, err) {
-		return out, retSource, err
-	}
-
-	out, source, err := downloadProviderGithub(providerSource)
-	if len(out) > 0 || err != nil {
-		return out, source, err
-	}
-
-	return nil, nil, fmt.Errorf(
-		"provider type not recognized: specify a local file, url, or github repository",
-	)
-}
-
-func hasOutputOrError(out []byte, err error) bool {
-	return out != nil || err != nil
-}
-
-func tryResolveURLProvider(
-	providerSource string,
-	retSource *provider.ProviderSource,
-) ([]byte, error) {
-	out, ok, err := resolveURLProvider(providerSource, retSource)
-	if !ok {
-		return nil, nil
-	}
-	return out, err
-}
-
-func tryResolveFileProvider(
-	providerSource string,
-	retSource *provider.ProviderSource,
-) ([]byte, error) {
-	out, ok, err := resolveFileProvider(providerSource, retSource)
-	if !ok {
-		return nil, nil
-	}
-	return out, err
-}
-
-func downloadProviderGithub(
-	originalPath string,
-) ([]byte, *provider.ProviderSource, error) {
-	path := strings.TrimPrefix(originalPath, "github.com/")
-
-	release := ""
-	index := strings.LastIndex(path, "@")
-	if index != -1 {
-		release = path[index+1:]
-		path = path[:index]
-	}
-
-	splitted := strings.Split(strings.TrimSuffix(path, "/"), "/")
-	if len(splitted) == 1 {
-		path = config.RepoOwner + "/" + config.ProviderPrefix + path
-	} else if len(splitted) != 2 {
-		return nil, nil, fmt.Errorf(
-			"invalid github path format: expected 'owner/repo' or 'provider-name', got %q",
-			originalPath,
-		)
-	}
-
-	requestURL := buildGithubURL(path, release)
-
-	body, err := download.File(requestURL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("download: %w", err)
-	}
-	defer func() { _ = body.Close() }()
-
-	out, err := io.ReadAll(body)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return out, &provider.ProviderSource{
-		Raw:    originalPath,
-		Github: path,
-	}, nil
 }
 
 func loadConfiguredProviders(
@@ -523,109 +418,6 @@ func cleanupOldOptions(devsyConfig *config.Config, providerConfig *provider.Prov
 	}
 }
 
-func getProviderSource(src provider.ProviderSource, configName string) string {
-	switch {
-	case src.Internal:
-		if src.Raw == "" {
-			return configName
-		}
-		return src.Raw
-	case src.URL != "":
-		return src.URL
-	case src.File != "":
-		return src.File
-	case src.Github != "":
-		// Canonicalize to github.com/<org>/<repo> so version helpers
-		// (classifyVersionSource, parseGitHubSourcePath) recognize it.
-		if strings.HasPrefix(src.Github, "github.com/") {
-			return src.Github
-		}
-		return "github.com/" + src.Github
-	default:
-		return ""
-	}
-}
-
-func resolveInternalProvider(
-	providerSource string,
-	retSource *provider.ProviderSource,
-) ([]byte, bool) {
-	internalProviders := providers.GetBuiltInProviders()
-	if internalProviders[providerSource] != "" {
-		retSource.Internal = true
-		return []byte(internalProviders[providerSource]), true
-	}
-	return nil, false
-}
-
-func resolveURLProvider(
-	providerSource string,
-	retSource *provider.ProviderSource,
-) ([]byte, bool, error) {
-	if !strings.HasPrefix(providerSource, "http://") &&
-		!strings.HasPrefix(providerSource, "https://") {
-		return nil, false, nil
-	}
-
-	log.Infof("downloading provider from %s", providerSource)
-	out, err := downloadProvider(providerSource)
-	if err != nil {
-		return nil, true, fmt.Errorf("download provider: %w", err)
-	}
-	retSource.URL = providerSource
-	return out, true, nil
-}
-
-func resolveFileProvider(
-	providerSource string,
-	retSource *provider.ProviderSource,
-) ([]byte, bool, error) {
-	if !strings.HasSuffix(providerSource, ".yaml") && !strings.HasSuffix(providerSource, ".yml") {
-		return nil, false, nil
-	}
-
-	if _, err := os.Stat(providerSource); err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, true, fmt.Errorf("stat provider file %q: %w", providerSource, err)
-	}
-
-	// #nosec G304 - providerSource is user-provided path for loading provider config
-	out, err := os.ReadFile(providerSource)
-	if err != nil {
-		return nil, true, fmt.Errorf("read provider file %q: %w", providerSource, err)
-	}
-
-	absPath, err := filepath.Abs(providerSource)
-	if err != nil {
-		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", providerSource, err)
-	}
-	retSource.File = absPath
-	return out, true, nil
-}
-
-func downloadProvider(url string) ([]byte, error) {
-	resp, err := devsyhttp.GetHTTPClient().Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("download binary: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(resp.Body)
-}
-
-func buildGithubURL(path, release string) string {
-	if release == "" {
-		return fmt.Sprintf("https://github.com/%s/releases/latest/download/provider.yaml", path)
-	}
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/provider.yaml", path, release)
-}
-
 // SwitchProvider updates the provider name for the given workspace with client locking.
 // It persists the new provider name before resolving the client so that FindProvider
 // can locate the already-renamed provider directory.
@@ -680,107 +472,4 @@ func SwitchProvider(
 	}
 
 	return nil
-}
-
-// MoveProvider renames a provider's directory on disk and migrates its state
-// in config.json. This preserves all options, initialized flag, and other state
-// that CloneProvider would lose.
-func MoveProvider(devsyConfig *config.Config, oldName, newName string) error {
-	oldDir, err := provider.GetProviderDir(devsyConfig.DefaultContext, oldName)
-	if err != nil {
-		return fmt.Errorf("get old provider dir: %w", err)
-	}
-
-	newDir, err := provider.GetProviderDir(devsyConfig.DefaultContext, newName)
-	if err != nil {
-		return fmt.Errorf("get new provider dir: %w", err)
-	}
-
-	if err := os.Rename(oldDir, newDir); err != nil {
-		return fmt.Errorf("rename provider dir: %w", err)
-	}
-
-	if err := updateProviderConfigName(devsyConfig, newName); err != nil {
-		_ = os.Rename(newDir, oldDir)
-		return err
-	}
-
-	if err := migrateProviderState(devsyConfig, oldName, newName); err != nil {
-		// Revert the config name before moving the directory back to avoid
-		// a corrupted provider.json (dir at old path but name field says new name).
-		_ = revertProviderConfigName(devsyConfig, oldName, newName)
-		_ = os.Rename(newDir, oldDir)
-		return err
-	}
-
-	return nil
-}
-
-// updateProviderConfigName loads the provider config from the new directory and
-// updates its Name field to match the new directory name.
-func updateProviderConfigName(devsyConfig *config.Config, newName string) error {
-	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, newName)
-	if err != nil {
-		return fmt.Errorf("load provider config after move: %w", err)
-	}
-	providerConfig.Name = newName
-	if err := provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig); err != nil {
-		return fmt.Errorf("save provider config: %w", err)
-	}
-	return nil
-}
-
-// revertProviderConfigName restores the provider config Name field back to
-// oldName. This is used during rollback when migrateProviderState fails after
-// updateProviderConfigName has already written the new name.
-func revertProviderConfigName(devsyConfig *config.Config, oldName, newName string) error {
-	providerConfig, err := provider.LoadProviderConfig(devsyConfig.DefaultContext, newName)
-	if err != nil {
-		return fmt.Errorf("load provider config for revert: %w", err)
-	}
-	providerConfig.Name = oldName
-	return provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig)
-}
-
-// migrateProviderState moves the provider's entry in the config Providers map
-// from oldName to newName, rewrites any option values that embed the old
-// provider directory path, and persists the change.
-func migrateProviderState(devsyConfig *config.Config, oldName, newName string) error {
-	ctx := devsyConfig.Current()
-	if ctx.Providers[oldName] == nil {
-		return nil
-	}
-
-	ctx.Providers[newName] = ctx.Providers[oldName]
-	delete(ctx.Providers, oldName)
-
-	// Rewrite option values that reference the old provider directory.
-	oldDir, _ := provider.GetProviderDir(devsyConfig.DefaultContext, oldName)
-	newDir, _ := provider.GetProviderDir(devsyConfig.DefaultContext, newName)
-	if oldDir != "" && newDir != "" {
-		rewriteOptionPaths(ctx.Providers[newName].Options, oldDir, newDir)
-	}
-
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		// Undo the map move and path rewrite on failure.
-		if oldDir != "" && newDir != "" {
-			rewriteOptionPaths(ctx.Providers[newName].Options, newDir, oldDir)
-		}
-		ctx.Providers[oldName] = ctx.Providers[newName]
-		delete(ctx.Providers, newName)
-		return fmt.Errorf("save config: %w", err)
-	}
-	return nil
-}
-
-// rewriteOptionPaths replaces occurrences of oldDir with newDir in every
-// option value. This keeps absolute paths (e.g. SSH key paths) valid after
-// a provider directory rename.
-func rewriteOptionPaths(opts map[string]config.OptionValue, oldDir, newDir string) {
-	for k, v := range opts {
-		if strings.Contains(v.Value, oldDir) {
-			v.Value = strings.ReplaceAll(v.Value, oldDir, newDir)
-			opts[k] = v
-		}
-	}
 }
