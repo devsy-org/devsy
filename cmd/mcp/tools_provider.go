@@ -123,7 +123,7 @@ func handleProviderList(_ context.Context, g *flags.GlobalFlags) (providerListOu
 func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInput) error {
 	args := []string{}
 	if in.Name != "" {
-		args = append(args, "--name", in.Name)
+		args = append(args, fmt.Sprintf("--name=%s", in.Name))
 	}
 	if in.Use {
 		args = append(args, "--use")
