@@ -2,57 +2,52 @@ package mcp
 
 import "fmt"
 
-// BoundedBuffer is an io.Writer that retains at most Cap bytes by keeping the
-// first Cap/2 and last Cap/2 bytes written. String() reports the contents
-// joined with a truncation marker when more than Cap bytes were written.
+// BoundedBuffer is an io.Writer that retains at most cap bytes by keeping the
+// tail (most recent bytes) of the written data. Tail-only retention is more
+// useful to LLMs than a mid-truncation split because output endings carry
+// the final state (exit messages, errors, summaries) rather than middles.
 type BoundedBuffer struct {
 	cap     int
-	head    []byte
-	tail    []byte
+	buf     []byte
 	written int64
 }
 
+// NewBoundedBuffer returns a BoundedBuffer with the given capacity.
+// The minimum effective capacity is 64 bytes.
 func NewBoundedBuffer(cap int) *BoundedBuffer {
-	if cap < 8 {
-		cap = 8
+	if cap < 64 {
+		cap = 64
 	}
-	if cap%2 != 0 {
-		cap++
-	}
-	return &BoundedBuffer{cap: cap}
+	return &BoundedBuffer{cap: cap, buf: make([]byte, 0, cap)}
 }
 
 func (b *BoundedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
 	b.written += int64(n)
-	half := b.cap / 2
-
-	if len(b.head) < half {
-		take := min(half-len(b.head), n)
-		b.head = append(b.head, p[:take]...)
-		p = p[take:]
-	}
-	if len(p) == 0 {
+	if len(p) >= b.cap {
+		// Incoming chunk fills or exceeds cap — keep only the last cap bytes.
+		b.buf = append(b.buf[:0], p[len(p)-b.cap:]...)
 		return n, nil
 	}
-
-	b.tail = append(b.tail, p...)
-	if len(b.tail) > half {
-		b.tail = b.tail[len(b.tail)-half:]
+	if len(b.buf)+len(p) > b.cap {
+		drop := len(b.buf) + len(p) - b.cap
+		b.buf = b.buf[drop:]
 	}
+	b.buf = append(b.buf, p...)
 	return n, nil
 }
 
-func (b *BoundedBuffer) Truncated() bool {
-	return b.written > int64(b.cap)
-}
+// Truncated reports whether more bytes were written than the buffer can hold.
+func (b *BoundedBuffer) Truncated() bool { return b.written > int64(b.cap) }
 
+// BytesWritten returns the total number of bytes written, including dropped ones.
 func (b *BoundedBuffer) BytesWritten() int64 { return b.written }
 
+// String returns the buffered content. When truncated, a marker showing how
+// many bytes were dropped is prepended so callers know output is incomplete.
 func (b *BoundedBuffer) String() string {
 	if !b.Truncated() {
-		return string(b.head) + string(b.tail)
+		return string(b.buf)
 	}
-	dropped := b.written - int64(len(b.head)) - int64(len(b.tail))
-	return fmt.Sprintf("%s\n... [%d bytes truncated] ...\n%s", b.head, dropped, b.tail)
+	return fmt.Sprintf("... [%d bytes dropped] ...\n%s", b.written-int64(len(b.buf)), b.buf)
 }
