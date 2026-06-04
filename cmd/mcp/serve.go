@@ -47,10 +47,10 @@ func (cmd *ServeCmd) Run(ctx context.Context) error {
 		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap)
 
 	// Reserve the real stdout for the JSON-RPC frame and redirect os.Stdout to
-	// stderr so stray writes elsewhere in the process cannot corrupt it.
-	// The up.go result/error JSON envelopes are now written to io.Discard via
-	// the plumbed Out writer; this swap is a defensive backstop for remaining
-	// sites that still hardcode os.Stdout (e.g. pkg/workspace/workspace.go:480).
+	// stderr. Up.go's JSON envelopes are routed through an injected writer, but
+	// other code paths in pkg/workspace still write directly to os.Stdout for
+	// interactive prompts and progress. Belt-and-suspenders against any such
+	// site corrupting the MCP stdio transport.
 	realStdout := os.Stdout
 	os.Stdout = os.Stderr
 	defer func() { os.Stdout = realStdout }()

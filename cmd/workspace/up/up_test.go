@@ -277,3 +277,34 @@ func TestUpCmd_ValidateMounts(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildUpCmd_AppliesOptions(t *testing.T) {
+	g := &flags.GlobalFlags{Provider: "default-provider", ResultFormat: ""}
+	opts := Options{
+		Source:           "github.com/example/repo",
+		Name:             "my-ws",
+		Provider:         "k8s",
+		IDE:              "vscode",
+		DevcontainerPath: ".devcontainer/devcontainer.json",
+	}
+	cmd := buildUpCmd(g, opts)
+
+	assert.Equal(t, "vscode", cmd.IDE)
+	assert.Equal(t, ".devcontainer/devcontainer.json", cmd.DevContainerPath)
+	assert.Equal(t, "my-ws", cmd.ID)
+	assert.Equal(t, "k8s", cmd.Provider, "Provider override must reach LoadConfig via gCopy")
+	assert.Equal(t, "plain", cmd.ResultFormat, "default ResultFormat ensures human-readable output")
+	require.NotNil(t, cmd.Out, "Out must be set to suppress JSON envelope writes to stdout")
+	assert.Equal(t, "default-provider", g.Provider, "caller's GlobalFlags must not be mutated")
+}
+
+func TestBuildUpCmd_DefaultsIDEToNone(t *testing.T) {
+	g := &flags.GlobalFlags{}
+	cmd := buildUpCmd(g, Options{Source: "src"})
+	assert.Equal(
+		t,
+		"none",
+		cmd.IDE,
+		"MCP path must default IDE to none — there's no human to attach an IDE to",
+	)
+}
