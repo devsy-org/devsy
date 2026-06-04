@@ -8,8 +8,9 @@ import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
-import { TriangleAlert } from "@lucide/svelte"
+import { TriangleAlert, Star } from "@lucide/svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
+import UpdateConfirmDialog from "$lib/components/provider/UpdateConfirmDialog.svelte"
 import ProviderIcon from "$lib/components/provider/ProviderIcon.svelte"
 import { providers } from "$lib/stores/providers.js"
 import {
@@ -49,6 +50,8 @@ let loading = $state(true)
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 let initializing = $state(false)
+let confirmUpdateOpen = $state(false)
+let updating = $state(false)
 let confirmSwitchOpen = $state(false)
 let targetTag = $state("")
 let switching = $state(false)
@@ -151,12 +154,22 @@ async function handleInitialize() {
   }
 }
 
-async function handleUpdate() {
+function handleUpdate() {
+  confirmUpdateOpen = true
+}
+
+async function runUpdate() {
+  updating = true
   try {
     await providerUpdate(id)
     toasts.success(`Updated ${id}`)
+    await loadVersionsFor(id)
+    await refreshUpdates()
   } catch (err) {
     toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
+  } finally {
+    updating = false
+    confirmUpdateOpen = false
   }
 }
 
@@ -230,7 +243,10 @@ async function handleSaveOptions() {
       <span class={badgeVariants({ variant: "default" })}>initialized</span>
     {/if}
     {#if provider?.isDefault}
-      <span class={badgeVariants({ variant: "default" })}>Default</span>
+      <span class="{badgeVariants({ variant: 'default' })} gap-1">
+        <Star class="size-3" />
+        Default
+      </span>
     {/if}
   </div>
 
@@ -239,7 +255,7 @@ async function handleSaveOptions() {
       <Alert.Root class="border-amber-500/50 bg-amber-500/10">
         <Alert.Title>Update available: {$providerVersions.updates[id].latest}</Alert.Title>
         <Alert.Description>
-          <Button size="sm" class="mt-2" onclick={() => openVersionSwitch($providerVersions.updates[id].latest)}>
+          <Button size="sm" class="mt-2" onclick={handleUpdate}>
             Install update
           </Button>
         </Alert.Description>
@@ -381,6 +397,15 @@ async function handleSaveOptions() {
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}
+/>
+
+<UpdateConfirmDialog
+  bind:open={confirmUpdateOpen}
+  providerName={id}
+  currentVersion={provider?.version}
+  latestVersion={$providerVersions.updates[id]?.latest}
+  loading={updating}
+  onconfirm={runUpdate}
 />
 
 <ConfirmDialog
