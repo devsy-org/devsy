@@ -434,9 +434,17 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 		case <-done:
 			return
 		}
+		// Check whether ctx.Done() was caused by cleanup (done is also ready)
+		// rather than by the first goroutine catching a signal. If cleanup is
+		// already in progress there is no need to wait for a second signal.
+		select {
+		case <-done:
+			return
+		default:
+		}
 		select {
 		case <-signals:
-			// force shutdown if context is done and another signal arrives
+			// A second signal arrived before cleanup finished — force shutdown.
 			os.Exit(1)
 		case <-done:
 		}
