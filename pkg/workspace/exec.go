@@ -224,7 +224,6 @@ func NewDockerRuntime(workspace *provider2.Workspace, override string) *DockerRu
 	}
 }
 
-// DockerCommand returns the resolved binary path for callers that need the raw string.
 func (r *DockerRuntime) DockerCommand() string { return r.helper.DockerCommand }
 
 func (r *DockerRuntime) FindRunning(
@@ -442,8 +441,6 @@ func execOneShotWithRuntime(
 	return runtime.Exec(ctx, req)
 }
 
-// resolvedExecTarget wraps the resolve step's return values; a struct
-// keeps it under revive's function-result-limit.
 type resolvedExecTarget struct {
 	runtime ContainerRuntime
 	target  ContainerTarget
