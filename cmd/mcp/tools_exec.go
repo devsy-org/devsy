@@ -37,6 +37,11 @@ type execOutput struct {
 	Truncated  bool   `json:"truncated"`
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	Clamped    bool   `json:"clamped,omitempty"`
+	// Error carries the classified error payload when the exec failed with
+	// partial output already captured. The MCP SDK overwrites a result's
+	// StructuredContent with the marshalled typed output, so the classification
+	// has to ride inside execOutput itself to survive the round-trip.
+	Error *ErrorPayload `json:"error,omitempty"`
 }
 
 func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
@@ -71,20 +76,23 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 			Stdout:                stdout,
 			Stderr:                stderr,
 		})
-		// Populate output from whatever result we got, even on error (e.g.
-		// cancelled / timed-out exec may have written partial output that is
-		// useful to the caller).
-		out := execOutput{}
+		// Populate output from whatever was captured. A cancelled or timed-out
+		// exec may still have written partial stdout/stderr that's useful to
+		// the caller, so read the buffers unconditionally.
+		out := execOutput{
+			Stdout:    stdout.String(),
+			Stderr:    stderr.String(),
+			Truncated: stdout.Truncated() || stderr.Truncated(),
+		}
 		if res != nil {
-			out.Stdout = stdout.String()
-			out.Stderr = stderr.String()
 			out.ExitCode = res.ExitCode
 			out.DurationMS = res.DurationMS
-			out.Truncated = stdout.Truncated() || stderr.Truncated()
 			out.TimedOut = res.TimedOut
 			out.Clamped = res.Clamped
 		}
 		if err != nil {
+			payload := ClassifyError(err)
+			out.Error = &payload
 			return errorResult(err), out, nil
 		}
 		return nil, out, nil
