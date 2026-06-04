@@ -27,19 +27,13 @@ const (
 	ContainerStatusRunning = "running"
 )
 
-// defaultExecTimeoutSeconds bounds an exec when no caller or configured
-// default applies. Tuned to surface hung calls without truncating typical
-// build/test commands.
+// defaultExecTimeoutSeconds bounds an exec when no caller or configured default
+// applies. Long enough for typical build/test, short enough to surface hangs.
 const defaultExecTimeoutSeconds = 300
 
-// ----------------------------------------------------------------------------
-// Workspace metadata helpers (runtime-agnostic).
-// ----------------------------------------------------------------------------
-
 // ResolveDockerCommand returns the docker binary to invoke. Precedence:
-// caller-supplied override → provider config (agent.docker.path) → default.
-// Callers wired to a --docker-path style flag pass it as override; the override
-// is honored even when workspace is nil so flag handling works at every call site.
+// override → provider config (agent.docker.path) → default. The override is
+// honored even when workspace is nil.
 func ResolveDockerCommand(
 	workspace *provider2.Workspace,
 	override string,
@@ -138,7 +132,6 @@ func applyRemoteEnv(env map[string]string, remoteEnv map[string]*string) {
 	}
 }
 
-// probeShellFlag returns the shell flag for the given probe mode.
 func probeShellFlag(probe devcconfig.UserEnvProbe) string {
 	switch probe {
 	case devcconfig.LoginInteractiveShellProbe:
@@ -152,7 +145,6 @@ func probeShellFlag(probe devcconfig.UserEnvProbe) string {
 	}
 }
 
-// buildProbeArgs constructs the docker exec arguments for env probing.
 func buildProbeArgs(target ContainerTarget, shellFlag string, cmd string) []string {
 	args := []string{"exec"}
 	if target.User != "" {
@@ -162,7 +154,6 @@ func buildProbeArgs(target ContainerTarget, shellFlag string, cmd string) []stri
 	return args
 }
 
-// parseEnvOutput parses the output of an env probe command.
 func parseEnvOutput(out []byte, sep byte) map[string]string {
 	entries := bytes.Split(out, []byte{sep})
 	env := make(map[string]string, len(entries))
@@ -180,37 +171,28 @@ func parseEnvOutput(out []byte, sep byte) map[string]string {
 	return env
 }
 
-// ----------------------------------------------------------------------------
-// ContainerRuntime — abstraction over docker / podman / test doubles.
-// ----------------------------------------------------------------------------
-
-// ContainerRuntime abstracts container-runtime operations used for workspace
-// exec and env-probe. Callers do not need to know whether Docker, Podman, or a
-// test double is underneath.
+// ContainerRuntime abstracts find/exec/probe over a container runtime so
+// callers and tests don't depend on a particular CLI (docker, podman, ...).
 type ContainerRuntime interface {
-	// FindRunning looks up a single running container for the given workspace.
-	// workspaceID may be empty when only idLabels are provided.
+	// FindRunning resolves a running container by workspace ID and/or labels.
+	// A non-nil error includes the not-found and not-running cases.
 	FindRunning(
 		ctx context.Context,
 		workspaceID string,
 		idLabels []string,
 	) (*devcconfig.ContainerDetails, error)
 
-	// Exec runs the command described by req inside a container. It writes
-	// stdout and stderr to req.Stdout/req.Stderr and returns the process exit
-	// code. A non-nil error means the exec machinery itself failed (e.g. the
-	// docker binary could not be found), not that the command exited non-zero.
+	// Exec runs req inside a container and returns the process exit code.
+	// A non-nil error means the exec machinery itself failed (e.g. binary
+	// missing), not a non-zero exit.
 	Exec(ctx context.Context, req ExecRequest) (exitCode int, err error)
 
-	// ProbeEnv queries the container's environment using the given probe mode
-	// string (values defined by devcconfig.UserEnvProbe). Returns an empty map
-	// on any error.
+	// ProbeEnv reads the container's environment via shell. Returns an empty
+	// map on any failure; probeMode comes from devcconfig.UserEnvProbe.
 	ProbeEnv(ctx context.Context, target ContainerTarget, probeMode string) map[string]string
 }
 
-// ExecRequest bundles all parameters for a single non-interactive container
-// exec. Using a struct keeps the ContainerRuntime.Exec signature within the
-// revive argument-limit rule while remaining extensible.
+// ExecRequest is the per-call input to ContainerRuntime.Exec.
 type ExecRequest struct {
 	Target  ContainerTarget
 	Workdir string
@@ -220,25 +202,20 @@ type ExecRequest struct {
 	Stderr  io.Writer
 }
 
-// ContainerTarget identifies a single container exec target. Runtime-agnostic
-// data; runtimes consume it.
+// ContainerTarget identifies a container and the user to exec as.
 type ContainerTarget struct {
 	ContainerID string
 	User        string
 }
 
-// ----------------------------------------------------------------------------
-// DockerRuntime — production implementation of ContainerRuntime.
-// ----------------------------------------------------------------------------
-
-// DockerRuntime shells out to a docker-compatible binary.
+// DockerRuntime is the production ContainerRuntime, shelling out to a
+// docker-compatible binary.
 type DockerRuntime struct {
 	helper *docker.DockerHelper
 }
 
-// NewDockerRuntime constructs a runtime that shells out to the docker-like
-// binary chosen by ResolveDockerCommand. The override parameter is honored
-// the same way ResolveDockerCommand honors it.
+// NewDockerRuntime builds a DockerRuntime using ResolveDockerCommand to pick
+// the binary; override wins if set.
 func NewDockerRuntime(workspace *provider2.Workspace, override string) *DockerRuntime {
 	return &DockerRuntime{
 		helper: &docker.DockerHelper{
@@ -247,11 +224,9 @@ func NewDockerRuntime(workspace *provider2.Workspace, override string) *DockerRu
 	}
 }
 
-// DockerCommand exposes the resolved docker binary path (for diagnostics or
-// callers that still need the raw string).
+// DockerCommand returns the resolved binary path for callers that need the raw string.
 func (r *DockerRuntime) DockerCommand() string { return r.helper.DockerCommand }
 
-// FindRunning implements ContainerRuntime.
 func (r *DockerRuntime) FindRunning(
 	ctx context.Context,
 	workspaceID string,
@@ -280,7 +255,6 @@ func (r *DockerRuntime) FindRunning(
 	return container, nil
 }
 
-// Exec implements ContainerRuntime.
 func (r *DockerRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) {
 	execArgs := []string{"exec", "-i"}
 	for k, v := range req.Env {
@@ -315,7 +289,6 @@ func (r *DockerRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) 
 	return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
 }
 
-// ProbeEnv implements ContainerRuntime.
 func (r *DockerRuntime) ProbeEnv(
 	ctx context.Context,
 	target ContainerTarget,
@@ -362,12 +335,8 @@ func (r *DockerRuntime) runProbeCommand(
 	return stdout.Bytes(), '\n', nil
 }
 
-// ----------------------------------------------------------------------------
-// ExecOneShot — the high-level non-interactive exec entry point.
-// ----------------------------------------------------------------------------
-
-// ExecOneShotOptions configures a single non-interactive command execution
-// inside a workspace's running container.
+// ExecOneShotOptions configures a single non-interactive exec inside a
+// workspace's running container.
 type ExecOneShotOptions struct {
 	WorkspaceName         string
 	Command               []string
@@ -384,7 +353,7 @@ type ExecOneShotOptions struct {
 	Stderr                io.Writer
 }
 
-// ExecOneShotResult is the structured outcome of an exec.
+// ExecOneShotResult is the outcome of an ExecOneShot call.
 type ExecOneShotResult struct {
 	ExitCode       int
 	DurationMS     int64
@@ -393,8 +362,9 @@ type ExecOneShotResult struct {
 	Clamped        bool
 }
 
-// ResolveTimeout picks the first positive of TimeoutSeconds, TimeoutSecondsDefault,
-// fallbackDefault, then clamps by TimeoutSecondsMax. The bool reports a clamp.
+// ResolveTimeout picks the first positive of TimeoutSeconds,
+// TimeoutSecondsDefault, fallbackDefault, then clamps by TimeoutSecondsMax.
+// The bool is true when clamping applied.
 func (o ExecOneShotOptions) ResolveTimeout(fallbackDefault int) (time.Duration, bool) {
 	want := o.TimeoutSeconds
 	if want <= 0 {
@@ -409,9 +379,8 @@ func (o ExecOneShotOptions) ResolveTimeout(fallbackDefault int) (time.Duration, 
 	return time.Duration(want) * time.Second, false
 }
 
-// ExecOneShot runs Command inside the workspace's container, captures
-// stdout/stderr via the provided writers, and returns a structured result.
-// It never reads stdin and never allocates a TTY.
+// ExecOneShot runs opts.Command in the workspace's container, capturing
+// stdout/stderr via the provided writers. Never reads stdin, never allocates a TTY.
 func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResult, error) {
 	if opts.WorkspaceName == "" {
 		return nil, fmt.Errorf("workspace name is required")
@@ -465,9 +434,8 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	return res, nil
 }
 
-// execOneShotWithRuntime is the low-level exec path; it accepts an already-
-// resolved runtime and request so tests can inject a fake runtime without
-// touching workspace resolution.
+// execOneShotWithRuntime is the testable seam: takes an already-resolved
+// runtime so fakes can be injected without touching workspace lookup.
 func execOneShotWithRuntime(
 	ctx context.Context,
 	runtime ContainerRuntime,
@@ -476,8 +444,8 @@ func execOneShotWithRuntime(
 	return runtime.Exec(ctx, req)
 }
 
-// resolvedExecTarget bundles the resolved runtime, target, workdir, and env
-// for an exec — kept as a struct to stay within revive's function-result-limit.
+// resolvedExecTarget wraps the resolve step's return values; a struct
+// keeps it under revive's function-result-limit.
 type resolvedExecTarget struct {
 	runtime ContainerRuntime
 	target  ContainerTarget
@@ -485,8 +453,6 @@ type resolvedExecTarget struct {
 	envMap  map[string]string
 }
 
-// resolveExecTarget resolves the container runtime, target, workdir, and env
-// map from options.
 func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedExecTarget, error) {
 	devsyConfig, err := config.LoadConfig(opts.Context, opts.Provider)
 	if err != nil {
