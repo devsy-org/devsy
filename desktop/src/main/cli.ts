@@ -176,6 +176,13 @@ export class CliRunner {
   }
 
   private activeChildren = new Set<ChildProcess>()
+  /**
+   * Tracks streaming children by workspace so callers can cancel everything
+   * tied to a workspace before destructive operations like delete. Without this,
+   * still-running children continue to emit output after the CLI has unlinked
+   * the workspace's log directory, causing ENOENT crashes in appendLog.
+   */
+  private childrenByWorkspace = new Map<string, Set<ChildProcess>>()
 
   async runStreaming(
     args: string[],
@@ -185,6 +192,7 @@ export class CliRunner {
       meta?: StreamLine,
     ) => void,
     onExit: (code: number, cliError?: CLIError) => void,
+    workspaceId?: string,
   ): Promise<ChildProcess> {
     await this.acquire()
     const child = spawn(
@@ -194,6 +202,14 @@ export class CliRunner {
     )
 
     this.activeChildren.add(child)
+    if (workspaceId) {
+      let bucket = this.childrenByWorkspace.get(workspaceId)
+      if (!bucket) {
+        bucket = new Set()
+        this.childrenByWorkspace.set(workspaceId, bucket)
+      }
+      bucket.add(child)
+    }
 
     let lastCliError: CLIError | undefined
 
@@ -221,6 +237,13 @@ export class CliRunner {
 
     child.on("close", (code) => {
       this.activeChildren.delete(child)
+      if (workspaceId) {
+        const bucket = this.childrenByWorkspace.get(workspaceId)
+        if (bucket) {
+          bucket.delete(child)
+          if (bucket.size === 0) this.childrenByWorkspace.delete(workspaceId)
+        }
+      }
       this.release()
       onExit(code ?? -1, lastCliError)
     })
@@ -232,6 +255,32 @@ export class CliRunner {
     for (const child of this.activeChildren) {
       child.kill("SIGTERM")
     }
+  }
+
+  /**
+   * Terminate every streaming child tied to a workspace and resolve once they
+   * have all closed. Resolves immediately if none are tracked. Must be awaited
+   * before invoking `workspace delete` so late stdout cannot land on an
+   * already-unlinked log file.
+   */
+  async cancelFor(workspaceId: string): Promise<void> {
+    const bucket = this.childrenByWorkspace.get(workspaceId)
+    if (!bucket || bucket.size === 0) return
+
+    const waits: Promise<void>[] = []
+    for (const child of bucket) {
+      waits.push(
+        new Promise<void>((resolve) => {
+          if (child.exitCode !== null || child.signalCode !== null) {
+            resolve()
+            return
+          }
+          child.once("close", () => resolve())
+        }),
+      )
+      child.kill("SIGTERM")
+    }
+    await Promise.all(waits)
   }
 
   static stripAnsi(str: string): string {
