@@ -104,14 +104,18 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 		Clamped:        clamped,
 		TimeoutSeconds: int(timeout.Seconds()),
 	}
+	// Distinguish "our timeout fired" from "the caller cancelled or expired".
+	// Check the parent context first — if it carries an error, execCtx
+	// inherits the same DeadlineExceeded/Canceled and we must not claim
+	// TimedOut, which means "the exec exceeded ITS own time budget".
+	if parentErr := ctx.Err(); parentErr != nil {
+		res.ExitCode = -1
+		return res, parentErr
+	}
 	if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
 		res.TimedOut = true
 		res.ExitCode = -1
 		return res, nil
-	}
-	if errors.Is(ctx.Err(), context.Canceled) {
-		res.ExitCode = -1
-		return res, ctx.Err()
 	}
 	if runErr != nil {
 		return res, runErr
@@ -168,7 +172,11 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		ContainerID: containerDetails.ID,
 		User:        user,
 	}
-	probedEnv := ProbeContainerEnv(ctx, target, "")
+	userEnvProbe := ""
+	if execResult != nil && execResult.MergedConfig != nil {
+		userEnvProbe = execResult.MergedConfig.UserEnvProbe
+	}
+	probedEnv := ProbeContainerEnv(ctx, target, userEnvProbe)
 	envSlice := envMapToSlice(opts.Env)
 	envMap := BuildExecEnv(execResult, envSlice, probedEnv)
 
