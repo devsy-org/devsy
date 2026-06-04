@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spf13/cobra"
 )
 
 type providerSummary struct {
@@ -143,21 +142,18 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 	return cobraCmd.Execute()
 }
 
-func runProviderCobraCmd(ctx context.Context, name string, newCmd func() *cobra.Command) error {
-	cobraCmd := newCmd()
-	cobraCmd.SetArgs([]string{"--", name})
-	cobraCmd.SetContext(ctx)
-	return cobraCmd.Execute()
-}
-
 func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	return runProviderCobraCmd(
-		ctx,
-		name,
-		func() *cobra.Command { return cmdprovider.NewDeleteCmd(g) },
-	)
+	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	if err != nil {
+		return err
+	}
+	return cmdprovider.DeleteProvider(ctx, devsyConfig, name, false, false)
 }
 
-func runProviderUse(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	return runProviderCobraCmd(ctx, name, func() *cobra.Command { return cmdprovider.NewUseCmd(g) })
+func runProviderUse(_ context.Context, g *flags.GlobalFlags, name string) error {
+	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	if err != nil {
+		return err
+	}
+	return cmdprovider.UseProvider(devsyConfig, name)
 }
