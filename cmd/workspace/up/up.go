@@ -76,6 +76,13 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 	}
 	cmd.applyConfig(devsyConfig)
 
+	// Surface the missing-provider case here so non-CLI callers don't see a
+	// confusing downstream lookup error.
+	if cmd.Provider == "" && devsyConfig.Current().DefaultProvider == "" {
+		return fmt.Errorf("no provider specified and no default provider configured for context %q",
+			cmd.Context)
+	}
+
 	args := []string{opts.Source}
 	client, err := cmd.prepareClient(ctx, devsyConfig, args)
 	if err != nil {
@@ -113,6 +120,10 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}
+	// Mirror CLI flag defaults that ship as *bool so non-CLI callers don't
+	// silently get nil-pointer or false-default behavior.
+	mountGitRootDefault := true
+	cmd.MountWorkspaceGitRoot = &mountGitRootDefault
 	return cmd
 }
 
