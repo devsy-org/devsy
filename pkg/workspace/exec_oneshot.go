@@ -143,7 +143,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := ResolveDockerCommand(workspaceConfig)
+	dockerCommand := ResolveDockerCommand(workspaceConfig, "")
 
 	containerDetails, err := FindRunningContainer(
 		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,

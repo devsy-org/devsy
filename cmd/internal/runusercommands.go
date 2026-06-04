@@ -332,10 +332,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig)
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
+	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig, cmd.DockerPath)
 
 	containerDetails, err := workspace2.FindRunningContainer(
 		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,

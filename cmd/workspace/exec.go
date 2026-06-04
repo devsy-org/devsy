@@ -145,10 +145,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig)
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
+	dockerCommand := workspace2.ResolveDockerCommand(workspaceConfig, cmd.DockerPath)
 
 	containerDetails, err := workspace2.FindRunningContainer(
 		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,

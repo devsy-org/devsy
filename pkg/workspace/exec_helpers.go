@@ -28,9 +28,17 @@ type ContainerTarget struct {
 	User        string
 }
 
+// ResolveDockerCommand returns the docker binary to invoke. Precedence:
+// caller-supplied override → provider config (agent.docker.path) → default.
+// Callers wired to a --docker-path style flag pass it as override; the override
+// is honored even when workspace is nil so flag handling works at every call site.
 func ResolveDockerCommand(
 	workspace *provider2.Workspace,
+	override string,
 ) string {
+	if override != "" {
+		return override
+	}
 	if workspace == nil || workspace.Context == "" {
 		return DefaultDockerCommand
 	}

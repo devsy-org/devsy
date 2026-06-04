@@ -70,8 +70,13 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
-	result := workspace2.ResolveDockerCommand(nil)
+	result := workspace2.ResolveDockerCommand(nil, "")
 	assert.Equal(t, "docker", result)
+}
+
+func TestResolveDockerCommand_OverrideBeatsDefault(t *testing.T) {
+	result := workspace2.ResolveDockerCommand(nil, "/usr/local/bin/podman")
+	assert.Equal(t, "/usr/local/bin/podman", result, "explicit override must win over the default")
 }
 
 func TestExecCmd_DockerPathFlag(t *testing.T) {
