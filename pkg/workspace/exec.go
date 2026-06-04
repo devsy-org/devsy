@@ -417,8 +417,6 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 		Clamped:        clamped,
 		TimeoutSeconds: int(timeout.Seconds()),
 	}
-	// Parent error first — execCtx inherits its cancellation, so we'd otherwise
-	// misreport caller cancellation as our own timeout.
 	if parentErr := ctx.Err(); parentErr != nil {
 		res.ExitCode = -1
 		return res, parentErr

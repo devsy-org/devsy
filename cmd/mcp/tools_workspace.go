@@ -103,7 +103,7 @@ func handleWorkspaceStatus(ctx context.Context, g *flags.GlobalFlags, name strin
 	return client.WorkspaceConfig(), nil
 }
 
-// errorResult builds an isError CallToolResult carrying our structured payload.
+// errorResult builds an isError CallToolResult carrying the classified payload.
 // The raw error is logged so operators can see the unclassified failure detail.
 func errorResult(err error) *sdkmcp.CallToolResult {
 	log.Errorf("mcp tool error: %v", err)
@@ -185,9 +185,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 }
 
 func startWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	// RunFromOptions creates the workspace if the name doesn't resolve, so we
+	// RunFromOptions creates the workspace if the name doesn't resolve;
 	// pre-check existence to keep workspace_start lookup-only. A TOCTOU race
-	// with a concurrent delete just surfaces as an actionable error.
+	// with a concurrent delete surfaces as an actionable error.
 	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
 	if err != nil {
 		return err
