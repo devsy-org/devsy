@@ -49,6 +49,58 @@ type UpCmd struct {
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 }
 
+// Options is the structured input form of the up command, for non-CLI callers.
+type Options struct {
+	Source           string // git URL, local path, image, or workspace name
+	Name             string // explicit workspace ID override
+	Provider         string // provider name override
+	IDE              string // ide name; "none" to skip launching
+	DevcontainerPath string // path to devcontainer.json, relative to project
+}
+
+// RunFromOptions runs the up command's logic without going through cobra.
+// This is the same code path execute() follows, exposed for callers (such as
+// the MCP server) that have structured input instead of CLI args.
+// NOTE: WithSignals is intentionally skipped — the caller controls cancellation
+// via ctx.
+func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
+	cmd := buildUpCmd(g, opts)
+	if err := cmd.validate(); err != nil {
+		return err
+	}
+	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	if err != nil {
+		return fmt.Errorf("load devsy config: %w", err)
+	}
+	cmd.applyConfig(devsyConfig)
+
+	args := []string{opts.Source}
+	client, err := cmd.prepareClient(ctx, devsyConfig, args)
+	if err != nil {
+		return fmt.Errorf("prepare workspace client: %w", err)
+	}
+	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
+		return fmt.Errorf("extra devcontainer file is only supported with local provider")
+	}
+	telemetry.CollectorCLI.SetClient(client)
+	return cmd.Run(ctx, devsyConfig, client, args)
+}
+
+// buildUpCmd constructs an UpCmd from structured options for non-CLI callers.
+func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
+	ide := opts.IDE
+	if ide == "" {
+		ide = "none"
+	}
+	cmd := &UpCmd{GlobalFlags: g}
+	cmd.IDE = ide
+	cmd.DevContainerPath = opts.DevcontainerPath
+	if opts.Name != "" {
+		cmd.ID = opts.Name
+	}
+	return cmd
+}
+
 // NewUpCmd creates a new up command.
 func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpCmd{GlobalFlags: f}
@@ -89,6 +141,15 @@ func (cmd *UpCmd) Run(
 		wctx:        wctx,
 		emitJSON:    emitJSON,
 	})
+}
+
+// applyConfig sets config-derived fields after loading the devsy config.
+// Used by both execute() and RunFromOptions().
+func (cmd *UpCmd) applyConfig(devsyConfig *config.Config) {
+	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
+		cmd.StrictHostKeyChecking = true
+	}
+	cmd.resolveDotfilesOptions(devsyConfig)
 }
 
 type finalizeUpArgs struct {
@@ -191,11 +252,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
-	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
-		cmd.StrictHostKeyChecking = true
-	}
-
-	cmd.resolveDotfilesOptions(devsyConfig)
+	cmd.applyConfig(devsyConfig)
 
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()

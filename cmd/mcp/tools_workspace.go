@@ -268,27 +268,11 @@ func createWorkspace(ctx context.Context, g *flags.GlobalFlags, in createInput) 
 }
 
 func runUp(ctx context.Context, g *flags.GlobalFlags, in createInput) error {
-	// Use --flag=value single-token form for every user-controlled value so a
-	// value starting with "-" cannot be reparsed by pflag as a separate flag.
-	args := []string{}
-	if in.Provider != "" {
-		args = append(args, fmt.Sprintf("--provider=%s", in.Provider))
-	}
-	if in.IDE != "" {
-		args = append(args, fmt.Sprintf("--ide=%s", in.IDE))
-	} else {
-		args = append(args, "--ide=none")
-	}
-	if in.DevcontainerPath != "" {
-		args = append(args, fmt.Sprintf("--devcontainer-path=%s", in.DevcontainerPath))
-	}
-	if in.Name != "" {
-		args = append(args, fmt.Sprintf("--id=%s", in.Name))
-	}
-	args = append(args, "--", in.Source)
-
-	cobraCmd := up.NewUpCmd(g)
-	cobraCmd.SetArgs(args)
-	cobraCmd.SetContext(ctx)
-	return cobraCmd.Execute()
+	return up.RunFromOptions(ctx, g, up.Options{
+		Source:           in.Source,
+		Name:             in.Name,
+		Provider:         in.Provider,
+		IDE:              in.IDE,
+		DevcontainerPath: in.DevcontainerPath,
+	})
 }
