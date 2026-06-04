@@ -205,7 +205,36 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
-  it("review step shows summary and blocks Launch on name conflict", async () => {
+  it("review step auto-suggests a unique name when the derived id conflicts", async () => {
+    providers.set([makeProvider("docker")])
+    workspaces.set([{ id: "python" }])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const heading = document.querySelector("h2")
+    expect(heading?.textContent).toBe("Review")
+
+    // Conflicting derived name ("python") should have been replaced with a
+    // generated unique name, not surface the "already exists" warning.
+    expect(queryByText(/already exists/i)).toBeNull()
+
+    const nameInput = document.querySelector(
+      'input[placeholder*="derived from source"]',
+    ) as HTMLInputElement
+    expect(nameInput.value).not.toBe("")
+    expect(nameInput.value).not.toBe("python")
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    expect(launchBtn.disabled).toBe(false)
+    unmount()
+  })
+
+  it("blocks Launch when the user edits the name into a conflict", async () => {
     providers.set([makeProvider("docker")])
     workspaces.set([{ id: "python" }])
     const { getByText, unmount } = render(WorkspaceWizard, {
@@ -214,9 +243,12 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    // Review heading + step indicator both contain "Review", so check the h2 specifically
-    const heading = document.querySelector("h2")
-    expect(heading?.textContent).toBe("Review")
+    const nameInput = document.querySelector(
+      'input[placeholder*="derived from source"]',
+    ) as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: "python" } })
+    await flushAsync()
+
     expect(getByText(/already exists/i)).toBeTruthy()
     const launchBtn = Array.from(
       document.querySelectorAll("button"),
