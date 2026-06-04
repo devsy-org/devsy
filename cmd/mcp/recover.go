@@ -20,10 +20,12 @@ func safeHandler[In any, Out any](
 		defer func() {
 			if r := recover(); r != nil {
 				log.Errorf("mcp handler panic: %v\n%s", r, debug.Stack())
-				result = errorResult(fmt.Errorf("handler panicked: %v", r))
-				// Reset in case the handler partially populated out before panicking.
+				// Return a non-nil Go error so the SDK takes over with SetError.
+				// Returning a custom result here would lose its StructuredContent
+				// when the SDK marshals the (zero) typed Out over it.
+				result = nil
 				out = *new(Out)
-				err = nil
+				err = fmt.Errorf("handler panicked: %v", r)
 			}
 		}()
 		return inner(ctx, req, in)
