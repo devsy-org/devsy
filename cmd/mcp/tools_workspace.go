@@ -185,6 +185,20 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 }
 
 func startWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) error {
+	// up.NewUpCmd treats the positional argument as either an existing
+	// workspace name or a source from which to create one. workspace_start
+	// must never create, so confirm the workspace exists first.
+	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	if err != nil {
+		return err
+	}
+	if _, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        []string{name},
+		Owner:       g.Owner,
+	}); err != nil {
+		return err
+	}
 	return runUp(ctx, g, createInput{Source: name})
 }
 
