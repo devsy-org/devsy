@@ -18,9 +18,8 @@ func TestServer_ListsAllTools(t *testing.T) {
 
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "devsy-test", Version: "test"}, nil)
 	g := &flags.GlobalFlags{}
-	registerWorkspaceTools(server, g)
-	registerProviderTools(server, g)
-	registerExecTool(server, &ServeCmd{GlobalFlags: g, ExecOutputCap: 1024})
+	serveCmd := &ServeCmd{GlobalFlags: g, ExecOutputCap: 1024}
+	serveCmd.registerTools(server)
 
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 
