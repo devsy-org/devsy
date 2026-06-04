@@ -31,7 +31,7 @@ export interface Workspace {
   machine?: WorkspaceMachineConfig
   ide?: WorkspaceIDEConfig
   source?: WorkspaceSource
-  created?: string
+  creationTimestamp?: string
   lastUsed?: string
   context?: string
   status?: string
@@ -104,7 +104,7 @@ export interface Machine {
   id: string
   provider?: MachineProviderConfig
   status?: string
-  created?: string
+  creationTimestamp?: string
   lastUsed?: string
 }
 

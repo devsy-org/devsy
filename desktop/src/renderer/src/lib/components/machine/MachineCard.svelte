@@ -83,7 +83,7 @@ async function handleDelete() {
       <span class={badgeVariants({ variant: "secondary" })}>{machine.provider.name}</span>
     {/if}
     <span class="text-xs text-muted-foreground">
-      Created {timeAgo(machine.created)}
+      Created {timeAgo(machine.creationTimestamp)}
     </span>
   </div>
 
