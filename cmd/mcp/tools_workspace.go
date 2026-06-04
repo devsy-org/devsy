@@ -140,6 +140,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
+		if in.Name == "" {
+			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		}
 		if err := startWorkspace(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
@@ -152,6 +155,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
+		if in.Name == "" {
+			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		}
 		if err := stopWorkspace(ctx, g, in.Name); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
@@ -164,6 +170,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
+		if in.Name == "" {
+			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		}
 		if err := deleteWorkspace(ctx, g, in.Name, in.Force); err != nil {
 			return errorResult(err), opOK{}, nil
 		}
