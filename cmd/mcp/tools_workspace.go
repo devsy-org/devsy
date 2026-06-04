@@ -143,10 +143,7 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
-		if err := startWorkspace(ctx, g, in.Name); err != nil {
-			return errorResult(err), opOK{}, nil
-		}
-		return nil, opOK{OK: true}, nil
+		return opResultHandler(func() error { return startWorkspace(ctx, g, in.Name) })
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -158,10 +155,7 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
-		if err := stopWorkspace(ctx, g, in.Name); err != nil {
-			return errorResult(err), opOK{}, nil
-		}
-		return nil, opOK{OK: true}, nil
+		return opResultHandler(func() error { return stopWorkspace(ctx, g, in.Name) })
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -173,10 +167,7 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
-		if err := deleteWorkspace(ctx, g, in.Name, in.Force); err != nil {
-			return errorResult(err), opOK{}, nil
-		}
-		return nil, opOK{OK: true}, nil
+		return opResultHandler(func() error { return deleteWorkspace(ctx, g, in.Name, in.Force) })
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
