@@ -12,7 +12,6 @@ import (
 )
 
 // UseProvider sets the named provider as the default for the active config context.
-// It is the extracted core of the `provider use` RunE, exposed for non-CLI callers.
 func UseProvider(devsyConfig *config.Config, name string) error {
 	p, err := workspace.FindProvider(devsyConfig, name)
 	if err != nil {

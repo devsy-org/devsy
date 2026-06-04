@@ -2,18 +2,16 @@ package mcp
 
 import "fmt"
 
-// BoundedBuffer is an io.Writer that retains at most cap bytes by keeping the
-// tail (most recent bytes) of the written data. Tail-only retention is more
-// useful to LLMs than a mid-truncation split because output endings carry
-// the final state (exit messages, errors, summaries) rather than middles.
+// BoundedBuffer is an io.Writer that keeps only the last cap bytes written.
+// Tail retention beats mid-truncation for command output because endings carry
+// exit status, errors, and final state.
 type BoundedBuffer struct {
 	cap     int
 	buf     []byte
 	written int64
 }
 
-// NewBoundedBuffer returns a BoundedBuffer with the given capacity.
-// The minimum effective capacity is 64 bytes.
+// NewBoundedBuffer returns a BoundedBuffer with the given capacity (minimum 64).
 func NewBoundedBuffer(cap int) *BoundedBuffer {
 	if cap < 64 {
 		cap = 64

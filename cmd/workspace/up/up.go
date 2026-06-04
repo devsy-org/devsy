@@ -49,8 +49,7 @@ type UpCmd struct {
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 
-	// Out is the writer for structured JSON output (result/error envelopes).
-	// When nil, os.Stdout is used, matching the CLI default.
+	// Out receives result/error JSON envelopes; nil falls back to os.Stdout (CLI default).
 	Out io.Writer
 }
 
@@ -63,16 +62,14 @@ type Options struct {
 	DevcontainerPath string // path to devcontainer.json, relative to project
 }
 
-// RunFromOptions runs the up command's logic without going through cobra.
-// Exposed for non-CLI callers that already have structured input and their own
-// context cancellation; WithSignals is intentionally skipped.
+// RunFromOptions runs the up logic without cobra, for callers with structured
+// input and their own context cancellation. WithSignals is intentionally skipped.
 func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
 	cmd := buildUpCmd(g, opts)
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	// Read overrides from cmd.GlobalFlags (the copy), not the caller's g —
-	// buildUpCmd may have applied opts.Provider on top of g.Provider.
+	// Read from cmd.GlobalFlags (the copy) so opts.Provider overrides take effect.
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
@@ -97,8 +94,7 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	if ide == "" {
 		ide = "none"
 	}
-	// Shallow-copy GlobalFlags so per-call overrides (ResultFormat, Provider)
-	// don't mutate the caller's flags.
+	// Shallow-copy so per-call overrides don't mutate the caller's flags.
 	gCopy := *g
 	if gCopy.ResultFormat == "" {
 		gCopy.ResultFormat = "plain"
@@ -108,9 +104,8 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	}
 	cmd := &UpCmd{
 		GlobalFlags: &gCopy,
-		// Non-CLI callers don't consume the result/error JSON envelopes and may
-		// share stdout with a transport (e.g. MCP stdio) that would be corrupted
-		// by them; discard by default.
+		// Discard JSON envelopes so they can't corrupt a shared stdout (e.g.
+		// an MCP stdio transport).
 		Out: io.Discard,
 	}
 	cmd.IDE = ide
@@ -418,9 +413,8 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 
-	// done is closed by the returned cleanup so both goroutines exit when the
-	// caller finishes — signal.Stop alone is not enough because a goroutine
-	// already blocked on <-signals will never unblock once Stop is called.
+	// done lets cleanup unblock goroutines parked on <-signals; signal.Stop
+	// alone wouldn't wake them.
 	done := make(chan struct{})
 
 	go func() {
@@ -438,9 +432,7 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 		case <-done:
 			return
 		}
-		// Check whether ctx.Done() was caused by cleanup (done is also ready)
-		// rather than by the first goroutine catching a signal. If cleanup is
-		// already in progress there is no need to wait for a second signal.
+		// Skip the second-signal wait if cleanup already closed done.
 		select {
 		case <-done:
 			return
@@ -448,8 +440,7 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 		}
 		select {
 		case <-signals:
-			// A second signal arrived before cleanup finished — force shutdown.
-			os.Exit(1)
+			os.Exit(1) // second signal — force shutdown
 		case <-done:
 		}
 	}()

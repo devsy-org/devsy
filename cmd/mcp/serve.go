@@ -46,11 +46,8 @@ func (cmd *ServeCmd) Run(ctx context.Context) error {
 	log.Debugf("starting MCP server (timeout default=%s max=%s cap=%dB)",
 		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap)
 
-	// Reserve the real stdout for the JSON-RPC frame and redirect os.Stdout to
-	// stderr. Up.go's JSON envelopes are routed through an injected writer, but
-	// other code paths in pkg/workspace still write directly to os.Stdout for
-	// interactive prompts and progress. Belt-and-suspenders against any such
-	// site corrupting the MCP stdio transport.
+	// Reserve real stdout for the JSON-RPC frame; redirect os.Stdout to stderr
+	// so any stray write elsewhere in the process can't corrupt the transport.
 	realStdout := os.Stdout
 	os.Stdout = os.Stderr
 	defer func() { os.Stdout = realStdout }()

@@ -33,9 +33,9 @@ type ExecOneShotOptions struct {
 	Stderr                io.Writer
 }
 
-// defaultExecTimeoutSeconds is used when neither the caller nor the configured
-// default supplies a positive timeout. Kept short enough to surface hung calls
-// quickly while long enough to allow typical build/test commands to complete.
+// defaultExecTimeoutSeconds bounds an exec when no caller or configured
+// default applies. Tuned to surface hung calls without truncating typical
+// build/test commands.
 const defaultExecTimeoutSeconds = 300
 
 // ExecOneShotResult is the structured outcome of an exec.
@@ -47,13 +47,8 @@ type ExecOneShotResult struct {
 	Clamped        bool
 }
 
-// ResolveTimeout returns the effective timeout and whether the caller's
-// requested value was clamped down by Max. Precedence:
-//  1. TimeoutSeconds if > 0
-//  2. TimeoutSecondsDefault if > 0
-//  3. fallbackDefault
-//
-// The result is clamped by TimeoutSecondsMax if > 0.
+// ResolveTimeout picks the first positive of TimeoutSeconds, TimeoutSecondsDefault,
+// fallbackDefault, then clamps by TimeoutSecondsMax. The bool reports a clamp.
 func (o ExecOneShotOptions) ResolveTimeout(fallbackDefault int) (time.Duration, bool) {
 	want := o.TimeoutSeconds
 	if want <= 0 {
@@ -81,14 +76,12 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 
 	timeout, clamped := opts.ResolveTimeout(defaultExecTimeoutSeconds)
 
-	// Resolve the container target with the parent context so a slow Docker
-	// daemon lookup doesn't consume the user's exec time budget.
+	// Resolve under the parent context so docker lookup doesn't eat the exec budget.
 	resolved, err := resolveExecTarget(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	// Apply the timeout only to the actual command execution.
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -109,10 +102,8 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 		Clamped:        clamped,
 		TimeoutSeconds: int(timeout.Seconds()),
 	}
-	// Distinguish "our timeout fired" from "the caller cancelled or expired".
-	// Check the parent context first — if it carries an error, execCtx
-	// inherits the same DeadlineExceeded/Canceled and we must not claim
-	// TimedOut, which means "the exec exceeded ITS own time budget".
+	// Parent error first — execCtx inherits its cancellation, so we'd otherwise
+	// misreport caller cancellation as our own timeout.
 	if parentErr := ctx.Err(); parentErr != nil {
 		res.ExitCode = -1
 		return res, parentErr

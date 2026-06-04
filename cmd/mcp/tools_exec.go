@@ -10,9 +10,8 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// durationToSeconds converts a Duration to a positive whole number of seconds,
-// rounding up so that any non-zero sub-second value resolves to at least 1s
-// rather than truncating to 0 (which would silently fall through to defaults).
+// durationToSeconds rounds up so any non-zero sub-second value becomes at
+// least 1s instead of truncating to 0 and falling through to defaults.
 func durationToSeconds(d time.Duration) int {
 	if d <= 0 {
 		return 0
@@ -37,10 +36,9 @@ type execOutput struct {
 	Truncated  bool   `json:"truncated"`
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	Clamped    bool   `json:"clamped,omitempty"`
-	// Error carries the classified error payload when the exec failed with
-	// partial output already captured. The MCP SDK overwrites a result's
-	// StructuredContent with the marshalled typed output, so the classification
-	// has to ride inside execOutput itself to survive the round-trip.
+	// Error rides inside execOutput because the SDK overwrites
+	// CallToolResult.StructuredContent with the marshalled typed output, which
+	// would otherwise drop the classified payload on partial-output failures.
 	Error *ErrorPayload `json:"error,omitempty"`
 }
 

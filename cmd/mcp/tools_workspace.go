@@ -185,12 +185,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 }
 
 func startWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	// workspace_start must never create a new workspace. RunFromOptions treats
-	// its positional argument as either an existing workspace name or a new
-	// source, so confirm the workspace exists first. The Get→RunFromOptions
-	// sequence has a TOCTOU window if another caller deletes the workspace in
-	// between; RunFromOptions returns an actionable error in that case, which
-	// is acceptable for an interactive tool.
+	// RunFromOptions creates the workspace if the name doesn't resolve, so we
+	// pre-check existence to keep workspace_start lookup-only. A TOCTOU race
+	// with a concurrent delete just surfaces as an actionable error.
 	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
 	if err != nil {
 		return err
