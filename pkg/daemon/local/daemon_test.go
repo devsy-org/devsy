@@ -9,46 +9,54 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 )
 
+const (
+	testDefaultContext = "default"
+	testProviderSSH2   = "ssh2"
+	testProviderSSH    = "ssh"
+	testProviderDocker = "docker"
+	testDefaultJSONKey = "default"
+)
+
 func TestWithDefaults_FlagsCurrentProvider(t *testing.T) {
 	cfg := &config.Config{
 		Contexts: map[string]*config.ContextConfig{
-			"default": {DefaultProvider: "ssh2"},
+			testDefaultContext: {DefaultProvider: testProviderSSH2},
 		},
-		DefaultContext: "default",
+		DefaultContext: testDefaultContext,
 	}
 
 	providers := map[string]*workspace.ProviderWithOptions{
-		"docker": {Config: &provider.ProviderConfig{Name: "docker"}},
-		"ssh":    {Config: &provider.ProviderConfig{Name: "ssh"}},
-		"ssh2":   {Config: &provider.ProviderConfig{Name: "ssh2"}},
+		testProviderDocker: {Config: &provider.ProviderConfig{Name: testProviderDocker}},
+		testProviderSSH:    {Config: &provider.ProviderConfig{Name: testProviderSSH}},
+		testProviderSSH2:   {Config: &provider.ProviderConfig{Name: testProviderSSH2}},
 	}
 
 	got := withDefaults(cfg, providers)
 	if len(got) != 3 {
 		t.Fatalf("got %d providers, want 3", len(got))
 	}
-	if !got["ssh2"].Default {
-		t.Errorf("ssh2 should be marked Default")
+	if !got[testProviderSSH2].Default {
+		t.Errorf("%s should be marked Default", testProviderSSH2)
 	}
-	if got["ssh"].Default {
-		t.Errorf("ssh should not be marked Default")
+	if got[testProviderSSH].Default {
+		t.Errorf("%s should not be marked Default", testProviderSSH)
 	}
-	if got["docker"].Default {
-		t.Errorf("docker should not be marked Default")
+	if got[testProviderDocker].Default {
+		t.Errorf("%s should not be marked Default", testProviderDocker)
 	}
 }
 
 func TestWithDefaults_NoDefaultProvider(t *testing.T) {
 	cfg := &config.Config{
-		Contexts:       map[string]*config.ContextConfig{"default": {}},
-		DefaultContext: "default",
+		Contexts:       map[string]*config.ContextConfig{testDefaultContext: {}},
+		DefaultContext: testDefaultContext,
 	}
 	providers := map[string]*workspace.ProviderWithOptions{
-		"docker": {Config: &provider.ProviderConfig{Name: "docker"}},
+		testProviderDocker: {Config: &provider.ProviderConfig{Name: testProviderDocker}},
 	}
 
 	got := withDefaults(cfg, providers)
-	if got["docker"].Default {
+	if got[testProviderDocker].Default {
 		t.Errorf("no provider should be marked Default when DefaultProvider is empty")
 	}
 }
@@ -58,11 +66,13 @@ func TestWithDefaults_JSONShapeHasTopLevelDefault(t *testing.T) {
 	// of each map value. Make sure the embedded ProviderWithOptions doesn't
 	// hide the Default field.
 	cfg := &config.Config{
-		Contexts:       map[string]*config.ContextConfig{"default": {DefaultProvider: "ssh2"}},
-		DefaultContext: "default",
+		Contexts: map[string]*config.ContextConfig{
+			testDefaultContext: {DefaultProvider: testProviderSSH2},
+		},
+		DefaultContext: testDefaultContext,
 	}
 	providers := map[string]*workspace.ProviderWithOptions{
-		"ssh2": {Config: &provider.ProviderConfig{Name: "ssh2"}},
+		testProviderSSH2: {Config: &provider.ProviderConfig{Name: testProviderSSH2}},
 	}
 
 	raw, err := json.Marshal(withDefaults(cfg, providers))
@@ -74,7 +84,10 @@ func TestWithDefaults_JSONShapeHasTopLevelDefault(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded["ssh2"]["default"] != true {
-		t.Errorf("expected ssh2.default == true in JSON output, got: %s", raw)
+	if decoded[testProviderSSH2][testDefaultJSONKey] != true {
+		t.Errorf(
+			"expected %s.%s == true in JSON output, got: %s",
+			testProviderSSH2, testDefaultJSONKey, raw,
+		)
 	}
 }

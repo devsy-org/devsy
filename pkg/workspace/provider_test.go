@@ -7,6 +7,9 @@ import (
 )
 
 func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
+	const githubPath = "devsy-org/devsy-provider-ssh"
+	const canonicalGithub = "github.com/" + githubPath
+
 	tests := []struct {
 		name string
 		src  provider.ProviderSource
@@ -14,13 +17,13 @@ func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
 	}{
 		{
 			name: "bare org/repo gets github.com prefix",
-			src:  provider.ProviderSource{Github: "devsy-org/devsy-provider-ssh"},
-			want: "github.com/devsy-org/devsy-provider-ssh",
+			src:  provider.ProviderSource{Github: githubPath},
+			want: canonicalGithub,
 		},
 		{
 			name: "already-prefixed github source is preserved",
-			src:  provider.ProviderSource{Github: "github.com/devsy-org/devsy-provider-ssh"},
-			want: "github.com/devsy-org/devsy-provider-ssh",
+			src:  provider.ProviderSource{Github: canonicalGithub},
+			want: canonicalGithub,
 		},
 		{
 			name: "internal source returns raw",
