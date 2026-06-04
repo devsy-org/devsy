@@ -17,15 +17,26 @@ let {
   onconfirm: () => void
 } = $props()
 
-let title = $derived(
-  latestVersion
-    ? `Update '${providerName}' to ${latestVersion}?`
-    : `Update '${providerName}'?`,
+let alreadyLatest = $derived(
+  !!currentVersion && !!latestVersion && currentVersion === latestVersion,
 )
 
+let title = $derived.by(() => {
+  if (alreadyLatest) return `'${providerName}' is already up to date`
+  if (latestVersion) return `Update '${providerName}' to ${latestVersion}?`
+  if (currentVersion) return `Update '${providerName}' (currently ${currentVersion})?`
+  return `Update '${providerName}'?`
+})
+
 let description = $derived.by(() => {
+  if (alreadyLatest) {
+    return `${providerName} is already on ${currentVersion}. Updating will re-fetch the same version.`
+  }
   if (currentVersion && latestVersion) {
     return `This will update ${providerName} from ${currentVersion} to ${latestVersion}.`
+  }
+  if (currentVersion) {
+    return `Currently on ${currentVersion}. The latest version isn't available — this will run the provider's update command.`
   }
   return "Check for and install the latest version."
 })
