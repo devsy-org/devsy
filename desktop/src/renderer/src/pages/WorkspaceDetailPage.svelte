@@ -623,7 +623,7 @@ async function handleRename() {
           <div>{workspace.status ?? "Unknown"}</div>
 
           <div class="text-muted-foreground">Created</div>
-          <div>{workspace.created ? formatTimestamp(workspace.created) : "N/A"}</div>
+          <div>{workspace.creationTimestamp ? formatTimestamp(workspace.creationTimestamp) : "N/A"}</div>
 
           <div class="text-muted-foreground">Last Used</div>
           <div>{workspace.lastUsed ? formatTimestamp(workspace.lastUsed) : "N/A"}</div>

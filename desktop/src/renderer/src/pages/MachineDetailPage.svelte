@@ -199,7 +199,7 @@ async function handleDelete(force = false) {
           <div>{status ?? machine.status ?? "Unknown"}</div>
 
           <div class="text-muted-foreground">Created</div>
-          <div>{machine.created ? formatTimestamp(machine.created) : "N/A"}</div>
+          <div>{machine.creationTimestamp ? formatTimestamp(machine.creationTimestamp) : "N/A"}</div>
 
           <div class="text-muted-foreground">Last Used</div>
           <div>{machine.lastUsed ? formatTimestamp(machine.lastUsed) : "N/A"}</div>

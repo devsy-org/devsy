@@ -29,7 +29,7 @@ let filtered = $derived.by(() => {
 
   if (sortBy === "created") {
     list = [...list].sort((a, b) =>
-      (b.created ?? "").localeCompare(a.created ?? ""),
+      (b.creationTimestamp ?? "").localeCompare(a.creationTimestamp ?? ""),
     )
   }
 
