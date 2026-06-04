@@ -220,7 +220,7 @@ func runCapture(ctx context.Context, args captureArgs) (int, error) {
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode(), nil
 	}
-	return -1, err
+	return -1, fmt.Errorf("exec in container %s: %w", args.target.ContainerID, err)
 }
 
 func envMapToSlice(m map[string]string) []string {

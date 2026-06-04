@@ -308,3 +308,23 @@ func TestBuildUpCmd_DefaultsIDEToNone(t *testing.T) {
 		"MCP path must default IDE to none — there's no human to attach an IDE to",
 	)
 }
+
+func TestBuildUpCmd_DoesNotMutateCallerGlobalFlags(t *testing.T) {
+	g := &flags.GlobalFlags{Provider: "default-provider", ResultFormat: ""}
+
+	// Two calls with different overrides must each see a clean copy. If the
+	// shallow-copy guard regressed, the second call would inherit the first
+	// call's override.
+	first := buildUpCmd(g, Options{Source: "src1", Provider: "alpha"})
+	second := buildUpCmd(g, Options{Source: "src2", Provider: "beta"})
+
+	assert.Equal(t, "alpha", first.Provider, "first call applies its own override")
+	assert.Equal(t, "beta", second.Provider, "second call applies its own override")
+	assert.Equal(t, "default-provider", g.Provider, "caller's Provider must remain untouched")
+	assert.Equal(
+		t,
+		"",
+		g.ResultFormat,
+		"caller's ResultFormat must remain untouched even after copy defaulted it",
+	)
+}
