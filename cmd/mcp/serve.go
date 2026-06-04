@@ -48,6 +48,9 @@ func (cmd *ServeCmd) Run(ctx context.Context) error {
 
 	// Reserve the real stdout for the JSON-RPC frame and redirect os.Stdout to
 	// stderr so stray writes elsewhere in the process cannot corrupt it.
+	// The up.go result/error JSON envelopes are now written to io.Discard via
+	// the plumbed Out writer; this swap is a defensive backstop for remaining
+	// sites that still hardcode os.Stdout (e.g. pkg/workspace/workspace.go:480).
 	realStdout := os.Stdout
 	os.Stdout = os.Stderr
 	defer func() { os.Stdout = realStdout }()

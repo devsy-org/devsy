@@ -3,6 +3,7 @@ package up
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,6 +48,10 @@ type UpCmd struct {
 	DotfilesTargetPath    string
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
+
+	// Out is the writer for structured JSON output (result/error envelopes).
+	// When nil, os.Stdout is used, matching the CLI default.
+	Out io.Writer
 }
 
 // Options is the structured input form of the up command, for non-CLI callers.
@@ -92,7 +97,18 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	if ide == "" {
 		ide = "none"
 	}
-	cmd := &UpCmd{GlobalFlags: g}
+	// Use a shallow copy of GlobalFlags so we can override ResultFormat without
+	// mutating the caller's flags.
+	gCopy := *g
+	if gCopy.ResultFormat == "" {
+		gCopy.ResultFormat = "plain"
+	}
+	cmd := &UpCmd{
+		GlobalFlags: &gCopy,
+		// MCP and other non-CLI callers do not have a structured JSON output channel;
+		// discard the result/error JSON so it does not corrupt stdout.
+		Out: io.Discard,
+	}
 	cmd.IDE = ide
 	cmd.DevContainerPath = opts.DevcontainerPath
 	if opts.Name != "" {
@@ -128,9 +144,10 @@ func (cmd *UpCmd) Run(
 	}
 	emitJSON := mode == output.ModeJSON
 
+	out := cmd.stdout()
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		return reportErr(err, emitJSON)
+		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
 		return nil // Platform mode or prebuild-only run.
@@ -140,6 +157,7 @@ func (cmd *UpCmd) Run(
 		client:      client,
 		wctx:        wctx,
 		emitJSON:    emitJSON,
+		out:         out,
 	})
 }
 
@@ -157,13 +175,14 @@ type finalizeUpArgs struct {
 	client      client2.BaseWorkspaceClient
 	wctx        *workspaceContext
 	emitJSON    bool
+	out         io.Writer
 }
 
 // finalizeUp performs the post-up steps: workspace configuration, optional SSH
 // tunnel, IDE launch, and JSON envelope emission. Split out to keep Run small.
 func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	if err := cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx); err != nil {
-		return reportErr(err, args.emitJSON)
+		return reportErr(err, args.emitJSON, args.out)
 	}
 
 	if cleanup := cmd.maybeStartTunnel(
@@ -180,10 +199,10 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 
 	ideURL, err := cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
 	if err != nil {
-		return reportErr(err, args.emitJSON)
+		return reportErr(err, args.emitJSON, args.out)
 	}
 	if args.emitJSON {
-		emitUpResult(args.wctx, ideURL)
+		emitUpResult(args.wctx, ideURL, args.out)
 	}
 	if args.wctx.tunnelPort > 0 {
 		log.Infof(
@@ -217,16 +236,25 @@ func (cmd *UpCmd) maybeStartTunnel(
 	return tunnelCleanup
 }
 
+// stdout returns the output writer for structured JSON envelopes.
+// Falls back to os.Stdout when no explicit writer is set, matching CLI behaviour.
+func (cmd *UpCmd) stdout() io.Writer {
+	if cmd.Out != nil {
+		return cmd.Out
+	}
+	return os.Stdout
+}
+
 // reportErr writes the error to JSON output when requested and returns it for the caller.
-func reportErr(err error, emitJSON bool) error {
+func reportErr(err error, emitJSON bool, out io.Writer) error {
 	if emitJSON {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		_ = config2.WriteErrorJSON(out, err.Error())
 	}
 	return err
 }
 
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
-func emitUpResult(wctx *workspaceContext, ideURL string) {
+func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := ""
 	var warnings []string
 	if wctx.result != nil {
@@ -235,7 +263,7 @@ func emitUpResult(wctx *workspaceContext, ideURL string) {
 		}
 		warnings = wctx.result.HostWarnings
 	}
-	_ = config2.WriteResultJSON(os.Stdout, config2.ResultEnvelope{
+	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
 		RemoteUser:            wctx.user,
 		RemoteWorkspaceFolder: wctx.workdir,
