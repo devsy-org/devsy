@@ -64,16 +64,16 @@ type Options struct {
 }
 
 // RunFromOptions runs the up command's logic without going through cobra.
-// This is the same code path execute() follows, exposed for callers (such as
-// the MCP server) that have structured input instead of CLI args.
-// NOTE: WithSignals is intentionally skipped — the caller controls cancellation
-// via ctx.
+// Exposed for non-CLI callers that already have structured input and their own
+// context cancellation; WithSignals is intentionally skipped.
 func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
 	cmd := buildUpCmd(g, opts)
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	// Read overrides from cmd.GlobalFlags (the copy), not the caller's g —
+	// buildUpCmd may have applied opts.Provider on top of g.Provider.
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
@@ -97,16 +97,20 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	if ide == "" {
 		ide = "none"
 	}
-	// Use a shallow copy of GlobalFlags so we can override ResultFormat without
-	// mutating the caller's flags.
+	// Shallow-copy GlobalFlags so per-call overrides (ResultFormat, Provider)
+	// don't mutate the caller's flags.
 	gCopy := *g
 	if gCopy.ResultFormat == "" {
 		gCopy.ResultFormat = "plain"
 	}
+	if opts.Provider != "" {
+		gCopy.Provider = opts.Provider
+	}
 	cmd := &UpCmd{
 		GlobalFlags: &gCopy,
-		// MCP and other non-CLI callers do not have a structured JSON output channel;
-		// discard the result/error JSON so it does not corrupt stdout.
+		// Non-CLI callers don't consume the result/error JSON envelopes and may
+		// share stdout with a transport (e.g. MCP stdio) that would be corrupted
+		// by them; discard by default.
 		Out: io.Discard,
 	}
 	cmd.IDE = ide
