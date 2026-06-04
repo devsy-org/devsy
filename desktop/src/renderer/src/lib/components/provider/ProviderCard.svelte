@@ -1,5 +1,6 @@
 <script lang="ts">
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
+import { Star } from "@lucide/svelte"
 import ProviderIcon from "./ProviderIcon.svelte"
 import ProviderSheet from "./ProviderSheet.svelte"
 import { providerVersions } from "$lib/stores/providerVersions.js"
@@ -32,7 +33,10 @@ function sourceDisplay(p: Provider): string {
       <ProviderIcon name={provider.name} class="size-8 shrink-0" />
       <h3 class="text-lg font-semibold truncate">{provider.name}</h3>
       {#if provider.isDefault}
-        <span class={badgeVariants({ variant: "default" })}>default</span>
+        <span class="{badgeVariants({ variant: 'default' })} gap-1">
+          <Star class="size-3" />
+          Default
+        </span>
       {/if}
     </div>
     <div class="flex gap-1.5 shrink-0">

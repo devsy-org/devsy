@@ -44,7 +44,7 @@ test.describe("Providers Page", () => {
 
   test("should show default badge on the default provider", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
-    await expect(main).toContainText("default")
+    await expect(main).toContainText("Default")
   })
 
   test("should show initialized badge on initialized providers", async () => {

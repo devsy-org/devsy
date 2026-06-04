@@ -535,7 +535,12 @@ func getProviderSource(src provider.ProviderSource, configName string) string {
 	case src.File != "":
 		return src.File
 	case src.Github != "":
-		return src.Github
+		// Canonicalize to github.com/<org>/<repo> so version helpers
+		// (classifyVersionSource, parseGitHubSourcePath) recognize it.
+		if strings.HasPrefix(src.Github, "github.com/") {
+			return src.Github
+		}
+		return "github.com/" + src.Github
 	default:
 		return ""
 	}

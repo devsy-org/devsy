@@ -1,21 +1,31 @@
 package telemetry
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"runtime"
-	"slices"
-	"strings"
 	"time"
 
 	devsyclient "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry/analytics"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/moby/term"
 	"github.com/spf13/cobra"
 )
+
+// Set on cobra commands the desktop polls frequently so their invocations
+// don't drown out meaningful CLI activity.
+const AnnotationSkipInUI = "telemetry.skip-in-ui"
+
+// SkipInUIAnnotation returns the cobra Annotations map that flags a command
+// as one the desktop polls frequently.
+func SkipInUIAnnotation() map[string]string {
+	return map[string]string{AnnotationSkipInUI: config.BoolTrue}
+}
 
 type ErrorSeverityType string
 
@@ -26,22 +36,6 @@ const (
 	PanicSeverity   ErrorSeverityType = "panic"
 )
 
-var UIEventsExceptions []string = []string{
-	config.BinaryName + " list",
-	config.BinaryName + " status",
-	config.BinaryName + " provider list",
-	config.BinaryName + " pro list",
-	config.BinaryName + " pro health",
-	config.BinaryName + " pro check-update",
-	config.BinaryName + " ide list",
-	config.BinaryName + " ide use",
-	config.BinaryName + " version",
-	config.BinaryName + " context get",
-}
-
-// skip everything in pro mode.
-var CollectorCLI CLICollector = &noopCollector{}
-
 type CLICollector interface {
 	RecordCLI(err error)
 	SetClient(client devsyclient.BaseWorkspaceClient)
@@ -50,22 +44,45 @@ type CLICollector interface {
 	Flush()
 }
 
-// StartCLI starts collecting events and sending them to the backend from the CLI.
-func StartCLI(devsyConfig *config.Config, cmd *cobra.Command) {
-	telemetryOpt := devsyConfig.ContextOption(config.ContextOptionTelemetry)
-	if telemetryOpt == config.BoolFalse || version.GetVersion() == version.DevVersion ||
+type ctxKey struct{}
+
+func WithCollector(ctx context.Context, c CLICollector) context.Context {
+	return context.WithValue(ctx, ctxKey{}, c)
+}
+
+// Returns a noop collector when none is present so callers can use it unguarded.
+func FromContext(ctx context.Context) CLICollector {
+	if c, ok := ctx.Value(ctxKey{}).(CLICollector); ok && c != nil {
+		return c
+	}
+	return &noopCollector{}
+}
+
+// Call before LoadConfig so config-load failures still get recorded.
+// Always returns a non-nil collector.
+func BootstrapCLI(cmd *cobra.Command) CLICollector {
+	if version.GetVersion() == version.DevVersion ||
 		os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
-		return
+		return &noopCollector{}
 	}
 
-	// create a new default collector
 	collector, err := newCLICollector(cmd)
 	if err != nil {
-		// Log the problem but don't fail - use disabled Collector instead
 		log.Infof("telemetry: %s", err.Error())
-	} else {
-		CollectorCLI = collector
+		return &noopCollector{}
 	}
+	return collector
+}
+
+// Swaps current for a noop collector if the user has opted out via context.
+func ApplyCLIConfig(devsyConfig *config.Config, current CLICollector) CLICollector {
+	if devsyConfig == nil {
+		return current
+	}
+	if devsyConfig.ContextOption(config.ContextOptionTelemetry) == config.BoolFalse {
+		return &noopCollector{}
+	}
+	return current
 }
 
 func newCLICollector(cmd *cobra.Command) (*cliCollector, error) {
@@ -98,11 +115,8 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 	cmd := d.cmd.CommandPath()
 	isUI := os.Getenv(config.EnvUI) == config.BoolTrue
-	// Ignore certain commands triggered by Devsy Desktop
-	if isUI {
-		if slices.Contains(UIEventsExceptions, cmd) {
-			return
-		}
+	if isUI && d.cmd.Annotations[AnnotationSkipInUI] == config.BoolTrue {
+		return
 	}
 
 	isCI := false
@@ -136,20 +150,15 @@ func (d *cliCollector) RecordCLI(err error) {
 		"os_arch":  runtime.GOARCH,
 		"timezone": timezone,
 	}
+	// Raw err.Error() strings can leak paths, hostnames, tokens.
 	if err != nil {
-		eventProperties["error"] = err.Error()
+		eventProperties["error_code"] = string(
+			cliErrors.Classify(err, cliErrors.ClassifyContext{}).Code,
+		)
 	}
 
-	// Check if we're on the runner
-	isPro := false
-	wd, wdErr := os.Getwd()
-	if wdErr == nil {
-		if strings.HasPrefix(wd, "/var/lib/loft/devsy") {
-			isPro = true
-		}
-	}
 	eventType := config.BinaryName + "_cli"
-	if isPro {
+	if os.Getenv(config.EnvProRunner) == config.BoolTrue {
 		eventType = config.BinaryName + "_cli_runner"
 	}
 

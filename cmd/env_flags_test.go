@@ -19,6 +19,7 @@ const (
 // setting the corresponding DEVSY_* env var pushes the value into the bound
 // pflag at registration time, satisfying cobra's required-flag check.
 func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
+	t.Setenv(envProEnabled, "true")
 	cases := []struct {
 		cmdPath    string
 		flagName   string
@@ -84,6 +85,7 @@ func TestOptInEnvFlags_NoEnvLeavesDefault(t *testing.T) {
 // BindEnv: setting DEVSY_HOST="" must NOT mark the flag as Changed (otherwise
 // MarkFlagRequired would be satisfied by an empty value).
 func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
+	t.Setenv(envProEnabled, "true")
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
 	cmd := resolveCommand(t, rootCmd, "pro workspace list")
@@ -96,6 +98,7 @@ func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 // wins over a value supplied via DEVSY_*. This is the standard precedence
 // users expect: flag > env > default.
 func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
+	t.Setenv(envProEnabled, "true")
 	t.Setenv(envDevsyHost, "env-value")
 	rootCmd, _ := BuildRoot()
 	// Replace the leaf command's RunE so Execute() doesn't try to actually
@@ -116,6 +119,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 // ValidateRequiredFlags pipeline to prove DEVSY_HOST satisfies
 // MarkFlagRequired("host") at execution time, not just in static inspection.
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
+	t.Setenv(envProEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")
 	rootCmd, _ := BuildRoot()
 	leaf := resolveCommand(t, rootCmd, "pro workspace list")
@@ -134,6 +138,7 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 // This catches the regression where a future addition to cmd/pro/ forgets
 // the inline BindEnv call.
 func TestOptInEnvFlags_ProSubcommandSweep(t *testing.T) {
+	t.Setenv(envProEnabled, "true")
 	for _, env := range []string{envDevsyHost, envDevsyProject} {
 		t.Setenv(env, "sweep-"+strings.ToLower(env))
 	}
@@ -155,6 +160,24 @@ func TestOptInEnvFlags_ProSubcommandSweep(t *testing.T) {
 		}
 	}
 	walk(proCmd)
+}
+
+// TestProCommand_HiddenWhenDisabled verifies pro is gated off by default.
+func TestProCommand_HiddenWhenDisabled(t *testing.T) {
+	t.Setenv(envProEnabled, "")
+	rootCmd, _ := BuildRoot()
+	for _, c := range rootCmd.Commands() {
+		use := c.Use
+		if i := strings.IndexByte(use, ' '); i >= 0 {
+			use = use[:i]
+		}
+		require.NotEqual(
+			t,
+			"pro",
+			use,
+			"pro command should not be registered when DEVSY_PRO_ENABLED is unset",
+		)
+	}
 }
 
 func resolveCommand(t *testing.T, rootCmd *cobra.Command, path string) *cobra.Command {

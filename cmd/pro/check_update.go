@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
 	"github.com/spf13/cobra"
 )
@@ -28,9 +29,10 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		GlobalFlags: globalFlags,
 	}
 	c := &cobra.Command{
-		Use:    "check-update",
-		Short:  "Check platform provider update",
-		Hidden: true,
+		Use:         "check-update",
+		Short:       "Check platform provider update",
+		Hidden:      true,
+		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, provider, err := proutil.FindProProvider(
 				cobraCmd.Context(),

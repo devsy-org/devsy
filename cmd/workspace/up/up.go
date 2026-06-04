@@ -91,7 +91,7 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
 		return fmt.Errorf("extra devcontainer file is only supported with local provider")
 	}
-	telemetry.CollectorCLI.SetClient(client)
+	telemetry.FromContext(ctx).SetClient(client)
 	return cmd.Run(ctx, devsyConfig, client, args)
 }
 
@@ -303,7 +303,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("extra devcontainer file is only supported with local provider")
 	}
 
-	telemetry.CollectorCLI.SetClient(client)
+	telemetry.FromContext(cobraCmd.Context()).SetClient(client)
 	return cmd.Run(ctx, devsyConfig, client, args)
 }
 

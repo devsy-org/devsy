@@ -142,6 +142,15 @@ func (d *Daemon) handleList(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, workspaces)
 }
 
+// providerWithDefault mirrors cmd/provider/list.ProviderWithDefault so the
+// daemon's JSON shape matches the CLI's. The desktop UI relies on the
+// top-level `default` field to flag which provider is current.
+type providerWithDefault struct {
+	*workspace.ProviderWithOptions
+
+	Default bool `json:"default,omitempty"`
+}
+
 func (d *Daemon) handleProviderList(w http.ResponseWriter, _ *http.Request) {
 	d.touch()
 
@@ -149,7 +158,7 @@ func (d *Daemon) handleProviderList(w http.ResponseWriter, _ *http.Request) {
 	if time.Since(d.providersAt) < cacheTTL && d.providers != nil {
 		data := d.providers
 		d.cacheMu.RUnlock()
-		writeJSON(w, data)
+		writeJSON(w, withDefaults(d.config, data))
 		return
 	}
 	d.cacheMu.RUnlock()
@@ -165,7 +174,22 @@ func (d *Daemon) handleProviderList(w http.ResponseWriter, _ *http.Request) {
 	d.providersAt = time.Now()
 	d.cacheMu.Unlock()
 
-	writeJSON(w, providers)
+	writeJSON(w, withDefaults(d.config, providers))
+}
+
+func withDefaults(
+	cfg *config.Config,
+	providers map[string]*workspace.ProviderWithOptions,
+) map[string]providerWithDefault {
+	defaultName := cfg.Current().DefaultProvider
+	out := make(map[string]providerWithDefault, len(providers))
+	for k, p := range providers {
+		out[k] = providerWithDefault{
+			ProviderWithOptions: p,
+			Default:             p.Config.Name == defaultName,
+		}
+	}
+	return out
 }
 
 func (d *Daemon) handleMachineList(w http.ResponseWriter, _ *http.Request) {

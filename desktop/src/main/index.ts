@@ -1,3 +1,4 @@
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, BrowserWindow, session } from "electron"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
@@ -124,8 +125,11 @@ app.whenReady().then(() => {
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))
   const cli = new CliRunner(binaryPath)
 
-  // Initialize log store and prune old logs
-  const logStore = LogStore.defaultPath()
+  // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
+  // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
+  // ~/.devsy/contexts/<ctx>/workspaces/<id>/ subtree that `workspace delete`
+  // unlinks. That separation closes the file-deletion race by construction.
+  const logStore = new LogStore(join(homedir(), ".devsy", "desktop", "logs"))
   try {
     const pruned = logStore.prune(30)
     if (pruned > 0) console.log(`Pruned ${pruned} old log files`)

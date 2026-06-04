@@ -43,6 +43,7 @@ jobs:
           args: build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
         env:
           DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
       - uses: actions/upload-artifact@v7
         with:
@@ -177,6 +178,8 @@ jobs:
       - name: build desktop app
         working-directory: desktop
         run: npx electron-vite build
+        env:
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
       - name: package and publish with electron-builder (macOS, signed)
         if: runner.os == 'macOS'

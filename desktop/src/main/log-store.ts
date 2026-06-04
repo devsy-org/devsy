@@ -8,7 +8,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs"
-import { homedir } from "node:os"
 import { basename, join } from "node:path"
 
 // safeLogFilename strips any directory components from filename so a caller
@@ -25,9 +24,6 @@ function safeLogFilename(filename: string): string {
   return clean
 }
 
-// isReadableDir returns true only when path exists AND is a regular
-// directory (not a symlink or file). Used by prune to skip non-directory
-// entries that would make readdirSync throw mid-pass.
 function isReadableDir(path: string): boolean {
   if (!existsSync(path)) return false
   try {
@@ -46,27 +42,18 @@ export interface LogEntry {
 
 let counter = 0
 
-// LogStore writes streaming command logs into the canonical per-workspace
-// directory (~/.devsy/contexts/<ctx>/workspaces/<id>/logs/), so `devsy delete`
-// wipes them via os.RemoveAll on the workspace dir. Callers must supply the
-// workspace's context for every operation; resolve it from DaemonState
-// (workspaceContext) before invoking.
+/**
+ * LogStore writes desktop-owned streaming command logs into a directory
+ * outside the CLI's workspace state subtree. The CLI's `workspace delete`
+ * unlinks ~/.devsy/contexts/<ctx>/workspaces/<id>/ wholesale, so co-locating
+ * desktop logs there created a file-deletion race when a still-running
+ * desktop child emitted output after the directory was gone.
+ */
 export class LogStore {
-  constructor(private devsyHomeDir: string) {}
-
-  static defaultPath(): LogStore {
-    return new LogStore(join(homedir(), ".devsy"))
-  }
+  constructor(private logsDir: string) {}
 
   private workspaceLogDir(context: string, workspaceId: string): string {
-    return join(
-      this.devsyHomeDir,
-      "contexts",
-      context,
-      "workspaces",
-      workspaceId,
-      "logs",
-    )
+    return join(this.logsDir, "workspaces", context, workspaceId)
   }
 
   createLogFile(context: string, workspaceId: string): string {
@@ -81,7 +68,14 @@ export class LogStore {
   }
 
   appendLog(logPath: string, line: string): void {
-    appendFileSync(logPath, `${line}\n`)
+    try {
+      appendFileSync(logPath, `${line}\n`)
+    } catch (err) {
+      // Defensive: the workspace dir under the desktop logs root is owned by
+      // this process, but a manual `rm -rf` of the logs tree (or any other
+      // out-of-band removal) shouldn't crash the main process.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err
+    }
   }
 
   readLogByPath(logPath: string): string {
@@ -122,28 +116,29 @@ export class LogStore {
     )
   }
 
-  // prune walks every <devsyHome>/contexts/<ctx>/workspaces/<id>/logs/ tree
-  // and removes log files older than maxAgeDays. Missing trees or
-  // non-directory entries (files, dangling symlinks) are skipped without
-  // aborting the rest of the pass.
+  /**
+   * Walks every <logsDir>/workspaces/<ctx>/<id>/ tree and removes log files
+   * older than maxAgeDays. Missing trees or non-directory entries are skipped
+   * without aborting the rest of the pass.
+   */
   prune(maxAgeDays: number): number {
-    const contextsRoot = join(this.devsyHomeDir, "contexts")
-    if (!isReadableDir(contextsRoot)) return 0
+    const root = join(this.logsDir, "workspaces")
+    if (!isReadableDir(root)) return 0
 
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
     let removed = 0
 
-    for (const ctx of readdirSync(contextsRoot)) {
-      const wsRoot = join(contextsRoot, ctx, "workspaces")
+    for (const ctx of readdirSync(root)) {
+      const wsRoot = join(root, ctx)
       if (!isReadableDir(wsRoot)) continue
 
       for (const wsDir of readdirSync(wsRoot)) {
-        const logDir = join(wsRoot, wsDir, "logs")
-        if (!isReadableDir(logDir)) continue
+        const dir = join(wsRoot, wsDir)
+        if (!isReadableDir(dir)) continue
 
-        for (const file of readdirSync(logDir)) {
+        for (const file of readdirSync(dir)) {
           if (!file.endsWith(".log")) continue
-          const filePath = join(logDir, file)
+          const filePath = join(dir, file)
           const fileStat = statSync(filePath)
           if (fileStat.birthtimeMs < cutoff) {
             unlinkSync(filePath)

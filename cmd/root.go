@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	gocontext "context"
 	"errors"
 	"fmt"
 	"os"
@@ -42,7 +43,16 @@ const (
 	groupPlatform     = "platform"
 	groupDevcontainer = "devcontainer"
 	groupMeta         = "meta"
+
+	// envProEnabled gates registration of the `pro` command tree. The pro
+	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
+	// expose it (e.g. for internal testing).
+	envProEnabled = "DEVSY_PRO_ENABLED"
 )
+
+func proEnabled() bool {
+	return os.Getenv(envProEnabled) == "true"
+}
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
 // a structured, machine-parseable stream (json or logfmt). Callers use this to
@@ -56,9 +66,27 @@ func isMachineLogFormat(format string) bool {
 func Execute() {
 	rootCmd, globalFlags := BuildRoot()
 
+	// Bootstrap pre-Execute so subcommands that override PersistentPreRunE
+	// without chaining (e.g. pro, agent) still get telemetry.
+	target := rootCmd
+	if found, _, findErr := rootCmd.Find(os.Args[1:]); findErr == nil && found != nil {
+		target = found
+	}
+	collector := telemetry.BootstrapCLI(target)
+	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+
 	err := rootCmd.Execute()
-	telemetry.CollectorCLI.RecordCLI(err)
-	telemetry.CollectorCLI.Flush()
+
+	// Re-apply opt-out post-Execute for the same PreRunE-bypass case.
+	if devsyConfig, cfgErr := config.LoadConfig(
+		globalFlags.Context,
+		globalFlags.Provider,
+	); cfgErr == nil {
+		collector = telemetry.ApplyCLIConfig(devsyConfig, collector)
+	}
+
+	collector.RecordCLI(err)
+	collector.Flush()
 	if err != nil {
 		//nolint:all
 		if sshExitErr, ok := err.(*ssh.ExitError); ok {
@@ -130,7 +158,11 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 
 		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 		if err == nil {
-			telemetry.StartCLI(devsyConfig, cobraCmd)
+			current := telemetry.FromContext(cobraCmd.Context())
+			cobraCmd.SetContext(telemetry.WithCollector(
+				cobraCmd.Context(),
+				telemetry.ApplyCLIConfig(devsyConfig, current),
+			))
 		}
 		return nil
 	}
@@ -141,13 +173,16 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
-	rootCmd.AddGroup(
-		&cobra.Group{ID: groupCore, Title: "Core commands:"},
-		&cobra.Group{ID: groupConfig, Title: "Configuration commands:"},
-		&cobra.Group{ID: groupPlatform, Title: "Platform commands:"},
-		&cobra.Group{ID: groupDevcontainer, Title: "Devcontainer commands:"},
-		&cobra.Group{ID: groupMeta, Title: "Meta:"},
-	)
+	groups := []*cobra.Group{
+		{ID: groupCore, Title: "Core commands:"},
+		{ID: groupConfig, Title: "Configuration commands:"},
+		{ID: groupDevcontainer, Title: "Devcontainer commands:"},
+		{ID: groupMeta, Title: "Meta:"},
+	}
+	if proEnabled() {
+		groups = append(groups, &cobra.Group{ID: groupPlatform, Title: "Platform commands:"})
+	}
+	rootCmd.AddGroup(groups...)
 
 	registerSubcommands(rootCmd, globalFlags)
 
@@ -167,10 +202,11 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	contextCmd := context.NewContextCmd(globalFlags)
 	contextCmd.GroupID = groupConfig
 	rootCmd.AddCommand(contextCmd)
-	proCmd := pro.NewProCmd(globalFlags)
-	proCmd.GroupID = groupPlatform
-	rootCmd.AddCommand(proCmd)
-
+	if proEnabled() {
+		proCmd := pro.NewProCmd(globalFlags)
+		proCmd.GroupID = groupPlatform
+		rootCmd.AddCommand(proCmd)
+	}
 	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
 	wsCmd.GroupID = groupCore
 	rootCmd.AddCommand(wsCmd)

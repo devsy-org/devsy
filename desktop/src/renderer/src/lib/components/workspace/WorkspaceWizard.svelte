@@ -21,6 +21,7 @@ import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
+import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
 import { workspaceUp } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
@@ -364,6 +365,25 @@ function goToStep(step: Step) {
   currentStep = step
 }
 
+function randomName(): string {
+  return uniqueNamesGenerator({
+    dictionaries: [adjectives, animals],
+    separator: "-",
+    length: 2,
+    style: "lowerCase",
+  })
+}
+
+function uniquifyName(base: string): string {
+  const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
+  if (base && !existing.has(base.toLowerCase())) return base
+  for (let i = 0; i < 50; i++) {
+    const candidate = randomName()
+    if (!existing.has(candidate.toLowerCase())) return candidate
+  }
+  return `${randomName()}-${Date.now().toString(36)}`
+}
+
 function continueFromProvider() {
   if (!selectedProvider) return
   currentStep = "source"
@@ -371,6 +391,17 @@ function continueFromProvider() {
 
 function continueFromSource() {
   if (!source.trim()) return
+  if (!workspaceName.trim()) {
+    const derived =
+      source
+        .trim()
+        .split("/")
+        .pop()
+        ?.replace(/\.git$/, "") ?? ""
+    if (derived) workspaceName = uniquifyName(derived)
+  } else {
+    workspaceName = uniquifyName(workspaceName.trim())
+  }
   currentStep = "ide"
 }
 
@@ -387,7 +418,7 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   source = t.source
   if (!workspaceName) {
-    workspaceName = t.name.toLowerCase().replace(/[^a-z0-9]/g, "-")
+    workspaceName = uniquifyName(t.name.toLowerCase().replace(/[^a-z0-9]/g, "-"))
   }
 }
 </script>
@@ -622,6 +653,9 @@ function selectTemplate(t: { name: string; source: string }) {
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
+            <p class="text-xs text-muted-foreground">
+              Auto-suggested to avoid conflicts. Edit to use a custom name.
+            </p>
             <p class="text-xs text-muted-foreground">
               Resolved id: <span class="font-mono">{resolvedId || "—"}</span>
             </p>
