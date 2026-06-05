@@ -152,6 +152,7 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 func TestResolveExecTarget(t *testing.T) {
 	const cwd = "/current/dir"
 	const testWsName = "my-ws"
+	const testFolder = "/some/path"
 
 	cases := []struct {
 		name    string
@@ -166,8 +167,8 @@ func TestResolveExecTarget(t *testing.T) {
 		},
 		{
 			name: "folder only",
-			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: "/some/path"},
-			want: []string{"/some/path"},
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: testFolder},
+			want: []string{testFolder},
 		},
 		{
 			name: "cwd default when nothing specified",
@@ -179,7 +180,7 @@ func TestResolveExecTarget(t *testing.T) {
 			cmd: &ExecCmd{
 				GlobalFlags:     &flags.GlobalFlags{},
 				WorkspaceName:   testWsName,
-				WorkspaceFolder: "/some/path",
+				WorkspaceFolder: testFolder,
 			},
 			wantErr: "not both",
 		},
