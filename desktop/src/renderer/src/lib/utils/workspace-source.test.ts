@@ -58,6 +58,21 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).toBe("github.com/org/repo@main@subpath:packages/api")
   })
 
+  it("git: subpath without ref appends @subpath: directly", () => {
+    const out = buildWorkspaceSource(
+      form({ repoUrl: "github.com/org/repo", refValue: "", subPath: "packages/api" }),
+    )
+    expect(out.source).toBe("github.com/org/repo@subpath:packages/api")
+  })
+
+  it("git: whitespace-only optional fields become undefined", () => {
+    const out = buildWorkspaceSource(
+      form({ repoUrl: "github.com/org/repo", devcontainerPath: "   ", prebuildRepository: "  " }),
+    )
+    expect(out.devcontainerPath).toBeUndefined()
+    expect(out.prebuildRepository).toBeUndefined()
+  })
+
   it("git: empty refValue omits the ref even if refType set", () => {
     const out = buildWorkspaceSource(
       form({ repoUrl: "github.com/org/repo", refType: "commit", refValue: "" }),
