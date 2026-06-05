@@ -84,12 +84,7 @@ func (s *workspaceClient) AgentLocal() bool {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	return options.ResolveAgentConfig(
-		s.devsyConfig,
-		s.config,
-		s.workspace,
-		s.machine,
-	).Local == config.BoolTrue
+	return s.agentLocalLocked()
 }
 
 func (s *workspaceClient) AgentPath() string {
@@ -384,7 +379,7 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 			}
 			command := fmt.Sprintf(
 				"%s%q internal agent workspace delete --workspace-info %q",
-				agent.ContainerAgentEnvPrefix,
+				agent.AgentCommandEnvPrefix(s.agentLocalLocked()),
 				info.Agent.Path,
 				compressed,
 			)
@@ -493,7 +488,7 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 		}
 		command := fmt.Sprintf(
 			"%s%q internal agent workspace stop --workspace-info %q",
-			agent.ContainerAgentEnvPrefix,
+			agent.AgentCommandEnvPrefix(s.agentLocalLocked()),
 			info.Agent.Path,
 			compressed,
 		)
@@ -622,6 +617,17 @@ func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 	return client.DescriptionNotFound, nil
 }
 
+// agentLocalLocked is AgentLocal without re-acquiring s.m; callers must
+// already hold the lock.
+func (s *workspaceClient) agentLocalLocked() bool {
+	return options.ResolveAgentConfig(
+		s.devsyConfig,
+		s.config,
+		s.workspace,
+		s.machine,
+	).Local == config.BoolTrue
+}
+
 func (s *workspaceClient) initLock() error {
 	s.workspaceLockOnce.Do(func() {
 		s.m.Lock()
@@ -662,7 +668,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 	}
 	command := fmt.Sprintf(
 		"%s%q internal agent workspace status --workspace-info %q",
-		agent.ContainerAgentEnvPrefix,
+		agent.AgentCommandEnvPrefix(s.agentLocalLocked()),
 		info.Agent.Path,
 		compressed,
 	)
@@ -994,7 +1000,7 @@ func buildAgentCommand(
 ) string {
 	command := fmt.Sprintf(
 		"%s%q internal agent workspace %s --workspace-info %q",
-		agent.ContainerAgentEnvPrefix,
+		agent.AgentCommandEnvPrefix(workspaceClient.AgentLocal()),
 		workspaceClient.AgentPath(),
 		agentCommand,
 		workspaceInfo,
