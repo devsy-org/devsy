@@ -8,9 +8,9 @@
   </a>
 </p>
 
-Devsy enables businesses and independent developers to run engineering at scale. It standardizes developer environments, enforces security controls, and runs workspaces across Docker, Kubernetes, cloud providers, and remote hosts with the open DevContainer standard.
+Devsy enables engineering teams to operate at scale using standardized workspaces, reducing hardware costs, saving onboarding time,  and improving developer productivity. Devsy users can deploy and use workspaces across Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
-<table>
+<table align="center">
 <tr>
 <td><b>Website</b></td>
 <td><a href="https://www.devsy.sh">https://www.devsy.sh</a></td>
@@ -29,30 +29,7 @@ Devsy enables businesses and independent developers to run engineering at scale.
 </tr>
 </table>
 
-Devsy creates container-based developer environments defined by a [devcontainer.json](https://containers.dev/). The same configuration works across local and remote infrastructure.
-
 ![Devsy Flow](docs/static/media/devsy-flow.gif)
-
-## Use cases
-
-<table>
-<tr>
-<th>Audience</th>
-<th>Outcome</th>
-</tr>
-<tr>
-<td><b>Engineering organizations</b></td>
-<td>Consistent environments across teams, faster onboarding, and centralized security and policy controls.</td>
-</tr>
-<tr>
-<td><b>Platform and DevOps teams</b></td>
-<td>Standardized environment delivery on existing infrastructure without provider lock-in.</td>
-</tr>
-<tr>
-<td><b>Independent developers and consultants</b></td>
-<td>Local and remote development with one toolchain and configuration.</td>
-</tr>
-</table>
 
 <h2 align="center">Downloads</h2>
 
