@@ -24,12 +24,14 @@ const ICON_MAP: Record<string, string> = {
   "c#": "./icons/languages/dotnet.svg",
   csharp: "./icons/languages/dotnet.svg",
   ruby: "./icons/languages/ruby.svg",
+  universal: "./icons/languages/universal.svg",
 }
 
 const DARK_VARIANTS: Record<string, string> = {
   "./icons/languages/go.svg": "./icons/languages/go_dark.svg",
   "./icons/languages/rust.svg": "./icons/languages/rust_dark.svg",
   "./icons/languages/php.svg": "./icons/languages/php_dark.svg",
+  "./icons/languages/universal.svg": "./icons/languages/universal_dark.svg",
 }
 
 const src = $derived.by(() => {
