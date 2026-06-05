@@ -368,16 +368,16 @@ func (w WorkspaceSource) Type() string {
 
 func ParseWorkspaceSource(source string) *WorkspaceSource {
 	if after, ok := strings.CutPrefix(source, WorkspaceSourceGit); ok {
-		gitRepo, gitPRReference, gitBranch, gitCommit, gitSubdir := git.NormalizeRepository(after)
-		if !isPlausibleGitSource(gitRepo) {
+		info := git.NormalizeRepository(after)
+		if !isPlausibleGitSource(info.Repository) {
 			return nil
 		}
 		return &WorkspaceSource{
-			GitRepository:  gitRepo,
-			GitPRReference: gitPRReference,
-			GitBranch:      gitBranch,
-			GitCommit:      gitCommit,
-			GitSubPath:     gitSubdir,
+			GitRepository:  info.Repository,
+			GitPRReference: info.PR,
+			GitBranch:      info.Branch,
+			GitCommit:      info.Commit,
+			GitSubPath:     info.SubPath,
 		}
 	} else if after, ok := strings.CutPrefix(source, WorkspaceSourceLocal); ok {
 		after = util.ExpandTilde(after)

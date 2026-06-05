@@ -33,50 +33,51 @@ var (
 	)
 )
 
-func NormalizeRepository(str string) (string, string, string, string, string) {
-	// Tolerate the "git:" workspace-source scheme that WorkspaceSource.String
-	// emits. Without this, a value that round-trips through workspace list →
-	// up would become "https://git:https://..." and trip the URL parser.
-	str = strings.TrimPrefix(str, "git:")
-	if !strings.HasPrefix(str, "ssh://") &&
-		!strings.HasPrefix(str, "git@") &&
-		!strings.HasPrefix(str, "http://") &&
-		!strings.HasPrefix(str, "https://") &&
-		!strings.HasPrefix(str, "file://") {
-		str = "https://" + str
-	}
+// recognizedSchemes are the prefixes NormalizeRepository accepts without
+// rewriting; anything else is treated as a bare host[/path] and prefixed
+// with https://.
+var recognizedSchemes = []string{"ssh://", "git@", "http://", "https://", "file://"}
 
-	// resolve pull request reference
-	prReference := ""
+// NormalizeRepository parses a repository reference into its structured parts.
+// Accepts plain URLs, the "git:<url>" workspace-source scheme, and references
+// suffixed with @branch, @subpath:<path>, @sha256:<commit>, or @pull/N/head.
+// Bare host[/path] inputs are upgraded to https://.
+func NormalizeRepository(str string) *GitInfo {
+	str = canonicalizeURL(str)
+
+	// PR references are mutually exclusive with branch/commit/subpath.
 	if match := prReferenceRegEx.FindStringSubmatch(str); match != nil {
-		str = match[1]
-		prReference = match[2]
-
-		return str, prReference, "", "", ""
+		return &GitInfo{Repository: match[1], PR: match[2]}
 	}
 
-	// resolve subpath
-	subpath := ""
-	if match := subPathRegEx.FindStringSubmatch(str); match != nil {
-		str = match[1]
-		subpath = strings.TrimSuffix(match[2], "/")
+	info := &GitInfo{Repository: str}
+	if match := subPathRegEx.FindStringSubmatch(info.Repository); match != nil {
+		info.Repository = match[1]
+		info.SubPath = strings.TrimSuffix(match[2], "/")
 	}
-
-	// resolve branch
-	branch := ""
-	if match := branchRegEx.FindStringSubmatch(str); match != nil {
-		str = match[1]
-		branch = match[2]
+	if match := branchRegEx.FindStringSubmatch(info.Repository); match != nil {
+		info.Repository = match[1]
+		info.Branch = match[2]
 	}
-
-	// resolve commit hash
-	commit := ""
-	if match := commitRegEx.FindStringSubmatch(str); match != nil {
-		str = match[1]
-		commit = match[2]
+	if match := commitRegEx.FindStringSubmatch(info.Repository); match != nil {
+		info.Repository = match[1]
+		info.Commit = match[2]
 	}
+	return info
+}
 
-	return str, prReference, branch, commit, subpath
+// canonicalizeURL strips the workspace-source "git:" scheme (the form
+// WorkspaceSource.String emits; without this strip, a value that round-trips
+// through workspace list → up becomes "https://git:https://...") and upgrades
+// bare host[/path] inputs to https://.
+func canonicalizeURL(str string) string {
+	str = strings.TrimPrefix(str, "git:")
+	for _, s := range recognizedSchemes {
+		if strings.HasPrefix(str, s) {
+			return str
+		}
+	}
+	return "https://" + str
 }
 
 func CommandContext(ctx context.Context, extraEnv []string, args ...string) *exec.Cmd {
@@ -107,27 +108,15 @@ func GetIDForPR(ref string) string {
 	return regex.ReplaceAllString(ref, "pr${1}")
 }
 
+// GitInfo is the parsed form of a repository reference. Branch, Commit, PR,
+// and SubPath are independent: a reference can carry zero or more of them.
+// PR is exclusive with Branch and Commit.
 type GitInfo struct {
 	Repository string
 	Branch     string
 	Commit     string
 	PR         string
 	SubPath    string
-}
-
-func NewGitInfo(repository, branch, commit, pr, subpath string) *GitInfo {
-	return &GitInfo{
-		Repository: repository,
-		Branch:     branch,
-		Commit:     commit,
-		PR:         pr,
-		SubPath:    subpath,
-	}
-}
-
-func NormalizeRepositoryGitInfo(str string) *GitInfo {
-	repository, pr, branch, commit, subpath := NormalizeRepository(str)
-	return NewGitInfo(repository, branch, commit, pr, subpath)
 }
 
 func CloneRepository(
