@@ -177,7 +177,7 @@ func removeContainerForRename(
 		return nil
 	}
 
-	log.Infof("removing stale container %s after workspace rename", container.ID)
+	log.Infof("removing stale container %s before workspace rename", container.ID)
 	return helper.Remove(ctx, container.ID)
 }
 
