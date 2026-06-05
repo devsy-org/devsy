@@ -7,7 +7,6 @@ import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
-import type { ImageCatalog } from "../shared/image-catalog-types.js"
 import { trackEvent } from "./analytics.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { CliRunner } from "./cli.js"
@@ -45,7 +44,6 @@ const IMAGE_CATALOG_URL =
   process.env.DEVSY_IMAGE_CATALOG_URL ??
   "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/resources/image-catalog-seed.json"
 const IMAGE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
-let imageCatalogCache: ImageCatalog | null = null
 
 function imageCatalogPaths(): { cachePath: string; seedPath: string } {
   return {
@@ -340,26 +338,26 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("image_catalog_get", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
-    imageCatalogCache = await loadCatalog({
+    const catalog = await loadCatalog({
       url: IMAGE_CATALOG_URL,
       cachePath,
       seedPath,
       ttlMs: IMAGE_CATALOG_TTL_MS,
       force: false,
     })
-    return imageCatalogCache
+    return catalog
   })
 
   ipcMain.handle("image_catalog_refresh", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
-    imageCatalogCache = await loadCatalog({
+    const catalog = await loadCatalog({
       url: IMAGE_CATALOG_URL,
       cachePath,
       seedPath,
       ttlMs: IMAGE_CATALOG_TTL_MS,
       force: true,
     })
-    return imageCatalogCache
+    return catalog
   })
 
   ipcMain.handle("dialog_open_directory", async () => {
