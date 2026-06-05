@@ -427,6 +427,75 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("forwards assembled source plus workspaceFolder and build flags to workspaceUp", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    const repoInput = document.querySelector(
+      'input[placeholder*="github.com/org/repo"]',
+    ) as HTMLInputElement
+    await fireEvent.input(repoInput, {
+      target: { value: "github.com/org/repo" },
+    })
+    await flushAsync()
+
+    const advancedToggle = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    await fireEvent.click(advancedToggle)
+    await flushAsync()
+
+    const subPathInput = document.querySelector(
+      'input[placeholder*="path/within/repo"]',
+    ) as HTMLInputElement
+    await fireEvent.input(subPathInput, { target: { value: "pkg/api" } })
+    const wsFolderInput = document.querySelector(
+      'input[placeholder*="opened inside the container"]',
+    ) as HTMLInputElement
+    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    const devcontainerInput = document.querySelector(
+      'input[placeholder*="devcontainer.json"]',
+    ) as HTMLInputElement
+    await fireEvent.input(devcontainerInput, {
+      target: { value: ".devcontainer/devcontainer.json" },
+    })
+    const prebuildInput = document.querySelector(
+      'input[placeholder*="ghcr.io/org/prebuilds"]',
+    ) as HTMLInputElement
+    await fireEvent.input(prebuildInput, {
+      target: { value: "ghcr.io/org/prebuilds" },
+    })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "github.com/org/repo@subpath:pkg/api",
+        workspaceFolder: "/workspaces/app",
+        devcontainerPath: ".devcontainer/devcontainer.json",
+        prebuildRepositories: "ghcr.io/org/prebuilds",
+      }),
+    )
+    unmount()
+  })
+
   it("close-during-launch shows the confirm dialog instead of closing", async () => {
     providers.set([makeProvider("docker")])
     // Hold workspaceUp open so launchRunning stays true

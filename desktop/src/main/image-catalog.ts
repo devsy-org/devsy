@@ -23,12 +23,20 @@ function getFetch(): typeof fetch {
 }
 
 async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
+  let raw: string
   try {
-    const raw = await readFile(cachePath, "utf8")
-    const parsed = JSON.parse(raw) as CatalogCacheFile
-    if (parsed?.catalog?.images) return parsed
+    raw = await readFile(cachePath, "utf8")
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.warn("[image-catalog] failed to read cache:", err)
+    }
     return null
-  } catch {
+  }
+  try {
+    const parsed = JSON.parse(raw) as CatalogCacheFile
+    return parsed?.catalog?.images ? parsed : null
+  } catch (err) {
+    console.warn("[image-catalog] corrupt cache file, ignoring:", err)
     return null
   }
 }
@@ -55,7 +63,8 @@ export async function loadCatalog(
     const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
     await writeFile(opts.cachePath, JSON.stringify(toWrite))
     return catalog
-  } catch {
+  } catch (err) {
+    console.warn("[image-catalog] remote fetch failed, using fallback:", err)
     if (cache) return cache.catalog
     return readSeed(opts.seedPath)
   }

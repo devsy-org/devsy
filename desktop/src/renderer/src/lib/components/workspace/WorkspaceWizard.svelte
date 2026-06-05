@@ -518,12 +518,23 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
         {/if}
 
+        {#if isGit}
+          <div class="space-y-1.5">
+            <Label class="text-sm">Subfolder</Label>
+            <Input
+              placeholder="path/within/repo (optional)"
+              value={subPath}
+              oninput={(e) => (subPath = e.currentTarget.value)}
+            />
+          </div>
+        {/if}
+
         <div class="space-y-1.5">
-          <Label class="text-sm">Subfolder</Label>
+          <Label class="text-sm">Workspace Folder</Label>
           <Input
-            placeholder="path/within/source (optional)"
-            value={subPath}
-            oninput={(e) => (subPath = e.currentTarget.value)}
+            placeholder="path opened inside the container (optional)"
+            value={workspaceFolder}
+            oninput={(e) => (workspaceFolder = e.currentTarget.value)}
           />
         </div>
 
