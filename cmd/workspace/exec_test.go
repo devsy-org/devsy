@@ -151,6 +151,7 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 
 func TestResolveExecTarget(t *testing.T) {
 	const cwd = "/current/dir"
+	const testWsName = "my-ws"
 
 	cases := []struct {
 		name    string
@@ -160,8 +161,8 @@ func TestResolveExecTarget(t *testing.T) {
 	}{
 		{
 			name: "name only",
-			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceName: "my-ws"},
-			want: []string{"my-ws"},
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceName: testWsName},
+			want: []string{testWsName},
 		},
 		{
 			name: "folder only",
@@ -177,7 +178,7 @@ func TestResolveExecTarget(t *testing.T) {
 			name: "name and folder conflict",
 			cmd: &ExecCmd{
 				GlobalFlags:     &flags.GlobalFlags{},
-				WorkspaceName:   "my-ws",
+				WorkspaceName:   testWsName,
 				WorkspaceFolder: "/some/path",
 			},
 			wantErr: "not both",
@@ -186,7 +187,7 @@ func TestResolveExecTarget(t *testing.T) {
 			name: "name and container-id conflict",
 			cmd: &ExecCmd{
 				GlobalFlags:   &flags.GlobalFlags{},
-				WorkspaceName: "my-ws",
+				WorkspaceName: testWsName,
 				ContainerID:   "abc123",
 			},
 			wantErr: "not both",
