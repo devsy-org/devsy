@@ -360,12 +360,14 @@ async function handleLaunch() {
     })
 
     const cmdId = await workspaceUp({
-      source: source.trim(),
+      source: assembled.source,
       workspaceId,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",
       workspaceFolder: workspaceFolder.trim() || undefined,
+      devcontainerPath: assembled.devcontainerPath,
+      prebuildRepositories: assembled.prebuildRepository,
       debug: true,
     })
 
