@@ -2,7 +2,8 @@ import { writable } from "svelte/store"
 import type {
   CatalogCategory,
   CatalogImage,
-  ImageCatalog,
+  CatalogOrigin,
+  LoadCatalogResult,
 } from "$lib/types/index.js"
 import { imageCatalogGet, imageCatalogRefresh } from "$lib/ipc/commands.js"
 
@@ -11,6 +12,7 @@ type State = {
   categories: CatalogCategory[]
   loading: boolean
   error?: string
+  origin?: CatalogOrigin
 }
 
 const initial: State = {
@@ -18,17 +20,19 @@ const initial: State = {
   categories: [],
   loading: false,
   error: undefined,
+  origin: undefined,
 }
 
 const internal = writable<State>(initial)
 export const imageCatalog = { subscribe: internal.subscribe }
 
-function apply(catalog: ImageCatalog): void {
+function apply(result: LoadCatalogResult): void {
   internal.set({
-    images: catalog.images,
-    categories: catalog.categories,
+    images: result.catalog.images,
+    categories: result.catalog.categories,
     loading: false,
     error: undefined,
+    origin: result.origin,
   })
 }
 

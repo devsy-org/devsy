@@ -338,26 +338,24 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("image_catalog_get", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
-    const catalog = await loadCatalog({
+    return loadCatalog({
       url: IMAGE_CATALOG_URL,
       cachePath,
       seedPath,
       ttlMs: IMAGE_CATALOG_TTL_MS,
       force: false,
     })
-    return catalog
   })
 
   ipcMain.handle("image_catalog_refresh", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
-    const catalog = await loadCatalog({
+    return loadCatalog({
       url: IMAGE_CATALOG_URL,
       cachePath,
       seedPath,
       ttlMs: IMAGE_CATALOG_TTL_MS,
       force: true,
     })
-    return catalog
   })
 
   ipcMain.handle("dialog_open_directory", async () => {
@@ -524,7 +522,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         debug?: boolean
         workspaceFolder?: string
         devcontainerPath?: string
-        prebuildRepositories?: string
+        prebuildRepository?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -537,8 +535,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
       if (args.devcontainerPath)
         cliArgs.push("--devcontainer-path", args.devcontainerPath)
-      if (args.prebuildRepositories)
-        cliArgs.push("--prebuild-repository", args.prebuildRepositories)
+      if (args.prebuildRepository)
+        cliArgs.push("--prebuild-repository", args.prebuildRepository)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()

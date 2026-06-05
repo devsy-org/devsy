@@ -1,7 +1,7 @@
 import type {
   AuditEntry,
   Context,
-  ImageCatalog,
+  LoadCatalogResult,
   LogEntry,
   Machine,
   OptionValue,
@@ -28,7 +28,7 @@ export async function workspaceUp(params: {
   debug?: boolean
   workspaceFolder?: string
   devcontainerPath?: string
-  prebuildRepositories?: string
+  prebuildRepository?: string
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }
@@ -163,12 +163,12 @@ export async function providerCheckUpdates() {
 }
 
 // Image catalog commands
-export async function imageCatalogGet(): Promise<ImageCatalog> {
-  return invoke<ImageCatalog>("image_catalog_get")
+export async function imageCatalogGet(): Promise<LoadCatalogResult> {
+  return invoke<LoadCatalogResult>("image_catalog_get")
 }
 
-export async function imageCatalogRefresh(): Promise<ImageCatalog> {
-  return invoke<ImageCatalog>("image_catalog_refresh")
+export async function imageCatalogRefresh(): Promise<LoadCatalogResult> {
+  return invoke<LoadCatalogResult>("image_catalog_refresh")
 }
 
 // Machine commands

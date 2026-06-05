@@ -18,3 +18,10 @@ export interface ImageCatalog {
   categories: CatalogCategory[]
   images: CatalogImage[]
 }
+
+export type CatalogOrigin = "remote" | "cache" | "seed"
+
+export interface LoadCatalogResult {
+  catalog: ImageCatalog
+  origin: CatalogOrigin
+}

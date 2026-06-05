@@ -490,7 +490,7 @@ describe("WorkspaceWizard", () => {
         source: "github.com/org/repo@subpath:pkg/api",
         workspaceFolder: "/workspaces/app",
         devcontainerPath: ".devcontainer/devcontainer.json",
-        prebuildRepositories: "ghcr.io/org/prebuilds",
+        prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
     unmount()

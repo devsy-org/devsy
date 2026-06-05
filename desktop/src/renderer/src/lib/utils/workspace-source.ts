@@ -1,17 +1,32 @@
 export type WorkspaceSourceType = "git" | "local" | "image"
 export type GitRefType = "branch" | "commit" | "pr"
 
-export interface WorkspaceSourceForm {
-  sourceType: WorkspaceSourceType
+export interface GitSourceForm {
+  sourceType: "git"
   repoUrl: string
-  localPath: string
-  imageRef: string
   refType: GitRefType
   refValue: string
   subPath: string
   devcontainerPath: string
   prebuildRepository: string
 }
+
+export interface LocalSourceForm {
+  sourceType: "local"
+  localPath: string
+  devcontainerPath: string
+  prebuildRepository: string
+}
+
+export interface ImageSourceForm {
+  sourceType: "image"
+  imageRef: string
+}
+
+export type WorkspaceSourceForm =
+  | GitSourceForm
+  | LocalSourceForm
+  | ImageSourceForm
 
 export interface WorkspaceSourceResult {
   source: string
@@ -49,13 +64,15 @@ export function buildWorkspaceSource(
     return { source: form.imageRef.trim() }
   }
 
-  const base =
-    form.sourceType === "git" ? form.repoUrl.trim() : form.localPath.trim()
+  if (form.sourceType === "local") {
+    return {
+      source: form.localPath.trim(),
+      devcontainerPath: optional(form.devcontainerPath),
+      prebuildRepository: optional(form.prebuildRepository),
+    }
+  }
 
-  const ref =
-    form.sourceType === "git" ? refSuffix(form.refType, form.refValue) : ""
-
-  const source = `${base}${ref}${subPathSuffix(form.subPath)}`
+  const source = `${form.repoUrl.trim()}${refSuffix(form.refType, form.refValue)}${subPathSuffix(form.subPath)}`
 
   return {
     source,

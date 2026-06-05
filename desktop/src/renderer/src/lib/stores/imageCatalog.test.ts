@@ -16,7 +16,14 @@ import { imageCatalogGet } from "$lib/ipc/commands.js"
 import type { CatalogImage } from "$lib/types/index.js"
 
 const IMAGES: CatalogImage[] = [
-  { id: "py", ref: "py:1", name: "Python", categories: ["lang"], featured: true },
+  {
+    id: "py",
+    ref: "py:1",
+    name: "Python",
+    description: "Python tooling",
+    categories: ["lang"],
+    featured: true,
+  },
   { id: "node", ref: "node:1", name: "Node.js", categories: ["lang"] },
   { id: "tf", ref: "tf:1", name: "Terraform", categories: ["tools"] },
 ]
@@ -29,15 +36,19 @@ describe("imageCatalog store", () => {
 
   it("loads catalog via loadImageCatalog", async () => {
     vi.mocked(imageCatalogGet).mockResolvedValue({
-      version: 1,
-      categories: [{ id: "lang", label: "Languages" }],
-      images: IMAGES,
+      origin: "remote",
+      catalog: {
+        version: 1,
+        categories: [{ id: "lang", label: "Languages" }],
+        images: IMAGES,
+      },
     })
     await loadImageCatalog()
     const state = get(imageCatalog)
     expect(state.images).toHaveLength(3)
     expect(state.loading).toBe(false)
     expect(state.error).toBeUndefined()
+    expect(state.origin).toBe("remote")
   })
 
   it("records error on failure", async () => {
@@ -54,8 +65,18 @@ describe("imageCatalog store", () => {
   })
 
   it("filterImages: search matches name (case-insensitive)", () => {
-    const out = filterImages(IMAGES, "node", "all")
+    const out = filterImages(IMAGES, "NODE", "all")
     expect(out.map((i) => i.id)).toEqual(["node"])
+  })
+
+  it("filterImages: search matches ref", () => {
+    const out = filterImages(IMAGES, "tf:1", "all")
+    expect(out.map((i) => i.id)).toEqual(["tf"])
+  })
+
+  it("filterImages: search matches description without crashing on missing ones", () => {
+    const out = filterImages(IMAGES, "tooling", "all")
+    expect(out.map((i) => i.id)).toEqual(["py"])
   })
 
   it("filterImages: category filter", () => {

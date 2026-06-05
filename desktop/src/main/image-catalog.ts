@@ -1,5 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises"
-import type { ImageCatalog } from "../shared/image-catalog-types.js"
+import type {
+  CatalogOrigin,
+  ImageCatalog,
+  LoadCatalogResult,
+} from "../shared/image-catalog-types.js"
 
 export interface CatalogCacheFile {
   fetchedAt: number
@@ -13,6 +17,8 @@ export interface LoadCatalogOptions {
   ttlMs: number
   force: boolean
 }
+
+export type { CatalogOrigin, LoadCatalogResult }
 
 let fetchImpl: typeof fetch | undefined
 export function __setFetchForTest(fn: typeof fetch | undefined): void {
@@ -48,11 +54,11 @@ async function readSeed(seedPath: string): Promise<ImageCatalog> {
 
 export async function loadCatalog(
   opts: LoadCatalogOptions,
-): Promise<ImageCatalog> {
+): Promise<LoadCatalogResult> {
   const cache = await readCache(opts.cachePath)
   const fresh = cache && Date.now() - cache.fetchedAt < opts.ttlMs
   if (cache && fresh && !opts.force) {
-    return cache.catalog
+    return { catalog: cache.catalog, origin: "cache" }
   }
 
   try {
@@ -62,10 +68,10 @@ export async function loadCatalog(
     if (!catalog?.images) throw new Error("malformed catalog")
     const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
     await writeFile(opts.cachePath, JSON.stringify(toWrite))
-    return catalog
+    return { catalog, origin: "remote" }
   } catch (err) {
     console.warn("[image-catalog] remote fetch failed, using fallback:", err)
-    if (cache) return cache.catalog
-    return readSeed(opts.seedPath)
+    if (cache) return { catalog: cache.catalog, origin: "cache" }
+    return { catalog: await readSeed(opts.seedPath), origin: "seed" }
   }
 }

@@ -45,7 +45,8 @@ describe("loadCatalog", () => {
       ttlMs: 1000,
       force: true,
     })
-    expect(result.images[0].id).toBe("remote-img")
+    expect(result.catalog.images[0].id).toBe("remote-img")
+    expect(result.origin).toBe("remote")
     const cached = JSON.parse(await readFile(cachePath, "utf8"))
     expect(cached.catalog.images[0].id).toBe("remote-img")
     expect(typeof cached.fetchedAt).toBe("number")
@@ -66,7 +67,8 @@ describe("loadCatalog", () => {
       ttlMs: 1000,
       force: true,
     })
-    expect(result.images[0].id).toBe("remote-img")
+    expect(result.catalog.images[0].id).toBe("remote-img")
+    expect(result.origin).toBe("cache")
   })
 
   it("falls back to seed when remote fails and no cache exists", async () => {
@@ -80,7 +82,8 @@ describe("loadCatalog", () => {
       ttlMs: 1000,
       force: true,
     })
-    expect(result.images[0].id).toBe("seed-img")
+    expect(result.catalog.images[0].id).toBe("seed-img")
+    expect(result.origin).toBe("seed")
   })
 
   it("returns fresh cache without fetching when within TTL and not forced", async () => {
@@ -98,6 +101,42 @@ describe("loadCatalog", () => {
       force: false,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(result.images[0].id).toBe("remote-img")
+    expect(result.catalog.images[0].id).toBe("remote-img")
+    expect(result.origin).toBe("cache")
+  })
+
+  it("refetches and overwrites when cache is stale even without force", async () => {
+    await writeFile(
+      cachePath,
+      JSON.stringify({ fetchedAt: Date.now() - 10_000, catalog: SEED }),
+    )
+    __setFetchForTest(async () => new Response(JSON.stringify(REMOTE)))
+    const result = await loadCatalog({
+      url: "https://example/catalog.json",
+      cachePath,
+      seedPath,
+      ttlMs: 1000,
+      force: false,
+    })
+    expect(result.catalog.images[0].id).toBe("remote-img")
+    expect(result.origin).toBe("remote")
+    const cached = JSON.parse(await readFile(cachePath, "utf8"))
+    expect(cached.catalog.images[0].id).toBe("remote-img")
+  })
+
+  it("ignores a corrupt cache file and falls back to seed", async () => {
+    await writeFile(cachePath, "{ this is not valid json")
+    __setFetchForTest(async () => {
+      throw new Error("network down")
+    })
+    const result = await loadCatalog({
+      url: "https://example/catalog.json",
+      cachePath,
+      seedPath,
+      ttlMs: 1000,
+      force: false,
+    })
+    expect(result.catalog.images[0].id).toBe("seed-img")
+    expect(result.origin).toBe("seed")
   })
 })

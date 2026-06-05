@@ -157,17 +157,24 @@ let selectedIde = $state("none")
 let workspaceName = $state("")
 
 let assembled = $derived(
-  buildWorkspaceSource({
-    sourceType,
-    repoUrl,
-    localPath,
-    imageRef,
-    refType,
-    refValue,
-    subPath,
-    devcontainerPath,
-    prebuildRepository,
-  }),
+  sourceType === "image"
+    ? buildWorkspaceSource({ sourceType: "image", imageRef })
+    : sourceType === "local"
+      ? buildWorkspaceSource({
+          sourceType: "local",
+          localPath,
+          devcontainerPath,
+          prebuildRepository,
+        })
+      : buildWorkspaceSource({
+          sourceType: "git",
+          repoUrl,
+          refType,
+          refValue,
+          subPath,
+          devcontainerPath,
+          prebuildRepository,
+        }),
 )
 
 let primarySourceValue = $derived(
@@ -367,7 +374,7 @@ async function handleLaunch() {
       ideLaunch: "auto",
       workspaceFolder: workspaceFolder.trim() || undefined,
       devcontainerPath: assembled.devcontainerPath,
-      prebuildRepositories: assembled.prebuildRepository,
+      prebuildRepository: assembled.prebuildRepository,
       debug: true,
     })
 
