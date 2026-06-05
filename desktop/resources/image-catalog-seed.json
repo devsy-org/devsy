@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "categories": [
+    { "id": "languages", "label": "Languages" },
+    { "id": "universal", "label": "Universal" }
+  ],
+  "images": [
+    {
+      "id": "universal",
+      "ref": "mcr.microsoft.com/devcontainers/universal:2",
+      "name": "Universal",
+      "description": "Multi-language image with common tools preinstalled.",
+      "categories": ["universal"],
+      "icon": "universal",
+      "featured": true
+    },
+    {
+      "id": "python-3.12",
+      "ref": "mcr.microsoft.com/devcontainers/python:3.12",
+      "name": "Python 3.12",
+      "description": "Python 3.12 development image.",
+      "categories": ["languages"],
+      "icon": "Python",
+      "featured": true
+    },
+    {
+      "id": "node-20",
+      "ref": "mcr.microsoft.com/devcontainers/javascript-node:20",
+      "name": "Node.js 20",
+      "description": "Node.js 20 development image.",
+      "categories": ["languages"],
+      "icon": "Node.js",
+      "featured": true
+    },
+    {
+      "id": "go-1",
+      "ref": "mcr.microsoft.com/devcontainers/go:1",
+      "name": "Go",
+      "description": "Go development image.",
+      "categories": ["languages"],
+      "icon": "Go"
+    }
+  ]
+}
