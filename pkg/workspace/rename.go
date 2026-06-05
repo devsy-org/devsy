@@ -181,9 +181,10 @@ func removeContainerForRename(
 	return helper.Remove(ctx, container.ID)
 }
 
-// Rename auto-stops the workspace, moves its directory, deletes the stale
-// container, and clears the old SSH entry. The container is rebuilt on the
-// next `up`.
+// Rename auto-stops the workspace, deletes the stale container, moves its
+// directory, and clears the old SSH entry. The container is rebuilt on the
+// next `up`. Container removal happens before the disk move so a failure
+// aborts cleanly with the workspace still intact under its old name.
 func Rename(ctx context.Context, opts RenameOptions) error {
 	wsConfig, err := provider.LoadWorkspaceConfig(opts.DevsyConfig.DefaultContext, opts.OldName)
 	if err != nil {
@@ -201,6 +202,9 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 	}
 
 	lookupRunnerID := devcontainer.GetRunnerIDFromWorkspace(wsConfig)
+	if err := removeContainerForRename(ctx, wsConfig, lookupRunnerID); err != nil {
+		return fmt.Errorf("remove stale container: %w", err)
+	}
 
 	if err := moveWorkspace(opts.DevsyConfig, opts.OldName, opts.NewName); err != nil {
 		return fmt.Errorf("moving workspace: %w", err)
@@ -215,14 +219,6 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 	}
 
 	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
-
-	if err := removeContainerForRename(ctx, wsConfig, lookupRunnerID); err != nil {
-		log.Warnf(
-			"renamed workspace but could not remove the stale container (%v); "+
-				"run `devsy up %s --recreate` to rebuild it",
-			err, opts.NewName,
-		)
-	}
 
 	_ = devssh.RemoveFromConfig(
 		opts.OldName,

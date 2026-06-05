@@ -427,8 +427,8 @@ async function performRename(target: string) {
 }
 
 async function handleRenameConfirmed() {
-  confirmRenameOpen = false
   await performRename(pendingRenameTarget)
+  confirmRenameOpen = false
 }
 </script>
 
