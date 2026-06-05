@@ -48,6 +48,10 @@ func Init(cfg Config) {
 // AddSink attaches w as an additional destination for log output for the
 // duration of the returned remove func. Each line of log output is written to
 // w in addition to stderr. Multiple concurrent sinks are supported.
+//
+// w must be safe for concurrent Write calls — AddSink does not serialize
+// writes to a single sink. io.Pipe writers and io.MultiWriter wrapping
+// pre-serialized destinations are both fine; bare bytes.Buffer is not.
 func AddSink(w io.Writer) (remove func()) {
 	return extraSinks.add(w)
 }

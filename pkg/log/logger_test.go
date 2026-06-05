@@ -46,9 +46,12 @@ func TestAddSink_RemoveStopsForwarding(t *testing.T) {
 func TestAddSink_ConcurrentSinksAreIndependent(t *testing.T) {
 	Init(Config{Verbosity: 2})
 
-	var a, b bytes.Buffer
-	removeA := AddSink(&a)
-	removeB := AddSink(&b)
+	// Production callers (the MCP layer's io.Pipe writer) are thread-safe;
+	// AddSink doesn't serialize the per-sink Write. Wrap bytes.Buffer for the test.
+	a := newSyncBuffer()
+	b := newSyncBuffer()
+	removeA := AddSink(a)
+	removeB := AddSink(b)
 	defer removeA()
 	defer removeB()
 
@@ -62,4 +65,23 @@ func TestAddSink_ConcurrentSinksAreIndependent(t *testing.T) {
 	if !strings.Contains(a.String(), "line") || !strings.Contains(b.String(), "line") {
 		t.Fatalf("both sinks should have seen the log line; a=%q b=%q", a.String(), b.String())
 	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func newSyncBuffer() *syncBuffer { return &syncBuffer{} }
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
 }
