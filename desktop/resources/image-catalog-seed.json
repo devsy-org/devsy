@@ -39,6 +39,54 @@
       "description": "Go development image.",
       "categories": ["languages"],
       "icon": "Go"
+    },
+    {
+      "id": "rust-1",
+      "ref": "mcr.microsoft.com/devcontainers/rust:1",
+      "name": "Rust",
+      "description": "Rust development image.",
+      "categories": ["languages"],
+      "icon": "Rust"
+    },
+    {
+      "id": "java-21",
+      "ref": "mcr.microsoft.com/devcontainers/java:21",
+      "name": "Java",
+      "description": "Java development image.",
+      "categories": ["languages"],
+      "icon": "Java"
+    },
+    {
+      "id": "php-8",
+      "ref": "mcr.microsoft.com/devcontainers/php:8",
+      "name": "PHP",
+      "description": "PHP development image.",
+      "categories": ["languages"],
+      "icon": "PHP"
+    },
+    {
+      "id": "cpp-1",
+      "ref": "mcr.microsoft.com/devcontainers/cpp:1",
+      "name": "C++",
+      "description": "C++ development image.",
+      "categories": ["languages"],
+      "icon": "C++"
+    },
+    {
+      "id": "dotnet-8",
+      "ref": "mcr.microsoft.com/devcontainers/dotnet:8",
+      "name": ".NET",
+      "description": ".NET development image.",
+      "categories": ["languages"],
+      "icon": ".NET"
+    },
+    {
+      "id": "ruby-3",
+      "ref": "mcr.microsoft.com/devcontainers/ruby:3",
+      "name": "Ruby",
+      "description": "Ruby development image.",
+      "categories": ["languages"],
+      "icon": "Ruby"
     }
   ]
 }
