@@ -96,26 +96,11 @@ export interface ProviderVersionCheckResult {
   error?: string
 }
 
-export interface CatalogCategory {
-  id: string
-  label: string
-}
-
-export interface CatalogImage {
-  id: string
-  ref: string
-  name: string
-  description?: string
-  categories: string[]
-  icon?: string
-  featured?: boolean
-}
-
-export interface ImageCatalog {
-  version: number
-  categories: CatalogCategory[]
-  images: CatalogImage[]
-}
+export type {
+  CatalogCategory,
+  CatalogImage,
+  ImageCatalog,
+} from "../../../../shared/image-catalog-types.js"
 
 export interface MachineProviderConfig {
   name?: string
