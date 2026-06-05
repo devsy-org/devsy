@@ -151,6 +151,9 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// Guard here (before the container-id branch) so name+container-id is rejected
+	// rather than silently taking the container path. resolveExecTarget repeats this
+	// check so it stays correct as a standalone unit.
 	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
 		return errFolderNameConflict
 	}

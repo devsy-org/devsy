@@ -85,6 +85,14 @@ func TestNewExecCmd_RejectsMultipleNames(t *testing.T) {
 	assert.Contains(t, err.Error(), "at most one workspace name")
 }
 
+func TestNewExecCmd_RequiresCommandAfterDash(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd.SetArgs([]string{"my-ws", "--"})
+	err := execCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a command to execute is required after --")
+}
+
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
 	result := workspace2.ResolveDockerCommand(nil, "")
 	assert.Equal(t, "docker", result)
