@@ -145,12 +145,16 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 			"match a workspace from workspace_list; use workspace_create to make a new one. " +
 			"May take a minute or more while the container starts.",
 	}, safeHandler(func(
-		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
+		ctx context.Context, req *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
-		return opResultHandler(func() error { return startWorkspace(ctx, g, in.Name) })
+		return opResultHandler(func() error {
+			return streamLogsToSession(ctx, req.Session, func() error {
+				return startWorkspace(ctx, g, in.Name)
+			})
+		})
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
@@ -191,11 +195,18 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 			"provider: the name of a configured provider; see provider_list. " +
 			"Defaults to the active context's default provider.",
 	}, safeHandler(func(
-		ctx context.Context, _ *sdkmcp.CallToolRequest, in createInput,
+		ctx context.Context, req *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {
-		out, err := createWorkspace(ctx, g, in)
-		if err != nil {
-			return errorResult(err), nil, nil
+		var (
+			out any
+			err error
+		)
+		streamErr := streamLogsToSession(ctx, req.Session, func() error {
+			out, err = createWorkspace(ctx, g, in)
+			return err
+		})
+		if streamErr != nil {
+			return errorResult(streamErr), nil, nil
 		}
 		return nil, out, nil
 	}))
