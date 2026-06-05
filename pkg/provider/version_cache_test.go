@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,6 +58,67 @@ func TestCacheGet_FreshVsStale(t *testing.T) {
 	}
 	if _, fresh := c.Get("foo", "different-hash"); fresh {
 		t.Fatal("source-hash mismatch must be treated as stale")
+	}
+}
+
+func TestListVersionsForSourceCached_CachesResults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DEVSY_HOME", dir)
+
+	source := "github.com/foo/bar@v1.0.0"
+	hash := HashProviderSource(source)
+
+	cached := ProviderVersionCache{
+		"myprov": {
+			SourceHash: hash,
+			Versions:   []ProviderVersion{{Tag: testTagV999}},
+			FetchedAt:  time.Now(),
+		},
+	}
+	if err := SaveProviderVersionCache(cached); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ListVersionsForSourceCached(
+		"myprov",
+		source,
+		ListVersionsOptions{UseCache: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Tag != testTagV999 {
+		t.Fatalf("expected cache hit, got %+v", got)
+	}
+}
+
+func TestListVersionsForSourceCached_BypassesCache(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DEVSY_HOME", dir)
+
+	source := "/local/path/provider.yaml"
+	hash := HashProviderSource(source)
+	cached := ProviderVersionCache{
+		"myprov": {
+			SourceHash: hash,
+			Versions:   []ProviderVersion{{Tag: testTagV999}},
+			FetchedAt:  time.Now(),
+		},
+	}
+	if err := SaveProviderVersionCache(cached); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ListVersionsForSourceCached(
+		"myprov",
+		source,
+		ListVersionsOptions{UseCache: false},
+	)
+	if !errors.Is(err, ErrVersionListUnsupported) {
+		t.Fatalf(
+			"expected ErrVersionListUnsupported when bypassing cache for local source, got %v",
+			err,
+		)
 	}
 }
 

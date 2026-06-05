@@ -121,3 +121,43 @@ func HashProviderSource(source string) string {
 	sum := sha256.Sum256([]byte(source))
 	return hex.EncodeToString(sum[:])
 }
+
+// ListVersionsForSourceCached wraps ListVersionsForSource with cache read/write.
+// providerName is used as the cache key. When opts.UseCache is true the cache is consulted;
+// successful fetches always update the cache regardless.
+func ListVersionsForSourceCached(
+	providerName, source string,
+	opts ListVersionsOptions,
+) ([]ProviderVersion, error) {
+	hash := HashProviderSource(source)
+
+	if opts.UseCache {
+		if cache, err := LoadProviderVersionCache(); err == nil {
+			if entry, fresh := cache.Get(providerName, hash); fresh {
+				return append([]ProviderVersion(nil), entry.Versions...), nil
+			}
+		}
+	}
+
+	versions, err := ListVersionsForSource(source, opts)
+	if err != nil {
+		return nil, err
+	}
+	storeVersionCacheEntry(providerName, hash, versions)
+	return versions, nil
+}
+
+// storeVersionCacheEntry persists the given versions under the provider name.
+// Errors are intentionally swallowed — cache write failure should not block the lister.
+func storeVersionCacheEntry(name, sourceHash string, versions []ProviderVersion) {
+	cache, err := LoadProviderVersionCache()
+	if err != nil || cache == nil {
+		cache = ProviderVersionCache{}
+	}
+	cache[name] = ProviderVersionCacheEntry{
+		SourceHash: sourceHash,
+		Versions:   versions,
+		FetchedAt:  time.Now(),
+	}
+	_ = SaveProviderVersionCache(cache)
+}
