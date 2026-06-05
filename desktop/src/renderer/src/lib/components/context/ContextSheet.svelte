@@ -89,10 +89,13 @@ let confirmDeleteOpen = $state(false)
 
 async function handleDelete() {
   deleting = true
+  // Capture before awaits: refreshContexts() can null out the reactive
+  // `context` prop once this context is removed from the store.
+  const name = context.name
   try {
-    await contextDelete(context.name)
+    await contextDelete(name)
     await refreshContexts()
-    toasts.success(`Context "${context.name}" deleted`)
+    toasts.success(`Context "${name}" deleted`)
     open = false
   } catch (err) {
     toasts.error(`Failed to delete context: ${extractErrorMessage(err)}`)
