@@ -176,14 +176,14 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 			wsName := workspace.ToID(tempDir)
 
-			_, _, err = f.ExecCommandCapture(ctx, []string{
+			_, stderr, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				wsName,
 				workspaceFolderFlag, tempDir,
 				"--", echoCommand, "-n", "hello",
 			})
 			framework.ExpectError(err)
-			gomega.Expect(err.Error()).To(gomega.ContainSubstring(
+			gomega.Expect(stderr).To(gomega.ContainSubstring(
 				"specify either a workspace name or --workspace-folder/--container-id, not both",
 			))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
