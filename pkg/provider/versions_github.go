@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"encoding/json"
@@ -18,9 +18,9 @@ type githubRelease struct {
 	Draft       bool      `json:"draft"`
 }
 
-// listGitHubReleases calls the GitHub Releases API (rooted at baseURL — pass "https://api.github.com" in production)
+// ListGitHubReleases calls the GitHub Releases API (rooted at baseURL — pass "https://api.github.com" in production)
 // and returns versions newest first. Drafts are always filtered out; prereleases only when includePrerelease is true.
-func listGitHubReleases(
+func ListGitHubReleases(
 	baseURL, org, repo string,
 	includePrerelease bool,
 ) ([]ProviderVersion, error) {
@@ -81,7 +81,7 @@ func filterAndSortReleases(releases []githubRelease, includePrerelease bool) []P
 }
 
 func parseGitHubSourcePath(canonical string) (org, repo string, ok bool) {
-	base, _ := splitSourceAndTag(canonical)
+	base, _ := SplitSourceAndTag(canonical)
 	const prefix = "github.com/"
 	if len(base) <= len(prefix) {
 		return "", "", false

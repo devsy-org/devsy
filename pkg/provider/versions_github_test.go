@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"encoding/json"
@@ -38,7 +38,7 @@ func TestListGitHubReleases_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	versions, err := listGitHubReleases(server.URL, "devsy-org", "provider-aws", false)
+	versions, err := ListGitHubReleases(server.URL, "devsy-org", "provider-aws", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestListGitHubReleases_IncludePrerelease(t *testing.T) {
 	}))
 	defer server.Close()
 
-	versions, err := listGitHubReleases(server.URL, "x", "y", true)
+	versions, err := ListGitHubReleases(server.URL, "x", "y", true)
 	if err != nil || len(versions) != 1 || !versions[0].Prerelease {
 		t.Fatalf("prerelease must be included when flag set: %+v %v", versions, err)
 	}
@@ -70,7 +70,7 @@ func TestListGitHubReleases_RateLimit(t *testing.T) {
 		http.Error(w, "rate limited", http.StatusForbidden)
 	}))
 	defer server.Close()
-	_, err := listGitHubReleases(server.URL, "x", "y", false)
+	_, err := ListGitHubReleases(server.URL, "x", "y", false)
 	if err == nil || !errors.Is(err, ErrVersionListRateLimited) {
 		t.Fatalf("expected rate-limited sentinel, got %v", err)
 	}

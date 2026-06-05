@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,7 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 			versions, err := workspace.ListProviderVersions(
 				devsyConfig,
 				name,
-				workspace.ListVersionsOptions{
+				provider.ListVersionsOptions{
 					UseCache:          !cmd.NoCache,
 					IncludePrerelease: cmd.IncludePrerelease,
 				},
@@ -77,7 +78,7 @@ func completeProviderName(
 	}
 }
 
-func renderVersionsTable(w io.Writer, versions []workspace.ProviderVersion) error {
+func renderVersionsTable(w io.Writer, versions []provider.ProviderVersion) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "TAG\tPUBLISHED\tSTATUS"); err != nil {
 		return err

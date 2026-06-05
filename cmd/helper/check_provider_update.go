@@ -110,7 +110,7 @@ func (cmd *CheckProviderUpdateCmd) Run(
 func loadLatestProvider(
 	providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, _, err := workspace.ResolveProvider(providerSourceRaw)
+	providerRaw, _, err := provider.ResolveProvider(providerSourceRaw)
 	if err != nil {
 		return nil, fmt.Errorf("resolve provider: %w", err)
 	}

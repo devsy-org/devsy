@@ -1,4 +1,4 @@
-package workspace
+package provider
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ func TestListManifestVersions_Success(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	got, err := listManifestVersions(server.URL+"/foo/provider.yaml", false)
+	got, err := ListManifestVersions(server.URL+"/foo/provider.yaml", false)
 	if err != nil || len(got) != 1 || got[0].Tag != testTagV100 {
 		t.Fatalf("got %+v err %v", got, err)
 	}
@@ -33,7 +33,7 @@ func TestListManifestVersions_Missing(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
-	_, err := listManifestVersions(server.URL+"/foo/provider.yaml", false)
+	_, err := ListManifestVersions(server.URL+"/foo/provider.yaml", false)
 	if !errors.Is(err, ErrVersionListUnsupported) {
 		t.Fatalf("expected ErrVersionListUnsupported, got %v", err)
 	}

@@ -200,7 +200,7 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 	_, err = switchMachines(r.switchedMachines, r.oldName)
 	errs = errors.Join(errs, err)
 
-	if moveErr := workspace.MoveProvider(r.devsyConfig, r.newName, r.oldName); moveErr != nil {
+	if moveErr := provider.MoveProvider(r.devsyConfig, r.newName, r.oldName); moveErr != nil {
 		errs = errors.Join(errs, fmt.Errorf("rollback move provider: %w", moveErr))
 	}
 
@@ -259,7 +259,7 @@ func renameProvider(
 		return err
 	}
 
-	if err := workspace.MoveProvider(devsyConfig, oldName, newName); err != nil {
+	if err := provider.MoveProvider(devsyConfig, oldName, newName); err != nil {
 		return fmt.Errorf("moving provider: %w", err)
 	}
 

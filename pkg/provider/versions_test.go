@@ -1,10 +1,9 @@
-package workspace
+package provider
 
 import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 )
 
 func TestErrVersionListUnsupported(t *testing.T) {
@@ -38,7 +37,7 @@ func TestClassifyVersionSource(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
-			got := classifyVersionSource(c.in)
+			got := ClassifyVersionSource(c.in)
 			if got != c.kind {
 				t.Fatalf("got %v, want %v", got, c.kind)
 			}
@@ -47,21 +46,21 @@ func TestClassifyVersionSource(t *testing.T) {
 }
 
 func TestListVersionsForSource_LocalUnsupported(t *testing.T) {
-	_, err := listVersionsForSource("/abs/path/provider.yaml", ListVersionsOptions{})
+	_, err := ListVersionsForSource("/abs/path/provider.yaml", ListVersionsOptions{})
 	if !errors.Is(err, ErrVersionListUnsupported) {
 		t.Fatalf("local source must be unsupported, got %v", err)
 	}
 }
 
 func TestListVersionsForSource_UnknownUnsupported(t *testing.T) {
-	_, err := listVersionsForSource("totally-bogus-source", ListVersionsOptions{})
+	_, err := ListVersionsForSource("totally-bogus-source", ListVersionsOptions{})
 	if !errors.Is(err, ErrVersionListUnsupported) {
 		t.Fatalf("unknown source must be unsupported, got %v", err)
 	}
 }
 
 func TestListVersionsForSource_GitHubInvalid(t *testing.T) {
-	_, err := listVersionsForSource("github.com/missingrepo", ListVersionsOptions{})
+	_, err := ListVersionsForSource("github.com/missingrepo", ListVersionsOptions{})
 	if err == nil || errors.Is(err, ErrVersionListUnsupported) {
 		t.Fatalf("github source missing repo segment must error (not unsupported): %v", err)
 	}
@@ -69,7 +68,7 @@ func TestListVersionsForSource_GitHubInvalid(t *testing.T) {
 
 func TestMarkCurrent(t *testing.T) {
 	versions := []ProviderVersion{{Tag: testTagV100}, {Tag: "v0.9.0"}}
-	got := markCurrent(versions, "github.com/foo/bar@v1.0.0")
+	got := MarkCurrent(versions, "github.com/foo/bar@v1.0.0")
 	if !got[0].Current || got[1].Current {
 		t.Fatalf("only v1.0.0 should be marked current: %+v", got)
 	}
@@ -77,80 +76,23 @@ func TestMarkCurrent(t *testing.T) {
 
 func TestMarkCurrent_NoTag(t *testing.T) {
 	versions := []ProviderVersion{{Tag: testTagV100}}
-	got := markCurrent(versions, "github.com/foo/bar")
+	got := MarkCurrent(versions, "github.com/foo/bar")
 	if got[0].Current {
 		t.Fatal("no pinned tag → none current")
 	}
 }
 
 func TestRewriteSourceTag(t *testing.T) {
-	got, err := rewriteSourceTag("github.com/foo/bar@v1.0.0", "v2.0.0")
+	got, err := RewriteSourceTag("github.com/foo/bar@v1.0.0", "v2.0.0")
 	if err != nil || got != "github.com/foo/bar@v2.0.0" {
 		t.Fatalf("got %q err %v", got, err)
 	}
-	got, err = rewriteSourceTag("github.com/foo/bar", "v2.0.0")
+	got, err = RewriteSourceTag("github.com/foo/bar", "v2.0.0")
 	if err != nil || got != "github.com/foo/bar@v2.0.0" {
 		t.Fatalf("got %q err %v", got, err)
 	}
-	if _, err := rewriteSourceTag("github.com/foo/bar", ""); err == nil {
+	if _, err := RewriteSourceTag("github.com/foo/bar", ""); err == nil {
 		t.Fatal("empty tag must error")
-	}
-}
-
-func TestListVersionsForSource_CachesResults(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("DEVSY_HOME", dir)
-
-	source := "github.com/foo/bar@v1.0.0"
-	hash := hashProviderSource(source)
-
-	// Prime cache with a synthetic entry that doesn't match any real upstream.
-	cached := providerVersionCache{
-		"myprov": {
-			SourceHash: hash,
-			Versions:   []ProviderVersion{{Tag: testTagV999}},
-			FetchedAt:  time.Now(),
-		},
-	}
-	if err := SaveProviderVersionCache(cached); err != nil {
-		t.Fatal(err)
-	}
-
-	// listVersionsForSourceCached must read the cache when UseCache is set and the entry is fresh.
-	got, err := listVersionsForSourceCached("myprov", source, ListVersionsOptions{UseCache: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 1 || got[0].Tag != testTagV999 {
-		t.Fatalf("expected cache hit, got %+v", got)
-	}
-}
-
-func TestListVersionsForSource_BypassesCache(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("DEVSY_HOME", dir)
-
-	source := "/local/path/provider.yaml"
-	hash := hashProviderSource(source)
-	cached := providerVersionCache{
-		"myprov": {
-			SourceHash: hash,
-			Versions:   []ProviderVersion{{Tag: testTagV999}},
-			FetchedAt:  time.Now(),
-		},
-	}
-	if err := SaveProviderVersionCache(cached); err != nil {
-		t.Fatal(err)
-	}
-
-	// With UseCache=false the cache is ignored and the underlying classifier runs.
-	// Local source → ErrVersionListUnsupported.
-	_, err := listVersionsForSourceCached("myprov", source, ListVersionsOptions{UseCache: false})
-	if !errors.Is(err, ErrVersionListUnsupported) {
-		t.Fatalf(
-			"expected ErrVersionListUnsupported when bypassing cache for local source, got %v",
-			err,
-		)
 	}
 }
 
