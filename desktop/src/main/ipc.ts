@@ -475,6 +475,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         ideLaunch?: "auto" | "headless" | "skip"
         debug?: boolean
         workspaceFolder?: string
+        devcontainerPath?: string
+        prebuildRepositories?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -485,6 +487,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
       if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
+      if (args.devcontainerPath)
+        cliArgs.push("--devcontainer-path", args.devcontainerPath)
+      if (args.prebuildRepositories)
+        cliArgs.push("--prebuild-repository", args.prebuildRepositories)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
