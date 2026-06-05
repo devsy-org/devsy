@@ -31,9 +31,9 @@ func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := &StatusCmd{
-				GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"},
+				GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain},
 			}
-			fake := &fakeWorkspaceClient{workspace: "node-js", status: tc.status}
+			fake := &fakeWorkspaceClient{workspace: testWorkspaceName, status: tc.status}
 
 			out := captureStdout(t, func() {
 				require.NoError(t, cmd.Run(t.Context(), fake))
@@ -48,12 +48,12 @@ func TestStatusCmd_JSONOutput(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
 	cmd := &StatusCmd{
-		GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"},
+		GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON},
 	}
 	fake := &fakeWorkspaceClient{
-		workspace: "node-js",
-		context:   "default",
-		provider:  "docker",
+		workspace: testWorkspaceName,
+		context:   testContext,
+		provider:  testProvider,
 		status:    client.StatusRunning,
 	}
 
@@ -64,9 +64,9 @@ func TestStatusCmd_JSONOutput(t *testing.T) {
 	var got client.WorkspaceStatus
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
 	assert.Equal(t, client.WorkspaceStatus{
-		ID:       "node-js",
-		Context:  "default",
-		Provider: "docker",
+		ID:       testWorkspaceName,
+		Context:  testContext,
+		Provider: testProvider,
 		State:    string(client.StatusRunning),
 	}, got)
 }

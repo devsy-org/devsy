@@ -21,15 +21,15 @@ func TestDescribeSource(t *testing.T) { //nolint:funlen // table-driven test
 		{
 			name: "git branch",
 			src: provider.WorkspaceSource{
-				GitRepository: "github.com/acme/node-js",
-				GitBranch:     "main",
+				GitRepository: testGitRepo,
+				GitBranch:     testGitBranch,
 			},
 			want: "git:github.com/acme/node-js@main",
 		},
 		{
 			name: "git commit when no branch",
 			src: provider.WorkspaceSource{
-				GitRepository: "github.com/acme/node-js",
+				GitRepository: testGitRepo,
 				GitCommit:     "abc123",
 			},
 			want: "git:github.com/acme/node-js@abc123",
@@ -37,28 +37,28 @@ func TestDescribeSource(t *testing.T) { //nolint:funlen // table-driven test
 		{
 			name: "git pr when no branch or commit",
 			src: provider.WorkspaceSource{
-				GitRepository:  "github.com/acme/node-js",
+				GitRepository:  testGitRepo,
 				GitPRReference: "refs/pull/42/head",
 			},
 			want: "git:github.com/acme/node-js@refs/pull/42/head",
 		},
 		{
 			name: "git repo only",
-			src:  provider.WorkspaceSource{GitRepository: "github.com/acme/node-js"},
+			src:  provider.WorkspaceSource{GitRepository: testGitRepo},
 			want: "git:github.com/acme/node-js",
 		},
 		{
 			name: "git with subpath",
 			src: provider.WorkspaceSource{
-				GitRepository: "github.com/acme/node-js",
-				GitBranch:     "main",
+				GitRepository: testGitRepo,
+				GitBranch:     testGitBranch,
 				GitSubPath:    "services/api",
 			},
 			want: "git:github.com/acme/node-js@main (services/api)",
 		},
 		{
 			name: "local folder",
-			src:  provider.WorkspaceSource{LocalFolder: "/home/me/project"},
+			src:  provider.WorkspaceSource{LocalFolder: testLocalFolder},
 			want: "/home/me/project",
 		},
 		{
@@ -88,18 +88,22 @@ func TestDescribeCmd_JSONOutput(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
 	cfg := &provider.Workspace{
-		ID:       "node-js",
-		Context:  "default",
-		Provider: provider.WorkspaceProviderConfig{Name: "docker"},
-		IDE:      provider.WorkspaceIDEConfig{Name: "vscode"},
+		ID:       testWorkspaceName,
+		Context:  testContext,
+		Provider: provider.WorkspaceProviderConfig{Name: testProvider},
+		IDE:      provider.WorkspaceIDEConfig{Name: testIDE},
 		Source: provider.WorkspaceSource{
-			GitRepository: "github.com/acme/node-js",
-			GitBranch:     "main",
+			GitRepository: testGitRepo,
+			GitBranch:     testGitBranch,
 		},
-		Machine: provider.WorkspaceMachineConfig{ID: "node-js"},
+		Machine: provider.WorkspaceMachineConfig{ID: testWorkspaceName},
 	}
-	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}}
-	fake := &fakeWorkspaceClient{workspace: "node-js", config: cfg, status: client.StatusRunning}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON}}
+	fake := &fakeWorkspaceClient{
+		workspace: testWorkspaceName,
+		config:    cfg,
+		status:    client.StatusRunning,
+	}
 
 	out := captureStdout(t, func() {
 		require.NoError(t, cmd.Run(t.Context(), fake))
@@ -107,39 +111,43 @@ func TestDescribeCmd_JSONOutput(t *testing.T) {
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
-	assert.Equal(t, "node-js", got["id"])
-	assert.Equal(t, "default", got["context"])
+	assert.Equal(t, testWorkspaceName, got["id"])
+	assert.Equal(t, testContext, got["context"])
 	assert.Equal(t, string(client.StatusRunning), got["state"])
 	provBlock, ok := got["provider"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "docker", provBlock["name"])
+	assert.Equal(t, testProvider, provBlock["name"])
 }
 
 func TestDescribeCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
 	cfg := &provider.Workspace{
-		ID:       "node-js",
-		Context:  "default",
-		Provider: provider.WorkspaceProviderConfig{Name: "docker"},
-		IDE:      provider.WorkspaceIDEConfig{Name: "vscode"},
+		ID:       testWorkspaceName,
+		Context:  testContext,
+		Provider: provider.WorkspaceProviderConfig{Name: testProvider},
+		IDE:      provider.WorkspaceIDEConfig{Name: testIDE},
 		Source: provider.WorkspaceSource{
-			GitRepository: "github.com/acme/node-js",
-			GitBranch:     "main",
+			GitRepository: testGitRepo,
+			GitBranch:     testGitBranch,
 		},
-		Machine: provider.WorkspaceMachineConfig{ID: "node-js"},
+		Machine: provider.WorkspaceMachineConfig{ID: testWorkspaceName},
 	}
-	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
-	fake := &fakeWorkspaceClient{workspace: "node-js", config: cfg, status: client.StatusRunning}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
+	fake := &fakeWorkspaceClient{
+		workspace: testWorkspaceName,
+		config:    cfg,
+		status:    client.StatusRunning,
+	}
 
 	out := captureStdout(t, func() {
 		require.NoError(t, cmd.Run(t.Context(), fake))
 	})
 
-	assert.Contains(t, out, "node-js")
+	assert.Contains(t, out, testWorkspaceName)
 	assert.Contains(t, out, "Running")
-	assert.Contains(t, out, "docker")
-	assert.Contains(t, out, "vscode")
+	assert.Contains(t, out, testProvider)
+	assert.Contains(t, out, testIDE)
 	assert.Contains(t, out, "git:github.com/acme/node-js@main")
 }
 
@@ -147,18 +155,22 @@ func TestDescribeCmd_PlainOmitsEmptyFields(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
 	cfg := &provider.Workspace{
-		ID:     "node-js",
-		Source: provider.WorkspaceSource{LocalFolder: "/home/me/project"},
+		ID:     testWorkspaceName,
+		Source: provider.WorkspaceSource{LocalFolder: testLocalFolder},
 		// No IDE, no Machine, no Context.
 	}
-	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
-	fake := &fakeWorkspaceClient{workspace: "node-js", config: cfg, status: client.StatusStopped}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
+	fake := &fakeWorkspaceClient{
+		workspace: testWorkspaceName,
+		config:    cfg,
+		status:    client.StatusStopped,
+	}
 
 	out := captureStdout(t, func() {
 		require.NoError(t, cmd.Run(t.Context(), fake))
 	})
 
-	assert.Contains(t, out, "/home/me/project")
+	assert.Contains(t, out, testLocalFolder)
 	assert.NotContains(t, out, "IDE")
 	assert.NotContains(t, out, "Machine")
 }
@@ -166,8 +178,12 @@ func TestDescribeCmd_PlainOmitsEmptyFields(t *testing.T) {
 func TestDescribeCmd_NilConfigErrors(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
-	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
-	fake := &fakeWorkspaceClient{workspace: "node-js", config: nil, status: client.StatusRunning}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
+	fake := &fakeWorkspaceClient{
+		workspace: testWorkspaceName,
+		config:    nil,
+		status:    client.StatusRunning,
+	}
 
 	err := cmd.Run(t.Context(), fake)
 	require.Error(t, err)

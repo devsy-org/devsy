@@ -11,6 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Shared fixture values reused across command tests.
+const (
+	testWorkspaceName = "node-js"
+	testContext       = "default"
+	testProvider      = "docker"
+	testIDE           = "vscode"
+	testGitRepo       = "github.com/acme/node-js"
+	testGitBranch     = "main"
+	testLocalFolder   = "/home/me/project"
+	formatPlain       = "plain"
+	formatJSON        = "json"
+)
+
 // fakeWorkspaceClient is a minimal BaseWorkspaceClient used to exercise
 // command Run methods without a real provider.
 type fakeWorkspaceClient struct {
