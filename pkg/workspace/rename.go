@@ -10,7 +10,9 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -157,10 +159,31 @@ func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) 
 	}
 }
 
-// Rename performs the workspace rename: auto-stops if running, moves the
-// workspace directory, updates the config ID, and removes the old SSH config
-// entry. If any step after the directory move fails, the entire operation is
-// rolled back.
+func removeContainerForRename(
+	ctx context.Context,
+	wsConfig *provider.Workspace,
+	lookupRunnerID string,
+) error {
+	helper := &docker.DockerHelper{
+		DockerCommand: ResolveDockerCommand(wsConfig, ""),
+	}
+
+	labels := devcontainerconfig.GetIDLabels(lookupRunnerID, nil)
+	container, err := helper.FindDevContainer(ctx, labels)
+	if err != nil {
+		return fmt.Errorf("find container: %w", err)
+	}
+	if container == nil {
+		return nil
+	}
+
+	log.Infof("removing stale container %s after workspace rename", container.ID)
+	return helper.Remove(ctx, container.ID)
+}
+
+// Rename auto-stops the workspace, moves its directory, deletes the stale
+// container, and clears the old SSH entry. The container is rebuilt on the
+// next `up`.
 func Rename(ctx context.Context, opts RenameOptions) error {
 	wsConfig, err := provider.LoadWorkspaceConfig(opts.DevsyConfig.DefaultContext, opts.OldName)
 	if err != nil {
@@ -177,6 +200,8 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 		return err
 	}
 
+	lookupRunnerID := devcontainer.GetRunnerIDFromWorkspace(wsConfig)
+
 	if err := moveWorkspace(opts.DevsyConfig, opts.OldName, opts.NewName); err != nil {
 		return fmt.Errorf("moving workspace: %w", err)
 	}
@@ -190,6 +215,14 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 	}
 
 	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
+
+	if err := removeContainerForRename(ctx, wsConfig, lookupRunnerID); err != nil {
+		log.Warnf(
+			"renamed workspace but could not remove the stale container (%v); "+
+				"run `devsy up %s --recreate` to rebuild it",
+			err, opts.NewName,
+		)
+	}
 
 	_ = devssh.RemoveFromConfig(
 		opts.OldName,
