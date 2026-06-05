@@ -1,6 +1,7 @@
 import type {
   AuditEntry,
   Context,
+  ImageCatalog,
   LogEntry,
   Machine,
   OptionValue,
@@ -159,6 +160,15 @@ export async function providerSetVersion(name: string, tag: string): Promise<voi
 
 export async function providerCheckUpdates() {
   return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
+}
+
+// Image catalog commands
+export async function imageCatalogGet(): Promise<ImageCatalog> {
+  return invoke<ImageCatalog>("image_catalog_get")
+}
+
+export async function imageCatalogRefresh(): Promise<ImageCatalog> {
+  return invoke<ImageCatalog>("image_catalog_refresh")
 }
 
 // Machine commands
