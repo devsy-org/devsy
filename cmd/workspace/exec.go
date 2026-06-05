@@ -1,13 +1,9 @@
 package workspace
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"maps"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -17,15 +13,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-)
-
-const (
-	DefaultDockerCommand   = "docker"
-	ContainerStatusRunning = "running"
 )
 
 type ExecCmd struct {
@@ -155,27 +145,26 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := ResolveDockerCommand(workspaceConfig)
+	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
 
-	containerDetails, err := FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
+	containerDetails, err := runtime.FindRunning(
+		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		return err
 	}
 
-	result := LoadExecResult(workspaceConfig, containerDetails)
-	workdir := ResolveExecWorkdir(result, client.Workspace())
+	result := workspace2.LoadExecResult(workspaceConfig, containerDetails)
+	workdir := workspace2.ResolveExecWorkdir(result, client.Workspace())
 	user := devcconfig.GetRemoteUser(result)
 	userEnvProbe := resolveUserEnvProbe(result, cmd.DefaultUserEnvProbe)
 
-	target := containerTarget{
-		helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
-		containerID: containerDetails.ID,
-		user:        user,
+	target := workspace2.ContainerTarget{
+		ContainerID: containerDetails.ID,
+		User:        user,
 	}
-	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
-	envMap := buildExecEnv(result, cmd.RemoteEnv, probedEnv)
+	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
+	envMap := workspace2.BuildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
@@ -184,9 +173,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		target:  target,
-		workdir: workdir,
-		envMap:  envMap,
+		dockerCmd: runtime.DockerCommand(),
+		target:    target,
+		workdir:   workdir,
+		envMap:    envMap,
 	}, args)
 	if err != nil {
 		if emitJSON {
@@ -206,11 +196,8 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 }
 
 func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error {
-	dockerCommand := DefaultDockerCommand
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
-	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
+	runtime := workspace2.NewDockerRuntime(nil, cmd.DockerPath)
+	helper := &docker.DockerHelper{DockerCommand: runtime.DockerCommand()}
 
 	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
 	if err != nil {
@@ -221,7 +208,7 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, ContainerStatusRunning) {
+	if !strings.EqualFold(containerDetails.State.Status, workspace2.ContainerStatusRunning) {
 		return fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.ContainerID,
@@ -230,13 +217,12 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	userEnvProbe := cmd.DefaultUserEnvProbe
-	target := containerTarget{
-		helper:      helper,
-		containerID: containerDetails.ID,
-		user:        "",
+	target := workspace2.ContainerTarget{
+		ContainerID: containerDetails.ID,
+		User:        "",
 	}
-	probedEnv := probeContainerEnv(ctx, target, userEnvProbe)
-	envMap := buildExecEnv(nil, cmd.RemoteEnv, probedEnv)
+	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
+	envMap := workspace2.BuildExecEnv(nil, cmd.RemoteEnv, probedEnv)
 
 	workdir := containerDetails.Config.WorkingDir
 
@@ -247,9 +233,10 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		target:  target,
-		workdir: workdir,
-		envMap:  envMap,
+		dockerCmd: runtime.DockerCommand(),
+		target:    target,
+		workdir:   workdir,
+		envMap:    envMap,
 	}, args)
 	if err != nil {
 		if emitJSON {
@@ -277,83 +264,6 @@ func (cmd *ExecCmd) validateRemoteEnv() error {
 	return nil
 }
 
-func ResolveDockerCommand(
-	workspace *provider2.Workspace,
-) string {
-	if workspace == nil || workspace.Context == "" {
-		return DefaultDockerCommand
-	}
-
-	providerConfig, err := provider2.LoadProviderConfig(
-		workspace.Context,
-		workspace.Provider.Name,
-	)
-	if err != nil {
-		log.Debugf("Failed to load provider config, defaulting to 'docker': %v", err)
-		return DefaultDockerCommand
-	}
-
-	if providerConfig.Agent.Docker.Path != "" {
-		if expanded := os.ExpandEnv(providerConfig.Agent.Docker.Path); expanded != "" {
-			return expanded
-		}
-	}
-
-	return DefaultDockerCommand
-}
-
-func FindRunningContainer(
-	ctx context.Context,
-	dockerCommand string,
-	workspaceID string,
-	idLabels []string,
-) (*devcconfig.ContainerDetails, error) {
-	dockerHelper := &docker.DockerHelper{
-		DockerCommand: dockerCommand,
-	}
-
-	labels := devcconfig.GetIDLabels(workspaceID, idLabels)
-	container, err := dockerHelper.FindDevContainer(ctx, labels)
-	if err != nil {
-		return nil, fmt.Errorf("find container: %w", err)
-	}
-	if container == nil {
-		return nil, fmt.Errorf(
-			"no running container found for workspace %q",
-			workspaceID,
-		)
-	}
-
-	if !strings.EqualFold(container.State.Status, ContainerStatusRunning) {
-		return nil, fmt.Errorf(
-			"container %s is not running (status: %s)",
-			container.ID,
-			container.State.Status,
-		)
-	}
-
-	return container, nil
-}
-
-func LoadExecResult(
-	workspaceConfig *provider2.Workspace,
-	containerDetails *devcconfig.ContainerDetails,
-) *devcconfig.Result {
-	if workspaceConfig == nil || workspaceConfig.Context == "" || workspaceConfig.ID == "" {
-		return nil
-	}
-
-	result, err := provider2.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
-	if err != nil {
-		log.Warnf("Error loading workspace result: %v", err)
-		return nil
-	}
-	if result != nil {
-		result.ContainerDetails = containerDetails
-	}
-	return result
-}
-
 func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 	if cliOverride != "" {
 		return cliOverride
@@ -364,59 +274,11 @@ func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 	return ""
 }
 
-func ResolveExecWorkdir(result *devcconfig.Result, workspaceName string) string {
-	if result != nil && result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
-		return result.MergedConfig.WorkspaceFolder
-	}
-	return path.Join("/workspaces", workspaceName)
-}
-
-func buildExecEnv(
-	result *devcconfig.Result,
-	cliEnv []string,
-	probedEnv map[string]string,
-) map[string]string {
-	env := make(map[string]string, len(probedEnv))
-	maps.Copy(env, probedEnv)
-
-	if result != nil {
-		applyRemoteEnv(env, mergedRemoteEnv(result))
-	}
-
-	for _, e := range cliEnv {
-		if k, v, ok := strings.Cut(e, "="); ok {
-			env[k] = v
-		}
-	}
-
-	return env
-}
-
-func mergedRemoteEnv(result *devcconfig.Result) map[string]*string {
-	merged := map[string]*string{}
-	if result.MergedConfig != nil {
-		maps.Copy(merged, result.MergedConfig.RemoteEnv)
-	}
-	if result.DevContainerConfigWithPath != nil && result.DevContainerConfigWithPath.Config != nil {
-		maps.Copy(merged, result.DevContainerConfigWithPath.Config.RemoteEnv)
-	}
-	return merged
-}
-
-func applyRemoteEnv(env map[string]string, remoteEnv map[string]*string) {
-	for k, v := range remoteEnv {
-		if v == nil {
-			delete(env, k)
-		} else {
-			env[k] = *v
-		}
-	}
-}
-
 type execOpts struct {
-	target  containerTarget
-	workdir string
-	envMap  map[string]string
+	dockerCmd string
+	target    workspace2.ContainerTarget
+	workdir   string
+	envMap    map[string]string
 }
 
 func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []string) error {
@@ -430,106 +292,17 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	if opts.workdir != "" {
 		execArgs = append(execArgs, "--workdir", opts.workdir)
 	}
-	if opts.target.user != "" {
-		execArgs = append(execArgs, "--user", opts.target.user)
+	if opts.target.User != "" {
+		execArgs = append(execArgs, "--user", opts.target.User)
 	}
-	execArgs = append(execArgs, opts.target.containerID)
+	execArgs = append(execArgs, opts.target.ContainerID)
 	execArgs = append(execArgs, args...)
 
 	redacted := strings.Join(redactExecArgs(execArgs), " ")
-	log.Debugf("Executing in container: %s %s", opts.target.helper.DockerCommand, redacted)
-	return opts.target.helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
-}
+	log.Debugf("Executing in container: %s %s", opts.dockerCmd, redacted)
 
-func parseEnvOutput(out []byte, sep byte) map[string]string {
-	entries := bytes.Split(out, []byte{sep})
-	env := make(map[string]string, len(entries))
-	for _, e := range entries {
-		if len(e) == 0 {
-			continue
-		}
-		name, value, ok := bytes.Cut(e, []byte{'='})
-		if !ok || len(name) == 0 {
-			continue
-		}
-		env[string(name)] = string(value)
-	}
-	delete(env, "PWD")
-	return env
-}
-
-type containerTarget struct {
-	helper      *docker.DockerHelper
-	containerID string
-	user        string
-}
-
-func probeContainerEnv(
-	ctx context.Context,
-	target containerTarget,
-	probe string,
-) map[string]string {
-	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
-	if err != nil {
-		log.Warnf("Invalid userEnvProbe %q, using default: %v", probe, err)
-		userEnvProbe = devcconfig.DefaultUserEnvProbe
-	}
-	if userEnvProbe == devcconfig.NoneProbe {
-		return map[string]string{}
-	}
-
-	shellFlag := probeShellFlag(userEnvProbe)
-
-	out, sep, err := runProbeCommand(ctx, target, shellFlag)
-	if err != nil {
-		log.Warnf("Failed to probe user env: %v", err)
-		return map[string]string{}
-	}
-	return parseEnvOutput(out, sep)
-}
-
-func probeShellFlag(probe devcconfig.UserEnvProbe) string {
-	switch probe {
-	case devcconfig.LoginInteractiveShellProbe:
-		return "-lic"
-	case devcconfig.LoginShellProbe:
-		return "-lc"
-	case devcconfig.InteractiveShellProbe:
-		return "-ic"
-	default:
-		return "-c"
-	}
-}
-
-func runProbeCommand(
-	ctx context.Context,
-	target containerTarget,
-	shellFlag string,
-) ([]byte, byte, error) {
-	args := buildProbeArgs(target, shellFlag, "cat /proc/self/environ")
-	var stdout bytes.Buffer
-	err := target.helper.Run(ctx, args, nil, &stdout, io.Discard)
-	if err == nil {
-		return stdout.Bytes(), 0, nil
-	}
-
-	log.Debugf("Env probe with /proc/self/environ failed: %v, trying printenv", err)
-	args = buildProbeArgs(target, shellFlag, "printenv")
-	stdout.Reset()
-	err = target.helper.Run(ctx, args, nil, &stdout, io.Discard)
-	if err != nil {
-		return nil, 0, fmt.Errorf("probe user env: %w", err)
-	}
-	return stdout.Bytes(), '\n', nil
-}
-
-func buildProbeArgs(target containerTarget, shellFlag string, cmd string) []string {
-	args := []string{"exec"}
-	if target.user != "" {
-		args = append(args, "--user", target.user)
-	}
-	args = append(args, target.containerID, "sh", shellFlag, cmd)
-	return args
+	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd}
+	return helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
 }
 
 func redactExecArgs(args []string) []string {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

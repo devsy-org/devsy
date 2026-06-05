@@ -41,6 +41,7 @@ require (
 	github.com/moby/buildkit v0.29.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/term v0.5.2
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/pkg/sftp v1.13.10
@@ -185,6 +186,7 @@ require (
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-github/v74 v74.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
@@ -248,6 +250,8 @@ require (
 	github.com/safchain/ethtool v0.3.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
@@ -269,6 +273,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gitlab.com/gitlab-org/api/client-go v1.9.1 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.5 // indirect

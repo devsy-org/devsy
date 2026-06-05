@@ -3,6 +3,7 @@ package up
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,6 +48,77 @@ type UpCmd struct {
 	DotfilesTargetPath    string
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
+
+	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
+	Out io.Writer
+}
+
+// Options is the structured input form of the up command.
+type Options struct {
+	Source           string // git URL, local path, image, or workspace name
+	Name             string // explicit workspace ID override
+	Provider         string // provider name override
+	IDE              string // ide name; "none" to skip launching
+	DevcontainerPath string // path to devcontainer.json, relative to project
+}
+
+// RunFromOptions runs the up logic without cobra. Callers own ctx cancellation;
+// WithSignals is intentionally skipped.
+func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
+	cmd := buildUpCmd(g, opts)
+	if err := cmd.validate(); err != nil {
+		return err
+	}
+	// Read from the copy in cmd.GlobalFlags so opts.Provider overrides take effect.
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return fmt.Errorf("load devsy config: %w", err)
+	}
+	cmd.applyConfig(devsyConfig)
+
+	if cmd.Provider == "" && devsyConfig.Current().DefaultProvider == "" {
+		return fmt.Errorf("no provider specified and no default provider configured for context %q",
+			cmd.Context)
+	}
+
+	args := []string{opts.Source}
+	client, err := cmd.prepareClient(ctx, devsyConfig, args)
+	if err != nil {
+		return fmt.Errorf("prepare workspace client: %w", err)
+	}
+	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
+		return fmt.Errorf("extra devcontainer file is only supported with local provider")
+	}
+	telemetry.FromContext(ctx).SetClient(client)
+	return cmd.Run(ctx, devsyConfig, client, args)
+}
+
+func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
+	ide := opts.IDE
+	if ide == "" {
+		ide = "none"
+	}
+	// Shallow-copy so per-call overrides don't mutate the caller's flags.
+	gCopy := *g
+	if gCopy.ResultFormat == "" {
+		gCopy.ResultFormat = "plain"
+	}
+	if opts.Provider != "" {
+		gCopy.Provider = opts.Provider
+	}
+	cmd := &UpCmd{
+		GlobalFlags: &gCopy,
+		Out:         io.Discard, // any callers wanting envelopes can set this themselves.
+	}
+	cmd.IDE = ide
+	cmd.DevContainerPath = opts.DevcontainerPath
+	if opts.Name != "" {
+		cmd.ID = opts.Name
+	}
+	// *bool flags lose their CLI default when the cobra registration is skipped.
+	mountGitRootDefault := true
+	cmd.MountWorkspaceGitRoot = &mountGitRootDefault
+	return cmd
 }
 
 // NewUpCmd creates a new up command.
@@ -76,9 +148,10 @@ func (cmd *UpCmd) Run(
 	}
 	emitJSON := mode == output.ModeJSON
 
+	out := cmd.stdout()
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		return reportErr(err, emitJSON)
+		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
 		return nil // Platform mode or prebuild-only run.
@@ -88,7 +161,15 @@ func (cmd *UpCmd) Run(
 		client:      client,
 		wctx:        wctx,
 		emitJSON:    emitJSON,
+		out:         out,
 	})
+}
+
+func (cmd *UpCmd) applyConfig(devsyConfig *config.Config) {
+	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
+		cmd.StrictHostKeyChecking = true
+	}
+	cmd.resolveDotfilesOptions(devsyConfig)
 }
 
 type finalizeUpArgs struct {
@@ -96,13 +177,14 @@ type finalizeUpArgs struct {
 	client      client2.BaseWorkspaceClient
 	wctx        *workspaceContext
 	emitJSON    bool
+	out         io.Writer
 }
 
 // finalizeUp performs the post-up steps: workspace configuration, optional SSH
 // tunnel, IDE launch, and JSON envelope emission. Split out to keep Run small.
 func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	if err := cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx); err != nil {
-		return reportErr(err, args.emitJSON)
+		return reportErr(err, args.emitJSON, args.out)
 	}
 
 	if cleanup := cmd.maybeStartTunnel(
@@ -119,10 +201,10 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 
 	ideURL, err := cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
 	if err != nil {
-		return reportErr(err, args.emitJSON)
+		return reportErr(err, args.emitJSON, args.out)
 	}
 	if args.emitJSON {
-		emitUpResult(args.wctx, ideURL)
+		emitUpResult(args.wctx, ideURL, args.out)
 	}
 	if args.wctx.tunnelPort > 0 {
 		log.Infof(
@@ -156,16 +238,23 @@ func (cmd *UpCmd) maybeStartTunnel(
 	return tunnelCleanup
 }
 
+func (cmd *UpCmd) stdout() io.Writer {
+	if cmd.Out != nil {
+		return cmd.Out
+	}
+	return os.Stdout
+}
+
 // reportErr writes the error to JSON output when requested and returns it for the caller.
-func reportErr(err error, emitJSON bool) error {
+func reportErr(err error, emitJSON bool, out io.Writer) error {
 	if emitJSON {
-		_ = config2.WriteErrorJSON(os.Stdout, err.Error())
+		_ = config2.WriteErrorJSON(out, err.Error())
 	}
 	return err
 }
 
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
-func emitUpResult(wctx *workspaceContext, ideURL string) {
+func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := ""
 	var warnings []string
 	if wctx.result != nil {
@@ -174,7 +263,7 @@ func emitUpResult(wctx *workspaceContext, ideURL string) {
 		}
 		warnings = wctx.result.HostWarnings
 	}
-	_ = config2.WriteResultJSON(os.Stdout, config2.ResultEnvelope{
+	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
 		RemoteUser:            wctx.user,
 		RemoteWorkspaceFolder: wctx.workdir,
@@ -191,11 +280,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
-	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
-		cmd.StrictHostKeyChecking = true
-	}
-
-	cmd.resolveDotfilesOptions(devsyConfig)
+	cmd.applyConfig(devsyConfig)
 
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()
@@ -328,23 +413,42 @@ func WithSignals(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+
+	// done lets cleanup unblock goroutines parked on <-signals; signal.Stop
+	// alone wouldn't wake them.
+	done := make(chan struct{})
+
 	go func() {
 		select {
 		case <-signals:
 			cancel()
 		case <-ctx.Done():
+		case <-done:
 		}
 	}()
 
 	go func() {
-		<-ctx.Done()
-		<-signals
-		// force shutdown if context is done and another signal arrives
-		os.Exit(1)
+		select {
+		case <-ctx.Done():
+		case <-done:
+			return
+		}
+		// Skip the second-signal wait if cleanup already closed done.
+		select {
+		case <-done:
+			return
+		default:
+		}
+		select {
+		case <-signals:
+			os.Exit(1) // second signal — force shutdown
+		case <-done:
+		}
 	}()
 
 	return ctx, func() {
 		cancel()
 		signal.Stop(signals)
+		close(done)
 	}
 }

@@ -233,7 +233,7 @@ func (cmd *RunUserCommandsCmd) resolveDockerPath() string {
 	if cmd.DockerPath != "" {
 		return cmd.DockerPath
 	}
-	return workspace.DefaultDockerCommand
+	return workspace2.DefaultDockerCommand
 }
 
 func (cmd *RunUserCommandsCmd) inspectRunningContainer(
@@ -252,7 +252,7 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, workspace.ContainerStatusRunning) {
+	if !strings.EqualFold(containerDetails.State.Status, workspace2.ContainerStatusRunning) {
 		errMsg := fmt.Sprintf(
 			"container %s is not running (status: %s)",
 			cmd.ContainerID,
@@ -332,20 +332,17 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	dockerCommand := workspace.ResolveDockerCommand(workspaceConfig)
-	if cmd.DockerPath != "" {
-		dockerCommand = cmd.DockerPath
-	}
+	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
 
-	containerDetails, err := workspace.FindRunningContainer(
-		ctx, dockerCommand, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
+	containerDetails, err := runtime.FindRunning(
+		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
 		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, nil, err
 	}
 
-	result := workspace.LoadExecResult(workspaceConfig, containerDetails)
+	result := workspace2.LoadExecResult(workspaceConfig, containerDetails)
 	if result == nil || result.MergedConfig == nil {
 		_ = devcconfig.WriteErrorJSON(
 			os.Stderr,
@@ -369,10 +366,10 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 
 	params := &workspace.LifecycleExecParams{
 		Ctx:         ctx,
-		Helper:      &docker.DockerHelper{DockerCommand: dockerCommand},
+		Helper:      &docker.DockerHelper{DockerCommand: runtime.DockerCommand()},
 		ContainerID: containerDetails.ID,
 		EnvArgs:     envArgs,
-		Workdir:     workspace.ResolveExecWorkdir(result, client.Workspace()),
+		Workdir:     workspace2.ResolveExecWorkdir(result, client.Workspace()),
 		User:        devcconfig.GetRemoteUser(result),
 	}
 	return params, result, nil

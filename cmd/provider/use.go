@@ -11,6 +11,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// UseProvider sets the named provider as the default for the active config context.
+func UseProvider(devsyConfig *config.Config, name string) error {
+	p, err := workspace.FindProvider(devsyConfig, name)
+	if err != nil {
+		return err
+	}
+	devsyConfig.Current().DefaultProvider = p.Config.Name
+	if err := config.SaveConfig(devsyConfig); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	log.Infof("default provider: %s", p.Config.Name)
+	return nil
+}
+
 // UseCmd holds the cmd flags.
 type UseCmd struct {
 	*flags.GlobalFlags
