@@ -84,39 +84,7 @@ func (cmd *StatusCmd) Run(
 	}
 	switch mode {
 	case output.ModePlain:
-		switch instanceStatus {
-		case client2.StatusStopped:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Workspace %q is %q, you can start it via 'devsy workspace up %s'\n",
-				client.Workspace(),
-				instanceStatus,
-				client.Workspace(),
-			)
-		case client2.StatusBusy:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Workspace %q is %q, which means its currently unaccessible. "+
-					"This is usually resolved by waiting a couple of minutes\n",
-				client.Workspace(),
-				instanceStatus,
-			)
-		case client2.StatusNotFound:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Workspace %q is %q, you can create it via 'devsy workspace up %s'\n",
-				client.Workspace(),
-				instanceStatus,
-				client.Workspace(),
-			)
-		default:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Workspace %q is %q\n",
-				client.Workspace(),
-				instanceStatus,
-			)
-		}
+		_, _ = fmt.Fprintln(os.Stdout, string(instanceStatus))
 	case output.ModeJSON:
 		out, err := json.Marshal(&client2.WorkspaceStatus{
 			ID:       client.Workspace(),

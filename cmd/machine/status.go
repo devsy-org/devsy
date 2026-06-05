@@ -59,38 +59,7 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		switch machineStatus {
-		case client.StatusStopped:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Machine %q is %q, you can start it via 'devsy machine start %s'\n",
-				machineClient.Machine(),
-				machineStatus,
-				machineClient.Machine(),
-			)
-		case client.StatusBusy:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Machine %q is %q, which means its currently unaccessible. "+
-					"This is usually resolved by waiting a couple of minutes\n",
-				machineClient.Machine(),
-				machineStatus,
-			)
-		case client.StatusNotFound:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Machine %q is %q\n",
-				machineClient.Machine(),
-				machineStatus,
-			)
-		default:
-			_, _ = fmt.Fprintf(
-				os.Stdout,
-				"Machine %q is %q\n",
-				machineClient.Machine(),
-				machineStatus,
-			)
-		}
+		_, _ = fmt.Fprintln(os.Stdout, string(machineStatus))
 	case output.ModeJSON:
 		out, err := json.Marshal(struct {
 			ID       string `json:"id,omitempty"`

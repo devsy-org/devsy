@@ -12,9 +12,10 @@ import (
 )
 
 // TestStatusCmd_PlainPrintsAtDefaultVerbosity is the regression guard: plain
-// status output must reach stdout even when the logger is at its default
-// (error-only) level. Previously the result was emitted via log.Infof, which
-// the default verbosity silenced, leaving the command output empty.
+// status output is the bare status word and must reach stdout even when the
+// logger is at its default (error-only) level. Previously the result was
+// emitted via log.Infof, which the default verbosity silenced, leaving the
+// command output empty.
 func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
@@ -23,10 +24,10 @@ func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 		status client.Status
 		want   string
 	}{
-		{"running", client.StatusRunning, `Workspace "node-js" is "Running"`},
-		{"stopped", client.StatusStopped, `Workspace "node-js" is "Stopped"`},
-		{"busy", client.StatusBusy, `Workspace "node-js" is "Busy"`},
-		{"notfound", client.StatusNotFound, `Workspace "node-js" is "NotFound"`},
+		{"running", client.StatusRunning, "Running"},
+		{"stopped", client.StatusStopped, "Stopped"},
+		{"busy", client.StatusBusy, "Busy"},
+		{"notfound", client.StatusNotFound, "NotFound"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
