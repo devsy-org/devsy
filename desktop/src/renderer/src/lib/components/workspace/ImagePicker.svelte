@@ -20,13 +20,16 @@ let {
 
 let search = $state("")
 let category = $state("all")
-let customRef = $state("")
 
 onMount(() => {
   if ($imageCatalog.images.length === 0) void loadImageCatalog()
 })
 
 let filtered = $derived(filterImages($imageCatalog.images, search, category))
+
+let isCatalogValue = $derived(
+  $imageCatalog.images.some((img) => img.ref === value),
+)
 
 function pick(ref: string) {
   value = ref
@@ -100,11 +103,8 @@ function pick(ref: string) {
     <Label class="text-sm">Custom image</Label>
     <Input
       placeholder="registry/image:tag"
-      value={customRef}
-      oninput={(e) => {
-        customRef = e.currentTarget.value
-        pick(customRef.trim())
-      }}
+      value={isCatalogValue ? "" : value}
+      oninput={(e) => pick(e.currentTarget.value.trim())}
     />
     <p class="text-xs text-muted-foreground">
       Use an image not in the catalog.
