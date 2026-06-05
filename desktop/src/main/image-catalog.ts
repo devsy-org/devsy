@@ -48,8 +48,18 @@ async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
 }
 
 async function readSeed(seedPath: string): Promise<ImageCatalog> {
-  const raw = await readFile(seedPath, "utf8")
-  return JSON.parse(raw) as ImageCatalog
+  try {
+    const raw = await readFile(seedPath, "utf8")
+    const seed = JSON.parse(raw) as ImageCatalog
+    if (!seed?.images) throw new Error("seed missing images")
+    return seed
+  } catch (err) {
+    console.error(
+      "[image-catalog] bundled seed unreadable/corrupt (packaging bug):",
+      err,
+    )
+    throw err
+  }
 }
 
 export async function loadCatalog(
@@ -66,8 +76,15 @@ export async function loadCatalog(
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const catalog = (await res.json()) as ImageCatalog
     if (!catalog?.images) throw new Error("malformed catalog")
-    const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
-    await writeFile(opts.cachePath, JSON.stringify(toWrite))
+    try {
+      const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
+      await writeFile(opts.cachePath, JSON.stringify(toWrite))
+    } catch (err) {
+      console.warn(
+        "[image-catalog] failed to write cache (continuing with remote):",
+        err,
+      )
+    }
     return { catalog, origin: "remote" }
   } catch (err) {
     console.warn("[image-catalog] remote fetch failed, using fallback:", err)

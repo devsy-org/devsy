@@ -126,6 +126,14 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).toBe("/home/me/proj")
   })
 
+  it("local: never appends a @subpath: suffix", () => {
+    const out = buildWorkspaceSource(
+      localForm({ localPath: "/home/me/proj/packages/api" }),
+    )
+    expect(out.source).toBe("/home/me/proj/packages/api")
+    expect(out.source).not.toContain("@subpath:")
+  })
+
   it("local: forwards devcontainerPath and prebuildRepository", () => {
     const out = buildWorkspaceSource(
       localForm({

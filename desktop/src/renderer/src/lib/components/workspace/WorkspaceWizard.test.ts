@@ -496,6 +496,68 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("forwards an image source as a bare ref with workspaceFolder kept separate", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    // Set a workspace folder via the git tab's advanced section; this state
+    // persists when we switch source types.
+    const advancedToggle = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    await fireEvent.click(advancedToggle)
+    await flushAsync()
+    const wsFolderInput = document.querySelector(
+      'input[placeholder*="opened inside the container"]',
+    ) as HTMLInputElement
+    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await flushAsync()
+
+    // Switch to the Image tab and enter a custom image ref.
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+    const customImageInput = document.querySelector(
+      'input[placeholder*="registry/image:tag"]',
+    ) as HTMLInputElement
+    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    // The image ref derives an id containing ":", so give an explicit name.
+    const nameInput = document.querySelector(
+      'input[placeholder*="derived from source"]',
+    ) as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: "ubuntu-box" } })
+    await flushAsync()
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "ubuntu:22.04",
+        workspaceFolder: "/workspaces/app",
+        devcontainerPath: undefined,
+        prebuildRepository: undefined,
+      }),
+    )
+    unmount()
+  })
+
   it("close-during-launch shows the confirm dialog instead of closing", async () => {
     providers.set([makeProvider("docker")])
     // Hold workspaceUp open so launchRunning stays true
