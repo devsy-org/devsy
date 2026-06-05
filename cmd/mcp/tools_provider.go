@@ -35,8 +35,10 @@ type providerNameInput struct {
 
 func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "provider_list",
-		Description: "List configured Devsy providers.",
+		Name: "provider_list",
+		Description: "List configured Devsy providers. The 'name' field of each " +
+			"entry is what workspace_create accepts as its 'provider' argument; " +
+			"the 'default' field marks which one is used when 'provider' is omitted.",
 	}, safeHandler(func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{},
 	) (*sdkmcp.CallToolResult, providerListOutput, error) {
 		out, err := handleProviderList(ctx, g)
@@ -47,8 +49,10 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "provider_add",
-		Description: "Add a provider from a source (registry name, URL, or local path).",
+		Name: "provider_add",
+		Description: "Add a provider from a source: a short registry name " +
+			"(e.g. 'docker', 'kubernetes'), a GitHub release URL, or a local path " +
+			"to a provider config file. Call provider_list afterward to confirm.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
@@ -60,7 +64,7 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "provider_delete",
-		Description: "Delete a configured provider.",
+		Description: "Delete a configured provider by name (must match provider_list).",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
@@ -71,8 +75,10 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "provider_use",
-		Description: "Set a provider as the default for new workspaces.",
+		Name: "provider_use",
+		Description: "Set a provider as the default for new workspaces. The name " +
+			"must match provider_list. After this, workspace_create calls without " +
+			"an explicit 'provider' use this provider.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {

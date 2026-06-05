@@ -45,8 +45,11 @@ type execOutput struct {
 func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_exec",
-		Description: "Run a one-shot command in a workspace container. Output is capped " +
-			"per stream; excess is truncated in the middle. The command is argv, not a shell string.",
+		Description: "Run a one-shot command in a running workspace container. The " +
+			"workspace name must match workspace_list; the workspace must already be " +
+			"started (use workspace_start if not). 'command' is argv, NOT a shell " +
+			"string — pass [\"sh\", \"-c\", \"...\"] to use a shell. Each output " +
+			"stream is capped; long output is truncated tail-only with a marker.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in execInput,
 	) (*sdkmcp.CallToolResult, execOutput, error) {
