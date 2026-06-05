@@ -8,7 +8,24 @@ const onCommandProgress = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
+  openDirectoryDialog: vi.fn(),
 }))
+
+vi.mock("$lib/stores/imageCatalog.js", async () => {
+  const { writable } = await import("svelte/store")
+  const actual = await vi.importActual<
+    typeof import("$lib/stores/imageCatalog.js")
+  >("$lib/stores/imageCatalog.js")
+  return {
+    imageCatalog: writable({
+      images: [],
+      categories: [],
+      loading: false,
+    }),
+    loadImageCatalog: vi.fn(),
+    filterImages: actual.filterImages,
+  }
+})
 
 vi.mock("$lib/ipc/events.js", () => ({
   onCommandProgress: (...args: unknown[]) => onCommandProgress(...args),
@@ -202,6 +219,56 @@ describe("WorkspaceWizard", () => {
       'input[placeholder*="github.com/org/repo"]',
     ) as HTMLInputElement
     expect(input.value).toContain("vscode-remote-try-python")
+    unmount()
+  })
+
+  it("defaults to git source type and accepts a repo url", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByText("Choose a Source")).toBeTruthy()
+
+    const repoInput = document.querySelector(
+      'input[placeholder*="github.com/org/repo"]',
+    ) as HTMLInputElement
+    expect(repoInput).toBeTruthy()
+    await fireEvent.input(repoInput, {
+      target: { value: "https://github.com/org/repo" },
+    })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByText("Choose an IDE")).toBeTruthy()
+    unmount()
+  })
+
+  it("shows the image picker when the Image tab is selected", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+
+    const searchInput = document.querySelector(
+      'input[placeholder*="Search images"]',
+    ) as HTMLInputElement
+    expect(searchInput).toBeTruthy()
     unmount()
   })
 
