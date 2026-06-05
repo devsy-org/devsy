@@ -148,3 +148,61 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, val)
 }
+
+func TestResolveExecTarget(t *testing.T) {
+	const cwd = "/current/dir"
+
+	cases := []struct {
+		name    string
+		cmd     *ExecCmd
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "name only",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceName: "my-ws"},
+			want: []string{"my-ws"},
+		},
+		{
+			name: "folder only",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: "/some/path"},
+			want: []string{"/some/path"},
+		},
+		{
+			name: "cwd default when nothing specified",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}},
+			want: []string{cwd},
+		},
+		{
+			name: "name and folder conflict",
+			cmd: &ExecCmd{
+				GlobalFlags:     &flags.GlobalFlags{},
+				WorkspaceName:   "my-ws",
+				WorkspaceFolder: "/some/path",
+			},
+			wantErr: "not both",
+		},
+		{
+			name: "name and container-id conflict",
+			cmd: &ExecCmd{
+				GlobalFlags:   &flags.GlobalFlags{},
+				WorkspaceName: "my-ws",
+				ContainerID:   "abc123",
+			},
+			wantErr: "not both",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveExecTarget(tc.cmd, cwd)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

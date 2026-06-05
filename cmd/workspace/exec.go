@@ -21,6 +21,7 @@ import (
 type ExecCmd struct {
 	*flags.GlobalFlags
 
+	WorkspaceName       string
 	WorkspaceFolder     string
 	ContainerID         string
 	DockerPath          string
@@ -252,6 +253,27 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 		})
 	}
 	return nil
+}
+
+var errFolderNameConflict = fmt.Errorf(
+	"specify either a workspace name or --workspace-folder/--container-id, not both",
+)
+
+// resolveExecTarget decides what string is handed to workspace.Get.
+// Precedence: explicit name, then --workspace-folder, then the current dir.
+// A workspace name combined with --workspace-folder or --container-id is a conflict.
+func resolveExecTarget(cmd *ExecCmd, cwd string) ([]string, error) {
+	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
+		return nil, errFolderNameConflict
+	}
+	switch {
+	case cmd.WorkspaceName != "":
+		return []string{cmd.WorkspaceName}, nil
+	case cmd.WorkspaceFolder != "":
+		return []string{cmd.WorkspaceFolder}, nil
+	default:
+		return []string{cwd}, nil
+	}
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {
