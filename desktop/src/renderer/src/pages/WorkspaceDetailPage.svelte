@@ -119,6 +119,13 @@ let logsLoading = $state(false)
 
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
+let confirmRenameOpen = $state(false)
+let pendingRenameTarget = $state("")
+
+let hasContainer = $derived.by(() => {
+  const status = workspace?.status?.toLowerCase()
+  return Boolean(status) && status !== "notfound"
+})
 
 let sshSessionId = $state<string | null>(null)
 let sshExited = $state(false)
@@ -397,17 +404,31 @@ async function handleRename() {
     renaming = false
     return
   }
+  if (hasContainer) {
+    pendingRenameTarget = trimmed
+    confirmRenameOpen = true
+    return
+  }
+  await performRename(trimmed)
+}
+
+async function performRename(target: string) {
   renameSaving = true
   try {
-    await workspaceRename(id, trimmed)
-    toasts.success(`Renamed workspace to ${trimmed}`)
+    await workspaceRename(id, target)
+    toasts.success(`Renamed workspace to ${target}`)
     renaming = false
-    goto(`/workspaces/${trimmed}`)
+    goto(`/workspaces/${target}`)
   } catch (err) {
     toasts.error(`Failed to rename: ${extractErrorMessage(err)}`)
   } finally {
     renameSaving = false
   }
+}
+
+async function handleRenameConfirmed() {
+  await performRename(pendingRenameTarget)
+  confirmRenameOpen = false
 }
 </script>
 
@@ -806,4 +827,13 @@ async function handleRename() {
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}
+/>
+
+<ConfirmDialog
+  bind:open={confirmRenameOpen}
+  title="Rename will reset the container"
+  description="Renaming '{id}' to '{pendingRenameTarget}' will delete the existing container. The source code and devcontainer config are preserved, but anything installed inside the running container outside the devcontainer config (e.g. manual 'apt install', files outside bind mounts) will be lost."
+  confirmLabel="Rename"
+  loading={renameSaving}
+  onconfirm={handleRenameConfirmed}
 />
