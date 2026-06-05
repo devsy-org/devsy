@@ -171,8 +171,10 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_create",
-		Description: "Create and start a new workspace from a git URL, local path, or container image.",
+		Name: "workspace_create",
+		Description: "Create and start a new workspace. source accepts a git URL " +
+			"(https://, git@host:repo, or git:https://... as emitted by workspace_list), " +
+			"a local path, or a container image reference.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {

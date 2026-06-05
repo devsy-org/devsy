@@ -34,6 +34,10 @@ var (
 )
 
 func NormalizeRepository(str string) (string, string, string, string, string) {
+	// Tolerate the "git:" workspace-source scheme that WorkspaceSource.String
+	// emits. Without this, a value that round-trips through workspace list →
+	// up would become "https://git:https://..." and trip the URL parser.
+	str = strings.TrimPrefix(str, "git:")
 	if !strings.HasPrefix(str, "ssh://") &&
 		!strings.HasPrefix(str, "git@") &&
 		!strings.HasPrefix(str, "http://") &&

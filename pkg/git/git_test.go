@@ -223,6 +223,16 @@ func TestNormalizeRepository(t *testing.T) {
 			expectedCommit:      "",
 			expectedSubpath:     "/test/path",
 		},
+		{
+			// WorkspaceSource.String emits "git:<url>"; round-tripping that
+			// through NormalizeRepository must not produce "https://git:https://...".
+			in:                  "git:https://github.com/devsy-org/devsy.git",
+			expectedRepo:        "https://github.com/devsy-org/devsy.git",
+			expectedPRReference: "",
+			expectedBranch:      "",
+			expectedCommit:      "",
+			expectedSubpath:     "",
+		},
 	}
 
 	for _, testCase := range testCases {
