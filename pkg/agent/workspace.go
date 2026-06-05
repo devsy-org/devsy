@@ -52,6 +52,17 @@ const EnvAgentInContainerTrue = "1"
 // is often disabled).
 const ContainerAgentEnvPrefix = EnvAgentInContainer + "=" + EnvAgentInContainerTrue + " "
 
+// AgentCommandEnvPrefix omits the container env prefix when the command
+// will be executed on the host (provider agent.local=true); prepending it
+// there would mislabel the host process and trip IsHostAgentInvocation's
+// stale-env warning.
+func AgentCommandEnvPrefix(isLocal bool) string {
+	if isLocal {
+		return ""
+	}
+	return ContainerAgentEnvPrefix
+}
+
 var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
 // GetAgentDaemonLogFolder returns the folder that holds agent-daemon.log.

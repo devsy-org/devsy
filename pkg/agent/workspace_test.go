@@ -8,6 +8,21 @@ import (
 // exercise the "explicit folder always wins" branch of IsHostAgentInvocation.
 const explicitAgentDir = "/some/dir"
 
+// TestAgentCommandEnvPrefix: regressions resurrect the stale-env warning
+// on every workspace op against a local provider (docker/podman/k8s).
+func TestAgentCommandEnvPrefix(t *testing.T) {
+	if got := AgentCommandEnvPrefix(true); got != "" {
+		t.Errorf("AgentCommandEnvPrefix(true) = %q, want \"\"", got)
+	}
+	if got := AgentCommandEnvPrefix(false); got != ContainerAgentEnvPrefix {
+		t.Errorf(
+			"AgentCommandEnvPrefix(false) = %q, want %q",
+			got,
+			ContainerAgentEnvPrefix,
+		)
+	}
+}
+
 // withContainerDetector swaps the package-level container detector for
 // the duration of the test, restoring the previous value on cleanup.
 func withContainerDetector(t *testing.T, fn func() bool) {
