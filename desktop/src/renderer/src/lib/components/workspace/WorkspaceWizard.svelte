@@ -842,7 +842,7 @@ function selectTemplate(t: { name: string; source: string }) {
                 <span class="font-medium truncate">{refValue}</span>
               </div>
             {/if}
-            {#if subPath.trim()}
+            {#if sourceType !== "image" && subPath.trim()}
               <div class="flex justify-between gap-3">
                 <span class="text-muted-foreground">Subfolder</span>
                 <span class="font-medium truncate">{subPath}</span>
