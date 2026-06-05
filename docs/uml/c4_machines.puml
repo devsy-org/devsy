@@ -11,31 +11,31 @@ LAYOUT_TOP_DOWN()
 
 title Component diagram for Devsy with machine providers
 
-Person(user, "Devsy", "CLI or UI")
-System(prov, "Devsy Provider", "aws, gcloud etc.")
+Person(user, "Devsy User", "CLI or Desktop")
+System(prov, "Machine Provider", "aws, gcp, azure, ssh, ...")
 Component(ide, "IDE", "Local IDE")
-Component(ctx, "Context", "Config, working dir etc.")
-Component(env, "Local Env", "Shell variables, git credentials etc.")
+Component(ctx, "Context", "Config, working dir")
+Component(env, "Local Env", "Shell vars, git/docker credentials")
 
 System_Boundary(cluster, "Virtual Machine") {
-  System(controlPlane, "Devsy Agent", "Manages the machine")
-  System(dockerd, "Docker daemon", "Manages the containers")
+  System(machineAgent, "Machine Agent", "devsy agent workspace ...")
+  System(dockerd, "Docker daemon", "Manages workspace containers")
   Container_Boundary(ws, "Workspace") {
-    Component(runner, "devcontainer", "")
-    Component(agent, "Devsy Container Agent", "")
-    Component(ssh, "SSH server", "")
-    ContainerDb(dir, "Workspace Directory", "Volume", "")
+    Component(runner, "Dev Container", "User's devcontainer image")
+    Component(cAgent, "Container Agent", "devsy agent container daemon")
+    Component(ssh, "SSH Server", "Tunnelled stdio")
+    ContainerDb(dir, "Workspace Volume", "Volume", "Source + cache")
   }
 }
 
-BiRel(user, prov, " devsy workspace up ...")
-BiRel(prov, controlPlane, "secure provider specific tunnel")
-Rel(controlPlane, dockerd, "docker run ...")
+BiRel(user, prov, "devsy workspace up ...")
+BiRel(prov, machineAgent, "provider-specific secure tunnel")
+Rel(machineAgent, dockerd, "docker run / exec")
 Rel(dockerd, ws, "")
-Rel(agent, ssh, "")
-Rel(agent, runner, "")
+Rel(cAgent, ssh, "")
+Rel(cAgent, runner, "lifecycle hooks")
 BiRel_Right(user, ide, "SSH port forwarding")
 Rel(ctx, user, "")
 Rel(env, user, "")
-BiRel(controlPlane, agent, "SSH  ")
+BiRel(machineAgent, cAgent, "gRPC tunnel over stdio")
 @enduml

@@ -15,12 +15,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devsyconfig"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/gpg"
-	devsyconfig "github.com/devsy-org/devsy/pkg/loftconfig"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -346,23 +346,13 @@ func (t *tunnelServer) DevsyConfig(
 	ctx context.Context,
 	message *tunnel.Message,
 ) (*tunnel.Message, error) {
-	loftConfigRequest := &devsyconfig.DevsyConfigRequest{}
-	err := json.Unmarshal([]byte(message.Message), loftConfigRequest)
-	if err != nil {
-		return nil, fmt.Errorf("loft platform config request: %w", err)
+	if t.workspace == nil {
+		return nil, fmt.Errorf("devsy platform config request: no workspace bound to tunnel")
 	}
 
-	var response *devsyconfig.DevsyConfigResponse
-	if t.workspace != nil {
-		response, err = devsyconfig.ReadFromWorkspace(t.workspace)
-		if err != nil {
-			return nil, fmt.Errorf("read loft config: %w", err)
-		}
-	} else {
-		response, err = devsyconfig.Read(loftConfigRequest)
-		if err != nil {
-			return nil, fmt.Errorf("read loft config: %w", err)
-		}
+	response, err := devsyconfig.Read(t.workspace)
+	if err != nil {
+		return nil, fmt.Errorf("read devsy platform config: %w", err)
 	}
 
 	out, err := json.Marshal(response)

@@ -9,31 +9,33 @@ scale 1920x1080
 HIDE_STEREOTYPE()
 LAYOUT_TOP_DOWN()
 
-title Component diagram for Devsy with kubernetes
+title Component diagram for Devsy with the Kubernetes provider
 
-Person(user, "Devsy", "CLI or UI")
-System(prov, "Kubernetes Provider", "Devsy Provider")
+Person(user, "Devsy User", "CLI or Desktop")
+System(prov, "Kubernetes Provider", "Devsy provider, kubectl-based")
 Component(ide, "IDE", "Local IDE")
-Component(ctx, "Context", "Config, working dir etc.")
-Component(env, "Local Env", "Shell variables, git credentials etc.")
+Component(ctx, "Context", "Config, working dir, kubeconfig")
+Component(env, "Local Env", "Shell vars, git credentials")
 
 System_Boundary(cluster, "Kubernetes Cluster") {
-  System(controlPlane, "kube API server", "Manages the cluster")
+  System(controlPlane, "kube-apiserver", "Manages the cluster")
   System_Boundary(ns, "devsy namespace") {
-    Container_Boundary(ws, "Workspace") {
-      Component(runner, "Dev Container", "kaniko:executor")
-      Component(agent, "Agent", "")
-      Component(ssh, "SSH server", "")
-      ContainerDb(dir, "Workspace Directory", "Volume", "")
+    Container_Boundary(ws, "Workspace Pod") {
+      Component(init, "Init Container", "PVC + agent delivery")
+      Component(runner, "Dev Container", "User's devcontainer image")
+      Component(agent, "Container Agent", "devsy agent container daemon")
+      Component(ssh, "SSH Server", "Tunnelled stdio")
+      ContainerDb(dir, "Workspace PVC", "PersistentVolumeClaim", "")
     }
   }
 }
 
 BiRel_Right(user, prov, "devsy workspace up ...")
-BiRel(prov, controlPlane, " kubectl ...")
-BiRel(controlPlane, agent, " ")
-BiRel_Left(agent, ssh, "Tunnelled STDIO")
-Rel(agent, runner, " ")
+BiRel(prov, controlPlane, "kubectl exec / apply")
+BiRel(controlPlane, agent, "")
+BiRel_Left(agent, ssh, "Tunnelled stdio")
+Rel(agent, runner, "lifecycle hooks")
+Rel(init, runner, "delivers agent binary")
 BiRel(user, ide, "SSH port forwarding")
 Rel_Up(user, ctx, "")
 Rel_Left(user, env, "")

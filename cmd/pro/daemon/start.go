@@ -82,8 +82,8 @@ func (cmd *StartCmd) Run(
 		return err
 	}
 
-	loftConfigPath := filepath.Join(dir, "..", "devsy-config.json")
-	baseClient, err := client.InitClientFromPath(ctx, loftConfigPath)
+	devsyConfigPath := filepath.Join(dir, "..", "devsy-config.json")
+	baseClient, err := client.InitClientFromPath(ctx, devsyConfigPath)
 	if err != nil {
 		if daemon.IsAccessKeyNotFound(err) && isDesktopControlled {
 			printStatus(daemon.Status{State: daemon.DaemonStateStopped, LoginRequired: true})

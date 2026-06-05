@@ -974,7 +974,7 @@ func (cmd *StartCmd) prepare(ctx context.Context) error {
 func (cmd *StartCmd) resolveKubeConfig(
 	loader client.Client,
 ) (clientcmd.ClientConfig, error) {
-	loftConfig := loader.Config()
+	cfg := loader.Config()
 
 	kubeClientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
@@ -993,12 +993,12 @@ func (cmd *StartCmd) resolveKubeConfig(
 	contextToLoad := kubeConfig.CurrentContext
 	if cmd.Context != "" {
 		contextToLoad = cmd.Context
-	} else if loftConfig.LastInstallContext != "" && loftConfig.LastInstallContext != contextToLoad {
+	} else if cfg.LastInstallContext != "" && cfg.LastInstallContext != contextToLoad {
 		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
 			Question: "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. " +
 				"Choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
-			Options:      []string{contextToLoad, loftConfig.LastInstallContext},
+			Options:      []string{contextToLoad, cfg.LastInstallContext},
 		})
 		if err != nil {
 			return nil, err
@@ -1006,7 +1006,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 	}
 	cmd.Context = contextToLoad
 
-	loftConfig.LastInstallContext = contextToLoad
+	cfg.LastInstallContext = contextToLoad
 	_ = loader.Save()
 
 	return clientcmd.NewNonInteractiveClientConfig(

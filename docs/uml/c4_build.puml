@@ -9,29 +9,31 @@ scale 1920x1080
 LAYOUT_TOP_DOWN()
 HIDE_STEREOTYPE()
 
-title Component Diagram for Devsy Build Process
+title Component Diagram for the Devsy build process
 
-Person(user, "Devsy", "CLI or UI")
-Component(reg, "Registry", "Remote cache")
-Component(ctx, "Context", "Build options, driver, registry cache etc.")
-Component(cdf, "Compiled Dockerfile", "")
+Person(user, "Devsy User", "CLI or Desktop")
+Component(reg, "Container Registry", "Push target + remote cache")
+Component(buildkit, "BuildKit / Dockerless", "BuildKit for remote, Dockerless for in-cluster")
+Component(ctx, "Build Context", "Driver, registry cache, features, options")
+Component(merged, "Merged Devcontainer Config", "Compiled config + Dockerfile")
 
 Boundary(repo, "Git repo") {
-  Component(bctx, "Build context", "Source code, dot files etc.")
+  Component(bctx, "Workspace source", "Source code, dotfiles")
   Component(df, "Dockerfile", "")
 
   Boundary(cluster, "Dev Container Spec") {
-    Component(dc, ".devcontainer.json", "Define dev env")
-    Component(fa, "Feature A", "docker in docker")
-    Component(fb, "Feature B", "git stuff")
+    Component(dc, ".devcontainer.json", "Dev environment definition")
+    Component(fa, "Feature A", "docker-in-docker, language tools, ...")
+    Component(fb, "Feature B", "git, secrets, ...")
   }
 }
 
 Rel(repo, user, "")
 Rel(dc, user, "")
-Rel(fa, user, "")
-Rel(fb, user, "")
+Rel(fa, user, "merged into")
+Rel(fb, user, "merged into")
 Rel_Right(ctx, user, "")
-Rel(user, cdf, "")
-Rel(cdf, reg, "")
+Rel(user, merged, "compile devcontainer config")
+Rel(merged, buildkit, "build")
+Rel(buildkit, reg, "push image + cache layers")
 @enduml

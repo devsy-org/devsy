@@ -9,30 +9,31 @@ scale 1920x1080
 HIDE_STEREOTYPE()
 LAYOUT_TOP_DOWN()
 
-title Component diagram for Devsy
+title Component diagram for Devsy workspaces
 
-Person(user, "Devsy", "CLI or UI")
-System(prov, "Provider", "Devsy Provider")
-Component(ide, "IDE", "Local IDE")
-Component(ctx, "Context", "Config, working dir etc.")
-Component(env, "Local Env", "Shell variables, git credentials etc.")
-Component(dc, ".devcontainer.json", "Dev container spec")
-Component(git, "Git repo", "Project repo")
+Person(user, "Devsy User", "CLI or Desktop")
+System(prov, "Devsy Provider", "docker / kubernetes / custom driver")
+Component(ide, "IDE", "VS Code, JetBrains, Fleet, Jupyter, ...")
+Component(ctx, "Context", "Active context, working dir, config")
+Component(env, "Local Env", "Shell vars, git/docker credentials")
+Component(dc, ".devcontainer.json", "Dev container spec + features")
+Component(git, "Git repo", "Project source")
 
-System_Boundary(cluster, "Machine / Cluster") {
-  System(controlPlane, "Control plane", "Tunnels connection")
+System_Boundary(cluster, "Machine or Cluster") {
+  System(machineAgent, "Machine Agent", "devsy agent workspace ...")
   Container_Boundary(ws, "Workspace") {
-    Component(runner, "Dev container", "")
-    Component(agent, "Agent", "")
-    Component(ssh, "SSH server", "")
+    Component(runner, "Dev Container", "User's devcontainer image")
+    Component(cAgent, "Container Agent", "devsy agent container ...")
+    Component(ssh, "SSH Server", "Tunnelled into the container")
+    ContainerDb(dir, "Workspace Volume", "Volume", "Source + build cache")
   }
 }
 
 BiRel(user, prov, "devsy workspace up ...")
-BiRel(prov, controlPlane, "")
-BiRel(controlPlane, agent, " gRPC")
-BiRel_Left(agent, ssh, "Tunnelled STDIO")
-Rel(agent, runner, "")
+BiRel(prov, machineAgent, "provider tunnel")
+BiRel(machineAgent, cAgent, "gRPC tunnel over stdio")
+BiRel_Left(cAgent, ssh, "stdio")
+Rel(cAgent, runner, "lifecycle hooks")
 BiRel_Left(user, ide, "SSH port forwarding")
 Rel(ctx, user, "")
 Rel(env, user, "")

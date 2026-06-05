@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	defaultTimeout                    = 10 * time.Minute
-	LoftPlatformConfigFileName string = "devsy-config.json"
+	defaultTimeout                     = 10 * time.Minute
+	DevsyPlatformConfigFileName string = "devsy-config.json"
 )
 
 func Timeout() time.Duration {
@@ -33,11 +33,9 @@ func ReadConfig(contextName string, providerName string) (*client.Config, error)
 		return nil, err
 	}
 
-	configPath := filepath.Join(providerDir, LoftPlatformConfigFileName)
+	configPath := filepath.Join(providerDir, DevsyPlatformConfigFileName)
 
-	// Check if given context and provider have Loft Platform configuration
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		// If not just return empty response
 		return nil, err
 	}
 
@@ -46,11 +44,11 @@ func ReadConfig(contextName string, providerName string) (*client.Config, error)
 		return nil, err
 	}
 
-	loftConfig := &client.Config{}
-	err = json.Unmarshal(content, loftConfig)
+	cfg := &client.Config{}
+	err = json.Unmarshal(content, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return loftConfig, nil
+	return cfg, nil
 }
