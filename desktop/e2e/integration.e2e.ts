@@ -307,6 +307,11 @@ test.describe
       // Click Save
       await page.locator('[data-slot="workspace-rename-save"]').click()
 
+      // ConfirmDialog warns that the existing container will be reset.
+      const confirmDialog = page.locator('[data-slot="dialog-content"]')
+      await confirmDialog.waitFor({ timeout: 5000 })
+      await confirmDialog.getByRole("button", { name: "Rename" }).click()
+
       // Wait for rename to complete and navigation to new URL
       await page.waitForTimeout(4000)
 
