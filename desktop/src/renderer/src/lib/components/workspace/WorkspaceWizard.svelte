@@ -16,13 +16,21 @@ import { Label } from "$lib/components/ui/label/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
+import * as Tabs from "$lib/components/ui/tabs/index.js"
+import * as Select from "$lib/components/ui/select/index.js"
 import { Progress } from "$lib/components/ui/progress/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
+import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
-import { workspaceUp } from "$lib/ipc/commands.js"
+import { workspaceUp, openDirectoryDialog } from "$lib/ipc/commands.js"
+import { buildWorkspaceSource } from "$lib/utils/workspace-source.js"
+import type {
+  WorkspaceSourceType,
+  GitRefType,
+} from "$lib/utils/workspace-source.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
@@ -134,11 +142,41 @@ let currentStep = $state<Step>("provider")
 let selectedProvider = $state(
   $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
 )
-let source = $state("")
+let sourceType = $state<WorkspaceSourceType>("git")
+let repoUrl = $state("")
+let localPath = $state("")
+let imageRef = $state("")
+let refType = $state<GitRefType>("branch")
+let refValue = $state("")
+let subPath = $state("")
+let devcontainerPath = $state("")
+let prebuildRepository = $state("")
 let workspaceFolder = $state("")
 let advancedOpen = $state(false)
 let selectedIde = $state("none")
 let workspaceName = $state("")
+
+let assembled = $derived(
+  buildWorkspaceSource({
+    sourceType,
+    repoUrl,
+    localPath,
+    imageRef,
+    refType,
+    refValue,
+    subPath,
+    devcontainerPath,
+    prebuildRepository,
+  }),
+)
+
+let primarySourceValue = $derived(
+  sourceType === "git"
+    ? repoUrl.trim()
+    : sourceType === "local"
+      ? localPath.trim()
+      : imageRef.trim(),
+)
 
 // IDE combobox state
 let ideComboOpen = $state(false)
@@ -174,11 +212,12 @@ let filteredIdes = $derived(
 
 let resolvedId = $derived(
   workspaceName.trim() ||
-    source
+    assembled.source
       .trim()
       .split("/")
       .pop()
-      ?.replace(/\.git$/, "") ||
+      ?.replace(/\.git$/, "")
+      ?.replace(/@.*$/, "") ||
     "",
 )
 
@@ -229,7 +268,15 @@ function clearWatchdog() {
 function reset() {
   currentStep = "provider"
   selectedProvider = $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
-  source = ""
+  sourceType = "git"
+  repoUrl = ""
+  localPath = ""
+  imageRef = ""
+  refType = "branch"
+  refValue = ""
+  subPath = ""
+  devcontainerPath = ""
+  prebuildRepository = ""
   workspaceFolder = ""
   advancedOpen = false
   selectedIde = "none"
