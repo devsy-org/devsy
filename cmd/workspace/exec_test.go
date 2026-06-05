@@ -170,7 +170,9 @@ func TestExecCmd_ParsesPositionalName(t *testing.T) {
 	var gotCmdArgs []string
 
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	// Replace RunE with a capture that mirrors the real split logic's outputs.
+	// Production RunE calls cmd.Run, which reaches Docker, so it can't run in a
+	// unit test. We mirror the ArgsLenAtDash split here to lock in the contract;
+	// the resolution behavior itself is covered by TestResolveExecTarget.
 	execCmd.RunE = func(cobraCmd *cobra.Command, args []string) error {
 		dash := cobraCmd.ArgsLenAtDash()
 		if dash >= 0 {
