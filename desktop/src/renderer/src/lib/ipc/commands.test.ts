@@ -10,6 +10,7 @@ import {
   machineCreate,
   machineDelete,
   machineStatus,
+  openDirectoryDialog,
   providerAdd,
   providerSetOptions,
   sshKeyGenerate,
@@ -95,6 +96,30 @@ describe("IPC commands", () => {
         workspaceId: "ws-1",
       })
       expect(result).toBe('{"state":"Running"}')
+    })
+
+    it("workspaceUp forwards devcontainerPath and prebuildRepositories", async () => {
+      mockInvoke.mockResolvedValue("cmd-id")
+      await workspaceUp({
+        source: "github.com/org/repo",
+        devcontainerPath: ".devcontainer/devcontainer.json",
+        prebuildRepositories: "ghcr.io/org/prebuilds",
+      })
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "workspace_up",
+        expect.objectContaining({
+          source: "github.com/org/repo",
+          devcontainerPath: ".devcontainer/devcontainer.json",
+          prebuildRepositories: "ghcr.io/org/prebuilds",
+        }),
+      )
+    })
+
+    it("openDirectoryDialog invokes dialog_open_directory", async () => {
+      mockInvoke.mockResolvedValue("/home/me/proj")
+      const result = await openDirectoryDialog()
+      expect(mockInvoke).toHaveBeenCalledWith("dialog_open_directory")
+      expect(result).toBe("/home/me/proj")
     })
   })
 

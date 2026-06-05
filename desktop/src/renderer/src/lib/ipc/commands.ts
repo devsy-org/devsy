@@ -26,6 +26,8 @@ export async function workspaceUp(params: {
   ideLaunch?: "auto" | "headless" | "skip"
   debug?: boolean
   workspaceFolder?: string
+  devcontainerPath?: string
+  prebuildRepositories?: string
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }
@@ -74,6 +76,10 @@ export async function workspaceSetIde(
   ide: string,
 ): Promise<void> {
   return invoke("workspace_set_ide", { workspaceId, ide })
+}
+
+export async function openDirectoryDialog(): Promise<string | null> {
+  return invoke<string | null>("dialog_open_directory")
 }
 
 // Provider commands
