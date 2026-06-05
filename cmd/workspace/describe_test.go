@@ -114,3 +114,62 @@ func TestDescribeCmd_JSONOutput(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "docker", provBlock["name"])
 }
+
+func TestDescribeCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	cfg := &provider.Workspace{
+		ID:       "node-js",
+		Context:  "default",
+		Provider: provider.WorkspaceProviderConfig{Name: "docker"},
+		IDE:      provider.WorkspaceIDEConfig{Name: "vscode"},
+		Source: provider.WorkspaceSource{
+			GitRepository: "github.com/acme/node-js",
+			GitBranch:     "main",
+		},
+		Machine: provider.WorkspaceMachineConfig{ID: "node-js"},
+	}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
+	fake := &fakeWorkspaceClient{workspace: "node-js", config: cfg, status: client.StatusRunning}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Run(t.Context(), fake))
+	})
+
+	assert.Contains(t, out, "node-js")
+	assert.Contains(t, out, "Running")
+	assert.Contains(t, out, "docker")
+	assert.Contains(t, out, "vscode")
+	assert.Contains(t, out, "git:github.com/acme/node-js@main")
+}
+
+func TestDescribeCmd_PlainOmitsEmptyFields(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	cfg := &provider.Workspace{
+		ID:     "node-js",
+		Source: provider.WorkspaceSource{LocalFolder: "/home/me/project"},
+		// No IDE, no Machine, no Context.
+	}
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
+	fake := &fakeWorkspaceClient{workspace: "node-js", config: cfg, status: client.StatusStopped}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Run(t.Context(), fake))
+	})
+
+	assert.Contains(t, out, "/home/me/project")
+	assert.NotContains(t, out, "IDE")
+	assert.NotContains(t, out, "Machine")
+}
+
+func TestDescribeCmd_NilConfigErrors(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "plain"}}
+	fake := &fakeWorkspaceClient{workspace: "node-js", config: nil, status: client.StatusRunning}
+
+	err := cmd.Run(t.Context(), fake)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no configuration")
+}
