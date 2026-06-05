@@ -372,7 +372,10 @@ func (cmd *UpCmd) executeDevsyUp(
 		return nil, fmt.Errorf("start workspace: %w", err)
 	}
 	if result == nil {
-		return nil, fmt.Errorf("did not receive a result back from agent")
+		return nil, fmt.Errorf(
+			"agent exited without sending a result; the underlying error was logged " +
+				"to the agent's stderr above — re-run with --debug for the full trace",
+		)
 	}
 	if cmd.Platform.Enabled {
 		return nil, nil

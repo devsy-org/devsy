@@ -422,13 +422,13 @@ func CloneRepositoryForWorkspace(
 	}
 
 	// run git command
-	gitInfo := git.NewGitInfo(
-		source.GitRepository,
-		source.GitBranch,
-		source.GitCommit,
-		source.GitPRReference,
-		source.GitSubPath,
-	)
+	gitInfo := &git.GitInfo{
+		Repository: source.GitRepository,
+		Branch:     source.GitBranch,
+		Commit:     source.GitCommit,
+		PR:         source.GitPRReference,
+		SubPath:    source.GitSubPath,
+	}
 
 	// should run with platform git cache?
 	platformGitcacheEnabled := options.Platform.Enabled && options.Platform.RunnerSocket != ""

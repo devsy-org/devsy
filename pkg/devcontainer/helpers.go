@@ -44,18 +44,16 @@ func FindDevcontainerFiles(
 	}
 
 	// git repo
-	gitRepository, gitPRReference, gitBranch, gitCommit, gitSubDir := git.NormalizeRepository(
-		rawSource,
-	)
+	info := git.NormalizeRepository(rawSource)
 	if strings.HasSuffix(rawSource, ".git") ||
-		git.PingRepository(gitRepository, git.GetDefaultExtraEnv(strictHostKeyChecking)) {
+		git.PingRepository(info.Repository, git.GetDefaultExtraEnv(strictHostKeyChecking)) {
 		log.Debug("Git repository detected")
 		opts := gitRepoFindOptions{
-			gitRepository:         gitRepository,
-			gitPRReference:        gitPRReference,
-			gitBranch:             gitBranch,
-			gitCommit:             gitCommit,
-			gitSubDir:             gitSubDir,
+			gitRepository:         info.Repository,
+			gitPRReference:        info.PR,
+			gitBranch:             info.Branch,
+			gitCommit:             info.Commit,
+			gitSubDir:             info.SubPath,
 			tmpDirPath:            tmpDirPath,
 			strictHostKeyChecking: strictHostKeyChecking,
 			maxDepth:              maxDepth,
@@ -122,13 +120,13 @@ func findFilesInGitRepo(
 		IsGitRepository: true,
 	}
 
-	gitInfo := git.NewGitInfo(
-		opts.gitRepository,
-		opts.gitBranch,
-		opts.gitCommit,
-		opts.gitPRReference,
-		opts.gitSubDir,
-	)
+	gitInfo := &git.GitInfo{
+		Repository: opts.gitRepository,
+		Branch:     opts.gitBranch,
+		Commit:     opts.gitCommit,
+		PR:         opts.gitPRReference,
+		SubPath:    opts.gitSubDir,
+	}
 	log.Debugf("Cloning Git repository into %s", opts.tmpDirPath)
 	err := git.CloneRepository(
 		ctx,

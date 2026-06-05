@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"net/url"
 	"strings"
 	"time"
 
@@ -367,13 +368,16 @@ func (w WorkspaceSource) Type() string {
 
 func ParseWorkspaceSource(source string) *WorkspaceSource {
 	if after, ok := strings.CutPrefix(source, WorkspaceSourceGit); ok {
-		gitRepo, gitPRReference, gitBranch, gitCommit, gitSubdir := git.NormalizeRepository(after)
+		info := git.NormalizeRepository(after)
+		if !isPlausibleGitSource(info.Repository) {
+			return nil
+		}
 		return &WorkspaceSource{
-			GitRepository:  gitRepo,
-			GitPRReference: gitPRReference,
-			GitBranch:      gitBranch,
-			GitCommit:      gitCommit,
-			GitSubPath:     gitSubdir,
+			GitRepository:  info.Repository,
+			GitPRReference: info.PR,
+			GitBranch:      info.Branch,
+			GitCommit:      info.Commit,
+			GitSubPath:     info.SubPath,
 		}
 	} else if after, ok := strings.CutPrefix(source, WorkspaceSourceLocal); ok {
 		after = util.ExpandTilde(after)
@@ -391,6 +395,35 @@ func ParseWorkspaceSource(source string) *WorkspaceSource {
 	}
 
 	return nil
+}
+
+var gitURLSchemes = map[string]bool{"http": true, "https": true, "ssh": true, "git": true}
+
+// isPlausibleGitSource returns true when s looks like a git repository
+// reference. Accepts HTTP(S)/SSH/file URLs and the scp-like "git@host:path"
+// shape; rejects empty strings and obvious garbage so callers fail early
+// instead of constructing a clone URL that git itself rejects with a
+// confusing parser error.
+func isPlausibleGitSource(s string) bool {
+	if s == "" {
+		return false
+	}
+	if strings.HasPrefix(s, "git@") {
+		return strings.Contains(s, ":")
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	if u.Scheme == "file" {
+		return u.Path != ""
+	}
+	if !gitURLSchemes[u.Scheme] || u.Host == "" {
+		return false
+	}
+	// Catch nested schemes like "https://git:https://host/repo" — Host would
+	// be "git" and a real port would be missing.
+	return !strings.Contains(u.Host, ":") || u.Port() != ""
 }
 
 func (w *Workspace) IsPro() bool {

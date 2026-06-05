@@ -1,7 +1,9 @@
 package log
 
 import (
+	"io"
 	"os"
+	"sync"
 	"sync/atomic"
 
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
@@ -10,7 +12,12 @@ import (
 	"golang.org/x/term"
 )
 
-var sugar atomic.Pointer[zap.SugaredLogger]
+var (
+	sugar atomic.Pointer[zap.SugaredLogger]
+	// extraSinks fans every log line out to writers added by AddSink. The
+	// stderr core remains the primary destination; sinks are additive.
+	extraSinks = &writerFanout{}
+)
 
 func init() {
 	sugar.Store(zap.NewNop().Sugar())
@@ -28,13 +35,59 @@ type Config struct {
 func Init(cfg Config) {
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
-	core := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
+	stderrCore := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
+	// A separate core writes to the fanout sink with the same level/encoder
+	// so AddSink consumers see the same output stderr does.
+	sinkCore := zapcore.NewCore(resolveEncoder(cfg.Format), extraSinks, level)
+	core := zapcore.NewTee(stderrCore, sinkCore)
 
-	opts := []zap.Option{
-		zap.AddStacktrace(zapcore.FatalLevel),
-	}
-	logger := zap.New(core, opts...)
+	logger := zap.New(core, zap.AddStacktrace(zapcore.FatalLevel))
 	sugar.Store(logger.Sugar())
+}
+
+// AddSink attaches w as an additional destination for log output for the
+// duration of the returned remove func. Each line of log output is written to
+// w in addition to stderr. Multiple concurrent sinks are supported.
+//
+// w must be safe for concurrent Write calls — AddSink does not serialize
+// writes to a single sink. io.Pipe writers and io.MultiWriter wrapping
+// pre-serialized destinations are both fine; bare bytes.Buffer is not.
+func AddSink(w io.Writer) (remove func()) {
+	return extraSinks.add(w)
+}
+
+// writerFanout is a zapcore.WriteSyncer that dispatches every Write to a
+// dynamic set of writers. Safe for concurrent use.
+type writerFanout struct {
+	mu      sync.RWMutex
+	writers []io.Writer
+}
+
+func (f *writerFanout) Write(p []byte) (int, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, w := range f.writers {
+		_, _ = w.Write(p)
+	}
+	return len(p), nil
+}
+
+func (*writerFanout) Sync() error { return nil }
+
+func (f *writerFanout) add(w io.Writer) (remove func()) {
+	f.mu.Lock()
+	f.writers = append(f.writers, w)
+	f.mu.Unlock()
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for i, x := range f.writers {
+			if x == w {
+				f.writers = append(f.writers[:i], f.writers[i+1:]...)
+				return
+			}
+		}
+	}
 }
 
 func resolveLevel(cfg Config) zapcore.Level {

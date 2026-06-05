@@ -559,18 +559,16 @@ func resolveWorkspaceConfig(
 	}
 
 	// is git?
-	gitRepository, gitPRReference, gitBranch, gitCommit, gitSubdir := git.NormalizeRepository(
-		params.name,
-	)
+	info := git.NormalizeRepository(params.name)
 	if strings.HasSuffix(params.name, ".git") ||
-		git.PingRepository(gitRepository, git.GetDefaultExtraEnv(false)) {
+		git.PingRepository(info.Repository, git.GetDefaultExtraEnv(false)) {
 		workspace.Picture = getProjectImage(params.name)
 		workspace.Source = providerpkg.WorkspaceSource{
-			GitRepository:  gitRepository,
-			GitPRReference: gitPRReference,
-			GitBranch:      gitBranch,
-			GitCommit:      gitCommit,
-			GitSubPath:     gitSubdir,
+			GitRepository:  info.Repository,
+			GitPRReference: info.PR,
+			GitBranch:      info.Branch,
+			GitCommit:      info.Commit,
+			GitSubPath:     info.SubPath,
 		}
 
 		return workspace, nil
@@ -587,20 +585,20 @@ func resolveWorkspaceConfig(
 
 	// fall back to Git repository
 	workspace.Source = providerpkg.WorkspaceSource{GitRepository: params.name}
-	if gitRepository != "" {
-		workspace.Source.GitRepository = gitRepository
+	if info.Repository != "" {
+		workspace.Source.GitRepository = info.Repository
 	}
-	if gitPRReference != "" {
-		workspace.Source.GitPRReference = gitPRReference
+	if info.PR != "" {
+		workspace.Source.GitPRReference = info.PR
 	}
-	if gitBranch != "" {
-		workspace.Source.GitBranch = gitBranch
+	if info.Branch != "" {
+		workspace.Source.GitBranch = info.Branch
 	}
-	if gitCommit != "" {
-		workspace.Source.GitCommit = gitCommit
+	if info.Commit != "" {
+		workspace.Source.GitCommit = info.Commit
 	}
-	if gitSubdir != "" {
-		workspace.Source.GitSubPath = gitSubdir
+	if info.SubPath != "" {
+		workspace.Source.GitSubPath = info.SubPath
 	}
 
 	return workspace, nil

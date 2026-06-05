@@ -223,17 +223,25 @@ func TestNormalizeRepository(t *testing.T) {
 			expectedCommit:      "",
 			expectedSubpath:     "/test/path",
 		},
+		{
+			// WorkspaceSource.String emits "git:<url>"; round-tripping that
+			// through NormalizeRepository must not produce "https://git:https://...".
+			in:                  "git:https://github.com/devsy-org/devsy.git",
+			expectedRepo:        "https://github.com/devsy-org/devsy.git",
+			expectedPRReference: "",
+			expectedBranch:      "",
+			expectedCommit:      "",
+			expectedSubpath:     "",
+		},
 	}
 
 	for _, testCase := range testCases {
-		outRepo, outPRReference, outBranch, outCommit, outSubpath := NormalizeRepository(
-			testCase.in,
-		)
-		assert.Check(t, cmp.Equal(testCase.expectedRepo, outRepo))
-		assert.Check(t, cmp.Equal(testCase.expectedPRReference, outPRReference))
-		assert.Check(t, cmp.Equal(testCase.expectedBranch, outBranch))
-		assert.Check(t, cmp.Equal(testCase.expectedCommit, outCommit))
-		assert.Check(t, cmp.Equal(testCase.expectedSubpath, outSubpath))
+		got := NormalizeRepository(testCase.in)
+		assert.Check(t, cmp.Equal(testCase.expectedRepo, got.Repository))
+		assert.Check(t, cmp.Equal(testCase.expectedPRReference, got.PR))
+		assert.Check(t, cmp.Equal(testCase.expectedBranch, got.Branch))
+		assert.Check(t, cmp.Equal(testCase.expectedCommit, got.Commit))
+		assert.Check(t, cmp.Equal(testCase.expectedSubpath, got.SubPath))
 	}
 }
 

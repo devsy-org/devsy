@@ -35,8 +35,10 @@ type workspaceStatusInput struct {
 
 func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_list",
-		Description: "List all Devsy workspaces.",
+		Name: "workspace_list",
+		Description: "List all Devsy workspaces with their provider, IDE, and source. " +
+			"The 'source' field is the canonical workspace-source string and is valid " +
+			"input to workspace_create's 'source' argument.",
 	}, safeHandler(func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ workspaceListInput,
 	) (*sdkmcp.CallToolResult, workspaceListOutput, error) {
 		out, err := handleWorkspaceList(ctx, g)
@@ -47,8 +49,11 @@ func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_status",
-		Description: "Get detailed status for a workspace by name.",
+		Name: "workspace_status",
+		Description: "Get detailed status for a workspace by name. Use this to check " +
+			"on a workspace after workspace_create returns or if a long-running " +
+			"workspace_create call timed out client-side (the server-side operation " +
+			"may have continued and succeeded).",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in workspaceStatusInput,
 	) (*sdkmcp.CallToolResult, any, error) {
@@ -135,20 +140,26 @@ type createInput struct {
 
 func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_start",
-		Description: "Start (or resume) an existing workspace by name.",
+		Name: "workspace_start",
+		Description: "Start (or resume) an existing workspace by name. The name must " +
+			"match a workspace from workspace_list; use workspace_create to make a new one. " +
+			"May take a minute or more while the container starts.",
 	}, safeHandler(func(
-		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
+		ctx context.Context, req *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
-		return opResultHandler(func() error { return startWorkspace(ctx, g, in.Name) })
+		return opResultHandler(func() error {
+			return streamLogsToSession(ctx, req.Session, func() error {
+				return startWorkspace(ctx, g, in.Name)
+			})
+		})
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_stop",
-		Description: "Stop a running workspace by name.",
+		Description: "Stop a running workspace by name. The name must match a workspace from workspace_list.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
@@ -159,8 +170,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_delete",
-		Description: "Delete a workspace by name. Pass force=true to force-delete even if not found remotely.",
+		Name: "workspace_delete",
+		Description: "Delete a workspace by name (must match workspace_list). " +
+			"Pass force=true to force-delete even if the remote state is missing.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
@@ -171,14 +183,30 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}))
 
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
-		Name:        "workspace_create",
-		Description: "Create and start a new workspace from a git URL, local path, or container image.",
+		Name: "workspace_create",
+		Description: "Create and start a new workspace. May take several minutes on " +
+			"first use (image pull, git clone, post-create commands); if the call " +
+			"times out client-side, the server-side operation likely continued — " +
+			"poll workspace_status to check.\n" +
+			"\n" +
+			"source: a git URL (https://, git@host:repo, ssh://, or git:https://... " +
+			"as emitted by workspace_list), an absolute local path, or a container " +
+			"image reference.\n" +
+			"provider: the name of a configured provider; see provider_list. " +
+			"Defaults to the active context's default provider.",
 	}, safeHandler(func(
-		ctx context.Context, _ *sdkmcp.CallToolRequest, in createInput,
+		ctx context.Context, req *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {
-		out, err := createWorkspace(ctx, g, in)
-		if err != nil {
-			return errorResult(err), nil, nil
+		var (
+			out any
+			err error
+		)
+		streamErr := streamLogsToSession(ctx, req.Session, func() error {
+			out, err = createWorkspace(ctx, g, in)
+			return err
+		})
+		if streamErr != nil {
+			return errorResult(streamErr), nil, nil
 		}
 		return nil, out, nil
 	}))
