@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -61,23 +61,35 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 	case output.ModePlain:
 		switch machineStatus {
 		case client.StatusStopped:
-			log.Infof(
-				"Machine %q is %q, you can start it via 'devsy machine start %s'",
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Machine %q is %q, you can start it via 'devsy machine start %s'\n",
 				machineClient.Machine(),
 				machineStatus,
 				machineClient.Machine(),
 			)
 		case client.StatusBusy:
-			log.Infof(
+			_, _ = fmt.Fprintf(
+				os.Stdout,
 				"Machine %q is %q, which means its currently unaccessible. "+
-					"This is usually resolved by waiting a couple of minutes",
+					"This is usually resolved by waiting a couple of minutes\n",
 				machineClient.Machine(),
 				machineStatus,
 			)
 		case client.StatusNotFound:
-			log.Infof("Machine %q is %q", machineClient.Machine(), machineStatus)
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Machine %q is %q\n",
+				machineClient.Machine(),
+				machineStatus,
+			)
 		default:
-			log.Infof("Machine %q is %q", machineClient.Machine(), machineStatus)
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Machine %q is %q\n",
+				machineClient.Machine(),
+				machineStatus,
+			)
 		}
 	case output.ModeJSON:
 		out, err := json.Marshal(struct {

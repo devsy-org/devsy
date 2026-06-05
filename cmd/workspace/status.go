@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/completion"
@@ -11,7 +12,6 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -86,28 +86,36 @@ func (cmd *StatusCmd) Run(
 	case output.ModePlain:
 		switch instanceStatus {
 		case client2.StatusStopped:
-			log.Infof(
-				"Workspace %q is %q, you can start it via 'devsy workspace up %s'",
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Workspace %q is %q, you can start it via 'devsy workspace up %s'\n",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		case client2.StatusBusy:
-			log.Infof(
+			_, _ = fmt.Fprintf(
+				os.Stdout,
 				"Workspace %q is %q, which means its currently unaccessible. "+
-					"This is usually resolved by waiting a couple of minutes",
+					"This is usually resolved by waiting a couple of minutes\n",
 				client.Workspace(),
 				instanceStatus,
 			)
 		case client2.StatusNotFound:
-			log.Infof(
-				"Workspace %q is %q, you can create it via 'devsy workspace up %s'",
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Workspace %q is %q, you can create it via 'devsy workspace up %s'\n",
 				client.Workspace(),
 				instanceStatus,
 				client.Workspace(),
 			)
 		default:
-			log.Infof("Workspace %q is %q", client.Workspace(), instanceStatus)
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"Workspace %q is %q\n",
+				client.Workspace(),
+				instanceStatus,
+			)
 		}
 	case output.ModeJSON:
 		out, err := json.Marshal(&client2.WorkspaceStatus{
