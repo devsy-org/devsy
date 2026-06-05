@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
@@ -21,6 +22,7 @@ import (
 type ExecCmd struct {
 	*flags.GlobalFlags
 
+	WorkspaceName       string
 	WorkspaceFolder     string
 	ContainerID         string
 	DockerPath          string
@@ -34,12 +36,39 @@ type ExecCmd struct {
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ExecCmd{GlobalFlags: f}
 	execCmd := &cobra.Command{
-		Use:   "exec --workspace-folder <path> -- <cmd> [args...]",
+		Use:   "exec [workspace-name] [flags] -- <cmd> [args...]",
 		Short: "Executes a command in a running workspace container",
 		Args:  cobra.MinimumNArgs(1),
+		ValidArgsFunction: func(
+			cobraCmd *cobra.Command, args []string, toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
+			return completion.GetWorkspaceSuggestions(
+				cobraCmd.Root(), cmd.Context, cmd.Provider, args, toComplete, cmd.Owner,
+			)
+		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			return cmd.Run(ctx, args)
+
+			dash := cobraCmd.ArgsLenAtDash()
+			var nameArgs, cmdArgs []string
+			if dash >= 0 {
+				nameArgs = args[:dash]
+				cmdArgs = args[dash:]
+			} else {
+				cmdArgs = args
+			}
+
+			if len(nameArgs) > 1 {
+				return fmt.Errorf("expected at most one workspace name, got %d", len(nameArgs))
+			}
+			if len(nameArgs) == 1 {
+				cmd.WorkspaceName = nameArgs[0]
+			}
+			if len(cmdArgs) == 0 {
+				return fmt.Errorf("a command to execute is required after --")
+			}
+
+			return cmd.Run(ctx, cmdArgs)
 		},
 	}
 
@@ -111,10 +140,6 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		log.Warnf("--skip-post-create is accepted but not yet implemented for exec")
 	}
 
-	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
-		return fmt.Errorf("either --workspace-folder or --container-id must be provided")
-	}
-
 	if err := cmd.validateRemoteEnv(); err != nil {
 		return err
 	}
@@ -126,8 +151,27 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// Must run before the container-id branch below, else name+container-id would
+	// silently take the container path instead of erroring.
+	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
+		return errFolderNameConflict
+	}
+
 	if cmd.ContainerID != "" {
 		return cmd.runWithContainerID(ctx, args)
+	}
+
+	cwd := ""
+	if cmd.WorkspaceName == "" && cmd.WorkspaceFolder == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("determine current directory: %w", err)
+		}
+	}
+	getArgs, err := resolveExecTarget(cmd, cwd)
+	if err != nil {
+		return err
 	}
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
@@ -137,7 +181,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 
 	client, err := workspace2.Get(ctx, workspace2.GetOptions{
 		DevsyConfig: devsyConfig,
-		Args:        []string{cmd.WorkspaceFolder},
+		Args:        getArgs,
 		Owner:       cmd.Owner,
 	})
 	if err != nil {
@@ -252,6 +296,26 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 		})
 	}
 	return nil
+}
+
+var errFolderNameConflict = fmt.Errorf(
+	"specify either a workspace name or --workspace-folder/--container-id, not both",
+)
+
+// resolveExecTarget decides what string is handed to workspace.Get.
+// Precedence: explicit name, then --workspace-folder, then the current dir.
+func resolveExecTarget(cmd *ExecCmd, cwd string) ([]string, error) {
+	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
+		return nil, errFolderNameConflict
+	}
+	switch {
+	case cmd.WorkspaceName != "":
+		return []string{cmd.WorkspaceName}, nil
+	case cmd.WorkspaceFolder != "":
+		return []string{cmd.WorkspaceFolder}, nil
+	default:
+		return []string{cwd}, nil
+	}
 }
 
 func (cmd *ExecCmd) validateRemoteEnv() error {

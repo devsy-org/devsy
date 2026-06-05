@@ -5,6 +5,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,12 +54,17 @@ func TestValidateRemoteEnv_EmptyKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be KEY=VALUE format")
 }
 
-func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
+func TestNewExecCmd_DefaultsToCwdWhenNoTarget(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	execCmd.SetArgs([]string{"--", testCmdEcho, testCmdHello})
 	err := execCmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "either --workspace-folder or --container-id must be provided")
+	// No target now defaults to cwd instead of erroring; assert the old hard error is gone.
+	if err != nil {
+		assert.NotContains(
+			t, err.Error(),
+			"either --workspace-folder or --container-id must be provided",
+		)
+	}
 }
 
 func TestNewExecCmd_RequiresArgs(t *testing.T) {
@@ -67,6 +73,22 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 	err := execCmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires at least 1 arg")
+}
+
+func TestNewExecCmd_RejectsMultipleNames(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd.SetArgs([]string{"ws-one", "ws-two", "--", testCmdEcho, testCmdHello})
+	err := execCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most one workspace name")
+}
+
+func TestNewExecCmd_RequiresCommandAfterDash(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd.SetArgs([]string{"my-ws", "--"})
+	err := execCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a command to execute is required after --")
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
@@ -88,16 +110,15 @@ func TestExecCmd_DockerPathFlag(t *testing.T) {
 
 func TestExecCmd_ContainerIDTakesPrecedenceOverWorkspaceFolder(t *testing.T) {
 	cmd := &ExecCmd{
-		GlobalFlags:     &flags.GlobalFlags{},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "auto"},
 		WorkspaceFolder: "/some/folder",
-		ContainerID:     "abc123",
+		ContainerID:     "nonexistent-container-id-12345",
 	}
-	// When both are set, ContainerID path is taken (runWithContainerID).
-	// We verify the logic by checking the Run method routes to containerID path.
-	// This test verifies the routing condition.
-	assert.NotEmpty(t, cmd.ContainerID)
-	assert.NotEmpty(t, cmd.WorkspaceFolder)
-	// The Run method checks `if cmd.ContainerID != ""` first, so container-id wins.
+	// With both set, Run must take the container-id branch: the error references the
+	// container id, proving it did not try to resolve the folder via workspace.Get.
+	err := cmd.Run(t.Context(), []string{testCmdEcho, testCmdHello})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent-container-id-12345")
 }
 
 func TestExecCmd_NonExistentContainerID(t *testing.T) {
@@ -147,4 +168,91 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	val, err := execCmd.Flags().GetBool("skip-post-create")
 	require.NoError(t, err)
 	assert.True(t, val)
+}
+
+func TestExecCmd_ParsesPositionalName(t *testing.T) {
+	var gotName string
+	var gotCmdArgs []string
+
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	// Production RunE calls cmd.Run, which reaches Docker, so it can't run in a
+	// unit test. We mirror the ArgsLenAtDash split here to lock in the contract;
+	// the resolution behavior itself is covered by TestResolveExecTarget.
+	execCmd.RunE = func(cobraCmd *cobra.Command, args []string) error {
+		dash := cobraCmd.ArgsLenAtDash()
+		if dash >= 0 {
+			if dash == 1 {
+				gotName = args[0]
+			}
+			gotCmdArgs = args[dash:]
+		} else {
+			gotCmdArgs = args
+		}
+		return nil
+	}
+	execCmd.SetArgs([]string{"my-ws", "--", testCmdEcho, testCmdHello})
+
+	require.NoError(t, execCmd.Execute())
+	assert.Equal(t, "my-ws", gotName)
+	assert.Equal(t, []string{testCmdEcho, testCmdHello}, gotCmdArgs)
+}
+
+func TestResolveExecTarget(t *testing.T) {
+	const cwd = "/current/dir"
+	const testWsName = "my-ws"
+	const testFolder = "/some/path"
+
+	cases := []struct {
+		name    string
+		cmd     *ExecCmd
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "name only",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceName: testWsName},
+			want: []string{testWsName},
+		},
+		{
+			name: "folder only",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}, WorkspaceFolder: testFolder},
+			want: []string{testFolder},
+		},
+		{
+			name: "cwd default when nothing specified",
+			cmd:  &ExecCmd{GlobalFlags: &flags.GlobalFlags{}},
+			want: []string{cwd},
+		},
+		{
+			name: "name and folder conflict",
+			cmd: &ExecCmd{
+				GlobalFlags:     &flags.GlobalFlags{},
+				WorkspaceName:   testWsName,
+				WorkspaceFolder: testFolder,
+			},
+			wantErr: "not both",
+		},
+		{
+			name: "name and container-id conflict",
+			cmd: &ExecCmd{
+				GlobalFlags:   &flags.GlobalFlags{},
+				WorkspaceName: testWsName,
+				ContainerID:   "abc123",
+			},
+			wantErr: "not both",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveExecTarget(tc.cmd, cwd)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
