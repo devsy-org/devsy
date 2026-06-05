@@ -15,7 +15,10 @@ import (
 	"tailscale.com/types/netmap"
 )
 
-const LoftTSNetDomain = "ts.loft"
+// DevsyTSNetDomain is the MagicDNS suffix for the Devsy tailnet.
+// The literal value matches the configured Tailscale tailnet and must stay
+// in sync with operator network configuration.
+const DevsyTSNetDomain = "ts.loft"
 
 func GetClientHostname(userName string) (string, error) {
 	osHostname, err := os.Hostname()
@@ -44,9 +47,9 @@ func ParseWorkspaceHostname(hostname string) (name string, project string, err e
 
 func GetURL(host string, port int) string {
 	if port == 0 {
-		return fmt.Sprintf("%s.%s", host, LoftTSNetDomain)
+		return fmt.Sprintf("%s.%s", host, DevsyTSNetDomain)
 	}
-	return fmt.Sprintf("%s.%s:%d", host, LoftTSNetDomain, port)
+	return fmt.Sprintf("%s.%s:%d", host, DevsyTSNetDomain, port)
 }
 
 // WaitHostReachable polls until the given host is reachable via ts.

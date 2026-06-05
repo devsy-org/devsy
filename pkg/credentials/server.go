@@ -44,8 +44,8 @@ func RunCredentialsServer(
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
-		case "/loft-platform-credentials":
-			err := handleLoftPlatformCredentialsRequest(ctx, writer, request, client)
+		case "/devsy-platform-credentials":
+			err := handleDevsyPlatformCredentialsRequest(ctx, writer, request, client)
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 			}
@@ -176,7 +176,7 @@ func handleGitSSHSignatureRequest(
 	return nil
 }
 
-func handleLoftPlatformCredentialsRequest(
+func handleDevsyPlatformCredentialsRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	request *http.Request,
@@ -187,7 +187,7 @@ func handleLoftPlatformCredentialsRequest(
 		return fmt.Errorf("read request body: %w", err)
 	}
 
-	log.Debugf("received loft platform credentials post data: bytes=%d", len(out))
+	log.Debugf("received devsy platform credentials post data: bytes=%d", len(out))
 	response, err := client.DevsyConfig(ctx, &tunnel.Message{Message: string(out)})
 	if err != nil {
 		log.Errorf("error receiving platform credentials: error=%v", err)

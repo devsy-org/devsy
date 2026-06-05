@@ -6,32 +6,33 @@
 HIDE_STEREOTYPE()
 LAYOUT_TOP_DOWN()
 
-Person(user, "Devsy", "Uses kubectl")
-System(prov, "Kubernetes Provider", "Devsy Provider")
+title Devsy build pipeline on Kubernetes (dockerless)
+
+Person(user, "Devsy User", "CLI or Desktop")
+System(prov, "Kubernetes Provider", "Devsy provider")
 
 System_Boundary(host, "Kubernetes Cluster") {
-    System(controlPlane, "kube API server", "Manages the cluster")
+    System(controlPlane, "kube-apiserver", "Manages the cluster")
 
     System_Boundary(devsyns, "devsy namespace") {
 
-        Container_Boundary(kaniko1, "Workspace") {
-            ContainerDb(cache, "Build Cache", "Volume", "Local registry mirror")
-            ContainerDb(dir, "Workspace Directory", "Volume", "Build context")
-            Container(kr1, "Kaniko Runner", "kaniko:executor", "Runs container as linux process")
-            Container(kb1, "Kaniko Builder", "kaniko:executor", "Builds image in userspace")
+        Container_Boundary(buildPod, "Build Pod") {
+            ContainerDb(ctxVol, "Build Context", "Volume", "Workspace source + Dockerfile")
+            ContainerDb(cache, "Layer Cache", "Volume", "Local image cache")
+            Container(dockerless, "Dockerless Builder", "ghcr.io/devsy-org/dockerless", "Builds OCI image in userspace (no daemon)")
         }
     }
 }
 
 System_Boundary(registry, "Container Registry") {
-    System(registryCache, "Image Repository", "")
-    System(cacheRepo, "Cached Layer Repositories", "")
+    System(registryCache, "Image Repository", "Final workspace images")
+    System(cacheRepo, "Registry Cache", "BuildKit / dockerless cache layers")
 }
 
-Rel(user, prov, " devsy workspace up ...")
-Rel(prov, controlPlane, " kubectl ...")
-Rel(controlPlane, kb1, " ")
+Rel(user, prov, "devsy workspace up ...")
+Rel(prov, controlPlane, "kubectl apply")
+Rel(controlPlane, dockerless, "creates Build Pod")
 Rel(user, registry, "devsy workspace build ...")
-Rel(registry, kb1, "")
-Rel(kb1, kr1, " image")
+Rel(dockerless, registry, "push image + cache")
+Rel(registry, dockerless, "pull cached layers")
 @enduml

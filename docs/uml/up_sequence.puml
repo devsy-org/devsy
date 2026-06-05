@@ -3,25 +3,36 @@
 !theme cloudscape-design
 skinparam BackgroundColor lightgray
 
-alt using machine provider
-alt machine doesn't exist
-Devsy -> Provider: devsy machine create
-Provider --> Devsy: machine id
-end
-Devsy -> Provider: devsy machine start
-Provider --> Devsy: machine id
+title devsy workspace up — sequence
+
+participant "Devsy CLI" as Devsy
+participant "Machine Provider" as Provider
+participant "Machine Agent" as Agent
+participant "Container Runtime" as ContainerRuntime
+participant "Container Agent" as ContainerAgent
+participant "Git Repo" as Repo
+participant "Devsy Platform" as Platform
+participant "IDE" as IDE
+
+alt machine provider
+  alt machine doesn't exist
+    Devsy -> Provider: devsy machine create
+    Provider --> Devsy: machine id
+  end
+  Devsy -> Provider: devsy machine start
+  Provider --> Devsy: machine id
 end
 
-Devsy -> Repo: git pull
+Devsy -> Repo: clone / pull
 Repo --> Devsy: source code
 
 alt image not already available
-Devsy -> Agent: devsy workspace build
-activate Agent
-Agent --> ContainerRuntime: build
-ContainerRuntime --> Agent: image
-Agent --> Devsy:
-deactivate Agent
+  Devsy -> Agent: devsy workspace build
+  activate Agent
+  Agent -> ContainerRuntime: BuildKit / Dockerless build
+  ContainerRuntime --> Agent: image
+  Agent --> Devsy:
+  deactivate Agent
 end
 
 Devsy -> Agent: devsy helper ssh-server --stdio
@@ -29,7 +40,7 @@ activate Agent
 Devsy -> Agent: devsy agent daemon
 Devsy -> Agent: devsy agent workspace up --workspace-info
 
-Agent -> ContainerRuntime: run
+Agent -> ContainerRuntime: run dev container
 ContainerRuntime --> Agent: container id
 
 Agent -> ContainerAgent: devsy helper ssh-server --stdio
@@ -37,46 +48,45 @@ activate ContainerAgent
 
 Agent -> ContainerAgent: devsy agent container setup
 Agent -> ContainerAgent: devsy agent container credentials-server
-alt if EXIT_AFTER_TIMEOUT
-Agent -> ContainerAgent: devsy agent container daemon
+alt EXIT_AFTER_TIMEOUT
+  Agent -> ContainerAgent: devsy agent container daemon
 end
 
-alt if pro user
-Agent -> ContainerAgent: devsy agent container setup-loft-platform-access
-ContainerAgent -> Platform: Setup pro
-Platform --> ContainerAgent: platform creds
+alt Devsy Platform user
+  Agent -> ContainerAgent: setup platform access
+  ContainerAgent -> Platform: exchange credentials
+  Platform --> ContainerAgent: platform credentials
 end
 
-alt if GIT_SSH_SIGNATURE_FORWARDING
-Agent -> Devsy: devsy agent git-credentials
-Devsy --> Agent: git creds
+alt GIT_SSH_SIGNATURE_FORWARDING
+  Agent -> Devsy: devsy agent git-credentials
+  Devsy --> Agent: git creds
 end
-alt if SSH_INJECT_DOCKER_CREDENTIALS
-Agent -> Devsy: devsy agent docker-credentials
-Devsy --> Agent: docker creds
+alt SSH_INJECT_DOCKER_CREDENTIALS
+  Agent -> Devsy: devsy agent docker-credentials
+  Devsy --> Agent: docker creds
 end
 
-Agent -> ContainerAgent: Run life cycle hooks
+Agent -> ContainerAgent: run lifecycle hooks
 
 ContainerAgent --> Agent:
 deactivate ContainerAgent
 Agent --> Devsy:
 deactivate Agent
 
-alt if using browser based IDE (openvscode, jupyter)
-Devsy -> ContainerAgent: devsy workspace ssh --reuse-ssh-auth-sock
+alt browser-based IDE (openvscode, jupyter)
+  Devsy -> ContainerAgent: devsy workspace ssh --reuse-ssh-auth-sock
 end
 
-Devsy -> IDE: Start
+Devsy -> IDE: start
 
-alt if using normal IDE (vscode, intilliJ)
-IDE -> ContainerAgent: devsy workspace ssh
-ContainerAgent --> IDE: ssh close
+alt desktop IDE (vscode, jetbrains)
+  IDE -> ContainerAgent: devsy workspace ssh
+  ContainerAgent --> IDE: ssh close
 end
 
-alt if using browser based IDE (openvscode, jupyter)
-ContainerAgent -> Devsy: ssh close
+alt browser-based IDE
+  ContainerAgent -> Devsy: ssh close
 end
-
 
 @enduml

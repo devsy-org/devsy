@@ -307,12 +307,12 @@ func (s *proxyClient) checkPlatformVersion(
 	ctx context.Context,
 	providerOptions map[string]config.OptionValue,
 ) error {
-	loftConfig := providerOptions["DEVSY_CONFIG"].Value
-	if loftConfig == "" {
+	devsyConfigPath := providerOptions["DEVSY_CONFIG"].Value
+	if devsyConfigPath == "" {
 		return nil
 	}
 
-	baseClient, err := platformclient.InitClientFromPath(ctx, loftConfig)
+	baseClient, err := platformclient.InitClientFromPath(ctx, devsyConfigPath)
 	if err != nil {
 		return fmt.Errorf("error initializing platform client: %w", err)
 	}
