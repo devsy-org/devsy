@@ -1,9 +1,0 @@
-{
-  "name": "Object-Lifecycle",
-  "image": "ghcr.io/devsy-org/test-images/go:1",
-  "postStartCommand": {
-    "cobra-install": "go install github.com/spf13/cobra-cli@latest",
-    "golangci-lint": "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest",
-    "errcheck": "go install github.com/kisielk/errcheck@latest"
-  }
-}
