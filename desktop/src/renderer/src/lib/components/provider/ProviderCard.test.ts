@@ -14,6 +14,11 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
 })
 
 import ProviderCard from "./ProviderCard.svelte"
+import {
+  initializingProviders,
+  markInitializing,
+  clearInitializing,
+} from "$lib/stores/providers.js"
 
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
@@ -47,6 +52,32 @@ describe("ProviderCard", () => {
       (el) => el.textContent?.trim().toLowerCase() === "default",
     )
     expect(pill).toBeUndefined()
+    unmount()
+  })
+
+  it("shows the initializing badge while an uninitialized provider is in flight", () => {
+    initializingProviders.set(new Set())
+    markInitializing("ssh")
+    const { container, unmount } = render(ProviderCard, {
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+    })
+
+    const text = container.textContent ?? ""
+    expect(text.toLowerCase()).toContain("initializing")
+    expect(text.toLowerCase()).not.toContain("not initialized")
+    clearInitializing("ssh")
+    unmount()
+  })
+
+  it("shows not initialized when no init is in flight", () => {
+    initializingProviders.set(new Set())
+    const { container, unmount } = render(ProviderCard, {
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+    })
+
+    expect((container.textContent ?? "").toLowerCase()).toContain(
+      "not initialized",
+    )
     unmount()
   })
 })

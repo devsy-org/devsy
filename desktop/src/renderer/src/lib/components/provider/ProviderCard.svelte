@@ -1,14 +1,17 @@
 <script lang="ts">
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
-import { Star } from "@lucide/svelte"
+import { Star, Loader2 } from "@lucide/svelte"
 import ProviderIcon from "./ProviderIcon.svelte"
 import { providerVersions } from "$lib/stores/providerVersions.js"
+import { initializingProviders } from "$lib/stores/providers.js"
 import type { Provider } from "$lib/types/index.js"
 
 let {
   provider,
   onopen,
 }: { provider: Provider; onopen?: () => void } = $props()
+
+let isInitializing = $derived($initializingProviders.has(provider.name))
 
 function sourceDisplay(p: Provider): string {
   if (p.source?.github) return p.source.github
@@ -43,6 +46,11 @@ function sourceDisplay(p: Provider): string {
     <div class="flex gap-1.5 shrink-0">
       {#if provider.state?.initialized}
         <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
+      {:else if isInitializing}
+        <span class="{badgeVariants({ variant: 'outline' })} gap-1">
+          <Loader2 class="size-3 animate-spin" />
+          initializing…
+        </span>
       {:else}
         <span class={badgeVariants({ variant: "destructive" })}>not initialized</span>
       {/if}
