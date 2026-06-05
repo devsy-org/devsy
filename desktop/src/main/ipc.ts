@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
-import { app, ipcMain } from "electron"
+import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
 import { trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
@@ -319,6 +319,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("provider_get_update_cache", async () => {
     return providerUpdateCache
+  })
+
+  ipcMain.handle("dialog_open_directory", async () => {
+    const win = deps.getMainWindow()
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ["openDirectory"] })
+      : await dialog.showOpenDialog({ properties: ["openDirectory"] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
   })
 
   // ── Machines ──
