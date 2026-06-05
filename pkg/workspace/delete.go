@@ -3,6 +3,9 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -10,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 )
 
 // DeleteOptions holds the parameters for deleting a workspace.
@@ -51,7 +55,11 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 
 	stopIfRunning(ctx, client, status)
 
-	return deleteWorkspace(ctx, client, opts)
+	id, err := deleteWorkspace(ctx, client, opts)
+	if err == nil {
+		SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
+	}
+	return id, err
 }
 
 // stopIfRunning stops the workspace before deletion when it is currently
@@ -307,4 +315,41 @@ func hasOtherWorkspaces(
 	}
 
 	return false, nil
+}
+
+func SweepOrphanWorkspaceDirs(contextName string) {
+	workspaceDir, err := providerpkg.GetWorkspacesDir(contextName)
+	if err != nil {
+		log.Debugf("sweep orphan workspaces: get dir: %v", err)
+		return
+	}
+
+	entries, err := os.ReadDir(workspaceDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Debugf("sweep orphan workspaces: read dir: %v", err)
+		}
+		return
+	}
+
+	for _, entry := range entries {
+		removeIfOrphan(workspaceDir, entry)
+	}
+}
+
+func removeIfOrphan(workspaceDir string, entry os.DirEntry) {
+	if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+		return
+	}
+
+	configPath := filepath.Join(workspaceDir, entry.Name(), providerpkg.WorkspaceConfigFile)
+	if _, err := os.Stat(configPath); err == nil || !os.IsNotExist(err) {
+		return
+	}
+
+	if err := os.RemoveAll(filepath.Join(workspaceDir, entry.Name())); err != nil {
+		log.Warnf("remove orphan workspace dir %s: %v", entry.Name(), err)
+		return
+	}
+	log.Debugf("removed orphan workspace dir without config: workspace=%s", entry.Name())
 }

@@ -40,6 +40,7 @@ func writeWorkspaceResult(
 	t.Helper()
 
 	ws := &provider.Workspace{ID: workspaceID, Context: testDefaultContext}
+	require.NoError(t, provider.SaveWorkspaceConfig(ws))
 	require.NoError(t, provider.SaveWorkspaceResult(ws, result))
 }
 
@@ -353,7 +354,9 @@ func TestUpdateWorkspaceResult_RawJSON(t *testing.T) {
 	wsDir, err := provider.GetWorkspaceDir(testDefaultContext, newName)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(wsDir, 0o750))
-
+	require.NoError(t, provider.SaveWorkspaceConfig(
+		&provider.Workspace{ID: newName, Context: testDefaultContext},
+	))
 	rawJSON := `{
   "SubstitutionContext": {
     "ContainerWorkspaceFolder": "/workspaces/old-ws",
