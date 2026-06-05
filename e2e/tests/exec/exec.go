@@ -183,6 +183,9 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 				"--", echoCommand, "-n", "hello",
 			})
 			framework.ExpectError(err)
+			gomega.Expect(err.Error()).To(gomega.ContainSubstring(
+				"specify either a workspace name or --workspace-folder/--container-id, not both",
+			))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should find container by custom id-label",

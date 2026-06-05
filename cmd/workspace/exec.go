@@ -161,9 +161,13 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return cmd.runWithContainerID(ctx, args)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("determine current directory: %w", err)
+	cwd := ""
+	if cmd.WorkspaceName == "" && cmd.WorkspaceFolder == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("determine current directory: %w", err)
+		}
 	}
 	getArgs, err := resolveExecTarget(cmd, cwd)
 	if err != nil {

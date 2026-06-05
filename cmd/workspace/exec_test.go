@@ -110,13 +110,15 @@ func TestExecCmd_DockerPathFlag(t *testing.T) {
 
 func TestExecCmd_ContainerIDTakesPrecedenceOverWorkspaceFolder(t *testing.T) {
 	cmd := &ExecCmd{
-		GlobalFlags:     &flags.GlobalFlags{},
+		GlobalFlags:     &flags.GlobalFlags{ResultFormat: "auto"},
 		WorkspaceFolder: "/some/folder",
-		ContainerID:     "abc123",
+		ContainerID:     "nonexistent-container-id-12345",
 	}
-	// Run checks `if cmd.ContainerID != ""` first, so container-id wins over folder.
-	assert.NotEmpty(t, cmd.ContainerID)
-	assert.NotEmpty(t, cmd.WorkspaceFolder)
+	// With both set, Run must take the container-id branch: the error references the
+	// container id, proving it did not try to resolve the folder via workspace.Get.
+	err := cmd.Run(t.Context(), []string{testCmdEcho, testCmdHello})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent-container-id-12345")
 }
 
 func TestExecCmd_NonExistentContainerID(t *testing.T) {
