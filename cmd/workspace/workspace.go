@@ -19,6 +19,7 @@ func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd.AddCommand(NewExecCmd(globalFlags))
 	cmd.AddCommand(NewListCmd(globalFlags))
 	cmd.AddCommand(NewStatusCmd(globalFlags))
+	cmd.AddCommand(NewDescribeCmd(globalFlags))
 	cmd.AddCommand(NewLogsCmd(globalFlags))
 	cmd.AddCommand(NewBuildCmd(globalFlags))
 	cmd.AddCommand(NewRenameCmd(globalFlags))

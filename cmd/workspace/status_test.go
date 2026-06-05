@@ -1,0 +1,73 @@
+package workspace
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestStatusCmd_PlainPrintsAtDefaultVerbosity is the regression guard: plain
+// status output is the bare status word and must reach stdout even when the
+// logger is at its default (error-only) level. Previously the result was
+// emitted via log.Infof, which the default verbosity silenced, leaving the
+// command output empty.
+func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	cases := []struct {
+		name   string
+		status client.Status
+		want   string
+	}{
+		{"running", client.StatusRunning, "Running"},
+		{"stopped", client.StatusStopped, "Stopped"},
+		{"busy", client.StatusBusy, "Busy"},
+		{"notfound", client.StatusNotFound, "NotFound"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &StatusCmd{
+				GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain},
+			}
+			fake := &fakeWorkspaceClient{workspace: testWorkspaceName, status: tc.status}
+
+			out := captureStdout(t, func() {
+				require.NoError(t, cmd.Run(t.Context(), fake))
+			})
+
+			assert.Contains(t, out, tc.want)
+		})
+	}
+}
+
+func TestStatusCmd_JSONOutput(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	cmd := &StatusCmd{
+		GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON},
+	}
+	fake := &fakeWorkspaceClient{
+		workspace: testWorkspaceName,
+		context:   testContext,
+		provider:  testProvider,
+		status:    client.StatusRunning,
+	}
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Run(t.Context(), fake))
+	})
+
+	var got client.WorkspaceStatus
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	assert.Equal(t, client.WorkspaceStatus{
+		ID:       testWorkspaceName,
+		Context:  testContext,
+		Provider: testProvider,
+		State:    string(client.StatusRunning),
+	}, got)
+}
