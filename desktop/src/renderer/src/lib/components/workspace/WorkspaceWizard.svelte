@@ -825,9 +825,39 @@ function selectTemplate(t: { name: string; source: string }) {
               <span class="font-medium truncate">{selectedProvider}</span>
             </div>
             <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source</span>
-              <span class="font-medium truncate">{source}</span>
+              <span class="text-muted-foreground">Source type</span>
+              <span class="font-medium truncate capitalize">{sourceType}</span>
             </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">Source</span>
+              <span class="font-medium truncate font-mono">{assembled.source}</span>
+            </div>
+            {#if sourceType === "git" && refValue.trim()}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull request"}
+                </span>
+                <span class="font-medium truncate">{refValue}</span>
+              </div>
+            {/if}
+            {#if subPath.trim()}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">Subfolder</span>
+                <span class="font-medium truncate">{subPath}</span>
+              </div>
+            {/if}
+            {#if assembled.devcontainerPath}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">devcontainer.json</span>
+                <span class="font-medium truncate">{assembled.devcontainerPath}</span>
+              </div>
+            {/if}
+            {#if assembled.prebuildRepository}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">Prebuild repo</span>
+                <span class="font-medium truncate">{assembled.prebuildRepository}</span>
+              </div>
+            {/if}
             {#if workspaceFolder}
               <div class="flex justify-between gap-3">
                 <span class="text-muted-foreground">Workspace Folder</span>
