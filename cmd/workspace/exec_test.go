@@ -58,9 +58,7 @@ func TestNewExecCmd_DefaultsToCwdWhenNoTarget(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	execCmd.SetArgs([]string{"--", testCmdEcho, testCmdHello})
 	err := execCmd.Execute()
-	// No --workspace-folder/--container-id and no name: the old hard error is gone.
-	// Execution proceeds to workspace resolution and fails there (no workspace at cwd),
-	// so we only assert the old error message is NOT what we get.
+	// No target now defaults to cwd instead of erroring; assert the old hard error is gone.
 	if err != nil {
 		assert.NotContains(
 			t, err.Error(),
@@ -116,12 +114,9 @@ func TestExecCmd_ContainerIDTakesPrecedenceOverWorkspaceFolder(t *testing.T) {
 		WorkspaceFolder: "/some/folder",
 		ContainerID:     "abc123",
 	}
-	// When both are set, ContainerID path is taken (runWithContainerID).
-	// We verify the logic by checking the Run method routes to containerID path.
-	// This test verifies the routing condition.
+	// Run checks `if cmd.ContainerID != ""` first, so container-id wins over folder.
 	assert.NotEmpty(t, cmd.ContainerID)
 	assert.NotEmpty(t, cmd.WorkspaceFolder)
-	// The Run method checks `if cmd.ContainerID != ""` first, so container-id wins.
 }
 
 func TestExecCmd_NonExistentContainerID(t *testing.T) {

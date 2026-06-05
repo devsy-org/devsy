@@ -151,9 +151,8 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// Guard here (before the container-id branch) so name+container-id is rejected
-	// rather than silently taking the container path. resolveExecTarget repeats this
-	// check so it stays correct as a standalone unit.
+	// Must run before the container-id branch below, else name+container-id would
+	// silently take the container path instead of erroring.
 	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
 		return errFolderNameConflict
 	}
@@ -301,7 +300,6 @@ var errFolderNameConflict = fmt.Errorf(
 
 // resolveExecTarget decides what string is handed to workspace.Get.
 // Precedence: explicit name, then --workspace-folder, then the current dir.
-// A workspace name combined with --workspace-folder or --container-id is a conflict.
 func resolveExecTarget(cmd *ExecCmd, cwd string) ([]string, error) {
 	if cmd.WorkspaceName != "" && (cmd.WorkspaceFolder != "" || cmd.ContainerID != "") {
 		return nil, errFolderNameConflict
