@@ -26,7 +26,11 @@ import {
   providerRename,
   providerSetVersion,
 } from "$lib/ipc/commands.js"
-import { providers } from "$lib/stores/providers.js"
+import {
+  providers,
+  markInitializing,
+  clearInitializing,
+} from "$lib/stores/providers.js"
 import {
   providerVersions,
   loadVersionsFor,
@@ -204,6 +208,7 @@ function extractCliError(err: unknown): CLIError | null {
 async function handleInitialize() {
   initializing = true
   initError = null
+  markInitializing(provider.name)
   try {
     await providerInit(provider.name)
     const updated = await providerList()
@@ -224,6 +229,7 @@ async function handleInitialize() {
     }
   } finally {
     initializing = false
+    clearInitializing(provider.name)
   }
 }
 
