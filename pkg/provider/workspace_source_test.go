@@ -2,6 +2,11 @@ package provider
 
 import "testing"
 
+const (
+	testRepoURL     = "https://github.com/devsy-org/devsy"
+	testSchemeHTTPS = "https"
+)
+
 func TestParseWorkspaceSource_GitURLs(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -10,9 +15,9 @@ func TestParseWorkspaceSource_GitURLs(t *testing.T) {
 		wantValid bool
 	}{
 		{
-			name:      "https",
-			in:        "git:https://github.com/devsy-org/devsy",
-			wantRepo:  "https://github.com/devsy-org/devsy",
+			name:      testSchemeHTTPS,
+			in:        "git:" + testRepoURL,
+			wantRepo:  testRepoURL,
 			wantValid: true,
 		},
 		{
@@ -30,7 +35,7 @@ func TestParseWorkspaceSource_GitURLs(t *testing.T) {
 		{
 			name:      "bare host normalizes to https",
 			in:        "git:github.com/devsy-org/devsy",
-			wantRepo:  "https://github.com/devsy-org/devsy",
+			wantRepo:  testRepoURL,
 			wantValid: true,
 		},
 		{
@@ -38,8 +43,8 @@ func TestParseWorkspaceSource_GitURLs(t *testing.T) {
 			// to workspace_create. NormalizeRepository now strips the leading
 			// "git:" so this no longer becomes "https://git:https://...".
 			name:      "double git: prefix from workspace_list round-trip",
-			in:        "git:git:https://github.com/devsy-org/devsy",
-			wantRepo:  "https://github.com/devsy-org/devsy",
+			in:        "git:git:" + testRepoURL,
+			wantRepo:  testRepoURL,
 			wantValid: true,
 		},
 	}
@@ -66,13 +71,13 @@ func TestIsPlausibleGitSource(t *testing.T) {
 		want bool
 	}{
 		{"empty", "", false},
-		{"https", "https://github.com/devsy-org/devsy", true},
+		{testSchemeHTTPS, testRepoURL, true},
 		{"ssh scheme", "ssh://git@github.com/devsy-org/devsy", true},
 		{"scp-like", "git@github.com:devsy-org/devsy.git", true},
 		{"file", "file:///workspace/repo", true},
 		{
 			"nested scheme (the user-reported bug)",
-			"https://git:https://github.com/devsy-org/devsy",
+			"https://git:" + testRepoURL,
 			false,
 		},
 		{"bare host (not normalized)", "github.com/devsy-org/devsy", false},
