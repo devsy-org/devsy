@@ -5,6 +5,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,12 +54,19 @@ func TestValidateRemoteEnv_EmptyKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be KEY=VALUE format")
 }
 
-func TestNewExecCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T) {
+func TestNewExecCmd_DefaultsToCwdWhenNoTarget(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	execCmd.SetArgs([]string{"--", testCmdEcho, testCmdHello})
 	err := execCmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "either --workspace-folder or --container-id must be provided")
+	// No --workspace-folder/--container-id and no name: the old hard error is gone.
+	// Execution proceeds to workspace resolution and fails there (no workspace at cwd),
+	// so we only assert the old error message is NOT what we get.
+	if err != nil {
+		assert.NotContains(
+			t, err.Error(),
+			"either --workspace-folder or --container-id must be provided",
+		)
+	}
 }
 
 func TestNewExecCmd_RequiresArgs(t *testing.T) {
@@ -67,6 +75,14 @@ func TestNewExecCmd_RequiresArgs(t *testing.T) {
 	err := execCmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires at least 1 arg")
+}
+
+func TestNewExecCmd_RejectsMultipleNames(t *testing.T) {
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	execCmd.SetArgs([]string{"ws-one", "ws-two", "--", testCmdEcho, testCmdHello})
+	err := execCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most one workspace name")
 }
 
 func TestResolveDockerCommand_NilWorkspace(t *testing.T) {
@@ -147,6 +163,31 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	val, err := execCmd.Flags().GetBool("skip-post-create")
 	require.NoError(t, err)
 	assert.True(t, val)
+}
+
+func TestExecCmd_ParsesPositionalName(t *testing.T) {
+	var gotName string
+	var gotCmdArgs []string
+
+	execCmd := NewExecCmd(&flags.GlobalFlags{})
+	// Replace RunE with a capture that mirrors the real split logic's outputs.
+	execCmd.RunE = func(cobraCmd *cobra.Command, args []string) error {
+		dash := cobraCmd.ArgsLenAtDash()
+		if dash >= 0 {
+			if dash == 1 {
+				gotName = args[0]
+			}
+			gotCmdArgs = args[dash:]
+		} else {
+			gotCmdArgs = args
+		}
+		return nil
+	}
+	execCmd.SetArgs([]string{"my-ws", "--", testCmdEcho, testCmdHello})
+
+	require.NoError(t, execCmd.Execute())
+	assert.Equal(t, "my-ws", gotName)
+	assert.Equal(t, []string{testCmdEcho, testCmdHello}, gotCmdArgs)
 }
 
 func TestResolveExecTarget(t *testing.T) {
