@@ -192,9 +192,10 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 		return err
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(workspaceDir, 0o755)
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(workspaceDir, WorkspaceConfigFile)); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace %s no longer exists", workspace.ID)
+		}
 		return err
 	}
 
