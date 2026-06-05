@@ -437,19 +437,25 @@ function continueFromProvider() {
 }
 
 function continueFromSource() {
-  if (!source.trim()) return
+  if (!primarySourceValue) return
   if (!workspaceName.trim()) {
     const derived =
-      source
+      assembled.source
         .trim()
         .split("/")
         .pop()
-        ?.replace(/\.git$/, "") ?? ""
+        ?.replace(/\.git$/, "")
+        ?.replace(/@.*$/, "") ?? ""
     if (derived) workspaceName = uniquifyName(derived)
   } else {
     workspaceName = uniquifyName(workspaceName.trim())
   }
   currentStep = "ide"
+}
+
+async function handleBrowse() {
+  const picked = await openDirectoryDialog()
+  if (picked) localPath = picked
 }
 
 function continueFromIde() {
@@ -463,12 +469,83 @@ function continueFromReview() {
 }
 
 function selectTemplate(t: { name: string; source: string }) {
-  source = t.source
+  repoUrl = t.source
   if (!workspaceName) {
     workspaceName = uniquifyName(t.name.toLowerCase().replace(/[^a-z0-9]/g, "-"))
   }
 }
 </script>
+
+{#snippet advancedSection(isGit: boolean)}
+  <div>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onclick={() => (advancedOpen = !advancedOpen)}
+    >
+      {advancedOpen ? "Hide" : "Show"} advanced options
+    </Button>
+    {#if advancedOpen}
+      <div class="mt-2 space-y-3">
+        {#if isGit}
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1.5">
+              <Label class="text-sm">Ref Type</Label>
+              <Select.Root type="single" bind:value={refType}>
+                <Select.Trigger class="w-full">
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull Request"}
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="branch">Branch</Select.Item>
+                  <Select.Item value="commit">Commit</Select.Item>
+                  <Select.Item value="pr">Pull Request</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="space-y-1.5">
+              <Label class="text-sm">
+                {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR number"}
+              </Label>
+              <Input
+                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123…" : "42"}
+                value={refValue}
+                oninput={(e) => (refValue = e.currentTarget.value)}
+              />
+            </div>
+          </div>
+        {/if}
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">Subfolder</Label>
+          <Input
+            placeholder="path/within/source (optional)"
+            value={subPath}
+            oninput={(e) => (subPath = e.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">devcontainer.json path</Label>
+          <Input
+            placeholder=".devcontainer/devcontainer.json (optional)"
+            value={devcontainerPath}
+            oninput={(e) => (devcontainerPath = e.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">Prebuild repository</Label>
+          <Input
+            placeholder="ghcr.io/org/prebuilds (optional)"
+            value={prebuildRepository}
+            oninput={(e) => (prebuildRepository = e.currentTarget.value)}
+          />
+        </div>
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
   <Dialog.Content class="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
@@ -575,61 +652,77 @@ function selectTemplate(t: { name: string; source: string }) {
         <div class="space-y-4">
           <div>
             <h2 class="text-lg font-semibold">Choose a Source</h2>
-            <p class="text-sm text-muted-foreground">Pick a template or enter a custom source (git URL, image, or local path).</p>
+            <p class="text-sm text-muted-foreground">
+              Start from a Git repository, a local directory, or a container image.
+            </p>
           </div>
 
-          <div class="space-y-2">
-            <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
-            <div class="grid grid-cols-3 gap-2">
-              {#each TEMPLATES as template (template.name)}
-                <button
-                  type="button"
-                  class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {source === template.source ? 'border-primary ring-1 ring-primary' : ''}"
-                  onclick={() => selectTemplate(template)}
-                >
-                  <LanguageIcon name={template.name} class="h-10 w-10" />
-                  <span class="truncate text-xs">{template.name}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
+          <Tabs.Root value={sourceType} onValueChange={(v) => (sourceType = v as WorkspaceSourceType)}>
+            <Tabs.List class="grid w-full grid-cols-3">
+              <Tabs.Trigger value="git">Git Repo</Tabs.Trigger>
+              <Tabs.Trigger value="local">Local Directory</Tabs.Trigger>
+              <Tabs.Trigger value="image">Image</Tabs.Trigger>
+            </Tabs.List>
 
-          <div class="space-y-1.5">
-            <Label class="text-sm">Source *</Label>
-            <Input
-              placeholder="github.com/org/repo, local path, or image"
-              value={source}
-              oninput={(e) => (source = e.currentTarget.value)}
-            />
-          </div>
+            <!-- GIT -->
+            <Tabs.Content value="git" class="space-y-4 pt-2">
+              <div class="space-y-2">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
+                <div class="grid grid-cols-3 gap-2">
+                  {#each TEMPLATES as template (template.name)}
+                    <button
+                      type="button"
+                      class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
+                      onclick={() => selectTemplate(template)}
+                    >
+                      <LanguageIcon name={template.name} class="h-10 w-10" />
+                      <span class="truncate text-xs">{template.name}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
 
-          <div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onclick={() => (advancedOpen = !advancedOpen)}
-            >
-              {advancedOpen ? "Hide" : "Show"} advanced options
-            </Button>
-            {#if advancedOpen}
-              <div class="mt-2 space-y-1.5">
-                <Label class="text-sm">Workspace Folder</Label>
+              <div class="space-y-1.5">
+                <Label class="text-sm">Repository URL *</Label>
                 <Input
-                  placeholder="Subfolder within the source to use as workspace root"
-                  value={workspaceFolder}
-                  oninput={(e) => (workspaceFolder = e.currentTarget.value)}
+                  placeholder="github.com/org/repo"
+                  value={repoUrl}
+                  oninput={(e) => (repoUrl = e.currentTarget.value)}
                 />
+              </div>
+
+              {@render advancedSection(true)}
+            </Tabs.Content>
+
+            <!-- LOCAL -->
+            <Tabs.Content value="local" class="space-y-4 pt-2">
+              <div class="space-y-1.5">
+                <Label class="text-sm">Local Directory *</Label>
+                <div class="flex gap-2">
+                  <Input
+                    placeholder="/path/to/project"
+                    value={localPath}
+                    oninput={(e) => (localPath = e.currentTarget.value)}
+                  />
+                  <Button variant="outline" onclick={handleBrowse}>Browse…</Button>
+                </div>
                 <p class="text-xs text-muted-foreground">
-                  Optional path inside the repository to use as the workspace root.
+                  Local sources require a provider running on this machine.
                 </p>
               </div>
-            {/if}
-          </div>
+
+              {@render advancedSection(false)}
+            </Tabs.Content>
+
+            <!-- IMAGE -->
+            <Tabs.Content value="image" class="space-y-4 pt-2">
+              <ImagePicker bind:value={imageRef} />
+            </Tabs.Content>
+          </Tabs.Root>
 
           <div class="flex justify-between gap-2 pt-2">
             <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
-            <Button disabled={!source.trim()} onclick={continueFromSource}>Continue</Button>
+            <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
           </div>
         </div>
 
