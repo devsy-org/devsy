@@ -29,10 +29,6 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
-function dockerOs(nodePlatform: NodeJS.Platform): string {
-  return nodePlatform === "win32" ? "windows" : nodePlatform
-}
-
 function dockerArch(nodeArch: string): string {
   if (nodeArch === "x64") return "amd64"
   if (nodeArch === "arm") return "arm"
@@ -1016,7 +1012,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   })
 
   ipcMain.handle("get_host_platform", () => {
-    return `${dockerOs(process.platform)}/${dockerArch(process.arch)}`
+    // Devcontainers always target Linux: Docker Desktop/Podman run containers
+    // in a Linux VM, so the host process OS (darwin/win32) is never the
+    // container target. Only the architecture varies by host.
+    return `linux/${dockerArch(process.arch)}`
   })
 
   ipcMain.handle(

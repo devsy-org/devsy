@@ -362,7 +362,13 @@ $effect(() => {
 
 onMount(() => {
   // Listener is registered at handleLaunch time (race-safe pattern).
-  void getHostPlatform().then((p) => (hostPlatform = p))
+  void getHostPlatform()
+    .then((p) => (hostPlatform = p))
+    .catch((err) => {
+      // Advisory only: leaving hostPlatform empty hides the compat check
+      // rather than blocking launch. Log so a real defect isn't masked.
+      console.warn("Host platform lookup failed:", err)
+    })
 })
 
 onDestroy(() => {
