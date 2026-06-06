@@ -2,8 +2,8 @@ package cmdinternal
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/helper"
 	"github.com/devsy-org/devsy/cmd/internal/agent"
+	"github.com/devsy-org/devsy/cmd/internal/helper"
 	"github.com/spf13/cobra"
 )
 

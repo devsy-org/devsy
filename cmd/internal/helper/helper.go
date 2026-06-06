@@ -2,10 +2,10 @@ package helper
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/helper/http"
-	"github.com/devsy-org/devsy/cmd/helper/json"
-	"github.com/devsy-org/devsy/cmd/helper/strings"
 	"github.com/devsy-org/devsy/cmd/internal/agent"
+	"github.com/devsy-org/devsy/cmd/internal/helper/http"
+	"github.com/devsy-org/devsy/cmd/internal/helper/json"
+	"github.com/devsy-org/devsy/cmd/internal/helper/strings"
 	"github.com/spf13/cobra"
 )
 
