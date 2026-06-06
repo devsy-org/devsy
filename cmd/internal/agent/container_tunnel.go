@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/internal/agent/workspace"
+	"github.com/devsy-org/devsy/cmd/internal/agentworkspace"
 	"github.com/devsy-org/devsy/pkg/agent"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
@@ -61,13 +61,13 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// make sure content folder exists
-	_, err = workspace.InitContentFolder(workspaceInfo)
+	_, err = agentworkspace.InitContentFolder(workspaceInfo)
 	if err != nil {
 		return err
 	}
 
 	// create runner
-	runner, err := workspace.CreateRunner(workspaceInfo)
+	runner, err := agentworkspace.CreateRunner(workspaceInfo)
 	if err != nil {
 		return err
 	}

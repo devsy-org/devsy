@@ -1,4 +1,4 @@
-package workspace
+package agentworkspace
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"

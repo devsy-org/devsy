@@ -1,6 +1,6 @@
 //go:build darwin
 
-package workspace
+package agentworkspace
 
 import (
 	"os"
