@@ -263,3 +263,54 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 		s.Equal(tt.want, stripMountConsistency(tt.input))
 	}
 }
+
+func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
+	b := &runArgsBuilder{
+		args:   []string{"run"},
+		driver: s.driver,
+		params: &driver.RunDockerDevContainerParams{
+			Options:      &driver.RunOptions{Platform: "linux/amd64"},
+			ParsedConfig: &config.DevContainerConfig{},
+		},
+	}
+	b.addRunPlatform()
+	s.Contains(b.args, "--platform=linux/amd64")
+}
+
+func (s *DockerDriverTestSuite) TestAddRunPlatform_EmptyNoFlag() {
+	b := &runArgsBuilder{
+		args:   []string{"run"},
+		driver: s.driver,
+		params: &driver.RunDockerDevContainerParams{
+			Options:      &driver.RunOptions{Platform: ""},
+			ParsedConfig: &config.DevContainerConfig{},
+		},
+	}
+	b.addRunPlatform()
+	for _, a := range b.args {
+		s.NotContains(a, "--platform")
+	}
+}
+
+func (s *DockerDriverTestSuite) TestAddRunPlatform_ExplicitInConfigNotDuplicated() {
+	b := &runArgsBuilder{
+		args:   []string{"run"},
+		driver: s.driver,
+		params: &driver.RunDockerDevContainerParams{
+			Options: &driver.RunOptions{Platform: "linux/amd64"},
+			ParsedConfig: &config.DevContainerConfig{
+				NonComposeBase: config.NonComposeBase{
+					RunArgs: []string{"--platform", "linux/arm64"},
+				},
+			},
+		},
+	}
+	b.addRunPlatform()
+	count := 0
+	for _, a := range b.args {
+		if a == "--platform=linux/amd64" {
+			count++
+		}
+	}
+	s.Equal(0, count, "should not auto-add when config already sets --platform")
+}

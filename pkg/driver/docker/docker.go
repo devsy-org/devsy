@@ -519,6 +519,7 @@ func (d *dockerDriver) buildRunArgs(
 		addLabels().
 		addGPU().
 		addRunArgs().
+		addRunPlatform().
 		addDetached().
 		addEntrypoint().
 		addImage()
@@ -596,6 +597,19 @@ func (b *runArgsBuilder) addGPU() *runArgsBuilder {
 
 func (b *runArgsBuilder) addRunArgs() *runArgsBuilder {
 	b.args = append(b.args, b.params.ParsedConfig.RunArgs...)
+	return b
+}
+
+func (b *runArgsBuilder) addRunPlatform() *runArgsBuilder {
+	if b.params.Options.Platform == "" {
+		return b
+	}
+	for _, a := range b.params.ParsedConfig.RunArgs {
+		if a == "--platform" || strings.HasPrefix(a, "--platform=") {
+			return b // explicit config wins; avoid duplicate/conflict.
+		}
+	}
+	b.args = append(b.args, "--platform="+b.params.Options.Platform)
 	return b
 }
 
