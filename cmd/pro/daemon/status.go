@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/devsy-org/devsy/cmd/internal/agent"
+	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
@@ -52,7 +52,7 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 				root.Annotations = map[string]string{}
 			}
 			// Don't print debug message
-			root.Annotations[agent.AgentExecutedAnnotation] = "true"
+			root.Annotations[cmdinternal.AgentExecutedAnnotation] = "true"
 		},
 	}
 

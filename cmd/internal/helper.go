@@ -2,7 +2,6 @@ package cmdinternal
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/internal/helperhttp"
 	"github.com/devsy-org/devsy/cmd/internal/helperimage"
 	"github.com/devsy-org/devsy/cmd/internal/helperjson"
@@ -19,7 +18,7 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:   "helper",
 		Short: "Devsy Utility Commands",
 		PersistentPreRunE: func(cobraCmd *cobra.Command, args []string) error {
-			return agent.AgentPersistentPreRunE(cobraCmd, args, globalFlags)
+			return AgentPersistentPreRunE(cobraCmd, args, globalFlags)
 		},
 		Hidden: true,
 	}

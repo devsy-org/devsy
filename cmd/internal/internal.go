@@ -2,7 +2,6 @@ package cmdinternal
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +14,7 @@ func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Internal plumbing commands (not for direct use)",
 		Hidden: true,
 	}
-	cmd.AddCommand(agent.NewAgentCmd(globalFlags))
+	cmd.AddCommand(NewAgentCmd(globalFlags))
 	cmd.AddCommand(NewHelperCmd(globalFlags))
 	cmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 	cmd.AddCommand(NewLogsDaemonCmd(globalFlags))
