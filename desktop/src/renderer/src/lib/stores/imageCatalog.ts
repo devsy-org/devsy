@@ -66,6 +66,18 @@ export function resetImageCatalogStore(): void {
   internal.set(initial)
 }
 
+/**
+ * Returns false when a non-empty platform list excludes the host's platform.
+ * An empty list is treated as compatible (multi-arch / unknown).
+ */
+export function isImageCompatible(
+  platforms: string[],
+  hostPlatform: string,
+): boolean {
+  if (platforms.length === 0) return true
+  return platforms.includes(hostPlatform)
+}
+
 export function filterImages(
   images: CatalogImage[],
   search: string,
