@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// staleHelperShCommand is the removed "helper sh" exec.command wrapper that
+// stale provider.json files carry before a refresh rewrites them.
+const staleHelperShCommand = `"${DEVSY}" helper sh -c "${COMMAND}"`
+
 // TestLoadProviderConfig_RefreshesInternalProvider verifies that a stored
 // built-in provider config with a stale exec.command (e.g. the removed
 // "helper sh" wrapper baked in before a CLI rename) is refreshed from the
@@ -20,7 +24,7 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 		Version: "v0.0.0-stale",
 		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
 		Exec: ProviderCommands{
-			Command: []string{`"${DEVSY}" helper sh -c "${COMMAND}"`},
+			Command: []string{staleHelperShCommand},
 		},
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, stale))
@@ -51,7 +55,7 @@ func TestLoadProviderConfig_RefreshesProBySourceID(t *testing.T) {
 		Version: "v0.0.0-stale",
 		Source:  ProviderSource{Internal: true, Raw: "pro"},
 		Exec: ProviderCommands{
-			Command: []string{`"${DEVSY}" helper sh -c "${COMMAND}"`},
+			Command: []string{staleHelperShCommand},
 		},
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, stale))
@@ -95,7 +99,7 @@ func TestLoadProviderConfig_PreservesExternalProvider(t *testing.T) {
 		Version: "v0.0.1",
 		Source:  ProviderSource{Github: "some-org/some-provider"},
 		Exec: ProviderCommands{
-			Command: []string{`"${DEVSY}" helper sh -c "${COMMAND}"`},
+			Command: []string{staleHelperShCommand},
 		},
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, external))
