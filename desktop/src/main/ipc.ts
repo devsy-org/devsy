@@ -5,9 +5,10 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
-import { app, ipcMain } from "electron"
+import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
 import { trackEvent } from "./analytics.js"
+import { loadCatalog } from "./image-catalog.js"
 import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
@@ -38,6 +39,20 @@ type UpdateInfo = {
 }
 
 let providerUpdateCache: Record<string, UpdateInfo> = {}
+
+const IMAGE_CATALOG_URL =
+  process.env.DEVSY_IMAGE_CATALOG_URL ??
+  "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/resources/image-catalog-seed.json"
+const IMAGE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
+
+function imageCatalogPaths(): { cachePath: string; seedPath: string } {
+  return {
+    cachePath: join(app.getPath("userData"), "image-catalog.json"),
+    seedPath: app.isPackaged
+      ? join(process.resourcesPath, "image-catalog-seed.json")
+      : join(app.getAppPath(), "resources", "image-catalog-seed.json"),
+  }
+}
 
 interface SshKeyInfo {
   name: string
@@ -321,6 +336,37 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return providerUpdateCache
   })
 
+  ipcMain.handle("image_catalog_get", async () => {
+    const { cachePath, seedPath } = imageCatalogPaths()
+    return loadCatalog({
+      url: IMAGE_CATALOG_URL,
+      cachePath,
+      seedPath,
+      ttlMs: IMAGE_CATALOG_TTL_MS,
+      force: false,
+    })
+  })
+
+  ipcMain.handle("image_catalog_refresh", async () => {
+    const { cachePath, seedPath } = imageCatalogPaths()
+    return loadCatalog({
+      url: IMAGE_CATALOG_URL,
+      cachePath,
+      seedPath,
+      ttlMs: IMAGE_CATALOG_TTL_MS,
+      force: true,
+    })
+  })
+
+  ipcMain.handle("dialog_open_directory", async () => {
+    const win = deps.getMainWindow()
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ["openDirectory"] })
+      : await dialog.showOpenDialog({ properties: ["openDirectory"] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   // ── Machines ──
   ipcMain.handle("machine_list", () => state.machineList())
 
@@ -475,6 +521,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         ideLaunch?: "auto" | "headless" | "skip"
         debug?: boolean
         workspaceFolder?: string
+        devcontainerPath?: string
+        prebuildRepository?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -485,6 +533,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
       if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
+      if (args.devcontainerPath)
+        cliArgs.push("--devcontainer-path", args.devcontainerPath)
+      if (args.prebuildRepository)
+        cliArgs.push("--prebuild-repository", args.prebuildRepository)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()

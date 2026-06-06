@@ -96,6 +96,14 @@ export interface ProviderVersionCheckResult {
   error?: string
 }
 
+export type {
+  CatalogCategory,
+  CatalogImage,
+  CatalogOrigin,
+  ImageCatalog,
+  LoadCatalogResult,
+} from "../../../../shared/image-catalog-types.js"
+
 export interface MachineProviderConfig {
   name?: string
 }

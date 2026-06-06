@@ -16,13 +16,21 @@ import { Label } from "$lib/components/ui/label/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
+import * as Tabs from "$lib/components/ui/tabs/index.js"
+import * as Select from "$lib/components/ui/select/index.js"
 import { Progress } from "$lib/components/ui/progress/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
+import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
-import { workspaceUp } from "$lib/ipc/commands.js"
+import { workspaceUp, openDirectoryDialog } from "$lib/ipc/commands.js"
+import { buildWorkspaceSource } from "$lib/utils/workspace-source.js"
+import type {
+  WorkspaceSourceType,
+  GitRefType,
+} from "$lib/utils/workspace-source.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
@@ -134,11 +142,48 @@ let currentStep = $state<Step>("provider")
 let selectedProvider = $state(
   $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
 )
-let source = $state("")
+let sourceType = $state<WorkspaceSourceType>("git")
+let repoUrl = $state("")
+let localPath = $state("")
+let imageRef = $state("")
+let refType = $state<GitRefType>("branch")
+let refValue = $state("")
+let subPath = $state("")
+let devcontainerPath = $state("")
+let prebuildRepository = $state("")
 let workspaceFolder = $state("")
 let advancedOpen = $state(false)
 let selectedIde = $state("none")
 let workspaceName = $state("")
+
+let assembled = $derived(
+  sourceType === "image"
+    ? buildWorkspaceSource({ sourceType: "image", imageRef })
+    : sourceType === "local"
+      ? buildWorkspaceSource({
+          sourceType: "local",
+          localPath,
+          devcontainerPath,
+          prebuildRepository,
+        })
+      : buildWorkspaceSource({
+          sourceType: "git",
+          repoUrl,
+          refType,
+          refValue,
+          subPath,
+          devcontainerPath,
+          prebuildRepository,
+        }),
+)
+
+let primarySourceValue = $derived(
+  sourceType === "git"
+    ? repoUrl.trim()
+    : sourceType === "local"
+      ? localPath.trim()
+      : imageRef.trim(),
+)
 
 // IDE combobox state
 let ideComboOpen = $state(false)
@@ -173,13 +218,7 @@ let filteredIdes = $derived(
 )
 
 let resolvedId = $derived(
-  workspaceName.trim() ||
-    source
-      .trim()
-      .split("/")
-      .pop()
-      ?.replace(/\.git$/, "") ||
-    "",
+  workspaceName.trim() || deriveWorkspaceNameFromSource(assembled.source),
 )
 
 let resolvedIdInvalid = $derived(
@@ -229,7 +268,15 @@ function clearWatchdog() {
 function reset() {
   currentStep = "provider"
   selectedProvider = $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
-  source = ""
+  sourceType = "git"
+  repoUrl = ""
+  localPath = ""
+  imageRef = ""
+  refType = "branch"
+  refValue = ""
+  subPath = ""
+  devcontainerPath = ""
+  prebuildRepository = ""
   workspaceFolder = ""
   advancedOpen = false
   selectedIde = "none"
@@ -313,12 +360,14 @@ async function handleLaunch() {
     })
 
     const cmdId = await workspaceUp({
-      source: source.trim(),
+      source: assembled.source,
       workspaceId,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",
       workspaceFolder: workspaceFolder.trim() || undefined,
+      devcontainerPath: assembled.devcontainerPath,
+      prebuildRepository: assembled.prebuildRepository,
       debug: true,
     })
 
@@ -374,6 +423,15 @@ function randomName(): string {
   })
 }
 
+function deriveWorkspaceNameFromSource(source: string): string {
+  const leaf = source.trim().split(/[\\/]/).pop() ?? ""
+  return leaf
+    .replace(/\.git$/i, "")
+    .replace(/@.*$/, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 function uniquifyName(base: string): string {
   const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
   if (base && !existing.has(base.toLowerCase())) return base
@@ -390,19 +448,23 @@ function continueFromProvider() {
 }
 
 function continueFromSource() {
-  if (!source.trim()) return
+  if (!primarySourceValue) return
   if (!workspaceName.trim()) {
-    const derived =
-      source
-        .trim()
-        .split("/")
-        .pop()
-        ?.replace(/\.git$/, "") ?? ""
+    const derived = deriveWorkspaceNameFromSource(assembled.source)
     if (derived) workspaceName = uniquifyName(derived)
   } else {
     workspaceName = uniquifyName(workspaceName.trim())
   }
   currentStep = "ide"
+}
+
+async function handleBrowse() {
+  try {
+    const picked = await openDirectoryDialog()
+    if (picked) localPath = picked
+  } catch (err) {
+    toasts.error(`Failed to open directory picker: ${extractErrorMessage(err)}`)
+  }
 }
 
 function continueFromIde() {
@@ -416,12 +478,94 @@ function continueFromReview() {
 }
 
 function selectTemplate(t: { name: string; source: string }) {
-  source = t.source
+  repoUrl = t.source
   if (!workspaceName) {
     workspaceName = uniquifyName(t.name.toLowerCase().replace(/[^a-z0-9]/g, "-"))
   }
 }
 </script>
+
+{#snippet advancedSection(isGit: boolean)}
+  <div>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onclick={() => (advancedOpen = !advancedOpen)}
+    >
+      {advancedOpen ? "Hide" : "Show"} advanced options
+    </Button>
+    {#if advancedOpen}
+      <div class="mt-2 space-y-3">
+        {#if isGit}
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1.5">
+              <Label class="text-sm">Ref Type</Label>
+              <Select.Root type="single" bind:value={refType}>
+                <Select.Trigger class="w-full">
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull Request"}
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="branch">Branch</Select.Item>
+                  <Select.Item value="commit">Commit</Select.Item>
+                  <Select.Item value="pr">Pull Request</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="space-y-1.5">
+              <Label class="text-sm">
+                {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR number"}
+              </Label>
+              <Input
+                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123…" : "42"}
+                value={refValue}
+                oninput={(e) => (refValue = e.currentTarget.value)}
+              />
+            </div>
+          </div>
+        {/if}
+
+        {#if isGit}
+          <div class="space-y-1.5">
+            <Label class="text-sm">Subfolder</Label>
+            <Input
+              placeholder="path/within/repo (optional)"
+              value={subPath}
+              oninput={(e) => (subPath = e.currentTarget.value)}
+            />
+          </div>
+        {/if}
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">Workspace Folder</Label>
+          <Input
+            placeholder="path opened inside the container (optional)"
+            value={workspaceFolder}
+            oninput={(e) => (workspaceFolder = e.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">devcontainer.json path</Label>
+          <Input
+            placeholder=".devcontainer/devcontainer.json (optional)"
+            value={devcontainerPath}
+            oninput={(e) => (devcontainerPath = e.currentTarget.value)}
+          />
+        </div>
+
+        <div class="space-y-1.5">
+          <Label class="text-sm">Prebuild repository</Label>
+          <Input
+            placeholder="ghcr.io/org/prebuilds (optional)"
+            value={prebuildRepository}
+            oninput={(e) => (prebuildRepository = e.currentTarget.value)}
+          />
+        </div>
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
   <Dialog.Content class="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
@@ -528,61 +672,77 @@ function selectTemplate(t: { name: string; source: string }) {
         <div class="space-y-4">
           <div>
             <h2 class="text-lg font-semibold">Choose a Source</h2>
-            <p class="text-sm text-muted-foreground">Pick a template or enter a custom source (git URL, image, or local path).</p>
+            <p class="text-sm text-muted-foreground">
+              Start from a Git repository, a local directory, or a container image.
+            </p>
           </div>
 
-          <div class="space-y-2">
-            <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
-            <div class="grid grid-cols-3 gap-2">
-              {#each TEMPLATES as template (template.name)}
-                <button
-                  type="button"
-                  class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {source === template.source ? 'border-primary ring-1 ring-primary' : ''}"
-                  onclick={() => selectTemplate(template)}
-                >
-                  <LanguageIcon name={template.name} class="h-10 w-10" />
-                  <span class="truncate text-xs">{template.name}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
+          <Tabs.Root value={sourceType} onValueChange={(v) => (sourceType = v as WorkspaceSourceType)}>
+            <Tabs.List class="grid w-full grid-cols-3">
+              <Tabs.Trigger value="git">Git Repo</Tabs.Trigger>
+              <Tabs.Trigger value="local">Local Directory</Tabs.Trigger>
+              <Tabs.Trigger value="image">Image</Tabs.Trigger>
+            </Tabs.List>
 
-          <div class="space-y-1.5">
-            <Label class="text-sm">Source *</Label>
-            <Input
-              placeholder="github.com/org/repo, local path, or image"
-              value={source}
-              oninput={(e) => (source = e.currentTarget.value)}
-            />
-          </div>
+            <!-- GIT -->
+            <Tabs.Content value="git" class="space-y-4 pt-2">
+              <div class="space-y-2">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
+                <div class="grid grid-cols-3 gap-2">
+                  {#each TEMPLATES as template (template.name)}
+                    <button
+                      type="button"
+                      class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
+                      onclick={() => selectTemplate(template)}
+                    >
+                      <LanguageIcon name={template.name} class="h-10 w-10" />
+                      <span class="truncate text-xs">{template.name}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
 
-          <div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onclick={() => (advancedOpen = !advancedOpen)}
-            >
-              {advancedOpen ? "Hide" : "Show"} advanced options
-            </Button>
-            {#if advancedOpen}
-              <div class="mt-2 space-y-1.5">
-                <Label class="text-sm">Workspace Folder</Label>
+              <div class="space-y-1.5">
+                <Label class="text-sm">Repository URL *</Label>
                 <Input
-                  placeholder="Subfolder within the source to use as workspace root"
-                  value={workspaceFolder}
-                  oninput={(e) => (workspaceFolder = e.currentTarget.value)}
+                  placeholder="github.com/org/repo"
+                  value={repoUrl}
+                  oninput={(e) => (repoUrl = e.currentTarget.value)}
                 />
+              </div>
+
+              {@render advancedSection(true)}
+            </Tabs.Content>
+
+            <!-- LOCAL -->
+            <Tabs.Content value="local" class="space-y-4 pt-2">
+              <div class="space-y-1.5">
+                <Label class="text-sm">Local Directory *</Label>
+                <div class="flex gap-2">
+                  <Input
+                    placeholder="/path/to/project"
+                    value={localPath}
+                    oninput={(e) => (localPath = e.currentTarget.value)}
+                  />
+                  <Button variant="outline" onclick={handleBrowse}>Browse…</Button>
+                </div>
                 <p class="text-xs text-muted-foreground">
-                  Optional path inside the repository to use as the workspace root.
+                  Local sources require a provider running on this machine.
                 </p>
               </div>
-            {/if}
-          </div>
+
+              {@render advancedSection(false)}
+            </Tabs.Content>
+
+            <!-- IMAGE -->
+            <Tabs.Content value="image" class="space-y-4 pt-2">
+              <ImagePicker bind:value={imageRef} />
+            </Tabs.Content>
+          </Tabs.Root>
 
           <div class="flex justify-between gap-2 pt-2">
             <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
-            <Button disabled={!source.trim()} onclick={continueFromSource}>Continue</Button>
+            <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
           </div>
         </div>
 
@@ -685,9 +845,39 @@ function selectTemplate(t: { name: string; source: string }) {
               <span class="font-medium truncate">{selectedProvider}</span>
             </div>
             <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source</span>
-              <span class="font-medium truncate">{source}</span>
+              <span class="text-muted-foreground">Source type</span>
+              <span class="font-medium truncate capitalize">{sourceType}</span>
             </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-muted-foreground">Source</span>
+              <span class="font-medium truncate font-mono">{assembled.source}</span>
+            </div>
+            {#if sourceType === "git" && refValue.trim()}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull request"}
+                </span>
+                <span class="font-medium truncate">{refValue}</span>
+              </div>
+            {/if}
+            {#if sourceType === "git" && subPath.trim()}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">Subfolder</span>
+                <span class="font-medium truncate">{subPath}</span>
+              </div>
+            {/if}
+            {#if assembled.devcontainerPath}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">devcontainer.json</span>
+                <span class="font-medium truncate">{assembled.devcontainerPath}</span>
+              </div>
+            {/if}
+            {#if assembled.prebuildRepository}
+              <div class="flex justify-between gap-3">
+                <span class="text-muted-foreground">Prebuild repo</span>
+                <span class="font-medium truncate">{assembled.prebuildRepository}</span>
+              </div>
+            {/if}
             {#if workspaceFolder}
               <div class="flex justify-between gap-3">
                 <span class="text-muted-foreground">Workspace Folder</span>

@@ -8,7 +8,24 @@ const onCommandProgress = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
+  openDirectoryDialog: vi.fn(),
 }))
+
+vi.mock("$lib/stores/imageCatalog.js", async () => {
+  const { writable } = await import("svelte/store")
+  const actual = await vi.importActual<
+    typeof import("$lib/stores/imageCatalog.js")
+  >("$lib/stores/imageCatalog.js")
+  return {
+    imageCatalog: writable({
+      images: [],
+      categories: [],
+      loading: false,
+    }),
+    loadImageCatalog: vi.fn(),
+    filterImages: actual.filterImages,
+  }
+})
 
 vi.mock("$lib/ipc/events.js", () => ({
   onCommandProgress: (...args: unknown[]) => onCommandProgress(...args),
@@ -205,6 +222,56 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("defaults to git source type and accepts a repo url", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByText("Choose a Source")).toBeTruthy()
+
+    const repoInput = document.querySelector(
+      'input[placeholder*="github.com/org/repo"]',
+    ) as HTMLInputElement
+    expect(repoInput).toBeTruthy()
+    await fireEvent.input(repoInput, {
+      target: { value: "https://github.com/org/repo" },
+    })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByText("Choose an IDE")).toBeTruthy()
+    unmount()
+  })
+
+  it("shows the image picker when the Image tab is selected", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+
+    const searchInput = document.querySelector(
+      'input[placeholder*="Search images"]',
+    ) as HTMLInputElement
+    expect(searchInput).toBeTruthy()
+    unmount()
+  })
+
   it("review step auto-suggests a unique name when the derived id conflicts", async () => {
     providers.set([makeProvider("docker")])
     workspaces.set([{ id: "python" }])
@@ -357,6 +424,168 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(queryByText("Retry")).not.toBeNull()
+    unmount()
+  })
+
+  it("forwards assembled source plus workspaceFolder and build flags to workspaceUp", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    const repoInput = document.querySelector(
+      'input[placeholder*="github.com/org/repo"]',
+    ) as HTMLInputElement
+    await fireEvent.input(repoInput, {
+      target: { value: "github.com/org/repo" },
+    })
+    await flushAsync()
+
+    const advancedToggle = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    await fireEvent.click(advancedToggle)
+    await flushAsync()
+
+    const subPathInput = document.querySelector(
+      'input[placeholder*="path/within/repo"]',
+    ) as HTMLInputElement
+    await fireEvent.input(subPathInput, { target: { value: "pkg/api" } })
+    const wsFolderInput = document.querySelector(
+      'input[placeholder*="opened inside the container"]',
+    ) as HTMLInputElement
+    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    const devcontainerInput = document.querySelector(
+      'input[placeholder*="devcontainer.json"]',
+    ) as HTMLInputElement
+    await fireEvent.input(devcontainerInput, {
+      target: { value: ".devcontainer/devcontainer.json" },
+    })
+    const prebuildInput = document.querySelector(
+      'input[placeholder*="ghcr.io/org/prebuilds"]',
+    ) as HTMLInputElement
+    await fireEvent.input(prebuildInput, {
+      target: { value: "ghcr.io/org/prebuilds" },
+    })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "github.com/org/repo@subpath:pkg/api",
+        workspaceFolder: "/workspaces/app",
+        devcontainerPath: ".devcontainer/devcontainer.json",
+        prebuildRepository: "ghcr.io/org/prebuilds",
+      }),
+    )
+    unmount()
+  })
+
+  it("forwards an image source as a bare ref with workspaceFolder kept separate", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    // Set a workspace folder via the git tab's advanced section; this state
+    // persists when we switch source types.
+    const advancedToggle = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    await fireEvent.click(advancedToggle)
+    await flushAsync()
+    const wsFolderInput = document.querySelector(
+      'input[placeholder*="opened inside the container"]',
+    ) as HTMLInputElement
+    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await flushAsync()
+
+    // Switch to the Image tab and enter a custom image ref.
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+    const customImageInput = document.querySelector(
+      'input[placeholder*="registry/image:tag"]',
+    ) as HTMLInputElement
+    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "ubuntu:22.04",
+        workspaceFolder: "/workspaces/app",
+        devcontainerPath: undefined,
+        prebuildRepository: undefined,
+      }),
+    )
+    unmount()
+  })
+
+  it("auto-derives a valid workspace id from an image tag", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+    const customImageInput = document.querySelector(
+      'input[placeholder*="registry/image:tag"]',
+    ) as HTMLInputElement
+    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    // The colon in the tag is sanitized, so the derived name is valid and
+    // Launch is enabled without manual correction.
+    const nameInput = document.querySelector(
+      'input[placeholder*="derived from source"]',
+    ) as HTMLInputElement
+    expect(nameInput.value).toBe("ubuntu-22.04")
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    expect(launchBtn.disabled).toBe(false)
     unmount()
   })
 

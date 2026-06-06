@@ -1,6 +1,7 @@
 import type {
   AuditEntry,
   Context,
+  LoadCatalogResult,
   LogEntry,
   Machine,
   OptionValue,
@@ -26,6 +27,8 @@ export async function workspaceUp(params: {
   ideLaunch?: "auto" | "headless" | "skip"
   debug?: boolean
   workspaceFolder?: string
+  devcontainerPath?: string
+  prebuildRepository?: string
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }
@@ -74,6 +77,10 @@ export async function workspaceSetIde(
   ide: string,
 ): Promise<void> {
   return invoke("workspace_set_ide", { workspaceId, ide })
+}
+
+export async function openDirectoryDialog(): Promise<string | null> {
+  return invoke<string | null>("dialog_open_directory")
 }
 
 // Provider commands
@@ -153,6 +160,15 @@ export async function providerSetVersion(name: string, tag: string): Promise<voi
 
 export async function providerCheckUpdates() {
   return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
+}
+
+// Image catalog commands
+export async function imageCatalogGet(): Promise<LoadCatalogResult> {
+  return invoke<LoadCatalogResult>("image_catalog_get")
+}
+
+export async function imageCatalogRefresh(): Promise<LoadCatalogResult> {
+  return invoke<LoadCatalogResult>("image_catalog_refresh")
 }
 
 // Machine commands

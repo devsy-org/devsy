@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "categories": [
+    { "id": "languages", "label": "Languages" },
+    { "id": "universal", "label": "Universal" }
+  ],
+  "images": [
+    {
+      "id": "universal",
+      "ref": "mcr.microsoft.com/devcontainers/universal:2",
+      "name": "Universal",
+      "description": "Multi-language image with common tools preinstalled.",
+      "categories": ["universal"],
+      "icon": "universal",
+      "featured": true
+    },
+    {
+      "id": "python-3.12",
+      "ref": "mcr.microsoft.com/devcontainers/python:3.12",
+      "name": "Python 3.12",
+      "description": "Python 3.12 development image.",
+      "categories": ["languages"],
+      "icon": "Python",
+      "featured": true
+    },
+    {
+      "id": "node-20",
+      "ref": "mcr.microsoft.com/devcontainers/javascript-node:20",
+      "name": "Node.js 20",
+      "description": "Node.js 20 development image.",
+      "categories": ["languages"],
+      "icon": "Node.js",
+      "featured": true
+    },
+    {
+      "id": "go-1",
+      "ref": "mcr.microsoft.com/devcontainers/go:1",
+      "name": "Go",
+      "description": "Go development image.",
+      "categories": ["languages"],
+      "icon": "Go"
+    },
+    {
+      "id": "rust-1",
+      "ref": "mcr.microsoft.com/devcontainers/rust:1",
+      "name": "Rust",
+      "description": "Rust development image.",
+      "categories": ["languages"],
+      "icon": "Rust"
+    },
+    {
+      "id": "java-21",
+      "ref": "mcr.microsoft.com/devcontainers/java:21",
+      "name": "Java",
+      "description": "Java development image.",
+      "categories": ["languages"],
+      "icon": "Java"
+    },
+    {
+      "id": "php-8",
+      "ref": "mcr.microsoft.com/devcontainers/php:8",
+      "name": "PHP",
+      "description": "PHP development image.",
+      "categories": ["languages"],
+      "icon": "PHP"
+    },
+    {
+      "id": "cpp-1",
+      "ref": "mcr.microsoft.com/devcontainers/cpp:1",
+      "name": "C++",
+      "description": "C++ development image.",
+      "categories": ["languages"],
+      "icon": "C++"
+    },
+    {
+      "id": "dotnet-8",
+      "ref": "mcr.microsoft.com/devcontainers/dotnet:8",
+      "name": ".NET",
+      "description": ".NET development image.",
+      "categories": ["languages"],
+      "icon": ".NET"
+    },
+    {
+      "id": "ruby-3",
+      "ref": "mcr.microsoft.com/devcontainers/ruby:3",
+      "name": "Ruby",
+      "description": "Ruby development image.",
+      "categories": ["languages"],
+      "icon": "Ruby"
+    }
+  ]
+}
