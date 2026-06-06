@@ -1,4 +1,4 @@
-package strings
+package helperstrings
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"

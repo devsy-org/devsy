@@ -1,4 +1,4 @@
-package json
+package helperjson
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"

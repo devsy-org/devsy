@@ -3,13 +3,13 @@ package helper
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/agent"
-	"github.com/devsy-org/devsy/cmd/internal/helper/http"
 	"github.com/devsy-org/devsy/cmd/internal/helper/image"
-	"github.com/devsy-org/devsy/cmd/internal/helper/json"
 	"github.com/devsy-org/devsy/cmd/internal/helper/provider"
 	"github.com/devsy-org/devsy/cmd/internal/helper/ssh"
-	"github.com/devsy-org/devsy/cmd/internal/helper/strings"
 	"github.com/devsy-org/devsy/cmd/internal/helper/workspaceinfo"
+	"github.com/devsy-org/devsy/cmd/internal/helperhttp"
+	"github.com/devsy-org/devsy/cmd/internal/helperjson"
+	"github.com/devsy-org/devsy/cmd/internal/helperstrings"
 	"github.com/spf13/cobra"
 )
 
@@ -24,9 +24,9 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Hidden: true,
 	}
 
-	helperCmd.AddCommand(http.NewHTTPCmd(globalFlags))
-	helperCmd.AddCommand(json.NewJSONCmd(globalFlags))
-	helperCmd.AddCommand(strings.NewStringsCmd(globalFlags))
+	helperCmd.AddCommand(helperhttp.NewHTTPCmd(globalFlags))
+	helperCmd.AddCommand(helperjson.NewJSONCmd(globalFlags))
+	helperCmd.AddCommand(helperstrings.NewStringsCmd(globalFlags))
 	helperCmd.AddCommand(ssh.NewSSHServerCmd(globalFlags))
 	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceNameCmd(globalFlags))
 	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceUIDCmd(globalFlags))
