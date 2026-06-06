@@ -480,7 +480,12 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   repoUrl = t.source
   if (!workspaceName) {
-    workspaceName = uniquifyName(t.name.toLowerCase().replace(/[^a-z0-9]/g, "-"))
+    workspaceName = uniquifyName(
+      t.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, ""),
+    )
   }
 }
 </script>
