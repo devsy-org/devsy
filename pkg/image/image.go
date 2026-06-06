@@ -165,7 +165,7 @@ func GetImagePlatforms(ctx context.Context, image string) ([]string, error) {
 	// Not an index — fall back to single-image config OS/Arch.
 	configFile, _, cErr := GetImageConfig(ctx, image)
 	if cErr != nil {
-		return nil, fmt.Errorf("retrieve image %s: %w", image, SanitizeRegistryError(err))
+		return nil, fmt.Errorf("retrieve image %s: %w", image, SanitizeRegistryError(cErr))
 	}
 	if configFile.OS == "" || configFile.Architecture == "" {
 		return []string{}, nil
