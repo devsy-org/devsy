@@ -327,7 +327,12 @@ func (d *dockerDriver) EnsureImage(
 		writer := log.Writer(log.LevelDebug)
 		defer func() { _ = writer.Close() }()
 
-		return d.Docker.Pull(ctx, options.Image, nil, writer, writer)
+		return d.Docker.Pull(ctx, docker.PullOptions{
+			Image:    options.Image,
+			Platform: options.Platform,
+			Stdout:   writer,
+			Stderr:   writer,
+		})
 	}
 	return nil
 }

@@ -1,8 +1,11 @@
 package docker
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,6 +82,41 @@ esac
 
 	assert.NoError(t, err)
 	assert.False(t, got, "should not detect GPU when Podman CDI has no nvidia device")
+}
+
+func TestPull_PlatformArg(t *testing.T) {
+	tmp := t.TempDir()
+	argsFile := filepath.Join(tmp, "args.txt")
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+echo "$@" > `+argsFile+`
+`)
+
+	t.Run("includes --platform when set", func(t *testing.T) {
+		h := &DockerHelper{DockerCommand: bin}
+		require.NoError(t, h.Pull(context.Background(), PullOptions{
+			Image:    "ubuntu:22.04",
+			Platform: "linux/amd64",
+			Stdout:   io.Discard,
+			Stderr:   io.Discard,
+		}))
+		//nolint:gosec // test reads a temp file path it controls
+		got, err := os.ReadFile(argsFile)
+		require.NoError(t, err)
+		assert.Equal(t, "pull --platform linux/amd64 ubuntu:22.04", strings.TrimSpace(string(got)))
+	})
+
+	t.Run("omits --platform when empty", func(t *testing.T) {
+		h := &DockerHelper{DockerCommand: bin}
+		require.NoError(t, h.Pull(context.Background(), PullOptions{
+			Image:  "ubuntu:22.04",
+			Stdout: io.Discard,
+			Stderr: io.Discard,
+		}))
+		//nolint:gosec // test reads a temp file path it controls
+		got, err := os.ReadFile(argsFile)
+		require.NoError(t, err)
+		assert.Equal(t, "pull ubuntu:22.04", strings.TrimSpace(string(got)))
+	})
 }
 
 func TestGPUSupportEnabled_CommandFailure(t *testing.T) {

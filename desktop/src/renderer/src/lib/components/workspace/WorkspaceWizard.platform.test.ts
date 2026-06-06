@@ -196,7 +196,22 @@ describe("WorkspaceWizard platform compatibility", () => {
     unmount()
   })
 
-  it("stays silent and still launches when the platform lookup rejects", async () => {
+  it("confirms compatibility and lists platforms for a multi-arch image", async () => {
+    getImagePlatforms.mockResolvedValue(["linux/amd64", "linux/arm64"])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await gotoReviewWithImage(getByText, "ubuntu:22.04")
+
+    await waitFor(() =>
+      expect(getByText(/Compatible with your machine \(linux\/arm64\)/i)).toBeTruthy(),
+    )
+    expect(getByText(/linux\/amd64, linux\/arm64/i)).toBeTruthy()
+    unmount()
+  })
+
+  it("shows a neutral note and still launches when the platform lookup rejects", async () => {
     getImagePlatforms.mockRejectedValue(new Error("registry unreachable"))
     const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
@@ -204,7 +219,9 @@ describe("WorkspaceWizard platform compatibility", () => {
     await flushAsync()
     await gotoReviewWithImage(getByText, "ubuntu:22.04")
 
-    await flushAsync()
+    await waitFor(() =>
+      expect(getByText(/Couldn't verify compatibility/i)).toBeTruthy(),
+    )
     expect(queryByText(/no build for your machine/i)).toBeNull()
     expect(document.querySelector('input[type="checkbox"]')).toBeNull()
 
@@ -215,6 +232,21 @@ describe("WorkspaceWizard platform compatibility", () => {
     expect(workspaceUp).toHaveBeenCalledWith(
       expect.objectContaining({ platform: undefined }),
     )
+    unmount()
+  })
+
+  it("shows a neutral note when the registry returns no platform data", async () => {
+    getImagePlatforms.mockResolvedValue([])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await gotoReviewWithImage(getByText, "ubuntu:22.04")
+
+    await waitFor(() =>
+      expect(getByText(/Couldn't verify compatibility/i)).toBeTruthy(),
+    )
+    expect(queryByText(/no build for your machine/i)).toBeNull()
     unmount()
   })
 })
