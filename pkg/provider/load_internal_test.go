@@ -32,9 +32,8 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 		"internal provider must be refreshed from embedded yaml, not the stale stored config")
 	require.True(t, strings.Contains(loaded.Exec.Command[0], "internal sh"),
 		"refreshed command should use the current 'internal sh' wrapper")
-	// The embedded YAML is the source of truth for internal providers, so the
-	// whole definition (not just exec.command) is taken from embed: the stale
-	// stored Version is replaced and Source.Internal stays set.
+	// Refresh replaces the whole definition from embed, not just exec.command,
+	// so the stale stored Version is dropped and Source.Internal stays set.
 	require.NotEqual(t, "v0.0.0-stale", loaded.Version,
 		"internal refresh replaces the stored definition wholesale, including Version")
 	require.True(t, loaded.Source.Internal, "refreshed provider must remain internal")

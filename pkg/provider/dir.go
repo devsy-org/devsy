@@ -305,9 +305,8 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		return nil, err
 	}
 
-	// Refresh built-in providers from the embedded YAML so a CLI change (e.g.
-	// renaming the command wrapper) can't leave a stale exec.command in the
-	// provider.json written at init time.
+	// Refresh built-in providers from embedded YAML: a CLI change (e.g. renaming
+	// the command wrapper) must not be shadowed by a stale provider.json.
 	if providerConfig.Source.Internal {
 		if embedded := embeddedProviderConfig(providerConfig.Name); embedded != nil {
 			return embedded, nil
@@ -326,9 +325,8 @@ func embeddedProviderConfig(name string) *ProviderConfig {
 	}
 	parsed, err := ParseProvider(strings.NewReader(raw))
 	if err != nil {
-		// The YAML is go:embed-compiled, so a parse failure is a build-time
-		// regression. Log it: the silent fallback to the stored config would
-		// otherwise reintroduce the stale-command bug this refresh defeats.
+		// Embedded YAML failing to parse is a build-time regression; log rather
+		// than silently fall back to the stale stored config this refresh fixes.
 		log.Errorf("built-in provider %q failed to parse: %v", name, err)
 		return nil
 	}
