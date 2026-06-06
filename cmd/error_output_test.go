@@ -33,7 +33,7 @@ func (s *syncBuffer) String() string {
 // and feed the resulting error to reportError, capturing the logger output.
 func captureReportError(t *testing.T, args []string) (string, int) {
 	t.Helper()
-	log.Init(log.Config{Format: "text"})
+	log.Init(log.Config{Format: logOutputText})
 	sink := &syncBuffer{}
 	remove := log.AddSink(sink)
 	defer remove()
@@ -43,7 +43,7 @@ func captureReportError(t *testing.T, args []string) (string, int) {
 	err := rootCmd.Execute()
 	require.Error(t, err)
 
-	code := reportError(err, "text")
+	code := reportError(err, logOutputText)
 	// Sync flushes buffered entries; syncing os.Stderr returns a harmless
 	// "invalid argument" on non-terminal fds, so the result is ignored.
 	_ = log.Sync()
@@ -62,7 +62,7 @@ func TestUnknownCommand_PrintsError(t *testing.T) {
 // TestUnknownFlag_PrintsError verifies an unknown flag on a valid command
 // reports an error rather than exiting silently.
 func TestUnknownFlag_PrintsError(t *testing.T) {
-	out, code := captureReportError(t, []string{cmdWorkspace, "list", "--definitely-not-a-flag"})
+	out, code := captureReportError(t, []string{cmdWorkspace, cmdList, "--definitely-not-a-flag"})
 	require.NotEmpty(t, strings.TrimSpace(out),
 		"unknown flag must produce error output, not exit silently")
 	require.NotZero(t, code, "unknown flag must exit non-zero")
@@ -74,11 +74,11 @@ func TestParseLogOutputFlag(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"default when absent", []string{cmdWorkspace, "list"}, "text"},
-		{"equals form", []string{"--log-output=json"}, "json"},
-		{"space form", []string{"--log-output", "logfmt"}, "logfmt"},
-		{"log-format alias", []string{"--log-format=json"}, "json"},
-		{"trailing flag with no value falls back", []string{"--log-output"}, "text"},
+		{"default when absent", []string{cmdWorkspace, cmdList}, logOutputText},
+		{"equals form", []string{flagLogOutput + "=" + logOutputJSON}, logOutputJSON},
+		{"space form", []string{flagLogOutput, logOutputLogfmt}, logOutputLogfmt},
+		{"log-format alias", []string{flagLogFormat + "=" + logOutputJSON}, logOutputJSON},
+		{"trailing flag with no value falls back", []string{flagLogOutput}, logOutputText},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

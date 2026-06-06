@@ -36,8 +36,12 @@ import (
 )
 
 const (
+	logOutputText   = "text"
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+
+	flagLogOutput = "--log-output"
+	flagLogFormat = "--log-format"
 
 	groupCore         = "core"
 	groupConfig       = "config"
@@ -147,10 +151,9 @@ func reportError(err error, logOutput string) int {
 // before cobra parses flags. Unknown values fall through to the default text
 // encoder via resolveEncoder.
 func parseLogOutputFlag(args []string) string {
-	const def = "text"
 	for i, arg := range args {
 		name, value, hasValue := strings.Cut(arg, "=")
-		if name != "--log-output" && name != "--log-format" {
+		if name != flagLogOutput && name != flagLogFormat {
 			continue
 		}
 		if hasValue {
@@ -160,7 +163,7 @@ func parseLogOutputFlag(args []string) string {
 			return args[i+1]
 		}
 	}
-	return def
+	return logOutputText
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed
