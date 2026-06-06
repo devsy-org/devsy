@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,16 +13,18 @@ import (
 // stale provider.json files carry before a refresh rewrites them.
 const staleHelperShCommand = `"${DEVSY}" helper sh -c "${COMMAND}"`
 
+const staleVersion = "v0.0.0-stale"
+
 // TestLoadProviderConfig_RefreshesInternalProvider verifies that a stored
 // built-in provider config with a stale exec.command (e.g. the removed
-// "helper sh" wrapper baked in before a CLI rename) is refreshed from the
-// embedded provider definition on load.
+// "helper sh" wrapper baked in before a CLI rename) has its exec block
+// refreshed from the embedded provider definition on load.
 func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 	setupTestHome(t)
 
 	stale := &ProviderConfig{
 		Name:    DockerDriver,
-		Version: "v0.0.0-stale",
+		Version: staleVersion,
 		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
 		Exec: ProviderCommands{
 			Command: []string{staleHelperShCommand},
@@ -36,11 +39,35 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 		"internal provider must be refreshed from embedded yaml, not the stale stored config")
 	require.True(t, strings.Contains(loaded.Exec.Command[0], "internal sh"),
 		"refreshed command should use the current 'internal sh' wrapper")
-	// Refresh replaces the whole definition from embed, not just exec.command,
-	// so the stale stored Version is dropped and Source.Internal stays set.
-	require.NotEqual(t, "v0.0.0-stale", loaded.Version,
-		"internal refresh replaces the stored definition wholesale, including Version")
-	require.True(t, loaded.Source.Internal, "refreshed provider must remain internal")
+}
+
+// TestLoadProviderConfig_PreservesCustomizations verifies the exec refresh
+// overlays only the embedded exec block, leaving a user's custom Name and
+// resolved Options intact (a built-in added with `--name`/`--option`).
+func TestLoadProviderConfig_PreservesCustomizations(t *testing.T) {
+	setupTestHome(t)
+
+	stored := &ProviderConfig{
+		Name:    "my-docker",
+		Version: staleVersion,
+		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
+		Options: map[string]*types.Option{
+			"DOCKER_PATH": {Default: "podman"},
+		},
+		Exec: ProviderCommands{
+			Command: []string{staleHelperShCommand},
+		},
+	}
+	require.NoError(t, SaveProviderConfig(config.DefaultContext, stored))
+
+	loaded, err := LoadProviderConfig(config.DefaultContext, "my-docker")
+	require.NoError(t, err)
+	require.Equal(t, "my-docker", loaded.Name, "custom provider name must survive refresh")
+	require.Equal(t, "v0.0.0-stale", loaded.Version, "stored version must survive refresh")
+	require.Equal(t, "podman", loaded.Options["DOCKER_PATH"].Default,
+		"resolved options must survive refresh")
+	require.NotContains(t, loaded.Exec.Command[0], "helper sh",
+		"exec block must still be refreshed from embedded yaml")
 }
 
 // TestLoadProviderConfig_RefreshesProBySourceID guards the case where a
@@ -52,19 +79,17 @@ func TestLoadProviderConfig_RefreshesProBySourceID(t *testing.T) {
 
 	stale := &ProviderConfig{
 		Name:    "devsy-pro",
-		Version: "v0.0.0-stale",
+		Version: staleVersion,
 		Source:  ProviderSource{Internal: true, Raw: "pro"},
-		Exec: ProviderCommands{
-			Command: []string{staleHelperShCommand},
-		},
+		Exec:    ProviderCommands{Daemon: &DaemonCommands{Start: []string{"stale start"}}},
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, stale))
 
 	loaded, err := LoadProviderConfig(config.DefaultContext, "devsy-pro")
 	require.NoError(t, err)
-	require.NotEqual(t, "v0.0.0-stale", loaded.Version,
-		"pro provider must be refreshed from embedded yaml via Source.Raw")
-	require.True(t, loaded.Source.Internal)
+	require.NotNil(t, loaded.Exec.Daemon, "pro exec must be refreshed from embedded yaml")
+	require.NotEqual(t, []string{"stale start"}, []string(loaded.Exec.Daemon.Start),
+		"pro provider exec must be refreshed from embedded yaml via Source.Raw")
 }
 
 // TestLoadProviderConfig_UnknownInternalFallsBack ensures an internal provider

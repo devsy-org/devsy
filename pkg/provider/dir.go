@@ -305,11 +305,14 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		return nil, err
 	}
 
-	// Refresh built-in providers from embedded YAML: a CLI change (e.g. renaming
-	// the command wrapper) must not be shadowed by a stale provider.json.
+	// Refresh the exec commands of built-in providers from embedded YAML: a CLI
+	// change (e.g. renaming the command wrapper) must not be shadowed by a stale
+	// provider.json. Only the exec blocks are overlaid so user customizations
+	// (custom --name, resolved options) survive.
 	if providerConfig.Source.Internal {
 		if embedded := embeddedProviderConfig(providerConfig.Source.Raw); embedded != nil {
-			return embedded, nil
+			providerConfig.Exec = embedded.Exec
+			providerConfig.Agent.Exec = embedded.Agent.Exec
 		}
 	}
 
@@ -332,7 +335,6 @@ func embeddedProviderConfig(sourceID string) *ProviderConfig {
 		log.Errorf("built-in provider %q failed to parse: %v", sourceID, err)
 		return nil
 	}
-	parsed.Source.Internal = true
 	return parsed
 }
 
