@@ -57,7 +57,7 @@ func NewHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				root.Annotations = map[string]string{}
 			}
 			// Don't print debug message
-			root.Annotations[cmdinternal.AgentExecutedAnnotation] = "true"
+			root.Annotations[cmdinternal.AgentExecutedAnnotation] = "true" //nolint:goconst
 		},
 	}
 
