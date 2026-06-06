@@ -53,7 +53,7 @@ module.exports = {
           path: "pages",
           routeBasePath: "/",
           sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/devsy-org/devsy/edit/main/docs/",
+          editUrl: "https://github.com/devsy-org/devsy/edit/main/sites/docs-devsy-sh/",
         },
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
