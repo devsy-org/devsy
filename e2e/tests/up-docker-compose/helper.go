@@ -69,7 +69,11 @@ func (btc *baseTestContext) resetTaggedImage(
 	ctx context.Context,
 	sourceImage, targetImage string,
 ) error {
-	if err := btc.dockerHelper.Pull(ctx, sourceImage, nil, io.Discard, io.Discard); err != nil {
+	if err := btc.dockerHelper.Pull(ctx, docker.PullOptions{
+		Image:  sourceImage,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	}); err != nil {
 		return err
 	}
 	_ = btc.dockerHelper.Run(

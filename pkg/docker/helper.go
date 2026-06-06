@@ -140,17 +140,25 @@ func (r *DockerHelper) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *DockerHelper) Pull(
-	ctx context.Context,
-	image string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	cmd := r.buildCmd(ctx, "pull", image)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+// PullOptions configures an image pull.
+type PullOptions struct {
+	Image    string
+	Platform string
+	Stdin    io.Reader
+	Stdout   io.Writer
+	Stderr   io.Writer
+}
+
+func (r *DockerHelper) Pull(ctx context.Context, opts PullOptions) error {
+	args := []string{"pull"}
+	if opts.Platform != "" {
+		args = append(args, "--platform", opts.Platform)
+	}
+	args = append(args, opts.Image)
+	cmd := r.buildCmd(ctx, args...)
+	cmd.Stdin = opts.Stdin
+	cmd.Stdout = opts.Stdout
+	cmd.Stderr = opts.Stderr
 	return cmd.Run()
 }
 
@@ -416,8 +424,7 @@ func (r *DockerHelper) FindContainerJSON(ctx context.Context, labels []string) (
 		}
 
 		for _, label := range labels {
-			key := strings.Split(label, "=")[0]
-			value := strings.Join(strings.Split(label, "=")[1:], "=")
+			key, value, _ := strings.Cut(label, "=")
 
 			found = containers[0].Config.Labels[key] == value
 		}

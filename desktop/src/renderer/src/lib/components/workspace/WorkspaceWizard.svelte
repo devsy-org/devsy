@@ -212,6 +212,8 @@ let hostPlatform = $state("")
 let imagePlatforms = $state<string[]>([])
 let checkedRef = $state("")
 let compatLoading = $state(false)
+let compatChecked = $state(false)
+let compatLookupFailed = $state(false)
 let emulationEnabled = $state(false)
 
 let initializedProviders = $derived(
@@ -259,6 +261,22 @@ let imageIncompatible = $derived(
 // platform. This is what we run under emulation.
 let emulationTarget = $derived(
   imagePlatforms.includes("linux/amd64") ? "linux/amd64" : imagePlatforms[0] ?? "",
+)
+
+let imageCompatible = $derived(
+  sourceType === "image" &&
+    compatChecked &&
+    hostPlatform !== "" &&
+    imagePlatforms.length > 0 &&
+    isImageCompatible(imagePlatforms, hostPlatform),
+)
+
+// Lookup resolved but produced nothing actionable: either it errored or the
+// registry returned no platform data, so we can't make a compatibility claim.
+let compatUnknown = $derived(
+  sourceType === "image" &&
+    compatChecked &&
+    (compatLookupFailed || imagePlatforms.length === 0 || hostPlatform === ""),
 )
 
 let stepStates = $derived.by(() => {
@@ -319,6 +337,8 @@ function reset() {
   checkedRef = ""
   imagePlatforms = []
   compatLoading = false
+  compatChecked = false
+  compatLookupFailed = false
   emulationEnabled = false
   clearWatchdog()
   unlisten?.()
@@ -342,6 +362,8 @@ $effect(() => {
     const ref = imageRef.trim()
     checkedRef = ref
     compatLoading = true
+    compatChecked = false
+    compatLookupFailed = false
     imagePlatforms = []
     emulationEnabled = false
     getImagePlatforms(ref)
@@ -353,9 +375,11 @@ $effect(() => {
         // renderer defect isn't silently masked as "image compatible".
         console.warn(`Image platform lookup failed for ${ref}:`, err)
         imagePlatforms = []
+        compatLookupFailed = true
       })
       .finally(() => {
         compatLoading = false
+        compatChecked = true
       })
   }
 })
@@ -577,7 +601,7 @@ function selectTemplate(t: { name: string; source: string }) {
             <div class="space-y-1.5">
               <Label class="text-sm">Ref Type</Label>
               <Select.Root type="single" bind:value={refType}>
-                <Select.Trigger class="w-full">
+                <Select.Trigger class="h-8 w-full rounded-lg">
                   {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull Request"}
                 </Select.Trigger>
                 <Select.Content>
@@ -897,12 +921,6 @@ function selectTemplate(t: { name: string; source: string }) {
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
-            <p class="text-xs text-muted-foreground">
-              Auto-suggested to avoid conflicts. Edit to use a custom name.
-            </p>
-            <p class="text-xs text-muted-foreground">
-              Resolved id: <span class="font-mono">{resolvedId || "—"}</span>
-            </p>
           </div>
 
           {#if resolvedIdInvalid}
@@ -984,7 +1002,29 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           {#if sourceType === "image" && compatLoading}
-            <p class="text-sm text-muted-foreground">Checking image compatibility…</p>
+            <p class="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              Checking image compatibility…
+            </p>
+          {/if}
+
+          {#if imageCompatible}
+            <p class="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+              <Check class="h-4 w-4 shrink-0" />
+              <span>
+                Compatible with your machine ({hostPlatform})
+                <span class="block text-xs text-muted-foreground">
+                  Image supports {imagePlatforms.join(", ")}
+                </span>
+              </span>
+            </p>
+          {/if}
+
+          {#if compatUnknown}
+            <p class="text-sm text-muted-foreground">
+              Couldn't verify compatibility for your machine ({hostPlatform ||
+                "unknown"}); the image will be pulled as-is.
+            </p>
           {/if}
 
           {#if imageIncompatible}
@@ -993,6 +1033,11 @@ function selectTemplate(t: { name: string; source: string }) {
               <Alert.Description class="text-amber-700 dark:text-amber-400">
                 This image has no build for your machine ({hostPlatform}) and will
                 fail to start unless you run it under emulation below.
+                {#if imagePlatforms.length > 0}
+                  <span class="block text-xs">
+                    Image supports {imagePlatforms.join(", ")}.
+                  </span>
+                {/if}
               </Alert.Description>
             </Alert.Root>
 
