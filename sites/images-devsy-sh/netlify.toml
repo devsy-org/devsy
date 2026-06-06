@@ -1,0 +1,10 @@
+[build]
+  base = "sites/images-devsy-sh/"
+  publish = "dist"
+  command = "npm install && npm run build"
+
+[[headers]]
+  for = "/catalog.json"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=60"
