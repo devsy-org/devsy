@@ -25,7 +25,12 @@ import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
-import { workspaceUp, openDirectoryDialog } from "$lib/ipc/commands.js"
+import {
+  workspaceUp,
+  openDirectoryDialog,
+  getHostPlatform,
+  getImagePlatforms,
+} from "$lib/ipc/commands.js"
 import { buildWorkspaceSource } from "$lib/utils/workspace-source.js"
 import type {
   WorkspaceSourceType,
@@ -35,6 +40,7 @@ import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
@@ -201,6 +207,13 @@ let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
 
+// Image platform compatibility (image source only)
+let hostPlatform = $state("")
+let imagePlatforms = $state<string[]>([])
+let checkedRef = $state("")
+let compatLoading = $state(false)
+let emulationEnabled = $state(false)
+
 let initializedProviders = $derived(
   $providers.filter((p) => p.state?.initialized === true),
 )
@@ -233,6 +246,19 @@ let nameConflict = $derived(
     $workspaces.some(
       (ws) => ws.id.toLowerCase() === resolvedId.toLowerCase(),
     ),
+)
+
+let imageIncompatible = $derived(
+  sourceType === "image" &&
+    hostPlatform !== "" &&
+    imagePlatforms.length > 0 &&
+    !isImageCompatible(imagePlatforms, hostPlatform),
+)
+
+// Prefer linux/amd64 if the image offers it; otherwise the first listed
+// platform. This is what we run under emulation.
+let emulationTarget = $derived(
+  imagePlatforms.includes("linux/amd64") ? "linux/amd64" : imagePlatforms[0] ?? "",
 )
 
 let stepStates = $derived.by(() => {
@@ -301,8 +327,36 @@ $effect(() => {
   }
 })
 
+$effect(() => {
+  if (
+    currentStep === "review" &&
+    sourceType === "image" &&
+    imageRef.trim() &&
+    imageRef.trim() !== checkedRef &&
+    !compatLoading
+  ) {
+    const ref = imageRef.trim()
+    checkedRef = ref
+    compatLoading = true
+    imagePlatforms = []
+    emulationEnabled = false
+    getImagePlatforms(ref)
+      .then((p) => {
+        imagePlatforms = p
+      })
+      .catch(() => {
+        // Advisory only: a failed lookup never blocks launch.
+        imagePlatforms = []
+      })
+      .finally(() => {
+        compatLoading = false
+      })
+  }
+})
+
 onMount(() => {
   // Listener is registered at handleLaunch time (race-safe pattern).
+  void getHostPlatform().then((p) => (hostPlatform = p))
 })
 
 onDestroy(() => {
@@ -368,6 +422,10 @@ async function handleLaunch() {
       workspaceFolder: workspaceFolder.trim() || undefined,
       devcontainerPath: assembled.devcontainerPath,
       prebuildRepository: assembled.prebuildRepository,
+      platform:
+        imageIncompatible && emulationEnabled && emulationTarget
+          ? emulationTarget
+          : undefined,
       debug: true,
     })
 
@@ -912,6 +970,35 @@ function selectTemplate(t: { name: string; source: string }) {
               <span class="font-medium truncate font-mono">{resolvedId}</span>
             </div>
           </div>
+
+          {#if sourceType === "image" && compatLoading}
+            <p class="text-sm text-muted-foreground">Checking image compatibility…</p>
+          {/if}
+
+          {#if imageIncompatible}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                This image has no build for your machine ({hostPlatform}) and will
+                fail to start unless you run it under emulation below.
+              </Alert.Description>
+            </Alert.Root>
+
+            <label class="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={emulationEnabled}
+                onchange={(e) => (emulationEnabled = e.currentTarget.checked)}
+              />
+              <span>
+                <span class="font-medium">Run under emulation ({emulationTarget})</span>
+                <span class="block text-xs text-muted-foreground">
+                  Runs an {emulationTarget} image on your machine via emulation. Works, but noticeably slower.
+                </span>
+              </span>
+            </label>
+          {/if}
 
           <div class="flex justify-between gap-2 pt-2">
             <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
