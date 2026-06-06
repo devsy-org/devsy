@@ -29,6 +29,16 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
+function dockerOs(nodePlatform: NodeJS.Platform): string {
+  return nodePlatform === "win32" ? "windows" : nodePlatform
+}
+
+function dockerArch(nodeArch: string): string {
+  if (nodeArch === "x64") return "amd64"
+  if (nodeArch === "arm") return "arm"
+  return nodeArch
+}
+
 // Cache for provider update checks. Seeded on launch and refreshed every 6 hours.
 type UpdateInfo = {
   current: string
@@ -1003,6 +1013,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("get_app_version", () => {
     return app.getVersion()
+  })
+
+  ipcMain.handle("get_host_platform", () => {
+    return `${dockerOs(process.platform)}/${dockerArch(process.arch)}`
   })
 
   ipcMain.handle(

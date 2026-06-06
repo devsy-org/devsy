@@ -172,6 +172,11 @@ export async function imageCatalogRefresh(): Promise<LoadCatalogResult> {
   return invoke<LoadCatalogResult>("image_catalog_refresh")
 }
 
+/** Host container platform as `os/arch` (e.g. "linux/arm64"). */
+export async function getHostPlatform(): Promise<string> {
+  return invoke<string>("get_host_platform")
+}
+
 /** Supported `os/arch` platforms for an image ref, via the registry manifest. */
 export async function getImagePlatforms(ref: string): Promise<string[]> {
   return invoke<string[]>("image_inspect_platforms", { ref })
