@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/internal/agent/container"
 	"github.com/devsy-org/devsy/cmd/internal/agent/workspace"
+	"github.com/devsy-org/devsy/cmd/internal/agentcontainer"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -26,7 +26,7 @@ func NewAgentCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	agentCmd.AddCommand(workspace.NewWorkspaceCmd(globalFlags))
-	agentCmd.AddCommand(container.NewContainerCmd(globalFlags))
+	agentCmd.AddCommand(agentcontainer.NewContainerCmd(globalFlags))
 	agentCmd.AddCommand(NewDaemonCmd(globalFlags))
 	agentCmd.AddCommand(NewContainerTunnelCmd(globalFlags))
 	agentCmd.AddCommand(NewGitCredentialsCmd(globalFlags))

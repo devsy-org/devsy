@@ -13,7 +13,7 @@ import (
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/cmd/internal/agent/container"
+	"github.com/devsy-org/devsy/cmd/internal/agentcontainer"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ts"
@@ -80,7 +80,7 @@ func (cmd *GitCredentialsCmd) Run(ctx context.Context, args []string) error {
 func getCredentialsFromWorkspaceServer(
 	credentials *gitcredentials.GitCredentials,
 ) *gitcredentials.GitCredentials {
-	if _, err := os.Stat(filepath.Join(container.RootDir, ts.RunnerProxySocket)); err != nil {
+	if _, err := os.Stat(filepath.Join(agentcontainer.RootDir, ts.RunnerProxySocket)); err != nil {
 		// workspace server is not running
 		return nil
 	}
@@ -88,7 +88,7 @@ func getCredentialsFromWorkspaceServer(
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", filepath.Join(container.RootDir, ts.RunnerProxySocket))
+				return net.Dial("unix", filepath.Join(agentcontainer.RootDir, ts.RunnerProxySocket))
 			},
 		},
 	}

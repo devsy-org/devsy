@@ -1,6 +1,6 @@
 //go:build !windows
 
-package container
+package agentcontainer
 
 import (
 	"encoding/json"
