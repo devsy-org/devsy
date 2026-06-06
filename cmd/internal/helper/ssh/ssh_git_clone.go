@@ -1,4 +1,4 @@
-package helper
+package ssh
 
 import (
 	"context"

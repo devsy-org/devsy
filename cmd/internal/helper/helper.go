@@ -5,6 +5,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/internal/helper/http"
 	"github.com/devsy-org/devsy/cmd/internal/helper/json"
+	"github.com/devsy-org/devsy/cmd/internal/helper/ssh"
 	"github.com/devsy-org/devsy/cmd/internal/helper/strings"
 	"github.com/spf13/cobra"
 )
@@ -23,15 +24,15 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	helperCmd.AddCommand(http.NewHTTPCmd(globalFlags))
 	helperCmd.AddCommand(json.NewJSONCmd(globalFlags))
 	helperCmd.AddCommand(strings.NewStringsCmd(globalFlags))
-	helperCmd.AddCommand(NewSSHServerCmd(globalFlags))
+	helperCmd.AddCommand(ssh.NewSSHServerCmd(globalFlags))
 	helperCmd.AddCommand(NewGetWorkspaceNameCmd(globalFlags))
 	helperCmd.AddCommand(NewGetWorkspaceUIDCmd(globalFlags))
 	helperCmd.AddCommand(NewGetWorkspaceConfigCommand(globalFlags))
 	helperCmd.AddCommand(NewGetProviderNameCmd(globalFlags))
 	helperCmd.AddCommand(NewCheckProviderUpdateCmd(globalFlags))
-	helperCmd.AddCommand(NewSSHClientCmd())
+	helperCmd.AddCommand(ssh.NewSSHClientCmd())
 	helperCmd.AddCommand(NewShellCmd())
-	helperCmd.AddCommand(NewSSHGitCloneCmd())
+	helperCmd.AddCommand(ssh.NewSSHGitCloneCmd())
 	helperCmd.AddCommand(NewFleetServerCmd(globalFlags))
 	helperCmd.AddCommand(NewDockerCredentialsHelperCmd(globalFlags))
 	helperCmd.AddCommand(NewGetImageCmd(globalFlags))
