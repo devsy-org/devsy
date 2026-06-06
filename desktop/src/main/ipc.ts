@@ -523,6 +523,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         workspaceFolder?: string
         devcontainerPath?: string
         prebuildRepository?: string
+        platform?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -537,6 +538,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         cliArgs.push("--devcontainer-path", args.devcontainerPath)
       if (args.prebuildRepository)
         cliArgs.push("--prebuild-repository", args.prebuildRepository)
+      if (args.platform) cliArgs.push("--platform", args.platform)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
