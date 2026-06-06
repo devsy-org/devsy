@@ -1022,7 +1022,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "image_inspect_platforms",
     async (_event, args: { ref: string }) => {
       const result = await cli.run<{ platforms: string[] }>([
-        "helper",
+        "internal",
         "get-image-platforms",
         args.ref,
       ])

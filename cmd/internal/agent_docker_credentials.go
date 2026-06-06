@@ -1,0 +1,53 @@
+package cmdinternal
+
+import (
+	"context"
+	"os"
+
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/docker/docker-credential-helpers/credentials"
+	"github.com/spf13/cobra"
+)
+
+// DockerCredentialsCmd holds the cmd flags.
+type DockerCredentialsCmd struct {
+	*flags.GlobalFlags
+
+	Port int
+}
+
+// NewDockerCredentialsCmd creates a new command.
+func NewDockerCredentialsCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &DockerCredentialsCmd{
+		GlobalFlags: flags,
+	}
+	dockerCredentialsCmd := &cobra.Command{
+		Use:   "docker-credentials",
+		Short: "Retrieves docker-credentials from the local machine",
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.Run(cobraCmd.Context(), args)
+		},
+	}
+	dockerCredentialsCmd.Flags().
+		IntVar(&cmd.Port, "port", 0, "If specified, will use the given port")
+	_ = dockerCredentialsCmd.MarkFlagRequired("port")
+	return dockerCredentialsCmd
+}
+
+func (cmd *DockerCredentialsCmd) Run(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	action := args[0]
+	helper := dockercredentials.NewHelper(cmd.Port)
+
+	if err := credentials.HandleCommand(helper, action, os.Stdin, os.Stdout); err != nil {
+		log.Debugf("docker credentials command: %v", err)
+	}
+
+	// Always return nil to fallback to anonymous access for public registries.
+	return nil
+}

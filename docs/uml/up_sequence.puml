@@ -35,7 +35,7 @@ alt image not already available
   deactivate Agent
 end
 
-Devsy -> Agent: devsy helper ssh-server --stdio
+Devsy -> Agent: devsy internal ssh-server --stdio
 activate Agent
 Devsy -> Agent: devsy agent daemon
 Devsy -> Agent: devsy agent workspace up --workspace-info
@@ -43,7 +43,7 @@ Devsy -> Agent: devsy agent workspace up --workspace-info
 Agent -> ContainerRuntime: run dev container
 ContainerRuntime --> Agent: container id
 
-Agent -> ContainerAgent: devsy helper ssh-server --stdio
+Agent -> ContainerAgent: devsy internal ssh-server --stdio
 activate ContainerAgent
 
 Agent -> ContainerAgent: devsy agent container setup

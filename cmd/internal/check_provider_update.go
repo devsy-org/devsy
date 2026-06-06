@@ -1,0 +1,123 @@
+package cmdinternal
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/blang/semver/v4"
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/spf13/cobra"
+)
+
+var errProviderNotFound = errors.New("provider not found")
+
+type CheckProviderUpdateCmd struct {
+	*flags.GlobalFlags
+}
+
+type providerVersionCheck struct {
+	UpdateAvailable bool   `json:"updateAvailable"`
+	LatestVersion   string `json:"latestVersion,omitempty"`
+}
+
+// NewCheckProviderUpdateCmd creates a new command.
+func NewCheckProviderUpdateCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &CheckProviderUpdateCmd{
+		GlobalFlags: flags,
+	}
+	shellCmd := &cobra.Command{
+		Use:   "check-provider-update",
+		Short: "Check if a provider update is available",
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			if err != nil {
+				return err
+			}
+			return cmd.Run(cobraCmd.Context(), devsyConfig, args)
+		},
+	}
+
+	return shellCmd
+}
+
+func (cmd *CheckProviderUpdateCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	args []string,
+) error {
+	if len(args) != 1 {
+		return fmt.Errorf("provider is missing")
+	}
+	providerName := args[0]
+
+	providerSourceRaw, err := workspace.ResolveProviderSource(
+		devsyConfig,
+		providerName,
+	)
+	if err != nil {
+		return fmt.Errorf("provider %s doesn't exist", providerName)
+	}
+
+	// retrieve current config for provider
+	allProviders, err := workspace.LoadAllProviders(devsyConfig)
+	if err != nil {
+		return err
+	}
+	currentProvider, ok := allProviders[providerName]
+	if !ok {
+		return errProviderNotFound
+	}
+
+	latestProviderConfig, err := loadLatestProvider(providerSourceRaw)
+	if err != nil {
+		return err
+	}
+	currentProviderVersion, err := semver.Parse(
+		strings.TrimPrefix(currentProvider.Config.Version, "v"),
+	)
+	if err != nil {
+		return err
+	}
+	latestProviderVersion, err := semver.Parse(
+		strings.TrimPrefix(latestProviderConfig.Version, "v"),
+	)
+	if err != nil {
+		return err
+	}
+
+	versionCheck := providerVersionCheck{UpdateAvailable: false}
+	// check if new version is newer
+	if latestProviderVersion.GT(currentProviderVersion) {
+		versionCheck.UpdateAvailable = true
+		versionCheck.LatestVersion = latestProviderConfig.Version
+	}
+	out, err := json.Marshal(versionCheck)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+
+	return nil
+}
+
+func loadLatestProvider(
+	providerSourceRaw string,
+) (*provider.ProviderConfig, error) {
+	providerRaw, _, err := provider.ResolveProvider(providerSourceRaw)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider: %w", err)
+	}
+	providerConfig, err := provider.ParseProvider(bytes.NewReader(providerRaw))
+	if err != nil {
+		return nil, fmt.Errorf("parse provider: %w", err)
+	}
+
+	return providerConfig, nil
+}

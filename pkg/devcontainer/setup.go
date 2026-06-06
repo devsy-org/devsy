@@ -376,7 +376,7 @@ func (r *runner) executeSetup(
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
 		shellescape.Quote(agent.ContainerDevsyHelperLocation),
-		"internal", "helper", "ssh-server", "--stdio",
+		"internal", "ssh-server", "--stdio",
 	}
 
 	if ide.ReusesAuthSock(r.WorkspaceConfig.Workspace.IDE.Name) {

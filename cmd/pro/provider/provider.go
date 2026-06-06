@@ -3,7 +3,7 @@ package provider
 import (
 	"os"
 
-	"github.com/devsy-org/devsy/cmd/agent"
+	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/provider/create"
 	"github.com/devsy-org/devsy/cmd/pro/provider/get"
@@ -34,7 +34,7 @@ func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			}
 
 			// Disable debug hints if we execute pro commands from Devsy Desktop
-			// We're reusing the agent.AgentExecutedAnnotation for simplicity, could rename in the future
+			// We're reusing the cmdinternal.AgentExecutedAnnotation for simplicity, could rename in the future
 			if os.Getenv(config.EnvUI) == config.BoolTrue {
 				cmd.VisitParents(func(c *cobra.Command) {
 					// find the root command
@@ -42,7 +42,7 @@ func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 						if c.Annotations == nil {
 							c.Annotations = map[string]string{}
 						}
-						c.Annotations[agent.AgentExecutedAnnotation] = config.BoolTrue
+						c.Annotations[cmdinternal.AgentExecutedAnnotation] = config.BoolTrue
 					}
 				})
 			}

@@ -1,0 +1,47 @@
+package agentworkspace
+
+import (
+	"context"
+
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/spf13/cobra"
+)
+
+// UpdateConfigCmd holds the cmd flags.
+type UpdateConfigCmd struct {
+	*flags.GlobalFlags
+
+	WorkspaceInfo string
+}
+
+// NewUpdateConfigCmd creates a new command.
+func NewUpdateConfigCmd(flags *flags.GlobalFlags) *cobra.Command {
+	cmd := &UpdateConfigCmd{
+		GlobalFlags: flags,
+	}
+	updateConfigCmd := &cobra.Command{
+		Use:   "update-config",
+		Short: "Updates the workspace config",
+		Args:  cobra.NoArgs,
+		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			return cmd.Run(cobraCmd.Context())
+		},
+	}
+	updateConfigCmd.Flags().
+		StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
+	_ = updateConfigCmd.MarkFlagRequired("workspace-info")
+	return updateConfigCmd
+}
+
+func (cmd *UpdateConfigCmd) Run(ctx context.Context) error {
+	// write workspace info
+	shouldExit, _, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo)
+	if err != nil {
+		return err
+	} else if shouldExit {
+		return nil
+	}
+
+	return nil
+}
