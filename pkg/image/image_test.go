@@ -7,7 +7,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
-func TestPlatformsFromIndex_FiltersUnknownAndDedupes(t *testing.T) {
+func TestPlatformsFromManifests_FiltersUnknownAndDedupes(t *testing.T) {
 	manifests := []v1.Descriptor{
 		{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}},
 		{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}},
