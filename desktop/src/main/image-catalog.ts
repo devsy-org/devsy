@@ -1,9 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises"
 import type {
+  CatalogCategory,
+  CatalogImage,
   CatalogOrigin,
   ImageCatalog,
   LoadCatalogResult,
 } from "../shared/image-catalog-types.js"
+
+const FETCH_TIMEOUT_MS = 10_000
 
 export interface CatalogCacheFile {
   fetchedAt: number
@@ -28,6 +32,35 @@ function getFetch(): typeof fetch {
   return fetchImpl ?? globalThis.fetch
 }
 
+function isCatalogCategory(value: unknown): value is CatalogCategory {
+  if (!value || typeof value !== "object") return false
+  const v = value as Partial<CatalogCategory>
+  return typeof v.id === "string" && typeof v.label === "string"
+}
+
+function isCatalogImage(value: unknown): value is CatalogImage {
+  if (!value || typeof value !== "object") return false
+  const v = value as Partial<CatalogImage>
+  return (
+    typeof v.id === "string" &&
+    typeof v.ref === "string" &&
+    typeof v.name === "string" &&
+    Array.isArray(v.categories) &&
+    v.categories.every((c) => typeof c === "string")
+  )
+}
+
+function isImageCatalog(value: unknown): value is ImageCatalog {
+  if (!value || typeof value !== "object") return false
+  const v = value as Partial<ImageCatalog>
+  return (
+    Array.isArray(v.categories) &&
+    v.categories.every(isCatalogCategory) &&
+    Array.isArray(v.images) &&
+    v.images.every(isCatalogImage)
+  )
+}
+
 async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
   let raw: string
   try {
@@ -40,7 +73,9 @@ async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
   }
   try {
     const parsed = JSON.parse(raw) as CatalogCacheFile
-    return parsed?.catalog?.images ? parsed : null
+    return typeof parsed?.fetchedAt === "number" && isImageCatalog(parsed.catalog)
+      ? parsed
+      : null
   } catch (err) {
     console.warn("[image-catalog] corrupt cache file, ignoring:", err)
     return null
@@ -51,7 +86,7 @@ async function readSeed(seedPath: string): Promise<ImageCatalog> {
   try {
     const raw = await readFile(seedPath, "utf8")
     const seed = JSON.parse(raw) as ImageCatalog
-    if (!seed?.images) throw new Error("seed missing images")
+    if (!isImageCatalog(seed)) throw new Error("seed malformed")
     return seed
   } catch (err) {
     console.error(
@@ -72,10 +107,17 @@ export async function loadCatalog(
   }
 
   try {
-    const res = await getFetch()(opts.url)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    let res: Response
+    try {
+      res = await getFetch()(opts.url, { signal: controller.signal })
+    } finally {
+      clearTimeout(timeout)
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const catalog = (await res.json()) as ImageCatalog
-    if (!catalog?.images) throw new Error("malformed catalog")
+    if (!isImageCatalog(catalog)) throw new Error("malformed catalog")
     try {
       const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
       await writeFile(opts.cachePath, JSON.stringify(toWrite))

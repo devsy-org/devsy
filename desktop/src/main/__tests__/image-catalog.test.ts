@@ -139,4 +139,39 @@ describe("loadCatalog", () => {
     expect(result.catalog.images[0].id).toBe("seed-img")
     expect(result.origin).toBe("seed")
   })
+
+  it("rejects a structurally malformed remote payload and falls back to seed", async () => {
+    // images present but entries miss required fields (no ref/categories).
+    __setFetchForTest(
+      async () =>
+        new Response(
+          JSON.stringify({ version: 1, categories: [], images: [{ id: "x" }] }),
+        ),
+    )
+    const result = await loadCatalog({
+      url: "https://example/catalog.json",
+      cachePath,
+      seedPath,
+      ttlMs: 1000,
+      force: true,
+    })
+    expect(result.catalog.images[0].id).toBe("seed-img")
+    expect(result.origin).toBe("seed")
+  })
+
+  it("passes an abort signal to the remote fetch", async () => {
+    let receivedSignal: AbortSignal | undefined
+    __setFetchForTest(async (_url, init) => {
+      receivedSignal = (init as RequestInit | undefined)?.signal ?? undefined
+      return new Response(JSON.stringify(REMOTE))
+    })
+    await loadCatalog({
+      url: "https://example/catalog.json",
+      cachePath,
+      seedPath,
+      ttlMs: 1000,
+      force: true,
+    })
+    expect(receivedSignal).toBeInstanceOf(AbortSignal)
+  })
 })

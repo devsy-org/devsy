@@ -218,14 +218,7 @@ let filteredIdes = $derived(
 )
 
 let resolvedId = $derived(
-  workspaceName.trim() ||
-    assembled.source
-      .trim()
-      .split("/")
-      .pop()
-      ?.replace(/\.git$/, "")
-      ?.replace(/@.*$/, "") ||
-    "",
+  workspaceName.trim() || deriveWorkspaceNameFromSource(assembled.source),
 )
 
 let resolvedIdInvalid = $derived(
@@ -430,6 +423,15 @@ function randomName(): string {
   })
 }
 
+function deriveWorkspaceNameFromSource(source: string): string {
+  const leaf = source.trim().split(/[\\/]/).pop() ?? ""
+  return leaf
+    .replace(/\.git$/i, "")
+    .replace(/@.*$/, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 function uniquifyName(base: string): string {
   const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
   if (base && !existing.has(base.toLowerCase())) return base
@@ -448,13 +450,7 @@ function continueFromProvider() {
 function continueFromSource() {
   if (!primarySourceValue) return
   if (!workspaceName.trim()) {
-    const derived =
-      assembled.source
-        .trim()
-        .split("/")
-        .pop()
-        ?.replace(/\.git$/, "")
-        ?.replace(/@.*$/, "") ?? ""
+    const derived = deriveWorkspaceNameFromSource(assembled.source)
     if (derived) workspaceName = uniquifyName(derived)
   } else {
     workspaceName = uniquifyName(workspaceName.trim())
@@ -463,8 +459,12 @@ function continueFromSource() {
 }
 
 async function handleBrowse() {
-  const picked = await openDirectoryDialog()
-  if (picked) localPath = picked
+  try {
+    const picked = await openDirectoryDialog()
+    if (picked) localPath = picked
+  } catch (err) {
+    toasts.error(`Failed to open directory picker: ${extractErrorMessage(err)}`)
+  }
 }
 
 function continueFromIde() {

@@ -534,13 +534,6 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(getActiveContinue(getByText))
     await flushAsync()
 
-    // The image ref derives an id containing ":", so give an explicit name.
-    const nameInput = document.querySelector(
-      'input[placeholder*="derived from source"]',
-    ) as HTMLInputElement
-    await fireEvent.input(nameInput, { target: { value: "ubuntu-box" } })
-    await flushAsync()
-
     const launchBtn = Array.from(
       document.querySelectorAll("button"),
     ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
@@ -555,6 +548,44 @@ describe("WorkspaceWizard", () => {
         prebuildRepository: undefined,
       }),
     )
+    unmount()
+  })
+
+  it("auto-derives a valid workspace id from an image tag", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    await fireEvent.click(getByText("Image"))
+    await flushAsync()
+    const customImageInput = document.querySelector(
+      'input[placeholder*="registry/image:tag"]',
+    ) as HTMLInputElement
+    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await flushAsync()
+
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    // The colon in the tag is sanitized, so the derived name is valid and
+    // Launch is enabled without manual correction.
+    const nameInput = document.querySelector(
+      'input[placeholder*="derived from source"]',
+    ) as HTMLInputElement
+    expect(nameInput.value).toBe("ubuntu-22.04")
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    expect(launchBtn.disabled).toBe(false)
     unmount()
   })
 
