@@ -14,6 +14,7 @@ const options = $derived([{ id: "all", label: "All" }, ...categories])
     <button
       type="button"
       onclick={() => (selected = opt.id)}
+      aria-pressed={selected === opt.id}
       class="rounded-full border px-3 py-1 text-sm {selected === opt.id
         ? 'border-primary bg-primary text-primary-foreground'
         : 'border-border bg-card text-card-foreground'}"

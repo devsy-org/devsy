@@ -5,9 +5,13 @@ let { image }: { image: CatalogImage } = $props()
 let copied = $state(false)
 
 async function copy() {
-  await navigator.clipboard.writeText(`docker pull ${image.ref}`)
-  copied = true
-  setTimeout(() => (copied = false), 1500)
+  try {
+    await navigator.clipboard.writeText(`docker pull ${image.ref}`)
+    copied = true
+    setTimeout(() => (copied = false), 1500)
+  } catch {
+    copied = false
+  }
 }
 </script>
 

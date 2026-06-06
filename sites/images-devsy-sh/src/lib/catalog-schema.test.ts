@@ -36,4 +36,20 @@ describe("isImageCatalog", () => {
     }
     expect(isImageCatalog(bad)).toBe(false)
   })
+
+  it("rejects an image with a mistyped optional field", () => {
+    const bad = {
+      ...VALID,
+      images: [
+        {
+          id: "py",
+          ref: "img:1",
+          name: "Python",
+          categories: ["languages"],
+          featured: "yes",
+        },
+      ],
+    }
+    expect(isImageCatalog(bad)).toBe(false)
+  })
 })

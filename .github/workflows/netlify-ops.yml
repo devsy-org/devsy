@@ -149,8 +149,15 @@ jobs:
       - name: Find or create images.devsy.sh site and output ID
         run: |
           echo "Listing Netlify sites..."
-          SITES=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+          SITES_RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             "https://api.netlify.com/api/v1/sites?per_page=100")
+          SITES_HTTP=$(echo "$SITES_RESP" | tail -1)
+          SITES=$(echo "$SITES_RESP" | sed '$d')
+          if [ "$SITES_HTTP" != "200" ]; then
+            echo "ERROR: Failed to list sites (HTTP $SITES_HTTP)"
+            echo "$SITES"
+            exit 1
+          fi
 
           IMAGES_SITE_ID=$(echo "$SITES" | \
             jq -r '.[] | select(.custom_domain == "images.devsy.sh" or .name == "images-devsy-sh") | .id' | head -1)
@@ -163,12 +170,24 @@ jobs:
             echo "$SITES" | jq '.[] | {id, name, custom_domain, url}' | head -100
             echo ""
             echo "Creating images-devsy-sh..."
-            CREATE_RESP=$(curl -s -X POST \
+            CREATE_RESP_RAW=$(curl -s -w "\n%{http_code}" -X POST \
               -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
               -H "Content-Type: application/json" \
               -d '{"name": "images-devsy-sh"}' \
               "https://api.netlify.com/api/v1/sites")
-            IMAGES_SITE_ID=$(echo "$CREATE_RESP" | jq -r '.id')
+            CREATE_HTTP=$(echo "$CREATE_RESP_RAW" | tail -1)
+            CREATE_RESP=$(echo "$CREATE_RESP_RAW" | sed '$d')
+            if [ "$CREATE_HTTP" != "200" ] && [ "$CREATE_HTTP" != "201" ]; then
+              echo "ERROR: Site creation failed (HTTP $CREATE_HTTP)"
+              echo "$CREATE_RESP"
+              exit 1
+            fi
+            IMAGES_SITE_ID=$(echo "$CREATE_RESP" | jq -r '.id // empty')
+            if [ -z "$IMAGES_SITE_ID" ]; then
+              echo "ERROR: Site created but no id returned"
+              echo "$CREATE_RESP"
+              exit 1
+            fi
             echo "Created: $(echo "$CREATE_RESP" | jq '{id, name, url}')"
           fi
 

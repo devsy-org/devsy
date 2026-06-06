@@ -32,6 +32,9 @@ function isCatalogImage(value: unknown): value is CatalogImage {
     typeof v.id === "string" &&
     typeof v.ref === "string" &&
     typeof v.name === "string" &&
+    (v.description === undefined || typeof v.description === "string") &&
+    (v.icon === undefined || typeof v.icon === "string") &&
+    (v.featured === undefined || typeof v.featured === "boolean") &&
     Array.isArray(v.categories) &&
     v.categories.every((c) => typeof c === "string")
   )

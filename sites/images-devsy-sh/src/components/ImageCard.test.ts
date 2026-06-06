@@ -36,4 +36,13 @@ describe("ImageCard", () => {
       `docker pull ${IMAGE.ref}`,
     )
   })
+
+  it("does not throw when clipboard write fails", async () => {
+    navigator.clipboard.writeText = vi
+      .fn()
+      .mockRejectedValue(new Error("denied"))
+    render(ImageCard, { props: { image: IMAGE } })
+    await fireEvent.click(screen.getByRole("button", { name: /copy/i }))
+    expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument()
+  })
 })
