@@ -316,6 +316,10 @@ function reset() {
   launchSuccess = false
   launchedWorkspaceId = null
   confirmCancelOpen = false
+  checkedRef = ""
+  imagePlatforms = []
+  compatLoading = false
+  emulationEnabled = false
   clearWatchdog()
   unlisten?.()
   unlisten = null
