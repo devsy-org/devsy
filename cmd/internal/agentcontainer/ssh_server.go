@@ -5,7 +5,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/log"
-	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
+	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	sshCmd.Flags().
-		StringVar(&cmd.Address, "address", fmt.Sprintf("127.0.0.1:%d", helperssh.DefaultUserPort), "Address to listen to")
+		StringVar(&cmd.Address, "address", fmt.Sprintf("127.0.0.1:%d", sshserver.DefaultUserPort), "Address to listen to")
 	sshCmd.Flags().
 		StringVar(&cmd.RemoteUser, "remote-user", "", "The remote user for this workspace")
 	sshCmd.Flags().
@@ -42,7 +42,7 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
-	server, err := helperssh.NewContainerServer(cmd.Address, cmd.Workdir)
+	server, err := sshserver.NewContainerServer(cmd.Address, cmd.Workdir)
 	if err != nil {
 		return err
 	}

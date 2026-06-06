@@ -1,4 +1,4 @@
-package helperhttp
+package cmdinternal
 
 import (
 	"context"

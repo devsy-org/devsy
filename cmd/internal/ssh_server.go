@@ -1,4 +1,4 @@
-package helperssh
+package cmdinternal
 
 import (
 	"encoding/base64"
@@ -9,7 +9,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/log"
-	helperssh "github.com/devsy-org/devsy/pkg/ssh/server"
+	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"github.com/devsy-org/devsy/pkg/token"
@@ -42,7 +42,7 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	sshCmd.Flags().
-		StringVar(&cmd.Address, "address", fmt.Sprintf("0.0.0.0:%d", helperssh.DefaultPort), "Address to listen to")
+		StringVar(&cmd.Address, "address", fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort), "Address to listen to")
 	sshCmd.Flags().
 		BoolVar(&cmd.Stdio, "stdio", false, "Will listen on stdout and stdin instead of an address")
 	sshCmd.Flags().
@@ -103,10 +103,10 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 	// SSH cleanup could run. Liveness is decided via a per-directory flock
 	// the owning process holds for its lifetime; the kernel releases the
 	// flock on any process exit (including SIGKILL).
-	helperssh.SweepStaleAgentSockets()
+	sshserver.SweepStaleAgentSockets()
 
 	// start the server
-	server, err := helperssh.NewServer(
+	server, err := sshserver.NewServer(
 		cmd.Address,
 		hostKey,
 		keys,

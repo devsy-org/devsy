@@ -1,4 +1,4 @@
-package helperworkspaceinfo
+package cmdinternal
 
 import (
 	"context"

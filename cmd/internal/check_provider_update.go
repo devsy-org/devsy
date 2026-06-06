@@ -1,4 +1,4 @@
-package helperprovider
+package cmdinternal
 
 import (
 	"bytes"

@@ -545,7 +545,6 @@ func (cmd *SSHCmd) startTunnel(
 	commandArgs := []string{
 		agent.ContainerDevsyHelperLocation,
 		"internal",
-		"helper",
 		"ssh-server",
 		"--track-activity",
 		"--stdio",

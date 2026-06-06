@@ -1,4 +1,4 @@
-package helperjson
+package cmdinternal
 
 import (
 	"context"

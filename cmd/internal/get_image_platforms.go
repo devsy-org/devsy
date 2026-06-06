@@ -1,4 +1,4 @@
-package helperimage
+package cmdinternal
 
 import (
 	"context"

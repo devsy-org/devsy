@@ -1,4 +1,4 @@
-package helperssh
+package cmdinternal
 
 import (
 	"context"
