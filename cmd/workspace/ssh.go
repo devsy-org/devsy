@@ -676,7 +676,7 @@ func (cmd *SSHCmd) startServices(
 }
 
 // setupGPGAgent will forward a local gpg-agent into the remote container
-// this works by using cmd/agent/workspace/setup_gpg.
+// this works by using cmd/internal/agent/workspace/setup_gpg.
 func (cmd *SSHCmd) setupGPGAgent(
 	ctx context.Context,
 	containerClient *ssh.Client,
