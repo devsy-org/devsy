@@ -5,6 +5,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/internal/helper/http"
 	"github.com/devsy-org/devsy/cmd/internal/helper/json"
+	"github.com/devsy-org/devsy/cmd/internal/helper/provider"
 	"github.com/devsy-org/devsy/cmd/internal/helper/ssh"
 	"github.com/devsy-org/devsy/cmd/internal/helper/strings"
 	"github.com/devsy-org/devsy/cmd/internal/helper/workspaceinfo"
@@ -29,8 +30,8 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceNameCmd(globalFlags))
 	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceUIDCmd(globalFlags))
 	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceConfigCommand(globalFlags))
-	helperCmd.AddCommand(NewGetProviderNameCmd(globalFlags))
-	helperCmd.AddCommand(NewCheckProviderUpdateCmd(globalFlags))
+	helperCmd.AddCommand(provider.NewGetProviderNameCmd(globalFlags))
+	helperCmd.AddCommand(provider.NewCheckProviderUpdateCmd(globalFlags))
 	helperCmd.AddCommand(ssh.NewSSHClientCmd())
 	helperCmd.AddCommand(NewShellCmd())
 	helperCmd.AddCommand(ssh.NewSSHGitCloneCmd())
