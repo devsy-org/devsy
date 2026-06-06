@@ -33,7 +33,7 @@ jobs:
           github_api_url: "https://api.github.com"
           files_to_ignore: |
             "*.lock"
-            "docs/*"
+            "sites/*"
             "go.mod"
             "go.sum"
             "package-lock.json"
