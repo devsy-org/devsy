@@ -12,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/id"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/providers"
 )
 
 const (
@@ -303,7 +305,35 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		return nil, err
 	}
 
+	// Refresh built-in providers from the embedded YAML so a CLI change (e.g.
+	// renaming the command wrapper) can't leave a stale exec.command in the
+	// provider.json written at init time.
+	if providerConfig.Source.Internal {
+		if embedded := embeddedProviderConfig(providerConfig.Name); embedded != nil {
+			return embedded, nil
+		}
+	}
+
 	return providerConfig, nil
+}
+
+// embeddedProviderConfig parses the built-in provider definition for name,
+// returning nil when name is not built-in or the YAML fails to parse.
+func embeddedProviderConfig(name string) *ProviderConfig {
+	raw := providers.GetBuiltInProviders()[name]
+	if raw == "" {
+		return nil
+	}
+	parsed, err := ParseProvider(strings.NewReader(raw))
+	if err != nil {
+		// The YAML is go:embed-compiled, so a parse failure is a build-time
+		// regression. Log it: the silent fallback to the stored config would
+		// otherwise reintroduce the stale-command bug this refresh defeats.
+		log.Errorf("built-in provider %q failed to parse: %v", name, err)
+		return nil
+	}
+	parsed.Source.Internal = true
+	return parsed
 }
 
 func LoadMachineConfig(context, machineID string) (*Machine, error) {
