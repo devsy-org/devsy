@@ -29,6 +29,12 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
+function dockerArch(nodeArch: string): string {
+  if (nodeArch === "x64") return "amd64"
+  if (nodeArch === "arm") return "arm"
+  return nodeArch
+}
+
 // Cache for provider update checks. Seeded on launch and refreshed every 6 hours.
 type UpdateInfo = {
   current: string
@@ -523,6 +529,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         workspaceFolder?: string
         devcontainerPath?: string
         prebuildRepository?: string
+        platform?: string
       },
     ) => {
       trackEvent("workspace_create", { provider: args.provider })
@@ -537,6 +544,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         cliArgs.push("--devcontainer-path", args.devcontainerPath)
       if (args.prebuildRepository)
         cliArgs.push("--prebuild-repository", args.prebuildRepository)
+      if (args.platform) cliArgs.push("--platform", args.platform)
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
@@ -1002,6 +1010,25 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("get_app_version", () => {
     return app.getVersion()
   })
+
+  ipcMain.handle("get_host_platform", () => {
+    // Devcontainers always target Linux: Docker Desktop/Podman run containers
+    // in a Linux VM, so the host process OS (darwin/win32) is never the
+    // container target. Only the architecture varies by host.
+    return `linux/${dockerArch(process.arch)}`
+  })
+
+  ipcMain.handle(
+    "image_inspect_platforms",
+    async (_event, args: { ref: string }) => {
+      const result = await cli.run<{ platforms: string[] }>([
+        "helper",
+        "get-image-platforms",
+        args.ref,
+      ])
+      return result.platforms
+    },
+  )
 
   ipcMain.handle("get_auto_download", () => {
     return getAutoDownloadEnabled()

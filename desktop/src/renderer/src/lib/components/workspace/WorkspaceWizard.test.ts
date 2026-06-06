@@ -9,6 +9,8 @@ const onCommandProgress = vi.fn()
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
   openDirectoryDialog: vi.fn(),
+  getHostPlatform: vi.fn().mockResolvedValue("linux/arm64"),
+  getImagePlatforms: vi.fn().mockResolvedValue(["linux/amd64", "linux/arm64"]),
 }))
 
 vi.mock("$lib/stores/imageCatalog.js", async () => {
@@ -24,6 +26,7 @@ vi.mock("$lib/stores/imageCatalog.js", async () => {
     }),
     loadImageCatalog: vi.fn(),
     filterImages: actual.filterImages,
+    isImageCompatible: actual.isImageCompatible,
   }
 })
 
@@ -453,11 +456,11 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     const subPathInput = document.querySelector(
-      'input[placeholder*="path/within/repo"]',
+      'input[placeholder*="packages/api"]',
     ) as HTMLInputElement
     await fireEvent.input(subPathInput, { target: { value: "pkg/api" } })
     const wsFolderInput = document.querySelector(
-      'input[placeholder*="opened inside the container"]',
+      'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
     await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
     const devcontainerInput = document.querySelector(
@@ -515,7 +518,7 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(advancedToggle)
     await flushAsync()
     const wsFolderInput = document.querySelector(
-      'input[placeholder*="opened inside the container"]',
+      'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
     await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
     await flushAsync()

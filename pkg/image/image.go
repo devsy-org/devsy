@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+)
+
+const (
+	osLinux   = "linux"
+	osUnknown = "unknown"
 )
 
 var (
@@ -49,7 +55,7 @@ func GetImageForArch(ctx context.Context, image, arch string) (v1.Image, error) 
 
 	remoteOptions := []remote.Option{
 		remote.WithAuthFromKeychain(keychain),
-		remote.WithPlatform(v1.Platform{Architecture: arch, OS: "linux"}),
+		remote.WithPlatform(v1.Platform{Architecture: arch, OS: osLinux}),
 	}
 
 	img, err := remote.Image(ref, remoteOptions...)
@@ -113,6 +119,64 @@ func GetImageConfig(
 	}
 
 	return configFile, img, nil
+}
+
+// platformsFromManifests collects unique "os/arch" strings from manifest
+// descriptors, skipping nil and unknown/attestation entries.
+func platformsFromManifests(manifests []v1.Descriptor) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, m := range manifests {
+		p := m.Platform
+		if p == nil || p.OS == "" || p.Architecture == "" ||
+			p.OS == osUnknown || p.Architecture == osUnknown {
+			continue
+		}
+		key := p.OS + "/" + p.Architecture
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}
+
+// GetImagePlatforms returns the "os/arch" platforms a remote image reference
+// supports. Multi-arch indexes return every entry; single-image manifests fall
+// back to the config file's OS/Architecture.
+func GetImagePlatforms(ctx context.Context, image string) ([]string, error) {
+	ref, err := name.ParseReference(image)
+	if err != nil {
+		return nil, err
+	}
+
+	keychain, err := GetKeychain(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create authentication keychain: %w", err)
+	}
+
+	idx, err := remote.Index(ref, remote.WithAuthFromKeychain(keychain))
+	if err == nil {
+		manifest, mErr := idx.IndexManifest()
+		if mErr != nil {
+			return nil, fmt.Errorf("read image index %s: %w", image, mErr)
+		}
+		platforms := platformsFromManifests(manifest.Manifests)
+		sort.Strings(platforms)
+		return platforms, nil
+	}
+
+	// Not an index — fall back to single-image config OS/Arch.
+	log.Debugf("Image %q is not an index (%v); falling back to single-image config", image, err)
+	configFile, _, cErr := GetImageConfig(ctx, image)
+	if cErr != nil {
+		return nil, fmt.Errorf("retrieve image %s: %w", image, SanitizeRegistryError(cErr))
+	}
+	if configFile.OS == "" || configFile.Architecture == "" {
+		return []string{}, nil
+	}
+	return []string{configFile.OS + "/" + configFile.Architecture}, nil
 }
 
 func ValidateTags(tags []string) error {

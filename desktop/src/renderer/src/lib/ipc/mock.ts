@@ -269,6 +269,10 @@ const COMMANDS: Record<string, Handler> = {
   terminal_close: () => undefined,
   terminal_list: () => [],
 
+  get_host_platform: () => "linux/amd64",
+
+  image_inspect_platforms: () => ["linux/amd64", "linux/arm64"],
+
   // Release channel
   get_release_channel: () => "stable",
   set_release_channel: () => undefined,

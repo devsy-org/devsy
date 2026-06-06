@@ -25,7 +25,12 @@ import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
-import { workspaceUp, openDirectoryDialog } from "$lib/ipc/commands.js"
+import {
+  workspaceUp,
+  openDirectoryDialog,
+  getHostPlatform,
+  getImagePlatforms,
+} from "$lib/ipc/commands.js"
 import { buildWorkspaceSource } from "$lib/utils/workspace-source.js"
 import type {
   WorkspaceSourceType,
@@ -35,6 +40,7 @@ import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
@@ -201,6 +207,13 @@ let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
 
+// Image platform compatibility (image source only)
+let hostPlatform = $state("")
+let imagePlatforms = $state<string[]>([])
+let checkedRef = $state("")
+let compatLoading = $state(false)
+let emulationEnabled = $state(false)
+
 let initializedProviders = $derived(
   $providers.filter((p) => p.state?.initialized === true),
 )
@@ -233,6 +246,19 @@ let nameConflict = $derived(
     $workspaces.some(
       (ws) => ws.id.toLowerCase() === resolvedId.toLowerCase(),
     ),
+)
+
+let imageIncompatible = $derived(
+  sourceType === "image" &&
+    hostPlatform !== "" &&
+    imagePlatforms.length > 0 &&
+    !isImageCompatible(imagePlatforms, hostPlatform),
+)
+
+// Prefer linux/amd64 if the image offers it; otherwise the first listed
+// platform. This is what we run under emulation.
+let emulationTarget = $derived(
+  imagePlatforms.includes("linux/amd64") ? "linux/amd64" : imagePlatforms[0] ?? "",
 )
 
 let stepStates = $derived.by(() => {
@@ -290,6 +316,10 @@ function reset() {
   launchSuccess = false
   launchedWorkspaceId = null
   confirmCancelOpen = false
+  checkedRef = ""
+  imagePlatforms = []
+  compatLoading = false
+  emulationEnabled = false
   clearWatchdog()
   unlisten?.()
   unlisten = null
@@ -301,8 +331,44 @@ $effect(() => {
   }
 })
 
+$effect(() => {
+  if (
+    currentStep === "review" &&
+    sourceType === "image" &&
+    imageRef.trim() &&
+    imageRef.trim() !== checkedRef &&
+    !compatLoading
+  ) {
+    const ref = imageRef.trim()
+    checkedRef = ref
+    compatLoading = true
+    imagePlatforms = []
+    emulationEnabled = false
+    getImagePlatforms(ref)
+      .then((p) => {
+        imagePlatforms = p
+      })
+      .catch((err) => {
+        // Advisory only: a failed lookup never blocks launch. Log so a genuine
+        // renderer defect isn't silently masked as "image compatible".
+        console.warn(`Image platform lookup failed for ${ref}:`, err)
+        imagePlatforms = []
+      })
+      .finally(() => {
+        compatLoading = false
+      })
+  }
+})
+
 onMount(() => {
   // Listener is registered at handleLaunch time (race-safe pattern).
+  void getHostPlatform()
+    .then((p) => (hostPlatform = p))
+    .catch((err) => {
+      // Advisory only: leaving hostPlatform empty hides the compat check
+      // rather than blocking launch. Log so a real defect isn't masked.
+      console.warn("Host platform lookup failed:", err)
+    })
 })
 
 onDestroy(() => {
@@ -368,6 +434,10 @@ async function handleLaunch() {
       workspaceFolder: workspaceFolder.trim() || undefined,
       devcontainerPath: assembled.devcontainerPath,
       prebuildRepository: assembled.prebuildRepository,
+      platform:
+        imageIncompatible && emulationEnabled && emulationTarget
+          ? emulationTarget
+          : undefined,
       debug: true,
     })
 
@@ -480,7 +550,12 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   repoUrl = t.source
   if (!workspaceName) {
-    workspaceName = uniquifyName(t.name.toLowerCase().replace(/[^a-z0-9]/g, "-"))
+    workspaceName = uniquifyName(
+      t.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, ""),
+    )
   }
 }
 </script>
@@ -527,31 +602,40 @@ function selectTemplate(t: { name: string; source: string }) {
 
         {#if isGit}
           <div class="space-y-1.5">
-            <Label class="text-sm">Subfolder</Label>
+            <Label class="text-sm">Project subfolder</Label>
             <Input
-              placeholder="path/within/repo (optional)"
+              placeholder="packages/api"
               value={subPath}
               oninput={(e) => (subPath = e.currentTarget.value)}
             />
+            <p class="text-xs text-muted-foreground">
+              The folder inside the repo that holds your project. Leave blank to use the repo root.
+            </p>
           </div>
         {/if}
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Workspace Folder</Label>
+          <Label class="text-sm">Open folder in container</Label>
           <Input
-            placeholder="path opened inside the container (optional)"
+            placeholder="/workspaces/app"
             value={workspaceFolder}
             oninput={(e) => (workspaceFolder = e.currentTarget.value)}
           />
+          <p class="text-xs text-muted-foreground">
+            The folder your editor opens once the container is running. Leave blank to use the default.
+          </p>
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">devcontainer.json path</Label>
+          <Label class="text-sm">Dev container config</Label>
           <Input
-            placeholder=".devcontainer/devcontainer.json (optional)"
+            placeholder=".devcontainer/devcontainer.json"
             value={devcontainerPath}
             oninput={(e) => (devcontainerPath = e.currentTarget.value)}
           />
+          <p class="text-xs text-muted-foreground">
+            Path to the devcontainer.json to build from. Leave blank to auto-detect.
+          </p>
         </div>
 
         <div class="space-y-1.5">
@@ -862,13 +946,13 @@ function selectTemplate(t: { name: string; source: string }) {
             {/if}
             {#if sourceType === "git" && subPath.trim()}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Subfolder</span>
+                <span class="text-muted-foreground">Project subfolder</span>
                 <span class="font-medium truncate">{subPath}</span>
               </div>
             {/if}
             {#if assembled.devcontainerPath}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">devcontainer.json</span>
+                <span class="text-muted-foreground">Dev container config</span>
                 <span class="font-medium truncate">{assembled.devcontainerPath}</span>
               </div>
             {/if}
@@ -880,7 +964,7 @@ function selectTemplate(t: { name: string; source: string }) {
             {/if}
             {#if workspaceFolder}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Workspace Folder</span>
+                <span class="text-muted-foreground">Open folder in container</span>
                 <span class="font-medium truncate">{workspaceFolder}</span>
               </div>
             {/if}
@@ -898,6 +982,35 @@ function selectTemplate(t: { name: string; source: string }) {
               <span class="font-medium truncate font-mono">{resolvedId}</span>
             </div>
           </div>
+
+          {#if sourceType === "image" && compatLoading}
+            <p class="text-sm text-muted-foreground">Checking image compatibility…</p>
+          {/if}
+
+          {#if imageIncompatible}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                This image has no build for your machine ({hostPlatform}) and will
+                fail to start unless you run it under emulation below.
+              </Alert.Description>
+            </Alert.Root>
+
+            <label class="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                checked={emulationEnabled}
+                onchange={(e) => (emulationEnabled = e.currentTarget.checked)}
+              />
+              <span>
+                <span class="font-medium">Run under emulation ({emulationTarget})</span>
+                <span class="block text-xs text-muted-foreground">
+                  Runs an {emulationTarget} image on your machine via emulation. Works, but noticeably slower.
+                </span>
+              </span>
+            </label>
+          {/if}
 
           <div class="flex justify-between gap-2 pt-2">
             <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>

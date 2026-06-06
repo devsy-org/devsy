@@ -11,6 +11,7 @@ import {
   loadImageCatalog,
   resetImageCatalogStore,
   filterImages,
+  isImageCompatible,
 } from "./imageCatalog.js"
 import { imageCatalogGet } from "$lib/ipc/commands.js"
 import type { CatalogImage } from "$lib/types/index.js"
@@ -82,5 +83,17 @@ describe("imageCatalog store", () => {
   it("filterImages: category filter", () => {
     const out = filterImages(IMAGES, "", "tools")
     expect(out.map((i) => i.id)).toEqual(["tf"])
+  })
+
+  it("isImageCompatible: empty list means compatible", () => {
+    expect(isImageCompatible([], "linux/arm64")).toBe(true)
+  })
+
+  it("isImageCompatible: matching platform is compatible", () => {
+    expect(isImageCompatible(["linux/amd64"], "linux/amd64")).toBe(true)
+  })
+
+  it("isImageCompatible: missing host platform is incompatible", () => {
+    expect(isImageCompatible(["linux/amd64"], "linux/arm64")).toBe(false)
   })
 })
