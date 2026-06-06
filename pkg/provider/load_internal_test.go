@@ -39,6 +39,30 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 	require.True(t, loaded.Source.Internal, "refreshed provider must remain internal")
 }
 
+// TestLoadProviderConfig_RefreshesProBySourceID guards the case where a
+// built-in's provider Name differs from its source id: pro is stored as
+// "devsy-pro" but keyed in the embedded map as "pro". Refresh must key off
+// Source.Raw (the source id), not Name, or the pro provider keeps a stale config.
+func TestLoadProviderConfig_RefreshesProBySourceID(t *testing.T) {
+	setupTestHome(t)
+
+	stale := &ProviderConfig{
+		Name:    "devsy-pro",
+		Version: "v0.0.0-stale",
+		Source:  ProviderSource{Internal: true, Raw: "pro"},
+		Exec: ProviderCommands{
+			Command: []string{`"${DEVSY}" helper sh -c "${COMMAND}"`},
+		},
+	}
+	require.NoError(t, SaveProviderConfig(config.DefaultContext, stale))
+
+	loaded, err := LoadProviderConfig(config.DefaultContext, "devsy-pro")
+	require.NoError(t, err)
+	require.NotEqual(t, "v0.0.0-stale", loaded.Version,
+		"pro provider must be refreshed from embedded yaml via Source.Raw")
+	require.True(t, loaded.Source.Internal)
+}
+
 // TestLoadProviderConfig_UnknownInternalFallsBack ensures an internal provider
 // whose name is not a built-in (e.g. a removed/renamed provider lingering on
 // disk) falls back to the stored config rather than failing or returning empty.

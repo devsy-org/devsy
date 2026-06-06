@@ -308,7 +308,7 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 	// Refresh built-in providers from embedded YAML: a CLI change (e.g. renaming
 	// the command wrapper) must not be shadowed by a stale provider.json.
 	if providerConfig.Source.Internal {
-		if embedded := embeddedProviderConfig(providerConfig.Name); embedded != nil {
+		if embedded := embeddedProviderConfig(providerConfig.Source.Raw); embedded != nil {
 			return embedded, nil
 		}
 	}
@@ -316,10 +316,12 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 	return providerConfig, nil
 }
 
-// embeddedProviderConfig parses the built-in provider definition for name,
-// returning nil when name is not built-in or the YAML fails to parse.
-func embeddedProviderConfig(name string) *ProviderConfig {
-	raw := providers.GetBuiltInProviders()[name]
+// embeddedProviderConfig parses the built-in provider definition for the given
+// source key (e.g. "pro"), returning nil when it is not built-in or the YAML
+// fails to parse. The built-in map is keyed by source id, which differs from
+// the provider Name for some providers (pro -> name "devsy-pro").
+func embeddedProviderConfig(sourceID string) *ProviderConfig {
+	raw := providers.GetBuiltInProviders()[sourceID]
 	if raw == "" {
 		return nil
 	}
@@ -327,7 +329,7 @@ func embeddedProviderConfig(name string) *ProviderConfig {
 	if err != nil {
 		// Embedded YAML failing to parse is a build-time regression; log rather
 		// than silently fall back to the stale stored config this refresh fixes.
-		log.Errorf("built-in provider %q failed to parse: %v", name, err)
+		log.Errorf("built-in provider %q failed to parse: %v", sourceID, err)
 		return nil
 	}
 	parsed.Source.Internal = true
