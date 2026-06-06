@@ -1,4 +1,4 @@
-package workspaceinfo
+package helperworkspaceinfo
 
 import (
 	"context"

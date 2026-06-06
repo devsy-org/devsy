@@ -1,4 +1,4 @@
-package provider
+package helperprovider
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package ssh
+package helperssh
 
 import (
 	"encoding/base64"

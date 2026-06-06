@@ -3,13 +3,13 @@ package helper
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/agent"
-	"github.com/devsy-org/devsy/cmd/internal/helper/image"
-	"github.com/devsy-org/devsy/cmd/internal/helper/provider"
-	"github.com/devsy-org/devsy/cmd/internal/helper/ssh"
-	"github.com/devsy-org/devsy/cmd/internal/helper/workspaceinfo"
 	"github.com/devsy-org/devsy/cmd/internal/helperhttp"
+	"github.com/devsy-org/devsy/cmd/internal/helperimage"
 	"github.com/devsy-org/devsy/cmd/internal/helperjson"
+	"github.com/devsy-org/devsy/cmd/internal/helperprovider"
+	"github.com/devsy-org/devsy/cmd/internal/helperssh"
 	"github.com/devsy-org/devsy/cmd/internal/helperstrings"
+	"github.com/devsy-org/devsy/cmd/internal/helperworkspaceinfo"
 	"github.com/spf13/cobra"
 )
 
@@ -27,19 +27,19 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	helperCmd.AddCommand(helperhttp.NewHTTPCmd(globalFlags))
 	helperCmd.AddCommand(helperjson.NewJSONCmd(globalFlags))
 	helperCmd.AddCommand(helperstrings.NewStringsCmd(globalFlags))
-	helperCmd.AddCommand(ssh.NewSSHServerCmd(globalFlags))
-	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceNameCmd(globalFlags))
-	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceUIDCmd(globalFlags))
-	helperCmd.AddCommand(workspaceinfo.NewGetWorkspaceConfigCommand(globalFlags))
-	helperCmd.AddCommand(provider.NewGetProviderNameCmd(globalFlags))
-	helperCmd.AddCommand(provider.NewCheckProviderUpdateCmd(globalFlags))
-	helperCmd.AddCommand(ssh.NewSSHClientCmd())
+	helperCmd.AddCommand(helperssh.NewSSHServerCmd(globalFlags))
+	helperCmd.AddCommand(helperworkspaceinfo.NewGetWorkspaceNameCmd(globalFlags))
+	helperCmd.AddCommand(helperworkspaceinfo.NewGetWorkspaceUIDCmd(globalFlags))
+	helperCmd.AddCommand(helperworkspaceinfo.NewGetWorkspaceConfigCommand(globalFlags))
+	helperCmd.AddCommand(helperprovider.NewGetProviderNameCmd(globalFlags))
+	helperCmd.AddCommand(helperprovider.NewCheckProviderUpdateCmd(globalFlags))
+	helperCmd.AddCommand(helperssh.NewSSHClientCmd())
 	helperCmd.AddCommand(NewShellCmd())
-	helperCmd.AddCommand(ssh.NewSSHGitCloneCmd())
+	helperCmd.AddCommand(helperssh.NewSSHGitCloneCmd())
 	helperCmd.AddCommand(NewFleetServerCmd(globalFlags))
 	helperCmd.AddCommand(NewDockerCredentialsHelperCmd(globalFlags))
-	helperCmd.AddCommand(image.NewGetImageCmd(globalFlags))
-	helperCmd.AddCommand(image.NewGetImagePlatformsCmd(globalFlags))
+	helperCmd.AddCommand(helperimage.NewGetImageCmd(globalFlags))
+	helperCmd.AddCommand(helperimage.NewGetImagePlatformsCmd(globalFlags))
 	helperCmd.AddCommand(NewBrowserTunnelCmd(globalFlags))
 	return helperCmd
 }
