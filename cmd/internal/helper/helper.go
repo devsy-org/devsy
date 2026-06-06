@@ -4,6 +4,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/internal/helper/http"
+	"github.com/devsy-org/devsy/cmd/internal/helper/image"
 	"github.com/devsy-org/devsy/cmd/internal/helper/json"
 	"github.com/devsy-org/devsy/cmd/internal/helper/provider"
 	"github.com/devsy-org/devsy/cmd/internal/helper/ssh"
@@ -37,8 +38,8 @@ func NewHelperCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	helperCmd.AddCommand(ssh.NewSSHGitCloneCmd())
 	helperCmd.AddCommand(NewFleetServerCmd(globalFlags))
 	helperCmd.AddCommand(NewDockerCredentialsHelperCmd(globalFlags))
-	helperCmd.AddCommand(NewGetImageCmd(globalFlags))
-	helperCmd.AddCommand(NewGetImagePlatformsCmd(globalFlags))
+	helperCmd.AddCommand(image.NewGetImageCmd(globalFlags))
+	helperCmd.AddCommand(image.NewGetImagePlatformsCmd(globalFlags))
 	helperCmd.AddCommand(NewBrowserTunnelCmd(globalFlags))
 	return helperCmd
 }
