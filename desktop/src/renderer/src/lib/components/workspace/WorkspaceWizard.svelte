@@ -532,31 +532,40 @@ function selectTemplate(t: { name: string; source: string }) {
 
         {#if isGit}
           <div class="space-y-1.5">
-            <Label class="text-sm">Subfolder</Label>
+            <Label class="text-sm">Project subfolder</Label>
             <Input
-              placeholder="path/within/repo (optional)"
+              placeholder="packages/api"
               value={subPath}
               oninput={(e) => (subPath = e.currentTarget.value)}
             />
+            <p class="text-xs text-muted-foreground">
+              The folder inside the repo that holds your project. Leave blank to use the repo root.
+            </p>
           </div>
         {/if}
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Workspace Folder</Label>
+          <Label class="text-sm">Open folder in container</Label>
           <Input
-            placeholder="path opened inside the container (optional)"
+            placeholder="/workspaces/app"
             value={workspaceFolder}
             oninput={(e) => (workspaceFolder = e.currentTarget.value)}
           />
+          <p class="text-xs text-muted-foreground">
+            The folder your editor opens once the container is running. Leave blank to use the default.
+          </p>
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">devcontainer.json path</Label>
+          <Label class="text-sm">Dev container config</Label>
           <Input
-            placeholder=".devcontainer/devcontainer.json (optional)"
+            placeholder=".devcontainer/devcontainer.json"
             value={devcontainerPath}
             oninput={(e) => (devcontainerPath = e.currentTarget.value)}
           />
+          <p class="text-xs text-muted-foreground">
+            Path to the devcontainer.json to build from. Leave blank to auto-detect.
+          </p>
         </div>
 
         <div class="space-y-1.5">
@@ -867,13 +876,13 @@ function selectTemplate(t: { name: string; source: string }) {
             {/if}
             {#if sourceType === "git" && subPath.trim()}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Subfolder</span>
+                <span class="text-muted-foreground">Project subfolder</span>
                 <span class="font-medium truncate">{subPath}</span>
               </div>
             {/if}
             {#if assembled.devcontainerPath}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">devcontainer.json</span>
+                <span class="text-muted-foreground">Dev container config</span>
                 <span class="font-medium truncate">{assembled.devcontainerPath}</span>
               </div>
             {/if}
@@ -885,7 +894,7 @@ function selectTemplate(t: { name: string; source: string }) {
             {/if}
             {#if workspaceFolder}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Workspace Folder</span>
+                <span class="text-muted-foreground">Open folder in container</span>
                 <span class="font-medium truncate">{workspaceFolder}</span>
               </div>
             {/if}
