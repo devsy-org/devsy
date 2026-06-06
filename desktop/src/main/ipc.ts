@@ -1003,6 +1003,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return app.getVersion()
   })
 
+  ipcMain.handle(
+    "image_inspect_platforms",
+    async (_event, args: { ref: string }) => {
+      const result = await cli.run<{ platforms: string[] }>([
+        "helper",
+        "get-image-platforms",
+        args.ref,
+      ])
+      return result.platforms
+    },
+  )
+
   ipcMain.handle("get_auto_download", () => {
     return getAutoDownloadEnabled()
   })
