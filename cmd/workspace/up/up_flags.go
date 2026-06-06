@@ -236,6 +236,10 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringArrayVar(&cmd.Mounts, "mount", []string{},
 			"Additional mount to add to the container (format: type=bind,source=/host/path,target=/container/path). "+
 				"Can be specified multiple times")
+	upCmd.Flags().
+		StringVar(&cmd.RunPlatform, "platform", "",
+			"Run the container under a specific platform via emulation (e.g. linux/amd64). "+
+				"Empty uses the host's native platform")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
