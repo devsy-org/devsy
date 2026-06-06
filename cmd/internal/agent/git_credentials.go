@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/devsy-org/devsy/cmd/agent/container"
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/agent/container"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ts"

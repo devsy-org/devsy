@@ -3,9 +3,9 @@ package agent
 import (
 	"os"
 
-	"github.com/devsy-org/devsy/cmd/agent/container"
-	"github.com/devsy-org/devsy/cmd/agent/workspace"
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/agent/container"
+	"github.com/devsy-org/devsy/cmd/internal/agent/workspace"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/log"

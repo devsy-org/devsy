@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"

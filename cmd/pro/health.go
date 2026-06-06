@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/devsy/cmd/agent"
+	"github.com/devsy-org/devsy/cmd/internal/agent"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
