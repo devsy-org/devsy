@@ -614,6 +614,7 @@ func (r *runner) getRunOptions(
 		Userns:         substitutionContext.Userns,
 		UidMap:         substitutionContext.UidMap,
 		GidMap:         substitutionContext.GidMap,
+		Platform:       r.WorkspaceConfig.CLIOptions.RunPlatform,
 	}, nil
 }
 
