@@ -81,14 +81,17 @@ test.describe.serial("Create Workspace Wizard", () => {
       dialog.getByRole("heading", { name: /choose a source/i }),
     ).toBeVisible()
 
-    // Quick Start Templates section + 5 core templates
+    // Quick Start Templates section + 5 core templates. Scope to the active
+    // tab panel (Git) so the template buttons don't collide with the Image
+    // tab's catalog entries (e.g. "Python 3.12"), which share language names.
     await expect(dialog).toContainText("Quick Start Templates")
+    const gitPanel = dialog.getByRole("tabpanel")
     for (const lang of ["Python", "Node.js", "Go", "Rust", "Java"]) {
-      await expect(dialog.locator("button", { hasText: lang })).toBeVisible()
+      await expect(gitPanel.locator("button", { hasText: lang })).toBeVisible()
     }
 
     // Language icons render
-    const icons = dialog.locator("button img")
+    const icons = gitPanel.locator("button img")
     expect(await icons.count()).toBeGreaterThan(0)
     const firstIcon = icons.first()
     await expect(firstIcon).toBeVisible()
@@ -100,7 +103,7 @@ test.describe.serial("Create Workspace Wizard", () => {
 
   test("should select a template and populate the source field", async () => {
     const dialog = page.locator('[role="dialog"]').first()
-    await dialog.locator("button", { hasText: "Python" }).click()
+    await dialog.getByRole("tabpanel").locator("button", { hasText: "Python" }).click()
 
     const sourceInput = dialog.locator('input[placeholder*="github"]')
     await expect(sourceInput).toHaveValue(

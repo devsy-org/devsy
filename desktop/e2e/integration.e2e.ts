@@ -371,8 +371,12 @@ test.describe
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Python template
-      await dialog.locator("button", { hasText: "Python" }).click()
+      // Step 2 — Source: click Python template (scope to the active Git tab
+      // panel so it doesn't match the Image tab catalog's "Python 3.12" entry)
+      await dialog
+        .getByRole("tabpanel")
+        .locator("button", { hasText: "Python" })
+        .click()
       const sourceInput = dialog.locator('input[placeholder*="github"]')
       await expect(sourceInput).toHaveValue(
         "https://github.com/microsoft/vscode-remote-try-python",
