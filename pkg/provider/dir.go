@@ -12,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/id"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/providers"
 )
 
 const (
@@ -303,7 +305,37 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		return nil, err
 	}
 
+	// Refresh the exec commands of built-in providers from embedded YAML: a CLI
+	// change (e.g. renaming the command wrapper) must not be shadowed by a stale
+	// provider.json. Only the exec blocks are overlaid so user customizations
+	// (custom --name, resolved options) survive.
+	if providerConfig.Source.Internal {
+		if embedded := embeddedProviderConfig(providerConfig.Source.Raw); embedded != nil {
+			providerConfig.Exec = embedded.Exec
+			providerConfig.Agent.Exec = embedded.Agent.Exec
+		}
+	}
+
 	return providerConfig, nil
+}
+
+// embeddedProviderConfig parses the built-in provider definition for the given
+// source key (e.g. "pro"), returning nil when it is not built-in or the YAML
+// fails to parse. The built-in map is keyed by source id, which differs from
+// the provider Name for some providers (pro -> name "devsy-pro").
+func embeddedProviderConfig(sourceID string) *ProviderConfig {
+	raw := providers.GetBuiltInProviders()[sourceID]
+	if raw == "" {
+		return nil
+	}
+	parsed, err := ParseProvider(strings.NewReader(raw))
+	if err != nil {
+		// Embedded YAML failing to parse is a build-time regression; log rather
+		// than silently fall back to the stale stored config this refresh fixes.
+		log.Errorf("built-in provider %q failed to parse: %v", sourceID, err)
+		return nil
+	}
+	return parsed
 }
 
 func LoadMachineConfig(context, machineID string) (*Machine, error) {
