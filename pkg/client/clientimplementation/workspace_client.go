@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -372,6 +373,11 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 			writer := log.Writer(log.LevelInfo)
 			defer func() { _ = writer.Close() }()
 
+			// writer logs at INFO, discarded at the default error verbosity, so
+			// tee into a buffer to surface the real cause on failure.
+			var captured bytes.Buffer
+			out := io.MultiWriter(writer, &captured)
+
 			log.Info("deleting workspace container")
 			compressed, info, err := s.compressedAgentInfo(provider.CLIOptions{})
 			if err != nil {
@@ -399,10 +405,11 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 					provider.CommandEnv: command,
 				},
 				Stdin:  nil,
-				Stdout: writer,
-				Stderr: writer,
+				Stdout: out,
+				Stderr: out,
 			})
 			if err != nil {
+				err = enrichCommandError(err, captured.Bytes())
 				if !opt.Force {
 					return err
 				}
@@ -814,6 +821,19 @@ func RunCommand(opts RunCommandOptions) error {
 	}
 
 	return nil
+}
+
+// enrichCommandError appends captured command output to an opaque process-exit
+// error (e.g. "exit status 1"), wrapping so errors.Is still matches.
+func enrichCommandError(err error, output []byte) error {
+	if err == nil {
+		return nil
+	}
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, detail)
 }
 
 func DeleteMachineFolder(context, machineID string) error {
