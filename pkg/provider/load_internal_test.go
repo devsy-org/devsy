@@ -16,16 +16,16 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 	setupTestHome(t)
 
 	stale := &ProviderConfig{
-		Name:    "docker",
+		Name:    DockerDriver,
 		Version: "v0.0.0-stale",
-		Source:  ProviderSource{Internal: true, Raw: "docker"},
+		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
 		Exec: ProviderCommands{
 			Command: []string{`"${DEVSY}" helper sh -c "${COMMAND}"`},
 		},
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, stale))
 
-	loaded, err := LoadProviderConfig(config.DefaultContext, "docker")
+	loaded, err := LoadProviderConfig(config.DefaultContext, DockerDriver)
 	require.NoError(t, err)
 	require.Len(t, loaded.Exec.Command, 1)
 	require.NotContains(t, loaded.Exec.Command[0], "helper sh",
@@ -68,7 +68,7 @@ func TestLoadProviderConfig_PreservesExternalProvider(t *testing.T) {
 	setupTestHome(t)
 
 	external := &ProviderConfig{
-		Name:    "docker",
+		Name:    DockerDriver,
 		Version: "v0.0.1",
 		Source:  ProviderSource{Github: "some-org/some-provider"},
 		Exec: ProviderCommands{
@@ -77,7 +77,7 @@ func TestLoadProviderConfig_PreservesExternalProvider(t *testing.T) {
 	}
 	require.NoError(t, SaveProviderConfig(config.DefaultContext, external))
 
-	loaded, err := LoadProviderConfig(config.DefaultContext, "docker")
+	loaded, err := LoadProviderConfig(config.DefaultContext, DockerDriver)
 	require.NoError(t, err)
 	require.Equal(t, external.Exec.Command, loaded.Exec.Command)
 }
