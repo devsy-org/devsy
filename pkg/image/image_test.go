@@ -9,10 +9,10 @@ import (
 
 func TestPlatformsFromManifests_FiltersUnknownAndDedupes(t *testing.T) {
 	manifests := []v1.Descriptor{
-		{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}},
-		{Platform: &v1.Platform{OS: "linux", Architecture: "arm64"}},
-		{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}, // dup
-		{Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"}},
+		{Platform: &v1.Platform{OS: osLinux, Architecture: "amd64"}},
+		{Platform: &v1.Platform{OS: osLinux, Architecture: "arm64"}},
+		{Platform: &v1.Platform{OS: osLinux, Architecture: "amd64"}}, // dup
+		{Platform: &v1.Platform{OS: osUnknown, Architecture: osUnknown}},
 		{Platform: nil},
 	}
 	got := platformsFromManifests(manifests)

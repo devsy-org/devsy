@@ -18,6 +18,7 @@ const (
 	testUpdateUIDDefaultOn  = "on"
 	testOSLinux             = "linux"
 	testRemoteUser          = "vscode"
+	testRunArg              = "run"
 )
 
 type DockerDriverTestSuite struct {
@@ -266,7 +267,7 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 
 func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 	b := &runArgsBuilder{
-		args:   []string{"run"},
+		args:   []string{testRunArg},
 		driver: s.driver,
 		params: &driver.RunDockerDevContainerParams{
 			Options:      &driver.RunOptions{Platform: "linux/amd64"},
@@ -279,7 +280,7 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 
 func (s *DockerDriverTestSuite) TestAddRunPlatform_EmptyNoFlag() {
 	b := &runArgsBuilder{
-		args:   []string{"run"},
+		args:   []string{testRunArg},
 		driver: s.driver,
 		params: &driver.RunDockerDevContainerParams{
 			Options:      &driver.RunOptions{Platform: ""},
@@ -294,7 +295,7 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_EmptyNoFlag() {
 
 func (s *DockerDriverTestSuite) TestAddRunPlatform_ExplicitInConfigNotDuplicated() {
 	b := &runArgsBuilder{
-		args:   []string{"run"},
+		args:   []string{testRunArg},
 		driver: s.driver,
 		params: &driver.RunDockerDevContainerParams{
 			Options: &driver.RunOptions{Platform: "linux/amd64"},

@@ -13,6 +13,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+const (
+	osLinux   = "linux"
+	osUnknown = "unknown"
+)
+
 var (
 	dockerTagRegexp  = regexp.MustCompile(`^[\w][\w.-]*$`)
 	DockerTagMaxSize = 128
@@ -50,7 +55,7 @@ func GetImageForArch(ctx context.Context, image, arch string) (v1.Image, error) 
 
 	remoteOptions := []remote.Option{
 		remote.WithAuthFromKeychain(keychain),
-		remote.WithPlatform(v1.Platform{Architecture: arch, OS: "linux"}),
+		remote.WithPlatform(v1.Platform{Architecture: arch, OS: osLinux}),
 	}
 
 	img, err := remote.Image(ref, remoteOptions...)
@@ -124,7 +129,7 @@ func platformsFromManifests(manifests []v1.Descriptor) []string {
 	for _, m := range manifests {
 		p := m.Platform
 		if p == nil || p.OS == "" || p.Architecture == "" ||
-			p.OS == "unknown" || p.Architecture == "unknown" {
+			p.OS == osUnknown || p.Architecture == osUnknown {
 			continue
 		}
 		key := p.OS + "/" + p.Architecture
