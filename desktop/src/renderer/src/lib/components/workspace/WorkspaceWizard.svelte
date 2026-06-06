@@ -348,8 +348,10 @@ $effect(() => {
       .then((p) => {
         imagePlatforms = p
       })
-      .catch(() => {
-        // Advisory only: a failed lookup never blocks launch.
+      .catch((err) => {
+        // Advisory only: a failed lookup never blocks launch. Log so a genuine
+        // renderer defect isn't silently masked as "image compatible".
+        console.warn(`Image platform lookup failed for ${ref}:`, err)
         imagePlatforms = []
       })
       .finally(() => {

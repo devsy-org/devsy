@@ -151,6 +151,36 @@ describe("WorkspaceWizard platform compatibility", () => {
     unmount()
   })
 
+  it("falls back to the first offered platform when amd64 is not available", async () => {
+    getImagePlatforms.mockResolvedValue(["linux/s390x"])
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await gotoReviewWithImage(getByText, "ubuntu:22.04")
+
+    await waitFor(() =>
+      expect(getByText(/no build for your machine/i)).toBeTruthy(),
+    )
+
+    // The emulation offer names the only platform the image provides.
+    expect(getByText(/Run under emulation \(linux\/s390x\)/i)).toBeTruthy()
+
+    const checkbox = document.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement
+    await fireEvent.click(checkbox)
+    await flushAsync()
+
+    await fireEvent.click(getLaunch())
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: "linux/s390x" }),
+    )
+    unmount()
+  })
+
   it("does not warn for a multi-arch image on an arm64 host", async () => {
     getImagePlatforms.mockResolvedValue(["linux/amd64", "linux/arm64"])
     const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
