@@ -7,40 +7,38 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 
-To get started with Devsy, choose either the [Devsy Desktop](#install-devsy) application or the [Devsy CLI](#install-devsy-cli).
+Choose either [Devsy Desktop](#install-devsy) or the [Devsy CLI](#install-devsy-cli).
 
 ## Install Devsy
 
 Download Devsy Desktop:
-- [MacOS Silicon/ARM](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_macos_aarch64.dmg)
-- [MacOS Intel/AMD](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_macos_x64.dmg)
-- [Windows](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_windows_x64_en-US.msi)
-- [Linux AppImage](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.AppImage)
-- [Linux Targz](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.tar.gz)
+- [macOS Silicon/ARM](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_arm64.dmg)
+- [macOS Intel/AMD](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_x64.dmg)
+- [Windows](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_win_x64.exe)
+- [Linux AppImage](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.AppImage)
+- [Linux DEB (Debian/Ubuntu)](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb)
+- [Linux RPM (Fedora/RHEL/openSUSE)](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.rpm)
+- [Linux Flatpak](https://github.com/devsy-org/devsy/releases/latest/download/Devsy.flatpak)
 
 :::info Previous Releases
 For earlier versions, visit the [GitHub releases page](https://github.com/devsy-org/devsy/releases)
 :::
 
 :::info Linux Packages
-**The official package is the Appimage**, it has been tested working on:
+The AppImage is tested on:
 
 - Debian 12 and newer
 - Ubuntu 22.04 and newer
 - Fedora 36 and newer
-- Opensuse Leap 15.3 and newer
-- Opensuse Tumbleweed
-- Archlinux
+- openSUSE Leap 15.3 and newer
+- openSUSE Tumbleweed
+- Arch Linux
 
-Make sure you have the following dependencies installed for the Appimage to work (usually already installed in desktop distributions):
+Most modern desktop distros include the required libraries. If the AppImage fails to launch, install FUSE and the standard GTK/Electron runtime libs:
 
-- glibc version 2.35+
-- fuse2, fuse2 libraries, libopengl, libfribidi, libegl, libxgl
-    - `sudo apt-get install fuse libfuse2 libopengl0 libfribidi0 libgles2-mesa`
-    - `sudo dnf install fuse fuse-libs libglvnd-egl libglvnd-opengl libglvnd-glx harfbuzz fontconfig fribidi libthai`
-    - `sudo zypper in fuse libfuse2 libharfbuzz0 libfribidi0 libthai0`
-
-These are generally needed for AppImage to work; they are not specific to Devsy.
+- Debian/Ubuntu: `sudo apt-get install libfuse2 libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0`
+- Fedora: `sudo dnf install fuse-libs gtk3 libnotify nss libXScrnSaver libXtst xdg-utils at-spi2-core`
+- openSUSE: `sudo zypper in libfuse2 gtk3 libnotify4 mozilla-nss libXss1 libXtst6 xdg-utils`
 :::
 
 :::info Windows Packages
@@ -48,34 +46,16 @@ Make sure you have the following dependencies installed for the Desktop App to w
 
 - [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH)
 
-Note that WebView 2 is normally already installed on recent versions of Windows and should not need installing unless you experience issues.
+WebView 2 ships with recent versions of Windows. Install it only if you hit issues.
 :::
 
-:::info Linux Custom Packages
-Since we're not providing deb or rpm packages anymore, we're now providing a tar.gz
-that can be used as source for your custom package.
-
-Keep in mind the following dependencies need to be declared in the package for the
-correct functioning of the program:
-
-- libappindicator3-1
-- libgdk-pixbuf2.0-0
-- libbsd0
-- libxdmcp6
-- libwmf-0.2-7
-- libwmf-0.2-7-gtk
-- libgtk-3-0
-- libwmf-dev
-- libwebkit2gtk-4.1-0
-- librust-openssl-sys-dev
-- librust-glib-sys-dev
-
-On Fedora: `sudo dnf install libappindicator-gtk3`
+:::info Linux Packaging
+Devsy publishes `.deb`, `.rpm`, `.AppImage`, and Flatpak builds. The DEB and RPM packages declare their runtime dependencies; the AppImage and Flatpak bundle theirs.
 :::
 
 ## Install Devsy CLI
 
-Alternatively, you can also use the CLI instead of the desktop application. The Devsy CLI is useful for managing Devsy directly from a terminal. Choose an installation method below, or install it later from the Desktop App."
+The Devsy CLI manages Devsy from a terminal. Choose an installation method below, or install it later from the Desktop App.
 
 <Tabs values={[
           {label: 'MacOS Silicon/ARM', value: 'macarm64'},

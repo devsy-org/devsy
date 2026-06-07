@@ -27,28 +27,29 @@ devsy provider list --available
 
 ## Via Devsy Desktop Application
 
-Navigate to the 'Providers' view and click on the 'Add' button in the title.
-Select one of the providers supplied by default, or click on the '+' button to
-add a custom one.
+Open the Providers view and click **Add**. The provider wizard has four steps:
 
-You will be prompted to fill some additional settings if needed, depending on
-the provider's needs.
+1. **Select** — pick a built-in preset, or enter a GitHub link, `provider.yaml` URL, or local file path in the **Provider Source** field below the presets.
+2. **Configure** — fill in provider-specific options (the form is generated from the provider's schema).
+3. **Initialize** — Devsy runs the provider init and streams logs.
+4. **Done** — review the result. Failures show the underlying error.
+
+The ProviderSheet (click any provider in the list) exposes edit settings, switch version, update, delete, rename, set as default, and re-initialize.
 
 :::info
-Under the hood, the Desktop Application will call a `devsy provider add PROVIDER`
+The Desktop Application calls `devsy provider add PROVIDER` under the hood.
 :::
 
 ### Adding a custom provider
 
-After you click the `Add` button in the `Providers` section, you can click the
-big `+` button to add a custom provider, then fill the `Source` section with either
+In the Select step, type one of the following into the **Provider Source** field below the preset grid:
 
 - A GitHub link to the provider's project
-- An URL to a `provider.yaml`
-- A File Path to a `provider.yaml`
+- A URL to a `provider.yaml`
+- A file path to a `provider.yaml`
 
 ## Via Devsy CLI
-The providers in this list can easily be installed like:
+Install any provider from the list with:
 
 ```sh
 devsy provider add docker

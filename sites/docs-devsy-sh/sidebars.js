@@ -103,6 +103,10 @@ module.exports = {
           type: "doc",
           id: "developing-in-workspaces/delete-a-workspace",
         },
+        {
+          type: "doc",
+          id: "developing-in-workspaces/mcp-server",
+        },
       ],
     },
     {
@@ -230,14 +234,6 @@ module.exports = {
         {
           type: "doc",
           id: "troubleshooting/linux-troubleshooting",
-        },
-        {
-          type: "doc",
-          id: "troubleshooting/windows-troubleshooting",
-        },
-        {
-          type: "doc",
-          id: "troubleshooting/ide-troubleshooting",
         },
       ],
     },

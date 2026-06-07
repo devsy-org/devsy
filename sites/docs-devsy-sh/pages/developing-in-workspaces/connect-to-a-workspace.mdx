@@ -5,41 +5,38 @@ sidebar_label: Connect to a Workspace
 
 ## Connect to a Workspace
 
-After a workspace is successfully created, the workspace is reachable via the ssh host `WORKSPACE_NAME.devsy`.
-If you have selected an IDE to automatically open, Devsy will automatically try to open the IDE after a successful workspace creation or `devsy workspace up` command.
+Once a workspace is created, it is reachable through the SSH host `WORKSPACE_NAME.devsy`. If you chose an IDE, Devsy opens it after the workspace starts.
 
 :::info
-You can change the default IDE to open globally via: `devsy ide use vscode` or `devsy workspace up my-workspace --ide vscode` for an individual workspace.
+Change the default IDE globally with `devsy ide use vscode`, or per workspace with `devsy workspace up my-workspace --ide vscode`.
 :::
 
 ### VS Code Browser
 
-Devsy is able to open VS Code in a browser in a workspace.
-It will use the open source project [openvscode-server](https://github.com/gitpod-io/openvscode-server) for installing a vscode server binary in the workspace and then tunnel a connection to that binary from the localhost.
-To open the workspace inside VS Code browser, you can run the following command:
+Devsy can open VS Code in a browser tab. It installs [openvscode-server](https://github.com/gitpod-io/openvscode-server) inside the workspace and tunnels a connection to it from localhost. Open the workspace in VS Code browser with:
 ```
 devsy workspace up my-workspace --ide openvscode
 ```
 
-To select a different openvscode version, please run with:
+To pick a different openvscode version:
 ```
 devsy workspace up my-workspace --ide openvscode --ide-option VERSION=v1.76.2
 ```
 
 ### VS Code
 
-Before connecting VS Code with Devsy, make sure you have installed the [remote ssh extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) and the [code CLI](https://code.visualstudio.com/docs/editor/command-line). Then you can start the workspace directly in VS Code with:
+Install the [remote ssh extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) and the [code CLI](https://code.visualstudio.com/docs/editor/command-line). Then start the workspace in VS Code with:
 ```
 devsy workspace up my-workspace --ide vscode
 ```
 
 :::info SSH Fallback
-If for whatever reason this does not work you can also use the regular SSH connection with `WORKSPACE_NAME.devsy` to connect VS Code with a workspace
+If this doesn't work, use the regular SSH connection `WORKSPACE_NAME.devsy` to connect VS Code.
 :::
 
 ### JetBrains Suite (Goland, PyCharm, Intellij etc.)
 
-Make sure you have [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) installed and a valid jetbrains subscription for your local IDE. The following JetBrains IDEs are supported:
+Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) and have a valid JetBrains subscription for your local IDE. Supported JetBrains IDEs:
 * **CLion (clion)**
 * **Goland (goland)**
 * **PyCharm (pycharm)**
@@ -49,75 +46,82 @@ Make sure you have [JetBrains Gateway](https://www.jetbrains.com/remote-developm
 * **Rider (rider)**
 * **RubyMine (rubymine)**
 
-Then start your workspace via:
+Start your workspace with:
 ```
 devsy workspace up my-workspace --ide goland
 ```
 
-Which will install the goland server binary into the workspace and then open JetBrains Gateway to open this workspace.
+Devsy installs the GoLand server binary into the workspace and opens JetBrains Gateway. After installation, the Gateway SSH dialog appears pre-filled — click **Check Connection and Continue** to start the IDE inside the workspace.
 
-After successful installation the Gateway SSH dialog will popup prefilled with the correct information, please click **Check Connection and Continue**, which will start your desired IDE inside the workspace.
-
-To select a different IDE version, please run with:
+To pick a different IDE version:
 ```
 devsy workspace up my-workspace --ide goland --ide-option VERSION=2022.3.3
 ```
 
 :::info SSH Fallback
-If for whatever reason this does not work you can also use the regular SSH connection with `WORKSPACE_NAME.devsy` to connect your JetBrains IDE with a workspace
+If this doesn't work, use the SSH host `WORKSPACE_NAME.devsy` to connect your JetBrains IDE.
 :::
 
 :::info Fleet Support
-Fleet currently only works by manually adding an SSH connection with `WORKSPACE_NAME.devsy`
+Fleet only works by manually adding an SSH connection to `WORKSPACE_NAME.devsy`.
 :::
 
 ### SSH
 
-Upon workspace creation, Devsy will automatically modify the `~/.ssh/config` to include an entry for `WORKSPACE_NAME.devsy`, which allows you to use the following command to connect to your workspace:
+When a workspace is created, Devsy adds an entry for `WORKSPACE_NAME.devsy` to `~/.ssh/config`. Connect with:
 ```
 ssh WORKSPACE_NAME.devsy
 ```
 
-This also allows you to connect any IDE that supports remote development through SSH via the given host `WORKSPACE_NAME.devsy`.
+Any IDE that supports remote development over SSH can also use this host.
 
 ### Devsy CLI
 
-If you don't have `ssh` installed or cannot connect through any other IDE, you can use the following Devsy command to access a workspace:
+If you don't have `ssh` installed or can't connect through an IDE, use the Devsy CLI:
 ```
 devsy workspace ssh my-workspace
 ```
 
-Optionally you can also define a command to run:
+Run a command non-interactively:
 ```
 devsy workspace ssh my-workspace --command "echo Hello World"
 ```
 
 ## IDE Commands
 
-This section shows additional commands to configure Devsy's behavior when opening a workspace.
+Configure how Devsy opens workspaces with these commands.
 
 ### Configure IDE Options
 
-You can specify certain options such as IDE version and download path if needed. You can list the available options for an IDE via:
+Each IDE supports options like version and download path. List them with:
 ```
 devsy ide get openvscode
 ```
 
-You will see available options and default values for them. To change an option, you can run:
+Change an option with:
 ```
 devsy ide set openvscode -o VERSION=v1.76.2
 ```
 
 ### Change Default IDE
 
-To change the default IDE Devsy will use for connecting to a workspace, please run:
+Set the default IDE Devsy uses to open workspaces:
 ```
 devsy ide use vscode
 ```
 
 ### List supported IDEs
 
-You can list all Devsy supported IDEs via:
+List every IDE Devsy supports:
 ```
 devsy ide list
 ```
+
+## Desktop shortcuts
+
+Devsy Desktop ships a command palette and section shortcuts for fast navigation:
+
+- `Cmd/Ctrl + K` — open the command palette (search workspaces, providers, machines, and pages).
+- `Cmd/Ctrl + N` — start the New Workspace wizard.
+- `Cmd/Ctrl + 1` through `Cmd/Ctrl + 8` — jump to Dashboard, Workspaces, Providers, Machines, Contexts, Terminals, SSH Keys, and Settings.
+- `Esc` — close the active sheet, dialog, or palette (where supported).
