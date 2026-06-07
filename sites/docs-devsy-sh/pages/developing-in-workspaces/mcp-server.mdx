@@ -1,0 +1,59 @@
+---
+title: Agent Control via MCP
+sidebar_label: Agent Control (MCP)
+---
+
+# Agent Control via MCP
+
+`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. MCP-compatible AI clients can connect to it and drive Devsy — listing, creating, and executing inside workspaces — without shelling out to the CLI themselves.
+
+```sh
+devsy mcp serve
+```
+
+The server reads JSON-RPC frames from stdin and writes them to stdout. Configure your MCP client to launch the command; it will discover the registered tools at startup.
+
+## Tools exposed
+
+The server registers 11 tools across workspace and provider domains:
+
+| Tool | Purpose |
+|---|---|
+| `workspace_list` | List all workspaces with provider, IDE, and source. |
+| `workspace_status` | Get detailed status for a workspace. |
+| `workspace_create` | Create and start a new workspace. |
+| `workspace_start` | Start (or resume) an existing workspace. |
+| `workspace_stop` | Stop a running workspace. |
+| `workspace_delete` | Delete a workspace by name. Accepts `force=true`. |
+| `workspace_exec` | Run a one-shot command inside a running workspace. |
+| `provider_list` | List configured providers. |
+| `provider_add` | Add a provider from a registry name, GitHub URL, or local path. |
+| `provider_delete` | Remove a configured provider. |
+| `provider_use` | Set the default provider for new workspaces. |
+
+`workspace_exec` is bounded by three server flags:
+
+- `--exec-timeout-default` (default `5m`) — default per-call timeout.
+- `--exec-timeout-max` (default `30m`) — caller-supplied timeouts are clamped to this.
+- `--exec-output-cap` (default `100 KiB`) — per-stream byte cap; excess is replaced with a truncation marker.
+
+## Example client config
+
+The exact format depends on your MCP client, but every client needs the command to launch and any arguments. A generic JSON shape looks like:
+
+```json
+{
+  "mcpServers": {
+    "devsy": {
+      "command": "devsy",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Check your client's documentation for where this config lives (e.g. `claude_desktop_config.json` for Claude Desktop). Refer to the [MCP specification](https://modelcontextprotocol.io/specification) for transport and tool semantics.
+
+## Security
+
+The MCP server has the same authority as your local Devsy CLI. A connected client can create, modify, and delete workspaces, run arbitrary commands inside them, and add or remove providers. Only enable `devsy mcp serve` for clients you trust.

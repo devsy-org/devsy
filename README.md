@@ -8,7 +8,7 @@
   </a>
 </p>
 
-Devsy enables engineering teams to operate at scale using standardized workspaces, reducing hardware costs, saving onboarding time,  and improving developer productivity. Devsy users can deploy and use workspaces across Docker, Kubernetes, cloud providers, and SSH remote hosts.
+Devsy lets engineering teams operate at scale with standardized workspaces — cutting hardware cost, shortening onboarding, and improving developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
 <table align="center">
 <tr>
@@ -34,7 +34,7 @@ Devsy enables engineering teams to operate at scale using standardized workspace
 <h2 align="center">Downloads</h2>
 
 <p>
-Devsy is available as a desktop application and a command-line tool.
+Devsy ships as a desktop application and a command-line tool.
 See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> for installation instructions.
 </p>
 
@@ -68,17 +68,17 @@ See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> f
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (AppImage)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.AppImage"><img src="https://img.shields.io/badge/Download-AppImage-blue?style=flat-square&logo=linux" alt="Linux AppImage"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.AppImage"><img src="https://img.shields.io/badge/Download-AppImage-blue?style=flat-square&logo=linux" alt="Linux AppImage"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (Debian/Ubuntu)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.deb"><img src="https://img.shields.io/badge/Download-DEB-blue?style=flat-square&logo=debian" alt="Linux DEB"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb"><img src="https://img.shields.io/badge/Download-DEB-blue?style=flat-square&logo=debian" alt="Linux DEB"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
 <td>x64 (RPM)</td>
-<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x64.rpm"><img src="https://img.shields.io/badge/Download-RPM-blue?style=flat-square&logo=redhat" alt="Linux RPM"></a></td>
+<td><a href="https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.rpm"><img src="https://img.shields.io/badge/Download-RPM-blue?style=flat-square&logo=redhat" alt="Linux RPM"></a></td>
 </tr>
 <tr>
 <td><b>Linux</b></td>
@@ -136,7 +136,7 @@ See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> f
 
 <h2 align="center">Operate Engineering at Scale</h2>
 <p>
-Devsy implements the open <a href="https://containers.dev/">DevContainer standard</a>. Development environments remain portable and repeatable across provider backends.
+Devsy implements the open <a href="https://containers.dev/">DevContainer standard</a>. Workspaces stay portable and repeatable across provider backends.
 </p>
 
 <table>
@@ -147,7 +147,7 @@ Lower infrastructure usage with local and remote options plus auto-shutdown cont
 </td>
 <td width="50%" valign="top">
 <b>No vendor lock-in</b><br>
-Choose the infrastructure that fits your business. Devsy supports cloud providers and self-managed platforms.
+Choose the infrastructure that fits your team. Devsy supports cloud providers and self-managed platforms.
 </td>
 </tr>
 <tr>
@@ -167,7 +167,7 @@ Features include prebuilds, inactivity-based shutdown, and Git and Docker creden
 </td>
 <td width="50%" valign="top">
 <b>Desktop App</b><br>
-Use the Devsy desktop app for workspace management. Use the CLI for automation and platform integration.
+The desktop app manages workspaces; the CLI drives automation and platform integration.
 </td>
 </tr>
 </table>

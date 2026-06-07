@@ -3,16 +3,14 @@ title: How it works
 sidebar_label: Overview
 ---
 
-Devsy provides the ability to provision workspaces on any infrastructure. It does so by wrapping your conventional CLI tools such as kubectl, docker, gcloud etc to deploy your development environment
-and set up everything required to run the dev container. While creating the workspace Devsy deploys an agent to the machine running the container as well as to the container itself to provide useful
-functions such as port forwarding, credential forwarding and log streaming. Doing so it provides a control plane across your development environment.
+Devsy provisions workspaces on any infrastructure. It wraps the CLI tools you already use — `kubectl`, `docker`, `gcloud`, and others — to deploy your development environment and run the dev container. When creating a workspace, Devsy deploys an agent to both the host machine and the container to handle port forwarding, credential forwarding, and log streaming. The agent acts as a control plane across your development environment.
 
-Devsy uses a client-agent architecture, where the client deploys it's own agent to host various servers, such as a grpc server or SSH server.
-In this regard the system is not unlike a browser server architecture where the front end is deployed and executed on a remote host. There are several improvements this brings to our specific context:
- - There can be no conflict of versions between client and server, since you install only one version of the client
- - There is no infrastructure to manage for users
+Devsy uses a client-agent architecture. The client deploys its own agent, which hosts a gRPC server and an SSH server. This resembles a browser-server architecture where the front end is delivered to a remote host. Two practical wins:
 
-To simplify debugging, Devsy connects your local shell with the agent's STDIO so you can see what's happening locally and in the container at all times.
+- No version conflict between client and server — you only install the client.
+- No infrastructure to manage.
+
+For easier debugging, Devsy pipes the agent's STDIO to your local shell so you can see what's happening locally and inside the container.
 
 Below is a high level overview of how Devsy uses your local environment, a source repo and a devcontainer to deploy your workspace to the cloud.
 
@@ -21,11 +19,8 @@ Below is a high level overview of how Devsy uses your local environment, a sourc
   <figcaption>Devsy - Component Diagram</figcaption>
 </figure>
 
-Devsy establishes a connection to the workspace using a vendor specific API. This vendor specific communication channel is referred to as the "tunnel".  When you run a `devsy workspace up` command, Devsy selects a
-provider based on your context and starts your devcontainer. If using a machine provider, Devsy will check if it should create a VM first. Once the devcontainer
-is running Devsy deploys an agent to the container. The way in which Devsy communicates with the workspace depends on the provider, this is known as the "tunnel". For AWS this could be instance connect, kubernetes uses
-the kubernetes control plane (kubectl), this connection is secured based on this tunnel. The Devsy agent starts a SSH server using the STDIO of the secure tunnel in order for your local Devsy CLI/UI to forward
-ports over the SSH connection. Once this is done Devsy starts your local IDE and connects it to the devcontainer via SSH.
+Devsy connects to the workspace through a vendor-specific channel called the **tunnel**. When you run `devsy workspace up`, Devsy picks a provider based on your context and starts your devcontainer. Machine providers create a VM first if needed. Once the devcontainer is running, Devsy deploys the agent into it.
 
-If you developer environment requires any port forwarding, then your IDE or an SSH connection must be running. That's because devsy needs the SSH server running on the agent to perform the forwarding,
-which is deployed when starting the IDE or SSH session.
+The tunnel's transport depends on the provider — AWS uses Instance Connect, Kubernetes uses the control plane via `kubectl`, and so on. The Devsy agent starts an SSH server over the tunnel's STDIO so the local CLI/UI can forward ports. Devsy then opens your local IDE and connects it to the devcontainer over SSH.
+
+Port forwarding requires an active IDE or SSH session — Devsy needs the agent's SSH server, which only runs while one of those connections is open.

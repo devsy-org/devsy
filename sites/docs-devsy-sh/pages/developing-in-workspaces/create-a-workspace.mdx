@@ -5,23 +5,28 @@ sidebar_label: Create a Workspace
 
 ## Create a Workspace
 
-You can create a workspace either from the Devsy CLI or through the Devsy desktop application. A workspace can be created from a Git repository, a local path or a Docker container (e.g. `golang:latest`).
+Create workspaces from the Devsy CLI or the Desktop app. A workspace's source can be a Git repository, a local path, or a Docker image (e.g. `golang:latest`).
 
-Upon successful creation, Devsy will make the development container available through the ssh host `WORKSPACE_NAME.devsy`. Alternatively, Devsy can automatically open the workspace in a locally installed IDE, such as VS Code or Intellij.
+Once created, the workspace is reachable through the SSH host `WORKSPACE_NAME.devsy`, or Devsy can open it in a local IDE like VS Code or IntelliJ.
 
 :::info
-A workspace is defined through a `devcontainer.json`. If Devsy can't find one, it will automatically try to guess the programming language of your project and provide a fitting template.
+A workspace is defined by a `devcontainer.json`. If none exists, Devsy detects the project's language and picks a matching template.
 :::
 
 ### Via Devsy Desktop Application
 
-Navigate to the 'Workspaces' view and click on the 'Create' button in the title to open the create-workspace wizard. The wizard walks through five steps:
+Open the Workspaces view and click **Create** to launch the wizard. It walks through five steps:
 
-1. **Provider**: Select an initialized provider to host the workspace. Cannot be changed later. If no initialized provider exists, the wizard prompts you to add one (navigates to 'Providers' > 'Add').
-2. **Source**: Pick one of the Quick Start templates or enter a custom source (Git URL, image, or local path). Use 'Show advanced options' to optionally set a **Workspace Folder** (a subfolder within the source to use as the workspace root).
-3. **IDE**: Choose an IDE to open the workspace with. Optional; the default is `none`.
-4. **Review**: Optionally override the auto-derived **Workspace Name** and confirm the configuration.
-5. **Launch**: Devsy creates the workspace and streams progress. The workspace is launched in the chosen IDE on success.
+1. **Provider** — pick an initialized provider. Cannot be changed later. If none exists, the wizard offers to add one.
+2. **Source** — choose a Quick Start template, browse the image catalog, or enter a custom Git URL / image / local path. **Show advanced options** reveals:
+   - Ref Type and value (branch, commit, or PR number) for Git sources.
+   - Project subfolder within the repo.
+   - Open folder in container (where the editor opens).
+   - Dev container config path (override `.devcontainer/devcontainer.json` location).
+   - Prebuild repository for cached images.
+3. **IDE** — pick one or more IDEs to open the workspace with. Optional; defaults to none.
+4. **Review** — adjust the auto-derived workspace name and confirm the configuration. If the chosen image has no build for your machine architecture, the Review step shows a compatibility warning and a **Run under emulation** toggle.
+5. **Launch** — Devsy creates the workspace and streams progress. A 10-minute watchdog cancels the launch if it stalls. The chosen IDE opens on success.
 
 :::info
 Under the hood, the Desktop Application will call the CLI command `devsy workspace up REPOSITORY`
@@ -38,7 +43,7 @@ For example: setting `--home=/mnt/c/Users/MyUser/` will result in a workspace pa
 
 ### Via Devsy CLI
 
-Make sure to [install the Devsy CLI locally](../getting-started/install.mdx#install-devsy-cli) and select a provider you would like to host the workspace on (such as local docker) via:
+[Install the Devsy CLI](../getting-started/install.mdx#install-devsy-cli) and add a provider to host the workspace (such as local docker):
 ```
 # Add a provider if you haven't already
 devsy provider add docker
@@ -46,14 +51,14 @@ devsy provider add docker
 
 #### Git Repository
 
-Run the following command in a terminal to start a new workspace:
+Start a new workspace from a Git repository:
 
 ```
 # Create from Git repository
 devsy workspace up github.com/microsoft/vscode-remote-try-node
 ```
 
-You can check out specific states of the repository by appending a commit hash, branch or Pull Request slug to the repository url:
+Append a commit hash, branch, or pull request slug to the URL to check out a specific ref:
 ```
 Branch: devsy workspace up github.com/microsoft/vscode-remote-try-node@main
 Commit: devsy workspace up github.com/microsoft/vscode-remote-try-node@sha256:15ba80171af11374143288fd3d54898860107323
@@ -61,77 +66,108 @@ PR:     devsy workspace up github.com/microsoft/vscode-remote-try-node@pull/108/
 ```
 
 :::info Private Git Repositories
-Devsy will forward git credentials to a remote machine so that you can also pull private repositories.
+Devsy forwards your git credentials to the remote machine so private repositories work too.
 :::
 
-
 :::info Multiple workspaces from the same repository
-Use the `--id` flag to override the name of the workspace. This allows you to create multiple workspaces from the same repository.
+Pass `--id` to override the workspace name. This lets you spin up multiple workspaces from one repository.
 :::
 
 
 #### Local Path
 
-Run the following command in a terminal to create a new workspace:
+Create a workspace from a local folder:
 
 ```
 # Create from a local path
 devsy workspace up ./path/to/my-folder
 ```
 
-Devsy will sync the folder into the remote machine and create a development environment from the `devcontainer.json`.
+Devsy syncs the folder onto the remote machine and builds the dev environment from the `devcontainer.json`.
 
 #### Docker Image
 
-Run the following command in a terminal to create a new workspace from a docker image:
+Create a workspace from a Docker image:
 
 ```
 # Create from a docker image
 devsy workspace up ghcr.io/my-org/my-repo:latest
 ```
 
-Devsy will create the following `.devcontainer.json`:
+Devsy generates the following `.devcontainer.json`:
 ```
 {
     "image": "ghcr.io/my-org/my-repo:latest"
 }
 ```
 
+##### Run under a different platform
+
+Pass `--platform` to run the container under a non-native architecture (via QEMU emulation on Docker). This is useful for images that only ship `linux/amd64` when you're on Apple Silicon.
+
+```
+devsy workspace up ghcr.io/my-org/my-repo:latest --platform linux/amd64
+```
+
+:::warning Emulation cost
+Emulated containers can be significantly slower than native ones. Prefer multi-arch images when available.
+:::
+
+##### Image catalog (Desktop)
+
+Devsy Desktop ships a curated catalog of pre-built devcontainer images. The Source step of the workspace wizard surfaces them in an image picker and flags incompatible images (e.g. an `arm64`-only image on an `amd64` host). The CLI accepts any of these images as a `--source` or positional argument.
+
 #### Existing local container
 
-If you have a local container running, you can create a workspace from it by running:
+Bind a workspace to a container that is already running:
 ```
 devsy workspace up my-workspace --source container:$CONTAINER_ID
 ```
 
-This only works with the `docker` provider.
+Only the `docker` provider supports this.
 
 :::info
-Using `--recreate` on a workspace based on an already existing container will be rejected.
+`--recreate` is rejected on a workspace backed by an existing container.
 :::
+
+## Inspect a workspace
+
+`devsy workspace describe <name>` prints a workspace's full configuration plus its live state. By default it renders a `Field | Value` table; pass `--result-format json` for machine-readable output (Devsy Desktop uses the JSON form).
+
+```sh
+devsy workspace describe my-workspace
+devsy workspace describe my-workspace --result-format json
+```
+
+Other useful inspection commands:
+
+- `devsy workspace status <name>` — quick state check (`Running`, `Stopped`, `NotFound`).
+- `devsy workspace logs <name>` — stream the agent logs from the container.
+- `devsy workspace ping <name>` — verify the agent is reachable through the tunnel.
+- `devsy workspace troubleshoot <name>` — bundle diagnostics for issue reports.
 
 ## Recreating a workspace
 
-If you are working on the `devcontainer.json` or have pulled changes that affect the development environment, you can recreate a workspace. Recreating a workspace means to apply changes in the `devcontainer.json` or related `Dockerfile` to the development environment. If a prebuild repository is supplied, Devsy will try to find the updated development environment image inside the prebuild repository and if not found will fall back to building it.
+Recreating a workspace re-applies changes from the `devcontainer.json` or its `Dockerfile`. Use this after editing the devcontainer or pulling new changes that affect the dev environment. If a prebuild repository is configured, Devsy looks for the updated image there first and falls back to building locally.
 
-When recreating a workspace, changes only to the project path or mounted volumes will be preserved. **All other changes made in the container will be lost.**
+Only changes inside the project path or mounted volumes survive a recreate. **Everything else in the container is lost.**
 
 ### Via Devsy CLI
 
-Run the following command to rebuild an existing workspace:
+Rebuild an existing workspace:
 ```
 devsy workspace up my-workspace --recreate
 ```
 
 ## Resetting a workspace
 
-Some scenarios require pulling in the latest changes from a Git repository or re-uploading your local folder. If instead of recreating the devcontainer you need to completely restart your workspace from a clean slate, use `Reset` over `Recreate`.
+Reset rebuilds the workspace from a clean slate — it pulls the latest Git changes or re-uploads your local folder. Use it instead of `--recreate` when you need a full restart.
 
-** When recreating a workspace, no changes will be preserved! **
+**A reset preserves nothing.**
 
 ### Via Devsy CLI
 
-Run the following command to reset an existing workspace:
+Reset an existing workspace:
 ```
 devsy workspace up my-workspace --reset
 ```

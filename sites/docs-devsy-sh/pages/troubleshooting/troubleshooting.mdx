@@ -50,6 +50,18 @@ Common error codes you may see:
 
 Re-run with `--debug` to see the original error chain, and pass `--result-format json` (or `plain` to force human-readable output) to control rendering — the default `auto` chooses JSON when stdout is not a TTY.
 
+### Windows: `line 2: $'\r': command not found`
+
+Windows line endings break shell scripts inside the container. Add the following to `.gitattributes`:
+
+```
+*.sh eol=lf
+```
+
+### NeoVim: `$TERM` issues over SSH
+
+NeoVim can misbehave when `$TERM` isn't set correctly over the SSH provider. A workaround is documented in [issue #1187](https://github.com/devsy-org/devsy/issues/1187).
+
 ### VS Code Browser workspace fails to open on first create
 
-Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail immediately after `devsy workspace up --ide openvscode`. This has been fixed — if you previously hit this, simply re-run `devsy workspace up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry automatically.
+Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail right after `devsy workspace up --ide openvscode`. This is fixed — if you previously hit this, re-run `devsy workspace up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry.

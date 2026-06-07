@@ -5,19 +5,19 @@ sidebar_label: Manage Machines
 
 ## Create a machine
 
-You can create a new machine using:
+Create a new machine with:
 
 ```sh
 devsy machine create <name-of-machine> --provider <provider-name>
 ```
 
-At any point you can list all the machines using:
+List all machines:
 
 ```sh
 devsy machine list
 ```
 
-An example output would be:
+Example output:
 
 ```
   NAME | PROVIDER | AGE
@@ -25,7 +25,7 @@ An example output would be:
   <name-of-machine> | aws      | 21s
 ```
 
-You can check in which state is a machine using:
+Check the state of a machine:
 
 ```sh
 devsy machine status <name-of-machine>
@@ -39,23 +39,21 @@ Example output:
 
 ## SSH into a machine
 
-It is possible to SSH directly into the provider's machine using
+Open an SSH session directly to the machine:
 
 ```sh
 devsy machine ssh <name-of-machine>
 ```
 
-This will open a full ssh session to the machine.
-
 ## Stop a machine
 
-Stopping a machine is as easy as:
+Stop a machine with:
 
 ```sh
 devsy machine stop <name-of-machine>
 ```
 
-You can check the status afterwards using:
+Check the status afterwards:
 
 ```sh
 devsy machine status <name-of-machine>
@@ -69,13 +67,12 @@ Example output:
 
 ## Delete a machine
 
-Finally, you can delete the machine simply using:
+Delete a machine with:
 
 ```sh
 devsy machine delete <name-of-machine>
 ```
 
 :::warning
-**Be aware**: this is non-reversible, all the workspace containers, and data will be
-lost after deletion.
+This is non-reversible. All workspace containers and data on the machine are lost.
 :::

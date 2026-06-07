@@ -1,50 +1,52 @@
 ---
-title: Set a provider's source
-sidebar_label: Set a provider's source
+title: Update or pin a provider version
+sidebar_label: Update a provider
 ---
 
-
-To update a provider to its latest version, you can use:
-
-```sh
-devsy provider set-source <name>
-```
-
-To update to a specific version, pass `--version <tag>`:
-
-```sh
-devsy provider set-source <name> --version v0.2.0
-```
-
-To list the available versions for an installed provider, use:
+## List available versions
 
 ```sh
 devsy provider versions <name>
 ```
 
-## From GitHub
+The table shows the published tag, date, and whether it's the currently-installed version. Pass `--prerelease` to include pre-releases and `--no-cache` to bypass the version cache.
 
-Similar to adding a provider, you can update via:
-```sh
-devsy provider set-source <provider-name> my-org/my-repo
-```
-
-If you want to update (or downgrade) a specific version, you can do:
-```sh
-devsy provider set-source <provider-name> github.com/my-org/my-repo@v0.2.0
-```
-
-## From URL
-
-You can also specify the URL to the `provider.yaml` file, for example:
+## Re-fetch the current source
 
 ```sh
-devsy provider set-source <provider-name> http://path/to/my/provider.yaml
+devsy provider set-source <name>
 ```
 
-### From File
+Re-resolves the provider's existing source. If the source is a registry entry or a GitHub repo without a pinned tag, this pulls the latest release. If the source is already pinned (e.g. `github.com/org/repo@v0.1.0`), it re-fetches that same version — use `--version` to move to a different one.
 
-Run the following command to update provider `provider-name`:
+## Pin to a specific version
+
 ```sh
-devsy provider set-source <provider-name> ../path-to-updated/provider.yaml
+devsy provider set-source <name> --version v0.2.0
 ```
+
+Equivalent inline form (works for GitHub-hosted providers):
+
+```sh
+devsy provider set-source <name> github.com/my-org/my-repo@v0.2.0
+```
+
+## Point at a different source
+
+The `set-source` command also replaces the provider's source entirely — registry name, GitHub repo, URL, or local path:
+
+```sh
+devsy provider set-source <name> my-org/my-repo
+devsy provider set-source <name> https://path/to/provider.yaml
+devsy provider set-source <name> ../path-to/provider.yaml
+```
+
+## Desktop
+
+Open the Providers sidebar, select a provider, and use the ProviderSheet:
+
+- **Select version** — pick a tag from the versions dropdown to switch versions.
+- **Update** — jump to the latest release. The button surfaces an "Update available" banner when one is detected.
+- **Initialize** — re-run provider init (handy after upgrades).
+
+Existing workspaces continue to use the version they were created with. Rebuild a workspace (`devsy workspace up <name> --recreate`) to pick up the new provider.
