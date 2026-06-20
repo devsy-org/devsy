@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -94,6 +95,10 @@ const (
 type Server interface {
 	Serve(listener net.Listener) error
 	ListenAndServe() error
+	// Shutdown gracefully closes the listener and waits for active
+	// connections to finish, bounded by ctx. Use Close for an immediate
+	// termination.
+	Shutdown(ctx context.Context) error
 }
 
 type server struct {
@@ -373,6 +378,10 @@ func (s *server) Serve(listener net.Listener) error {
 func (s *server) ListenAndServe() error {
 	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
 	return s.sshServer.ListenAndServe()
+}
+
+func (s *server) Shutdown(ctx context.Context) error {
+	return s.sshServer.Shutdown(ctx)
 }
 
 // connCallback is invoked once per inbound SSH connection. Outside the

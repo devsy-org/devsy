@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -71,6 +72,10 @@ type containerServer struct {
 
 func (s *containerServer) Serve(listener net.Listener) error {
 	return s.sshServer.Serve(listener)
+}
+
+func (s *containerServer) Shutdown(ctx context.Context) error {
+	return s.sshServer.Shutdown(ctx)
 }
 
 func (s *containerServer) ListenAndServe() error {

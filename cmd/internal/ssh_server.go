@@ -25,54 +25,57 @@ const (
 	activityFileMode          = 0o666
 )
 
-// SSHServerCmd holds the ssh server cmd flags.
-type SSHServerCmd struct {
+// shutdownTimeout bounds how long we wait for in-flight SSH connections to
+// drain on context cancel before falling back to immediate Close().
+const shutdownTimeout = 5 * time.Second
+
+// sshServerCmd holds the ssh server cmd flags.
+type sshServerCmd struct {
 	*flags.GlobalFlags
 
-	Token            string
-	Address          string
-	Stdio            bool
-	TrackActivity    bool
-	ReuseSSHAuthSock string
-	Workdir          string
+	token            string
+	address          string
+	stdio            bool
+	trackActivity    bool
+	reuseSSHAuthSock string
+	workdir          string
 }
 
 // NewSSHServerCmd creates a new ssh command.
 func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
-	cmd := &SSHServerCmd{GlobalFlags: globalFlags}
+	cmd := &sshServerCmd{GlobalFlags: globalFlags}
 	sshCmd := &cobra.Command{
 		Use:   "ssh-server",
 		Short: "Starts a new SSH server",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
-			return cmd.Run(cobraCmd.Context())
+			return cmd.run(cobraCmd.Context())
 		},
 	}
 
 	f := sshCmd.Flags()
-	f.StringVar(&cmd.Address, "address",
+	f.StringVar(&cmd.address, "address",
 		fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort),
 		"Address to listen to")
-	f.BoolVar(&cmd.Stdio, "stdio", false,
+	f.BoolVar(&cmd.stdio, "stdio", false,
 		"Listen on stdin/stdout instead of an address")
-	f.BoolVar(&cmd.TrackActivity, "track-activity", false,
+	f.BoolVar(&cmd.trackActivity, "track-activity", false,
 		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
-	f.StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+	f.StringVar(&cmd.reuseSSHAuthSock, "reuse-ssh-auth-sock", "",
 		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
 	_ = f.MarkHidden("reuse-ssh-auth-sock")
-	f.StringVar(&cmd.Token, "token", "", "Base64 encoded token to use")
-	f.StringVar(&cmd.Workdir, "workdir", "",
+	f.StringVar(&cmd.token, "token", "", "Base64 encoded token to use")
+	f.StringVar(&cmd.workdir, "workdir", "",
 		"Directory where commands will run on the host")
 	return sshCmd
 }
 
-// Run runs the command logic.
-func (cmd *SSHServerCmd) Run(ctx context.Context) error {
-	if cmd.TrackActivity && !cmd.Stdio {
+func (cmd *sshServerCmd) run(ctx context.Context) error {
+	if cmd.trackActivity && !cmd.stdio {
 		return errors.New("--track-activity requires --stdio")
 	}
 
-	keys, hostKey, err := parseSSHToken(cmd.Token)
+	keys, hostKey, err := parseSSHToken(cmd.token)
 	if err != nil {
 		return err
 	}
@@ -85,35 +88,59 @@ func (cmd *SSHServerCmd) Run(ctx context.Context) error {
 	sshserver.SweepStaleAgentSockets()
 
 	server, err := sshserver.NewServer(
-		cmd.Address, hostKey, keys, cmd.Workdir, cmd.ReuseSSHAuthSock,
+		cmd.address, hostKey, keys, cmd.workdir, cmd.reuseSSHAuthSock,
 	)
 	if err != nil {
 		return fmt.Errorf("create ssh server: %w", err)
 	}
 
-	if cmd.Stdio {
+	if cmd.stdio {
 		return cmd.serveStdio(ctx, server)
 	}
-	return cmd.serveListener(server)
+	return cmd.serveListener(ctx, server)
 }
 
-func (cmd *SSHServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
-	if cmd.TrackActivity {
+func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
+	if cmd.trackActivity {
 		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
 	}
+	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
 	lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
-	return server.Serve(lis)
+	return ignoreServerClosed(server.Serve(lis))
 }
 
-func (cmd *SSHServerCmd) serveListener(server sshserver.Server) error {
-	available, err := port.IsAvailable(cmd.Address)
+func (cmd *sshServerCmd) serveListener(ctx context.Context, server sshserver.Server) error {
+	available, err := port.IsAvailable(cmd.address)
 	if err != nil {
-		return fmt.Errorf("check port %s: %w", cmd.Address, err)
+		return fmt.Errorf("check port %s: %w", cmd.address, err)
 	}
 	if !available {
-		return fmt.Errorf("address %s already in use", cmd.Address)
+		return fmt.Errorf("address %s already in use", cmd.address)
 	}
-	return server.ListenAndServe()
+	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
+	return ignoreServerClosed(server.ListenAndServe())
+}
+
+// shutdownOnCancel drains active SSH connections when ctx is canceled,
+// bounded by shutdownTimeout. The shutdown context derives from
+// context.Background by design: ctx is already canceled at this point, so
+// reusing it would make Shutdown's grace period instantly expire.
+func shutdownOnCancel(ctx context.Context, server sshserver.Server) {
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Errorf("ssh server shutdown: %v", err)
+	}
+}
+
+// ignoreServerClosed turns the expected post-Shutdown error into a clean
+// return so cobra doesn't surface "ssh: Server closed" as a failure.
+func ignoreServerClosed(err error) error {
+	if err == nil || errors.Is(err, ssh.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // parseSSHToken decodes the optional base64-encoded token blob. An empty

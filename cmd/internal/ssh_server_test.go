@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/token"
+	"github.com/devsy-org/ssh"
 )
 
 func encodeTestToken(t *testing.T, tok token.Token) string {
@@ -120,6 +122,50 @@ func TestEnsureActivityFileSurfacesNonExistErrors(t *testing.T) {
 	}
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("want non-ErrNotExist error surfaced, got %v", err)
+	}
+}
+
+type fakeServer struct {
+	shutdownCalls int
+	shutdownErr   error
+}
+
+func (*fakeServer) Serve(net.Listener) error { return nil }
+func (*fakeServer) ListenAndServe() error    { return nil }
+func (f *fakeServer) Shutdown(context.Context) error {
+	f.shutdownCalls++
+	return f.shutdownErr
+}
+
+func TestShutdownOnCancelInvokesServer(t *testing.T) {
+	f := &fakeServer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		shutdownOnCancel(ctx, f)
+		close(done)
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdownOnCancel did not return after ctx cancel")
+	}
+	if f.shutdownCalls != 1 {
+		t.Errorf("Shutdown calls = %d, want 1", f.shutdownCalls)
+	}
+}
+
+func TestIgnoreServerClosed(t *testing.T) {
+	if err := ignoreServerClosed(nil); err != nil {
+		t.Errorf("nil should map to nil, got %v", err)
+	}
+	if err := ignoreServerClosed(ssh.ErrServerClosed); err != nil {
+		t.Errorf("ErrServerClosed should map to nil, got %v", err)
+	}
+	other := errors.New("boom")
+	if err := ignoreServerClosed(other); err != other {
+		t.Errorf("unrelated error should pass through, got %v", err)
 	}
 }
 
