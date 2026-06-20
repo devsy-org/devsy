@@ -23,4 +23,10 @@ const (
 
 	// WebsiteAssetsURL is the base URL for icon/image assets.
 	WebsiteAssetsURL = WebsiteBaseURL + "/assets"
+
+	// AgentDownloadBaseURL is the prefix under which versioned agent binaries are published.
+	AgentDownloadBaseURL = GitHubReleasesURL + "/download/"
+
+	// AgentLatestDownloadURL points at the floating "latest" agent release.
+	AgentLatestDownloadURL = GitHubReleasesURL + "/latest/download"
 )

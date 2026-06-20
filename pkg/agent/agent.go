@@ -23,19 +23,14 @@ import (
 
 const DefaultInactivityTimeout = time.Minute * 20
 
-var defaultAgentDownloadURL = config.GitHubReleasesURL + "/download/"
-
 func DefaultAgentDownloadURL() string {
-	devsyAgentURL := os.Getenv(config.EnvAgentURL)
-	if devsyAgentURL != "" {
-		return strings.TrimRight(devsyAgentURL, "/")
+	if override := os.Getenv(config.EnvAgentURL); override != "" {
+		return strings.TrimRight(override, "/")
 	}
-
 	if version.GetVersion() == version.DevVersion {
-		return config.GitHubReleasesURL + "/latest/download"
+		return config.AgentLatestDownloadURL
 	}
-
-	return defaultAgentDownloadURL + version.GetVersion()
+	return config.AgentDownloadBaseURL + version.GetVersion()
 }
 
 func DecodeContainerWorkspaceInfo(
