@@ -298,6 +298,9 @@ func decodeWorkspaceInfoAndWrite(
 				)
 				return false, nil, err
 			}
+
+			// Drop the old UID's path so the recompute below uses the new one.
+			workspaceInfo.ContentFolder = ""
 		}
 	}
 
@@ -331,9 +334,11 @@ func decodeWorkspaceInfoAndWrite(
 		}
 	}
 
-	// set content folder
 	if workspaceInfo.ContentFolder == "" {
-		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
+		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(
+			workspaceDir,
+			workspaceInfo.Workspace.UID,
+		)
 		log.Debugf(
 			"set content folder to default location: contentFolder=%s",
 			workspaceInfo.ContentFolder,

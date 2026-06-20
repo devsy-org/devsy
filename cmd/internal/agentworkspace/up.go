@@ -544,6 +544,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
 		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
 			params.workspaceInfo.Origin,
+			params.workspaceInfo.Workspace.UID,
 		)
 	}
 
