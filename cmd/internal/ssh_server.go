@@ -1,8 +1,11 @@
 package cmdinternal
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"time"
 
@@ -15,6 +18,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/token"
 	"github.com/devsy-org/ssh"
 	"github.com/spf13/cobra"
+)
+
+const (
+	activityHeartbeatInterval = 10 * time.Second
+	activityFileMode          = 0o666
 )
 
 // SSHServerCmd holds the ssh server cmd flags.
@@ -30,138 +38,189 @@ type SSHServerCmd struct {
 }
 
 // NewSSHServerCmd creates a new ssh command.
-func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &SSHServerCmd{
-		GlobalFlags: flags,
-	}
+func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+	cmd := &SSHServerCmd{GlobalFlags: globalFlags}
 	sshCmd := &cobra.Command{
 		Use:   "ssh-server",
 		Short: "Starts a new SSH server",
 		Args:  cobra.NoArgs,
-		RunE:  cmd.Run,
+		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			return cmd.Run(cobraCmd.Context())
+		},
 	}
 
-	sshCmd.Flags().
-		StringVar(&cmd.Address, "address", fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort), "Address to listen to")
-	sshCmd.Flags().
-		BoolVar(&cmd.Stdio, "stdio", false, "Will listen on stdout and stdin instead of an address")
-	sshCmd.Flags().
-		BoolVar(&cmd.TrackActivity, "track-activity", false, "If enabled will write the last activity time to a file")
-	sshCmd.Flags().
-		StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
-			"If set, the SSH_AUTH_SOCK is expected to already be available in the workspace "+
-				"(under /tmp using the key provided) and the connection reuses this instead of creating a new one")
-	_ = sshCmd.Flags().MarkHidden("reuse-ssh-auth-sock")
-	sshCmd.Flags().StringVar(&cmd.Token, "token", "", "Base64 encoded token to use")
-	sshCmd.Flags().
-		StringVar(&cmd.Workdir, "workdir", "", "Directory where commands will run on the host")
+	f := sshCmd.Flags()
+	f.StringVar(&cmd.Address, "address",
+		fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort),
+		"Address to listen to")
+	f.BoolVar(&cmd.Stdio, "stdio", false,
+		"Listen on stdin/stdout instead of an address")
+	f.BoolVar(&cmd.TrackActivity, "track-activity", false,
+		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
+	f.StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
+	_ = f.MarkHidden("reuse-ssh-auth-sock")
+	f.StringVar(&cmd.Token, "token", "", "Base64 encoded token to use")
+	f.StringVar(&cmd.Workdir, "workdir", "",
+		"Directory where commands will run on the host")
 	return sshCmd
 }
 
 // Run runs the command logic.
-func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
-	var (
-		keys    []ssh.PublicKey
-		hostKey []byte
-		err     error
-	)
-	if cmd.Token != "" {
-		// parse token
-		t, err := token.ParseToken(cmd.Token)
-		if err != nil {
-			return fmt.Errorf("parse token: %w", err)
-		}
-
-		if t.AuthorizedKeys != "" {
-			keyBytes, err := base64.StdEncoding.DecodeString(t.AuthorizedKeys)
-			if err != nil {
-				return fmt.Errorf("seems like the provided encoded string is not base64 encoded")
-			}
-
-			for len(keyBytes) > 0 {
-				key, _, _, rest, err := ssh.ParseAuthorizedKey(keyBytes)
-				if err != nil {
-					return fmt.Errorf("parse authorized key: %w", err)
-				}
-
-				keys = append(keys, key)
-				keyBytes = rest
-			}
-		}
-
-		if len(t.HostKey) > 0 {
-			hostKey, err = base64.StdEncoding.DecodeString(t.HostKey)
-			if err != nil {
-				return fmt.Errorf("decode host key")
-			}
-		}
+func (cmd *SSHServerCmd) Run(ctx context.Context) error {
+	if cmd.TrackActivity && !cmd.Stdio {
+		return errors.New("--track-activity requires --stdio")
 	}
 
-	// Sweep stale per-connection agent socket directories left behind by
-	// predecessors that
-	// were killed by docker exec / proxy-chain teardown before any internal
-	// SSH cleanup could run. Liveness is decided via a per-directory flock
-	// the owning process holds for its lifetime; the kernel releases the
-	// flock on any process exit (including SIGKILL).
-	sshserver.SweepStaleAgentSockets()
-
-	// start the server
-	server, err := sshserver.NewServer(
-		cmd.Address,
-		hostKey,
-		keys,
-		cmd.Workdir,
-		cmd.ReuseSSHAuthSock,
-	)
+	keys, hostKey, err := parseSSHToken(cmd.Token)
 	if err != nil {
 		return err
 	}
 
-	// should we listen on stdout & stdin?
-	if cmd.Stdio {
-		if cmd.TrackActivity {
-			go func() {
-				_, err = os.Stat(config.ContainerActivityFile)
-				if err != nil {
-					if err := os.WriteFile(
-						config.ContainerActivityFile,
-						nil,
-						0o666,
-					); err != nil { // #nosec G306
-						fmt.Fprintf(os.Stderr, "error writing file: %v\n", err)
-						return
-					}
-					if err := os.Chmod(
-						config.ContainerActivityFile,
-						0o666,
-					); err != nil { // #nosec G302
-						fmt.Fprintf(os.Stderr, "error setting file permissions: %v\n", err)
-						return
-					}
-				}
+	// Sweep stale per-connection agent socket directories left behind by
+	// predecessors killed by docker exec / proxy-chain teardown before
+	// internal SSH cleanup could run. Liveness is decided via a per-directory
+	// flock the owning process holds for its lifetime; the kernel releases
+	// the flock on any process exit (including SIGKILL).
+	sshserver.SweepStaleAgentSockets()
 
-				for {
-					time.Sleep(time.Second * 10)
-					file, _ := os.Create(config.ContainerActivityFile)
-					_ = file.Close()
-				}
-			}()
-		}
-
-		lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
-		return server.Serve(lis)
+	server, err := sshserver.NewServer(
+		cmd.Address, hostKey, keys, cmd.Workdir, cmd.ReuseSSHAuthSock,
+	)
+	if err != nil {
+		return fmt.Errorf("create ssh server: %w", err)
 	}
 
-	// check if ssh is already running at that port
-	available, err := port.IsAvailable(cmd.Address)
-	if !available {
-		if err != nil {
-			return fmt.Errorf("address %s already in use: %w", cmd.Address, err)
-		}
+	if cmd.Stdio {
+		return cmd.serveStdio(ctx, server)
+	}
+	return cmd.serveListener(server)
+}
 
-		log.Infof("address %s already in use", cmd.Address)
+func (cmd *SSHServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
+	if cmd.TrackActivity {
+		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
+	}
+	lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
+	return server.Serve(lis)
+}
+
+func (cmd *SSHServerCmd) serveListener(server sshserver.Server) error {
+	available, err := port.IsAvailable(cmd.Address)
+	if err != nil {
+		return fmt.Errorf("check port %s: %w", cmd.Address, err)
+	}
+	if !available {
+		return fmt.Errorf("address %s already in use", cmd.Address)
+	}
+	return server.ListenAndServe()
+}
+
+// parseSSHToken decodes the optional base64-encoded token blob. An empty
+// string is valid and yields zero values: callers may run without a token.
+func parseSSHToken(encoded string) ([]ssh.PublicKey, []byte, error) {
+	if encoded == "" {
+		return nil, nil, nil
+	}
+
+	t, err := token.ParseToken(encoded)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse token: %w", err)
+	}
+
+	keys, err := decodeAuthorizedKeys(t.AuthorizedKeys)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	hostKey, err := decodeBase64Bytes(t.HostKey, "host key")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return keys, hostKey, nil
+}
+
+func decodeAuthorizedKeys(encoded string) ([]ssh.PublicKey, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode authorized keys: %w", err)
+	}
+	var keys []ssh.PublicKey
+	for len(raw) > 0 {
+		key, _, _, rest, err := ssh.ParseAuthorizedKey(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse authorized key: %w", err)
+		}
+		keys = append(keys, key)
+		raw = rest
+	}
+	return keys, nil
+}
+
+func decodeBase64Bytes(encoded, label string) ([]byte, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	out, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", label, err)
+	}
+	return out, nil
+}
+
+// runActivityHeartbeat periodically updates the activity file's mtime so
+// outside watchers can detect liveness. It exits when ctx is canceled.
+// Errors transition between "logged" and "silent" — we log only when the
+// failure mode changes so a permanently broken file doesn't spam the log.
+func runActivityHeartbeat(ctx context.Context, path string) {
+	if err := ensureActivityFile(path); err != nil {
+		log.Errorf("activity heartbeat: ensure file: %v", err)
+		return
+	}
+
+	t := time.NewTicker(activityHeartbeatInterval)
+	defer t.Stop()
+
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			err := os.Chtimes(path, now, now)
+			if (err == nil) != (lastErr == nil) {
+				if err != nil {
+					log.Errorf("activity heartbeat: %v", err)
+				} else {
+					log.Infof("activity heartbeat recovered")
+				}
+			}
+			lastErr = err
+		}
+	}
+}
+
+func ensureActivityFile(path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
 		return nil
 	}
-
-	return server.ListenAndServe()
+	if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("stat: %w", err)
+	}
+	if err := os.WriteFile(
+		path,
+		nil,
+		activityFileMode,
+	); err != nil { // #nosec G306 -- intentionally world-writable; multiple users update activity
+		return fmt.Errorf("create: %w", err)
+	}
+	if err := os.Chmod(path, activityFileMode); err != nil { // #nosec G302 -- ditto
+		return fmt.Errorf("chmod: %w", err)
+	}
+	return nil
 }
