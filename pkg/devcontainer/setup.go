@@ -124,7 +124,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
 	downloadURL := r.AgentDownloadURL
 	if downloadURL == "" {
-		downloadURL = agent.DefaultAgentDownloadURL()
+		downloadURL = pkgconfig.DefaultAgentDownloadURL()
 	}
 	mgr, err := agent.NewBinaryManager(downloadURL)
 	if err != nil {
@@ -149,7 +149,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
-		DownloadURL:                 agent.DefaultAgentDownloadURL(),
+		DownloadURL:                 pkgconfig.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: agent.Bool(false),
 		Timeout:                     timeout,
 	})

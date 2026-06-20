@@ -63,7 +63,7 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 	// create new runner
 	runner, err := devcontainer.NewRunner(
 		config.ContainerDevsyHelperLocation,
-		agent.DefaultAgentDownloadURL(),
+		config.DefaultAgentDownloadURL(),
 		workspaceInfo,
 	)
 	if err != nil {

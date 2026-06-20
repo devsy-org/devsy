@@ -68,7 +68,7 @@ func (d *LegacyShellDelivery) downloadURL() string {
 	if d.DownloadURL != "" {
 		return d.DownloadURL
 	}
-	return agent.DefaultAgentDownloadURL()
+	return pkgconfig.DefaultAgentDownloadURL()
 }
 
 // ExecFuncFromDriver creates an inject.ExecFunc that routes commands through

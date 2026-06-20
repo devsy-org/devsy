@@ -209,7 +209,7 @@ func CreateRunner(
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
 		config.ContainerDevsyHelperLocation,
-		agent.DefaultAgentDownloadURL(),
+		config.DefaultAgentDownloadURL(),
 		workspaceInfo,
 	)
 }

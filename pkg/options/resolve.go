@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -383,7 +382,7 @@ func resolveAgentDownloadURL(devConfig *config.Config) string {
 		return strings.TrimSuffix(contextAgentOption.Value, "/") + "/"
 	}
 
-	return agent.DefaultAgentDownloadURL()
+	return config.DefaultAgentDownloadURL()
 }
 
 func filterResolvedOptions(

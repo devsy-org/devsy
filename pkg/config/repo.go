@@ -1,5 +1,12 @@
 package config
 
+import (
+	"os"
+	"strings"
+
+	"github.com/devsy-org/devsy/pkg/version"
+)
+
 const (
 	RepoOwner         = "devsy-org"
 	RepoName          = "devsy"
@@ -30,3 +37,16 @@ const (
 	// AgentLatestDownloadURL points at the floating "latest" agent release.
 	AgentLatestDownloadURL = GitHubReleasesURL + "/latest/download"
 )
+
+// DefaultAgentDownloadURL returns the URL the host should download the agent
+// binary from. Honors the DEVSY_AGENT_URL override; otherwise uses the
+// version-pinned release URL, falling back to "latest" in dev builds.
+func DefaultAgentDownloadURL() string {
+	if override := os.Getenv(EnvAgentURL); override != "" {
+		return strings.TrimRight(override, "/")
+	}
+	if version.GetVersion() == version.DevVersion {
+		return AgentLatestDownloadURL
+	}
+	return AgentDownloadBaseURL + version.GetVersion()
+}

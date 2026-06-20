@@ -18,20 +18,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/version"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20
-
-func DefaultAgentDownloadURL() string {
-	if override := os.Getenv(config.EnvAgentURL); override != "" {
-		return strings.TrimRight(override, "/")
-	}
-	if version.GetVersion() == version.DevVersion {
-		return config.AgentLatestDownloadURL
-	}
-	return config.AgentDownloadBaseURL + version.GetVersion()
-}
 
 func DecodeContainerWorkspaceInfo(
 	workspaceInfoRaw string,
@@ -408,7 +397,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
-		DownloadURL:                 DefaultAgentDownloadURL(),
+		DownloadURL:                 config.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: Bool(false),
 		Timeout:                     opts.Timeout,
 	}); err != nil {
