@@ -25,8 +25,8 @@ const (
 	activityFileMode          = 0o666
 )
 
-// shutdownTimeout bounds how long we wait for in-flight SSH connections to
-// drain on context cancel before falling back to immediate Close().
+// shutdownTimeout bounds the grace period for in-flight SSH connections to
+// drain on context cancel before the listener is force-closed.
 const shutdownTimeout = 5 * time.Second
 
 // sshServerCmd holds the ssh server cmd flags.
@@ -200,9 +200,9 @@ func decodeBase64Bytes(encoded, label string) ([]byte, error) {
 }
 
 // runActivityHeartbeat periodically updates the activity file's mtime so
-// outside watchers can detect liveness. It exits when ctx is canceled.
-// Errors transition between "logged" and "silent" — we log only when the
-// failure mode changes so a permanently broken file doesn't spam the log.
+// outside watchers can detect liveness. Exits when ctx is canceled. Logs
+// only on success/failure transitions so a permanently broken file does
+// not spam the log.
 func runActivityHeartbeat(ctx context.Context, path string) {
 	if err := ensureActivityFile(path); err != nil {
 		log.Errorf("activity heartbeat: ensure file: %v", err)

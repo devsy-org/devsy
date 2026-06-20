@@ -109,7 +109,7 @@ func TestEnsureActivityFileCreatesAndIsIdempotent(t *testing.T) {
 
 func TestEnsureActivityFileSurfacesNonExistErrors(t *testing.T) {
 	// Path through a non-directory is ENOTDIR, which is neither nil nor ErrNotExist —
-	// confirm we surface it instead of trying to create.
+	// must surface as-is instead of falling into the create branch.
 	tmp := t.TempDir()
 	regular := filepath.Join(tmp, "regular")
 	if err := os.WriteFile(regular, nil, 0o600); err != nil {
