@@ -396,46 +396,40 @@ type Exec func(
 	stdin io.Reader, stdout io.Writer, stderr io.Writer,
 ) error
 
-func Tunnel(
-	ctx context.Context,
-	exec Exec,
-	user string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-	timeout time.Duration,
-) error {
-	err := InjectAgent(&InjectOptions{
+type TunnelOptions struct {
+	Exec    Exec
+	User    string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+	Timeout time.Duration
+}
+
+func Tunnel(ctx context.Context, opts TunnelOptions) error {
+	if err := InjectAgent(&InjectOptions{
 		Ctx: ctx,
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return exec(ctx, "root", command, stdin, stdout, stderr)
+			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
 		DownloadURL:                 DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: Bool(false),
-		Timeout:                     timeout,
-	})
-	if err != nil {
+		Timeout:                     opts.Timeout,
+	}); err != nil {
 		return err
 	}
 
-	// build command
 	command := fmt.Sprintf("'%s' internal ssh-server --stdio", config.ContainerDevsyHelperLocation)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
+	user := opts.User
 	if user == "" {
 		user = "root"
 	}
 
-	// create tunnel
-	err = exec(ctx, user, command, stdin, stdout, stderr)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
 }
 
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
