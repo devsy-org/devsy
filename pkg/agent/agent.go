@@ -252,9 +252,8 @@ func handleStaleWorkspace(
 }
 
 // resolveContentFolder fills in workspaceInfo.ContentFolder, preferring a
-// LocalFolder source when accessible. Platform proxy mode is excluded because
-// it only has write access under /var/lib/loft/* and most local folders would
-// hit permission errors.
+// LocalFolder source when accessible. Skipped under Platform.Enabled because
+// the host's local folder path is not addressable from the managed runner.
 func resolveContentFolder(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 	workspaceDir string,
