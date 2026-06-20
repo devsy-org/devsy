@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -37,7 +37,7 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	}
 	defer func() { _ = binary.Close() }()
 
-	destPath := agent.ContainerDevsyHelperLocation
+	destPath := pkgconfig.ContainerDevsyHelperLocation
 	script := fmt.Sprintf(
 		`set -e; t=$(mktemp %s.XXXXXX); cat > "$t" && chmod 755 "$t" && mv "$t" %s || { rm -f "$t"; exit 1; }`,
 		destPath,

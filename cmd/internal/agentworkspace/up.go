@@ -208,8 +208,8 @@ func CreateRunner(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
-		agent.ContainerDevsyHelperLocation,
-		agent.DefaultAgentDownloadURL(),
+		config.ContainerDevsyHelperLocation,
+		config.DefaultAgentDownloadURL(),
 		workspaceInfo,
 	)
 }
@@ -544,6 +544,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
 		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
 			params.workspaceInfo.Origin,
+			params.workspaceInfo.Workspace.UID,
 		)
 	}
 

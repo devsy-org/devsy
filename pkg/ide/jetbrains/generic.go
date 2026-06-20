@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/command"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
@@ -110,7 +109,7 @@ func (o *GenericJetBrainsServer) GetVolume() string {
 }
 
 func (o *GenericJetBrainsServer) getDownloadFolder() string {
-	return filepath.Join(agent.ContainerDataDir, o.options.ID)
+	return filepath.Join(config2.ContainerDataDir, o.options.ID)
 }
 
 func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {

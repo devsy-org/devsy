@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/agent"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -170,7 +169,7 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 		p.client.Workspace(),
 		"--log-output=raw",
 		"--command",
-		agent.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
+		config.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
 	)
 	execPath, err := os.Executable()
 	if err != nil {

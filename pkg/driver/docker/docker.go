@@ -807,6 +807,9 @@ func (d *dockerDriver) startContainer(
 		dir,
 	)
 
+	logHostEnvOnce(ctx, d.Docker)
+	logBindSources(args)
+
 	err := d.Docker.RunWithDir(ctx, dir, args, nil, writer, writer)
 	if err != nil {
 		log.Errorf(

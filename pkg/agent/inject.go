@@ -43,9 +43,9 @@ type InjectOptions struct {
 	// IsLocal indicates if the injection target is the local machine.
 	IsLocal bool
 	// RemoteAgentPath is the path where the agent binary should be placed on the remote machine.
-	// Defaults to RemoteDevsyHelperLocation.
+	// Defaults to config.RemoteDevsyHelperLocation.
 	RemoteAgentPath string
-	// DownloadURL is the base URL to download the agent binary from. Defaults to DefaultAgentDownloadURL().
+	// DownloadURL is the base URL to download the agent binary from. Defaults to config.DefaultAgentDownloadURL().
 	DownloadURL string
 	// PreferDownloadFromRemoteUrl forces downloading the agent even if a local binary is available.
 	// Defaults to true for release versions, false for dev versions.
@@ -93,7 +93,7 @@ func (o *InjectOptions) Validate() error {
 
 func (o *InjectOptions) applyPathDefaults() {
 	if o.RemoteAgentPath == "" {
-		o.RemoteAgentPath = RemoteDevsyHelperLocation
+		o.RemoteAgentPath = config.RemoteDevsyHelperLocation
 	}
 	if o.Timeout == 0 {
 		o.Timeout = waitForInstanceConnectionTimeout
@@ -108,7 +108,7 @@ func (o *InjectOptions) applyPathDefaults() {
 
 func (o *InjectOptions) applyURLDefaults() {
 	if o.DownloadURL == "" {
-		o.DownloadURL = DefaultAgentDownloadURL()
+		o.DownloadURL = config.DefaultAgentDownloadURL()
 	}
 
 	if strings.Contains(o.DownloadURL, "github.com") &&
@@ -133,7 +133,7 @@ func (o *InjectOptions) applyPreferDownloadDefaults() {
 		return
 	}
 
-	isDefaultURL := o.DownloadURL == DefaultAgentDownloadURL()
+	isDefaultURL := o.DownloadURL == config.DefaultAgentDownloadURL()
 	hasCustomAgentURL := os.Getenv(config.EnvAgentURL) != "" || !isDefaultURL
 
 	preferDownloadEnv := os.Getenv(config.EnvAgentPreferDownload)

@@ -1,13 +1,16 @@
 package cmdinternal
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
@@ -17,151 +20,234 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// SSHServerCmd holds the ssh server cmd flags.
-type SSHServerCmd struct {
+const (
+	activityHeartbeatInterval = 10 * time.Second
+	activityFileMode          = 0o666
+)
+
+// shutdownTimeout bounds the grace period for in-flight SSH connections to
+// drain on context cancel before the listener is force-closed.
+const shutdownTimeout = 5 * time.Second
+
+// sshServerCmd holds the ssh server cmd flags.
+type sshServerCmd struct {
 	*flags.GlobalFlags
 
-	Token            string
-	Address          string
-	Stdio            bool
-	TrackActivity    bool
-	ReuseSSHAuthSock string
-	Workdir          string
+	token            string
+	address          string
+	stdio            bool
+	trackActivity    bool
+	reuseSSHAuthSock string
+	workdir          string
 }
 
 // NewSSHServerCmd creates a new ssh command.
-func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &SSHServerCmd{
-		GlobalFlags: flags,
-	}
+func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+	cmd := &sshServerCmd{GlobalFlags: globalFlags}
 	sshCmd := &cobra.Command{
 		Use:   "ssh-server",
 		Short: "Starts a new SSH server",
 		Args:  cobra.NoArgs,
-		RunE:  cmd.Run,
+		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			return cmd.run(cobraCmd.Context())
+		},
 	}
 
-	sshCmd.Flags().
-		StringVar(&cmd.Address, "address", fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort), "Address to listen to")
-	sshCmd.Flags().
-		BoolVar(&cmd.Stdio, "stdio", false, "Will listen on stdout and stdin instead of an address")
-	sshCmd.Flags().
-		BoolVar(&cmd.TrackActivity, "track-activity", false, "If enabled will write the last activity time to a file")
-	sshCmd.Flags().
-		StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
-			"If set, the SSH_AUTH_SOCK is expected to already be available in the workspace "+
-				"(under /tmp using the key provided) and the connection reuses this instead of creating a new one")
-	_ = sshCmd.Flags().MarkHidden("reuse-ssh-auth-sock")
-	sshCmd.Flags().StringVar(&cmd.Token, "token", "", "Base64 encoded token to use")
-	sshCmd.Flags().
-		StringVar(&cmd.Workdir, "workdir", "", "Directory where commands will run on the host")
+	f := sshCmd.Flags()
+	f.StringVar(&cmd.address, "address",
+		fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort),
+		"Address to listen to")
+	f.BoolVar(&cmd.stdio, "stdio", false,
+		"Listen on stdin/stdout instead of an address")
+	f.BoolVar(&cmd.trackActivity, "track-activity", false,
+		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
+	f.StringVar(&cmd.reuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
+	_ = f.MarkHidden("reuse-ssh-auth-sock")
+	f.StringVar(&cmd.token, "token", "", "Base64 encoded token to use")
+	f.StringVar(&cmd.workdir, "workdir", "",
+		"Directory where commands will run on the host")
 	return sshCmd
 }
 
-// Run runs the command logic.
-func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
-	var (
-		keys    []ssh.PublicKey
-		hostKey []byte
-		err     error
-	)
-	if cmd.Token != "" {
-		// parse token
-		t, err := token.ParseToken(cmd.Token)
-		if err != nil {
-			return fmt.Errorf("parse token: %w", err)
-		}
-
-		if t.AuthorizedKeys != "" {
-			keyBytes, err := base64.StdEncoding.DecodeString(t.AuthorizedKeys)
-			if err != nil {
-				return fmt.Errorf("seems like the provided encoded string is not base64 encoded")
-			}
-
-			for len(keyBytes) > 0 {
-				key, _, _, rest, err := ssh.ParseAuthorizedKey(keyBytes)
-				if err != nil {
-					return fmt.Errorf("parse authorized key: %w", err)
-				}
-
-				keys = append(keys, key)
-				keyBytes = rest
-			}
-		}
-
-		if len(t.HostKey) > 0 {
-			hostKey, err = base64.StdEncoding.DecodeString(t.HostKey)
-			if err != nil {
-				return fmt.Errorf("decode host key")
-			}
-		}
+func (cmd *sshServerCmd) run(ctx context.Context) error {
+	if cmd.trackActivity && !cmd.stdio {
+		return errors.New("--track-activity requires --stdio")
 	}
 
-	// Sweep stale per-connection agent socket directories left behind by
-	// predecessors that
-	// were killed by docker exec / proxy-chain teardown before any internal
-	// SSH cleanup could run. Liveness is decided via a per-directory flock
-	// the owning process holds for its lifetime; the kernel releases the
-	// flock on any process exit (including SIGKILL).
-	sshserver.SweepStaleAgentSockets()
-
-	// start the server
-	server, err := sshserver.NewServer(
-		cmd.Address,
-		hostKey,
-		keys,
-		cmd.Workdir,
-		cmd.ReuseSSHAuthSock,
-	)
+	keys, hostKey, err := parseSSHToken(cmd.token)
 	if err != nil {
 		return err
 	}
 
-	// should we listen on stdout & stdin?
-	if cmd.Stdio {
-		if cmd.TrackActivity {
-			go func() {
-				_, err = os.Stat(agent.ContainerActivityFile)
-				if err != nil {
-					if err := os.WriteFile(
-						agent.ContainerActivityFile,
-						nil,
-						0o666,
-					); err != nil { // #nosec G306
-						fmt.Fprintf(os.Stderr, "error writing file: %v\n", err)
-						return
-					}
-					if err := os.Chmod(
-						agent.ContainerActivityFile,
-						0o666,
-					); err != nil { // #nosec G302
-						fmt.Fprintf(os.Stderr, "error setting file permissions: %v\n", err)
-						return
-					}
-				}
+	// Sweep stale per-connection agent socket directories left behind by
+	// predecessors killed by docker exec / proxy-chain teardown before
+	// internal SSH cleanup could run. Liveness is decided via a per-directory
+	// flock the owning process holds for its lifetime; the kernel releases
+	// the flock on any process exit (including SIGKILL).
+	sshserver.SweepStaleAgentSockets()
 
-				for {
-					time.Sleep(time.Second * 10)
-					file, _ := os.Create(agent.ContainerActivityFile)
-					_ = file.Close()
-				}
-			}()
-		}
-
-		lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
-		return server.Serve(lis)
+	server, err := sshserver.NewServer(
+		cmd.address, hostKey, keys, cmd.workdir, cmd.reuseSSHAuthSock,
+	)
+	if err != nil {
+		return fmt.Errorf("create ssh server: %w", err)
 	}
 
-	// check if ssh is already running at that port
-	available, err := port.IsAvailable(cmd.Address)
-	if !available {
-		if err != nil {
-			return fmt.Errorf("address %s already in use: %w", cmd.Address, err)
-		}
+	if cmd.stdio {
+		return cmd.serveStdio(ctx, server)
+	}
+	return cmd.serveListener(ctx, server)
+}
 
-		log.Infof("address %s already in use", cmd.Address)
+func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
+	if cmd.trackActivity {
+		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
+	}
+	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
+	lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
+	return ignoreServerClosed(server.Serve(lis))
+}
+
+func (cmd *sshServerCmd) serveListener(ctx context.Context, server sshserver.Server) error {
+	available, err := port.IsAvailable(cmd.address)
+	if err != nil {
+		return fmt.Errorf("check port %s: %w", cmd.address, err)
+	}
+	if !available {
+		return fmt.Errorf("address %s already in use", cmd.address)
+	}
+	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
+	return ignoreServerClosed(server.ListenAndServe())
+}
+
+// shutdownOnCancel drains active SSH connections when ctx is canceled,
+// bounded by shutdownTimeout. The shutdown context derives from
+// context.Background by design: ctx is already canceled at this point, so
+// reusing it would make Shutdown's grace period instantly expire.
+func shutdownOnCancel(ctx context.Context, server sshserver.Server) {
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Errorf("ssh server shutdown: %v", err)
+	}
+}
+
+// ignoreServerClosed turns the expected post-Shutdown error into a clean
+// return so cobra doesn't surface "ssh: Server closed" as a failure.
+func ignoreServerClosed(err error) error {
+	if err == nil || errors.Is(err, ssh.ErrServerClosed) {
 		return nil
 	}
+	return err
+}
 
-	return server.ListenAndServe()
+// parseSSHToken decodes the optional base64-encoded token blob. An empty
+// string is valid and yields zero values: callers may run without a token.
+func parseSSHToken(encoded string) ([]ssh.PublicKey, []byte, error) {
+	if encoded == "" {
+		return nil, nil, nil
+	}
+
+	t, err := token.ParseToken(encoded)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse token: %w", err)
+	}
+
+	keys, err := decodeAuthorizedKeys(t.AuthorizedKeys)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	hostKey, err := decodeBase64Bytes(t.HostKey, "host key")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return keys, hostKey, nil
+}
+
+func decodeAuthorizedKeys(encoded string) ([]ssh.PublicKey, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode authorized keys: %w", err)
+	}
+	var keys []ssh.PublicKey
+	for len(raw) > 0 {
+		key, _, _, rest, err := ssh.ParseAuthorizedKey(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse authorized key: %w", err)
+		}
+		keys = append(keys, key)
+		raw = rest
+	}
+	return keys, nil
+}
+
+func decodeBase64Bytes(encoded, label string) ([]byte, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	out, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", label, err)
+	}
+	return out, nil
+}
+
+// runActivityHeartbeat periodically updates the activity file's mtime so
+// outside watchers can detect liveness. Exits when ctx is canceled. Logs
+// only on success/failure transitions so a permanently broken file does
+// not spam the log.
+func runActivityHeartbeat(ctx context.Context, path string) {
+	if err := ensureActivityFile(path); err != nil {
+		log.Errorf("activity heartbeat: ensure file: %v", err)
+		return
+	}
+
+	t := time.NewTicker(activityHeartbeatInterval)
+	defer t.Stop()
+
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			err := os.Chtimes(path, now, now)
+			if (err == nil) != (lastErr == nil) {
+				if err != nil {
+					log.Errorf("activity heartbeat: %v", err)
+				} else {
+					log.Infof("activity heartbeat recovered")
+				}
+			}
+			lastErr = err
+		}
+	}
+}
+
+func ensureActivityFile(path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("stat: %w", err)
+	}
+	if err := os.WriteFile(
+		path,
+		nil,
+		activityFileMode,
+	); err != nil { // #nosec G306 -- intentionally world-writable; multiple users update activity
+		return fmt.Errorf("create: %w", err)
+	}
+	if err := os.Chmod(path, activityFileMode); err != nil { // #nosec G302 -- ditto
+		return fmt.Errorf("chmod: %w", err)
+	}
+	return nil
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +68,7 @@ func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 
 	require.NoError(t, err)
 
-	destPath := agent.ContainerDevsyHelperLocation
+	destPath := pkgconfig.ContainerDevsyHelperLocation
 	assert.Contains(t, capturedCmd, "cat >")
 	assert.Contains(t, capturedCmd, destPath)
 	assert.Contains(t, capturedCmd, "chmod 755")

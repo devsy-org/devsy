@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/spf13/cobra"
 )
@@ -61,8 +62,8 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 
 	// create new runner
 	runner, err := devcontainer.NewRunner(
-		agent.ContainerDevsyHelperLocation,
-		agent.DefaultAgentDownloadURL(),
+		config.ContainerDevsyHelperLocation,
+		config.DefaultAgentDownloadURL(),
 		workspaceInfo,
 	)
 	if err != nil {

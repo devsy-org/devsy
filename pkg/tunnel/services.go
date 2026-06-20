@@ -147,7 +147,7 @@ func buildCredentialsCommand(opts RunServicesOptions) string {
 	command := fmt.Sprintf(
 		"%s%s internal agent container credentials-server --user %s",
 		agent.ContainerAgentEnvPrefix,
-		shellescape.Quote(agent.ContainerDevsyHelperLocation),
+		shellescape.Quote(config.ContainerDevsyHelperLocation),
 		shellescape.Quote(opts.User),
 	)
 	if opts.ConfigureGitCredentials {

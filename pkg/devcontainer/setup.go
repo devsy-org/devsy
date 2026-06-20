@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/compress"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
@@ -123,7 +124,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
 	downloadURL := r.AgentDownloadURL
 	if downloadURL == "" {
-		downloadURL = agent.DefaultAgentDownloadURL()
+		downloadURL = pkgconfig.DefaultAgentDownloadURL()
 	}
 	mgr, err := agent.NewBinaryManager(downloadURL)
 	if err != nil {
@@ -147,8 +148,8 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 			)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             agent.ContainerDevsyHelperLocation,
-		DownloadURL:                 agent.DefaultAgentDownloadURL(),
+		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
+		DownloadURL:                 pkgconfig.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: agent.Bool(false),
 		Timeout:                     timeout,
 	})
@@ -252,7 +253,7 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string) string {
 	log.Infof("setting up container")
 	args := []string{
-		shellescape.Quote(agent.ContainerDevsyHelperLocation),
+		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
 		"internal", "agent", "container", "setup",
 		"--setup-info", shellescape.Quote(compressed),
 		"--container-workspace-info", shellescape.Quote(workspaceConfigCompressed),
@@ -375,7 +376,7 @@ func (r *runner) executeSetup(
 
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
-		shellescape.Quote(agent.ContainerDevsyHelperLocation),
+		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
 		"internal", "ssh-server", "--stdio",
 	}
 

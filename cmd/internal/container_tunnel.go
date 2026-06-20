@@ -86,23 +86,21 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 		os.Exit(0)
 	}()
 
-	// create tunnel into container.
-	err = agent.Tunnel(
-		ctx,
-		func(ctx context.Context, user string, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+	return agent.Tunnel(ctx, agent.TunnelOptions{
+		Exec: func(
+			ctx context.Context,
+			user, command string,
+			stdin io.Reader,
+			stdout, stderr io.Writer,
+		) error {
 			return runner.Command(ctx, user, command, stdin, stdout, stderr)
 		},
-		cmd.User,
-		os.Stdin,
-		os.Stdout,
-		os.Stderr,
-		workspaceInfo.InjectTimeout,
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
+		User:    cmd.User,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		Timeout: workspaceInfo.InjectTimeout,
+	})
 }
 
 func startDevContainer(
