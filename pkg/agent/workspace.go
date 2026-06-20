@@ -255,12 +255,7 @@ func IsHostAgentInvocation(agentFolder string) bool {
 		return true
 	}
 	if !containerDetector() {
-		// Warn every time we detect a stale env on a non-container host.
-		// IsHostAgentInvocation is called once per CLI invocation, so this
-		// won't spam the terminal; long-running parents (test runners,
-		// daemonized supervisors) need every occurrence surfaced, not just
-		// the first.
-		log.Warnf(
+		log.Debugf(
 			"%s=1 is set but no container indicator file found; treating as host invocation",
 			EnvAgentInContainer,
 		)
