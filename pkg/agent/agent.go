@@ -187,179 +187,106 @@ func decodeWorkspaceInfoAndWrite(
 	writeInfo bool,
 	deleteWorkspace func(workspaceInfo *provider2.AgentWorkspaceInfo) error,
 ) (bool, *provider2.AgentWorkspaceInfo, error) {
-	log.Debugf(
-		"starting to decode and write workspace info: workspaceEncodedLength=%v, writeInfo=%v",
-		len(workspaceInfoEncoded),
-		writeInfo,
-	)
-
 	workspaceInfo, _, err := DecodeWorkspaceInfo(workspaceInfoEncoded)
 	if err != nil {
-		log.Errorf(
-			"failed to decode workspace info: error=%v, workspaceEncodedLength=%v",
-			err,
-			len(workspaceInfoEncoded),
-		)
 		return false, nil, err
 	}
 
-	log.Debugf(
-		"decoded workspace info: workspaceId=%s, context=%s, driver=%s",
-		workspaceInfo.Workspace.ID,
-		workspaceInfo.Workspace.Context,
-		workspaceInfo.Agent.Driver,
-	)
-
-	// check if we need to become root
-	log.Debug("checking if root privileges are required")
-	shouldExit, err := rerunAsRoot(workspaceInfo)
-	if err != nil {
-		log.Errorf("failed to rerun as root: error=%v", err)
+	if shouldExit, err := rerunAsRoot(workspaceInfo); err != nil {
 		return false, nil, fmt.Errorf("rerun as root: %w", err)
 	} else if shouldExit {
-		log.Debug("rerunning as root, exiting current process")
 		return true, nil, nil
 	}
 
-	// write to workspace folder
-	log.Debugf(
-		"creating agent workspace directory: dataPath=%s, context=%s, workspaceId=%s",
-		workspaceInfo.Agent.DataPath,
-		workspaceInfo.Workspace.Context,
-		workspaceInfo.Workspace.ID,
-	)
 	workspaceDir, err := CreateAgentWorkspaceDir(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.Workspace.Context,
 		workspaceInfo.Workspace.ID,
 	)
 	if err != nil {
-		log.Errorf(
-			"failed to create agent workspace directory: error=%v, dataPath=%s, context=%s, workspaceId=%s",
-			err,
-			workspaceInfo.Agent.DataPath,
-			workspaceInfo.Workspace.Context,
-			workspaceInfo.Workspace.ID,
-		)
-		return false, nil, err
+		return false, nil, fmt.Errorf("create workspace dir: %w", err)
 	}
 
-	log.Debugf("using workspace dir: workspaceDir=%s", workspaceDir)
-
-	// check if workspace config already exists
 	workspaceConfig := filepath.Join(workspaceDir, provider2.WorkspaceConfigFile)
 	if deleteWorkspace != nil {
-		log.Debugf("checking for existing workspace config: configFile=%s", workspaceConfig)
-
-		oldWorkspaceInfo, _ := ParseAgentWorkspaceInfo(workspaceConfig)
-		if oldWorkspaceInfo != nil &&
-			oldWorkspaceInfo.Workspace.UID != workspaceInfo.Workspace.UID {
-			// delete the old workspace
-			log.Infof(
-				"delete old workspace: workspaceId=%s, oldUid=%s, newUid=%s",
-				oldWorkspaceInfo.Workspace.ID,
-				oldWorkspaceInfo.Workspace.UID,
-				workspaceInfo.Workspace.UID,
-			)
-
-			err = deleteWorkspace(oldWorkspaceInfo)
-			if err != nil {
-				log.Errorf(
-					"failed to delete old workspace: error=%v, workspaceId=%s",
-					err,
-					oldWorkspaceInfo.Workspace.ID,
-				)
-				return false, nil, fmt.Errorf("delete old workspace: %w", err)
-			}
-
-			// recreate workspace folder again
-			log.Debug("recreating workspace directory after deletion")
-			workspaceDir, err = CreateAgentWorkspaceDir(
-				workspaceInfo.Agent.DataPath,
-				workspaceInfo.Workspace.Context,
-				workspaceInfo.Workspace.ID,
-			)
-			if err != nil {
-				log.Errorf(
-					"failed to recreate workspace directory: error=%v, dataPath=%s",
-					err,
-					workspaceInfo.Agent.DataPath,
-				)
-				return false, nil, err
-			}
-
-			// Drop the old UID's path so the recompute below uses the new one.
-			workspaceInfo.ContentFolder = ""
+		workspaceDir, err = handleStaleWorkspace(
+			workspaceInfo, workspaceDir, workspaceConfig, deleteWorkspace,
+		)
+		if err != nil {
+			return false, nil, err
 		}
 	}
 
-	// check content folder for local folder workspace source
-	//
-	// We don't want to initialize the content folder with the value of the local workspace folder
-	// if we're running in proxy mode.
-	// We only have write access to /var/lib/loft/* by default causing nearly all local folders
-	// to run into permissions issues
+	resolveContentFolder(workspaceInfo, workspaceDir)
+
+	if writeInfo {
+		if err := writeWorkspaceInfo(workspaceConfig, workspaceInfo); err != nil {
+			return false, nil, fmt.Errorf("write workspace info: %w", err)
+		}
+	}
+
+	workspaceInfo.Origin = workspaceDir
+	return false, workspaceInfo, nil
+}
+
+// handleStaleWorkspace deletes a workspace whose persisted UID no longer
+// matches the incoming one, then recreates the workspace dir. Returns the
+// (possibly new) workspaceDir.
+func handleStaleWorkspace(
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+	workspaceDir, workspaceConfig string,
+	deleteWorkspace func(*provider2.AgentWorkspaceInfo) error,
+) (string, error) {
+	oldWorkspaceInfo, _ := ParseAgentWorkspaceInfo(workspaceConfig)
+	if oldWorkspaceInfo == nil ||
+		oldWorkspaceInfo.Workspace.UID == workspaceInfo.Workspace.UID {
+		return workspaceDir, nil
+	}
+
+	log.Infof(
+		"delete old workspace: workspaceId=%s, oldUid=%s, newUid=%s",
+		oldWorkspaceInfo.Workspace.ID,
+		oldWorkspaceInfo.Workspace.UID,
+		workspaceInfo.Workspace.UID,
+	)
+	if err := deleteWorkspace(oldWorkspaceInfo); err != nil {
+		return "", fmt.Errorf("delete old workspace: %w", err)
+	}
+
+	newDir, err := CreateAgentWorkspaceDir(
+		workspaceInfo.Agent.DataPath,
+		workspaceInfo.Workspace.Context,
+		workspaceInfo.Workspace.ID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("recreate workspace dir: %w", err)
+	}
+
+	// Drop the old UID's path so resolveContentFolder picks up the new one.
+	workspaceInfo.ContentFolder = ""
+	return newDir, nil
+}
+
+// resolveContentFolder fills in workspaceInfo.ContentFolder, preferring a
+// LocalFolder source when accessible. Platform proxy mode is excluded because
+// it only has write access under /var/lib/loft/* and most local folders would
+// hit permission errors.
+func resolveContentFolder(
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+	workspaceDir string,
+) {
 	if workspaceInfo.Workspace.Source.LocalFolder != "" &&
 		!workspaceInfo.CLIOptions.Platform.Enabled {
-		log.Debugf(
-			"checking local folder workspace source: localFolder=%s, workspaceOrigin=%s",
-			workspaceInfo.Workspace.Source.LocalFolder,
-			workspaceInfo.WorkspaceOrigin,
-		)
-
-		_, err = os.Stat(workspaceInfo.WorkspaceOrigin)
-		if err == nil {
+		if _, err := os.Stat(workspaceInfo.WorkspaceOrigin); err == nil {
 			workspaceInfo.ContentFolder = workspaceInfo.Workspace.Source.LocalFolder
-			log.Debugf(
-				"set content folder to local folder: contentFolder=%s",
-				workspaceInfo.ContentFolder,
-			)
-		} else {
-			log.Debugf(
-				"workspace origin not accessible: error=%v, workspaceOrigin=%s",
-				err,
-				workspaceInfo.WorkspaceOrigin,
-			)
 		}
 	}
-
 	if workspaceInfo.ContentFolder == "" {
 		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(
 			workspaceDir,
 			workspaceInfo.Workspace.UID,
 		)
-		log.Debugf(
-			"set content folder to default location: contentFolder=%s",
-			workspaceInfo.ContentFolder,
-		)
 	}
-
-	// write workspace info
-	if writeInfo {
-		log.Debugf("writing workspace info to file: configFile=%s", workspaceConfig)
-
-		err = writeWorkspaceInfo(workspaceConfig, workspaceInfo)
-		if err != nil {
-			log.Errorf(
-				"failed to write workspace info: error=%v, configFile=%s",
-				err,
-				workspaceConfig,
-			)
-			return false, nil, err
-		}
-
-		log.Debugf("wrote workspace info: configFile=%s", workspaceConfig)
-	}
-
-	workspaceInfo.Origin = workspaceDir
-	log.Debugf(
-		"processed workspace info: workspaceId=%s, origin=%s, contentFolder=%s",
-		workspaceInfo.Workspace.ID,
-		workspaceInfo.Origin,
-		workspaceInfo.ContentFolder,
-	)
-
-	return false, workspaceInfo, nil
 }
 
 func CreateWorkspaceBusyFile(folder string) {
