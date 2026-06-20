@@ -8,10 +8,10 @@ import (
 func TestExtractBindSources(t *testing.T) {
 	args := []string{
 		"run", "--sig-proxy=false",
-		"--mount", "type=bind,source=/a/b,target=/x,consistency=consistent",
-		"--mount", "type=bind,src=/c/d,dst=/y",
+		mountFlag, "type=bind,source=/a/b,target=/x,consistency=consistent",
+		mountFlag, "type=bind,src=/c/d,dst=/y",
 		"--mount=type=bind,src=/e/f,dst=/z",
-		"--mount", "type=volume,source=myvol,target=/v", // not a bind, ignored
+		mountFlag, "type=volume,source=myvol,target=/v", // not a bind, ignored
 		"alpine",
 	}
 	got := extractBindSources(args)

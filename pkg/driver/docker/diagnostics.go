@@ -15,6 +15,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
+const mountFlag = "--mount"
+
 func extractBindSources(args []string) []string {
 	var srcs []string
 	for i, a := range args {
@@ -26,7 +28,7 @@ func extractBindSources(args []string) []string {
 }
 
 func mountSpec(arg string, args []string, i int) (string, bool) {
-	if arg == "--mount" && i+1 < len(args) {
+	if arg == mountFlag && i+1 < len(args) {
 		return args[i+1], true
 	}
 	if rest, ok := strings.CutPrefix(arg, "--mount="); ok {
