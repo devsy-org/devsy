@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -289,5 +289,5 @@ func (d *LocalDockerDelivery) dockerCommand() string {
 }
 
 func binaryName() string {
-	return agent.ContainerDevsyHelperLocation[len("/usr/local/bin/"):]
+	return pkgconfig.ContainerDevsyHelperLocation[len("/usr/local/bin/"):]
 }

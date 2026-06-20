@@ -43,7 +43,7 @@ type InjectOptions struct {
 	// IsLocal indicates if the injection target is the local machine.
 	IsLocal bool
 	// RemoteAgentPath is the path where the agent binary should be placed on the remote machine.
-	// Defaults to RemoteDevsyHelperLocation.
+	// Defaults to config.RemoteDevsyHelperLocation.
 	RemoteAgentPath string
 	// DownloadURL is the base URL to download the agent binary from. Defaults to DefaultAgentDownloadURL().
 	DownloadURL string
@@ -93,7 +93,7 @@ func (o *InjectOptions) Validate() error {
 
 func (o *InjectOptions) applyPathDefaults() {
 	if o.RemoteAgentPath == "" {
-		o.RemoteAgentPath = RemoteDevsyHelperLocation
+		o.RemoteAgentPath = config.RemoteDevsyHelperLocation
 	}
 	if o.Timeout == 0 {
 		o.Timeout = waitForInstanceConnectionTimeout

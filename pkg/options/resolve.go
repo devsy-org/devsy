@@ -335,7 +335,7 @@ func resolveAgentPathAndURL(
 		}
 	}
 	if agentConfig.Path == "" {
-		agentConfig.Path = agent.RemoteDevsyHelperLocation
+		agentConfig.Path = config.RemoteDevsyHelperLocation
 	}
 	agentConfig.DownloadURL = resolver.ResolveDefaultValue(agentConfig.DownloadURL, options)
 	if agentConfig.DownloadURL == "" {

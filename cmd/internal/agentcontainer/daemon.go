@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -25,7 +24,7 @@ import (
 )
 
 const (
-	RootDir          = agent.ContainerDataDir
+	RootDir          = config2.ContainerDataDir
 	DaemonConfigPath = "/var/run/secrets/" + config2.BinaryName + "/daemon_config"
 )
 
@@ -68,13 +67,13 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 		}
 		if timeoutDuration > 0 {
 			if err := os.WriteFile(
-				agent.ContainerActivityFile,
+				config2.ContainerActivityFile,
 				nil,
 				0o666,
 			); err != nil { // #nosec G306
 				return fmt.Errorf("failed to create activity file: %w", err)
 			}
-			if err := os.Chmod(agent.ContainerActivityFile, 0o666); err != nil { // #nosec G302
+			if err := os.Chmod(config2.ContainerActivityFile, 0o666); err != nil { // #nosec G302
 				return fmt.Errorf("failed to set activity file permissions: %w", err)
 			}
 		}
@@ -197,7 +196,7 @@ func runTimeoutMonitor(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			stat, err := os.Stat(agent.ContainerActivityFile)
+			stat, err := os.Stat(config2.ContainerActivityFile)
 			if err != nil {
 				continue
 			}

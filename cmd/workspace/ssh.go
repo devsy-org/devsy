@@ -16,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/machine"
-	"github.com/devsy-org/devsy/pkg/agent"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -543,7 +542,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	log.Debugf("Run outer container tunnel")
 	commandArgs := []string{
-		agent.ContainerDevsyHelperLocation,
+		config.ContainerDevsyHelperLocation,
 		"internal",
 		"ssh-server",
 		"--track-activity",
@@ -705,7 +704,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 
 	// Now we forward the agent socket to the remote, and setup remote gpg to use it
 	forwardAgent := []string{
-		agent.ContainerDevsyHelperLocation,
+		config.ContainerDevsyHelperLocation,
 		"internal",
 		"agent",
 		"workspace",

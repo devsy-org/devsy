@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +62,7 @@ func (c *FleetServerCmd) Run(cmd *cobra.Command, _ []string) error {
 			// if ouf last occurrence of notify if "Notify ID connected"
 			// we have an active session, so let's keep alive
 			if strings.Contains(connString[len(connString)-1][0], "is connected") {
-				file, _ := os.Create(agent.ContainerActivityFile)
+				file, _ := os.Create(config.ContainerActivityFile)
 				_ = file.Close()
 			}
 		case <-cmd.Context().Done():

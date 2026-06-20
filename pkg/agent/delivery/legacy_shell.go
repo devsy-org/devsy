@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -38,7 +39,7 @@ func (d *LegacyShellDelivery) DeliverPostStart(ctx context.Context, opts PostSta
 		Ctx:                         ctx,
 		Exec:                        d.ExecFunc,
 		IsLocal:                     false,
-		RemoteAgentPath:             agent.ContainerDevsyHelperLocation,
+		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
 		DownloadURL:                 d.downloadURL(),
 		PreferDownloadFromRemoteUrl: agent.Bool(false),
 	}

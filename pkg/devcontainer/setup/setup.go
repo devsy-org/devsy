@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/devsy-org/api/pkg/devsy"
-	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -410,7 +409,7 @@ func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
 		return true
 	}
 
-	markerPath := filepath.Join(agent.ContainerDataDir, "setupKubeConfig.marker")
+	markerPath := filepath.Join(pkgconfig.ContainerDataDir, "setupKubeConfig.marker")
 	info, err := os.Stat(markerPath)
 	if err == nil {
 		if info.Mode().Perm()&0o022 != 0 {
@@ -492,7 +491,7 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 }
 
 func markerFileExists(markerName string, markerContent string) (bool, error) {
-	markerName = filepath.Join(agent.ContainerDataDir, markerName+".marker")
+	markerName = filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
 	t, err := os.ReadFile(markerName)
 	if err != nil && !os.IsNotExist(err) {
 		return false, err

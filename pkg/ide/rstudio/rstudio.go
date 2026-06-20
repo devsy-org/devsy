@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
@@ -38,7 +37,7 @@ var Options = ide.Options{
 const (
 	DefaultServerPort = 8787
 
-	downloadFolder = agent.ContainerDataDir + "/rstudio-server"
+	downloadFolder = config.ContainerDataDir + "/rstudio-server"
 	dataFolder     = "/usr/local/share/devsy/rstudio-server/data"
 	// rstudioConfigFolder is where RStudio expects configuration.
 	rstudioConfigFolder = "/etc/rstudio"

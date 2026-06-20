@@ -208,7 +208,7 @@ func CreateRunner(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
-		agent.ContainerDevsyHelperLocation,
+		config.ContainerDevsyHelperLocation,
 		agent.DefaultAgentDownloadURL(),
 		workspaceInfo,
 	)

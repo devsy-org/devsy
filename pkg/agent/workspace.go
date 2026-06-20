@@ -32,7 +32,7 @@ var extraSearchLocations = []string{
 	"/home/devsy/" + config.ConfigDirName + "/agent",
 	"/opt/devsy/agent",
 	"/var/lib/devsy/agent",
-	ContainerDataDir + "/agent",
+	config.ContainerDataDir + "/agent",
 }
 
 // EnvAgentInContainer is set to "1" by every SSH command builder that

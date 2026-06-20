@@ -23,18 +23,7 @@ import (
 
 const DefaultInactivityTimeout = time.Minute * 20
 
-// ContainerDataDir is the base directory for Devsy data inside containers.
-const ContainerDataDir = "/var/" + config.BinaryName
-
-const ContainerDevsyHelperLocation = "/usr/local/bin/" + config.BinaryName
-
-const RemoteDevsyHelperLocation = "/tmp/" + config.BinaryName
-
-const ContainerActivityFile = "/tmp/" + config.BinaryName + ".activity"
-
 var defaultAgentDownloadURL = config.GitHubReleasesURL + "/download/"
-
-const WorkspaceBusyFile = "workspace.lock"
 
 func DefaultAgentDownloadURL() string {
 	devsyAgentURL := os.Getenv(config.EnvAgentURL)
@@ -374,7 +363,7 @@ func decodeWorkspaceInfoAndWrite(
 }
 
 func CreateWorkspaceBusyFile(folder string) {
-	filePath := filepath.Join(folder, WorkspaceBusyFile)
+	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
 	_, err := os.Stat(filePath)
 	if err == nil {
 		return
@@ -384,13 +373,13 @@ func CreateWorkspaceBusyFile(folder string) {
 }
 
 func HasWorkspaceBusyFile(folder string) bool {
-	filePath := filepath.Join(folder, WorkspaceBusyFile)
+	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
 	_, err := os.Stat(filePath)
 	return err == nil
 }
 
 func DeleteWorkspaceBusyFile(folder string) {
-	_ = os.Remove(filepath.Join(folder, WorkspaceBusyFile))
+	_ = os.Remove(filepath.Join(folder, config.WorkspaceBusyFile))
 }
 
 func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo) error {
@@ -495,7 +484,7 @@ func Tunnel(
 			return exec(ctx, "root", command, stdin, stdout, stderr)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             ContainerDevsyHelperLocation,
+		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
 		DownloadURL:                 DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: Bool(false),
 		Timeout:                     timeout,
@@ -505,7 +494,7 @@ func Tunnel(
 	}
 
 	// build command
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", ContainerDevsyHelperLocation)
+	command := fmt.Sprintf("'%s' internal ssh-server --stdio", config.ContainerDevsyHelperLocation)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}

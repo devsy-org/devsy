@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
@@ -121,10 +121,10 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 	if cmd.Stdio {
 		if cmd.TrackActivity {
 			go func() {
-				_, err = os.Stat(agent.ContainerActivityFile)
+				_, err = os.Stat(config.ContainerActivityFile)
 				if err != nil {
 					if err := os.WriteFile(
-						agent.ContainerActivityFile,
+						config.ContainerActivityFile,
 						nil,
 						0o666,
 					); err != nil { // #nosec G306
@@ -132,7 +132,7 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 						return
 					}
 					if err := os.Chmod(
-						agent.ContainerActivityFile,
+						config.ContainerActivityFile,
 						0o666,
 					); err != nil { // #nosec G302
 						fmt.Fprintf(os.Stderr, "error setting file permissions: %v\n", err)
@@ -142,7 +142,7 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 
 				for {
 					time.Sleep(time.Second * 10)
-					file, _ := os.Create(agent.ContainerActivityFile)
+					file, _ := os.Create(config.ContainerActivityFile)
 					_ = file.Close()
 				}
 			}()

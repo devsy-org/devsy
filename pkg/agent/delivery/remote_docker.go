@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path"
 
-	"github.com/devsy-org/devsy/pkg/agent"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -39,7 +39,7 @@ func (d *RemoteDockerDelivery) DeliverPostStart(ctx context.Context, opts PostSt
 		return fmt.Errorf("container ID is required for remote docker delivery")
 	}
 
-	destPath := agent.ContainerDevsyHelperLocation
+	destPath := pkgconfig.ContainerDevsyHelperLocation
 
 	if err := d.ensureDir(ctx, destPath); err != nil {
 		return fmt.Errorf("ensure target directory: %w", err)

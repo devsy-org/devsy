@@ -19,4 +19,19 @@ const (
 	// DaemonProcessName is the name used for the fallback background daemon process
 	// PID file and lock file in os.TempDir().
 	DaemonProcessName = BinaryName + ".daemon"
+
+	// ContainerDataDir is the base directory for Devsy data inside containers.
+	ContainerDataDir = "/var/" + BinaryName
+
+	// ContainerDevsyHelperLocation is where the Devsy agent binary lives inside containers.
+	ContainerDevsyHelperLocation = "/usr/local/bin/" + BinaryName
+
+	// RemoteDevsyHelperLocation is the staging path for the Devsy agent on remote hosts.
+	RemoteDevsyHelperLocation = "/tmp/" + BinaryName
+
+	// ContainerActivityFile is touched by SSH/fleet servers to record container liveness.
+	ContainerActivityFile = "/tmp/" + BinaryName + ".activity"
+
+	// WorkspaceBusyFile is the per-workspace lock file written under the workspace folder.
+	WorkspaceBusyFile = "workspace.lock"
 )
