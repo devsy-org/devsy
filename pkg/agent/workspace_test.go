@@ -4,12 +4,8 @@ import (
 	"testing"
 )
 
-// explicitAgentDir is a representative non-empty --agent-dir value used to
-// exercise the "explicit folder always wins" branch of IsHostAgentInvocation.
 const explicitAgentDir = "/some/dir"
 
-// TestAgentCommandEnvPrefix: regressions resurrect the stale-env warning
-// on every workspace op against a local provider (docker/podman/k8s).
 func TestAgentCommandEnvPrefix(t *testing.T) {
 	if got := AgentCommandEnvPrefix(true); got != "" {
 		t.Errorf("AgentCommandEnvPrefix(true) = %q, want \"\"", got)
@@ -59,14 +55,14 @@ func hostInvocationCases() []hostInvocationCase {
 			want:          false,
 		},
 		{
-			name:          "host with stale env: marker set but no indicator → host + warn",
+			name:          "host with stale env: marker set but no indicator",
 			agentFolder:   "",
 			inContainer:   "1",
 			containerSeen: false,
 			want:          true,
 		},
 		{
-			name:          "host with rogue indicator but no env: → host",
+			name:          "host with rogue indicator but no env",
 			agentFolder:   "",
 			inContainer:   "",
 			containerSeen: true,
