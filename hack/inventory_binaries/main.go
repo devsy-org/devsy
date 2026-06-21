@@ -1,8 +1,5 @@
-// inventory_binaries walks a directory tree, prints a per-file inventory line
-// (relative path, size, sha256, arch), and optionally flattens nested files
-// into the root with collision detection.
-//
-// Usage: inventory_binaries [-flatten] -dir <path>
+// Walks a directory tree, prints per-file inventory (path, size, sha256, arch),
+// and optionally flattens nested files into the root.
 package main
 
 import (
@@ -122,8 +119,7 @@ func sha256File(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// flattenInto moves nested files (those whose parent isn't root) into root.
-// Fails on name collisions instead of silently overwriting.
+// flattenInto fails on name collisions instead of silently overwriting.
 func flattenInto(root string, files []string) error {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
@@ -164,8 +160,7 @@ func removeEmptyDirs(root string) error {
 	if err := filepath.WalkDir(root, walk); err != nil {
 		return err
 	}
-	// Remove deepest first so parents become empty after their children go.
-	// os.Remove on a non-empty dir returns *os.PathError, which is fine to skip.
+	// Deepest first so parents become removable after their children go.
 	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
 	for _, d := range dirs {
 		_ = os.Remove(d)

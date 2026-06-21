@@ -1,7 +1,4 @@
-// Package binaryarch detects the target architecture of a built executable
-// by reading the leading bytes of its Mach-O or ELF header. Used by release
-// tooling to assert that a packaged binary matches the matrix entry it was
-// built for.
+// Package binaryarch detects the target architecture of a built executable.
 package binaryarch
 
 import (
@@ -22,7 +19,6 @@ const (
 	ArchARM64 = "arm64"
 )
 
-// Arch is the canonical "<goos>/<goarch>" identifier for a built binary.
 type Arch struct {
 	GOOS   string
 	GOARCH string
@@ -30,7 +26,6 @@ type Arch struct {
 
 func (a Arch) String() string { return a.GOOS + "/" + a.GOARCH }
 
-// FromFile reads the binary header at path and returns its target Arch.
 func FromFile(path string) (Arch, error) {
 	f, err := os.Open(path) // #nosec G304 -- caller-controlled release tooling.
 	if err != nil {
@@ -58,15 +53,11 @@ func FromFile(path string) (Arch, error) {
 }
 
 func isMachO(h [4]byte) bool {
-	v := binary.LittleEndian.Uint32(h[:])
-	switch v {
-	case macho.Magic32, macho.Magic64, macho.MagicFat:
-		return true
-	}
-	// Big-endian variants (rare for Apple Silicon era, kept for completeness).
-	switch binary.BigEndian.Uint32(h[:]) {
-	case macho.Magic32, macho.Magic64, macho.MagicFat:
-		return true
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		switch order.Uint32(h[:]) {
+		case macho.Magic32, macho.Magic64, macho.MagicFat:
+			return true
+		}
 	}
 	return false
 }
@@ -107,8 +98,6 @@ func elfArch(f *os.File) (Arch, error) {
 	return Arch{}, fmt.Errorf("unsupported elf machine: %v", ef.Machine)
 }
 
-// peArch returns the architecture of a PE/COFF executable. Limited to the
-// architectures the release pipeline actually ships.
 func peArch(f *os.File) (Arch, error) {
 	machine, err := readPEMachine(f)
 	if err != nil {

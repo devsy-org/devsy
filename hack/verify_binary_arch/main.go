@@ -1,8 +1,4 @@
-// verify_binary_arch asserts that the binary at -file targets the architecture
-// at -goos / -goarch. Fails the process with exit 1 on mismatch so the calling
-// CI step turns red.
-//
-// Usage: verify_binary_arch -file <path> -goos <goos> -goarch <goarch>
+// Asserts that the binary at -file targets the architecture at -goos / -goarch.
 package main
 
 import (

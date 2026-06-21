@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// buildFixture cross-compiles a tiny program for goos/goarch and returns the
-// output path. The fixture lives in t.TempDir so it's cleaned up automatically.
 func buildFixture(t *testing.T, goos, goarch string) string {
 	t.Helper()
 
