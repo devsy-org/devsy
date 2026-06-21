@@ -1,36 +1,30 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 )
 
-func populateDistCmd() *cli.Command {
-	return &cli.Command{
-		Name:  "populate-dist",
-		Usage: "copy every devsy-* binary from -src-dir into -dst-dir",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "src-dir",
-				Usage:    "directory containing the per-arch CLI binaries",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:     "dst-dir",
-				Usage:    "directory to populate",
-				Required: true,
-			},
-		},
-		Action: func(_ context.Context, c *cli.Command) error {
-			return runPopulateDist(c.String("src-dir"), c.String("dst-dir"))
+func populateDistCmd() *cobra.Command {
+	var srcDir, dstDir string
+	cmd := &cobra.Command{
+		Use:   "populate-dist",
+		Short: "copy every devsy-* binary from --src-dir into --dst-dir",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runPopulateDist(srcDir, dstDir)
 		},
 	}
+	cmd.Flags().StringVar(&srcDir, "src-dir", "", "directory containing the per-arch CLI binaries")
+	cmd.Flags().StringVar(&dstDir, "dst-dir", "", "directory to populate")
+	for _, f := range []string{"src-dir", "dst-dir"} {
+		_ = cmd.MarkFlagRequired(f)
+	}
+	return cmd
 }
 
 func runPopulateDist(srcDir, dstDir string) error {

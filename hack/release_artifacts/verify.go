@@ -1,26 +1,27 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 )
 
-func verifyCmd() *cli.Command {
-	return &cli.Command{
-		Name:  "verify",
-		Usage: "assert that the binary at -file targets -goos / -goarch",
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "file", Usage: "binary to verify", Required: true},
-			&cli.StringFlag{Name: "goos", Usage: "expected GOOS", Required: true},
-			&cli.StringFlag{Name: "goarch", Usage: "expected GOARCH", Required: true},
-		},
-		Action: func(_ context.Context, c *cli.Command) error {
-			want := Arch{GOOS: c.String("goos"), GOARCH: c.String("goarch")}
-			return verify(c.String("file"), want)
+func verifyCmd() *cobra.Command {
+	var file, goos, goarch string
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "assert that the binary at --file targets --goos / --goarch",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return verify(file, Arch{GOOS: goos, GOARCH: goarch})
 		},
 	}
+	cmd.Flags().StringVar(&file, "file", "", "binary to verify")
+	cmd.Flags().StringVar(&goos, "goos", "", "expected GOOS")
+	cmd.Flags().StringVar(&goarch, "goarch", "", "expected GOARCH")
+	for _, f := range []string{"file", "goos", "goarch"} {
+		_ = cmd.MarkFlagRequired(f)
+	}
+	return cmd
 }
 
 func verify(file string, want Arch) error {

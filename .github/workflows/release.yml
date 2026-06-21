@@ -113,22 +113,22 @@ jobs:
       - name: inventory and flatten CLI artifacts
         shell: bash
         run: |
-          go run ./hack/release_artifacts inventory -dir "${{ runner.temp }}/devsy-bin" -flatten
+          go run ./hack/release_artifacts inventory --dir "${{ runner.temp }}/devsy-bin" --flatten
 
       - name: stage embedded CLI binary
         shell: bash
         run: |
           go run ./hack/release_artifacts stage \
-            -src-dir "${{ runner.temp }}/devsy-bin" \
-            -dst-dir desktop/resources/bin \
-            -goos "${{ matrix.go-os }}" -goarch "${{ matrix.go-arch }}"
+            --src-dir "${{ runner.temp }}/devsy-bin" \
+            --dst-dir desktop/resources/bin \
+            --goos "${{ matrix.go-os }}" --goarch "${{ matrix.go-arch }}"
 
       - name: populate dist for pro provider generation
         if: matrix.name == 'linux-x64'
         shell: bash
         run: |
           go run ./hack/release_artifacts populate-dist \
-            -src-dir "${{ runner.temp }}/devsy-bin" -dst-dir dist
+            --src-dir "${{ runner.temp }}/devsy-bin" --dst-dir dist
 
       - name: generate pro provider
         if: matrix.name == 'linux-x64'
@@ -210,8 +210,8 @@ jobs:
             exit 1
           fi
           go run ./hack/release_artifacts verify \
-            -file "$app/Contents/Resources/bin/devsy" \
-            -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
+            --file "$app/Contents/Resources/bin/devsy" \
+            --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3

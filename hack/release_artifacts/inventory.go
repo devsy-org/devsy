@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,24 +11,24 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 )
 
-func inventoryCmd() *cli.Command {
-	return &cli.Command{
-		Name:  "inventory",
-		Usage: "log size/sha256/arch for each file under -dir; optionally flatten",
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "dir", Usage: "directory to inventory", Required: true},
-			&cli.BoolFlag{
-				Name:  "flatten",
-				Usage: "after inventory, move nested files into <dir> root and remove empty subdirs",
-			},
-		},
-		Action: func(_ context.Context, c *cli.Command) error {
-			return runInventory(c.String("dir"), c.Bool("flatten"))
+func inventoryCmd() *cobra.Command {
+	var dir string
+	var flatten bool
+	cmd := &cobra.Command{
+		Use:   "inventory",
+		Short: "log size/sha256/arch for each file under --dir; optionally flatten",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runInventory(dir, flatten)
 		},
 	}
+	cmd.Flags().StringVar(&dir, "dir", "", "directory to inventory")
+	cmd.Flags().BoolVar(&flatten, "flatten", false,
+		"after inventory, move nested files into <dir> root and remove empty subdirs")
+	_ = cmd.MarkFlagRequired("dir")
+	return cmd
 }
 
 func runInventory(dir string, flatten bool) error {

@@ -1,48 +1,31 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 )
 
-func stageCmd() *cli.Command {
-	return &cli.Command{
-		Name:  "stage",
-		Usage: "copy the matching per-arch CLI binary into -dst-dir and verify its arch",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "src-dir",
-				Usage:    "directory containing the per-arch CLI binaries",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:     "dst-dir",
-				Usage:    "directory the embedded binary is copied into",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:     "goos",
-				Usage:    "GOOS for the binary to stage",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:     "goarch",
-				Usage:    "GOARCH for the binary to stage",
-				Required: true,
-			},
-		},
-		Action: func(_ context.Context, c *cli.Command) error {
-			return runStage(
-				c.String("src-dir"), c.String("dst-dir"),
-				c.String("goos"), c.String("goarch"),
-			)
+func stageCmd() *cobra.Command {
+	var srcDir, dstDir, goos, goarch string
+	cmd := &cobra.Command{
+		Use:   "stage",
+		Short: "copy the matching per-arch CLI binary into --dst-dir and verify its arch",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runStage(srcDir, dstDir, goos, goarch)
 		},
 	}
+	cmd.Flags().StringVar(&srcDir, "src-dir", "", "directory containing the per-arch CLI binaries")
+	cmd.Flags().StringVar(&dstDir, "dst-dir", "", "directory the embedded binary is copied into")
+	cmd.Flags().StringVar(&goos, "goos", "", "GOOS for the binary to stage")
+	cmd.Flags().StringVar(&goarch, "goarch", "", "GOARCH for the binary to stage")
+	for _, f := range []string{"src-dir", "dst-dir", "goos", "goarch"} {
+		_ = cmd.MarkFlagRequired(f)
+	}
+	return cmd
 }
 
 func runStage(srcDir, dstDir, goos, goarch string) error {
