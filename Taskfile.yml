@@ -9,9 +9,9 @@ tasks:
     desc: lint go code using golangci-lint
     cmd: golangci-lint run ./...
 
-  cli:lint:new:
-    desc: lint go code changed since origin/main using golangci-lint
-    cmd: golangci-lint run --new-from-rev="$(git merge-base HEAD origin/main)" ./... # or use --new-from-rev=HEAD~1 for changes since last push or --new for changes since last commit
+  cli:lint:ci:
+    desc: lint as CI does (diff-filtered against origin/main); use --new-from-rev=HEAD~1 to scope to last push or omit for full lint
+    cmd: golangci-lint run --new-from-rev="$(git merge-base HEAD origin/main)" ./...
 
   cli:lint:fix:
     desc: fix lint issues using golangci-lint
