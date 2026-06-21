@@ -22,15 +22,12 @@ mac:
   category: public.app-category.developer-tools
   icon: resources/icon.icns
   artifactName: Devsy_${os}_${arch}.${ext}
+  # Architecture is selected by the CLI flag (--arm64 / --x64) at the
+  # invocation in .github/workflows/release.yml so each matrix entry
+  # produces exactly one .dmg + .zip pair for its arch.
   target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
+    - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
