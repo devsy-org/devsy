@@ -1,0 +1,10 @@
+{
+  "name": "Go",
+  "dockerComposeFile": "./docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "mounts": [
+    "source=${localWorkspaceFolder}/mount-ro,target=/home/vscode/mnt-ro,type=bind,readonly",
+    "type=tmpfs,target=/home/vscode/scratch,tmpfs-size=104857600"
+  ]
+}

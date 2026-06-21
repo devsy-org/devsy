@@ -520,6 +520,38 @@ func (m *Mount) String() string {
 	return strings.Join(components, ",")
 }
 
+func (m *Mount) IsReadOnly() bool {
+	return m.hasFlag("readonly", "ro")
+}
+
+func (m *Mount) BindPropagation() string {
+	return m.lookupOption("bind-propagation", "propagation")
+}
+
+func (m *Mount) IsBindNonRecursive() bool {
+	return m.hasFlag("bind-nonrecursive")
+}
+
+func (m *Mount) Consistency() string {
+	return m.lookupOption("consistency")
+}
+
+func (m *Mount) VolumeNoCopy() bool {
+	return m.hasFlag("volume-nocopy", "nocopy")
+}
+
+func (m *Mount) VolumeSubpath() string {
+	return m.lookupOption("volume-subpath", "subpath")
+}
+
+func (m *Mount) TmpfsSize() string {
+	return m.lookupOption("tmpfs-size")
+}
+
+func (m *Mount) TmpfsMode() string {
+	return m.lookupOption("tmpfs-mode")
+}
+
 func GetContextPath(parsedConfig *DevContainerConfig) string {
 	configDir := path.Dir(filepath.ToSlash(parsedConfig.Origin))
 
@@ -610,4 +642,53 @@ func (m *Mount) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return types.ErrUnsupportedType
+}
+
+// hasFlag returns true if any name appears in m.Other as a bare token or
+// with a truthy value. Multiple names cover Docker --mount keys
+// ("volume-nocopy") and their compose synonyms ("nocopy").
+func (m *Mount) hasFlag(names ...string) bool {
+	if m == nil {
+		return false
+	}
+	for _, opt := range m.Other {
+		key, value, hasValue := strings.Cut(strings.TrimSpace(opt), "=")
+		if !nameMatches(key, names) {
+			continue
+		}
+		if !hasValue || isTruthyMountValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Mount) lookupOption(names ...string) string {
+	if m == nil {
+		return ""
+	}
+	for _, opt := range m.Other {
+		key, value, _ := strings.Cut(strings.TrimSpace(opt), "=")
+		if nameMatches(key, names) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func nameMatches(key string, names []string) bool {
+	for _, name := range names {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTruthyMountValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on":
+		return true
+	}
+	return false
 }
