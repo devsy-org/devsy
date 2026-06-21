@@ -49,10 +49,7 @@ type UpCmd struct {
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 
-	// pullFromInsideContainerFlag holds the raw value of the
-	// --pull-from-inside-container flag. Whether it was set is read from
-	// cobra's Changed() to distinguish "user said false" from "user did not
-	// say".
+	// Read via Changed() so unset is distinguishable from explicit false.
 	pullFromInsideContainerFlag bool
 
 	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
@@ -312,9 +309,6 @@ type workspaceContext struct {
 	tunnelPort int
 }
 
-// applyPullFromInsideContainerOverride moves the --pull-from-inside-container
-// flag (when explicitly set) into CLIOptions.PullFromInsideContainerOverride,
-// preserving the nil-means-no-override invariant that the resolver depends on.
 func (cmd *UpCmd) applyPullFromInsideContainerOverride(cobraCmd *cobra.Command) {
 	if !cobraCmd.Flags().Changed("pull-from-inside-container") {
 		return

@@ -33,10 +33,7 @@ const (
 	containerRootUser = "root"
 )
 
-// resolvePullFromInsideContainer chooses whether to clone the workspace
-// source inside the container instead of bind-mounting from the host.
-// Precedence: explicit override wins; otherwise crane mode + git source
-// enables it; otherwise empty (the legacy bind-mount path runs).
+// resolvePullFromInsideContainer: explicit override > crane+git > "".
 func resolvePullFromInsideContainer(opts provider2.CLIOptions, gitRepo string) types.StrBool {
 	if opts.PullFromInsideContainerOverride != nil {
 		if *opts.PullFromInsideContainerOverride {
