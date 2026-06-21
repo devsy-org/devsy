@@ -195,6 +195,8 @@ jobs:
 
       # macOS-only because .app is a directory bundle the CLI can read
       # directly. AppImage / deb / rpm / NSIS would need archive extractors.
+      # electron-builder emits arm64 under release/mac-arm64/ and x64 under
+      # release/mac/; pick the directory that matches the matrix arch.
       - name: verify packaged macOS app embedded CLI arch
         if: runner.os == 'macOS'
         shell: bash
@@ -203,9 +205,13 @@ jobs:
           MATRIX_GO_ARCH: ${{ matrix.go-arch }}
         run: |
           set -euo pipefail
-          app=$(find desktop/release -maxdepth 2 -type d -name 'Devsy.app' | head -n1)
-          if [ -z "$app" ]; then
-            echo "::error::no Devsy.app bundle found under desktop/release/"
+          case "$MATRIX_GO_ARCH" in
+            arm64) app=desktop/release/mac-arm64/Devsy.app ;;
+            amd64) app=desktop/release/mac/Devsy.app ;;
+            *) echo "::error::unsupported matrix arch: $MATRIX_GO_ARCH"; exit 1 ;;
+          esac
+          if [ ! -d "$app" ]; then
+            echo "::error::Devsy.app bundle missing for $MATRIX_GO_ARCH at $app"
             ls -la desktop/release || true
             exit 1
           fi
