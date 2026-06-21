@@ -240,6 +240,11 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		StringVar(&cmd.RunPlatform, "platform", "",
 			"Run the container under a specific platform via emulation (e.g. linux/amd64). "+
 				"Empty uses the host's native platform")
+	upCmd.Flags().
+		BoolVar(&cmd.pullFromInsideContainerFlag, "pull-from-inside-container", false,
+			"Clone the workspace source inside the container instead of bind-mounting from the host. "+
+				"Useful on macOS/Windows where host bind mounts can have performance or visibility issues "+
+				"(e.g. Docker Desktop VirtioFS). Unset = auto-detect.")
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {

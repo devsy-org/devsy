@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 const (
@@ -31,6 +32,23 @@ const (
 	stringFalse       = "false"
 	containerRootUser = "root"
 )
+
+// resolvePullFromInsideContainer chooses whether to clone the workspace
+// source inside the container instead of bind-mounting from the host.
+// Precedence: explicit override wins; otherwise crane mode + git source
+// enables it; otherwise empty (the legacy bind-mount path runs).
+func resolvePullFromInsideContainer(opts provider2.CLIOptions, gitRepo string) types.StrBool {
+	if opts.PullFromInsideContainerOverride != nil {
+		if *opts.PullFromInsideContainerOverride {
+			return types.StrBool(stringTrue)
+		}
+		return types.StrBool(stringFalse)
+	}
+	if crane.ShouldUse(&opts) && gitRepo != "" {
+		return types.StrBool(stringTrue)
+	}
+	return ""
+}
 
 type setupContainerParams struct {
 	rawConfig           *config.DevContainerConfig
@@ -234,10 +252,10 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 		Agent:            r.WorkspaceConfig.Agent,
 		ContentFolder:    r.WorkspaceConfig.ContentFolder,
 	}
-	if crane.ShouldUse(&r.WorkspaceConfig.CLIOptions) &&
-		r.WorkspaceConfig.Workspace.Source.GitRepository != "" {
-		workspaceConfig.PullFromInsideContainer = stringTrue
-	}
+	workspaceConfig.PullFromInsideContainer = resolvePullFromInsideContainer(
+		r.WorkspaceConfig.CLIOptions,
+		r.WorkspaceConfig.Workspace.Source.GitRepository,
+	)
 
 	workspaceConfigRaw, err := json.Marshal(workspaceConfig)
 	if err != nil {

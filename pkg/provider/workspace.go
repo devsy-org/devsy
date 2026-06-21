@@ -251,6 +251,12 @@ type CLIOptions struct {
 	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
 	ContainerUser               string            `json:"containerUser,omitempty"`
 	RemoteUser                  string            `json:"remoteUser,omitempty"`
+	// PullFromInsideContainerOverride lets the user force or disable cloning
+	// the workspace source inside the container instead of bind-mounting from
+	// the host. nil = use the auto-detected default; true = force clone-in-
+	// container; false = force bind-mount. Useful for opting out of host
+	// bind-mount when Docker Desktop's macOS file-share has visibility issues.
+	PullFromInsideContainerOverride *bool `json:"pullFromInsideContainerOverride,omitempty"`
 
 	// skip lifecycle hook options
 	SkipPostCreate       bool `json:"skipPostCreate,omitempty"`
