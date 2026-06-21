@@ -123,12 +123,12 @@ jobs:
             -dst-dir desktop/resources/bin \
             -goos "${{ matrix.go-os }}" -goarch "${{ matrix.go-arch }}"
 
-      - name: stage CLI binaries for dist
-        if: runner.os != 'Windows'
+      - name: populate dist for pro provider generation
+        if: matrix.name == 'linux-x64'
         shell: bash
         run: |
-          mkdir -p dist/
-          find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
+          go run ./hack/release_artifacts populate-dist \
+            -src-dir "${{ runner.temp }}/devsy-bin" -dst-dir dist
 
       - name: generate pro provider
         if: matrix.name == 'linux-x64'
@@ -193,6 +193,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      # macOS-only because .app is a directory bundle the CLI can read
+      # directly. AppImage / deb / rpm / NSIS would need archive extractors.
       - name: verify packaged macOS app embedded CLI arch
         if: runner.os == 'macOS'
         shell: bash

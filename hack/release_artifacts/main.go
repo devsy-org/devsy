@@ -16,6 +16,7 @@ func main() {
 		Usage: "release-pipeline tools for staging and verifying CLI binaries",
 		Commands: []*cli.Command{
 			inventoryCmd(),
+			populateDistCmd(),
 			stageCmd(),
 			verifyCmd(),
 		},
