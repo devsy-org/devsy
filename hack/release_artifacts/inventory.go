@@ -1,30 +1,35 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/urfave/cli/v3"
 )
 
-func cmdInventory(args []string) error {
-	fs := flag.NewFlagSet("inventory", flag.ExitOnError)
-	dir := fs.String("dir", "", "directory to inventory")
-	flatten := fs.Bool("flatten", false,
-		"after inventory, move nested files into <dir> root and remove empty subdirs")
-	if err := fs.Parse(args); err != nil {
-		return err
+func inventoryCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "inventory",
+		Usage: "log size/sha256/arch for each file under -dir; optionally flatten",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "dir", Usage: "directory to inventory", Required: true},
+			&cli.BoolFlag{
+				Name:  "flatten",
+				Usage: "after inventory, move nested files into <dir> root and remove empty subdirs",
+			},
+		},
+		Action: func(_ context.Context, c *cli.Command) error {
+			return runInventory(c.String("dir"), c.Bool("flatten"))
+		},
 	}
-	if *dir == "" {
-		return errors.New("inventory: missing required -dir flag")
-	}
-	return runInventory(*dir, *flatten)
 }
 
 func runInventory(dir string, flatten bool) error {

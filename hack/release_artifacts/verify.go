@@ -1,23 +1,26 @@
 package main
 
 import (
-	"errors"
-	"flag"
+	"context"
 	"fmt"
+
+	"github.com/urfave/cli/v3"
 )
 
-func cmdVerify(args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	file := fs.String("file", "", "binary to verify")
-	goos := fs.String("goos", "", "expected GOOS")
-	goarch := fs.String("goarch", "", "expected GOARCH")
-	if err := fs.Parse(args); err != nil {
-		return err
+func verifyCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "verify",
+		Usage: "assert that the binary at -file targets -goos / -goarch",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "file", Usage: "binary to verify", Required: true},
+			&cli.StringFlag{Name: "goos", Usage: "expected GOOS", Required: true},
+			&cli.StringFlag{Name: "goarch", Usage: "expected GOARCH", Required: true},
+		},
+		Action: func(_ context.Context, c *cli.Command) error {
+			want := Arch{GOOS: c.String("goos"), GOARCH: c.String("goarch")}
+			return verify(c.String("file"), want)
+		},
 	}
-	if *file == "" || *goos == "" || *goarch == "" {
-		return errors.New("verify: missing required flag (-file, -goos, -goarch)")
-	}
-	return verify(*file, Arch{GOOS: *goos, GOARCH: *goarch})
 }
 
 func verify(file string, want Arch) error {

@@ -1,27 +1,48 @@
 package main
 
 import (
-	"errors"
-	"flag"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/urfave/cli/v3"
 )
 
-func cmdStage(args []string) error {
-	fs := flag.NewFlagSet("stage", flag.ExitOnError)
-	srcDir := fs.String("src-dir", "", "directory containing the per-arch CLI binaries")
-	dstDir := fs.String("dst-dir", "", "directory the embedded binary is copied into")
-	goos := fs.String("goos", "", "GOOS for the binary to stage")
-	goarch := fs.String("goarch", "", "GOARCH for the binary to stage")
-	if err := fs.Parse(args); err != nil {
-		return err
+func stageCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "stage",
+		Usage: "copy the matching per-arch CLI binary into -dst-dir and verify its arch",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "src-dir",
+				Usage:    "directory containing the per-arch CLI binaries",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "dst-dir",
+				Usage:    "directory the embedded binary is copied into",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "goos",
+				Usage:    "GOOS for the binary to stage",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "goarch",
+				Usage:    "GOARCH for the binary to stage",
+				Required: true,
+			},
+		},
+		Action: func(_ context.Context, c *cli.Command) error {
+			return runStage(
+				c.String("src-dir"), c.String("dst-dir"),
+				c.String("goos"), c.String("goarch"),
+			)
+		},
 	}
-	if *srcDir == "" || *dstDir == "" || *goos == "" || *goarch == "" {
-		return errors.New("stage: missing required flag (-src-dir, -dst-dir, -goos, -goarch)")
-	}
-	return runStage(*srcDir, *dstDir, *goos, *goarch)
 }
 
 func runStage(srcDir, dstDir, goos, goarch string) error {

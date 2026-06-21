@@ -1,35 +1,27 @@
 // release_artifacts: subcommands for inspecting CLI binaries staged by the
-// release pipeline. See cmdInventory and cmdVerify.
+// release pipeline. See cmdInventory, cmdStage, and cmdVerify.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	cmd := &cli.Command{
+		Name:  "release_artifacts",
+		Usage: "release-pipeline tools for staging and verifying CLI binaries",
+		Commands: []*cli.Command{
+			inventoryCmd(),
+			stageCmd(),
+			verifyCmd(),
+		},
 	}
-	var err error
-	switch os.Args[1] {
-	case "inventory":
-		err = cmdInventory(os.Args[2:])
-	case "stage":
-		err = cmdStage(os.Args[2:])
-	case "verify":
-		err = cmdVerify(os.Args[2:])
-	default:
-		usage()
-		os.Exit(2)
-	}
-	if err != nil {
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release_artifacts {inventory|stage|verify} [flags]")
 }
