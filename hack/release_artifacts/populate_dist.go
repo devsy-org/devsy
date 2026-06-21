@@ -31,6 +31,7 @@ func runPopulateDist(srcDir, dstDir string) error {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil { // #nosec G301 -- release tooling.
 		return fmt.Errorf("mkdir %s: %w", dstDir, err)
 	}
+	seen := map[string]string{}
 	walk := func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -38,6 +39,10 @@ func runPopulateDist(srcDir, dstDir string) error {
 		if !d.Type().IsRegular() || !strings.HasPrefix(d.Name(), "devsy-") {
 			return nil
 		}
+		if prev, ok := seen[d.Name()]; ok {
+			return fmt.Errorf("duplicate binary basename %q: %s and %s", d.Name(), prev, p)
+		}
+		seen[d.Name()] = p
 		return copyExecutable(p, filepath.Join(dstDir, d.Name()))
 	}
 	return filepath.WalkDir(srcDir, walk)
