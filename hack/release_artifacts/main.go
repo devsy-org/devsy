@@ -16,6 +16,8 @@ func main() {
 	switch os.Args[1] {
 	case "inventory":
 		err = cmdInventory(os.Args[2:])
+	case "stage":
+		err = cmdStage(os.Args[2:])
 	case "verify":
 		err = cmdVerify(os.Args[2:])
 	default:
@@ -29,5 +31,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: release_artifacts {inventory|verify} [flags]")
+	fmt.Fprintln(os.Stderr, "usage: release_artifacts {inventory|stage|verify} [flags]")
 }

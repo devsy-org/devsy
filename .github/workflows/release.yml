@@ -115,48 +115,20 @@ jobs:
         run: |
           go run ./hack/release_artifacts inventory -dir "${{ runner.temp }}/devsy-bin" -flatten
 
-      - name: setup CLI binary (unix)
+      - name: stage embedded CLI binary
+        shell: bash
+        run: |
+          go run ./hack/release_artifacts stage \
+            -src-dir "${{ runner.temp }}/devsy-bin" \
+            -dst-dir desktop/resources/bin \
+            -goos "${{ matrix.go-os }}" -goarch "${{ matrix.go-arch }}"
+
+      - name: stage CLI binaries for dist
         if: runner.os != 'Windows'
         shell: bash
-        env:
-          MATRIX_GO_OS: ${{ matrix.go-os }}
-          MATRIX_GO_ARCH: ${{ matrix.go-arch }}
         run: |
-          set -euo pipefail
-          src="${{ runner.temp }}/devsy-bin/devsy-${MATRIX_GO_OS}-${MATRIX_GO_ARCH}"
-          dst="desktop/resources/bin/devsy"
-          if [ ! -f "$src" ]; then
-            echo "::error::expected CLI binary missing: $src"
-            ls -la "${{ runner.temp }}/devsy-bin"
-            exit 1
-          fi
-          mkdir -p desktop/resources/bin
-          cp "$src" "$dst"
-          chmod +x "$dst"
           mkdir -p dist/
           find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
-
-      - name: setup CLI binary (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $src = "${{ runner.temp }}/devsy-bin/devsy-windows-amd64.exe"
-          $dst = "desktop/resources/bin/devsy.exe"
-          if (-not (Test-Path $src)) {
-            Write-Error "expected CLI binary missing: $src"
-            Get-ChildItem "${{ runner.temp }}/devsy-bin"
-            exit 1
-          }
-          New-Item -ItemType Directory -Force -Path desktop/resources/bin | Out-Null
-          Copy-Item $src $dst
-          $srcSha = (Get-FileHash -Algorithm SHA256 $src).Hash
-          $dstSha = (Get-FileHash -Algorithm SHA256 $dst).Hash
-          Write-Host "src=$src sha256=$srcSha"
-          Write-Host "dst=$dst sha256=$dstSha"
-          if ($srcSha -ne $dstSha) {
-            Write-Error "sha256 mismatch between source and destination"
-            exit 1
-          }
 
       - name: generate pro provider
         if: matrix.name == 'linux-x64'
