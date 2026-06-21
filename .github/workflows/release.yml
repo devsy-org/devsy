@@ -103,39 +103,70 @@ jobs:
           fi
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
-      - name: download CLI artifacts
+      # Build the embedded CLI binary directly for this matrix entry's
+      # target arch instead of relying on cross-job artifact handoff. The
+      # earlier upload/download/flatten/cp pipeline shipped the wrong
+      # architecture into the macos-arm64 dmg (see v1.10.0-beta.29) — see
+      # `.github/workflows/release.yml` history for the failure mode. Using
+      # an inline build forces the binary to be the correct arch and lets
+      # us assert it via `file` / `lipo` before electron-builder runs.
+      - name: build embedded CLI binary
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
+          GOOS: ${{ matrix.go-os }}
+          GOARCH: ${{ matrix.go-arch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p desktop/resources/bin
+          go build \
+            -tags 'netgo osusergo' \
+            -ldflags "-s -w -X main.build=${VERSION} -X main.commit=${GITHUB_SHA} -X github.com/devsy-org/devsy/pkg/version.version=${VERSION} -X github.com/devsy-org/devsy/pkg/telemetry/analytics.posthogAPIKey=${DEVSY_POSTHOG_API_KEY}" \
+            -o desktop/resources/bin/devsy \
+            .
+          chmod +x desktop/resources/bin/devsy
+          file desktop/resources/bin/devsy
+          # Fail loudly if the embedded binary's arch does not match the matrix.
+          case "${GOOS}-${GOARCH}" in
+            darwin-arm64) file desktop/resources/bin/devsy | grep -q 'arm64'  ;;
+            darwin-amd64) file desktop/resources/bin/devsy | grep -q 'x86_64' ;;
+            linux-amd64)  file desktop/resources/bin/devsy | grep -q 'x86-64' ;;
+            linux-arm64)  file desktop/resources/bin/devsy | grep -q 'aarch64' ;;
+          esac
+
+      - name: build embedded CLI binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
+        run: |
+          New-Item -ItemType Directory -Force -Path desktop/resources/bin
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          $env:CGO_ENABLED = "0"
+          $ldflags = "-s -w -X main.build=$env:VERSION -X main.commit=$env:GITHUB_SHA -X github.com/devsy-org/devsy/pkg/version.version=$env:VERSION -X github.com/devsy-org/devsy/pkg/telemetry/analytics.posthogAPIKey=$env:DEVSY_POSTHOG_API_KEY"
+          go build -ldflags $ldflags -o desktop/resources/bin/devsy.exe .
+
+      # The pro-provider generator needs every platform's CLI binary.
+      # Only the linux-x64 desktop job runs that step, so only that job
+      # needs to fetch the cross-arch binaries from the build-cli job.
+      - name: download CLI artifacts (for provider generation)
+        if: matrix.name == 'linux-x64'
         uses: actions/download-artifact@v8
         with:
           pattern: devsy-*
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
-      - name: flatten CLI artifacts
+      - name: stage CLI binaries for provider generation
+        if: matrix.name == 'linux-x64'
         shell: bash
         run: |
-          BIN_DIR="${{ runner.temp }}/devsy-bin"
-          find "$BIN_DIR" -mindepth 2 -type f -exec mv {} "$BIN_DIR/" \;
-          find "$BIN_DIR" -mindepth 1 -type d -delete 2>/dev/null || true
-
-      - name: setup CLI binary (unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          TEMP_DIR="${{ runner.temp }}"
-          mkdir -p desktop/resources/bin
-          cp "$TEMP_DIR/devsy-bin/devsy-${{ matrix.go-os }}-${{ matrix.go-arch }}" desktop/resources/bin/devsy
-          chmod +x desktop/resources/bin/devsy
-
-          # Also stage binaries for dist/ upload and provider generation
           mkdir -p dist/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
-
-      - name: setup CLI binary (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path desktop/resources/bin
-          Copy-Item "${{ runner.temp }}/devsy-bin/devsy-windows-amd64.exe" desktop/resources/bin/devsy.exe
+          find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
 
       - name: generate pro provider
         if: matrix.name == 'linux-x64'
