@@ -1,5 +1,3 @@
-// Walks a directory tree, prints per-file inventory (path, size, sha256, arch),
-// and optionally flattens nested files into the root.
 package main
 
 import (
@@ -13,26 +11,23 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-
-	binaryarch "github.com/devsy-org/devsy/hack/binary_arch"
 )
 
-func main() {
-	dir := flag.String("dir", "", "directory to inventory")
-	flatten := flag.Bool("flatten", false,
+func cmdInventory(args []string) error {
+	fs := flag.NewFlagSet("inventory", flag.ExitOnError)
+	dir := fs.String("dir", "", "directory to inventory")
+	flatten := fs.Bool("flatten", false,
 		"after inventory, move nested files into <dir> root and remove empty subdirs")
-	flag.Parse()
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	if *dir == "" {
-		fmt.Fprintln(os.Stderr, "missing required -dir flag")
-		os.Exit(2)
+		return errors.New("inventory: missing required -dir flag")
 	}
-	if err := run(*dir, *flatten); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
+	return runInventory(*dir, *flatten)
 }
 
-func run(dir string, flatten bool) error {
+func runInventory(dir string, flatten bool) error {
 	files, err := walkFiles(dir)
 	if err != nil {
 		return fmt.Errorf("walk %s: %w", dir, err)
@@ -69,7 +64,7 @@ func printGroup(label, root string, files []string) error {
 
 func walkFiles(root string) ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	walk := func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -77,8 +72,8 @@ func walkFiles(root string) ([]string, error) {
 			out = append(out, p)
 		}
 		return nil
-	})
-	if err != nil {
+	}
+	if err := filepath.WalkDir(root, walk); err != nil {
 		return nil, err
 	}
 	sort.Strings(out)
@@ -99,7 +94,7 @@ func printEntry(root, p string) error {
 		return err
 	}
 	archStr := "<undetected>"
-	if a, err := binaryarch.FromFile(p); err == nil {
+	if a, err := FromFile(p); err == nil {
 		archStr = a.String()
 	}
 	fmt.Printf("%s  size=%d  sha256=%s  arch=%s\n", rel, st.Size(), sum, archStr)

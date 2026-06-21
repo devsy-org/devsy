@@ -1,5 +1,4 @@
-// Package binaryarch detects the target architecture of a built executable.
-package binaryarch
+package main
 
 import (
 	"debug/elf"

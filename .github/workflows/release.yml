@@ -113,7 +113,7 @@ jobs:
       - name: inventory and flatten CLI artifacts
         shell: bash
         run: |
-          go run ./hack/inventory_binaries -dir "${{ runner.temp }}/devsy-bin" -flatten
+          go run ./hack/release_artifacts inventory -dir "${{ runner.temp }}/devsy-bin" -flatten
 
       - name: setup CLI binary (unix)
         if: runner.os != 'Windows'
@@ -133,7 +133,7 @@ jobs:
           mkdir -p desktop/resources/bin
           cp "$src" "$dst"
           chmod +x "$dst"
-          go run ./hack/verify_binary_arch -file "$dst" -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
+          go run ./hack/release_artifacts verify -file "$dst" -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
           mkdir -p dist/
           find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
 
@@ -236,7 +236,7 @@ jobs:
             ls -la desktop/release || true
             exit 1
           fi
-          go run ./hack/verify_binary_arch \
+          go run ./hack/release_artifacts verify \
             -file "$app/Contents/Resources/bin/devsy" \
             -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
 

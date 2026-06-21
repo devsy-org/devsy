@@ -1,4 +1,4 @@
-package binaryarch
+package main
 
 import (
 	"os"
