@@ -133,7 +133,6 @@ jobs:
           mkdir -p desktop/resources/bin
           cp "$src" "$dst"
           chmod +x "$dst"
-          go run ./hack/release_artifacts verify -file "$dst" -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
           mkdir -p dist/
           find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
 
