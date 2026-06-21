@@ -2,6 +2,15 @@ package config
 
 import "testing"
 
+const (
+	caseNil          = "nil"
+	caseUnset        = "unset"
+	optReadonly      = "readonly"
+	optConsistency   = "consistency=cached"
+	consistencyValue = "cached"
+	subpathValue     = "app"
+)
+
 func TestMountIsReadOnly(t *testing.T) {
 	tests := []struct {
 		name string
@@ -10,7 +19,7 @@ func TestMountIsReadOnly(t *testing.T) {
 	}{
 		{"nil mount", nil, false},
 		{"no other options", &Mount{Type: "bind"}, false},
-		{"bare readonly", &Mount{Other: []string{"readonly"}}, true},
+		{"bare readonly", &Mount{Other: []string{optReadonly}}, true},
 		{"bare ro", &Mount{Other: []string{"ro"}}, true},
 		{"uppercase RO", &Mount{Other: []string{"RO"}}, true},
 		{"mixed-case ReadOnly", &Mount{Other: []string{"ReadOnly"}}, true},
@@ -22,13 +31,13 @@ func TestMountIsReadOnly(t *testing.T) {
 		{"readonly=TRUE", &Mount{Other: []string{"readonly=TRUE"}}, true},
 		{"readonly=false", &Mount{Other: []string{"readonly=false"}}, false},
 		{"readonly=0", &Mount{Other: []string{"readonly=0"}}, false},
-		{"unrelated option", &Mount{Other: []string{"consistency=cached"}}, false},
+		{"unrelated option", &Mount{Other: []string{optConsistency}}, false},
 		{
 			"option containing ro substring",
 			&Mount{Other: []string{"bind-propagation=rprivate"}},
 			false,
 		},
-		{"readonly mixed with others", &Mount{Other: []string{"consistency=cached", "ro"}}, true},
+		{"readonly mixed with others", &Mount{Other: []string{optConsistency, "ro"}}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -45,8 +54,8 @@ func TestMountBindPropagation(t *testing.T) {
 		m    *Mount
 		want string
 	}{
-		{"nil", nil, ""},
-		{"unset", &Mount{Other: []string{"readonly"}}, ""},
+		{caseNil, nil, ""},
+		{caseUnset, &Mount{Other: []string{optReadonly}}, ""},
 		{"docker form", &Mount{Other: []string{"bind-propagation=rslave"}}, "rslave"},
 		{"compose form", &Mount{Other: []string{"propagation=rprivate"}}, "rprivate"},
 		{"case-insensitive key", &Mount{Other: []string{"BIND-PROPAGATION=shared"}}, "shared"},
@@ -69,8 +78,8 @@ func TestMountIsBindNonRecursive(t *testing.T) {
 		m    *Mount
 		want bool
 	}{
-		{"nil", nil, false},
-		{"unset", &Mount{Other: []string{"readonly"}}, false},
+		{caseNil, nil, false},
+		{caseUnset, &Mount{Other: []string{optReadonly}}, false},
 		{"bare token", &Mount{Other: []string{"bind-nonrecursive"}}, true},
 		{"=true", &Mount{Other: []string{"bind-nonrecursive=true"}}, true},
 		{"=false", &Mount{Other: []string{"bind-nonrecursive=false"}}, false},
@@ -90,9 +99,9 @@ func TestMountConsistency(t *testing.T) {
 		m    *Mount
 		want string
 	}{
-		{"nil", nil, ""},
-		{"unset", &Mount{Other: []string{"readonly"}}, ""},
-		{"cached", &Mount{Other: []string{"consistency=cached"}}, "cached"},
+		{caseNil, nil, ""},
+		{caseUnset, &Mount{Other: []string{optReadonly}}, ""},
+		{consistencyValue, &Mount{Other: []string{optConsistency}}, consistencyValue},
 		{"delegated", &Mount{Other: []string{"consistency=delegated"}}, "delegated"},
 		{"case-insensitive key", &Mount{Other: []string{"CONSISTENCY=consistent"}}, "consistent"},
 	}
@@ -111,8 +120,8 @@ func TestMountVolumeNoCopy(t *testing.T) {
 		m    *Mount
 		want bool
 	}{
-		{"nil", nil, false},
-		{"unset", &Mount{Other: []string{"readonly"}}, false},
+		{caseNil, nil, false},
+		{caseUnset, &Mount{Other: []string{optReadonly}}, false},
 		{"docker bare", &Mount{Other: []string{"volume-nocopy"}}, true},
 		{"compose bare", &Mount{Other: []string{"nocopy"}}, true},
 		{"=true", &Mount{Other: []string{"volume-nocopy=true"}}, true},
@@ -133,9 +142,9 @@ func TestMountVolumeSubpath(t *testing.T) {
 		m    *Mount
 		want string
 	}{
-		{"nil", nil, ""},
-		{"unset", &Mount{Other: []string{"readonly"}}, ""},
-		{"docker form", &Mount{Other: []string{"volume-subpath=app"}}, "app"},
+		{caseNil, nil, ""},
+		{caseUnset, &Mount{Other: []string{optReadonly}}, ""},
+		{"docker form", &Mount{Other: []string{"volume-subpath=" + subpathValue}}, subpathValue},
 		{"compose form", &Mount{Other: []string{"subpath=data"}}, "data"},
 	}
 	for _, tt := range tests {

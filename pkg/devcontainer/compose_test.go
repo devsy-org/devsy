@@ -353,10 +353,10 @@ func TestValidateRunServices(t *testing.T) {
 
 func TestMountToServiceVolumeConfigScalars(t *testing.T) {
 	got := mountToServiceVolumeConfig(&config.Mount{
-		Type: "bind", Source: "/s", Target: "/t",
+		Type: mountTypeBind, Source: "/s", Target: "/t",
 		Other: []string{"readonly", "consistency=cached"},
 	})
-	if got.Type != "bind" || got.Source != "/s" || got.Target != "/t" {
+	if got.Type != mountTypeBind || got.Source != "/s" || got.Target != "/t" {
 		t.Errorf("scalars wrong: got %+v", got)
 	}
 	if !got.ReadOnly {
@@ -375,7 +375,7 @@ func TestBindOptionsFromMount(t *testing.T) {
 	}{
 		{
 			name: "no bind options",
-			in:   &config.Mount{Type: "bind"},
+			in:   &config.Mount{Type: mountTypeBind},
 			want: nil,
 		},
 		{
@@ -411,7 +411,7 @@ func TestVolumeOptionsFromMount(t *testing.T) {
 	}{
 		{
 			name: "no volume options",
-			in:   &config.Mount{Type: "volume"},
+			in:   &config.Mount{Type: mountTypeVolume},
 			want: nil,
 		},
 		{
