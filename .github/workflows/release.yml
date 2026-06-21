@@ -112,106 +112,30 @@ jobs:
 
       - name: inventory and flatten CLI artifacts
         shell: bash
-        env:
-          BIN_DIR: ${{ runner.temp }}/devsy-bin
         run: |
-          python3 <<'PY'
-          import hashlib
-          import os
-          import shutil
-          import subprocess
-          from pathlib import Path
-
-          bin_dir = Path(os.environ["BIN_DIR"])
-
-          def file_arch(p: Path) -> str:
-              try:
-                  return subprocess.check_output(["file", "-b", str(p)], text=True).strip()
-              except (FileNotFoundError, subprocess.CalledProcessError):
-                  return "<file unavailable>"
-
-          def sha256(p: Path) -> str:
-              h = hashlib.sha256()
-              with p.open("rb") as f:
-                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                      h.update(chunk)
-              return h.hexdigest()
-
-          print("::group::Downloaded CLI artifacts (pre-flatten)")
-          for p in sorted(bin_dir.rglob("*")):
-              if p.is_file():
-                  print(f"{p.relative_to(bin_dir)}  size={p.stat().st_size}  "
-                        f"sha256={sha256(p)}  arch={file_arch(p)}")
-          print("::endgroup::")
-
-          for nested in sorted(p for p in bin_dir.rglob("*") if p.is_file() and p.parent != bin_dir):
-              dest = bin_dir / nested.name
-              if dest.exists():
-                  raise SystemExit(f"flatten collision: {nested} -> {dest} (already exists)")
-              shutil.move(str(nested), str(dest))
-
-          for d in sorted((p for p in bin_dir.rglob("*") if p.is_dir()), reverse=True):
-              try:
-                  d.rmdir()
-              except OSError:
-                  pass
-
-          print("::group::Flattened CLI binaries")
-          for p in sorted(bin_dir.iterdir()):
-              if p.is_file():
-                  print(f"{p.name}  size={p.stat().st_size}  arch={file_arch(p)}")
-          print("::endgroup::")
-          PY
+          go run ./hack/inventory_binaries -dir "${{ runner.temp }}/devsy-bin" -flatten
 
       - name: setup CLI binary (unix)
         if: runner.os != 'Windows'
         shell: bash
         env:
-          MATRIX_NAME: ${{ matrix.name }}
           MATRIX_GO_OS: ${{ matrix.go-os }}
           MATRIX_GO_ARCH: ${{ matrix.go-arch }}
         run: |
           set -euo pipefail
-          TEMP_DIR="${{ runner.temp }}"
-          SRC="$TEMP_DIR/devsy-bin/devsy-${MATRIX_GO_OS}-${MATRIX_GO_ARCH}"
-          DST="desktop/resources/bin/devsy"
-
-          if [ ! -f "$SRC" ]; then
-            echo "::error::expected CLI binary missing: $SRC"
-            ls -la "$TEMP_DIR/devsy-bin"
+          src="${{ runner.temp }}/devsy-bin/devsy-${MATRIX_GO_OS}-${MATRIX_GO_ARCH}"
+          dst="desktop/resources/bin/devsy"
+          if [ ! -f "$src" ]; then
+            echo "::error::expected CLI binary missing: $src"
+            ls -la "${{ runner.temp }}/devsy-bin"
             exit 1
           fi
-
           mkdir -p desktop/resources/bin
-          cp "$SRC" "$DST"
-          chmod +x "$DST"
-
-          src_sha=$(shasum -a 256 "$SRC" | awk '{print $1}')
-          dst_sha=$(shasum -a 256 "$DST" | awk '{print $1}')
-          arch_desc=$(file -b "$DST")
-          echo "matrix=${MATRIX_NAME} expected=devsy-${MATRIX_GO_OS}-${MATRIX_GO_ARCH}"
-          echo "src=$SRC sha256=$src_sha"
-          echo "dst=$DST sha256=$dst_sha"
-          echo "dst arch=$arch_desc"
-
-          if [ "$src_sha" != "$dst_sha" ]; then
-            echo "::error::sha256 mismatch between source and destination"
-            exit 1
-          fi
-
-          case "${MATRIX_GO_OS}-${MATRIX_GO_ARCH}" in
-            darwin-arm64) echo "$arch_desc" | grep -q 'arm64'   ;;
-            darwin-amd64) echo "$arch_desc" | grep -q 'x86_64'  ;;
-            linux-amd64)  echo "$arch_desc" | grep -q 'x86-64'  ;;
-            linux-arm64)  echo "$arch_desc" | grep -q 'aarch64' ;;
-            *)
-              echo "::warning::no arch assertion for ${MATRIX_GO_OS}-${MATRIX_GO_ARCH}"
-              ;;
-          esac
-
-          # Stage binaries for dist/ upload and provider generation.
+          cp "$src" "$dst"
+          chmod +x "$dst"
+          go run ./hack/verify_binary_arch -file "$dst" -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
           mkdir -p dist/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
+          find "${{ runner.temp }}/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
 
       - name: setup CLI binary (windows)
         if: runner.os == 'Windows'
@@ -302,34 +226,19 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
+          MATRIX_GO_OS: ${{ matrix.go-os }}
           MATRIX_GO_ARCH: ${{ matrix.go-arch }}
-        working-directory: desktop
         run: |
           set -euo pipefail
-          app_dir=$(find release -maxdepth 2 -type d -name 'Devsy.app' | head -n1)
-          if [ -z "$app_dir" ]; then
+          app=$(find desktop/release -maxdepth 2 -type d -name 'Devsy.app' | head -n1)
+          if [ -z "$app" ]; then
             echo "::error::no Devsy.app bundle found under desktop/release/"
-            ls -la release || true
+            ls -la desktop/release || true
             exit 1
           fi
-          embedded="$app_dir/Contents/Resources/bin/devsy"
-          if [ ! -f "$embedded" ]; then
-            echo "::error::embedded CLI binary missing: $embedded"
-            exit 1
-          fi
-          arch_desc=$(file -b "$embedded")
-          sha=$(shasum -a 256 "$embedded" | awk '{print $1}')
-          echo "embedded=$embedded"
-          echo "sha256=$sha"
-          echo "arch=$arch_desc"
-          case "$MATRIX_GO_ARCH" in
-            arm64) echo "$arch_desc" | grep -q 'arm64'  ;;
-            amd64) echo "$arch_desc" | grep -q 'x86_64' ;;
-            *)
-              echo "::error::unexpected matrix go-arch: $MATRIX_GO_ARCH"
-              exit 1
-              ;;
-          esac
+          go run ./hack/verify_binary_arch \
+            -file "$app/Contents/Resources/bin/devsy" \
+            -goos "$MATRIX_GO_OS" -goarch "$MATRIX_GO_ARCH"
 
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3
