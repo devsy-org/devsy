@@ -350,3 +350,123 @@ func TestValidateRunServices(t *testing.T) {
 		})
 	}
 }
+
+func TestMountToServiceVolumeConfigScalars(t *testing.T) {
+	got := mountToServiceVolumeConfig(&config.Mount{
+		Type: "bind", Source: "/s", Target: "/t",
+		Other: []string{"readonly", "consistency=cached"},
+	})
+	if got.Type != "bind" || got.Source != "/s" || got.Target != "/t" {
+		t.Errorf("scalars wrong: got %+v", got)
+	}
+	if !got.ReadOnly {
+		t.Error("ReadOnly should be true")
+	}
+	if got.Consistency != "cached" {
+		t.Errorf("Consistency = %q, want cached", got.Consistency)
+	}
+}
+
+func TestBindOptionsFromMount(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *config.Mount
+		want *composetypes.ServiceVolumeBind
+	}{
+		{
+			name: "no bind options",
+			in:   &config.Mount{Type: "bind"},
+			want: nil,
+		},
+		{
+			name: "propagation",
+			in:   &config.Mount{Other: []string{"bind-propagation=rslave"}},
+			want: &composetypes.ServiceVolumeBind{Propagation: "rslave"},
+		},
+		{
+			name: "nonrecursive",
+			in:   &config.Mount{Other: []string{"bind-nonrecursive"}},
+			want: &composetypes.ServiceVolumeBind{Recursive: "disabled"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := bindOptionsFromMount(tt.in)
+			if (got == nil) != (tt.want == nil) {
+				t.Fatalf("nil-ness differs: got %+v, want %+v", got, tt.want)
+			}
+			if got != nil &&
+				(got.Propagation != tt.want.Propagation || got.Recursive != tt.want.Recursive) {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVolumeOptionsFromMount(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *config.Mount
+		want *composetypes.ServiceVolumeVolume
+	}{
+		{
+			name: "no volume options",
+			in:   &config.Mount{Type: "volume"},
+			want: nil,
+		},
+		{
+			name: "nocopy and subpath",
+			in:   &config.Mount{Other: []string{"volume-nocopy", "volume-subpath=inner"}},
+			want: &composetypes.ServiceVolumeVolume{NoCopy: true, Subpath: "inner"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := volumeOptionsFromMount(tt.in)
+			if (got == nil) != (tt.want == nil) {
+				t.Fatalf("nil-ness differs: got %+v, want %+v", got, tt.want)
+			}
+			if got != nil && (got.NoCopy != tt.want.NoCopy || got.Subpath != tt.want.Subpath) {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTmpfsOptionsFromMount(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *config.Mount
+		want *composetypes.ServiceVolumeTmpfs
+	}{
+		{
+			name: "no tmpfs options",
+			in:   &config.Mount{Type: "tmpfs"},
+			want: nil,
+		},
+		{
+			name: "size and mode",
+			in:   &config.Mount{Other: []string{"tmpfs-size=1048576", "tmpfs-mode=1777"}},
+			want: &composetypes.ServiceVolumeTmpfs{
+				Size: composetypes.UnitBytes(1048576),
+				Mode: 0o1777,
+			},
+		},
+		{
+			name: "invalid values dropped",
+			in:   &config.Mount{Other: []string{"tmpfs-size=oops", "tmpfs-mode=oops"}},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tmpfsOptionsFromMount(tt.in)
+			if (got == nil) != (tt.want == nil) {
+				t.Fatalf("nil-ness differs: got %+v, want %+v", got, tt.want)
+			}
+			if got != nil && (got.Size != tt.want.Size || got.Mode != tt.want.Mode) {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

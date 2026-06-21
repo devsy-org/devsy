@@ -98,6 +98,80 @@ var _ = ginkgo.Describe(
 			gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
+		ginkgo.It("readonly bind mounts", func(ctx context.Context) {
+			tempDir, workspace, err := tc.setupAndStartWorkspace(
+				ctx,
+				"tests/up-docker-compose/testdata/docker-compose-mounts-readonly",
+				"--debug",
+			)
+			framework.ExpectNoError(err)
+
+			ids, err := findComposeContainer(
+				ctx,
+				tc.dockerHelper,
+				tc.composeHelper,
+				workspace.UID,
+				"app",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+
+			seed, err := tc.execSSH(ctx, tempDir, "cat /home/vscode/mnt-ro/seed.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(seed)).To(gomega.Equal("SEED"))
+
+			opts, err := tc.execSSH(
+				ctx,
+				tempDir,
+				"findmnt -n -T /home/vscode/mnt-ro -o OPTIONS",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(opts).To(
+				gomega.MatchRegexp(`(^|,)ro(,|$)`),
+				"readonly bind mount should report ro in findmnt options, got %q",
+				strings.TrimSpace(opts),
+			)
+
+			_, _, err = tc.f.ExecCommandCapture(
+				ctx,
+				[]string{
+					cmdWorkspace,
+					cmdSSH,
+					flagCommand,
+					"touch /home/vscode/mnt-ro/should-not-write.txt",
+					workspace.ID,
+					"--user",
+					"root",
+				},
+			)
+			framework.ExpectError(
+				err,
+				"writing to a readonly bind mount must fail",
+			)
+
+			fsType, err := tc.execSSH(
+				ctx,
+				tempDir,
+				"findmnt -n -T /home/vscode/scratch -o FSTYPE",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(fsType)).To(
+				gomega.Equal("tmpfs"),
+				"tmpfs mount should report fstype tmpfs",
+			)
+
+			tmpfsSize, err := tc.execSSH(
+				ctx,
+				tempDir,
+				"findmnt -n -T /home/vscode/scratch -o SIZE",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(tmpfsSize)).To(
+				gomega.Equal("100M"),
+				"tmpfs-size=104857600 should round-trip to 100M",
+			)
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
 		ginkgo.It("port forwarding", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
