@@ -13,6 +13,7 @@ const (
 	envDevsyHost    = "DEVSY_HOST"
 	envDevsyProject = "DEVSY_PROJECT"
 	cmdWorkspace    = "workspace"
+	cmdList         = "list"
 )
 
 // TestOptInEnvFlags_AppliesEnvValueToFlag verifies that for each opt-in flag,
@@ -110,7 +111,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 		seen, _ = c.Flags().GetString("host")
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", cmdWorkspace, "list", "--host", "cli-value"})
+	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList, "--host", "cli-value"})
 	require.NoError(t, rootCmd.Execute())
 	assert.Equal(t, "cli-value", seen, "CLI flag must override env value")
 }
@@ -128,7 +129,7 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 		seen, _ = c.Flags().GetString("host")
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", cmdWorkspace, "list"})
+	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList})
 	require.NoError(t, rootCmd.Execute(), "required --host must be satisfied by env")
 	assert.Equal(t, "from-env.example.com", seen)
 }

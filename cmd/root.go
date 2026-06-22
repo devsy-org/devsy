@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
@@ -35,8 +36,12 @@ import (
 )
 
 const (
+	logOutputText   = "text"
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+
+	flagLogOutput = "--log-output"
+	flagLogFormat = "--log-format"
 
 	groupCore         = "core"
 	groupConfig       = "config"
@@ -66,6 +71,14 @@ func isMachineLogFormat(format string) bool {
 func Execute() {
 	rootCmd, globalFlags := BuildRoot()
 
+	// Parse/flag errors return before PersistentPreRunE runs log.Init, so
+	// initialize up front or reportError logs to a no-op logger. log.Init is
+	// idempotent; PersistentPreRunE re-inits with the parsed flags. The same
+	// raw-args format feeds reportError, since globalFlags.LogOutput is left
+	// unpopulated when cobra fails during flag parsing.
+	logOutput := parseLogOutputFlag(os.Args[1:])
+	log.Init(log.Config{Format: logOutput})
+
 	// Bootstrap pre-Execute so subcommands that override PersistentPreRunE
 	// without chaining (e.g. pro, agent) still get telemetry.
 	target := rootCmd
@@ -88,43 +101,69 @@ func Execute() {
 	collector.RecordCLI(err)
 	collector.Flush()
 	if err != nil {
-		//nolint:all
-		if sshExitErr, ok := err.(*ssh.ExitError); ok {
-			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
-			os.Exit(sshExitErr.ExitStatus())
-		}
-
-		//nolint:all
-		if execExitErr, ok := err.(*exec.ExitError); ok {
-			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
-			os.Exit(execExitErr.ExitCode())
-		}
-
-		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
-		// Always emit the error through zap so the configured log encoder
-		// (json/logfmt/text) governs the wire format. JSONError preserves
-		// the full err.Error() chain in the top-level "msg" field and ships
-		// the structured CLIError under "cliError" for the desktop IPC.
-		log.JSONError(cliErr)
-		// In human-friendly text mode, follow up with hint/doc affordances
-		// that don't fit cleanly into the zap line. These extras are
-		// suppressed in machine-readable modes so log streams stay parseable.
-		if !isMachineLogFormat(globalFlags.LogOutput) {
-			if cliErr.Hint != "" {
-				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
-			}
-			if cliErr.DocURL != "" {
-				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-			}
-		}
-		// Signal workspace-not-found via a distinct exit code so parent
-		// processes (e.g. SetupBackhaul) can detect the registration race
-		// without parsing stderr.
-		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			os.Exit(exitcode.WorkspaceNotFound)
-		}
-		os.Exit(1)
+		os.Exit(reportError(err, logOutput))
 	}
+}
+
+// reportError emits a command error through the logger and returns the process
+// exit code. Split out from Execute so it is unit testable without os.Exit.
+func reportError(err error, logOutput string) int {
+	var sshExitErr *ssh.ExitError
+	if errors.As(err, &sshExitErr) {
+		log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+		return sshExitErr.ExitStatus()
+	}
+
+	var execExitErr *exec.ExitError
+	if errors.As(err, &execExitErr) {
+		log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+		return execExitErr.ExitCode()
+	}
+
+	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+	// Always emit the error through zap so the configured log encoder
+	// (json/logfmt/text) governs the wire format. JSONError preserves
+	// the full err.Error() chain in the top-level "msg" field and ships
+	// the structured CLIError under "cliError" for the desktop IPC.
+	log.JSONError(cliErr)
+	// In human-friendly text mode, follow up with hint/doc affordances
+	// that don't fit cleanly into the zap line. These extras are
+	// suppressed in machine-readable modes so log streams stay parseable.
+	if !isMachineLogFormat(logOutput) {
+		if cliErr.Hint != "" {
+			fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
+		}
+		if cliErr.DocURL != "" {
+			fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
+		}
+	}
+	// Signal workspace-not-found via a distinct exit code so parent
+	// processes (e.g. SetupBackhaul) can detect the registration race
+	// without parsing stderr.
+	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+		return exitcode.WorkspaceNotFound
+	}
+	return 1
+}
+
+// parseLogOutputFlag scans raw CLI args for --log-output / --log-format (and
+// their =value forms) so the logger can be initialized with the right encoder
+// before cobra parses flags. Unknown values fall through to the default text
+// encoder via resolveEncoder.
+func parseLogOutputFlag(args []string) string {
+	for i, arg := range args {
+		name, value, hasValue := strings.Cut(arg, "=")
+		if name != flagLogOutput && name != flagLogFormat {
+			continue
+		}
+		if hasValue {
+			return value
+		}
+		if i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return logOutputText
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed
