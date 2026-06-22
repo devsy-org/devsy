@@ -660,7 +660,7 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 		if !helper.GetRuntime().SupportsMountConsistency() {
 			mountPath = stripMountConsistency(mountPath)
 		}
-		if helper.GetRuntime().SupportsBindCreateSrc() {
+		if shouldBustBindCache(helper) {
 			mountPath = withBindCreateSrc(mountPath)
 		}
 		args = append(args, "--mount", mountPath)
@@ -668,8 +668,51 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 	return args
 }
 
+// minBindCreateSrcMajor is the docker CLI major version that introduced the
+// bind-create-src mount option. Older clients reject it at parse time.
+const minBindCreateSrcMajor = 29
+
+// shouldBustBindCache reports whether the workspace bind mount should carry
+// bind-create-src=true to work around Docker Desktop's stale file-share inode
+// cache (the up -> delete -> up failure mode). It is gated three ways:
+//   - Docker runtime only (Podman/nerdctl reject the option).
+//   - Docker Desktop only (GOOS != linux); native Linux binds the host path
+//     directly and never hits the file-share cache.
+//   - docker CLI >= v29, which introduced the option; older clients error out.
+func shouldBustBindCache(helper *docker.DockerHelper) bool {
+	if helper.GetRuntime().Name() != docker.RuntimeDocker {
+		return false
+	}
+	if runtime.GOOS == "linux" {
+		return false
+	}
+	return dockerMajorAtLeast(helper.ClientVersion(context.Background()), minBindCreateSrcMajor)
+}
+
+// dockerMajorAtLeast reports whether a docker version string like "29.5.3" has
+// a major component >= min. An unparseable version returns false so we never
+// emit an option an unknown client might reject.
+func dockerMajorAtLeast(version string, minMajor int) bool {
+	major, _, ok := strings.Cut(version, ".")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(major))
+	if err != nil {
+		return false
+	}
+	return n >= minMajor
+}
+
 // withBindCreateSrc adds bind-create-src=true to a bind --mount whose source
-// exists, forcing Docker Desktop to resolve the path.
+// exists, forcing Docker Desktop to re-resolve the path and bust a stale inode
+// from a delete-then-recreated parent.
+//
+// The os.Stat check gates this on the source actually existing. With
+// bind-create-src set, the daemon would create a missing source as an empty
+// directory and start the container against it. Omitting the option for a
+// missing source preserves docker's "bind source path does not exist"
+// rejection, surfaced by startContainer as a failed run.
 func withBindCreateSrc(mountPath string) string {
 	m := config.ParseMount(mountPath)
 	if m.Type != "bind" || m.Source == "" {

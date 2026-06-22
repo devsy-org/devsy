@@ -286,6 +286,25 @@ func (s *DockerDriverTestSuite) TestWithBindCreateSrc() {
 	s.Equal(vol, withBindCreateSrc(vol))
 }
 
+func (s *DockerDriverTestSuite) TestDockerMajorAtLeast() {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"29.5.3", true},
+		{"29.0.0", true},
+		{"30.1.0", true},
+		{"28.0.4", false}, // CI's version; must not emit bind-create-src
+		{"20.10.21", false},
+		{"", false},        // version unknown -> do not risk the option
+		{"garbage", false}, // unparseable major
+	}
+	for _, tt := range tests {
+		s.Equalf(tt.want, dockerMajorAtLeast(tt.version, minBindCreateSrcMajor),
+			"dockerMajorAtLeast(%q)", tt.version)
+	}
+}
+
 func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},
