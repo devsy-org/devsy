@@ -26,6 +26,7 @@ type ContainerRuntime interface {
 	SupportsInternalBuildKit() bool
 	SupportsSignalProxy() bool
 	SupportsMountConsistency() bool
+	SupportsBindCreateSrc() bool
 	NeedsUserNamespaceArgs() bool
 	GPUAvailable(ctx context.Context, helper *DockerHelper) (bool, error)
 }
@@ -36,6 +37,7 @@ func (dockerRuntime) Name() RuntimeName              { return RuntimeDocker }
 func (dockerRuntime) SupportsInternalBuildKit() bool { return true }
 func (dockerRuntime) SupportsSignalProxy() bool      { return true }
 func (dockerRuntime) SupportsMountConsistency() bool { return true }
+func (dockerRuntime) SupportsBindCreateSrc() bool    { return true }
 func (dockerRuntime) NeedsUserNamespaceArgs() bool   { return false }
 
 func (dockerRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {
@@ -52,6 +54,7 @@ func (podmanRuntime) Name() RuntimeName              { return RuntimePodman }
 func (podmanRuntime) SupportsInternalBuildKit() bool { return false }
 func (podmanRuntime) SupportsSignalProxy() bool      { return true }
 func (podmanRuntime) SupportsMountConsistency() bool { return true }
+func (podmanRuntime) SupportsBindCreateSrc() bool    { return false }
 func (podmanRuntime) NeedsUserNamespaceArgs() bool   { return true }
 
 func (podmanRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {
@@ -68,6 +71,7 @@ func (nerdctlRuntime) Name() RuntimeName              { return RuntimeNerdctl }
 func (nerdctlRuntime) SupportsInternalBuildKit() bool { return true }
 func (nerdctlRuntime) SupportsSignalProxy() bool      { return false }
 func (nerdctlRuntime) SupportsMountConsistency() bool { return false }
+func (nerdctlRuntime) SupportsBindCreateSrc() bool    { return false }
 func (nerdctlRuntime) NeedsUserNamespaceArgs() bool   { return false }
 
 func (nerdctlRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {

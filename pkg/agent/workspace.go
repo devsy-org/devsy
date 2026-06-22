@@ -215,11 +215,8 @@ echo Devsy
 	return true, nil
 }
 
-// GetAgentWorkspaceContentDir returns the bind-mount source for a workspace.
-// The UID suffix ensures a delete-then-recreate cycle never reuses the same
-// host path, avoiding Docker Desktop's stale /host_mnt inode cache.
-func GetAgentWorkspaceContentDir(workspaceDir, uid string) string {
-	return filepath.Join(workspaceDir, "content-"+uid)
+func GetAgentWorkspaceContentDir(workspaceDir string) string {
+	return filepath.Join(workspaceDir, "content")
 }
 
 func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {

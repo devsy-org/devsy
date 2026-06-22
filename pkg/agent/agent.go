@@ -246,7 +246,7 @@ func handleStaleWorkspace(
 		return "", fmt.Errorf("recreate workspace dir: %w", err)
 	}
 
-	// Drop the old UID's path so resolveContentFolder picks up the new one.
+	// Clear so resolveContentFolder recomputes against the recreated dir.
 	workspaceInfo.ContentFolder = ""
 	return newDir, nil
 }
@@ -265,10 +265,7 @@ func resolveContentFolder(
 		}
 	}
 	if workspaceInfo.ContentFolder == "" {
-		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(
-			workspaceDir,
-			workspaceInfo.Workspace.UID,
-		)
+		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
 	}
 }
 

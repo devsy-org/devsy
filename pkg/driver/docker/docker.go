@@ -660,9 +660,30 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 		if !helper.GetRuntime().SupportsMountConsistency() {
 			mountPath = stripMountConsistency(mountPath)
 		}
+		if helper.GetRuntime().SupportsBindCreateSrc() {
+			mountPath = withBindCreateSrc(mountPath)
+		}
 		args = append(args, "--mount", mountPath)
 	}
 	return args
+}
+
+// withBindCreateSrc adds bind-create-src=true to a bind --mount whose source
+// exists, forcing Docker Desktop to resolve the path.
+func withBindCreateSrc(mountPath string) string {
+	m := config.ParseMount(mountPath)
+	if m.Type != "bind" || m.Source == "" {
+		return mountPath
+	}
+	for part := range strings.SplitSeq(mountPath, ",") {
+		if strings.HasPrefix(part, "bind-create-src=") {
+			return mountPath
+		}
+	}
+	if _, err := os.Stat(m.Source); err != nil {
+		return mountPath
+	}
+	return mountPath + ",bind-create-src=true"
 }
 
 func stripMountConsistency(mount string) string {

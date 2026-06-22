@@ -265,6 +265,27 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 	}
 }
 
+func (s *DockerDriverTestSuite) TestWithBindCreateSrc() {
+	existing := s.T().TempDir()
+
+	// Source exists: bind-create-src is appended to bust a stale file-share
+	// inode while still binding the real (present) directory.
+	withExisting := "type=bind,src=" + existing + ",dst=/b"
+	s.Equal(withExisting+",bind-create-src=true", withBindCreateSrc(withExisting))
+
+	// Source missing: spec is left untouched so docker fails loudly instead of
+	// silently materializing an empty placeholder directory.
+	s.Equal(testBindMount, withBindCreateSrc(testBindMount))
+
+	// Idempotent: an existing bind-create-src is not duplicated.
+	already := withExisting + ",bind-create-src=true"
+	s.Equal(already, withBindCreateSrc(already))
+
+	// Non-bind mounts are ignored.
+	vol := "type=volume,src=myvol,dst=/b"
+	s.Equal(vol, withBindCreateSrc(vol))
+}
+
 func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},
