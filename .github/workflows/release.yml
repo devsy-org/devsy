@@ -42,7 +42,7 @@ jobs:
           version: "~> v2"
           args: build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
         env:
-          DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_CLI_VERSION: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
       - uses: actions/upload-artifact@v7
@@ -135,7 +135,7 @@ jobs:
         working-directory: ./hack/pro
         env:
           PARTIAL: "true"
-        run: go run ./main.go ${{ inputs.tag || github.ref_name }} ../../dist > ../../dist/provider.yaml
+        run: go run ./main.go ${{ inputs.tag || github.event.release.tag_name || github.ref_name }} ../../dist > ../../dist/provider.yaml
 
       - name: configure Windows build tools
         if: runner.os == 'Windows'
@@ -160,7 +160,7 @@ jobs:
         shell: bash
         working-directory: desktop
         run: |
-          VERSION=${{ inputs.tag || github.ref_name }}
+          VERSION=${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           VERSION="${VERSION#v}"
           npm version "$VERSION" --no-git-tag-version
 
@@ -222,7 +222,7 @@ jobs:
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           draft: true
           files: |
             desktop/release/*.dmg
@@ -238,7 +238,7 @@ jobs:
         shell: bash
         env:
           REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
         run: |
           go run hack/rewrite_manifest_urls/main.go desktop/release/ "$REPO" "$TAG"
 
@@ -255,7 +255,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         if: matrix.name == 'linux-x64'
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           draft: true
           files: |
             ./dist/*
@@ -357,7 +357,7 @@ jobs:
       - name: upload flatpak bundle
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           draft: true
           files: |
             ./Devsy.flatpak
@@ -372,6 +372,6 @@ jobs:
     steps:
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
           prerelease: true
           draft: false
