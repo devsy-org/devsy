@@ -237,18 +237,16 @@ func handleStaleWorkspace(
 		return "", fmt.Errorf("delete old workspace: %w", err)
 	}
 
-	newDir, err := CreateAgentWorkspaceDir(
-		workspaceInfo.Agent.DataPath,
-		workspaceInfo.Workspace.Context,
-		workspaceInfo.Workspace.ID,
-	)
-	if err != nil {
-		return "", fmt.Errorf("recreate workspace dir: %w", err)
+	// Wipe the content folder's children in place rather than removing and
+	// recreating the directory. Preserving the inode keeps Docker Desktop's
+	// /host_mnt mapping valid for the next bind mount.
+	if err := wipeContentFolder(GetAgentWorkspaceContentDir(workspaceDir)); err != nil {
+		return "", fmt.Errorf("wipe content folder: %w", err)
 	}
 
-	// Drop the old UID's path so resolveContentFolder picks up the new one.
+	// Drop the persisted ContentFolder so resolveContentFolder recomputes it.
 	workspaceInfo.ContentFolder = ""
-	return newDir, nil
+	return workspaceDir, nil
 }
 
 // resolveContentFolder fills in workspaceInfo.ContentFolder, preferring a
@@ -265,10 +263,7 @@ func resolveContentFolder(
 		}
 	}
 	if workspaceInfo.ContentFolder == "" {
-		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(
-			workspaceDir,
-			workspaceInfo.Workspace.UID,
-		)
+		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
 	}
 }
 

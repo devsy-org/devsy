@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -134,5 +136,40 @@ func TestIsHostAgentInvocation_NonStandardMarkerValue(t *testing.T) {
 
 	if !IsHostAgentInvocation("") {
 		t.Fatal("only DEVSY_AGENT_IN_CONTAINER=1 should be honoured; got false for value 'true'")
+	}
+}
+
+func TestGetAgentWorkspaceContentDir(t *testing.T) {
+	want := filepath.Join("/wd", "content")
+	if got := GetAgentWorkspaceContentDir("/wd"); got != want {
+		t.Errorf("GetAgentWorkspaceContentDir(/wd) = %q, want %q", got, want)
+	}
+}
+
+func TestWipeContentFolderEmptiesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	content := filepath.Join(dir, "content")
+	// #nosec G301 -- test fixture.
+	if err := os.MkdirAll(filepath.Join(content, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(content, "a.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := wipeContentFolder(content); err != nil {
+		t.Fatalf("wipeContentFolder: %v", err)
+	}
+	entries, err := os.ReadDir(content)
+	if err != nil {
+		t.Fatalf("read after wipe: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("want empty content dir after wipe, got %d entries", len(entries))
+	}
+}
+
+func TestWipeContentFolderMissingDirIsNoError(t *testing.T) {
+	if err := wipeContentFolder(filepath.Join(t.TempDir(), "nope")); err != nil {
+		t.Errorf("wipeContentFolder on missing dir should be no-error, got %v", err)
 	}
 }

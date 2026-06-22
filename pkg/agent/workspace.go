@@ -216,10 +216,32 @@ echo Devsy
 }
 
 // GetAgentWorkspaceContentDir returns the bind-mount source for a workspace.
-// The UID suffix ensures a delete-then-recreate cycle never reuses the same
-// host path, avoiding Docker Desktop's stale /host_mnt inode cache.
-func GetAgentWorkspaceContentDir(workspaceDir, uid string) string {
-	return filepath.Join(workspaceDir, "content-"+uid)
+// The directory is reused across UID changes — wipeContentFolder clears its
+// children in place on recreate so the directory's inode never changes,
+// keeping Docker Desktop's /host_mnt mapping stable.
+func GetAgentWorkspaceContentDir(workspaceDir string) string {
+	return filepath.Join(workspaceDir, "content")
+}
+
+// wipeContentFolder removes every child of the workspace content folder
+// without removing the folder itself. The folder's inode is preserved so
+// Docker Desktop's macOS file-share VM keeps its /host_mnt mapping valid
+// across workspace recreates.
+func wipeContentFolder(contentDir string) error {
+	entries, err := os.ReadDir(contentDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", contentDir, err)
+	}
+	for _, e := range entries {
+		p := filepath.Join(contentDir, e.Name())
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("remove %s: %w", p, err)
+		}
+	}
+	return nil
 }
 
 func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
