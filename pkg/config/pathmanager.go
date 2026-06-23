@@ -41,6 +41,8 @@ type PathManager interface {
 	WorkspacesDir(context string) (string, error)
 	WorkspaceDir(context, workspaceID string) (string, error)
 	WorkspaceAgentDir(context, workspaceID string) (string, error)
+	WorkspaceContentsDir(context string) (string, error)
+	WorkspaceContentDir(context, workspaceID string) (string, error)
 	WorkspaceLogDir(context, workspaceID string) (string, error)
 	MachinesDir(context string) (string, error)
 	MachineDir(context, machineID string) (string, error)
@@ -133,6 +135,29 @@ func (b *basePathManager) WorkspaceAgentDir(context, workspaceID string) (string
 	}
 
 	return filepath.Join(dir, "agent"), nil
+}
+
+// WorkspaceContentsDir is the per-context parent of workspace content folders.
+// It is never removed on delete, keeping a stable host inode for the bind-mount
+// source's parent across up -> delete -> up (avoids Docker Desktop's stale
+// file-share inode cache).
+func (b *basePathManager) WorkspaceContentsDir(context string) (string, error) {
+	dir, err := b.ContextDir(context)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "contents"), nil
+}
+
+// WorkspaceContentDir is the bind-mount source leaf under WorkspaceContentsDir.
+func (b *basePathManager) WorkspaceContentDir(context, workspaceID string) (string, error) {
+	dir, err := b.WorkspaceContentsDir(context)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, workspaceID), nil
 }
 
 // WorkspaceLogDir is the per-workspace log directory used by the desktop's

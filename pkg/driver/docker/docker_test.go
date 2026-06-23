@@ -265,6 +265,44 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 	}
 }
 
+func (s *DockerDriverTestSuite) TestWithBindCreateSrc() {
+	existing := s.T().TempDir()
+
+	// source exists -> option appended
+	withExisting := "type=bind,src=" + existing + ",dst=/b"
+	s.Equal(withExisting+",bind-create-src=true", withBindCreateSrc(withExisting))
+
+	// source missing -> untouched
+	s.Equal(testBindMount, withBindCreateSrc(testBindMount))
+
+	// idempotent
+	already := withExisting + ",bind-create-src=true"
+	s.Equal(already, withBindCreateSrc(already))
+
+	// non-bind ignored
+	vol := "type=volume,src=myvol,dst=/b"
+	s.Equal(vol, withBindCreateSrc(vol))
+}
+
+func (s *DockerDriverTestSuite) TestDockerMajorAtLeast() {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"29.5.3", true},
+		{"29.0.0", true},
+		{"30.1.0", true},
+		{"28.0.4", false},
+		{"20.10.21", false},
+		{"", false},
+		{"garbage", false},
+	}
+	for _, tt := range tests {
+		s.Equalf(tt.want, dockerMajorAtLeast(tt.version, minBindCreateSrcMajor),
+			"dockerMajorAtLeast(%q)", tt.version)
+	}
+}
+
 func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},

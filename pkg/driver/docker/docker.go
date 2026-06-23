@@ -660,9 +660,63 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 		if !helper.GetRuntime().SupportsMountConsistency() {
 			mountPath = stripMountConsistency(mountPath)
 		}
+		if shouldBustBindCache(helper) {
+			mountPath = withBindCreateSrc(mountPath)
+		}
 		args = append(args, "--mount", mountPath)
 	}
 	return args
+}
+
+// minBindCreateSrcMajor is the docker CLI major version that added the
+// bind-create-src mount option; older clients reject it at parse time.
+const minBindCreateSrcMajor = 29
+
+// shouldBustBindCache reports whether to add bind-create-src to the workspace
+// mount. Gated to Docker (Podman/nerdctl reject it), Docker Desktop
+// (GOOS != linux), and CLI >= v29.
+func shouldBustBindCache(helper *docker.DockerHelper) bool {
+	if helper.GetRuntime().Name() != docker.RuntimeDocker {
+		return false
+	}
+	if runtime.GOOS == "linux" {
+		return false
+	}
+	return dockerMajorAtLeast(helper.ClientVersion(context.Background()), minBindCreateSrcMajor)
+}
+
+// dockerMajorAtLeast reports whether version's major component is >= minMajor.
+// An unparseable version returns false.
+func dockerMajorAtLeast(version string, minMajor int) bool {
+	major, _, ok := strings.Cut(version, ".")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(major))
+	if err != nil {
+		return false
+	}
+	return n >= minMajor
+}
+
+// withBindCreateSrc adds bind-create-src=true to a bind --mount whose source
+// exists, forcing Docker Desktop to re-resolve a stale-cached path. A missing
+// source is left untouched so docker still fails loudly rather than binding an
+// empty dir.
+func withBindCreateSrc(mountPath string) string {
+	m := config.ParseMount(mountPath)
+	if m.Type != "bind" || m.Source == "" {
+		return mountPath
+	}
+	for part := range strings.SplitSeq(mountPath, ",") {
+		if strings.HasPrefix(part, "bind-create-src=") {
+			return mountPath
+		}
+	}
+	if _, err := os.Stat(m.Source); err != nil {
+		return mountPath
+	}
+	return mountPath + ",bind-create-src=true"
 }
 
 func stripMountConsistency(mount string) string {

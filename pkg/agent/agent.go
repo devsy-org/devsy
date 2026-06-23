@@ -246,7 +246,7 @@ func handleStaleWorkspace(
 		return "", fmt.Errorf("recreate workspace dir: %w", err)
 	}
 
-	// Drop the old UID's path so resolveContentFolder picks up the new one.
+	// Clear so resolveContentFolder recomputes against the recreated dir.
 	workspaceInfo.ContentFolder = ""
 	return newDir, nil
 }
@@ -264,12 +264,23 @@ func resolveContentFolder(
 			workspaceInfo.ContentFolder = workspaceInfo.Workspace.Source.LocalFolder
 		}
 	}
-	if workspaceInfo.ContentFolder == "" {
-		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(
-			workspaceDir,
-			workspaceInfo.Workspace.UID,
-		)
+	if workspaceInfo.ContentFolder != "" {
+		return
 	}
+
+	// On the host, place the bind-mount source under the delete-stable
+	// "contents" dir so its parent inode survives up -> delete -> up.
+	if IsHostAgentInvocation(workspaceInfo.Agent.DataPath) {
+		if contentDir, err := provider2.GetWorkspaceContentDir(
+			workspaceInfo.Workspace.Context,
+			workspaceInfo.Workspace.ID,
+		); err == nil {
+			workspaceInfo.ContentFolder = contentDir
+			return
+		}
+	}
+
+	workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
 }
 
 func CreateWorkspaceBusyFile(folder string) {
