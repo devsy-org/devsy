@@ -264,9 +264,26 @@ func resolveContentFolder(
 			workspaceInfo.ContentFolder = workspaceInfo.Workspace.Source.LocalFolder
 		}
 	}
-	if workspaceInfo.ContentFolder == "" {
-		workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
+	if workspaceInfo.ContentFolder != "" {
+		return
 	}
+
+	// On the host the content folder is the docker bind-mount source. Place it
+	// under the per-context "contents" dir whose parent survives workspace
+	// delete, so Docker Desktop's file-share inode cache for the parent stays
+	// valid across up -> delete -> up. Container-side agents keep content under
+	// the workspace dir (no host file share involved).
+	if IsHostAgentInvocation(workspaceInfo.Agent.DataPath) {
+		if contentDir, err := provider2.GetWorkspaceContentDir(
+			workspaceInfo.Workspace.Context,
+			workspaceInfo.Workspace.ID,
+		); err == nil {
+			workspaceInfo.ContentFolder = contentDir
+			return
+		}
+	}
+
+	workspaceInfo.ContentFolder = GetAgentWorkspaceContentDir(workspaceDir)
 }
 
 func CreateWorkspaceBusyFile(folder string) {
