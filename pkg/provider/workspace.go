@@ -251,6 +251,8 @@ type CLIOptions struct {
 	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
 	ContainerUser               string            `json:"containerUser,omitempty"`
 	RemoteUser                  string            `json:"remoteUser,omitempty"`
+	// nil = auto-detect; true/false = force clone-in-container or bind-mount.
+	PullFromInsideContainerOverride *bool `json:"pullFromInsideContainerOverride,omitempty"`
 
 	// skip lifecycle hook options
 	SkipPostCreate       bool `json:"skipPostCreate,omitempty"`

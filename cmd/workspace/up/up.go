@@ -49,6 +49,9 @@ type UpCmd struct {
 	DotfilesScriptEnv     []string // Key=Value to pass to install script
 	DotfilesScriptEnvFile []string // Paths to files containing Key=Value pairs to pass to install script
 
+	// Read via Changed() so unset is distinguishable from explicit false.
+	pullFromInsideContainerFlag bool
+
 	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
 	Out io.Writer
 }
@@ -276,6 +279,7 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
+	cmd.applyPullFromInsideContainerOverride(cobraCmd)
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
@@ -303,6 +307,14 @@ type workspaceContext struct {
 	user       string
 	workdir    string
 	tunnelPort int
+}
+
+func (cmd *UpCmd) applyPullFromInsideContainerOverride(cobraCmd *cobra.Command) {
+	if !cobraCmd.Flags().Changed("pull-from-inside-container") {
+		return
+	}
+	value := cmd.pullFromInsideContainerFlag
+	cmd.PullFromInsideContainerOverride = &value
 }
 
 // resolveDotfilesOptions populates DotfilesRepo and DotfilesScript
