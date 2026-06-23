@@ -41,11 +41,19 @@ func TestAllPagesSourceListReleasesPaginates(t *testing.T) {
 
 	src := &allPagesSource{api: client}
 
-	releases, err := src.ListReleases(context.Background(), selfupdate.NewRepositorySlug("owner", "repo"))
+	releases, err := src.ListReleases(
+		context.Background(),
+		selfupdate.NewRepositorySlug("owner", "repo"),
+	)
 	require.NoError(t, err)
 
 	require.Len(t, releases, 2, "should aggregate releases from both pages")
 	assert.Equal(t, "v2.0.0-beta.1", releases[0].GetTagName())
 	assert.Equal(t, "v1.0.0", releases[1].GetTagName(), "stable release on page 2 must be returned")
-	assert.Equal(t, []string{"", "2"}, requestedPages, "should request page 1 then follow next to page 2")
+	assert.Equal(
+		t,
+		[]string{"", "2"},
+		requestedPages,
+		"should request page 1 then follow next to page 2",
+	)
 }
