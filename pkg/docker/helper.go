@@ -75,9 +75,7 @@ func (r *DockerHelper) GetRuntime() ContainerRuntime {
 	return DetectRuntime(r.DockerCommand)
 }
 
-// ClientVersion returns the docker CLI version (e.g. "29.5.3"), or "" if it
-// cannot be determined. It queries the client only, so it succeeds even when
-// no daemon is reachable.
+// ClientVersion returns the docker CLI version (e.g. "29.5.3"), or "".
 func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

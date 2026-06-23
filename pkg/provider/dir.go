@@ -86,14 +86,13 @@ func GetWorkspaceAgentDir(context, workspaceID string) (string, error) {
 }
 
 // GetWorkspaceContentsDir returns the per-context parent of workspace content
-// folders (.../contexts/<ctx>/contents). It is never removed on delete.
+// folders (.../contexts/<ctx>/contents).
 func GetWorkspaceContentsDir(context string) (string, error) {
 	return config.DefaultPathManager().WorkspaceContentsDir(context)
 }
 
-// GetWorkspaceContentDir returns the host-side stable bind-mount source for a
-// workspace (.../contexts/<ctx>/contents/<id>). Its parent persists across
-// delete so Docker Desktop's file-share inode cache stays valid.
+// GetWorkspaceContentDir returns the host-side bind-mount source for a
+// workspace (.../contexts/<ctx>/contents/<id>).
 func GetWorkspaceContentDir(context, workspaceID string) (string, error) {
 	if workspaceID == "" {
 		return "", fmt.Errorf("workspace id is empty")

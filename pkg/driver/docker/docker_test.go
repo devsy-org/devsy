@@ -268,20 +268,18 @@ func (s *DockerDriverTestSuite) TestStripMountConsistency() {
 func (s *DockerDriverTestSuite) TestWithBindCreateSrc() {
 	existing := s.T().TempDir()
 
-	// Source exists: bind-create-src is appended to bust a stale file-share
-	// inode while still binding the real (present) directory.
+	// source exists -> option appended
 	withExisting := "type=bind,src=" + existing + ",dst=/b"
 	s.Equal(withExisting+",bind-create-src=true", withBindCreateSrc(withExisting))
 
-	// Source missing: spec is left untouched so docker fails loudly instead of
-	// silently materializing an empty placeholder directory.
+	// source missing -> untouched
 	s.Equal(testBindMount, withBindCreateSrc(testBindMount))
 
-	// Idempotent: an existing bind-create-src is not duplicated.
+	// idempotent
 	already := withExisting + ",bind-create-src=true"
 	s.Equal(already, withBindCreateSrc(already))
 
-	// Non-bind mounts are ignored.
+	// non-bind ignored
 	vol := "type=volume,src=myvol,dst=/b"
 	s.Equal(vol, withBindCreateSrc(vol))
 }
@@ -294,10 +292,10 @@ func (s *DockerDriverTestSuite) TestDockerMajorAtLeast() {
 		{"29.5.3", true},
 		{"29.0.0", true},
 		{"30.1.0", true},
-		{"28.0.4", false}, // CI's version; must not emit bind-create-src
+		{"28.0.4", false},
 		{"20.10.21", false},
-		{"", false},        // version unknown -> do not risk the option
-		{"garbage", false}, // unparseable major
+		{"", false},
+		{"garbage", false},
 	}
 	for _, tt := range tests {
 		s.Equalf(tt.want, dockerMajorAtLeast(tt.version, minBindCreateSrcMajor),

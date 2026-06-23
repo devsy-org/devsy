@@ -268,11 +268,8 @@ func resolveContentFolder(
 		return
 	}
 
-	// On the host the content folder is the docker bind-mount source. Place it
-	// under the per-context "contents" dir whose parent survives workspace
-	// delete, so Docker Desktop's file-share inode cache for the parent stays
-	// valid across up -> delete -> up. Container-side agents keep content under
-	// the workspace dir (no host file share involved).
+	// On the host, place the bind-mount source under the delete-stable
+	// "contents" dir so its parent inode survives up -> delete -> up.
 	if IsHostAgentInvocation(workspaceInfo.Agent.DataPath) {
 		if contentDir, err := provider2.GetWorkspaceContentDir(
 			workspaceInfo.Workspace.Context,
