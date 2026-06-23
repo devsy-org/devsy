@@ -872,7 +872,8 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 
 	// remove the content folder leaf (outside WorkspaceDir); leave its parent
 	// "contents" dir in place to keep its host inode stable across recreate.
-	if contentFolder, err := provider.GetWorkspaceContentDir(params.Context, params.WorkspaceID); err == nil {
+	contentFolder, err := provider.GetWorkspaceContentDir(params.Context, params.WorkspaceID)
+	if err == nil {
 		if err := os.RemoveAll(contentFolder); err != nil && !os.IsNotExist(err) {
 			return err
 		}
