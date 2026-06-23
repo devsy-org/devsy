@@ -41,6 +41,7 @@ import type { CommandProgress } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
+import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
@@ -462,7 +463,7 @@ async function handleLaunch() {
         imageIncompatible && emulationEnabled && emulationTarget
           ? emulationTarget
           : undefined,
-      debug: true,
+      debug: loadLocalOptions().debugFlag,
     })
 
     commandId = cmdId

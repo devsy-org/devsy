@@ -85,6 +85,22 @@ func GetWorkspaceAgentDir(context, workspaceID string) (string, error) {
 	return config.DefaultPathManager().WorkspaceAgentDir(context, workspaceID)
 }
 
+// GetWorkspaceContentsDir returns the per-context parent of workspace content
+// folders (.../contexts/<ctx>/contents).
+func GetWorkspaceContentsDir(context string) (string, error) {
+	return config.DefaultPathManager().WorkspaceContentsDir(context)
+}
+
+// GetWorkspaceContentDir returns the host-side bind-mount source for a
+// workspace (.../contexts/<ctx>/contents/<id>).
+func GetWorkspaceContentDir(context, workspaceID string) (string, error) {
+	if workspaceID == "" {
+		return "", fmt.Errorf("workspace id is empty")
+	}
+
+	return config.DefaultPathManager().WorkspaceContentDir(context, workspaceID)
+}
+
 // GetWorkspaceLogDir returns the per-workspace log dir
 // (.../workspaces/<id>/logs) used by the desktop's streaming-log store.
 func GetWorkspaceLogDir(context, workspaceID string) (string, error) {

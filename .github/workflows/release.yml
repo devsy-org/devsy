@@ -110,32 +110,25 @@ jobs:
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
-      - name: flatten CLI artifacts
+      - name: inventory and flatten CLI artifacts
         shell: bash
         run: |
-          BIN_DIR="${{ runner.temp }}/devsy-bin"
-          find "$BIN_DIR" -mindepth 2 -type f -exec mv {} "$BIN_DIR/" \;
-          find "$BIN_DIR" -mindepth 1 -type d -delete 2>/dev/null || true
+          go run ./hack/release_artifacts inventory --dir "${{ runner.temp }}/devsy-bin" --flatten
 
-      - name: setup CLI binary (unix)
-        if: runner.os != 'Windows'
+      - name: stage embedded CLI binary
         shell: bash
         run: |
-          TEMP_DIR="${{ runner.temp }}"
-          mkdir -p desktop/resources/bin
-          cp "$TEMP_DIR/devsy-bin/devsy-${{ matrix.go-os }}-${{ matrix.go-arch }}" desktop/resources/bin/devsy
-          chmod +x desktop/resources/bin/devsy
+          go run ./hack/release_artifacts stage \
+            --src-dir "${{ runner.temp }}/devsy-bin" \
+            --dst-dir desktop/resources/bin \
+            --goos "${{ matrix.go-os }}" --goarch "${{ matrix.go-arch }}"
 
-          # Also stage binaries for dist/ upload and provider generation
-          mkdir -p dist/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} dist/ \;
-
-      - name: setup CLI binary (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: populate dist for pro provider generation
+        if: matrix.name == 'linux-x64'
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path desktop/resources/bin
-          Copy-Item "${{ runner.temp }}/devsy-bin/devsy-windows-amd64.exe" desktop/resources/bin/devsy.exe
+          go run ./hack/release_artifacts populate-dist \
+            --src-dir "${{ runner.temp }}/devsy-bin" --dst-dir dist
 
       - name: generate pro provider
         if: matrix.name == 'linux-x64'
@@ -199,6 +192,32 @@ jobs:
         run: npx electron-builder ${{ matrix.builder-args }} --publish always --config electron-builder.yml
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # macOS-only because .app is a directory bundle the CLI can read
+      # directly. AppImage / deb / rpm / NSIS would need archive extractors.
+      # electron-builder emits arm64 under release/mac-arm64/ and x64 under
+      # release/mac/; pick the directory that matches the matrix arch.
+      - name: verify packaged macOS app embedded CLI arch
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MATRIX_GO_OS: ${{ matrix.go-os }}
+          MATRIX_GO_ARCH: ${{ matrix.go-arch }}
+        run: |
+          set -euo pipefail
+          case "$MATRIX_GO_ARCH" in
+            arm64) app=desktop/release/mac-arm64/Devsy.app ;;
+            amd64) app=desktop/release/mac/Devsy.app ;;
+            *) echo "::error::unsupported matrix arch: $MATRIX_GO_ARCH"; exit 1 ;;
+          esac
+          if [ ! -d "$app" ]; then
+            echo "::error::Devsy.app bundle missing for $MATRIX_GO_ARCH at $app"
+            ls -la desktop/release || true
+            exit 1
+          fi
+          go run ./hack/release_artifacts verify \
+            --file "$app/Contents/Resources/bin/devsy" \
+            --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@v3

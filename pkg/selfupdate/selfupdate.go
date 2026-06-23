@@ -71,7 +71,13 @@ func detectRelease(
 	ctx context.Context,
 	opts Options,
 ) (*selfupdate.Release, *selfupdate.Updater, error) {
+	source, err := newAllPagesSource()
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize release source: %w", err)
+	}
+
 	updater, err := selfupdate.NewUpdater(selfupdate.Config{
+		Source:     source,
 		Prerelease: opts.IncludePrerelease,
 	})
 	if err != nil {
