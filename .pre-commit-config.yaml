@@ -54,8 +54,8 @@ repos:
       - id: commitizen
         stages: [commit-msg]
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.11.4
+    rev: v2.12.2
     hooks:
       - id: golangci-lint
-        args: ["--timeout", "10m"]
+        args: ["--timeout=10m"]
       - id: golangci-lint-fmt
