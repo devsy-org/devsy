@@ -119,6 +119,33 @@ echo "$@" > `+argsFile+`
 	})
 }
 
+func TestFindContainerJSON_MatchesAllLabels(t *testing.T) {
+	tmp := t.TempDir()
+	// Fake docker: `ps -q -a` lists three containers; `inspect` returns each
+	// container's labels. c1 matches both query labels; c2 matches only the
+	// last label (an earlier label differs); c3 inspect returns an empty array.
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  ps) printf 'c1\nc2\nc3\n' ;;
+  inspect)
+    case "$4" in
+      c1) echo '[{"ID":"c1","Config":{"Labels":{"a":"x","b":"y"}}}]' ;;
+      c2) echo '[{"ID":"c2","Config":{"Labels":{"a":"zzz","b":"y"}}}]' ;;
+      c3) echo '[]' ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	got, err := h.FindContainerJSON(context.Background(), []string{"a=x", "b=y"})
+
+	require.NoError(t, err)
+	// Only c1 satisfies every label. c2 must be excluded (the AND-logic bug
+	// previously matched it on the last label alone), and c3's empty inspect
+	// result must not panic.
+	assert.Equal(t, []string{"c1"}, got)
+}
+
 func TestGPUSupportEnabled_CommandFailure(t *testing.T) {
 	tmp := t.TempDir()
 	bin := writeScript(t, tmp, "bad-runtime", `#!/bin/sh

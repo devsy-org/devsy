@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -99,11 +100,7 @@ func isLocalDockerHost(host string) bool {
 
 // CommandFunc adapts a driver's command function to inject.ExecFunc.
 func CommandFunc(
-	driverCmd func(
-		ctx context.Context,
-		workspaceID, user, command string,
-		stdin io.Reader, stdout io.Writer, stderr io.Writer,
-	) error,
+	driverCmd func(ctx context.Context, params *driver.CommandParams) error,
 	workspaceID string,
 ) inject.ExecFunc { //nolint:staticcheck // bridges driver command signature to legacy ExecFunc
 	return func(
@@ -111,7 +108,14 @@ func CommandFunc(
 		command string,
 		stdin io.Reader, stdout io.Writer, stderr io.Writer,
 	) error {
-		return driverCmd(ctx, workspaceID, "root", command, stdin, stdout, stderr)
+		return driverCmd(ctx, &driver.CommandParams{
+			WorkspaceID: workspaceID,
+			User:        "root",
+			Command:     command,
+			Stdin:       stdin,
+			Stdout:      stdout,
+			Stderr:      stderr,
+		})
 	}
 }
 

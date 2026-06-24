@@ -430,14 +430,16 @@ func (r *DockerHelper) FindContainerJSON(ctx context.Context, labels []string) (
 		found := true
 
 		containers, err := r.InspectContainers(ctx, []string{id})
-		if err != nil {
+		if err != nil || len(containers) == 0 {
 			continue
 		}
 
 		for _, label := range labels {
 			key, value, _ := strings.Cut(label, "=")
-
-			found = containers[0].Config.Labels[key] == value
+			if containers[0].Config.Labels[key] != value {
+				found = false
+				break
+			}
 		}
 
 		if found {
