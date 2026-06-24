@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"runtime"
 	"strings"
 	"time"
 
@@ -406,7 +405,7 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 		WorkspaceID:  r.ID,
 		RunOptions:   runOptions,
 		BinarySource: binarySource,
-		Arch:         runtime.GOARCH,
+		Arch:         r.deliveryArch(ctx),
 	})
 }
 

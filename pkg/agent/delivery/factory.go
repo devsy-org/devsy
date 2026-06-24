@@ -21,6 +21,7 @@ type FactoryOptions struct {
 	IsRemoteDocker  bool
 	ContainerID     string
 	ExecFunc        inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
+	PodExec         PodExecFunc
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
@@ -38,14 +39,18 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 		}
 
 	case driverType == provider.KubernetesDriver:
-		log.Debugf("using legacy shell delivery for kubernetes driver")
-		log.Warnf(
-			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
-		)
-		return &LegacyShellDelivery{
-			ExecFunc:    opts.ExecFunc,
-			DownloadURL: "",
+		if opts.PodExec == nil {
+			log.Debugf("kubernetes pod exec unavailable, using legacy shell delivery")
+			log.Warnf(
+				"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
+			)
+			return &LegacyShellDelivery{
+				ExecFunc:    opts.ExecFunc,
+				DownloadURL: "",
+			}
 		}
+		log.Debugf("using kubernetes-native delivery (exec stream)")
+		return &KubernetesDelivery{Exec: opts.PodExec}
 
 	case opts.IsRemoteDocker:
 		log.Debugf("using remote docker delivery (docker cp)")

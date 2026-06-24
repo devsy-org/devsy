@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -119,7 +121,7 @@ func (c *Client) Exec(ctx context.Context, options *ExecStreamOptions) error {
 			Stderr:    options.Stderr != nil,
 		}, scheme.ParameterCodec)
 
-	exec, err := remotecommand.NewSPDYExecutor(c.config, "POST", execRequest.URL())
+	exec, err := newFallbackExecutor(c.config, execRequest.URL())
 	if err != nil {
 		return err
 	}
@@ -140,4 +142,20 @@ func (c *Client) Exec(ctx context.Context, options *ExecStreamOptions) error {
 	case err = <-errChan:
 		return err
 	}
+}
+
+// newFallbackExecutor prefers the WebSocket transport and falls back to SPDY,
+// which is deprecated and disabled on newer API servers.
+func newFallbackExecutor(config *rest.Config, url *url.URL) (remotecommand.Executor, error) {
+	spdyExec, err := remotecommand.NewSPDYExecutor(config, "POST", url)
+	if err != nil {
+		return nil, err
+	}
+
+	wsExec, err := remotecommand.NewWebSocketExecutor(config, "GET", url.String())
+	if err != nil {
+		return nil, err
+	}
+
+	return remotecommand.NewFallbackExecutor(wsExec, spdyExec, httpstream.IsUpgradeFailure)
 }

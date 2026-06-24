@@ -87,13 +87,24 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 
 	if strategy.Phase() == delivery.PhasePostStart {
 		if err := r.deliverPostStart(ctx, strategy); err != nil {
-			log.Debugf("post-start delivery failed, falling back to legacy inject: %v", err)
+			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
 			return r.legacyInject(ctx, timeout)
 		}
 		return nil
 	}
 
 	return r.legacyInject(ctx, timeout)
+}
+
+// podExecCapableDriver is implemented by the kubernetes driver, decoupling
+// delivery wiring from the driver package.
+type podExecCapableDriver interface {
+	CommandContainerArgv(
+		ctx context.Context,
+		workspaceID string,
+		argv []string,
+		streams driver.Streams,
+	) error
 }
 
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
@@ -108,6 +119,13 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 
 	execFn := delivery.CommandFunc(r.Driver.CommandDevContainer, r.ID)
 
+	var podExec delivery.PodExecFunc
+	if d, ok := r.Driver.(podExecCapableDriver); ok {
+		podExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+			return d.CommandContainerArgv(ctx, r.ID, argv, streams)
+		}
+	}
+
 	return delivery.NewAgentDelivery(delivery.FactoryOptions{
 		WorkspaceConfig: r.WorkspaceConfig,
 		WorkspaceID:     r.ID,
@@ -116,7 +134,23 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		HelperImage:     r.WorkspaceConfig.Agent.Docker.HelperImage,
 		ContainerID:     r.ID,
 		ExecFunc:        execFn,
+		PodExec:         podExec,
 	})
+}
+
+// deliveryArch returns the target arch for the agent binary. The kubernetes
+// cluster arch can differ from the host, so it takes precedence when available.
+func (r *runner) deliveryArch(ctx context.Context) string {
+	arch := runtime.GOARCH
+	if r.WorkspaceConfig.Agent.Driver != provider2.KubernetesDriver {
+		return arch
+	}
+	if a, err := r.Driver.TargetArchitecture(ctx, r.ID); err == nil && a != "" {
+		return a
+	} else if err != nil {
+		log.Debugf("target architecture lookup failed, using host arch %q: %v", arch, err)
+	}
+	return arch
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
@@ -128,7 +162,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
 		WorkspaceID:  r.ID,
 		BinarySource: binarySource,
-		Arch:         runtime.GOARCH,
+		Arch:         r.deliveryArch(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)

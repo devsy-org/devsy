@@ -56,6 +56,13 @@ type CommandParams struct {
 	Stderr      io.Writer
 }
 
+// Streams bundles the standard IO streams for an exec.
+type Streams struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
 // RunOptions are the options for running a container.
 type RunOptions struct {
 	// UID is a unique identifier for this workspace

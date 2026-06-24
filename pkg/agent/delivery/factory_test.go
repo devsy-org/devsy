@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,26 @@ func TestNewAgentDelivery_CustomDriver(t *testing.T) {
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
-func TestNewAgentDelivery_KubernetesDriver(t *testing.T) {
+func TestNewAgentDelivery_KubernetesDriver_Native(t *testing.T) {
+	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
+		return nil
+	}
+
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{
+				Driver: provider.KubernetesDriver,
+			},
+		},
+		PodExec: podExec,
+	}
+
+	d := NewAgentDelivery(opts)
+	assert.IsType(t, &KubernetesDelivery{}, d)
+	assert.Equal(t, PhasePostStart, d.Phase())
+}
+
+func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) {
 	execFn := func(ctx context.Context, cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		return nil
 	}
@@ -85,6 +105,7 @@ func TestNewAgentDelivery_KubernetesDriver(t *testing.T) {
 			},
 		},
 		ExecFunc: execFn,
+		// PodExec intentionally nil → legacy fallback.
 	}
 
 	d := NewAgentDelivery(opts)
