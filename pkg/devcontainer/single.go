@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"runtime"
 	"strings"
 	"time"
 
@@ -402,11 +401,16 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 		return fmt.Errorf("create binary source: %w", err)
 	}
 
+	arch, err := r.deliveryArch(ctx)
+	if err != nil {
+		return err
+	}
+
 	return strategy.DeliverPreStart(ctx, delivery.PreStartOptions{
 		WorkspaceID:  r.ID,
 		RunOptions:   runOptions,
 		BinarySource: binarySource,
-		Arch:         runtime.GOARCH,
+		Arch:         arch,
 	})
 }
 

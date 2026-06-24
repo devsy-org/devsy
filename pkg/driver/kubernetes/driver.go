@@ -184,6 +184,26 @@ func (k *KubernetesDriver) CommandDevContainer(
 	})
 }
 
+// CommandContainerArgv execs argv in the workspace pod's dev container, streaming
+// the given stdin/stdout/stderr. Unlike CommandDevContainer it takes explicit
+// argv rather than wrapping the command in sh -c.
+func (k *KubernetesDriver) CommandContainerArgv(
+	ctx context.Context,
+	workspaceID string,
+	argv []string,
+	streams driver.Streams,
+) error {
+	return k.client.Exec(ctx, &ExecStreamOptions{
+		Pod:       getID(workspaceID),
+		Namespace: k.namespace,
+		Container: DevContainerName,
+		Command:   argv,
+		Stdin:     streams.Stdin,
+		Stdout:    streams.Stdout,
+		Stderr:    streams.Stderr,
+	})
+}
+
 func (k *KubernetesDriver) GetDevContainerLogs(
 	ctx context.Context,
 	workspaceID string,
