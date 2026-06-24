@@ -152,15 +152,14 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 	err := agent.InjectAgent(&agent.InjectOptions{
 		Ctx: ctx,
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return r.Driver.CommandDevContainer(
-				ctx,
-				r.ID,
-				containerRootUser,
-				command,
-				stdin,
-				stdout,
-				stderr,
-			)
+			return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
+				WorkspaceID: r.ID,
+				User:        containerRootUser,
+				Command:     command,
+				Stdin:       stdin,
+				Stdout:      stdout,
+				Stderr:      stderr,
+			})
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
@@ -368,15 +367,14 @@ func (r *runner) executeSetup(
 		sshTunnelStdinReader, sshTunnelStdoutWriter *os.File,
 		writer io.WriteCloser,
 	) error {
-		return r.Driver.CommandDevContainer(
-			cancelCtx,
-			r.ID,
-			containerRootUser,
-			sshCmd,
-			sshTunnelStdinReader,
-			sshTunnelStdoutWriter,
-			writer,
-		)
+		return r.Driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
+			WorkspaceID: r.ID,
+			User:        containerRootUser,
+			Command:     sshCmd,
+			Stdin:       sshTunnelStdinReader,
+			Stdout:      sshTunnelStdoutWriter,
+			Stderr:      writer,
+		})
 	}
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{

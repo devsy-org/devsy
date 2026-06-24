@@ -72,23 +72,20 @@ func (c *customDriver) FindDevContainer(
 // CommandDevContainer runs the given command inside the devcontainer.
 func (c *customDriver) CommandDevContainer(
 	ctx context.Context,
-	workspaceId, user, command string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	params *driver.CommandParams,
 ) error {
 	// run command
 	err := c.runCommand(
 		ctx,
-		workspaceId,
+		params.WorkspaceID,
 		"commandDevContainer",
 		c.workspaceInfo.Agent.Custom.CommandDevContainer,
-		stdin,
-		stdout,
-		stderr,
+		params.Stdin,
+		params.Stdout,
+		params.Stderr,
 		[]string{
-			"DEVCONTAINER_USER=" + user,
-			"DEVCONTAINER_COMMAND=" + command,
+			"DEVCONTAINER_USER=" + params.User,
+			"DEVCONTAINER_COMMAND=" + params.Command,
 		},
 	)
 	if err != nil {

@@ -162,18 +162,15 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 
 func (k *KubernetesDriver) CommandDevContainer(
 	ctx context.Context,
-	workspaceId, user, command string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	params *driver.CommandParams,
 ) error {
-	workspaceId = getID(workspaceId)
+	workspaceId := getID(params.WorkspaceID)
 
 	var args []string
-	if user != "" && user != "root" {
-		args = []string{"su", user, "-c", command}
+	if params.User != "" && params.User != "root" {
+		args = []string{"su", params.User, "-c", params.Command}
 	} else {
-		args = []string{"sh", "-c", command}
+		args = []string{"sh", "-c", params.Command}
 	}
 
 	return k.client.Exec(ctx, &ExecStreamOptions{
@@ -181,9 +178,9 @@ func (k *KubernetesDriver) CommandDevContainer(
 		Namespace: k.namespace,
 		Container: DevContainerName,
 		Command:   args,
-		Stdin:     stdin,
-		Stdout:    stdout,
-		Stderr:    stderr,
+		Stdin:     params.Stdin,
+		Stdout:    params.Stdout,
+		Stderr:    params.Stderr,
 	})
 }
 

@@ -13,13 +13,7 @@ type Driver interface {
 	FindDevContainer(ctx context.Context, workspaceID string) (*config.ContainerDetails, error)
 
 	// CommandDevContainer runs the given command inside the devcontainer
-	CommandDevContainer(
-		ctx context.Context,
-		workspaceID, user, command string,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-	) error
+	CommandDevContainer(ctx context.Context, params *CommandParams) error
 
 	// RunDevContainer runs a devcontainer
 	RunDevContainer(ctx context.Context, workspaceID string, options *RunOptions) error
@@ -50,6 +44,16 @@ type ReprovisioningDriver interface {
 
 	// CanReprovision returns true if the driver can reprovision the devcontainer
 	CanReprovision() bool
+}
+
+// CommandParams holds the parameters for running a command inside a devcontainer.
+type CommandParams struct {
+	WorkspaceID string
+	User        string
+	Command     string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
 }
 
 // RunOptions are the options for running a container.

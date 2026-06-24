@@ -189,7 +189,14 @@ func (r *runner) Command(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	return r.Driver.CommandDevContainer(ctx, r.ID, user, command, stdin, stdout, stderr)
+	return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID: r.ID,
+		User:        user,
+		Command:     command,
+		Stdin:       stdin,
+		Stdout:      stdout,
+		Stderr:      stderr,
+	})
 }
 
 func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
