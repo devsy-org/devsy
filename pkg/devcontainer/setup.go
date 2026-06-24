@@ -138,19 +138,22 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	})
 }
 
-// deliveryArch returns the target arch for the agent binary. The kubernetes
-// cluster arch can differ from the host, so it takes precedence when available.
-func (r *runner) deliveryArch(ctx context.Context) string {
-	arch := runtime.GOARCH
+// deliveryArch returns the target arch for the agent binary. For kubernetes the
+// cluster arch can differ from the host, so a lookup failure is surfaced rather
+// than guessing the host arch: streaming a wrong-arch binary would succeed here
+// but fail when the agent starts, after the legacy fallback can no longer run.
+func (r *runner) deliveryArch(ctx context.Context) (string, error) {
 	if r.WorkspaceConfig.Agent.Driver != provider2.KubernetesDriver {
-		return arch
+		return runtime.GOARCH, nil
 	}
-	if a, err := r.Driver.TargetArchitecture(ctx, r.ID); err == nil && a != "" {
-		return a
-	} else if err != nil {
-		log.Debugf("target architecture lookup failed, using host arch %q: %v", arch, err)
+	arch, err := r.Driver.TargetArchitecture(ctx, r.ID)
+	if err != nil {
+		return "", fmt.Errorf("resolve cluster architecture: %w", err)
 	}
-	return arch
+	if arch == "" {
+		return "", fmt.Errorf("cluster architecture is empty")
+	}
+	return arch, nil
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
@@ -159,10 +162,15 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		return fmt.Errorf("create binary source: %w", err)
 	}
 
+	arch, err := r.deliveryArch(ctx)
+	if err != nil {
+		return err
+	}
+
 	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
 		WorkspaceID:  r.ID,
 		BinarySource: binarySource,
-		Arch:         r.deliveryArch(ctx),
+		Arch:         arch,
 	})
 	if err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)

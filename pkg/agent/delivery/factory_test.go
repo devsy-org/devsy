@@ -89,7 +89,9 @@ func TestNewAgentDelivery_KubernetesDriver_Native(t *testing.T) {
 	}
 
 	d := NewAgentDelivery(opts)
-	assert.IsType(t, &KubernetesDelivery{}, d)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.NotNil(t, native.Exec)
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
@@ -109,7 +111,9 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 	}
 
 	d := NewAgentDelivery(opts)
-	assert.IsType(t, &LegacyShellDelivery{}, d)
+	legacy, ok := d.(*LegacyShellDelivery)
+	require.True(t, ok)
+	assert.NotNil(t, legacy.ExecFunc)
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 

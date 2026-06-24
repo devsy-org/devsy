@@ -16,11 +16,12 @@ import (
 
 const testVersion = "v1.2.3"
 
-// recordingExec records each call and replays stdouts[N] as stdout on call N.
+// recordingExec records each call, replays stdouts[N] as stdout, and returns
+// errs[N] on call N (nil when unset).
 type recordingExec struct {
 	calls   []recordedCall
 	stdouts []string
-	err     error
+	errs    []error
 }
 
 type recordedCall struct {
@@ -40,7 +41,10 @@ func (r *recordingExec) fn(_ context.Context, argv []string, streams driver.Stre
 	if streams.Stdout != nil && idx < len(r.stdouts) {
 		_, _ = io.WriteString(streams.Stdout, r.stdouts[idx])
 	}
-	return r.err
+	if idx < len(r.errs) {
+		return r.errs[idx]
+	}
+	return nil
 }
 
 func binarySourceFrom(data string) BinarySourceFunc {
@@ -120,16 +124,18 @@ func TestKubernetesDelivery_DeliverPostStart_SkipsWhenVersionMatches(t *testing.
 }
 
 func TestKubernetesDelivery_DeliverPostStart_DeliversWhenProbeErrors(t *testing.T) {
-	// A failing probe must not abort delivery; it should still attempt the write.
-	probeErr := &recordingExec{err: fmt.Errorf("probe boom")}
+	// A failing probe must not abort delivery; the write still succeeds.
+	probeErr := &recordingExec{
+		stdouts: []string{""},
+		errs:    []error{fmt.Errorf("probe boom"), nil},
+	}
 	d := &KubernetesDelivery{Exec: probeErr.fn, ExpectedVersion: testVersion}
 
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
 		BinarySource: binarySourceFrom("data"),
 		Arch:         testArch,
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write binary to container")
+	require.NoError(t, err)
 	assert.Len(t, probeErr.calls, 2)
 }
 
