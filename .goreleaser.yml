@@ -95,6 +95,9 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - LICENSE
+      - THIRD_PARTY_LICENSES.md
 checksum:
   name_template: checksums.txt
 report_sizes: true

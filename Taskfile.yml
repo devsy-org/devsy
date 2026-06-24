@@ -5,6 +5,14 @@ tasks:
     desc: tidy go.mod and go.sum
     cmd: go mod tidy
 
+  cli:licenses:
+    desc: regenerate THIRD_PARTY_LICENSES.md and enforce the license allowlist
+    cmd: go run ./hack/licenses
+
+  cli:licenses:check:
+    desc: verify THIRD_PARTY_LICENSES.md is in sync and all licenses are allowed (CI)
+    cmd: go run ./hack/licenses --check
+
   cli:lint:
     desc: lint go code using golangci-lint
     cmd: golangci-lint run ./...
