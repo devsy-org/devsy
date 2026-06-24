@@ -1,13 +1,13 @@
 __webpack_public_path__ = "/docs/";
 
 module.exports = {
-  title: "Devsy docs | DevContainers everywhere",
-  tagline: "DevContainers everywhere",
+  title: "Devsy docs | Engineering at scale",
+  tagline: "Engineering at scale",
   url: "https://devsy.sh",
   baseUrl: __webpack_public_path__,
   favicon: "/media/devsy-favicon.svg",
-  organizationName: "devsy-org", // Usually your GitHub org/user name.
-  projectName: "devsy", // Usually your repo name.
+  organizationName: "devsy-org",
+  projectName: "devsy",
   themeConfig: {
     colorMode: {
       defaultMode: "light",
