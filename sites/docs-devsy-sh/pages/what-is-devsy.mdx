@@ -3,25 +3,25 @@ title: What is Devsy?
 sidebar_label: What is Devsy?
 ---
 
-Devsy is a tool used to create reproducible developer environments. Each developer environment runs in a separate container and is specified through a [devcontainer.json](https://containers.dev/). [Devsy providers](./managing-providers/what-are-providers) can create these containers on the local computer, any reachable remote machine, or in a public or private cloud. It's also possible to extend Devsy and write your own custom providers.
+Devsy helps organizations scale their engineering operations with standardized, reproducible development environments. Each environment runs in its own container, defined by a [devcontainer.json](https://containers.dev/) that lives alongside your source. [Devsy providers](./managing-providers/what-are-providers) provision those containers on a developer's machine, any reachable remote host, or in a public or private cloud — and you can extend Devsy with your own custom providers.
 
 <figure>
   <img src="/docs/media/devsy-flow.gif" alt="Devsy Flow" />
   <figcaption>Devsy</figcaption>
 </figure>
 
-You can think of Devsy as the glue connecting your local IDE to a machine you want to use for development. So depending on your project's requirements, you can create a workspace locally on the computer, a powerful cloud machine, or a spare remote computer. Within Devsy, every workspace is managed the same way, which also makes it easy to switch between workspaces that might be hosted somewhere else.
+Devsy connects each developer's local IDE to the infrastructure where work actually runs. The same workspace can live on a laptop, a powerful cloud machine, or a shared remote host, and every workspace is created and managed the same way. That consistency is what lets a team standardize on one environment definition and move between backends without re-learning their tooling.
 
 ## Why Devsy?
 
-Devsy reuses the open [DevContainer standard](https://containers.dev/) to create a consistent developer experience no matter what backend you want to use.
+Devsy implements the open [DevContainer standard](https://containers.dev/), so the environment definition your team commits remains portable across every backend Devsy supports.
 
-Compared to hosted services such as GitHub Codespaces, JetBrains Spaces or Google Cloud Workstations, Devsy has the following advantages:
-* **Cost savings**: Devsy is usually around 5-10 times cheaper than existing services with comparable feature sets, because it uses bare virtual machines and shuts down unused virtual machines automatically.
-* **No vendor lock-in**: Choose whatever cloud provider suits you best, be it the cheapest one or the most powerful, Devsy supports all cloud providers. If you are tired of using a provider, change it with a single command.
-* **Local development**: You get the same developer experience also locally, so you don't need to rely on a cloud provider at all.
-* **Cross-IDE support**: VS Code in its various flavors and the full JetBrains suite are supported, all others can be connected through SSH.
-* **Client-only**: No need to install a server backend, Devsy runs solely on your computer.
-* **Extensible**: Devsy is source-available and extensible. A provider doesn't exist? Just create your own.
-* **Rich feature set**: Devsy already supports prebuilds, auto inactivity shutdown, git & docker credentials sync and many more features to come.
-* **Desktop App**: Devsy comes with an easy-to-use desktop application that abstracts all the complexity away. If you want to build your own integration, Devsy offers a feature-rich CLI as well.
+For engineering organizations, Devsy delivers:
+* **Standardized environments**: Define a workspace once in `devcontainer.json` and give every engineer the same toolchain, dependencies, and configuration. New hires are productive on day one instead of spending days on setup.
+* **Cost efficiency at scale**: Run workspaces on the infrastructure you already pay for, and let Devsy automatically shut down idle machines so you only spend on capacity that's in use.
+* **No vendor lock-in**: Choose the infrastructure that fits each team — local, cloud, Kubernetes, or remote SSH hosts. Switch a workspace's provider with a single command, with no rewrite of your environment definition.
+* **Flexible development**: Engineers get the same experience locally and remotely, from quick prototyping on a laptop to heavy builds on a cloud machine.
+* **Cross-IDE support**: VS Code and its variants and the full JetBrains suite are supported out of the box; any other editor can connect over SSH.
+* **Extensible**: Devsy is source-available and extensible. If a provider doesn't exist for your platform, you can build one.
+* **Rich feature set**: Prebuilds, inactivity-based shutdown, and Git and Docker credential sync are built in, with more capabilities on the way.
+* **Desktop app and CLI**: The desktop application gives engineers a guided way to manage workspaces, while the CLI drives automation and platform integration across your organization.

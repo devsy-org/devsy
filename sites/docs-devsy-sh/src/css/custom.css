@@ -84,31 +84,19 @@ ul ul .table-of-contents__link--active::before {
   display: none;
 }
 
-.menu > .menu__list > .menu__list-item:nth-child(-n + 7) {
+.menu > .menu__list > .menu__list-item {
   margin: 1em 0;
 }
 
-.menu
-  > .menu__list
-  > .menu__list-item:nth-child(-n + 7)
-  > .menu__link--sublist {
+.menu > .menu__list > .menu__list-item > .menu__link--sublist {
   pointer-events: none;
   color: var(--ifm-menu-color) !important;
   font-weight: 500;
   text-transform: uppercase;
 }
 
-.menu
-  > .menu__list
-  > .menu__list-item:nth-child(-n + 7)
-  > .menu__link--sublist::after {
+.menu > .menu__list > .menu__list-item > .menu__link--sublist::after {
   display: none;
-}
-
-.menu > .menu__list > .menu__list-item:last-child {
-  margin-top: 1.5em;
-  padding-top: 1.5em;
-  border-top: 1px solid #e9e9e9;
 }
 
 .markdown figure figcaption {
