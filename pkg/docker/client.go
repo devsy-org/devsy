@@ -4,50 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devsy-org/devsy/pkg/log"
-	dockerclient "github.com/docker/docker/client"
+	sdkclient "github.com/docker/go-sdk/client"
 )
 
-// Client is a client for docker.
+// Client is a client for the Docker daemon API.
+//
+// It embeds the high-level docker/go-sdk client, which itself embeds the
+// low-level moby APIClient. Callers that need raw daemon access (for example,
+// the internal BuildKit path via DialHijack) can use it directly.
 type Client struct {
-	dockerclient.CommonAPIClient
+	sdkclient.SDKClient
 }
 
-// NewClient creates a new docker client.
+// NewClient creates a new Docker daemon client from the environment.
+//
+// The go-sdk client negotiates the API version and runs a health check against
+// the daemon during construction, so a successful return guarantees a usable
+// connection.
 func NewClient(ctx context.Context) (*Client, error) {
-	cli, err := newDockerClientFromEnvironment()
+	cli, err := sdkclient.New(ctx)
 	if err != nil {
-		log.Warnf("Error creating docker client from environment: %v", err)
-
-		// Last try to create it without the environment option
-		cli, err = newDockerClient()
-		if err != nil {
-			return nil, fmt.Errorf("cannot create docker client: %w", err)
-		}
+		return nil, fmt.Errorf("cannot create docker client: %w", err)
 	}
 
-	cli.NegotiateAPIVersion(ctx)
-	return cli, nil
-}
-
-func newDockerClient() (*Client, error) {
-	cli, err := dockerclient.NewClientWithOpts()
-	if err != nil {
-		return nil, fmt.Errorf("could not create docker client: %w", err)
-	}
-
-	return &Client{
-		CommonAPIClient: cli,
-	}, nil
-}
-
-func newDockerClientFromEnvironment() (*Client, error) {
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv)
-	if err != nil {
-		return nil, fmt.Errorf("could not create docker client: %w", err)
-	}
-
-	return &Client{
-		CommonAPIClient: cli,
-	}, nil
+	return &Client{SDKClient: cli}, nil
 }
