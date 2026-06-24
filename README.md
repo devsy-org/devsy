@@ -2,13 +2,13 @@
 <p align="center">
   <a href="https://www.devsy.sh">
     <picture width="500">
-      <source media="(prefers-color-scheme: dark)" srcset="sites/docs-devsy-sh/static/media/devsy_dark.png">
+      <source media="(prefers-color-scheme: dark)" srcset="sites/docs-devsy-sh/static/media/devsy-dark.png">
       <img alt="Devsy wordmark" width="500" src="sites/docs-devsy-sh/static/media/devsy.png">
     </picture>
   </a>
 </p>
 
-Devsy lets engineering teams operate at scale with standardized workspaces — cutting hardware cost, shortening onboarding, and improving developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
+Devsy enables teams to scale development using standardized workspaces — cutting hardware cost, shortening onboarding, and improving developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
 <table align="center">
 <tr>
@@ -134,7 +134,7 @@ See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> f
 </tr>
 </table>
 
-<h2 align="center">Operate Engineering at Scale</h2>
+<h2 align="center">Engineering at Scale</h2>
 <p>
 Devsy implements the open <a href="https://containers.dev/">DevContainer standard</a>. Workspaces stay portable and repeatable across provider backends.
 </p>
