@@ -1,6 +1,6 @@
 name: kubernetes
 version: v1.0.0
-icon: https://devsy.sh/assets/kubernetes.svg
+icon: https://assets.devsy.sh/kubernetes.svg
 home: https://github.com/devsy-org/devsy
 description: |-
   Devsy on Kubernetes

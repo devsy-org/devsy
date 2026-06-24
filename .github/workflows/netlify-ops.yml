@@ -13,6 +13,8 @@ on:
           - add-dl-custom-domain
           - find-images-site
           - add-images-custom-domain
+          - find-assets-site
+          - add-assets-custom-domain
 
 jobs:
   restore-devsy-sh:
@@ -134,6 +136,109 @@ jobs:
           echo "CEO DNS action required — add this DNS record:"
           echo "  Type:  CNAME"
           echo "  Name:  dl"
+          echo "  Value: ${NETLIFY_SUBDOMAIN}.netlify.app"
+          echo ""
+          echo "Full site info:"
+          echo "$BODY" | jq '{id, name, custom_domain, subdomain, url, ssl_url}'
+
+  find-assets-site:
+    name: Find or Create assets.devsy.sh Netlify Site
+    if: inputs.operation == 'find-assets-site'
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+    steps:
+      - name: Find or create assets.devsy.sh site and output ID
+        run: |
+          echo "Listing Netlify sites..."
+          SITES_RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites?per_page=100")
+          SITES_HTTP=$(echo "$SITES_RESP" | tail -1)
+          SITES=$(echo "$SITES_RESP" | sed '$d')
+          if [ "$SITES_HTTP" != "200" ]; then
+            echo "ERROR: Failed to list sites (HTTP $SITES_HTTP)"
+            echo "$SITES"
+            exit 1
+          fi
+
+          ASSETS_SITE_ID=$(echo "$SITES" | \
+            jq -r '.[] | select(.custom_domain == "assets.devsy.sh" or .name == "assets-devsy-sh") | .id' | head -1)
+
+          if [ -n "$ASSETS_SITE_ID" ] && [ "$ASSETS_SITE_ID" != "null" ]; then
+            ASSETS_SITE_NAME=$(echo "$SITES" | jq -r ".[] | select(.id == \"$ASSETS_SITE_ID\") | .name")
+            echo "Found existing site: $ASSETS_SITE_NAME"
+          else
+            echo "Site not found. Listing all sites for reference:"
+            echo "$SITES" | jq '.[] | {id, name, custom_domain, url}' | head -100
+            echo ""
+            echo "Creating assets-devsy-sh..."
+            CREATE_RESP_RAW=$(curl -s -w "\n%{http_code}" -X POST \
+              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"name": "assets-devsy-sh"}' \
+              "https://api.netlify.com/api/v1/sites")
+            CREATE_HTTP=$(echo "$CREATE_RESP_RAW" | tail -1)
+            CREATE_RESP=$(echo "$CREATE_RESP_RAW" | sed '$d')
+            if [ "$CREATE_HTTP" != "200" ] && [ "$CREATE_HTTP" != "201" ]; then
+              echo "ERROR: Site creation failed (HTTP $CREATE_HTTP)"
+              echo "$CREATE_RESP"
+              exit 1
+            fi
+            ASSETS_SITE_ID=$(echo "$CREATE_RESP" | jq -r '.id // empty')
+            if [ -z "$ASSETS_SITE_ID" ]; then
+              echo "ERROR: Site created but no id returned"
+              echo "$CREATE_RESP"
+              exit 1
+            fi
+            echo "Created: $(echo "$CREATE_RESP" | jq '{id, name, url}')"
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "NETLIFY_ASSETS_SITE_ID = $ASSETS_SITE_ID"
+          echo "========================================"
+          echo "Run: gh secret set NETLIFY_ASSETS_SITE_ID --org devsy-org --visibility all --body \"$ASSETS_SITE_ID\""
+
+  add-assets-custom-domain:
+    name: Add assets.devsy.sh Custom Domain to assets-devsy-sh Site
+    if: inputs.operation == 'add-assets-custom-domain'
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      ASSETS_SITE_ID: ${{ secrets.NETLIFY_ASSETS_SITE_ID }}
+    steps:
+      - name: Add custom domain and report DNS instructions
+        run: |
+          if [ -z "$ASSETS_SITE_ID" ]; then
+            echo "ERROR: NETLIFY_ASSETS_SITE_ID secret is not set. Run find-assets-site first."
+            exit 1
+          fi
+          echo "Adding assets.devsy.sh as custom domain to site $ASSETS_SITE_ID..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"custom_domain": "assets.devsy.sh"}' \
+            "https://api.netlify.com/api/v1/sites/$ASSETS_SITE_ID")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Custom domain update failed (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+
+          echo "Custom domain set (HTTP $HTTP_CODE)"
+          NETLIFY_SUBDOMAIN=$(echo "$BODY" | jq -r '.subdomain // .name')
+          echo ""
+          echo "========================================"
+          echo "CUSTOM DOMAIN CONFIGURED: assets.devsy.sh"
+          echo "========================================"
+          echo ""
+          echo "DNS action required — add this DNS record:"
+          echo "  Type:  CNAME"
+          echo "  Name:  assets"
           echo "  Value: ${NETLIFY_SUBDOMAIN}.netlify.app"
           echo ""
           echo "Full site info:"

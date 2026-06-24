@@ -1,6 +1,6 @@
 name: docker
 version: v1.0.0
-icon: https://devsy.sh/assets/docker.svg
+icon: https://assets.devsy.sh/docker.svg
 home: https://github.com/devsy-org/devsy
 description: |-
   Devsy on Docker

@@ -18,7 +18,7 @@ function defaultState() {
         config: {
           name: "docker",
           version: "v0.5.0",
-          icon: "https://devsy.sh/icons/docker.svg",
+          icon: "https://assets.devsy.sh/docker.svg",
           description: "Devsy on Docker",
           source: { github: "devsy-org/devsy-provider-docker" },
           options: {
@@ -38,7 +38,7 @@ function defaultState() {
         config: {
           name: "kubernetes",
           version: "v0.3.0",
-          icon: "https://devsy.sh/icons/k8s.svg",
+          icon: "https://assets.devsy.sh/kubernetes.svg",
           description: "Devsy on Kubernetes",
           source: { github: "devsy-org/devsy-provider-kubernetes" },
           options: {},

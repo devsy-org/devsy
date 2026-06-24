@@ -25,11 +25,11 @@ const (
 	// SSHHostSuffix is appended to workspace IDs for SSH config host entries.
 	SSHHostSuffix = "." + BinaryName
 
-	// WebsiteBaseURL is the project website used for asset URLs.
+	// WebsiteBaseURL is the project website.
 	WebsiteBaseURL = "https://" + RepoName + ".sh"
 
-	// WebsiteAssetsURL is the base URL for icon/image assets.
-	WebsiteAssetsURL = WebsiteBaseURL + "/assets"
+	// WebsiteAssetsURL is the root URL for icon/image assets, served at WebsiteAssetsURL + "/<name>.svg".
+	WebsiteAssetsURL = "https://assets." + RepoName + ".sh"
 
 	// AgentDownloadBaseURL is the prefix under which versioned agent binaries are published.
 	AgentDownloadBaseURL = GitHubReleasesURL + "/download/"
