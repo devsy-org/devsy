@@ -26,6 +26,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/docker-credential-helpers v0.9.5
 	github.com/docker/go-connections v0.6.0
+	github.com/docker/go-sdk/client v0.1.0-alpha013
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
@@ -116,6 +117,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.9 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/caarlos0/env/v11 v11.3.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -149,6 +151,8 @@ require (
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
 	github.com/devsy-org/admin-apis v1.2.0 // indirect
+	github.com/docker/go-sdk/config v0.1.0-alpha013 // indirect
+	github.com/docker/go-sdk/context v0.1.0-alpha013 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
@@ -221,6 +225,8 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
+	github.com/moby/moby/api v1.54.1 // indirect
+	github.com/moby/moby/client v0.4.0 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
