@@ -8,4 +8,4 @@ See the [install instructions for Devsy](https://devsy.sh/docs/getting-started/i
 
 
 ## Reporting a Vulnerability
-Please report vulnerabilities to: [security@devsy.sh](mailto:security@devsy.sh)
+Please report vulnerabilities to: [dev@devsy.sh](mailto:dev@devsy.sh)
