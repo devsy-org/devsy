@@ -327,7 +327,7 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 					"- via Online Chat: %s\n- via Email: %s\n",
 				greenBold("https://slack.devsy.sh/"),
 				greenBold("https://devsy.sh/"),
-				greenBold("support@devsy.sh"),
+				greenBold("dev@devsy.sh"),
 			),
 		)
 	}

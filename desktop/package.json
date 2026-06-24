@@ -5,7 +5,7 @@
   "homepage": "https://devsy.sh",
   "author": {
     "name": "Devsy",
-    "email": "support@devsy.sh"
+    "email": "dev@devsy.sh"
   },
   "type": "module",
   "main": "dist/main/index.js",
