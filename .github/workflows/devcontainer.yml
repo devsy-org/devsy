@@ -16,13 +16,13 @@ on:
       runCmd:
         description: "Command to run inside the devcontainer"
         required: false
-        default: test -x "$(command -v pre-commit)"
+        default: test -x "$(command -v prek)"
 
 permissions:
   contents: read
 
 env:
-  DEFAULT_RUN_CMD: test -x "$(command -v pre-commit)"
+  DEFAULT_RUN_CMD: test -x "$(command -v prek)"
 
 jobs:
   build:

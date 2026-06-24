@@ -28,9 +28,7 @@ For non-machine providers, Devsy can automatically kill the container its runnin
 
 ### Machine Providers
 
-For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused.
-Instead, Devsy will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, Devsy will automatically shutdown the machine or even delete it, based on what's cheaper for the given cloud provider.
-Then when the developer wants to resume development, Devsy will restart or recreate the virtual machine.
+For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused. Instead, Devsy will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, Devsy will automatically shutdown the machine or even delete it, based on whichever is more cost-effective for the given cloud provider. Then when the developer wants to resume development, Devsy restarts or recreates the virtual machine.
 
 :::info
 See [agent's development guide](../developing-providers/agent.mdx#machine-providers) to learn more about how inactivity-timeout works on the provider side.

@@ -34,6 +34,8 @@ jobs:
               - '.goreleaser.yml'
               - 'e2e/**'
               - '.github/workflows/pr-ci.yml'
+              - 'hack/licenses/**'
+              - 'THIRD_PARTY_LICENSES.md'
 
   precommit:
     name: Pre-commit
@@ -115,6 +117,21 @@ jobs:
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
+
+  licenses:
+    name: Third-party licenses
+    needs: [changes, precommit, lint]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check license policy and attribution
+        run: go run ./hack/licenses --check
 
   integration-tests-unprivileged:
     name: Test ${{ matrix.label }} on ${{ matrix.runner }}
@@ -609,6 +626,7 @@ jobs:
       - changes
       - precommit
       - lint
+      - licenses
       - build-cli
       - integration-tests-unprivileged
       - integration-tests
@@ -619,6 +637,7 @@ jobs:
           if [[ "${{ needs.changes.result }}" == "failure" ]] || \
              [[ "${{ needs.precommit.result }}" == "failure" ]] || \
              [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.licenses.result }}" == "failure" ]] || \
              [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
              [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then

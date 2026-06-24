@@ -24,34 +24,8 @@ module.exports = {
           id: "getting-started/update",
         },
         {
-          type: "category",
-          label: "Quick Start",
-          items: [
-            {
-              type: "doc",
-              id: "quickstart/browser",
-            },
-            {
-              type: "doc",
-              id: "quickstart/vscode",
-            },
-            {
-              type: "doc",
-              id: "quickstart/jetbrains",
-            },
-            {
-              type: "doc",
-              id: "quickstart/ssh",
-            },
-            {
-              type: "doc",
-              id: "quickstart/vim",
-            },
-            {
-              type: "doc",
-              id: "quickstart/devsy-cli",
-            },
-          ],
+          type: "doc",
+          id: "quickstart/quickstart",
         },
       ],
     },
@@ -236,10 +210,6 @@ module.exports = {
           id: "troubleshooting/linux-troubleshooting",
         },
       ],
-    },
-    {
-      type: "doc",
-      id: "licenses/devsy",
     },
   ],
 };
