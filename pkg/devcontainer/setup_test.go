@@ -36,11 +36,8 @@ func TestShouldChownWorkspace(t *testing.T) {
 			goos: goosWindows, isDockerDriver: true, isPodman: false, want: false,
 		},
 		{
-			// Regression: rootless podman on macOS bind-mounts host files as
-			// root-owned, so a non-root remote user cannot enter the workspace
-			// folder without the chown. Previously skipped because podman uses
-			// the docker driver, producing "fork/exec /usr/bin/bash:
-			// permission denied" on the in-container chdir.
+			// Regression: previously skipped because podman uses the docker
+			// driver, breaking non-root remoteUser on macOS/Windows.
 			name: "podman on macOS chowns despite docker driver",
 			goos: goosDarwin, isDockerDriver: true, isPodman: true, want: true,
 		},

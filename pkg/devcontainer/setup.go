@@ -341,28 +341,21 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 	}
 }
 
-// shouldChownWorkspace decides whether the agent should chown the workspace
+// shouldChownWorkspace reports whether the agent should chown the workspace
 // folder to the remote user during setup.
 //
-// Docker Desktop's macOS/Windows file sharing already presents bind mounts
-// owned by the container user, so a chown is unnecessary there; the flag is
-// therefore only added on Linux hosts for the docker driver. Podman is the
-// exception: even though it runs through the docker driver, its `podman
-// machine` bind mounts surface host files as root-owned inside the container,
-// so a non-root remote user cannot enter the workspace folder unless we chown
-// it. Request the chown for podman regardless of host OS.
-//
-// Note: the chown writes through the bind mount to the host inode, so it also
-// changes ownership of the host-side workspace contents (cf. loft-sh/devpod
-// #1879). The agent only chowns when a non-root remote user is resolved, so
-// root-user containers are unaffected.
+// Docker Desktop presents macOS/Windows bind mounts already owned by the
+// container user, so the chown is only needed on Linux there. Podman is the
+// exception: its `podman machine` bind mounts surface host files as root-owned
+// inside the container, so a non-root remote user can't enter the workspace
+// folder without it — hence chown for podman on any host OS. The chown writes
+// through to the host inode (cf. loft-sh/devpod#1879).
 func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
 	return goos == goosLinux || !isDockerDriver || isPodman
 }
 
-// isPodmanRuntime reports whether the workspace's docker driver is backed by
-// the Podman runtime, as configured by the built-in podman provider
-// (agent.docker.runtime: podman).
+// isPodmanRuntime reports whether the docker driver is backed by the Podman
+// runtime (agent.docker.runtime: podman).
 func (r *runner) isPodmanRuntime() bool {
 	return strings.EqualFold(r.WorkspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
