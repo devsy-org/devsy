@@ -342,14 +342,9 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 }
 
 // shouldChownWorkspace reports whether the agent should chown the workspace
-// folder to the remote user during setup.
-//
-// Docker Desktop presents macOS/Windows bind mounts already owned by the
-// container user, so the chown is only needed on Linux there. Podman is the
-// exception: its `podman machine` bind mounts surface host files as root-owned
-// inside the container, so a non-root remote user can't enter the workspace
-// folder without it — hence chown for podman on any host OS. The chown writes
-// through to the host inode (cf. loft-sh/devpod#1879).
+// folder to the remote user during setup. Podman needs it on any host OS:
+// its `podman machine` bind mounts are root-owned inside the container, so a
+// non-root remote user can't enter the workspace folder otherwise.
 func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
 	return goos == goosLinux || !isDockerDriver || isPodman
 }
