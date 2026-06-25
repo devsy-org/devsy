@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 )
@@ -20,19 +21,19 @@ func TestShouldChownWorkspace(t *testing.T) {
 	}{
 		{
 			name: "linux docker host always chowns",
-			goos: "linux", isDockerDriver: true, isPodman: false, want: true,
+			goos: goosLinux, isDockerDriver: true, isPodman: false, want: true,
 		},
 		{
 			name: "non-docker driver always chowns (stream mounts)",
-			goos: "darwin", isDockerDriver: false, isPodman: false, want: true,
+			goos: goosDarwin, isDockerDriver: false, isPodman: false, want: true,
 		},
 		{
 			name: "docker desktop on macOS skips chown",
-			goos: "darwin", isDockerDriver: true, isPodman: false, want: false,
+			goos: goosDarwin, isDockerDriver: true, isPodman: false, want: false,
 		},
 		{
 			name: "docker desktop on windows skips chown",
-			goos: "windows", isDockerDriver: true, isPodman: false, want: false,
+			goos: goosWindows, isDockerDriver: true, isPodman: false, want: false,
 		},
 		{
 			// Regression: rootless podman on macOS bind-mounts host files as
@@ -41,15 +42,15 @@ func TestShouldChownWorkspace(t *testing.T) {
 			// the docker driver, producing "fork/exec /usr/bin/bash:
 			// permission denied" on the in-container chdir.
 			name: "podman on macOS chowns despite docker driver",
-			goos: "darwin", isDockerDriver: true, isPodman: true, want: true,
+			goos: goosDarwin, isDockerDriver: true, isPodman: true, want: true,
 		},
 		{
 			name: "podman on windows chowns despite docker driver",
-			goos: "windows", isDockerDriver: true, isPodman: true, want: true,
+			goos: goosWindows, isDockerDriver: true, isPodman: true, want: true,
 		},
 		{
 			name: "podman on linux chowns",
-			goos: "linux", isDockerDriver: true, isPodman: true, want: true,
+			goos: goosLinux, isDockerDriver: true, isPodman: true, want: true,
 		},
 	}
 	for _, c := range cases {
@@ -69,11 +70,11 @@ func TestRunnerIsPodmanRuntime(t *testing.T) {
 		runtime string
 		want    bool
 	}{
-		{name: "podman", runtime: "podman", want: true},
+		{name: "podman", runtime: string(docker.RuntimePodman), want: true},
 		{name: "podman mixed case", runtime: "Podman", want: true},
-		{name: "docker", runtime: "docker", want: false},
+		{name: "docker runtime", runtime: string(docker.RuntimeDocker), want: false},
 		{name: "empty defaults to non-podman", runtime: "", want: false},
-		{name: "nerdctl", runtime: "nerdctl", want: false},
+		{name: "nerdctl", runtime: string(docker.RuntimeNerdctl), want: false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

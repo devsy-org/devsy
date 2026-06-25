@@ -32,6 +32,10 @@ const (
 	stringTrue        = "true"
 	stringFalse       = "false"
 	containerRootUser = "root"
+
+	goosLinux   = "linux"
+	goosDarwin  = "darwin"
+	goosWindows = "windows"
 )
 
 // resolvePullFromInsideContainer: explicit override > crane+git > "".
@@ -353,7 +357,7 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 // #1879). The agent only chowns when a non-root remote user is resolved, so
 // root-user containers are unaffected.
 func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
-	return goos == "linux" || !isDockerDriver || isPodman
+	return goos == goosLinux || !isDockerDriver || isPodman
 }
 
 // isPodmanRuntime reports whether the workspace's docker driver is backed by
