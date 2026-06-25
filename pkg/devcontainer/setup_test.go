@@ -10,6 +10,87 @@ import (
 
 func boolPtr(v bool) *bool { return &v }
 
+func TestShouldChownWorkspace(t *testing.T) {
+	cases := []struct {
+		name           string
+		goos           string
+		isDockerDriver bool
+		isPodman       bool
+		want           bool
+	}{
+		{
+			name: "linux docker host always chowns",
+			goos: "linux", isDockerDriver: true, isPodman: false, want: true,
+		},
+		{
+			name: "non-docker driver always chowns (stream mounts)",
+			goos: "darwin", isDockerDriver: false, isPodman: false, want: true,
+		},
+		{
+			name: "docker desktop on macOS skips chown",
+			goos: "darwin", isDockerDriver: true, isPodman: false, want: false,
+		},
+		{
+			name: "docker desktop on windows skips chown",
+			goos: "windows", isDockerDriver: true, isPodman: false, want: false,
+		},
+		{
+			// Regression: rootless podman on macOS bind-mounts host files as
+			// root-owned, so a non-root remote user cannot enter the workspace
+			// folder without the chown. Previously skipped because podman uses
+			// the docker driver, producing "fork/exec /usr/bin/bash:
+			// permission denied" on the in-container chdir.
+			name: "podman on macOS chowns despite docker driver",
+			goos: "darwin", isDockerDriver: true, isPodman: true, want: true,
+		},
+		{
+			name: "podman on windows chowns despite docker driver",
+			goos: "windows", isDockerDriver: true, isPodman: true, want: true,
+		},
+		{
+			name: "podman on linux chowns",
+			goos: "linux", isDockerDriver: true, isPodman: true, want: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman)
+			if got != c.want {
+				t.Errorf("shouldChownWorkspace(%q, %v, %v) = %v, want %v",
+					c.goos, c.isDockerDriver, c.isPodman, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRunnerIsPodmanRuntime(t *testing.T) {
+	cases := []struct {
+		name    string
+		runtime string
+		want    bool
+	}{
+		{name: "podman", runtime: "podman", want: true},
+		{name: "podman mixed case", runtime: "Podman", want: true},
+		{name: "docker", runtime: "docker", want: false},
+		{name: "empty defaults to non-podman", runtime: "", want: false},
+		{name: "nerdctl", runtime: "nerdctl", want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := &runner{
+				WorkspaceConfig: &provider2.AgentWorkspaceInfo{
+					Agent: provider2.ProviderAgentConfig{
+						Docker: provider2.ProviderDockerDriverConfig{Runtime: c.runtime},
+					},
+				},
+			}
+			if got := r.isPodmanRuntime(); got != c.want {
+				t.Errorf("isPodmanRuntime() with runtime=%q = %v, want %v", c.runtime, got, c.want)
+			}
+		})
+	}
+}
+
 func TestResolvePullFromInsideContainer(t *testing.T) {
 	cases := []struct {
 		name string

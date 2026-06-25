@@ -47,6 +47,47 @@ var _ = ginkgo.Describe(
 					},
 					ginkgo.SpecTimeout(framework.TimeoutShort()),
 				)
+
+				// Regression: rootless podman bind-mounts the host workspace
+				// folder as root-owned inside the container. A non-root
+				// remoteUser could not chdir into it, so the in-container SSH
+				// server's `fork/exec /usr/bin/bash` failed with "permission
+				// denied" and `devsy ssh` (and VS Code Remote-SSH) broke. The
+				// agent must chown the workspace to the remote user even though
+				// podman runs through the docker driver.
+				ginkgo.It(
+					"should ssh into a workspace with a non-root remoteUser",
+					func(ctx context.Context) {
+						tempDir, err := setupWorkspace(
+							"tests/up/testdata/docker-nonroot-user",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
+
+						err = f.DevsyUp(ctx, tempDir)
+						framework.ExpectNoError(err)
+
+						// A non-PTY command exec is exactly the path that failed:
+						// it runs `bash -c <cmd>` with the workspace folder as the
+						// working directory, as the non-root remote user.
+						whoami, err := f.DevsySSH(ctx, tempDir, "whoami")
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(whoami)).To(gomega.Equal("devsyuser"))
+
+						// The workspace folder must be owned by the remote user.
+						// This is the actual fix: without the chown the folder
+						// stays root-owned (rootless podman bind mount), and the
+						// remote user cannot enter it. Asserting ownership rather
+						// than mere chdir success avoids a false pass when the
+						// bind source happens to be world-searchable.
+						owner, err := f.DevsySSH(ctx, tempDir, `stat -c %U "$PWD"`)
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(owner)).To(gomega.Equal("devsyuser"),
+							"workspace folder should be chowned to the remote user")
+					},
+					ginkgo.SpecTimeout(framework.TimeoutLong()),
+				)
 			})
 
 			ginkgo.Context("build", func() {

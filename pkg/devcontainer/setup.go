@@ -20,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -331,9 +332,35 @@ func (r *runner) addSetupFlags(args *[]string) {
 }
 
 func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
-	if runtime.GOOS == "linux" || !isDockerDriver {
+	if shouldChownWorkspace(runtime.GOOS, isDockerDriver, r.isPodmanRuntime()) {
 		*args = append(*args, "--chown-workspace")
 	}
+}
+
+// shouldChownWorkspace decides whether the agent should chown the workspace
+// folder to the remote user during setup.
+//
+// Docker Desktop's macOS/Windows file sharing already presents bind mounts
+// owned by the container user, so a chown is unnecessary there; the flag is
+// therefore only added on Linux hosts for the docker driver. Podman is the
+// exception: even though it runs through the docker driver, its `podman
+// machine` bind mounts surface host files as root-owned inside the container,
+// so a non-root remote user cannot enter the workspace folder unless we chown
+// it. Request the chown for podman regardless of host OS.
+//
+// Note: the chown writes through the bind mount to the host inode, so it also
+// changes ownership of the host-side workspace contents (cf. loft-sh/devpod
+// #1879). The agent only chowns when a non-root remote user is resolved, so
+// root-user containers are unaffected.
+func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
+	return goos == "linux" || !isDockerDriver || isPodman
+}
+
+// isPodmanRuntime reports whether the workspace's docker driver is backed by
+// the Podman runtime, as configured by the built-in podman provider
+// (agent.docker.runtime: podman).
+func (r *runner) isPodmanRuntime() bool {
+	return strings.EqualFold(r.WorkspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
 func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {

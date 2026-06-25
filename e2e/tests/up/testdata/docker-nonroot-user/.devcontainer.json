@@ -1,0 +1,7 @@
+{
+  "name": "Non-root user",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "devsyuser"
+}
