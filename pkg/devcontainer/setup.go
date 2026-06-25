@@ -20,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -31,6 +32,10 @@ const (
 	stringTrue        = "true"
 	stringFalse       = "false"
 	containerRootUser = "root"
+
+	goosLinux   = "linux"
+	goosDarwin  = "darwin"
+	goosWindows = "windows"
 )
 
 // resolvePullFromInsideContainer: explicit override > crane+git > "".
@@ -331,9 +336,23 @@ func (r *runner) addSetupFlags(args *[]string) {
 }
 
 func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
-	if runtime.GOOS == "linux" || !isDockerDriver {
+	if shouldChownWorkspace(runtime.GOOS, isDockerDriver, r.isPodmanRuntime()) {
 		*args = append(*args, "--chown-workspace")
 	}
+}
+
+// shouldChownWorkspace reports whether the agent should chown the workspace
+// folder to the remote user during setup. Podman needs it on any host OS:
+// its `podman machine` bind mounts are root-owned inside the container, so a
+// non-root remote user can't enter the workspace folder otherwise.
+func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
+	return goos == goosLinux || !isDockerDriver || isPodman
+}
+
+// isPodmanRuntime reports whether the docker driver is backed by the Podman
+// runtime (agent.docker.runtime: podman).
+func (r *runner) isPodmanRuntime() bool {
+	return strings.EqualFold(r.WorkspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
 func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {

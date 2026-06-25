@@ -47,6 +47,38 @@ var _ = ginkgo.Describe(
 					},
 					ginkgo.SpecTimeout(framework.TimeoutShort()),
 				)
+
+				// Regression: rootless podman bind-mounts the workspace folder
+				// root-owned, so a non-root remoteUser couldn't chdir into it
+				// and the in-container SSH server failed with "fork/exec
+				// /usr/bin/bash: permission denied".
+				ginkgo.It(
+					"should ssh into a workspace with a non-root remoteUser",
+					func(ctx context.Context) {
+						tempDir, err := setupWorkspace(
+							"tests/up/testdata/docker-nonroot-user",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
+
+						err = f.DevsyUp(ctx, tempDir)
+						framework.ExpectNoError(err)
+
+						whoami, err := f.DevsySSH(ctx, tempDir, "whoami")
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(whoami)).To(gomega.Equal("devsyuser"))
+
+						// Assert ownership, not just chdir success: a
+						// world-searchable bind source would let chdir pass even
+						// without the chown.
+						owner, err := f.DevsySSH(ctx, tempDir, `stat -c %U "$PWD"`)
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(owner)).To(gomega.Equal("devsyuser"),
+							"workspace folder should be chowned to the remote user")
+					},
+					ginkgo.SpecTimeout(framework.TimeoutLong()),
+				)
 			})
 
 			ginkgo.Context("build", func() {

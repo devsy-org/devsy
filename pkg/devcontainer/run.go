@@ -350,7 +350,7 @@ func mountSetConsistency(mount, value string) string {
 }
 
 func needsDefaultConsistency() bool {
-	return runtime.GOOS != "linux"
+	return runtime.GOOS != goosLinux
 }
 
 func getWorkspace(
