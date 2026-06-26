@@ -62,6 +62,7 @@ const IDE_OPTIONS = [
   { value: "none", label: "None" },
   { value: "vscode", label: "VS Code" },
   { value: "openvscode", label: "VS Code Browser" },
+  { value: "vscode-web", label: "VS Code Web" },
   { value: "code-server", label: "code-server" },
   { value: "cursor", label: "Cursor" },
   { value: "zed", label: "Zed" },

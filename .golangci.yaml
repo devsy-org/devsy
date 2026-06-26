@@ -37,6 +37,14 @@ linters:
           - gosec
         text: "G101"
         path: "pkg/telemetry/analytics/client.go"
+      # Per-IDE async commands and setup functions are intentionally parallel
+      # (one package per browser IDE), so dupl across them is by design.
+      - linters:
+          - dupl
+        path: "cmd/internal/agentcontainer/(codeserver|vscodeweb|openvscode)_async.go"
+      - linters:
+          - dupl
+        path: "cmd/internal/agentcontainer/setup.go"
       - path: "hack/"
         linters:
           - forbidigo

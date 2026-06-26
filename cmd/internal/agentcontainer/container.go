@@ -25,6 +25,7 @@ func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	containerCmd.AddCommand(NewVSCodeAsyncCmd())
 	containerCmd.AddCommand(NewOpenVSCodeAsyncCmd())
 	containerCmd.AddCommand(NewCodeServerAsyncCmd())
+	containerCmd.AddCommand(NewVSCodeWebAsyncCmd())
 	containerCmd.AddCommand(NewCredentialsServerCmd(flags))
 	containerCmd.AddCommand(NewSetupDevsyPlatformAccessCmd(flags))
 	containerCmd.AddCommand(NewSSHServerCmd(flags))
