@@ -31,15 +31,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/git"
-	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
 	"github.com/devsy-org/devsy/pkg/ide/jupyter"
 	"github.com/devsy-org/devsy/pkg/ide/marimo"
-	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
-	"github.com/devsy-org/devsy/pkg/ide/vscodeweb"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ts"
@@ -592,12 +589,8 @@ func (cmd *SetupContainerCmd) installIDE(
 		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity)
 	case string(config2.IDEBob):
 		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob)
-	case string(config2.IDEOpenVSCode):
-		return cmd.setupOpenVSCode(setupInfo, ide.Options)
-	case string(config2.IDECodeServer):
-		return cmd.setupCodeServer(setupInfo, ide.Options)
-	case string(config2.IDEVSCodeWeb):
-		return cmd.setupVSCodeWeb(setupInfo, ide.Options)
+	case string(config2.IDEOpenVSCode), string(config2.IDECodeServer), string(config2.IDEVSCodeWeb):
+		return cmd.setupBrowserIDE(ide.Name, setupInfo, ide.Options)
 	case string(config2.IDEGoland):
 		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options).
 			Install(setupInfo)
@@ -713,75 +706,20 @@ func (cmd *SetupContainerCmd) setupVSCode(
 		})
 }
 
-func (cmd *SetupContainerCmd) setupOpenVSCode(
+// setupBrowserIDE installs and starts any of the browser-based IDEs
+// (openvscode, code-server, VS Code Web). The per-IDE differences live in the
+// browserIDEs registry, so the install/extensions/start flow is written once.
+func (cmd *SetupContainerCmd) setupBrowserIDE(
+	ideName string,
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
 ) error {
-	log.Debugf("setup openvscode")
-	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
-	settings := ""
-	if len(vsCodeConfiguration.Settings) > 0 {
-		out, err := json.Marshal(vsCodeConfiguration.Settings)
-		if err != nil {
-			return err
-		}
-
-		settings = string(out)
+	b, ok := browserIDEByName(ideName)
+	if !ok {
+		return fmt.Errorf("unknown browser IDE %q", ideName)
 	}
+	log.Debugf("setup %s", b.name)
 
-	user := config.GetRemoteUser(setupInfo)
-	openVSCode := openvscode.NewOpenVSCodeServer(
-		vsCodeConfiguration.Extensions,
-		settings,
-		user,
-		"0.0.0.0",
-		strconv.Itoa(openvscode.DefaultVSCodePort),
-		ideOptions,
-	)
-
-	// install open vscode
-	err := openVSCode.Install()
-	if err != nil {
-		return err
-	}
-
-	// install extensions in background
-	if len(vsCodeConfiguration.Extensions) > 0 {
-		err = command.StartBackgroundOnce("openvscode-async", func() (*exec.Cmd, error) {
-			log.Infof(
-				"installing extensions in the background: %s",
-				strings.Join(vsCodeConfiguration.Extensions, ","),
-			)
-			binaryPath, err := os.Executable()
-			if err != nil {
-				return nil, err
-			}
-
-			return exec.Command(
-				binaryPath,
-				cmdInternal,
-				cmdAgent,
-				cmdContainer,
-				"openvscode-async",
-				"--setup-info",
-				cmd.SetupInfo,
-			), nil
-		})
-		if err != nil {
-			return fmt.Errorf("install extensions: %w", err)
-		}
-	}
-
-	// start the server in the background
-	return openVSCode.Start()
-}
-
-//nolint:dupl // mirrored by setupVSCodeWeb by design (one package per browser IDE).
-func (cmd *SetupContainerCmd) setupCodeServer(
-	setupInfo *config.Result,
-	ideOptions map[string]config2.OptionValue,
-) error {
-	log.Debugf("setup code-server")
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
 	settings := ""
 	if len(vsCodeConfiguration.Settings) > 0 {
@@ -792,109 +730,54 @@ func (cmd *SetupContainerCmd) setupCodeServer(
 		settings = string(out)
 	}
 
-	user := config.GetRemoteUser(setupInfo)
-	cs := codeserver.NewCodeServer(codeserver.ServerOptions{
-		Extensions: vsCodeConfiguration.Extensions,
-		Settings:   settings,
-		UserName:   user,
-		Host:       "0.0.0.0",
-		Port:       strconv.Itoa(codeserver.DefaultCodeServerPort),
-		Values:     ideOptions,
+	server := b.newServer(browserServerSpec{
+		extensions: vsCodeConfiguration.Extensions,
+		settings:   settings,
+		userName:   config.GetRemoteUser(setupInfo),
+		host:       "0.0.0.0",
+		port:       strconv.Itoa(b.defaultPort),
+		values:     ideOptions,
 	})
 
-	if err := cs.Install(); err != nil {
+	if err := server.Install(); err != nil {
 		return err
 	}
 
 	if len(vsCodeConfiguration.Extensions) > 0 {
-		err := command.StartBackgroundOnce("code-server-async", func() (*exec.Cmd, error) {
-			log.Infof(
-				"installing extensions in the background: %s",
-				strings.Join(vsCodeConfiguration.Extensions, ","),
-			)
-			binaryPath, err := os.Executable()
-			if err != nil {
-				return nil, err
-			}
-			//nolint:gosec // binaryPath is from os.Executable(), not user input
-			return exec.Command(
-				binaryPath,
-				cmdInternal,
-				cmdAgent,
-				cmdContainer,
-				"code-server-async",
-				"--setup-info",
-				cmd.SetupInfo,
-			), nil
-		})
-		if err != nil {
+		if err := cmd.startBrowserExtensionsInstall(b, vsCodeConfiguration.Extensions); err != nil {
 			return fmt.Errorf("install extensions: %w", err)
 		}
 	}
 
-	return cs.Start()
+	return server.Start()
 }
 
-// setupVSCodeWeb intentionally mirrors setupCodeServer; the per-IDE browser
-// setup functions are parallel by design (one package per browser IDE).
-//
-//nolint:dupl // mirrors setupCodeServer by design.
-func (cmd *SetupContainerCmd) setupVSCodeWeb(
-	setupInfo *config.Result,
-	ideOptions map[string]config2.OptionValue,
+// startBrowserExtensionsInstall launches the IDE's `<ide>-async` command as a
+// background process so a slow marketplace fetch never blocks setup.
+func (cmd *SetupContainerCmd) startBrowserExtensionsInstall(
+	b browserIDE,
+	extensions []string,
 ) error {
-	log.Debugf("setup vscode-web")
-	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
-	settings := ""
-	if len(vsCodeConfiguration.Settings) > 0 {
-		out, err := json.Marshal(vsCodeConfiguration.Settings)
+	return command.StartBackgroundOnce(b.asyncCmd, func() (*exec.Cmd, error) {
+		log.Infof(
+			"installing extensions in the background: %s",
+			strings.Join(extensions, ","),
+		)
+		binaryPath, err := os.Executable()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		settings = string(out)
-	}
-
-	user := config.GetRemoteUser(setupInfo)
-	vw := vscodeweb.NewVSCodeWeb(vscodeweb.ServerOptions{
-		Extensions: vsCodeConfiguration.Extensions,
-		Settings:   settings,
-		UserName:   user,
-		Host:       "0.0.0.0",
-		Port:       strconv.Itoa(vscodeweb.DefaultVSCodeWebPort),
-		Values:     ideOptions,
+		//nolint:gosec // binaryPath is from os.Executable(), not user input
+		return exec.Command(
+			binaryPath,
+			cmdInternal,
+			cmdAgent,
+			cmdContainer,
+			b.asyncCmd,
+			"--setup-info",
+			cmd.SetupInfo,
+		), nil
 	})
-
-	if err := vw.Install(); err != nil {
-		return err
-	}
-
-	if len(vsCodeConfiguration.Extensions) > 0 {
-		err := command.StartBackgroundOnce("vscode-web-async", func() (*exec.Cmd, error) {
-			log.Infof(
-				"installing extensions in the background: %s",
-				strings.Join(vsCodeConfiguration.Extensions, ","),
-			)
-			binaryPath, err := os.Executable()
-			if err != nil {
-				return nil, err
-			}
-			//nolint:gosec // binaryPath is from os.Executable(), not user input
-			return exec.Command(
-				binaryPath,
-				cmdInternal,
-				cmdAgent,
-				cmdContainer,
-				"vscode-web-async",
-				"--setup-info",
-				cmd.SetupInfo,
-			), nil
-		})
-		if err != nil {
-			return fmt.Errorf("install extensions: %w", err)
-		}
-	}
-
-	return vw.Start()
 }
 
 func configureSystemGitCredentials(
