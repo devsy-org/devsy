@@ -776,6 +776,7 @@ func (cmd *SetupContainerCmd) setupOpenVSCode(
 	return openVSCode.Start()
 }
 
+//nolint:dupl // mirrored by setupVSCodeWeb by design (one package per browser IDE).
 func (cmd *SetupContainerCmd) setupCodeServer(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,
@@ -834,6 +835,10 @@ func (cmd *SetupContainerCmd) setupCodeServer(
 	return cs.Start()
 }
 
+// setupVSCodeWeb intentionally mirrors setupCodeServer; the per-IDE browser
+// setup functions are parallel by design (one package per browser IDE).
+//
+//nolint:dupl // mirrors setupCodeServer by design.
 func (cmd *SetupContainerCmd) setupVSCodeWeb(
 	setupInfo *config.Result,
 	ideOptions map[string]config2.OptionValue,

@@ -223,7 +223,7 @@ func (v *VSCodeWeb) installExtensions() error {
 	binary := binaryPath(location)
 	var failed []string
 	for _, extension := range v.extensions {
-		log.Info("Install extension " + extension)
+		log.Infof("Install extension %q", extension)
 		runCommand := fmt.Sprintf(
 			"%s serve-web --server-data-dir %q --install-extension %q",
 			binary, serverDataDir(location), extension,
@@ -232,10 +232,10 @@ func (v *VSCodeWeb) installExtensions() error {
 		cmd.Stdout = out
 		cmd.Stderr = out
 		if err := cmd.Run(); err != nil {
-			log.Errorf("failed installing extension: extension=%s, error=%v", extension, err)
+			log.Errorf("failed installing extension: extension=%q, error=%v", extension, err)
 			failed = append(failed, extension)
 		} else {
-			log.Infof("installed extension: extension=%s", extension)
+			log.Infof("installed extension: extension=%q", extension)
 		}
 	}
 

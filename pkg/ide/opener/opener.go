@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -420,7 +421,7 @@ func openVSCodeBrowser(
 		Label:   LabelVSCodeBrowser,
 		LogName: "vscode",
 		TargetURLFn: func(port int, folder string) string {
-			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
 		},
 	})
 }
@@ -439,7 +440,7 @@ func openCodeServerBrowser(
 		Label:   LabelCodeServer,
 		LogName: "code-server",
 		TargetURLFn: func(port int, folder string) string {
-			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
 		},
 	})
 }
@@ -458,7 +459,7 @@ func openVSCodeWebBrowser(
 		Label:   LabelVSCodeWeb,
 		LogName: "vscode-web",
 		TargetURLFn: func(port int, folder string) string {
-			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
 		},
 	})
 }

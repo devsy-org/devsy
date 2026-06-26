@@ -42,9 +42,6 @@ linters:
       - linters:
           - dupl
         path: "cmd/internal/agentcontainer/(codeserver|vscodeweb|openvscode)_async.go"
-      - linters:
-          - dupl
-        path: "cmd/internal/agentcontainer/setup.go"
       - path: "hack/"
         linters:
           - forbidigo
