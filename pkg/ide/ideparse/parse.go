@@ -72,7 +72,7 @@ var AllowedIDEs = []AllowedIDE{
 		Name:        config.IDEVSCodeWeb,
 		DisplayName: "VS Code Web",
 		Options:     vscodeweb.Options,
-		Icon:        config.WebsiteAssetsURL + "/vscode.svg",
+		Icon:        config.WebsiteAssetsURL + "/vscode-web.svg",
 		Group:       config.IDEGroupPrimary,
 	},
 	{
