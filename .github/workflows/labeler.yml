@@ -14,7 +14,7 @@ jobs:
       issues: write
     runs-on: ubuntu-latest
     steps:
-      - uses: skevetter/pr-size-labeler@v1
+      - uses: skevetter/pr-size-labeler@a5723b449a38e6fb620a8ab0fd3cba0ea9794e0b # v1
         with:
           xs_label: "size/xs"
           xs_max_size: "10"

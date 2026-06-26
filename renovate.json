@@ -3,7 +3,7 @@
   "automerge": false,
   "automergeType": "pr",
   "automergeStrategy": "squash",
-  "extends": ["config:recommended"],
+  "extends": ["config:best-practices", "helpers:pinGitHubActionDigests"],
   "pre-commit": {
     "enabled": true
   },

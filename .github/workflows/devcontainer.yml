@@ -29,12 +29,12 @@ jobs:
     name: Build and Run Devcontainer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "latest"
 
-      - uses: devcontainers/ci@v0.3
+      - uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
         with:
           runCmd: ${{ inputs.runCmd || env.DEFAULT_RUN_CMD }}

@@ -20,9 +20,9 @@ jobs:
           - runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
 
@@ -36,7 +36,7 @@ jobs:
           fi
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -45,7 +45,7 @@ jobs:
           DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
           DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
@@ -81,15 +81,15 @@ jobs:
             builder-args: --win
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
 
@@ -104,7 +104,7 @@ jobs:
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: devsy-*
           path: ${{ runner.temp }}/devsy-bin/
@@ -145,7 +145,7 @@ jobs:
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           echo "GYP_MSVS_OVERRIDE_PATH=$vsPath" >> $env:GITHUB_ENV
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
 
@@ -220,7 +220,7 @@ jobs:
             --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
       - name: upload desktop artifacts to release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -243,7 +243,7 @@ jobs:
           go run hack/rewrite_manifest_urls/main.go desktop/release/ "$REPO" "$TAG"
 
       - name: upload update metadata artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: update-metadata-${{ matrix.name }}
           path: |
@@ -252,7 +252,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: upload cli assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         if: matrix.name == 'linux-x64'
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
@@ -262,7 +262,7 @@ jobs:
 
       - name: upload desktop linux artifact for flatpak
         if: matrix.name == 'linux-x64'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: devsy-flatpak
           path: desktop/release/*.deb
@@ -274,16 +274,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
 
       - name: download update metadata artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: update-metadata-*
           path: metadata/
@@ -309,7 +309,7 @@ jobs:
           find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
 
       - name: deploy to Netlify (dl.devsy.sh)
-        uses: nwtgck/actions-netlify@v3
+        uses: nwtgck/actions-netlify@4cbaf4c08f1a7bfa537d6113472ef4424e4eb654 # v3
         with:
           publish-dir: ./publish-dir
           production-deploy: true
@@ -327,10 +327,10 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: download desktop linux artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: devsy-flatpak
           path: desktop/flatpak/
@@ -347,7 +347,7 @@ jobs:
           fi
 
       - name: build flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6
         with:
           bundle: Devsy.flatpak
           manifest-path: desktop/flatpak/sh.devsy.app.yml
@@ -355,7 +355,7 @@ jobs:
           upload-artifact: true
 
       - name: upload flatpak bundle
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -370,7 +370,7 @@ jobs:
     if: github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           prerelease: true
