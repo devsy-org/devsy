@@ -75,8 +75,8 @@ function setUIScale(value: UIScale) {
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
   { value: "vscode", label: "VS Code" },
-  { value: "openvscode", label: "VS Code Browser" },
-  { value: "vscode-web", label: "VS Code Web" },
+  { value: "openvscode", label: "OpenVSCode Server" },
+  { value: "vscode-web", label: "VS Code for the Web" },
   { value: "cursor", label: "Cursor" },
   { value: "zed", label: "Zed" },
   { value: "codium", label: "VSCodium" },

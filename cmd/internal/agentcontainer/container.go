@@ -23,9 +23,9 @@ func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	containerCmd.AddCommand(NewPostAttachCmd(flags))
 	containerCmd.AddCommand(NewDaemonCmd())
 	containerCmd.AddCommand(NewVSCodeAsyncCmd())
-	containerCmd.AddCommand(NewOpenVSCodeAsyncCmd())
-	containerCmd.AddCommand(NewCodeServerAsyncCmd())
-	containerCmd.AddCommand(NewVSCodeWebAsyncCmd())
+	for _, b := range browserIDEs {
+		containerCmd.AddCommand(newBrowserAsyncCmd(b))
+	}
 	containerCmd.AddCommand(NewCredentialsServerCmd(flags))
 	containerCmd.AddCommand(NewSetupDevsyPlatformAccessCmd(flags))
 	containerCmd.AddCommand(NewSSHServerCmd(flags))
