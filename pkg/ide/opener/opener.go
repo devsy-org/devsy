@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/ide/vscodeweb"
 	"github.com/devsy-org/devsy/pkg/ide/zed"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	open2 "github.com/devsy-org/devsy/pkg/open"
@@ -97,6 +99,8 @@ func browserIDEOpener(
 		return openVSCodeBrowser, true
 	case string(config.IDECodeServer):
 		return openCodeServerBrowser, true
+	case string(config.IDEVSCodeWeb):
+		return openVSCodeWebBrowser, true
 	case string(config.IDEJupyterNotebook):
 		return openJupyterBrowser, true
 	case string(config.IDEMarimo):
@@ -417,7 +421,7 @@ func openVSCodeBrowser(
 		Label:   LabelVSCodeBrowser,
 		LogName: "vscode",
 		TargetURLFn: func(port int, folder string) string {
-			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
 		},
 	})
 }
@@ -436,7 +440,26 @@ func openCodeServerBrowser(
 		Label:   LabelCodeServer,
 		LogName: "code-server",
 		TargetURLFn: func(port int, folder string) string {
-			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, folder)
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
+		},
+	})
+}
+
+func openVSCodeWebBrowser(
+	ctx context.Context,
+	ideOptions map[string]config.OptionValue,
+	params IDEParams,
+) (string, error) {
+	return openBrowserIDE(ctx, params, browserIDESpec{
+		BindAddrOption: vscodeweb.Options.GetValue(ideOptions, vscodeweb.BindAddressOption),
+		DefaultPort:    vscodeweb.DefaultVSCodeWebPort,
+		ForwardPorts: vscodeweb.Options.GetValue(
+			ideOptions, vscodeweb.ForwardPortsOption,
+		) == config.BoolTrue,
+		Label:   LabelVSCodeWeb,
+		LogName: "vscode-web",
+		TargetURLFn: func(port int, folder string) string {
+			return fmt.Sprintf("http://localhost:%d/?folder=%s", port, url.QueryEscape(folder))
 		},
 	})
 }

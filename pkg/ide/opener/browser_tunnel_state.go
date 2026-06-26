@@ -34,6 +34,10 @@ const LabelVSCodeBrowser = "vscode"
 // (coder.com) browser-IDE tunnel.
 const LabelCodeServer = "code-server"
 
+// LabelVSCodeWeb is the TunnelState.Label value used for the official VS Code
+// (code serve-web) browser-IDE tunnel.
+const LabelVSCodeWeb = "vscode-web"
+
 // TunnelState describes a running browser tunnel for a workspace.
 //
 // CreateTime is the helper process's creation timestamp in milliseconds

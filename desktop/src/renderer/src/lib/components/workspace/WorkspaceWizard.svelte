@@ -82,6 +82,7 @@ const IDE_GROUPS = [
       { value: "none", label: "None", iconName: "none" },
       { value: "vscode", label: "VS Code", iconName: "vscode" },
       { value: "openvscode", label: "VS Code Browser", iconName: "vscodebrowser" },
+      { value: "vscode-web", label: "VS Code Web", iconName: "vscode-web" },
       { value: "code-server", label: "code-server", iconName: "code-server" },
       { value: "cursor", label: "Cursor", iconName: "cursor" },
       { value: "zed", label: "Zed", iconName: "zed" },

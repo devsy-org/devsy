@@ -43,6 +43,9 @@ var _ = ginkgo.Describe("devsy ide test suite", ginkgo.Label("ide"), ginkgo.Orde
 			err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=jupyternotebook")
 			framework.ExpectNoError(err)
 
+			err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=vscode-web")
+			framework.ExpectNoError(err)
+
 			// TODO: Fix broken IDE
 			// err = f.DevsyUpWithIDE(ctx, tempDir, "--ide-launch=skip", "--ide=fleet")
 			// framework.ExpectNoError(err)

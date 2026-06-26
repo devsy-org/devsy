@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/rstudio"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
+	"github.com/devsy-org/devsy/pkg/ide/vscodeweb"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -65,6 +66,13 @@ var AllowedIDEs = []AllowedIDE{
 		DisplayName: "code-server",
 		Options:     codeserver.Options,
 		Icon:        "https://raw.githubusercontent.com/coder/code-server/main/src/browser/media/favicon.svg",
+		Group:       config.IDEGroupPrimary,
+	},
+	{
+		Name:        config.IDEVSCodeWeb,
+		DisplayName: "VS Code Web",
+		Options:     vscodeweb.Options,
+		Icon:        config.WebsiteAssetsURL + "/vscode-web.svg",
 		Group:       config.IDEGroupPrimary,
 	},
 	{

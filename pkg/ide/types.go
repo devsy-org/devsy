@@ -75,6 +75,8 @@ func ReusesAuthSock(ide string) bool {
 		return true
 	case string(config.IDECodeServer):
 		return true
+	case string(config.IDEVSCodeWeb):
+		return true
 	case string(config.IDEJupyterNotebook):
 		return true
 	case string(config.IDEMarimo):
