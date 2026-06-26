@@ -113,32 +113,37 @@ func NewVSCodeWeb(opts ServerOptions) *VSCodeWeb {
 }
 
 // Install downloads the VS Code CLI tarball, extracts the `code` binary under
-// <home>/.vscode-web, and writes settings.json. Idempotent: returns nil without
-// re-downloading when the binary is already present.
+// <home>/.vscode-web, and writes settings.json. The download is skipped only
+// when the existing install already matches the requested release (tracked via
+// a marker file), so changing VERSION / DOWNLOAD_* triggers a reinstall.
+// settings.json is rewritten on every call so workspace settings stay current.
 func (v *VSCodeWeb) Install() error {
 	location, err := prepareVSCodeWebLocation(v.userName)
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(binaryPath(location)); err == nil {
-		return nil
+	releaseURL := v.getReleaseURL()
+	if !v.isInstalled(location, releaseURL) {
+		vscode.InstallAPKRequirements()
+
+		if err := downloadAndExtract(releaseURL, location); err != nil {
+			return err
+		}
+
+		if err := writeReleaseMarker(location, releaseURL); err != nil {
+			return fmt.Errorf("record release marker: %w", err)
+		}
 	}
 
-	vscode.InstallAPKRequirements()
-
-	if err := downloadAndExtract(v.getReleaseURL(), location); err != nil {
-		return err
+	if err := v.installSettings(); err != nil {
+		return fmt.Errorf("install settings: %w", err)
 	}
 
 	if v.userName != "" {
 		if err := copy2.ChownR(location, v.userName); err != nil {
 			return fmt.Errorf("chown: %w", err)
 		}
-	}
-
-	if err := v.installSettings(); err != nil {
-		return fmt.Errorf("install settings: %w", err)
 	}
 
 	return nil
@@ -187,6 +192,20 @@ func (v *VSCodeWeb) Start() error {
 		)
 		return suOrSh(v.userName, runCommand, location), nil
 	})
+}
+
+// isInstalled reports whether the `code` binary exists and was installed from
+// the same release URL currently requested. A missing or mismatched marker
+// forces a reinstall so VERSION / DOWNLOAD_* overrides take effect.
+func (v *VSCodeWeb) isInstalled(location, releaseURL string) bool {
+	if _, err := os.Stat(binaryPath(location)); err != nil {
+		return false
+	}
+	recorded, err := os.ReadFile(releaseMarkerPath(location))
+	if err != nil {
+		return false
+	}
+	return string(recorded) == releaseURL
 }
 
 func (v *VSCodeWeb) getReleaseURL() string {
@@ -337,6 +356,16 @@ func binaryPath(location string) string {
 // settings, kept inside the install dir so it is cleaned up with it.
 func serverDataDir(location string) string {
 	return filepath.Join(location, "server-data")
+}
+
+// releaseMarkerPath holds the release URL the current binary was installed
+// from, used to detect VERSION / DOWNLOAD_* changes across runs.
+func releaseMarkerPath(location string) string {
+	return filepath.Join(location, ".release")
+}
+
+func writeReleaseMarker(location, releaseURL string) error {
+	return os.WriteFile(releaseMarkerPath(location), []byte(releaseURL), 0o600)
 }
 
 // prepareVSCodeWebLocation returns the install dir for VS Code Web, creating it

@@ -1,6 +1,7 @@
 package vscodeweb
 
 import (
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -54,6 +55,49 @@ func TestGetReleaseURLDownloadOverride(t *testing.T) {
 	})
 	if got := v.getReleaseURL(); got != custom {
 		t.Fatalf("expected explicit download url %q, got %q", custom, got)
+	}
+}
+
+func TestIsInstalledMatchesReleaseMarker(t *testing.T) {
+	location := t.TempDir()
+	v := NewVSCodeWeb(ServerOptions{})
+	releaseURL := v.getReleaseURL()
+
+	if v.isInstalled(location, releaseURL) {
+		t.Fatal("expected not installed when binary is missing")
+	}
+
+	if err := os.WriteFile(binaryPath(location), []byte("stub"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if v.isInstalled(location, releaseURL) {
+		t.Fatal("expected not installed when release marker is missing")
+	}
+
+	if err := writeReleaseMarker(location, releaseURL); err != nil {
+		t.Fatal(err)
+	}
+	if !v.isInstalled(location, releaseURL) {
+		t.Fatal("expected installed when binary and matching marker exist")
+	}
+
+	if v.isInstalled(location, "https://example.test/other-version") {
+		t.Fatal("expected reinstall when requested release differs from marker")
+	}
+}
+
+func TestWriteReleaseMarkerRoundTrip(t *testing.T) {
+	location := t.TempDir()
+	const url = "https://update.code.visualstudio.com/1.99.0/cli-linux-x64/stable"
+	if err := writeReleaseMarker(location, url); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(releaseMarkerPath(location)) // #nosec G304 -- test-controlled temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != url {
+		t.Fatalf("marker mismatch: got %q want %q", string(got), url)
 	}
 }
 
