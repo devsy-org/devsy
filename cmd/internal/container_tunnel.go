@@ -93,7 +93,13 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 			stdin io.Reader,
 			stdout, stderr io.Writer,
 		) error {
-			return runner.Command(ctx, user, command, stdin, stdout, stderr)
+			return runner.Command(ctx, devcontainer.CommandParams{
+				User:    user,
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
 		},
 		User:    cmd.User,
 		Stdin:   os.Stdin,
@@ -113,27 +119,34 @@ func startDevContainer(
 		return err
 	}
 
-	// start container if necessary
+	// start container if it is missing or not running
 	if containerDetails == nil || containerDetails.State.Status != "running" {
-		// start container
 		_, err = StartContainer(ctx, runner, workspaceConfig)
-		if err != nil {
-			return err
-		}
-	} else if encoding.IsLegacyUID(workspaceConfig.Workspace.UID) {
-		// make sure workspace result is in devcontainer
-		buf := &bytes.Buffer{}
-		err = runner.Command(ctx, "root", "cat "+pkgconfig.DevContainerResultPath, nil, buf, buf)
-		if err != nil {
-			// start container
-			_, err = StartContainer(ctx, runner, workspaceConfig)
-			if err != nil {
-				return err
-			}
-		}
+		return err
+	}
+
+	// for legacy UIDs, ensure the workspace result is present in the container,
+	// restarting it when the result is missing
+	if encoding.IsLegacyUID(workspaceConfig.Workspace.UID) &&
+		!hasDevContainerResult(ctx, runner) {
+		_, err = StartContainer(ctx, runner, workspaceConfig)
+		return err
 	}
 
 	return nil
+}
+
+// hasDevContainerResult reports whether the devcontainer result file is readable
+// inside the running container.
+func hasDevContainerResult(ctx context.Context, runner devcontainer.Runner) bool {
+	buf := &bytes.Buffer{}
+	err := runner.Command(ctx, devcontainer.CommandParams{
+		User:    "root",
+		Command: "cat " + pkgconfig.DevContainerResultPath,
+		Stdout:  buf,
+		Stderr:  buf,
+	})
+	return err == nil
 }
 
 func StartContainer(

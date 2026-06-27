@@ -145,22 +145,22 @@ func (s *ComposeSuite) TestComposeBuildImageName() {
 
 func (s *ComposeSuite) TestCreateComposeServiceUsesBuildImageName() {
 	r := &runner{}
-	service := r.createComposeService(
-		&composetypes.ServiceConfig{
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
 			Name:  "app",
 			Image: "ghcr.io/example/shared-base:latest",
 			Build: &composetypes.BuildConfig{Target: "original-target"},
 		},
-		"workspace-app:latest",
-		"Dockerfile-with-features",
-		"/tmp/context",
-		&feature.BuildInfo{
+		buildImageName:          "workspace-app:latest",
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo: &feature.BuildInfo{
 			OverrideTarget: "dev_containers_target_stage",
 			BuildArgs: map[string]string{
 				"FEATURE_FLAG": "true",
 			},
 		},
-	)
+	})
 
 	s.Equal("workspace-app:latest", service.Image)
 	s.Require().NotNil(service.Build)
@@ -469,4 +469,107 @@ func TestTmpfsOptionsFromMount(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEscapeComposeLabelValue(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain value untouched", in: "plain-value", want: "plain-value"},
+		{name: "dollar doubled", in: "$HOME", want: "$$HOME"},
+		{name: "single quote escaped", in: "it's", want: `it\'\'s`},
+		{name: "dollar and quote combined", in: "$a'b", want: `$$a\'\'b`},
+		{name: "empty value", in: "", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeComposeLabelValue(tt.in); got != tt.want {
+				t.Errorf("escapeComposeLabelValue(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildServiceLabels(t *testing.T) {
+	t.Run("uses default ID label when no ID labels", func(t *testing.T) {
+		r := &runner{}
+		r.ID = "workspace-id"
+
+		labels := r.buildServiceLabels(nil)
+
+		if labels[config.DockerIDLabel] != "workspace-id" {
+			t.Errorf("default ID label = %q, want %q", labels[config.DockerIDLabel], "workspace-id")
+		}
+	})
+
+	t.Run("escapes ID and additional label values", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=$value"}
+
+		labels := r.buildServiceLabels(map[string]string{"extra": "it's $here"})
+
+		if labels["id.label"] != "$$value" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "$$value")
+		}
+		if labels["extra"] != `it\'\'s $$here` {
+			t.Errorf("extra = %q, want %q", labels["extra"], `it\'\'s $$here`)
+		}
+	})
+}
+
+func TestResolveServiceEntrypoint(t *testing.T) {
+	override := true
+	t.Run("override command clears entrypoint and command", func(t *testing.T) {
+		entry, cmd := resolveServiceEntrypoint(
+			&config.MergedDevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{OverrideCommand: &override},
+			},
+			&composetypes.ServiceConfig{Entrypoint: []string{"a"}, Command: []string{"b"}},
+			&config.ImageDetails{},
+		)
+		if len(entry) != 0 || len(cmd) != 0 {
+			t.Errorf("expected empty entrypoint/command, got %v / %v", entry, cmd)
+		}
+	})
+
+	t.Run("falls back to image entrypoint and command", func(t *testing.T) {
+		entry, cmd := resolveServiceEntrypoint(
+			&config.MergedDevContainerConfig{},
+			&composetypes.ServiceConfig{},
+			&config.ImageDetails{Config: config.ImageDetailsConfig{
+				Entrypoint: []string{"img-entry"},
+				Cmd:        []string{"img-cmd"},
+			}},
+		)
+		if len(entry) != 1 || entry[0] != "img-entry" {
+			t.Errorf("entrypoint = %v, want [img-entry]", entry)
+		}
+		if len(cmd) != 1 || cmd[0] != "img-cmd" {
+			t.Errorf("command = %v, want [img-cmd]", cmd)
+		}
+	})
+}
+
+func TestNamedVolumesFromMounts(t *testing.T) {
+	t.Run("nil when no volume mounts", func(t *testing.T) {
+		if got := namedVolumesFromMounts([]*config.Mount{{Type: mountTypeBind}}); got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+
+	t.Run("collects volume mounts", func(t *testing.T) {
+		got := namedVolumesFromMounts([]*config.Mount{
+			{Type: mountTypeVolume, Source: "data", External: true},
+			{Type: mountTypeBind, Source: "/host"},
+		})
+		if len(got) != 1 {
+			t.Fatalf("expected 1 volume, got %d", len(got))
+		}
+		v := got["data"]
+		if v.Name != "data" || !bool(v.External) {
+			t.Errorf("volume = %+v, want name=data external=true", v)
+		}
+	})
 }

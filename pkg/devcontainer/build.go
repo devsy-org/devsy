@@ -427,10 +427,7 @@ func (r *runner) buildDevImageCompose(
 		return nil, fmt.Errorf("find docker compose: %w", err)
 	}
 
-	envFiles, err := r.getEnvFiles()
-	if err != nil {
-		return nil, fmt.Errorf("get env files: %w", err)
-	}
+	envFiles := r.getEnvFiles()
 
 	composeFiles, err := r.getDockerComposeFilePaths(parsedConfig, envFiles)
 	if err != nil {
@@ -454,33 +451,24 @@ func (r *runner) buildDevImageCompose(
 	project.Name = composeHelper.GetProjectName(r.ID)
 	log.Debugf("Loaded project %s", project.Name)
 
-	service := parsedConfig.Config.Service
-	composeService, err := project.GetService(service)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"service %q configured in devcontainer.json not found in Docker Compose configuration",
-			service,
-		)
-	}
-
-	originalImageName := composeService.Image
-	if originalImageName == "" {
-		originalImageName, err = composeHelper.GetDefaultImage(project.Name, service)
-		if err != nil {
-			return nil, fmt.Errorf("get default image: %w", err)
-		}
-	}
-
-	extendResult, err := r.buildAndExtendDockerCompose(
-		ctx,
-		parsedConfig,
-		substitutionContext,
+	composeService, originalImageName, err := resolveComposeServiceImage(
 		project,
 		composeHelper,
-		&composeService,
-		composeGlobalArgs,
-		options.FeatureSecretsFile,
+		parsedConfig.Config.Service,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	extendResult, err := r.buildAndExtendDockerCompose(ctx, &buildAndExtendParams{
+		parsedConfig:        parsedConfig,
+		substitutionContext: substitutionContext,
+		project:             project,
+		composeHelper:       composeHelper,
+		composeService:      &composeService,
+		globalArgs:          composeGlobalArgs,
+		featureSecretsFile:  options.FeatureSecretsFile,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)
 	}

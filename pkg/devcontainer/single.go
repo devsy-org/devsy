@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"strings"
-	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -52,33 +51,23 @@ type resolveParams struct {
 
 func (r *runner) runSingleContainer(
 	ctx context.Context,
-	parsedConfig *config.SubstitutedConfig,
-	substitutionContext *config.SubstitutionContext,
-	options UpOptions,
-	timeout time.Duration,
+	runParams *runContainerParams,
 ) (*config.Result, error) {
+	parsedConfig := runParams.parsedConfig
+	substitutionContext := runParams.substitutionContext
+	options := runParams.options
+	timeout := runParams.timeout
+
 	log.Debugf("starting devcontainer for workspace %s", r.ID)
 
 	substitutionContext.Userns = options.Userns
 	substitutionContext.UidMap = options.UidMap
 	substitutionContext.GidMap = options.GidMap
 
-	// Check if Docker exists before trying to find containers
-	var containerDetails *config.ContainerDetails
-	var err error
-	dockerCmd := "docker"
-	if r.WorkspaceConfig.Agent.Docker.Path != "" {
-		dockerCmd = r.WorkspaceConfig.Agent.Docker.Path
+	containerDetails, err := r.findExistingDevContainer(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if command.Exists(dockerCmd) {
-		containerDetails, err = r.Driver.FindDevContainer(ctx, r.ID)
-		if err != nil {
-			return nil, fmt.Errorf("find dev container: %w", err)
-		}
-	}
-
-	// Resolve container: ensure we have a running container with merged config.
-	var resolved *resolvedContainer
 
 	params := &resolveParams{
 		parsedConfig:        parsedConfig,
@@ -86,21 +75,8 @@ func (r *runner) runSingleContainer(
 		options:             options,
 	}
 
-	if options.Recreate && parsedConfig.Config.ContainerID != "" {
-		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
-	} else if !options.Recreate && containerDetails != nil {
-		if actual := workspaceMountDestination(containerDetails); actual != "" &&
-			actual != substitutionContext.ContainerWorkspaceFolder {
-			log.Infof(
-				"container workspace mount is %s, updating from computed %s",
-				actual, substitutionContext.ContainerWorkspaceFolder,
-			)
-			substitutionContext.ContainerWorkspaceFolder = actual
-		}
-		resolved, err = r.resolveExistingContainer(ctx, containerDetails, params)
-	} else {
-		resolved, err = r.resolveNewContainer(ctx, params)
-	}
+	// Resolve container: ensure we have a running container with merged config.
+	resolved, err := r.resolveContainer(ctx, params, containerDetails)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +89,57 @@ func (r *runner) runSingleContainer(
 		timeout:             timeout,
 		hostWarnings:        resolved.hostWarnings,
 	})
+}
+
+// resolveContainer ensures a running container with merged config, either by
+// reusing the existing container or creating a new one. Recreating a container
+// not created by Devsy (i.e. one with an explicit ContainerID) is rejected.
+func (r *runner) resolveContainer(
+	ctx context.Context,
+	params *resolveParams,
+	containerDetails *config.ContainerDetails,
+) (*resolvedContainer, error) {
+	options := params.options
+
+	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
+		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
+	}
+
+	if options.Recreate || containerDetails == nil {
+		return r.resolveNewContainer(ctx, params)
+	}
+
+	substitutionContext := params.substitutionContext
+	if actual := workspaceMountDestination(containerDetails); actual != "" &&
+		actual != substitutionContext.ContainerWorkspaceFolder {
+		log.Infof(
+			"container workspace mount is %s, updating from computed %s",
+			actual, substitutionContext.ContainerWorkspaceFolder,
+		)
+		substitutionContext.ContainerWorkspaceFolder = actual
+	}
+	return r.resolveExistingContainer(ctx, containerDetails, params)
+}
+
+// findExistingDevContainer looks up the dev container, first checking that the
+// configured docker command exists. Returns nil details (without error) when
+// docker is unavailable.
+func (r *runner) findExistingDevContainer(
+	ctx context.Context,
+) (*config.ContainerDetails, error) {
+	dockerCmd := "docker"
+	if r.WorkspaceConfig.Agent.Docker.Path != "" {
+		dockerCmd = r.WorkspaceConfig.Agent.Docker.Path
+	}
+	if !command.Exists(dockerCmd) {
+		return nil, nil
+	}
+
+	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	return containerDetails, nil
 }
 
 // resolveExistingContainer handles the case where a container already exists.
@@ -155,7 +182,7 @@ func (r *runner) ensureRunning(
 	ctx context.Context,
 	containerDetails *config.ContainerDetails,
 ) (*config.ContainerDetails, error) {
-	if strings.ToLower(containerDetails.State.Status) == "running" {
+	if strings.ToLower(containerDetails.State.Status) == containerStatusRunning {
 		return containerDetails, nil
 	}
 
@@ -231,50 +258,13 @@ func (r *runner) resolveNewContainer(
 	ctx context.Context,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
-	hostWarnings, hostErr := config.ValidateHostRequirements(
-		p.parsedConfig.Config.HostRequirements,
-		config.SystemHostInfo{},
-		p.substitutionContext.LocalWorkspaceFolder,
-	)
-	if hostErr != nil {
-		if !p.options.SkipHostRequirements {
-			return nil, hostErr
-		}
-		hostWarnings = append(hostWarnings, hostErr.Error())
-	}
-
-	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
-		CLIOptions: provider2.CLIOptions{
-			PrebuildRepositories:  p.options.PrebuildRepositories,
-			ForceDockerless:       p.options.ForceDockerless,
-			Platform:              p.options.Platform,
-			ExtraDevContainerPath: p.options.ExtraDevContainerPath,
-		},
-		NoBuild:       p.options.NoBuild,
-		RegistryCache: p.options.RegistryCache,
-		ExportCache:   false,
-	})
+	hostWarnings, err := r.newContainerHostWarnings(p)
 	if err != nil {
-		return nil, fmt.Errorf("build image: %w", err)
+		return nil, err
 	}
 
-	if p.options.Recreate {
-		if err := r.deleteForRecreate(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	mergedConfig, err := config.MergeConfiguration(
-		p.parsedConfig.Config,
-		buildInfo.ImageMetadata.Config,
-	)
+	buildInfo, mergedConfig, err := r.buildNewContainerConfig(ctx, p)
 	if err != nil {
-		return nil, fmt.Errorf("merge config: %w", err)
-	}
-
-	if err := config.MergeExtraRemoteEnv(
-		mergedConfig, p.options.ExtraDevContainerPath,
-	); err != nil {
 		return nil, err
 	}
 
@@ -287,7 +277,7 @@ func (r *runner) resolveNewContainer(
 		}
 	}
 
-	err = r.runContainer(ctx, p.parsedConfig, p.substitutionContext, mergedConfig, buildInfo)
+	err = r.runContainer(ctx, p, mergedConfig, buildInfo)
 	if err != nil {
 		return nil, fmt.Errorf("runner run container: %w", err)
 	}
@@ -302,6 +292,70 @@ func (r *runner) resolveNewContainer(
 		mergedConfig: mergedConfig,
 		hostWarnings: hostWarnings,
 	}, nil
+}
+
+// buildNewContainerConfig builds the image (deleting the existing container
+// first when recreating) and produces the merged devcontainer config from the
+// build's image metadata.
+func (r *runner) buildNewContainerConfig(
+	ctx context.Context,
+	p *resolveParams,
+) (*config.BuildInfo, *config.MergedDevContainerConfig, error) {
+	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
+		CLIOptions: provider2.CLIOptions{
+			PrebuildRepositories:  p.options.PrebuildRepositories,
+			ForceDockerless:       p.options.ForceDockerless,
+			Platform:              p.options.Platform,
+			ExtraDevContainerPath: p.options.ExtraDevContainerPath,
+		},
+		NoBuild:       p.options.NoBuild,
+		RegistryCache: p.options.RegistryCache,
+		ExportCache:   false,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("build image: %w", err)
+	}
+
+	if p.options.Recreate {
+		if err := r.deleteForRecreate(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	mergedConfig, err := config.MergeConfiguration(
+		p.parsedConfig.Config,
+		buildInfo.ImageMetadata.Config,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merge config: %w", err)
+	}
+
+	if err := config.MergeExtraRemoteEnv(
+		mergedConfig,
+		p.options.ExtraDevContainerPath,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	return buildInfo, mergedConfig, nil
+}
+
+// newContainerHostWarnings validates host requirements for a new container,
+// returning warnings. Unmet requirements error unless SkipHostRequirements is
+// set, in which case the error is downgraded to a warning.
+func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
+	hostWarnings, hostErr := config.ValidateHostRequirements(
+		p.parsedConfig.Config.HostRequirements,
+		config.SystemHostInfo{},
+		p.substitutionContext.LocalWorkspaceFolder,
+	)
+	if hostErr != nil {
+		if !p.options.SkipHostRequirements {
+			return nil, hostErr
+		}
+		hostWarnings = append(hostWarnings, hostErr.Error())
+	}
+	return hostWarnings, nil
 }
 
 // deleteForRecreate removes the existing container before recreating it.
@@ -416,8 +470,7 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 
 func (r *runner) runContainer(
 	ctx context.Context,
-	parsedConfig *config.SubstitutedConfig,
-	substitutionContext *config.SubstitutionContext,
+	p *resolveParams,
 	mergedConfig *config.MergedDevContainerConfig,
 	buildInfo *config.BuildInfo,
 ) error {
@@ -426,13 +479,13 @@ func (r *runner) runContainer(
 	// build run options for dockerless mode
 	var runOptions *driver.RunOptions
 	if buildInfo.Dockerless != nil {
-		runOptions, err = r.getDockerlessRunOptions(mergedConfig, substitutionContext, buildInfo)
+		runOptions, err = r.getDockerlessRunOptions(mergedConfig, p.substitutionContext, buildInfo)
 		if err != nil {
 			return fmt.Errorf("build dockerless run options: %w", err)
 		}
 	} else {
 		// build run options
-		runOptions, err = r.getRunOptions(mergedConfig, substitutionContext, buildInfo)
+		runOptions, err = r.getRunOptions(mergedConfig, p.substitutionContext, buildInfo)
 		if err != nil {
 			return fmt.Errorf("build run options: %w", err)
 		}
@@ -446,7 +499,7 @@ func (r *runner) runContainer(
 		return dockerDriver.RunDockerDevContainer(ctx, &driver.RunDockerDevContainerParams{
 			WorkspaceID:          r.ID,
 			Options:              runOptions,
-			ParsedConfig:         parsedConfig.Config,
+			ParsedConfig:         p.parsedConfig.Config,
 			IDE:                  r.WorkspaceConfig.Workspace.IDE.Name,
 			IDEOptions:           r.WorkspaceConfig.Workspace.IDE.Options,
 			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
@@ -458,25 +511,32 @@ func (r *runner) runContainer(
 	return r.Driver.RunDevContainer(ctx, r.ID, runOptions)
 }
 
-func (r *runner) getDockerlessRunOptions(
-	mergedConfig *config.MergedDevContainerConfig,
-	substitutionContext *config.SubstitutionContext,
-	buildInfo *config.BuildInfo,
-) (*driver.RunOptions, error) {
-	// parse workspace mount — nil when suppressed via workspaceMount: ""
-	var workspaceMountPtr *config.Mount
-	if substitutionContext.WorkspaceMount != "" {
-		parsed := config.ParseMount(substitutionContext.WorkspaceMount)
-		workspaceMountPtr = &parsed
+// parseWorkspaceMount parses the substituted workspace mount, returning nil when
+// it has been suppressed via an empty workspaceMount.
+func parseWorkspaceMount(substitutionContext *config.SubstitutionContext) *config.Mount {
+	if substitutionContext.WorkspaceMount == "" {
+		return nil
 	}
+	parsed := config.ParseMount(substitutionContext.WorkspaceMount)
+	return &parsed
+}
 
-	// add metadata as label here
-	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
-	if err != nil {
-		return nil, fmt.Errorf("marshal config: %w", err)
+// workspaceUID returns the workspace UID, or an empty string when unavailable.
+func (r *runner) workspaceUID() string {
+	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil {
+		return r.WorkspaceConfig.Workspace.UID
 	}
+	return ""
+}
+
+// dockerlessEnv builds the environment for a dockerless build container,
+// combining the kaniko/dockerless settings with the merged container env.
+func (r *runner) dockerlessEnv(
+	mergedConfig *config.MergedDevContainerConfig,
+	buildInfo *config.BuildInfo,
+) (map[string]string, error) {
 	env := map[string]string{
-		"DOCKERLESS":            "true",
+		"DOCKERLESS":            stringTrue,
 		"DOCKERLESS_CONTEXT":    buildInfo.Dockerless.Context,
 		"DOCKERLESS_DOCKERFILE": buildInfo.Dockerless.Dockerfile,
 		"GODEBUG":               "http2client=0", // https://github.com/GoogleContainerTools/kaniko/issues/875
@@ -490,8 +550,27 @@ func (r *runner) getDockerlessRunOptions(
 		if err != nil {
 			return nil, fmt.Errorf("marshal build args: %w", err)
 		}
-
 		env["DOCKERLESS_BUILD_ARGS"] = string(out)
+	}
+	return env, nil
+}
+
+func (r *runner) getDockerlessRunOptions(
+	mergedConfig *config.MergedDevContainerConfig,
+	substitutionContext *config.SubstitutionContext,
+	buildInfo *config.BuildInfo,
+) (*driver.RunOptions, error) {
+	workspaceMountPtr := parseWorkspaceMount(substitutionContext)
+
+	// add metadata as label here
+	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+
+	env, err := r.dockerlessEnv(mergedConfig, buildInfo)
+	if err != nil {
+		return nil, err
 	}
 
 	image := dockerlessImage
@@ -507,16 +586,11 @@ func (r *runner) getDockerlessRunOptions(
 		Target: "/workspaces/.dockerless",
 	})
 
-	uid := ""
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil {
-		uid = r.WorkspaceConfig.Workspace.UID
-	}
-
 	// build run options
 	return &driver.RunOptions{
-		UID:        uid,
+		UID:        r.workspaceUID(),
 		Image:      image,
-		User:       "root",
+		User:       containerRootUser,
 		Entrypoint: "/.dockerless/dockerless",
 		Cmd: []string{
 			"start",
@@ -548,12 +622,7 @@ func (r *runner) getRunOptions(
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
 ) (*driver.RunOptions, error) {
-	// parse workspace mount — nil when suppressed via workspaceMount: ""
-	var workspaceMountPtr *config.Mount
-	if substitutionContext.WorkspaceMount != "" {
-		parsed := config.ParseMount(substitutionContext.WorkspaceMount)
-		workspaceMountPtr = &parsed
-	}
+	workspaceMountPtr := parseWorkspaceMount(substitutionContext)
 
 	// add metadata as label here
 	marshalled, err := metadata.MarshalImageMetadata(buildInfo.ImageMetadata.Raw)
@@ -580,11 +649,6 @@ func (r *runner) getRunOptions(
 		user = mergedConfig.ContainerUser
 	}
 
-	uid := ""
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil {
-		uid = r.WorkspaceConfig.Workspace.UID
-	}
-
 	// Resolve any ${containerEnv:VAR} references in containerEnv values using
 	// the image's inspected environment. ${containerWorkspaceFolder} and
 	// ${containerWorkspaceFolderBasename} are already substituted upstream in
@@ -602,7 +666,7 @@ func (r *runner) getRunOptions(
 	mergedConfig.ContainerEnv = resolvedContainerEnv
 
 	return &driver.RunOptions{
-		UID:            uid,
+		UID:            r.workspaceUID(),
 		Image:          buildInfo.ImageName,
 		User:           user,
 		Entrypoint:     entrypoint,
@@ -629,8 +693,8 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 		env = make(map[string]string)
 	}
 
-	env[DevsyExtraEnvVar] = "true"
-	env[RemoteContainersExtraEnvVar] = "true"
+	env[DevsyExtraEnvVar] = stringTrue
+	env[RemoteContainersExtraEnvVar] = stringTrue
 	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil &&
 		r.WorkspaceConfig.Workspace.ID != "" {
 		env[pkgconfig.EnvWorkspaceID] = r.WorkspaceConfig.Workspace.ID
