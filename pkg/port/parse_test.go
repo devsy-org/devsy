@@ -216,11 +216,11 @@ func TestSplitParts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hostIP, hostPort, contIP, contPort, err := splitParts(tt.input)
+			parts, err := splitParts(tt.input)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			got := result{hostIP, hostPort, contIP, contPort}
+			got := result{parts.hostIP, parts.hostPort, parts.containerIP, parts.containerPort}
 			if got != tt.want {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
@@ -229,7 +229,7 @@ func TestSplitParts(t *testing.T) {
 }
 
 func TestSplitParts_Errors(t *testing.T) {
-	_, _, _, _, err := splitParts("a:b:c:d:e")
+	_, err := splitParts("a:b:c:d:e")
 	if err == nil {
 		t.Fatal("expected error for five parts")
 	}

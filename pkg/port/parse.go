@@ -19,25 +19,12 @@ type Mapping struct {
 }
 
 func ParsePortSpec(port string) (Mapping, error) {
-	hostIP, hostPort, containerIP, containerPort, err := splitParts(port)
+	parts, err := splitParts(port)
 	if err != nil {
 		return Mapping{}, err
 	}
 
-	hostAddress, err := toAddress(hostIP, hostPort)
-	if err != nil {
-		return Mapping{}, fmt.Errorf("parse host address: %w", err)
-	}
-
-	containerAddress, err := toAddress(containerIP, containerPort)
-	if err != nil {
-		return Mapping{}, fmt.Errorf("parse container address: %w", err)
-	}
-
-	return Mapping{
-		Host:      hostAddress,
-		Container: containerAddress,
-	}, nil
+	return parts.toMapping()
 }
 
 func toAddress(host, port string) (Address, error) {
@@ -63,28 +50,61 @@ func toAddress(host, port string) (Address, error) {
 	}, nil
 }
 
-func splitParts(rawport string) (string, string, string, string, error) {
-	parts := strings.Split(rawport, ":")
+type parsedParts struct {
+	hostIP        string
+	hostPort      string
+	containerIP   string
+	containerPort string
+}
+
+func (p parsedParts) toMapping() (Mapping, error) {
+	hostAddress, err := toAddress(p.hostIP, p.hostPort)
+	if err != nil {
+		return Mapping{}, fmt.Errorf("parse host address: %w", err)
+	}
+
+	containerAddress, err := toAddress(p.containerIP, p.containerPort)
+	if err != nil {
+		return Mapping{}, fmt.Errorf("parse container address: %w", err)
+	}
+
+	return Mapping{
+		Host:      hostAddress,
+		Container: containerAddress,
+	}, nil
+}
+
+func splitParts(rawPort string) (parsedParts, error) {
+	parts := strings.Split(rawPort, ":")
 	n := len(parts)
-	containerport := parts[n-1]
+	containerPort := parts[n-1]
 
 	switch n {
 	case 1:
-		return "", containerport, "", containerport, nil
+		return parsedParts{hostPort: containerPort, containerPort: containerPort}, nil
 	case 2:
-		return "", parts[0], "", containerport, nil
+		return parsedParts{hostPort: parts[0], containerPort: containerPort}, nil
 	case 3:
 		// a:b:c — if middle token is non-numeric, it's a host/IP for the
 		// container side: hostPort:containerHost:containerPort.
 		// Otherwise it's hostHost:hostPort:containerPort.
 		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return "", parts[0], parts[1], containerport, nil
+			return parsedParts{
+				hostPort:      parts[0],
+				containerIP:   parts[1],
+				containerPort: containerPort,
+			}, nil
 		}
 
-		return parts[0], parts[1], "", containerport, nil
+		return parsedParts{hostIP: parts[0], hostPort: parts[1], containerPort: containerPort}, nil
 	case 4:
-		return parts[0], parts[1], parts[2], parts[3], nil
+		return parsedParts{
+			hostIP:        parts[0],
+			hostPort:      parts[1],
+			containerIP:   parts[2],
+			containerPort: parts[3],
+		}, nil
 	default:
-		return "", "", "", "", fmt.Errorf("unexpected port format: %s", rawport)
+		return parsedParts{}, fmt.Errorf("unexpected port format: %s", rawPort)
 	}
 }
