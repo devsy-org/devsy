@@ -131,6 +131,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Check license policy and attribution
+        env:
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
         run: go run ./hack/licenses --check
 
   integration-tests-unprivileged:
