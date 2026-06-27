@@ -1,6 +1,6 @@
 module github.com/devsy-org/devsy
 
-go 1.25.8
+go 1.26.0
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.0
@@ -22,7 +22,7 @@ require (
 	github.com/devsy-org/apiserver v1.5.0
 	github.com/devsy-org/ssh v1.2.0
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.4.0+incompatible
+	github.com/docker/cli v29.6.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/docker-credential-helpers v0.9.5
 	github.com/docker/go-connections v0.6.0
@@ -33,7 +33,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.21.5
-	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260414223304-7a662782a11f
+	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260624172245-e8b2b9e51df6
 	github.com/google/go-github/v74 v74.0.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
@@ -61,15 +61,15 @@ require (
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.35.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.42.0
 	google.golang.org/grpc v1.80.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
-	k8s.io/api v0.35.3
-	k8s.io/apimachinery v0.35.3
-	k8s.io/client-go v0.35.3
+	k8s.io/api v0.36.2
+	k8s.io/apimachinery v0.36.2
+	k8s.io/client-go v0.36.2
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kube-aggregator v0.35.3
 	k8s.io/kubectl v0.35.3
@@ -221,7 +221,7 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/spdystream v0.5.0 // indirect
+	github.com/moby/spdystream v0.5.1 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
@@ -231,7 +231,6 @@ require (
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
@@ -316,10 +315,11 @@ require (
 	k8s.io/component-base v0.35.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20260330154417-16be699c7b31 // indirect
 	k8s.io/metrics v0.35.3 // indirect
+	k8s.io/streaming v0.36.2 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
 
 replace tailscale.com => github.com/devsy-org/tailscale v1.92.2
