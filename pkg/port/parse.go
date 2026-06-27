@@ -89,12 +89,21 @@ func splitParts(rawPort string) (parsedParts, error) {
 		// container side: hostPort:containerHost:containerPort.
 		// Otherwise it's hostHost:hostPort:containerPort.
 		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return parsedParts{hostPort: parts[0], containerIP: parts[1], containerPort: containerPort}, nil
+			return parsedParts{
+				hostPort:      parts[0],
+				containerIP:   parts[1],
+				containerPort: containerPort,
+			}, nil
 		}
 
 		return parsedParts{hostIP: parts[0], hostPort: parts[1], containerPort: containerPort}, nil
 	case 4:
-		return parsedParts{hostIP: parts[0], hostPort: parts[1], containerIP: parts[2], containerPort: parts[3]}, nil
+		return parsedParts{
+			hostIP:        parts[0],
+			hostPort:      parts[1],
+			containerIP:   parts[2],
+			containerPort: parts[3],
+		}, nil
 	default:
 		return parsedParts{}, fmt.Errorf("unexpected port format: %s", rawPort)
 	}
