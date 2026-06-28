@@ -89,9 +89,23 @@ type runner struct {
 type UpOptions struct {
 	provider2.CLIOptions
 
-	NoBuild       bool
-	ForceBuild    bool
+	// NoBuild is set by the container tunnel to force pre-built images; it is
+	// distinct from the embedded CLIOptions.NoBuild used by the build command.
+	NoBuild bool
+	// RegistryCache is sourced from AgentWorkspaceInfo.RegistryCache (a provider
+	// context option), not from CLIOptions, so it is a separate field.
 	RegistryCache string
+}
+
+// toBuildOptions derives the BuildOptions for an up-triggered build. It carries
+// the full embedded CLIOptions (so build flags like Pull/ForceBuild are never
+// dropped) and applies the up-specific NoBuild/RegistryCache overrides.
+func (o UpOptions) toBuildOptions() provider2.BuildOptions {
+	return provider2.BuildOptions{
+		CLIOptions:    o.CLIOptions,
+		RegistryCache: o.RegistryCache,
+		NoBuild:       o.NoBuild,
+	}
 }
 
 // runContainerParams groups the inputs shared by the runSingleContainer,

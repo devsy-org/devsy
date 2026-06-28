@@ -73,9 +73,9 @@ type buildAndExtendParams struct {
 	composeService      *composetypes.ServiceConfig
 	globalArgs          []string
 	featureSecretsFile  string
-	// forceBuild re-pulls the base image during the compose build (--pull),
-	// set from CLIOptions.ForceBuild.
-	forceBuild bool
+	// pull re-pulls base images during the compose build (--pull), set from
+	// CLIOptions.Pull.
+	pull bool
 }
 
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
@@ -748,7 +748,7 @@ func (r *runner) buildComposeOverrideArgs(
 		composeService:      params.composeService,
 		globalArgs:          composeGlobalArgs,
 		featureSecretsFile:  start.options.FeatureSecretsFile,
-		forceBuild:          start.options.ForceBuild,
+		pull:                start.options.Pull,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)

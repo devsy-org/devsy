@@ -145,7 +145,7 @@ func (r *runner) buildAndExtendDockerCompose(
 		projectName:             params.project.Name,
 		globalArgs:              params.globalArgs,
 		overrideComposeFilePath: dockerComposeFilePath,
-		pull:                    params.forceBuild,
+		pull:                    params.pull,
 		serviceName:             params.composeService.Name,
 		runServices:             params.parsedConfig.Config.RunServices,
 	})

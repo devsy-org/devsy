@@ -15,7 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
 var dockerlessImage = "ghcr.io/devsy-org/dockerless:0.2.0"
@@ -301,17 +300,12 @@ func (r *runner) buildNewContainerConfig(
 	ctx context.Context,
 	p *resolveParams,
 ) (*config.BuildInfo, *config.MergedDevContainerConfig, error) {
-	buildInfo, err := r.build(ctx, p.parsedConfig, p.substitutionContext, provider2.BuildOptions{
-		CLIOptions: provider2.CLIOptions{
-			PrebuildRepositories:  p.options.PrebuildRepositories,
-			ForceDockerless:       p.options.ForceDockerless,
-			Platform:              p.options.Platform,
-			ExtraDevContainerPath: p.options.ExtraDevContainerPath,
-		},
-		NoBuild:       p.options.NoBuild,
-		RegistryCache: p.options.RegistryCache,
-		ExportCache:   false,
-	})
+	buildInfo, err := r.build(
+		ctx,
+		p.parsedConfig,
+		p.substitutionContext,
+		p.options.toBuildOptions(),
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build image: %w", err)
 	}

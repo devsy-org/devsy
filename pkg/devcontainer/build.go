@@ -468,7 +468,7 @@ func (r *runner) buildDevImageCompose(
 		composeService:      &composeService,
 		globalArgs:          composeGlobalArgs,
 		featureSecretsFile:  options.FeatureSecretsFile,
-		forceBuild:          options.ForceBuild,
+		pull:                options.Pull,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)

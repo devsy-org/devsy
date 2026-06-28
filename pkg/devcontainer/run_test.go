@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
@@ -292,5 +293,43 @@ func TestMountSetConsistency(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestUpOptionsToBuildOptions(t *testing.T) {
+	up := UpOptions{
+		CLIOptions: provider2.CLIOptions{
+			Pull:                  true,
+			ForceBuild:            true,
+			ForceDockerless:       true,
+			ExtraDevContainerPath: "/extra.json",
+		},
+		NoBuild:       true,
+		RegistryCache: "registry.example.com/cache",
+	}
+
+	got := up.toBuildOptions()
+
+	// Build flags carried via the embedded CLIOptions must survive the
+	// conversion (regression guard against the old lossy field-by-field copy).
+	if !got.Pull {
+		t.Error("Pull should be carried through to BuildOptions")
+	}
+	if !got.ForceBuild {
+		t.Error("ForceBuild should be carried through to BuildOptions")
+	}
+	if !got.ForceDockerless {
+		t.Error("ForceDockerless should be carried through to BuildOptions")
+	}
+	if got.ExtraDevContainerPath != "/extra.json" {
+		t.Errorf("ExtraDevContainerPath = %q, want /extra.json", got.ExtraDevContainerPath)
+	}
+
+	// Up-specific overrides.
+	if !got.NoBuild {
+		t.Error("NoBuild override should be applied")
+	}
+	if got.RegistryCache != "registry.example.com/cache" {
+		t.Errorf("RegistryCache = %q, want registry.example.com/cache", got.RegistryCache)
 	}
 }
