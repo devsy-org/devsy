@@ -3,6 +3,17 @@
  * Provides browser API polyfills that jsdom doesn't fully cover.
  */
 
+import { afterAll } from "vitest"
+
+// bits-ui's body scroll lock schedules a ~24ms setTimeout to reset the body
+// style after a Dialog/Sheet unmounts. If a test file finishes before that
+// timer fires, jsdom is torn down and the callback throws
+// "ReferenceError: document is not defined". Drain any pending cleanup before
+// teardown, while document still exists.
+afterAll(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 30))
+})
+
 // Node 22+ has a built-in localStorage that requires --localstorage-file.
 // Override with a simple in-memory implementation for tests.
 if (
