@@ -98,8 +98,10 @@ func checkInSync(hackDir, outFile string, deps []byte) error {
 		// Dependency bumps (e.g. Renovate) change the attribution file without
 		// regenerating it, so warn instead of failing; the file is reconciled
 		// when a maintainer runs the generator and commits the result.
-		fmt.Fprintln(os.Stderr,
-			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'task cli:licenses' and commit the result")
+		fmt.Fprintln(
+			os.Stderr,
+			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'task cli:licenses' and commit the result",
+		)
 		return nil
 	}
 
