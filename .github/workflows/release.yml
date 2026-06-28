@@ -288,34 +288,43 @@ jobs:
           pattern: update-metadata-*
           path: metadata/
 
-      - name: prepare publish dir
-        run: mkdir -p publish-dir/desktop
-
-      - name: merge macOS metadata from separate arch builds
-        run: go run hack/merge_mac_metadata/main.go metadata/ publish-dir/desktop/
-
-      - name: overlay non-mac metadata files (stable release)
-        if: ${{ !github.event.release.prerelease }}
-        run: |
-          find metadata/ -name 'latest-linux.yml' -exec cp {} publish-dir/desktop/ \;
-          find metadata/ -name 'latest.yml' -exec cp {} publish-dir/desktop/ \;
-          find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
-          find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
-
-      - name: overlay non-mac metadata files (prerelease)
-        if: ${{ github.event.release.prerelease }}
-        run: |
-          find metadata/ -name 'beta-linux.yml' -exec cp {} publish-dir/desktop/ \;
-          find metadata/ -name 'beta.yml' -exec cp {} publish-dir/desktop/ \;
-
-      - name: deploy to Netlify (dl.devsy.sh)
-        uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4
-        with:
-          publish-dir: ./publish-dir
-          production-deploy: true
+      - name: assemble this channel's manifests
         env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_DL_SITE_ID }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          go run hack/merge_mac_metadata/main.go metadata/ upload/
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            rm -f upload/latest*.yml
+            find metadata/ \( -name 'beta.yml' -o -name 'beta-linux.yml' \) \
+              -exec cp {} upload/ \;
+          else
+            rm -f upload/beta*.yml
+            find metadata/ \( -name 'latest.yml' -o -name 'latest-linux.yml' \) \
+              -exec cp {} upload/ \;
+          fi
+          ls -la upload/
+
+      - name: upload manifests to R2 (dl.devsy.sh)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DEVSY_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DEVSY_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_S3_API: ${{ secrets.DEVSY_R2_S3_API }}
+        run: |
+          set -euo pipefail
+          bucket="devsy"
+          rest="${R2_S3_API#*://}"
+          endpoint="${R2_S3_API%%://*}://${rest%%/*}"
+          for f in upload/*.yml; do
+            name=$(basename "$f")
+            aws s3 cp "$f" "s3://${bucket}/desktop/${name}" \
+              --endpoint-url "$endpoint" \
+              --content-type "text/yaml" \
+              --cache-control "public, max-age=0, must-revalidate"
+            echo "uploaded desktop/${name}"
+          done
 
   build-flatpak:
     name: Build Flatpak
