@@ -270,10 +270,21 @@ async function getUpdater() {
   return autoUpdater
 }
 
+async function runUpdateCheck(
+  autoUpdater: NonNullable<Awaited<ReturnType<typeof getUpdater>>>,
+): Promise<void> {
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    if (err instanceof Error && classifyError(err) === "channel-missing") return
+    throw err
+  }
+}
+
 export async function checkForUpdates(): Promise<void> {
   const autoUpdater = await getUpdater()
   if (!autoUpdater) return
-  await autoUpdater.checkForUpdates()
+  await runUpdateCheck(autoUpdater)
 }
 
 export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promise<void> {
@@ -284,15 +295,7 @@ export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promi
   if (!autoUpdater) return
   autoUpdater.allowPrerelease = channel === "beta"
   autoUpdater.channel = channel === "beta" ? "beta" : "latest"
-  try {
-    await autoUpdater.checkForUpdates()
-  } catch (err) {
-    // A missing channel manifest is surfaced via the 'error' event as a
-    // friendly not-available status; don't let the rejected promise bubble
-    // up and trigger a channel rollback in the IPC caller.
-    if (err instanceof Error && classifyError(err) === "channel-missing") return
-    throw err
-  }
+  await runUpdateCheck(autoUpdater)
 }
 
 export async function downloadUpdate(): Promise<void> {
@@ -304,5 +307,6 @@ export async function downloadUpdate(): Promise<void> {
 export async function installUpdate(): Promise<void> {
   const autoUpdater = await getUpdater()
   if (!autoUpdater || typeof autoUpdater.quitAndInstall !== "function") return
+  ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
   autoUpdater.quitAndInstall()
 }
