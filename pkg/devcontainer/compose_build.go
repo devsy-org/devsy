@@ -146,6 +146,7 @@ func (r *runner) buildAndExtendDockerCompose(
 		globalArgs:              params.globalArgs,
 		overrideComposeFilePath: dockerComposeFilePath,
 		pull:                    params.pull,
+		noCache:                 params.noCache,
 		serviceName:             params.composeService.Name,
 		runServices:             params.parsedConfig.Config.RunServices,
 	})
@@ -337,13 +338,14 @@ type composeBuildArgsParams struct {
 	globalArgs              []string
 	overrideComposeFilePath string
 	pull                    bool
+	noCache                 bool
 	serviceName             string
 	runServices             []string
 }
 
 // composeBuildArgs assembles the "docker compose ... build" argument list,
-// adding the override file, --pull when a fresh base image is requested, and
-// any explicitly requested run services.
+// adding the override file, --pull/--no-cache build modifiers, and any
+// explicitly requested run services.
 func composeBuildArgs(params *composeBuildArgsParams) []string {
 	buildArgs := []string{composeProjectNameFlag, params.projectName}
 	buildArgs = append(buildArgs, params.globalArgs...)
@@ -353,6 +355,9 @@ func composeBuildArgs(params *composeBuildArgsParams) []string {
 	buildArgs = append(buildArgs, "build")
 	if params.pull {
 		buildArgs = append(buildArgs, "--pull")
+	}
+	if params.noCache {
+		buildArgs = append(buildArgs, "--no-cache")
 	}
 
 	// Only run the services defined in .devcontainer.json runServices

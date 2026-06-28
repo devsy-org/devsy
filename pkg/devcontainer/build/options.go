@@ -52,8 +52,10 @@ type BuildOptions struct {
 	Push bool
 	// Upload controls whether to upload the build context. Used for remote builds.
 	Upload bool
-	// NoCache disables the Docker build cache entirely.
+	// NoCache disables the Docker build cache entirely (--no-cache).
 	NoCache bool
+	// Pull always attempts to pull a newer version of base images (--pull).
+	Pull bool
 }
 
 // NewOptionsParams contains the parameters needed to create BuildOptions.
@@ -96,6 +98,7 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 		// directly to the registry. This is mutually exclusive with Load.
 		Push:    params.Options.PushDuringBuild,
 		NoCache: params.Options.NoCache,
+		Pull:    params.Options.Pull,
 	}
 
 	// get build args and target

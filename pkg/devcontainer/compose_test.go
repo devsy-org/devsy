@@ -670,28 +670,37 @@ func TestNamedVolumesFromMounts(t *testing.T) {
 }
 
 func TestComposeBuildArgs(t *testing.T) {
-	t.Run("adds --pull when requested", func(t *testing.T) {
-		args := composeBuildArgs(&composeBuildArgsParams{
-			projectName: "ws",
-			serviceName: "app",
-			pull:        true,
+	modifierTests := []struct {
+		name        string
+		pull        bool
+		noCache     bool
+		wantPull    bool
+		wantNoCache bool
+	}{
+		{name: "no modifiers"},
+		{name: "pull only", pull: true, wantPull: true},
+		{name: "no-cache only", noCache: true, wantNoCache: true},
+		{name: "both", pull: true, noCache: true, wantPull: true, wantNoCache: true},
+	}
+	for _, tt := range modifierTests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := composeBuildArgs(&composeBuildArgsParams{
+				projectName: "ws",
+				serviceName: "app",
+				pull:        tt.pull,
+				noCache:     tt.noCache,
+			})
+			if got := slices.Contains(args, "--pull"); got != tt.wantPull {
+				t.Errorf("--pull present = %v, want %v (args=%v)", got, tt.wantPull, args)
+			}
+			if got := slices.Contains(args, "--no-cache"); got != tt.wantNoCache {
+				t.Errorf("--no-cache present = %v, want %v (args=%v)", got, tt.wantNoCache, args)
+			}
 		})
-		if !slices.Contains(args, "--pull") {
-			t.Errorf("expected --pull in %v", args)
-		}
-	})
+	}
+}
 
-	t.Run("omits --pull by default", func(t *testing.T) {
-		args := composeBuildArgs(&composeBuildArgsParams{
-			projectName: "ws",
-			serviceName: "app",
-			pull:        false,
-		})
-		if slices.Contains(args, "--pull") {
-			t.Errorf("did not expect --pull in %v", args)
-		}
-	})
-
+func TestComposeBuildArgsStructure(t *testing.T) {
 	t.Run("includes project name, build, and override file", func(t *testing.T) {
 		args := composeBuildArgs(&composeBuildArgsParams{
 			projectName:             "ws",
