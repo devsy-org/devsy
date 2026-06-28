@@ -1,12 +1,8 @@
 package devcontainer
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
-	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
@@ -33,16 +29,13 @@ func (r *runner) extendedDockerComposeUp(params *composeUpParams) (string, error
 		return "", err
 	}
 
-	dockerComposeFolder := getDockerComposeFolder(r.WorkspaceConfig.Origin)
-	err = os.MkdirAll(dockerComposeFolder, 0o750)
+	dockerComposePath, err := r.writeComposeOverrideFile(
+		FeaturesStartOverrideFilePrefix,
+		dockerComposeData,
+	)
 	if err != nil {
 		return "", err
 	}
-
-	dockerComposePath := filepath.Join(
-		dockerComposeFolder,
-		fmt.Sprintf("%s-%d.yml", FeaturesStartOverrideFilePrefix, time.Now().Second()),
-	)
 
 	log.Debugf(
 		"Creating docker-compose up %s with content:\n %s",
@@ -50,10 +43,6 @@ func (r *runner) extendedDockerComposeUp(params *composeUpParams) (string, error
 		string(dockerComposeData),
 	)
 
-	err = os.WriteFile(dockerComposePath, dockerComposeData, 0o600)
-	if err != nil {
-		return "", err
-	}
 	return dockerComposePath, nil
 }
 
@@ -183,7 +172,9 @@ func (r *runner) buildServiceLabels(additionalLabels map[string]string) composet
 func namedVolumesFromMounts(mounts []*config.Mount) map[string]composetypes.VolumeConfig {
 	var volumes map[string]composetypes.VolumeConfig
 	for _, m := range mounts {
-		if m.Type != composetypes.VolumeTypeVolume {
+		// Only named volumes are declared at the project level; anonymous
+		// volumes (empty source) stay service-scoped.
+		if m.Type != composetypes.VolumeTypeVolume || m.Source == "" {
 			continue
 		}
 		if volumes == nil {

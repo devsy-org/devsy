@@ -572,4 +572,17 @@ func TestNamedVolumesFromMounts(t *testing.T) {
 			t.Errorf("volume = %+v, want name=data external=true", v)
 		}
 	})
+
+	t.Run("skips anonymous volumes with empty source", func(t *testing.T) {
+		got := namedVolumesFromMounts([]*config.Mount{
+			{Type: mountTypeVolume, Target: "/anon"},
+			{Type: mountTypeVolume, Source: "named"},
+		})
+		if len(got) != 1 {
+			t.Fatalf("expected 1 named volume, got %d: %+v", len(got), got)
+		}
+		if _, ok := got[""]; ok {
+			t.Error("anonymous volume with empty source should not be declared")
+		}
+	})
 }

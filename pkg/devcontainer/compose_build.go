@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
@@ -73,6 +72,9 @@ func (r *runner) prepareComposeDockerfileBuildInfo(
 	var buildTarget string
 	if originalTarget != "" {
 		buildTarget = originalTarget
+		// Preserve the Dockerfile contents so a build-backed service with an
+		// explicit target is not later misclassified as image-based.
+		dockerfileContents = string(originalDockerfile)
 	} else {
 		lastStageName, modifiedDockerfile, stageErr := dockerfile.EnsureFinalStageName(
 			string(originalDockerfile),
@@ -577,30 +579,24 @@ func (r *runner) writeComposeFile(service *composetypes.ServiceConfig) (string, 
 		},
 	}
 
-	dockerComposeFolder := getDockerComposeFolder(r.WorkspaceConfig.Origin)
-	if err := os.MkdirAll(dockerComposeFolder, 0o750); err != nil {
-		return "", err
-	}
-
 	dockerComposeData, err := yaml.Marshal(project)
 	if err != nil {
 		return "", err
 	}
 
-	dockerComposePath := filepath.Join(
-		dockerComposeFolder,
-		fmt.Sprintf("%s-%d.yml", FeaturesBuildOverrideFilePrefix, time.Now().Second()),
+	dockerComposePath, err := r.writeComposeOverrideFile(
+		FeaturesBuildOverrideFilePrefix,
+		dockerComposeData,
 	)
+	if err != nil {
+		return "", err
+	}
 
 	log.Debugf(
 		"Creating docker-compose build %s with content:\n %s",
 		dockerComposePath,
 		string(dockerComposeData),
 	)
-
-	if err := os.WriteFile(dockerComposePath, dockerComposeData, 0o600); err != nil {
-		return "", err
-	}
 
 	return dockerComposePath, nil
 }

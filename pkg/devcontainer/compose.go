@@ -372,11 +372,13 @@ func (r *runner) updateContainerUserUID(
 	if !ok {
 		return nil
 	}
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
 	if err := dockerDriver.UpdateContainerUserUID(
 		ctx,
 		r.ID,
 		parsedConfig.Config,
-		log.Writer(log.LevelInfo),
+		writer,
 	); err != nil {
 		log.Errorf("failed to update container user UID/GID: error=%v", err)
 		return err
@@ -444,7 +446,24 @@ func (r *runner) tryStartExistingProject(
 
 	// If project is found, we can call `up` with the project name.
 	// If it fails, fall back to rebuilding.
-	upArgs := []string{composeProjectNameFlag, project.Name}
+	details, err := r.composeUpExistingProject(ctx, params, existingProjectFiles)
+	if err != nil || details == nil {
+		// Compose failed, or reported success but the dev container is not
+		// present; fall back to a full start rather than finalizing nil.
+		return containerDetails, false
+	}
+
+	return details, true
+}
+
+// composeUpExistingProject runs "compose up" using the persisted project files
+// and returns the resulting dev container details.
+func (r *runner) composeUpExistingProject(
+	ctx context.Context,
+	params *existingProjectParams,
+	existingProjectFiles []string,
+) (*config.ContainerDetails, error) {
+	upArgs := []string{composeProjectNameFlag, params.project.Name}
 	for _, projectFile := range existingProjectFiles {
 		upArgs = append(upArgs, "-f", projectFile)
 	}
@@ -452,23 +471,24 @@ func (r *runner) tryStartExistingProject(
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
 	writer := log.Writer(log.LevelInfo)
-	if err := composeHelper.Run(ctx, upArgs, nil, writer, writer); err != nil {
+	defer func() { _ = writer.Close() }()
+	if err := params.composeHelper.Run(ctx, upArgs, nil, writer, writer); err != nil {
 		log.Errorf("Error starting project: %s", err)
-		return containerDetails, false
+		return nil, err
 	}
 
 	// wait for running and get container details
-	details, err := composeHelper.FindDevContainer(
+	details, err := params.composeHelper.FindDevContainer(
 		ctx,
-		project.Name,
+		params.project.Name,
 		params.parsedConfig.Config.Service,
 	)
 	if err != nil {
 		log.Errorf("Error finding dev container: %s", err)
-		return containerDetails, false
+		return nil, err
 	}
 
-	return details, true
+	return details, nil
 }
 
 // allProjectFilesExist reports whether every persisted project file is still
@@ -913,6 +933,29 @@ func checkForPersistedFile(
 
 func getDockerComposeFolder(workspaceOriginFolder string) string {
 	return filepath.Join(workspaceOriginFolder, ".docker-compose")
+}
+
+// writeComposeOverrideFile writes a compose override file into the workspace's
+// docker-compose folder using a collision-safe unique name that retains the
+// given prefix (so checkForPersistedFile can still match it by prefix).
+func (r *runner) writeComposeOverrideFile(prefix string, data []byte) (string, error) {
+	dockerComposeFolder := getDockerComposeFolder(r.WorkspaceConfig.Origin)
+	if err := os.MkdirAll(dockerComposeFolder, 0o750); err != nil {
+		return "", err
+	}
+
+	f, err := os.CreateTemp(dockerComposeFolder, prefix+"-*.yml")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.Write(data); err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+
+	return f.Name(), nil
 }
 
 func mappingFromMap(m map[string]string) composetypes.MappingWithEquals {
