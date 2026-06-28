@@ -478,10 +478,32 @@ func TestEscapeComposeLabelValue(t *testing.T) {
 		want string
 	}{
 		{name: "plain value untouched", in: "plain-value", want: "plain-value"},
-		{name: "dollar doubled", in: "$HOME", want: "$$HOME"},
-		{name: "single quote escaped", in: "it's", want: `it\'\'s`},
-		{name: "dollar and quote combined", in: "$a'b", want: `$$a\'\'b`},
 		{name: "empty value", in: "", want: ""},
+
+		// "$" is the only character Compose interpolates, so it is doubled.
+		{name: "single dollar doubled", in: "$HOME", want: "$$HOME"},
+		{name: "leading dollar", in: "$", want: "$$"},
+		{name: "trailing dollar", in: "a$", want: "a$$"},
+		{name: "multiple dollars", in: "$a$b$", want: "$$a$$b$$"},
+		{name: "already doubled dollar is doubled again", in: "$$", want: "$$$$"},
+		{name: "braced variable reference", in: "${FOO}", want: "$${FOO}"},
+
+		// Characters that are NOT special to Compose interpolation must pass
+		// through verbatim. Escaping them would corrupt the stored payload.
+		{name: "single quote preserved", in: "it's", want: "it's"},
+		{name: "double quote preserved", in: `say "hi"`, want: `say "hi"`},
+		{name: "backslash preserved", in: `a\b`, want: `a\b`},
+		{name: "backtick preserved", in: "a`b", want: "a`b"},
+		{name: "newline preserved", in: "line1\nline2", want: "line1\nline2"},
+		{name: "unicode preserved", in: "café—naïve 🚀", want: "café—naïve 🚀"},
+
+		// Realistic metadata: JSON containing an apostrophe must survive so it
+		// can be json.Unmarshal'd back on read. Only "$" is altered.
+		{
+			name: "json metadata with apostrophe and dollar",
+			in:   `[{"id":"it's-a-feature","cmd":"echo $X"}]`,
+			want: `[{"id":"it's-a-feature","cmd":"echo $$X"}]`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -489,6 +511,34 @@ func TestEscapeComposeLabelValue(t *testing.T) {
 				t.Errorf("escapeComposeLabelValue(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestEscapeComposeLabelValueRoundTrip documents the contract that motivates the
+// escaping: doubling "$" survives Compose's interpolation (which un-doubles
+// "$$" back to "$"), and non-"$" characters are returned unchanged so a
+// JSON-encoded metadata label can be unmarshalled back without corruption.
+func TestEscapeComposeLabelValueRoundTrip(t *testing.T) {
+	original := `{"name":"it's a test","entrypoint":"run $CMD"}`
+
+	escaped := escapeComposeLabelValue(original)
+
+	// Compose interpolation collapses "$$" -> "$"; emulate that to recover the
+	// value a consumer would see.
+	interpolated := strings.ReplaceAll(escaped, "$$", "$")
+	if interpolated != original {
+		t.Errorf(
+			"round-trip mismatch:\n  escaped      = %q\n  interpolated = %q\n  original     = %q",
+			escaped,
+			interpolated,
+			original,
+		)
+	}
+
+	// The apostrophe (and every non-"$" byte) must be untouched in the escaped
+	// form so json.Unmarshal succeeds after interpolation.
+	if strings.Contains(escaped, `\'`) {
+		t.Errorf("apostrophe was escaped, corrupting the payload: %q", escaped)
 	}
 }
 
@@ -504,7 +554,7 @@ func TestBuildServiceLabels(t *testing.T) {
 		}
 	})
 
-	t.Run("escapes ID and additional label values", func(t *testing.T) {
+	t.Run("escapes dollars but preserves other characters", func(t *testing.T) {
 		r := &runner{}
 		r.IDLabels = []string{"id.label=$value"}
 
@@ -513,8 +563,34 @@ func TestBuildServiceLabels(t *testing.T) {
 		if labels["id.label"] != "$$value" {
 			t.Errorf("id.label = %q, want %q", labels["id.label"], "$$value")
 		}
-		if labels["extra"] != `it\'\'s $$here` {
-			t.Errorf("extra = %q, want %q", labels["extra"], `it\'\'s $$here`)
+		// The apostrophe must be preserved; only "$" is doubled.
+		if labels["extra"] != "it's $$here" {
+			t.Errorf("extra = %q, want %q", labels["extra"], "it's $$here")
+		}
+	})
+
+	t.Run("splits ID label only on first equals sign", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=a=b=c"}
+
+		labels := r.buildServiceLabels(nil)
+
+		if labels["id.label"] != "a=b=c" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "a=b=c")
+		}
+	})
+
+	t.Run("additional labels merge alongside ID labels", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=v"}
+
+		labels := r.buildServiceLabels(map[string]string{"k": "plain"})
+
+		if labels["id.label"] != "v" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "v")
+		}
+		if labels["k"] != "plain" {
+			t.Errorf("k = %q, want %q", labels["k"], "plain")
 		}
 	})
 }

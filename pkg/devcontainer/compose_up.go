@@ -11,12 +11,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// composeLabelEscaper escapes characters in label values that would otherwise
-// trigger shell/compose variable interpolation. A literal replacer is used
-// instead of a regex because the substitution is a fixed per-character mapping:
-//   - "$" -> "$$" so compose does not expand it as a variable reference
-//   - "'" -> "\'\'" so single quotes survive shell-quoted entrypoints
-var composeLabelEscaper = strings.NewReplacer("$", "$$", "'", `\'\'`)
+// composeLabelEscaper escapes "$" as "$$" so Compose does not treat the value
+// as a variable reference; Compose un-doubles it back to a literal "$" during
+// interpolation. Only "$" is special here: the override is written as YAML and
+// the compose CLI is invoked via an argv (no shell), so no other characters
+// (e.g. "'") need escaping — doing so would corrupt the stored label payload.
+var composeLabelEscaper = strings.NewReplacer("$", "$$")
 
 func escapeComposeLabelValue(value string) string {
 	return composeLabelEscaper.Replace(value)
