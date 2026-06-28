@@ -700,41 +700,37 @@ func TestComposeBuildArgs(t *testing.T) {
 	}
 }
 
-func TestComposeBuildArgsStructure(t *testing.T) {
-	t.Run("includes project name, build, and override file", func(t *testing.T) {
-		args := composeBuildArgs(&composeBuildArgsParams{
-			projectName:             "ws",
-			serviceName:             "app",
-			overrideComposeFilePath: "/tmp/override.yml",
-		})
-		if !slices.Contains(args, composeProjectNameFlag) || !slices.Contains(args, "ws") {
-			t.Errorf("expected project name flag in %v", args)
-		}
-		if !slices.Contains(args, "build") {
-			t.Errorf("expected build verb in %v", args)
-		}
-		if !slices.Contains(args, "/tmp/override.yml") {
-			t.Errorf("expected override file in %v", args)
-		}
+func TestComposeBuildArgsIncludesCoreArgs(t *testing.T) {
+	args := composeBuildArgs(&composeBuildArgsParams{
+		projectName:             "ws",
+		serviceName:             "app",
+		overrideComposeFilePath: "/tmp/override.yml",
 	})
 
-	t.Run("appends run services without duplicating the main service", func(t *testing.T) {
-		args := composeBuildArgs(&composeBuildArgsParams{
-			projectName: "ws",
-			serviceName: "app",
-			runServices: []string{"app", "db"},
-		})
-		appCount := 0
-		for _, a := range args {
-			if a == "app" {
-				appCount++
-			}
+	for _, want := range []string{composeProjectNameFlag, "ws", "build", "/tmp/override.yml"} {
+		if !slices.Contains(args, want) {
+			t.Errorf("expected %q in %v", want, args)
 		}
-		if appCount != 1 {
-			t.Errorf("main service should appear once, got %d in %v", appCount, args)
-		}
-		if !slices.Contains(args, "db") {
-			t.Errorf("expected run service db in %v", args)
-		}
+	}
+}
+
+func TestComposeBuildArgsRunServicesNoDuplicate(t *testing.T) {
+	args := composeBuildArgs(&composeBuildArgsParams{
+		projectName: "ws",
+		serviceName: "app",
+		runServices: []string{"app", "db"},
 	})
+
+	appCount := 0
+	for _, a := range args {
+		if a == "app" {
+			appCount++
+		}
+	}
+	if appCount != 1 {
+		t.Errorf("main service should appear once, got %d in %v", appCount, args)
+	}
+	if !slices.Contains(args, "db") {
+		t.Errorf("expected run service db in %v", args)
+	}
 }
