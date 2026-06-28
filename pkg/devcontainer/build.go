@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/compose"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/devcontainer/buildkit"
@@ -31,11 +30,12 @@ func (r *runner) build(
 	var buildInfo *config.BuildInfo
 	var err error
 
-	if isDockerFileConfig(parsedConfig.Config) {
+	switch {
+	case isDockerFileConfig(parsedConfig.Config):
 		buildInfo, err = r.buildAndExtendImage(ctx, parsedConfig, substitutionContext, options)
-	} else if isDockerComposeConfig(parsedConfig.Config) {
+	case isDockerComposeConfig(parsedConfig.Config):
 		buildInfo, err = r.buildDevImageCompose(ctx, parsedConfig, substitutionContext, options)
-	} else {
+	default:
 		buildInfo, err = r.extendImage(ctx, parsedConfig, substitutionContext, options)
 	}
 
@@ -95,16 +95,63 @@ func (r *runner) extendImage(
 	}
 
 	// build the image
-	return r.buildImage(
-		ctx,
-		parsedConfig,
-		substitutionContext,
-		imageBuildInfo,
-		extendedBuildInfo,
-		"",
-		"",
-		options,
+	return r.buildImage(ctx, &buildImageParams{
+		parsedConfig:        parsedConfig,
+		substitutionContext: substitutionContext,
+		buildInfo:           imageBuildInfo,
+		extendedBuildInfo:   extendedBuildInfo,
+		options:             options,
+	})
+}
+
+// dockerfileBuildBase holds the resolved Dockerfile and the image base/target
+// stage for a dockerfile-backed build.
+type dockerfileBuildBase struct {
+	path      string
+	content   []byte
+	imageBase string
+}
+
+// resolveDockerfileBuildBase locates and reads the Dockerfile and determines the
+// image base/target stage, ensuring a final stage name when no target is set.
+func (r *runner) resolveDockerfileBuildBase(
+	parsedConfig *config.SubstitutedConfig,
+) (*dockerfileBuildBase, error) {
+	dockerFilePath, err := r.getDockerfilePath(parsedConfig.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	// #nosec G304 -- dockerFilePath is derived from trusted devcontainer config.
+	dockerFileContent, err := os.ReadFile(dockerFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if target := parsedConfig.Config.GetTarget(); target != "" {
+		return &dockerfileBuildBase{
+			path:      dockerFilePath,
+			content:   dockerFileContent,
+			imageBase: target,
+		}, nil
+	}
+
+	lastTargetName, modifiedDockerfileContents, err := dockerfile.EnsureFinalStageName(
+		string(dockerFileContent),
+		config.DockerfileDefaultTarget,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if modifiedDockerfileContents != "" {
+		dockerFileContent = []byte(modifiedDockerfileContents)
+	}
+
+	return &dockerfileBuildBase{
+		path:      dockerFilePath,
+		content:   dockerFileContent,
+		imageBase: lastTargetName,
+	}, nil
 }
 
 func (r *runner) buildAndExtendImage(
@@ -113,38 +160,15 @@ func (r *runner) buildAndExtendImage(
 	substitutionContext *config.SubstitutionContext,
 	options provider.BuildOptions,
 ) (*config.BuildInfo, error) {
-	dockerFilePath, err := r.getDockerfilePath(parsedConfig.Config)
+	base, err := r.resolveDockerfileBuildBase(parsedConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	dockerFileContent, err := os.ReadFile(dockerFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	// ensure there is a target to choose for us
-	var imageBase string
-	if parsedConfig.Config.GetTarget() != "" {
-		imageBase = parsedConfig.Config.GetTarget()
-	} else {
-		lastTargetName, modifiedDockerfileContents, err := dockerfile.EnsureFinalStageName(
-			string(dockerFileContent),
-			config.DockerfileDefaultTarget,
-		)
-		if err != nil {
-			return nil, err
-		} else if modifiedDockerfileContents != "" {
-			dockerFileContent = []byte(modifiedDockerfileContents)
-		}
-
-		imageBase = lastTargetName
 	}
 
 	// get image build info
 	imageBuildInfo, err := r.getImageBuildInfoFromDockerfile(
 		substitutionContext,
-		string(dockerFileContent),
+		string(base.content),
 		parsedConfig.Config.GetArgs(),
 		parsedConfig.Config.GetTarget(),
 	)
@@ -156,7 +180,7 @@ func (r *runner) buildAndExtendImage(
 	extendedBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
 		Ctx:                substitutionContext,
 		ImageBuildInfo:     imageBuildInfo,
-		Target:             imageBase,
+		Target:             base.imageBase,
 		DevContainerConfig: parsedConfig,
 		ForceBuild:         options.ForceBuild,
 		SecretOpts:         featureSecretOpts(options),
@@ -166,16 +190,15 @@ func (r *runner) buildAndExtendImage(
 	}
 
 	// build the image
-	return r.buildImage(
-		ctx,
-		parsedConfig,
-		substitutionContext,
-		imageBuildInfo,
-		extendedBuildInfo,
-		dockerFilePath,
-		string(dockerFileContent),
-		options,
-	)
+	return r.buildImage(ctx, &buildImageParams{
+		parsedConfig:        parsedConfig,
+		substitutionContext: substitutionContext,
+		buildInfo:           imageBuildInfo,
+		extendedBuildInfo:   extendedBuildInfo,
+		dockerfilePath:      base.path,
+		dockerfileContent:   string(base.content),
+		options:             options,
+	})
 }
 
 func (r *runner) getDockerfilePath(parsedConfig *config.DevContainerConfig) (string, error) {
@@ -252,12 +275,8 @@ func (r *runner) getImageBuildInfoFromDockerfile(
 		return nil, fmt.Errorf("parse dockerfile: %w", err)
 	}
 
-	// Check that the build target specified in the devcontainer.json exists in the Dockerfile
-	if target != "" && parsedDockerfile.StagesByTarget != nil {
-		_, ok := parsedDockerfile.StagesByTarget[target]
-		if !ok {
-			return nil, fmt.Errorf("build target does not exist")
-		}
+	if err := validateDockerfileTarget(parsedDockerfile, target); err != nil {
+		return nil, err
 	}
 
 	baseImage := parsedDockerfile.FindBaseImage(buildArgs, target)
@@ -270,18 +289,7 @@ func (r *runner) getImageBuildInfoFromDockerfile(
 		return nil, fmt.Errorf("inspect image %s: %w", baseImage, err)
 	}
 
-	// find user
-	user := parsedDockerfile.FindUserStatement(
-		buildArgs,
-		config.ListToObject(imageDetails.Config.Env),
-		target,
-	)
-	if user == "" {
-		user = imageDetails.Config.User
-	}
-	if user == "" {
-		user = "root"
-	}
+	user := resolveDockerfileUser(parsedDockerfile, buildArgs, imageDetails, target)
 
 	// parse metadata from image details
 	imageMetadataConfig, err := metadata.GetImageMetadata(imageDetails, substitutionContext)
@@ -296,16 +304,118 @@ func (r *runner) getImageBuildInfoFromDockerfile(
 	}, nil
 }
 
+// validateDockerfileTarget ensures a non-empty build target exists in the
+// parsed Dockerfile's stages.
+func validateDockerfileTarget(parsed *dockerfile.Dockerfile, target string) error {
+	if target == "" || parsed.StagesByTarget == nil {
+		return nil
+	}
+	if _, ok := parsed.StagesByTarget[target]; !ok {
+		return fmt.Errorf("build target does not exist")
+	}
+	return nil
+}
+
+// resolveDockerfileUser determines the build user, preferring a USER statement
+// in the Dockerfile, then the base image's user, then "root".
+func resolveDockerfileUser(
+	parsed *dockerfile.Dockerfile,
+	buildArgs map[string]string,
+	imageDetails *config.ImageDetails,
+	target string,
+) string {
+	user := parsed.FindUserStatement(
+		buildArgs,
+		config.ListToObject(imageDetails.Config.Env),
+		target,
+	)
+	if user == "" {
+		user = imageDetails.Config.User
+	}
+	if user == "" {
+		user = "root"
+	}
+	return user
+}
+
+// prebuildLookupParams groups the inputs for locating an existing prebuild image.
+type prebuildLookupParams struct {
+	parsedConfig      *config.SubstitutedConfig
+	extendedBuildInfo *feature.ExtendedBuildInfo
+	options           provider.BuildOptions
+	prebuildHash      string
+	targetArch        string
+}
+
+// findPrebuildImage searches the configured prebuild repositories for an image
+// matching the prebuild hash and target architecture. It returns the resolved
+// BuildInfo when found, or (nil, nil) when no prebuild image is available.
+func (r *runner) findPrebuildImage(
+	ctx context.Context,
+	params *prebuildLookupParams,
+) (*config.BuildInfo, error) {
+	options := params.options
+	devsyCustomizations := config.GetDevsyCustomizations(params.parsedConfig.Config)
+	if options.Repository != "" {
+		options.PrebuildRepositories = append(options.PrebuildRepositories, options.Repository)
+	}
+	options.PrebuildRepositories = append(
+		options.PrebuildRepositories,
+		devsyCustomizations.PrebuildRepository...)
+
+	log.Debugf(
+		"Try to find prebuild image %s in repositories %s",
+		params.prebuildHash,
+		strings.Join(options.PrebuildRepositories, ","),
+	)
+	for _, prebuildRepo := range options.PrebuildRepositories {
+		prebuildImage := prebuildRepo + ":" + params.prebuildHash
+		img, err := image.GetImageForArch(ctx, prebuildImage, params.targetArch)
+		if err != nil {
+			log.Debugf("Error trying to find prebuild image %s: %v", prebuildImage, err)
+			continue
+		}
+		if img == nil {
+			continue
+		}
+
+		log.Infof("Found existing prebuilt image %s", prebuildImage)
+		imageDetails, err := r.inspectImage(ctx, prebuildImage)
+		if err != nil {
+			return nil, fmt.Errorf("get image details: %w", err)
+		}
+
+		return &config.BuildInfo{
+			ImageDetails:  imageDetails,
+			ImageMetadata: params.extendedBuildInfo.MetadataConfig,
+			ImageName:     prebuildImage,
+			PrebuildHash:  params.prebuildHash,
+			RegistryCache: options.RegistryCache,
+			Tags:          options.Tag,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// buildImageParams groups the inputs for building a dockerfile-backed image.
+type buildImageParams struct {
+	parsedConfig        *config.SubstitutedConfig
+	substitutionContext *config.SubstitutionContext
+	buildInfo           *config.ImageBuildInfo
+	extendedBuildInfo   *feature.ExtendedBuildInfo
+	dockerfilePath      string
+	dockerfileContent   string
+	options             provider.BuildOptions
+}
+
 func (r *runner) buildImage(
 	ctx context.Context,
-	parsedConfig *config.SubstitutedConfig,
-	substitutionContext *config.SubstitutionContext,
-	buildInfo *config.ImageBuildInfo,
-	extendedBuildInfo *feature.ExtendedBuildInfo,
-	dockerfilePath,
-	dockerfileContent string,
-	options provider.BuildOptions,
+	params *buildImageParams,
 ) (*config.BuildInfo, error) {
+	parsedConfig := params.parsedConfig
+	options := params.options
+
 	targetArch, err := r.Driver.TargetArchitecture(ctx, r.ID)
 	if err != nil {
 		return nil, err
@@ -316,9 +426,9 @@ func (r *runner) buildImage(
 		Platform:          options.Platform,
 		Architecture:      targetArch,
 		ContextPath:       config.GetContextPath(parsedConfig.Config),
-		DockerfilePath:    dockerfilePath,
-		DockerfileContent: dockerfileContent,
-		BuildInfo:         buildInfo,
+		DockerfilePath:    params.dockerfilePath,
+		DockerfileContent: params.dockerfileContent,
+		BuildInfo:         params.buildInfo,
 	})
 	if err != nil {
 		return nil, err
@@ -326,53 +436,41 @@ func (r *runner) buildImage(
 
 	// check if there is a prebuild image
 	if !options.ForceDockerless && !options.ForceBuild {
-		devsyCustomizations := config.GetDevsyCustomizations(parsedConfig.Config)
-		if options.Repository != "" {
-			options.PrebuildRepositories = append(options.PrebuildRepositories, options.Repository)
+		prebuilt, err := r.findPrebuildImage(ctx, &prebuildLookupParams{
+			parsedConfig:      parsedConfig,
+			extendedBuildInfo: params.extendedBuildInfo,
+			options:           options,
+			prebuildHash:      prebuildHash,
+			targetArch:        targetArch,
+		})
+		if err != nil {
+			return nil, err
 		}
-		options.PrebuildRepositories = append(
-			options.PrebuildRepositories,
-			devsyCustomizations.PrebuildRepository...)
-
-		log.Debugf(
-			"Try to find prebuild image %s in repositories %s",
-			prebuildHash,
-			strings.Join(options.PrebuildRepositories, ","),
-		)
-		for _, prebuildRepo := range options.PrebuildRepositories {
-			prebuildImage := prebuildRepo + ":" + prebuildHash
-			img, err := image.GetImageForArch(ctx, prebuildImage, targetArch)
-			if err == nil && img != nil {
-				// prebuild image found
-				log.Infof("Found existing prebuilt image %s", prebuildImage)
-
-				// inspect image
-				imageDetails, err := r.inspectImage(ctx, prebuildImage)
-				if err != nil {
-					return nil, fmt.Errorf("get image details: %w", err)
-				}
-
-				return &config.BuildInfo{
-					ImageDetails:  imageDetails,
-					ImageMetadata: extendedBuildInfo.MetadataConfig,
-					ImageName:     prebuildImage,
-					PrebuildHash:  prebuildHash,
-					RegistryCache: options.RegistryCache,
-					Tags:          options.Tag,
-				}, nil
-			} else if err != nil {
-				log.Debugf("Error trying to find prebuild image %s: %v", prebuildImage, err)
-			}
+		if prebuilt != nil {
+			return prebuilt, nil
 		}
 	}
+
+	return r.executeBuild(ctx, params, prebuildHash, targetArch)
+}
+
+// executeBuild dispatches the actual image build to the appropriate backend:
+// remote BuildKit (platform mode), the dockerless fallback (non-docker driver),
+// or the docker driver.
+func (r *runner) executeBuild(
+	ctx context.Context,
+	params *buildImageParams,
+	prebuildHash, targetArch string,
+) (*config.BuildInfo, error) {
+	options := params.options
 
 	if options.CLIOptions.Platform.Enabled {
 		buildInfo, err := buildkit.BuildRemote(ctx, buildkit.BuildRemoteOptions{
 			PrebuildHash:         prebuildHash,
-			ParsedConfig:         parsedConfig,
-			ExtendedBuildInfo:    extendedBuildInfo,
-			DockerfilePath:       dockerfilePath,
-			DockerfileContent:    dockerfileContent,
+			ParsedConfig:         params.parsedConfig,
+			ExtendedBuildInfo:    params.extendedBuildInfo,
+			DockerfilePath:       params.dockerfilePath,
+			DockerfileContent:    params.dockerfileContent,
 			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
 			Options:              options,
 			TargetArch:           targetArch,
@@ -394,23 +492,23 @@ func (r *runner) buildImage(
 			)
 		}
 
-		return dockerlessFallback(
-			r.LocalWorkspaceFolder,
-			substitutionContext.ContainerWorkspaceFolder,
-			parsedConfig,
-			buildInfo,
-			extendedBuildInfo,
-			dockerfileContent,
-			options,
-		)
+		return dockerlessFallback(&dockerlessFallbackParams{
+			localWorkspaceFolder:     r.LocalWorkspaceFolder,
+			containerWorkspaceFolder: params.substitutionContext.ContainerWorkspaceFolder,
+			parsedConfig:             params.parsedConfig,
+			buildInfo:                params.buildInfo,
+			extendedBuildInfo:        params.extendedBuildInfo,
+			dockerfileContent:        params.dockerfileContent,
+			options:                  options,
+		})
 	}
 
 	return dockerDriver.BuildDevContainer(ctx, driver.BuildRequest{
 		PrebuildHash:         prebuildHash,
-		ParsedConfig:         parsedConfig,
-		ExtendedBuildInfo:    extendedBuildInfo,
-		DockerfilePath:       dockerfilePath,
-		DockerfileContent:    dockerfileContent,
+		ParsedConfig:         params.parsedConfig,
+		ExtendedBuildInfo:    params.extendedBuildInfo,
+		DockerfilePath:       params.dockerfilePath,
+		DockerfileContent:    params.dockerfileContent,
 		LocalWorkspaceFolder: r.LocalWorkspaceFolder,
 		Options:              options,
 	})
@@ -427,29 +525,15 @@ func (r *runner) buildDevImageCompose(
 		return nil, fmt.Errorf("find docker compose: %w", err)
 	}
 
-	envFiles := r.getEnvFiles()
-
-	composeFiles, err := r.getDockerComposeFilePaths(parsedConfig, envFiles)
+	projFiles, err := r.dockerComposeProjectFiles(parsedConfig)
 	if err != nil {
-		return nil, fmt.Errorf("get docker compose file paths: %w", err)
+		return nil, err
 	}
 
-	var composeGlobalArgs []string
-	for _, configFile := range composeFiles {
-		composeGlobalArgs = append(composeGlobalArgs, "-f", configFile)
-	}
-
-	for _, envFile := range envFiles {
-		composeGlobalArgs = append(composeGlobalArgs, "--env-file", envFile)
-	}
-
-	log.Debugf("Loading docker compose project %+v", composeFiles)
-	project, err := compose.LoadDockerComposeProject(ctx, composeFiles, envFiles)
+	project, err := r.loadComposeProject(ctx, composeHelper, parsedConfig, projFiles)
 	if err != nil {
-		return nil, fmt.Errorf("load docker compose project: %w", err)
+		return nil, err
 	}
-	project.Name = composeHelper.GetProjectName(r.ID)
-	log.Debugf("Loaded project %s", project.Name)
 
 	composeService, originalImageName, err := resolveComposeServiceImage(
 		project,
@@ -466,7 +550,7 @@ func (r *runner) buildDevImageCompose(
 		project:             project,
 		composeHelper:       composeHelper,
 		composeService:      &composeService,
-		globalArgs:          composeGlobalArgs,
+		globalArgs:          projFiles.composeGlobalArgs,
 		featureSecretsFile:  options.FeatureSecretsFile,
 		pull:                options.Pull,
 		noCache:             options.NoCache,
@@ -475,6 +559,18 @@ func (r *runner) buildDevImageCompose(
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)
 	}
 
+	return r.composeBuildInfo(ctx, extendResult, originalImageName, options)
+}
+
+// composeBuildInfo resolves the final image for a compose build and assembles
+// the resulting BuildInfo. Compose builds do not compute a prebuild hash, so the
+// image tag is used as the PrebuildHash fallback.
+func (r *runner) composeBuildInfo(
+	ctx context.Context,
+	extendResult composeExtendResult,
+	originalImageName string,
+	options provider.BuildOptions,
+) (*config.BuildInfo, error) {
 	currentImageName := extendResult.buildImageName
 	if currentImageName == "" {
 		currentImageName = originalImageName
@@ -485,9 +581,6 @@ func (r *runner) buildDevImageCompose(
 		return nil, fmt.Errorf("inspect image: %w", err)
 	}
 
-	// have a fallback value for PrebuildHash
-	// we don't calculate prebuild hash on docker compose builds
-	// let's use Images :tag then
 	imageTag, err := r.getImageTag(ctx, imageDetails.ID)
 	if err != nil {
 		return nil, fmt.Errorf("inspect image: %w", err)
@@ -503,15 +596,22 @@ func (r *runner) buildDevImageCompose(
 	}, nil
 }
 
-func dockerlessFallback(
-	localWorkspaceFolder,
-	containerWorkspaceFolder string,
-	parsedConfig *config.SubstitutedConfig,
-	buildInfo *config.ImageBuildInfo,
-	extendedBuildInfo *feature.ExtendedBuildInfo,
-	dockerfileContent string,
-	options provider.BuildOptions,
-) (*config.BuildInfo, error) {
+// dockerlessFallbackParams groups the inputs for the dockerless build fallback.
+type dockerlessFallbackParams struct {
+	localWorkspaceFolder     string
+	containerWorkspaceFolder string
+	parsedConfig             *config.SubstitutedConfig
+	buildInfo                *config.ImageBuildInfo
+	extendedBuildInfo        *feature.ExtendedBuildInfo
+	dockerfileContent        string
+	options                  provider.BuildOptions
+}
+
+func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, error) {
+	parsedConfig := params.parsedConfig
+	extendedBuildInfo := params.extendedBuildInfo
+	options := params.options
+
 	contextPath := config.GetContextPath(parsedConfig.Config)
 	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
@@ -521,12 +621,12 @@ func dockerlessFallback(
 	}
 
 	// build dockerfile
-	devsyDockerfile, err := build.RewriteDockerfile(dockerfileContent, extendedBuildInfo)
+	devsyDockerfile, err := build.RewriteDockerfile(params.dockerfileContent, extendedBuildInfo)
 	if err != nil {
 		return nil, fmt.Errorf("rewrite dockerfile: %w", err)
 	} else if devsyDockerfile == "" {
 		devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
-		err = os.WriteFile(devsyDockerfile, []byte(dockerfileContent), 0o600)
+		err = os.WriteFile(devsyDockerfile, []byte(params.dockerfileContent), 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("write devsy dockerfile: %w", err)
 		}
@@ -534,8 +634,8 @@ func dockerlessFallback(
 
 	// get build args and target
 	containerContext, containerDockerfile := getContainerContextAndDockerfile(
-		localWorkspaceFolder,
-		containerWorkspaceFolder,
+		params.localWorkspaceFolder,
+		params.containerWorkspaceFolder,
 		contextPath,
 		devsyDockerfile,
 	)
@@ -549,7 +649,7 @@ func dockerlessFallback(
 			BuildArgs: buildArgs,
 			Target:    target,
 
-			User: buildInfo.User,
+			User: params.buildInfo.User,
 		},
 		RegistryCache: options.RegistryCache,
 		Tags:          options.Tag,
