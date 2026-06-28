@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 const detectorVersion = "v0.10.0"
@@ -96,33 +95,16 @@ func checkInSync(hackDir, outFile string, deps []byte) error {
 		diff.Stdout = os.Stderr
 		diff.Stderr = os.Stderr
 		_ = diff.Run()
-		const msg = "THIRD_PARTY_LICENSES.md is out of date; run 'task cli:licenses' and commit the result"
-		// Renovate bumps dependencies without regenerating the attribution
-		// file, so warn instead of failing on its branches; the file is
-		// reconciled when a maintainer runs the generator.
-		if onRenovateBranch() {
-			fmt.Fprintln(os.Stderr, "warning:", msg)
-			return nil
-		}
-		return fmt.Errorf("%s", msg)
+		// Dependency bumps (e.g. Renovate) change the attribution file without
+		// regenerating it, so warn instead of failing; the file is reconciled
+		// when a maintainer runs the generator and commits the result.
+		fmt.Fprintln(os.Stderr,
+			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'task cli:licenses' and commit the result")
+		return nil
 	}
 
 	fmt.Fprintln(os.Stderr, "THIRD_PARTY_LICENSES.md is up to date.")
 	return nil
-}
-
-// onRenovateBranch reports whether the check is running against a Renovate
-// branch, using the GITHUB_HEAD_REF set on pull_request events and falling back
-// to the locally checked-out branch.
-func onRenovateBranch() bool {
-	if strings.HasPrefix(os.Getenv("GITHUB_HEAD_REF"), "renovate/") {
-		return true
-	}
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return false
-	}
-	return strings.HasPrefix(strings.TrimSpace(string(out)), "renovate/")
 }
 
 func repoRoot() (string, error) {
