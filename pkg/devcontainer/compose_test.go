@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -664,6 +665,67 @@ func TestNamedVolumesFromMounts(t *testing.T) {
 		}
 		if _, ok := got[""]; ok {
 			t.Error("anonymous volume with empty source should not be declared")
+		}
+	})
+}
+
+func TestComposeBuildArgs(t *testing.T) {
+	t.Run("adds --pull when requested", func(t *testing.T) {
+		args := composeBuildArgs(&composeBuildArgsParams{
+			projectName: "ws",
+			serviceName: "app",
+			pull:        true,
+		})
+		if !slices.Contains(args, "--pull") {
+			t.Errorf("expected --pull in %v", args)
+		}
+	})
+
+	t.Run("omits --pull by default", func(t *testing.T) {
+		args := composeBuildArgs(&composeBuildArgsParams{
+			projectName: "ws",
+			serviceName: "app",
+			pull:        false,
+		})
+		if slices.Contains(args, "--pull") {
+			t.Errorf("did not expect --pull in %v", args)
+		}
+	})
+
+	t.Run("includes project name, build, and override file", func(t *testing.T) {
+		args := composeBuildArgs(&composeBuildArgsParams{
+			projectName:             "ws",
+			serviceName:             "app",
+			overrideComposeFilePath: "/tmp/override.yml",
+		})
+		if !slices.Contains(args, composeProjectNameFlag) || !slices.Contains(args, "ws") {
+			t.Errorf("expected project name flag in %v", args)
+		}
+		if !slices.Contains(args, "build") {
+			t.Errorf("expected build verb in %v", args)
+		}
+		if !slices.Contains(args, "/tmp/override.yml") {
+			t.Errorf("expected override file in %v", args)
+		}
+	})
+
+	t.Run("appends run services without duplicating the main service", func(t *testing.T) {
+		args := composeBuildArgs(&composeBuildArgsParams{
+			projectName: "ws",
+			serviceName: "app",
+			runServices: []string{"app", "db"},
+		})
+		appCount := 0
+		for _, a := range args {
+			if a == "app" {
+				appCount++
+			}
+		}
+		if appCount != 1 {
+			t.Errorf("main service should appear once, got %d in %v", appCount, args)
+		}
+		if !slices.Contains(args, "db") {
+			t.Errorf("expected run service db in %v", args)
 		}
 	})
 }
