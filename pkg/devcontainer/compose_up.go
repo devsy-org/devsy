@@ -11,11 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// composeLabelEscaper escapes "$" as "$$" so Compose does not treat the value
-// as a variable reference; Compose un-doubles it back to a literal "$" during
-// interpolation. Only "$" is special here: the override is written as YAML and
-// the compose CLI is invoked via an argv (no shell), so no other characters
-// (e.g. "'") need escaping — doing so would corrupt the stored label payload.
+// composeLabelEscaper doubles "$" so Compose does not interpolate it as a
+// variable reference. "$" is the only special character: labels are written as
+// YAML and the compose CLI runs via argv (no shell), so escaping anything else
+// (e.g. "'") would corrupt the stored value.
 var composeLabelEscaper = strings.NewReplacer("$", "$$")
 
 func escapeComposeLabelValue(value string) string {

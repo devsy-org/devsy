@@ -42,7 +42,7 @@ type DeleteOptions struct {
 }
 
 // CommandParams groups the inputs for running a command inside the dev
-// container. ctx is passed separately to keep it out of the struct.
+// container.
 type CommandParams struct {
 	User    string
 	Command string
@@ -95,8 +95,7 @@ type UpOptions struct {
 }
 
 // runContainerParams groups the inputs shared by the runSingleContainer,
-// runDockerCompose, and runDefaultContainer dispatch methods. ctx is passed
-// separately to keep it out of the struct.
+// runDockerCompose, and runDefaultContainer dispatch methods.
 type runContainerParams struct {
 	parsedConfig        *config.SubstitutedConfig
 	substitutionContext *config.SubstitutionContext

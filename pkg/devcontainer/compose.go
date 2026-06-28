@@ -52,7 +52,7 @@ type persistedFileResult struct {
 }
 
 // startContainerParams groups the inputs for starting (or recreating) the
-// compose dev container. ctx is passed separately to keep it out of the struct.
+// compose dev container.
 type startContainerParams struct {
 	parsedConfig        *config.SubstitutedConfig
 	substitutionContext *config.SubstitutionContext
@@ -304,9 +304,8 @@ func (r *runner) ensureComposeContainer(
 	return containerDetails, nil
 }
 
-// finalizeComposeContainer derives the merged config from container metadata,
-// updates the container user, exposes the compose project name, validates host
-// requirements, and sets up the container.
+// finalizeComposeContainer merges the container's metadata config and sets up
+// the running container.
 func (r *runner) finalizeComposeContainer(
 	ctx context.Context,
 	runParams *runContainerParams,
@@ -362,8 +361,7 @@ func (r *runner) finalizeComposeContainer(
 	})
 }
 
-// updateContainerUserUID updates the container user's UID/GID to match the local
-// user when running on a Docker driver.
+// updateContainerUserUID updates the container user's UID/GID on Docker drivers.
 func (r *runner) updateContainerUserUID(
 	ctx context.Context,
 	parsedConfig *config.SubstitutedConfig,
