@@ -145,9 +145,13 @@ func (r *runner) buildAndExtendDockerCompose(
 		projectName:             params.project.Name,
 		globalArgs:              params.globalArgs,
 		overrideComposeFilePath: dockerComposeFilePath,
-		pull:                    extendImageBuildInfo == nil,
-		serviceName:             params.composeService.Name,
-		runServices:             params.parsedConfig.Config.RunServices,
+		// extendImageBuildInfo is non-nil here (a nil result always comes with
+		// an error, handled above), so --pull is effectively never added. This
+		// preserves the original behavior; do not switch to hasFeatureBuildInfo
+		// without intending to start passing --pull on featureless builds.
+		pull:        false,
+		serviceName: params.composeService.Name,
+		runServices: params.parsedConfig.Config.RunServices,
 	})
 
 	if err := r.runComposeBuild(ctx, params.composeHelper, buildArgs); err != nil {
@@ -342,8 +346,8 @@ type composeBuildArgsParams struct {
 }
 
 // composeBuildArgs assembles the "docker compose ... build" argument list,
-// adding the override file, --pull when no feature build info is present, and
-// any explicitly requested run services.
+// adding the override file, --pull when params.pull is set, and any explicitly
+// requested run services.
 func composeBuildArgs(params *composeBuildArgsParams) []string {
 	buildArgs := []string{composeProjectNameFlag, params.projectName}
 	buildArgs = append(buildArgs, params.globalArgs...)

@@ -439,11 +439,13 @@ func (r *runner) tryStartExistingProject(
 
 	log.Debugf("Found existing project files: %s", existingProjectFiles)
 	if !allProjectFilesExist(existingProjectFiles) {
-		containerDetails = nil
+		// A referenced file is gone, so `compose up -f <missing>` would only
+		// fail; rebuild from scratch instead.
+		return containerDetails, false
 	}
 
-	// If project is found, we can call `up` with the project name.
-	// If it fails, fall back to rebuilding.
+	// The project files are present, so `up` can reuse them. If it fails, the
+	// caller falls back to rebuilding.
 	details, err := r.composeUpExistingProject(ctx, params, existingProjectFiles)
 	if err != nil || details == nil {
 		// Compose failed, or reported success but the dev container is not

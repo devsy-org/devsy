@@ -66,8 +66,8 @@ func parseTmpfsSize(raw, target string) (composetypes.UnitBytes, bool) {
 		return 0, false
 	}
 	parsed, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		log.Warnf("ignoring tmpfs-size %q on mount %s: %s", raw, target, err)
+	if err != nil || parsed < 0 {
+		log.Warnf("ignoring invalid tmpfs-size %q on mount %s", raw, target)
 		return 0, false
 	}
 	return composetypes.UnitBytes(parsed), true

@@ -457,6 +457,11 @@ func TestTmpfsOptionsFromMount(t *testing.T) {
 			in:   &config.Mount{Other: []string{"tmpfs-size=oops", "tmpfs-mode=oops"}},
 			want: nil,
 		},
+		{
+			name: "negative size dropped",
+			in:   &config.Mount{Other: []string{"tmpfs-size=-1"}},
+			want: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
