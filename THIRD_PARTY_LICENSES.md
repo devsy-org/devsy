@@ -75,7 +75,7 @@ To regenerate this file after changing dependencies, run `task cli:licenses`.
 | [github.com/containerd/console](https://github.com/containerd/console) | `v1.0.5` | Apache-2.0 |
 | [github.com/containerd/containerd/api](https://github.com/containerd/containerd) | `v1.10.0` | Apache-2.0 |
 | [github.com/containerd/containerd/v2](https://github.com/containerd/containerd) | `v2.2.2` | Apache-2.0 |
-| [github.com/containerd/continuity](https://github.com/containerd/continuity) | `v0.4.5` | Apache-2.0 |
+| [github.com/containerd/continuity](https://github.com/containerd/continuity) | `v0.5.0` | Apache-2.0 |
 | [github.com/containerd/errdefs](https://github.com/containerd/errdefs) | `v1.0.0` | Apache-2.0 |
 | [github.com/containerd/errdefs/pkg](https://github.com/containerd/errdefs) | `v0.3.0` | Apache-2.0 |
 | [github.com/containerd/log](https://github.com/containerd/log) | `v0.1.0` | Apache-2.0 |
@@ -243,7 +243,7 @@ To regenerate this file after changing dependencies, run `task cli:licenses`.
 | [github.com/tidwall/pretty](https://github.com/tidwall/pretty) | `v1.2.1` | MIT |
 | [github.com/tklauser/go-sysconf](https://github.com/tklauser/go-sysconf) | `v0.3.16` | BSD-3-Clause |
 | [github.com/tklauser/numcpus](https://github.com/tklauser/numcpus) | `v0.11.0` | Apache-2.0 |
-| [github.com/tonistiigi/fsutil](https://github.com/tonistiigi/fsutil) | `v0.0.0-20251211185533-a2aa163d723f` | MIT |
+| [github.com/tonistiigi/fsutil](https://github.com/tonistiigi/fsutil) | `v0.0.0-20260609174605-b61e79c0c046` | MIT |
 | [github.com/tonistiigi/go-csvvalue](https://github.com/tonistiigi/go-csvvalue) | `v0.0.0-20240814133006-030d3b2625d0` | MIT |
 | [github.com/tonistiigi/units](https://github.com/tonistiigi/units) | `v0.0.0-20180711220420-6950e57a87ea` | MIT |
 | [github.com/tonistiigi/vt100](https://github.com/tonistiigi/vt100) | `v0.0.0-20240514184818-90bafcd6abab` | MIT |

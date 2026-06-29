@@ -334,6 +334,43 @@ var _ = ginkgo.Describe(
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
+		// Regression guard: a build-backed service with an explicit build.target
+		// and features must honor the real Dockerfile. Previously the Dockerfile
+		// contents were dropped when a target was set, producing a synthesized
+		// "FROM <image> AS <target>" that ignored the requested stage (and broke
+		// build-only services that have no top-level image).
+		ginkgo.It("features with build target", func(ctx context.Context) {
+			tempDir, workspace, err := tc.setupAndStartWorkspace(
+				ctx,
+				"tests/up-docker-compose/testdata/docker-compose-build-target-features",
+				"--debug",
+			)
+			framework.ExpectNoError(err)
+
+			ids, err := findComposeContainer(
+				ctx,
+				tc.dockerHelper,
+				tc.composeHelper,
+				workspace.UID,
+				"app",
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+
+			// The "dev" stage overwrites the marker, so seeing "dev-stage"
+			// proves the real multi-stage Dockerfile (and its target) was built.
+			stageMarker, err := tc.execSSH(ctx, tempDir, "cat /stage-marker.txt")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stageMarker)).
+				To(gomega.Equal("dev-stage"), "the requested build target stage should be used")
+
+			// The feature must still be installed on top of the targeted stage.
+			vclusterVersionOutput, err := tc.execSSH(ctx, tempDir, "vcluster --version")
+			framework.ExpectNoError(err)
+			gomega.Expect(vclusterVersionOutput).
+				To(gomega.ContainSubstring("vcluster version 0.24.1"))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
 		ginkgo.It(
 			"does not retag shared image when applying features to image backed services",
 			func(ctx context.Context) {

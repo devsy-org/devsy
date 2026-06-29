@@ -4,8 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
@@ -107,5 +109,31 @@ func TestSelectStrategy_DockerRuntime_BuildxWhenAvailable(t *testing.T) {
 		// Docker without buildx — still valid, not Podman
 	default:
 		t.Fatalf("unexpected strategy type: %T", strategy)
+	}
+}
+
+func TestBuildDockerBuildxArgs_PullAndNoCache(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       *build.BuildOptions
+		wantPull   bool
+		wantNoCach bool
+	}{
+		{name: "neither", opts: &build.BuildOptions{}},
+		{name: "pull only", opts: &build.BuildOptions{Pull: true}, wantPull: true},
+		{name: "no-cache only", opts: &build.BuildOptions{NoCache: true}, wantNoCach: true},
+		{
+			name:       "both",
+			opts:       &build.BuildOptions{Pull: true, NoCache: true},
+			wantPull:   true,
+			wantNoCach: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := buildDockerBuildxArgs(tt.opts, "")
+			assert.Equal(t, tt.wantPull, slices.Contains(args, "--pull"), "args=%v", args)
+			assert.Equal(t, tt.wantNoCach, slices.Contains(args, "--no-cache"), "args=%v", args)
+		})
 	}
 }

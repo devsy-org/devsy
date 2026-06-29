@@ -196,6 +196,12 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		BoolVar(&cmd.Prebuild, "prebuild", false,
 			"If true will only run the prebuild lifecycle (onCreateCommand + updateContentCommand) then stop")
 	upCmd.Flags().
+		BoolVar(&cmd.Pull, "pull", false,
+			"Always attempt to pull a newer version of the base image when building")
+	upCmd.Flags().
+		BoolVar(&cmd.NoCache, "no-cache", false,
+			"Do not use the build cache when building the image")
+	upCmd.Flags().
 		BoolVar(&cmd.Recreate, "recreate", false, "If true will remove any existing containers and recreate them")
 	upCmd.Flags().BoolVar(&cmd.Recreate, "remove-existing-container", false, "Alias for --recreate")
 	_ = upCmd.Flags().MarkHidden("remove-existing-container")

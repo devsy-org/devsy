@@ -101,6 +101,9 @@ func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []strin
 	if options.NoCache {
 		args = append(args, "--no-cache")
 	}
+	if options.Pull {
+		args = append(args, "--pull")
+	}
 	args = appendImageTags(args, options.Images)
 	args = appendBuildArgsAndContexts(args, options.BuildArgs, options.Contexts)
 	args = appendLabels(args, options.Labels)

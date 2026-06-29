@@ -296,6 +296,9 @@ type CLIOptions struct {
 
 	// ForceBuild forces a rebuild even if a cached image exists.
 	ForceBuild bool `json:"forceBuild,omitempty"`
+	// Pull re-pulls base images during the build (docker build --pull) instead
+	// of reusing locally cached layers.
+	Pull bool `json:"pull,omitempty"`
 	// ForceDockerless forces the use of a dockerless build approach.
 	ForceDockerless bool `json:"forceDockerless,omitempty"`
 	// ForceInternalBuildKit forces the use of internal BuildKit instead of docker buildx.

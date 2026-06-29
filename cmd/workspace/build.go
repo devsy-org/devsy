@@ -100,6 +100,8 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 		StringVar(&cmd.ImageName, "image-name", "", "Alternative name for the built image")
 	buildCmd.Flags().
 		BoolVar(&cmd.NoBuild, "no-build", false, "Fail if the image must be built (enforce pre-built images only)")
+	buildCmd.Flags().
+		BoolVar(&cmd.Pull, "pull", false, "Always attempt to pull a newer version of the base image when building")
 
 	// TESTING
 	buildCmd.Flags().BoolVar(&cmd.ForceBuild, "force-build", false, "TESTING ONLY")

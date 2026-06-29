@@ -28,14 +28,7 @@ type Runner interface {
 
 	Find(ctx context.Context) (*config.ContainerDetails, error)
 
-	Command(
-		ctx context.Context,
-		user string,
-		command string,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-	) error
+	Command(ctx context.Context, params CommandParams) error
 
 	Stop(ctx context.Context) error
 
@@ -46,6 +39,16 @@ type Runner interface {
 
 type DeleteOptions struct {
 	RemoveVolumes bool
+}
+
+// CommandParams groups the inputs for running a command inside the dev
+// container.
+type CommandParams struct {
+	User    string
+	Command string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
 }
 
 func NewRunner(
@@ -86,9 +89,32 @@ type runner struct {
 type UpOptions struct {
 	provider2.CLIOptions
 
-	NoBuild       bool
-	ForceBuild    bool
+	// NoBuild is set by the container tunnel to force pre-built images; it is
+	// distinct from the embedded CLIOptions.NoBuild used by the build command.
+	NoBuild bool
+	// RegistryCache is sourced from AgentWorkspaceInfo.RegistryCache (a provider
+	// context option), not from CLIOptions, so it is a separate field.
 	RegistryCache string
+}
+
+// toBuildOptions derives the BuildOptions for an up-triggered build. It carries
+// the full embedded CLIOptions (so build flags like Pull/ForceBuild are never
+// dropped) and applies the up-specific NoBuild/RegistryCache overrides.
+func (o UpOptions) toBuildOptions() provider2.BuildOptions {
+	return provider2.BuildOptions{
+		CLIOptions:    o.CLIOptions,
+		RegistryCache: o.RegistryCache,
+		NoBuild:       o.NoBuild,
+	}
+}
+
+// runContainerParams groups the inputs shared by the runSingleContainer,
+// runDockerCompose, and runDefaultContainer dispatch methods.
+type runContainerParams struct {
+	parsedConfig        *config.SubstitutedConfig
+	substitutionContext *config.SubstitutionContext
+	options             UpOptions
+	timeout             time.Duration
 }
 
 func (r *runner) Up(
@@ -121,31 +147,55 @@ func (r *runner) Up(
 		log.Info("Skipping initializeCommand on platform")
 	}
 
+	runParams := &runContainerParams{
+		parsedConfig:        substitutedConfig,
+		substitutionContext: substitutionContext,
+		options:             options,
+		timeout:             timeout,
+	}
+
 	switch {
 	case isDockerFileConfig(substitutedConfig.Config),
 		substitutedConfig.Config.Image != "",
 		substitutedConfig.Config.ContainerID != "":
-		return r.runSingleContainer(
-			ctx,
-			substitutedConfig,
-			substitutionContext,
-			options,
-			timeout,
-		)
+		return r.runSingleContainer(ctx, runParams)
 	case isDockerComposeConfig(substitutedConfig.Config):
-		return r.runDockerCompose(ctx, substitutedConfig, substitutionContext, options, timeout)
+		return r.runDockerCompose(ctx, runParams)
 	default:
-		return r.runDefaultContainer(ctx, options, substitutedConfig, substitutionContext, timeout)
+		return r.runDefaultContainer(ctx, runParams)
 	}
+}
+
+func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID: r.ID,
+		User:        params.User,
+		Command:     params.Command,
+		Stdin:       params.Stdin,
+		Stdout:      params.Stdout,
+		Stderr:      params.Stderr,
+	})
+}
+
+func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
+	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+
+	return containerDetails, nil
+}
+
+func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
+	return r.Driver.GetDevContainerLogs(ctx, r.ID, writer, writer)
 }
 
 func (r *runner) runDefaultContainer(
 	ctx context.Context,
-	options UpOptions,
-	substitutedConfig *config.SubstitutedConfig,
-	substitutionContext *config.SubstitutionContext,
-	timeout time.Duration,
+	params *runContainerParams,
 ) (*config.Result, error) {
+	options := params.options
+	substitutedConfig := params.parsedConfig
 	if options.FallbackImage != "" {
 		log.Warn(
 			"dev container config is missing one of \"image\", \"dockerFile\" or \"dockerComposeFile\" properties, " +
@@ -178,38 +228,7 @@ func (r *runner) runDefaultContainer(
 		substitutedConfig.Config.ImageContainer = language.MapConfig[lang].ImageContainer
 	}
 
-	return r.runSingleContainer(ctx, substitutedConfig, substitutionContext, options, timeout)
-}
-
-func (r *runner) Command(
-	ctx context.Context,
-	user string,
-	command string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.ID,
-		User:        user,
-		Command:     command,
-		Stdin:       stdin,
-		Stdout:      stdout,
-		Stderr:      stderr,
-	})
-}
-
-func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
-	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
-	if err != nil {
-		return nil, fmt.Errorf("find dev container: %w", err)
-	}
-
-	return containerDetails, nil
-}
-
-func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
-	return r.Driver.GetDevContainerLogs(ctx, r.ID, writer, writer)
+	return r.runSingleContainer(ctx, params)
 }
 
 func isDockerFileConfig(config *config.DevContainerConfig) bool {

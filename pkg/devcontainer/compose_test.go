@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,22 +146,22 @@ func (s *ComposeSuite) TestComposeBuildImageName() {
 
 func (s *ComposeSuite) TestCreateComposeServiceUsesBuildImageName() {
 	r := &runner{}
-	service := r.createComposeService(
-		&composetypes.ServiceConfig{
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
 			Name:  "app",
 			Image: "ghcr.io/example/shared-base:latest",
 			Build: &composetypes.BuildConfig{Target: "original-target"},
 		},
-		"workspace-app:latest",
-		"Dockerfile-with-features",
-		"/tmp/context",
-		&feature.BuildInfo{
+		buildImageName:          "workspace-app:latest",
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo: &feature.BuildInfo{
 			OverrideTarget: "dev_containers_target_stage",
 			BuildArgs: map[string]string{
 				"FEATURE_FLAG": "true",
 			},
 		},
-	)
+	})
 
 	s.Equal("workspace-app:latest", service.Image)
 	s.Require().NotNil(service.Build)
@@ -457,6 +458,11 @@ func TestTmpfsOptionsFromMount(t *testing.T) {
 			in:   &config.Mount{Other: []string{"tmpfs-size=oops", "tmpfs-mode=oops"}},
 			want: nil,
 		},
+		{
+			name: "negative size dropped",
+			in:   &config.Mount{Other: []string{"tmpfs-size=-1"}},
+			want: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -468,5 +474,263 @@ func TestTmpfsOptionsFromMount(t *testing.T) {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEscapeComposeLabelValue(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain value untouched", in: "plain-value", want: "plain-value"},
+		{name: "empty value", in: "", want: ""},
+
+		// "$" is the only character Compose interpolates, so it is doubled.
+		{name: "single dollar doubled", in: "$HOME", want: "$$HOME"},
+		{name: "leading dollar", in: "$", want: "$$"},
+		{name: "trailing dollar", in: "a$", want: "a$$"},
+		{name: "multiple dollars", in: "$a$b$", want: "$$a$$b$$"},
+		{name: "already doubled dollar is doubled again", in: "$$", want: "$$$$"},
+		{name: "braced variable reference", in: "${FOO}", want: "$${FOO}"},
+
+		// Characters that are NOT special to Compose interpolation must pass
+		// through verbatim. Escaping them would corrupt the stored payload.
+		{name: "single quote preserved", in: "it's", want: "it's"},
+		{name: "double quote preserved", in: `say "hi"`, want: `say "hi"`},
+		{name: "backslash preserved", in: `a\b`, want: `a\b`},
+		{name: "backtick preserved", in: "a`b", want: "a`b"},
+		{name: "newline preserved", in: "line1\nline2", want: "line1\nline2"},
+		{name: "unicode preserved", in: "café—naïve 🚀", want: "café—naïve 🚀"},
+
+		// Realistic metadata: JSON containing an apostrophe must survive so it
+		// can be json.Unmarshal'd back on read. Only "$" is altered.
+		{
+			name: "json metadata with apostrophe and dollar",
+			in:   `[{"id":"it's-a-feature","cmd":"echo $X"}]`,
+			want: `[{"id":"it's-a-feature","cmd":"echo $$X"}]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeComposeLabelValue(tt.in); got != tt.want {
+				t.Errorf("escapeComposeLabelValue(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEscapeComposeLabelValueRoundTrip documents the contract that motivates the
+// escaping: doubling "$" survives Compose's interpolation (which un-doubles
+// "$$" back to "$"), and non-"$" characters are returned unchanged so a
+// JSON-encoded metadata label can be unmarshalled back without corruption.
+func TestEscapeComposeLabelValueRoundTrip(t *testing.T) {
+	original := `{"name":"it's a test","entrypoint":"run $CMD"}`
+
+	escaped := escapeComposeLabelValue(original)
+
+	// Compose interpolation collapses "$$" -> "$"; emulate that to recover the
+	// value a consumer would see.
+	interpolated := strings.ReplaceAll(escaped, "$$", "$")
+	if interpolated != original {
+		t.Errorf(
+			"round-trip mismatch:\n  escaped      = %q\n  interpolated = %q\n  original     = %q",
+			escaped,
+			interpolated,
+			original,
+		)
+	}
+
+	// The apostrophe (and every non-"$" byte) must be untouched in the escaped
+	// form so json.Unmarshal succeeds after interpolation.
+	if strings.Contains(escaped, `\'`) {
+		t.Errorf("apostrophe was escaped, corrupting the payload: %q", escaped)
+	}
+}
+
+func TestBuildServiceLabels(t *testing.T) {
+	t.Run("uses default ID label when no ID labels", func(t *testing.T) {
+		r := &runner{}
+		r.ID = "workspace-id"
+
+		labels := r.buildServiceLabels(nil)
+
+		if labels[config.DockerIDLabel] != "workspace-id" {
+			t.Errorf("default ID label = %q, want %q", labels[config.DockerIDLabel], "workspace-id")
+		}
+	})
+
+	t.Run("escapes dollars but preserves other characters", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=$value"}
+
+		labels := r.buildServiceLabels(map[string]string{"extra": "it's $here"})
+
+		if labels["id.label"] != "$$value" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "$$value")
+		}
+		// The apostrophe must be preserved; only "$" is doubled.
+		if labels["extra"] != "it's $$here" {
+			t.Errorf("extra = %q, want %q", labels["extra"], "it's $$here")
+		}
+	})
+
+	t.Run("splits ID label only on first equals sign", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=a=b=c"}
+
+		labels := r.buildServiceLabels(nil)
+
+		if labels["id.label"] != "a=b=c" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "a=b=c")
+		}
+	})
+
+	t.Run("additional labels merge alongside ID labels", func(t *testing.T) {
+		r := &runner{}
+		r.IDLabels = []string{"id.label=v"}
+
+		labels := r.buildServiceLabels(map[string]string{"k": "plain"})
+
+		if labels["id.label"] != "v" {
+			t.Errorf("id.label = %q, want %q", labels["id.label"], "v")
+		}
+		if labels["k"] != "plain" {
+			t.Errorf("k = %q, want %q", labels["k"], "plain")
+		}
+	})
+}
+
+func TestResolveServiceEntrypoint(t *testing.T) {
+	override := true
+	t.Run("override command clears entrypoint and command", func(t *testing.T) {
+		entry, cmd := resolveServiceEntrypoint(
+			&config.MergedDevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{OverrideCommand: &override},
+			},
+			&composetypes.ServiceConfig{Entrypoint: []string{"a"}, Command: []string{"b"}},
+			&config.ImageDetails{},
+		)
+		if len(entry) != 0 || len(cmd) != 0 {
+			t.Errorf("expected empty entrypoint/command, got %v / %v", entry, cmd)
+		}
+	})
+
+	t.Run("falls back to image entrypoint and command", func(t *testing.T) {
+		entry, cmd := resolveServiceEntrypoint(
+			&config.MergedDevContainerConfig{},
+			&composetypes.ServiceConfig{},
+			&config.ImageDetails{Config: config.ImageDetailsConfig{
+				Entrypoint: []string{"img-entry"},
+				Cmd:        []string{"img-cmd"},
+			}},
+		)
+		if len(entry) != 1 || entry[0] != "img-entry" {
+			t.Errorf("entrypoint = %v, want [img-entry]", entry)
+		}
+		if len(cmd) != 1 || cmd[0] != "img-cmd" {
+			t.Errorf("command = %v, want [img-cmd]", cmd)
+		}
+	})
+}
+
+func TestNamedVolumesFromMounts(t *testing.T) {
+	t.Run("nil when no volume mounts", func(t *testing.T) {
+		if got := namedVolumesFromMounts([]*config.Mount{{Type: mountTypeBind}}); got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+
+	t.Run("collects volume mounts", func(t *testing.T) {
+		got := namedVolumesFromMounts([]*config.Mount{
+			{Type: mountTypeVolume, Source: "data", External: true},
+			{Type: mountTypeBind, Source: "/host"},
+		})
+		if len(got) != 1 {
+			t.Fatalf("expected 1 volume, got %d", len(got))
+		}
+		v := got["data"]
+		if v.Name != "data" || !bool(v.External) {
+			t.Errorf("volume = %+v, want name=data external=true", v)
+		}
+	})
+
+	t.Run("skips anonymous volumes with empty source", func(t *testing.T) {
+		got := namedVolumesFromMounts([]*config.Mount{
+			{Type: mountTypeVolume, Target: "/anon"},
+			{Type: mountTypeVolume, Source: "named"},
+		})
+		if len(got) != 1 {
+			t.Fatalf("expected 1 named volume, got %d: %+v", len(got), got)
+		}
+		if _, ok := got[""]; ok {
+			t.Error("anonymous volume with empty source should not be declared")
+		}
+	})
+}
+
+func TestComposeBuildArgs(t *testing.T) {
+	modifierTests := []struct {
+		name        string
+		pull        bool
+		noCache     bool
+		wantPull    bool
+		wantNoCache bool
+	}{
+		{name: "no modifiers"},
+		{name: "pull only", pull: true, wantPull: true},
+		{name: "no-cache only", noCache: true, wantNoCache: true},
+		{name: "both", pull: true, noCache: true, wantPull: true, wantNoCache: true},
+	}
+	for _, tt := range modifierTests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := composeBuildArgs(&composeBuildArgsParams{
+				projectName: "ws",
+				serviceName: "app",
+				pull:        tt.pull,
+				noCache:     tt.noCache,
+			})
+			if got := slices.Contains(args, "--pull"); got != tt.wantPull {
+				t.Errorf("--pull present = %v, want %v (args=%v)", got, tt.wantPull, args)
+			}
+			if got := slices.Contains(args, "--no-cache"); got != tt.wantNoCache {
+				t.Errorf("--no-cache present = %v, want %v (args=%v)", got, tt.wantNoCache, args)
+			}
+		})
+	}
+}
+
+func TestComposeBuildArgsIncludesCoreArgs(t *testing.T) {
+	args := composeBuildArgs(&composeBuildArgsParams{
+		projectName:             "ws",
+		serviceName:             "app",
+		overrideComposeFilePath: "/tmp/override.yml",
+	})
+
+	for _, want := range []string{composeProjectNameFlag, "ws", "build", "/tmp/override.yml"} {
+		if !slices.Contains(args, want) {
+			t.Errorf("expected %q in %v", want, args)
+		}
+	}
+}
+
+func TestComposeBuildArgsRunServicesNoDuplicate(t *testing.T) {
+	args := composeBuildArgs(&composeBuildArgsParams{
+		projectName: "ws",
+		serviceName: "app",
+		runServices: []string{"app", "db"},
+	})
+
+	appCount := 0
+	for _, a := range args {
+		if a == "app" {
+			appCount++
+		}
+	}
+	if appCount != 1 {
+		t.Errorf("main service should appear once, got %d in %v", appCount, args)
+	}
+	if !slices.Contains(args, "db") {
+		t.Errorf("expected run service db in %v", args)
 	}
 }
