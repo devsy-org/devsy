@@ -1,6 +1,6 @@
 name: devsy-pro
 version: ##VERSION##
-icon: https://devsy.sh/assets/devsy.svg
+icon: https://assets.devsy.sh/devsy.svg
 description: Devsy Pro
 options:
   DEVSY_CONFIG:

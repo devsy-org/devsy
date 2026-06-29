@@ -1,6 +1,6 @@
 name: podman
 version: v1.0.0
-icon: https://devsy.sh/assets/podman.svg
+icon: https://assets.devsy.sh/podman.svg
 home: https://github.com/devsy-org/devsy
 description: |-
   Devsy on Podman

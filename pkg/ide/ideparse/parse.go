@@ -228,7 +228,7 @@ var AllowedIDEs = []AllowedIDE{
 		Name:        config.IDEBob,
 		DisplayName: "IBM Bob",
 		Options:     vscode.Options,
-		Icon:        "https://devsy.sh/assets/bob.svg",
+		Icon:        config.WebsiteAssetsURL + "/bob.svg",
 		Group:       config.IDEGroupPrimary,
 	},
 }
