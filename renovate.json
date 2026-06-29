@@ -4,6 +4,7 @@
   "automergeType": "pr",
   "automergeStrategy": "squash",
   "extends": ["config:best-practices", "helpers:pinGitHubActionDigests"],
+  "labels": ["dependencies"],
   "pre-commit": {
     "enabled": true
   },
