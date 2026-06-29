@@ -1,0 +1,11 @@
+changelog:
+  categories:
+    - title: Dependency Updates
+      labels:
+        - dependencies
+      authors:
+        - renovate[bot]
+        - dependabot[bot]
+    - title: Other Changes
+      labels:
+        - "*"
