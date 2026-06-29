@@ -1,8 +1,11 @@
 changelog:
   categories:
-    - title: Dependency Updates
-      labels:
-        - dependencies
     - title: Other Changes
       labels:
         - "*"
+      exclude:
+        labels:
+          - dependencies
+    - title: Dependency Updates
+      labels:
+        - dependencies
