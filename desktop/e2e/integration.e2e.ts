@@ -232,8 +232,13 @@ test.describe
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Node.js template
-      await dialog.locator("button", { hasText: "Node.js" }).click()
+      // Step 2 — Source: click Node.js template. Scope to the active tab panel
+      // (Git) so the template button doesn't collide with the Image catalog's
+      // "Node.js 20" card, which is also present in the DOM.
+      await dialog
+        .getByRole("tabpanel")
+        .locator("button", { hasText: "Node.js" })
+        .click()
       const sourceInput = dialog.locator('input[placeholder*="github"]')
       await expect(sourceInput).toHaveValue(
         "https://github.com/microsoft/vscode-remote-try-node",
