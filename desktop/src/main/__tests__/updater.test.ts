@@ -27,6 +27,7 @@ vi.mock("electron-updater", () => ({
 vi.mock("electron", () => ({
   app: {
     isPackaged: true,
+    isQuitting: false,
     getPath: () => "/tmp/devsy-test",
     getVersion: () => "1.0.0",
   },
@@ -39,6 +40,7 @@ describe("updater", () => {
     electronUpdaterMock.autoUpdater.handlers.clear()
     electronUpdaterMock.autoUpdater.checkForUpdates.mockClear()
     electronUpdaterMock.autoUpdater.downloadUpdate.mockClear()
+    electronUpdaterMock.autoUpdater.quitAndInstall.mockReset()
     vi.resetModules()
     // Restore isPackaged on every test so an early throw in one test
     // cannot silently flip later tests into the dev-mode branch.
@@ -87,6 +89,35 @@ describe("updater", () => {
     setAutoDownloadEnabled(false)
     electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
     expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it("sets app.isQuitting before quitAndInstall so the window can close", async () => {
+    const electron = await import("electron")
+    ;(electron.app as { isQuitting: boolean }).isQuitting = false
+    let quittingWhenInstalled: boolean | undefined
+    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementation(() => {
+      quittingWhenInstalled = (electron.app as { isQuitting: boolean }).isQuitting
+    })
+    const { installUpdate } = await import("../updater.js")
+    await installUpdate()
+    expect(quittingWhenInstalled).toBe(true)
+    expect(electronUpdaterMock.autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it("swallows a channel-missing rejection from check_for_updates", async () => {
+    electronUpdaterMock.autoUpdater.checkForUpdates.mockRejectedValueOnce(
+      new Error('Cannot find channel "latest-mac.yml" update info: HttpError: 404'),
+    )
+    const { checkForUpdates } = await import("../updater.js")
+    await expect(checkForUpdates()).resolves.toBeUndefined()
+  })
+
+  it("propagates non-channel-missing errors from check_for_updates", async () => {
+    electronUpdaterMock.autoUpdater.checkForUpdates.mockRejectedValueOnce(
+      new Error("net::ERR_INTERNET_DISCONNECTED"),
+    )
+    const { checkForUpdates } = await import("../updater.js")
+    await expect(checkForUpdates()).rejects.toThrow("ERR_INTERNET_DISCONNECTED")
   })
 
   it("does not fire a native dialog on update-downloaded", async () => {
