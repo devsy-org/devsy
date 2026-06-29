@@ -589,7 +589,7 @@ func (r *runner) composeBuildInfo(
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: extendResult.imageMetadata,
-		ImageName:     extendResult.buildImageName,
+		ImageName:     currentImageName,
 		PrebuildHash:  imageTag,
 		RegistryCache: options.RegistryCache,
 		Tags:          options.Tag,
