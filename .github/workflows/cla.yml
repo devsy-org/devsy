@@ -40,7 +40,7 @@ jobs:
           branch: "main"
           remote-organization-name: "devsy-org"
           remote-repository-name: "cla-signatures"
-          allowlist: "renovate[bot],dependabot[bot],*[bot]"
+          allowlist: "skevetter,renovate[bot],dependabot[bot],*[bot]"
           custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"
           custom-allsigned-prcomment: >
             All contributors have signed the CLA.
