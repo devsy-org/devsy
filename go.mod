@@ -47,7 +47,7 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/pkg/sftp v1.13.10
 	github.com/posthog/posthog-go v1.12.5
-	github.com/shirou/gopsutil/v4 v4.26.4
+	github.com/shirou/gopsutil/v4 v4.26.5
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
