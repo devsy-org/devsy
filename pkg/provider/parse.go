@@ -228,6 +228,13 @@ func validateStandardProvider(config *ProviderConfig) error {
 }
 
 func validateAgentDriver(config *ProviderConfig) error {
+	// A templated driver (e.g. ${SOME_OPTION}) is resolved at runtime from the
+	// provider options, so its concrete value cannot be validated here. Defer
+	// validation to driver creation, which rejects unknown resolved values.
+	if isTemplatedValue(config.Agent.Driver) {
+		return nil
+	}
+
 	if config.Agent.Driver != "" && config.Agent.Driver != CustomDriver &&
 		config.Agent.Driver != DockerDriver &&
 		config.Agent.Driver != KubernetesDriver {
@@ -239,6 +246,12 @@ func validateAgentDriver(config *ProviderConfig) error {
 	}
 
 	return nil
+}
+
+// isTemplatedValue reports whether a provider config value references an option
+// variable (e.g. ${MY_OPTION} or $MY_OPTION) that is substituted at runtime.
+func isTemplatedValue(value string) bool {
+	return strings.Contains(value, "$")
 }
 
 func validateCustomDriver(config *ProviderConfig) error {
