@@ -44,11 +44,12 @@ license terms the Licensor chooses, including open-source, source-available,
 and proprietary (closed-source) licenses**, and that the Licensor may change
 the license terms applicable to the Work and Your Contributions at any time and
 for any future version. You understand that the Project is currently distributed
-under the Business Source License 1.1 and that the Licensor offers commercial
+under the Mozilla Public License 2.0 and that the Licensor may offer commercial
 licenses, and that the rights granted in this Agreement permit the Licensor to
-continue and change such arrangements without further notice to or consent from
-You. This grant survives and is not limited by the license under which the
-Project is distributed at the time of Your Contribution.
+continue and change such arrangements, including distributing future versions
+under different or proprietary license terms, without further notice to or
+consent from You. This grant survives and is not limited by the license under
+which the Project is distributed at the time of Your Contribution.
 
 ## 5. Ownership Retained
 
