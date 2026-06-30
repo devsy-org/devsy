@@ -2,6 +2,17 @@
 
 Thank you for your interest in contributing to Devsy! This guide will help you get started with development.
 
+## Contributor License Agreement
+
+Before your first contribution can be merged, you must sign the [Contributor
+License Agreement](./.github/CLA.md). When you open a pull request, a bot will
+check your signing status and, if needed, comment with instructions. You sign by
+posting a comment on the pull request with the exact text the bot provides.
+
+The CLA lets you keep copyright in your contributions while granting Devsy a
+perpetual, irrevocable license to use and **relicense** them, including under
+proprietary terms. Please read it before contributing.
+
 ## Development Setup
 
 ### Prerequisites
