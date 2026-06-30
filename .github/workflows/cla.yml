@@ -41,8 +41,7 @@ jobs:
           custom-allsigned-prcomment: >
             All contributors have signed the CLA.
           custom-notsigned-prcomment: >
-            Thank you for your contribution. Before we can merge it, we need you
-            to agree to our [Contributor License Agreement](https://github.com/${{ github.repository }}/blob/main/.github/CLA.md).
-            Please read it carefully — it grants Devsy the right to relicense your
-            contribution, including under proprietary terms. If you agree, post a
-            comment on this pull request with exactly the following text:
+            Thank you for your contribution. Before we can merge it, please read
+            our [Contributor License Agreement](https://github.com/${{ github.repository }}/blob/main/.github/CLA.md).
+            If you agree, post a comment on this pull request with exactly the
+            following text:
