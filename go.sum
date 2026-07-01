@@ -686,8 +686,8 @@ github.com/tklauser/numcpus v0.11.0 h1:nSTwhKH5e1dMNsCdVBukSZrURJRoHbSEQjdEbY+9R
 github.com/tklauser/numcpus v0.11.0/go.mod h1:z+LwcLq54uWZTX0u/bGobaV34u6V7KNlTZejzM6/3MQ=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 h1:6fotK7otjonDflCTK0BCfls4SPy3NcCVb5dqqmbRknE=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75/go.mod h1:KO6IkyS8Y3j8OdNO85qEYBsRPuteD+YciPomcXdrMnk=
-github.com/tonistiigi/fsutil v0.0.0-20260609174605-b61e79c0c046 h1:j29MScUISj0S98EHdM6/pzKgqppfswl9OZ7OVpnQdzE=
-github.com/tonistiigi/fsutil v0.0.0-20260609174605-b61e79c0c046/go.mod h1:K5zrLch9UaSGNiek5XHZeqZUf1zPWJHqDfLIcnpquQ4=
+github.com/tonistiigi/fsutil v0.0.0-20260630114638-b1eb15549b43 h1:fRyMSoBPjo/hQP4/SYb3X2qQkAa6rxbE7dVLPKSZaD0=
+github.com/tonistiigi/fsutil v0.0.0-20260630114638-b1eb15549b43/go.mod h1:K5zrLch9UaSGNiek5XHZeqZUf1zPWJHqDfLIcnpquQ4=
 github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 h1:2f304B10LaZdB8kkVEaoXvAMVan2tl9AiK4G0odjQtE=
 github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0/go.mod h1:278M4p8WsNh3n4a1eqiFcV2FGk7wE5fwUpUom9mK9lE=
 github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea h1:SXhTLE6pb6eld/v/cCndK0AMpt1wiVFb/YYmqB3/QG0=
