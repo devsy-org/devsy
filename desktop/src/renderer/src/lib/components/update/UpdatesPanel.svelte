@@ -164,9 +164,12 @@ onMount(async () => {
       <Label>Release Channel</Label>
       <p class="text-xs text-muted-foreground">Choose how early you receive new versions</p>
     </div>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Release Channel">
       {#each CHANNELS as c (c.value)}
         <button
+          type="button"
+          role="radio"
+          aria-checked={releaseChannel === c.value}
           class="rounded-lg border p-3 text-left transition-colors {releaseChannel === c.value
             ? 'border-primary bg-primary/5 ring-1 ring-primary'
             : 'border-border hover:border-muted-foreground/50'}"

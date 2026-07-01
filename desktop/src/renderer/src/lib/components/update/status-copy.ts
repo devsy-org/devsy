@@ -17,11 +17,11 @@ export function statusHeadline(s: UpdateStatus, currentVersion: string | null): 
     case "checking":
       return "Checking for updates…"
     case "available":
-      return `Version ${s.version} is available`
+      return `Version ${s.version ?? "unknown"} is available`
     case "downloading":
-      return `Downloading v${s.version} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
+      return `Downloading v${s.version ?? "?"} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
     case "downloaded":
-      return `Version ${s.version} is ready to install`
+      return `Version ${s.version ?? "unknown"} is ready to install`
     case "error":
       return "Update check failed"
     case "not-available":

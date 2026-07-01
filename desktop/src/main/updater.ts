@@ -78,6 +78,7 @@ let currentChannel: ReleaseChannel = "stable"
 let autoDownloadEnabled = true
 let getMainWindowFn: (() => BrowserWindow | null) | null = null
 let lastStatus: UpdateStatus = { state: "idle" }
+let initialCheckTimer: ReturnType<typeof setTimeout> | null = null
 let recheckTimer: ReturnType<typeof setInterval> | null = null
 
 function sendUpdateStatus(status: UpdateStatus): void {
@@ -265,11 +266,15 @@ export async function initAutoUpdater(
     })
   }
 
-  setTimeout(runBackgroundCheck, INITIAL_CHECK_DELAY_MS)
+  initialCheckTimer = setTimeout(runBackgroundCheck, INITIAL_CHECK_DELAY_MS)
   recheckTimer = setInterval(runBackgroundCheck, RECHECK_INTERVAL_MS)
 }
 
 export function stopAutoUpdater(): void {
+  if (initialCheckTimer) {
+    clearTimeout(initialCheckTimer)
+    initialCheckTimer = null
+  }
   if (recheckTimer) {
     clearInterval(recheckTimer)
     recheckTimer = null

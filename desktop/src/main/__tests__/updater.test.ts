@@ -153,6 +153,23 @@ describe("updater", () => {
     }
   })
 
+  it("clears the pending boot check when stopped before it fires", async () => {
+    vi.useFakeTimers()
+    try {
+      const { initAutoUpdater, stopAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      // Quit before the 10s boot delay elapses.
+      stopAutoUpdater()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("skips the background check while a download is in flight", async () => {
     vi.useFakeTimers()
     try {
