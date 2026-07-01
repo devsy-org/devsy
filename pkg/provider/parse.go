@@ -14,17 +14,18 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-var ProviderNameRegEx = regexp.MustCompile(`[^a-z0-9\-]+`)
-
-var optionNameRegEx = regexp.MustCompile(`[^A-Z0-9_]+`)
-
-var allowedTypes = []string{
-	"string",
-	"multiline",
-	"duration",
-	"number",
-	"boolean",
-}
+var (
+	ProviderNameRegEx   = regexp.MustCompile(`[^a-z0-9\-]+`)
+	optionNameRegEx     = regexp.MustCompile(`[^A-Z0-9_]+`)
+	templatedValueRegex = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+	allowedTypes        = []string{
+		"string",
+		"multiline",
+		"duration",
+		"number",
+		"boolean",
+	}
+)
 
 func ParseProvider(reader io.Reader) (*ProviderConfig, error) {
 	payload, err := io.ReadAll(reader)
@@ -228,6 +229,10 @@ func validateStandardProvider(config *ProviderConfig) error {
 }
 
 func validateAgentDriver(config *ProviderConfig) error {
+	if templatedValueRegex.MatchString(config.Agent.Driver) {
+		return nil
+	}
+
 	if config.Agent.Driver != "" && config.Agent.Driver != CustomDriver &&
 		config.Agent.Driver != DockerDriver &&
 		config.Agent.Driver != KubernetesDriver {
