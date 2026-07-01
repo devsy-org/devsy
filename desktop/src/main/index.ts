@@ -9,7 +9,7 @@ import { LogStore } from "./log-store.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
-import { initAutoUpdater } from "./updater.js"
+import { initAutoUpdater, stopAutoUpdater } from "./updater.js"
 import { Watcher } from "./watcher.js"
 
 const PROTOCOL = "devsy"
@@ -157,6 +157,7 @@ app.whenReady().then(() => {
     }
     daemonManager.stop()
     ptyManager.destroyAll()
+    stopAutoUpdater()
   })
 
   // Register IPC handlers

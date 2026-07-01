@@ -14,6 +14,7 @@ import {
   lastCheckedAt,
 } from "$lib/stores/updates.svelte.js"
 import { markUserInitiated } from "./update-toasts.js"
+import { fmtMBps, fmtTime } from "./status-copy.js"
 
 let {
   open = $bindable(false),
@@ -25,17 +26,6 @@ const lastChecked = $derived(lastCheckedAt())
 const sanitizedNotes = $derived(
   s.releaseNotes ? DOMPurify.sanitize(s.releaseNotes) : "",
 )
-
-function fmtMBps(bps: number): string {
-  if (!bps) return ""
-  const mbps = bps / 1_000_000
-  return `${mbps.toFixed(2)} MB/s`
-}
-
-function fmtTime(ts: number | null): string {
-  if (!ts) return ""
-  return new Date(ts).toLocaleTimeString()
-}
 
 async function onCheck() {
   markUserInitiated()
@@ -80,7 +70,7 @@ async function onInstall() {
 				<p class="text-sm font-medium">Downloading v{s.version}…</p>
 				<Progress value={s.progress?.percent ?? 0} max={100} />
 				<p class="text-xs text-muted-foreground">
-					{(s.progress?.percent ?? 0).toFixed(0)}% · {fmtMBps(s.progress?.bytesPerSecond ?? 0)}
+					{(s.progress?.percent ?? 0).toFixed(0)}% · {fmtMBps(s.progress?.bytesPerSecond)}
 				</p>
 			</div>
 		{:else if s.state === "downloaded"}
@@ -95,7 +85,7 @@ async function onInstall() {
 				{/if}
 				<div class="flex gap-2 justify-end">
 					<Button variant="ghost" onclick={() => (open = false)}>Later</Button>
-					<Button onclick={onInstall}>Restart and Update</Button>
+					<Button onclick={onInstall}>Restart &amp; Update</Button>
 				</div>
 			</div>
 		{:else if s.state === "not-available"}

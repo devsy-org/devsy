@@ -129,4 +129,65 @@ describe("updater", () => {
     electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "9.9.9" })
     expect((electron.dialog.showMessageBox as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
   })
+
+  it("checks at boot and again on the recheck interval", async () => {
+    vi.useFakeTimers()
+    try {
+      const { initAutoUpdater, stopAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+
+      stopAutoUpdater()
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("clears the pending boot check when stopped before it fires", async () => {
+    vi.useFakeTimers()
+    try {
+      const { initAutoUpdater, stopAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      // Quit before the 10s boot delay elapses.
+      stopAutoUpdater()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("skips the background check while a download is in flight", async () => {
+    vi.useFakeTimers()
+    try {
+      const { initAutoUpdater, stopAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "9.9.9" })
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
+      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+
+      stopAutoUpdater()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
