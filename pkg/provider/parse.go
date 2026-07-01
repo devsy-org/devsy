@@ -14,17 +14,18 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-var ProviderNameRegEx = regexp.MustCompile(`[^a-z0-9\-]+`)
-
-var optionNameRegEx = regexp.MustCompile(`[^A-Z0-9_]+`)
-
-var allowedTypes = []string{
-	"string",
-	"multiline",
-	"duration",
-	"number",
-	"boolean",
-}
+var (
+	ProviderNameRegEx   = regexp.MustCompile(`[^a-z0-9\-]+`)
+	optionNameRegEx     = regexp.MustCompile(`[^A-Z0-9_]+`)
+	templatedValueRegex = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`)
+	allowedTypes        = []string{
+		"string",
+		"multiline",
+		"duration",
+		"number",
+		"boolean",
+	}
+)
 
 func ParseProvider(reader io.Reader) (*ProviderConfig, error) {
 	payload, err := io.ReadAll(reader)
@@ -228,10 +229,7 @@ func validateStandardProvider(config *ProviderConfig) error {
 }
 
 func validateAgentDriver(config *ProviderConfig) error {
-	// A templated driver (e.g. ${SOME_OPTION}) is resolved at runtime from the
-	// provider options, so its concrete value cannot be validated here. Defer
-	// validation to driver creation, which rejects unknown resolved values.
-	if isTemplatedValue(config.Agent.Driver) {
+	if templatedValueRegex.MatchString(config.Agent.Driver) {
 		return nil
 	}
 
@@ -246,12 +244,6 @@ func validateAgentDriver(config *ProviderConfig) error {
 	}
 
 	return nil
-}
-
-// isTemplatedValue reports whether a provider config value references an option
-// variable (e.g. ${MY_OPTION} or $MY_OPTION) that is substituted at runtime.
-func isTemplatedValue(value string) bool {
-	return strings.Contains(value, "$")
 }
 
 func validateCustomDriver(config *ProviderConfig) error {
