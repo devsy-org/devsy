@@ -44,7 +44,7 @@ describe("UpdateDialog", () => {
     __setForTest({ state: "downloaded", version: "9.9.9" })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/version 9\.9\.9/i)
-    expect(queryButton(/restart and update/i)).toBeTruthy()
+    expect(queryButton(/restart & update/i)).toBeTruthy()
   })
 
   it("renders 'downloading' progress", () => {

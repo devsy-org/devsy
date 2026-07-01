@@ -68,10 +68,17 @@ function saveSettings(patch: PersistedSettings): void {
   }
 }
 
+// Delay before the first check so it doesn't compete with app startup, then
+// re-check on a fixed interval so long-running sessions still discover releases
+// published after launch.
+const INITIAL_CHECK_DELAY_MS = 10_000
+const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
 let currentChannel: ReleaseChannel = "stable"
 let autoDownloadEnabled = true
 let getMainWindowFn: (() => BrowserWindow | null) | null = null
 let lastStatus: UpdateStatus = { state: "idle" }
+let recheckTimer: ReturnType<typeof setInterval> | null = null
 
 function sendUpdateStatus(status: UpdateStatus): void {
   const win = getMainWindowFn?.()
@@ -246,11 +253,27 @@ export async function initAutoUpdater(
     console.error("Auto-update error:", err.message)
   })
 
-  setTimeout(() => {
+  const runBackgroundCheck = (): void => {
+    // Skip while a download is already in flight or staged — re-fetching the
+    // manifest would just churn state. autoUpdater.autoDownload is already set
+    // from the user's preference, so a plain check honors that toggle.
+    if (lastStatus.state === "downloading" || lastStatus.state === "downloaded") {
+      return
+    }
     autoUpdater.checkForUpdates().catch((err: Error) => {
       console.error("Update check failed:", err.message)
     })
-  }, 10_000)
+  }
+
+  setTimeout(runBackgroundCheck, INITIAL_CHECK_DELAY_MS)
+  recheckTimer = setInterval(runBackgroundCheck, RECHECK_INTERVAL_MS)
+}
+
+export function stopAutoUpdater(): void {
+  if (recheckTimer) {
+    clearInterval(recheckTimer)
+    recheckTimer = null
+  }
 }
 
 async function getUpdater() {

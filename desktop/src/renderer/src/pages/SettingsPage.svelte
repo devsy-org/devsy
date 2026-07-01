@@ -29,7 +29,7 @@ import type {
   UIScale,
   LocalOptions,
 } from "$lib/stores/settings.js"
-import UpdatesSection from "$lib/components/update/UpdatesSection.svelte"
+import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -163,6 +163,7 @@ function toggleLocal(key: keyof LocalOptions) {
     <Tabs.List variant="line" class="w-full flex-wrap">
       <Tabs.Trigger value="general">General</Tabs.Trigger>
       <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
+      <Tabs.Trigger value="updates">Updates</Tabs.Trigger>
       <Tabs.Trigger value="experimental">Experimental</Tabs.Trigger>
     </Tabs.List>
 
@@ -261,10 +262,6 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <Separator />
 
-        <UpdatesSection />
-
-        <Separator />
-
         <div class="space-y-2">
           <h2 class="text-lg font-semibold">Keyboard Shortcuts</h2>
           <div class="rounded-md border divide-y">
@@ -336,6 +333,13 @@ function toggleLocal(key: keyof LocalOptions) {
           </div>
         </div>
 
+      </div>
+    </Tabs.Content>
+
+    <!-- Updates -->
+    <Tabs.Content value="updates" class="w-full">
+      <div class="mt-4">
+        <UpdatesPanel />
       </div>
     </Tabs.Content>
 
