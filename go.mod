@@ -43,8 +43,8 @@ require (
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/term v0.5.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/gomega v1.40.0
 	github.com/pkg/sftp v1.13.10
 	github.com/posthog/posthog-go v1.12.5
 	github.com/shirou/gopsutil/v4 v4.26.6
