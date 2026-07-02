@@ -13,6 +13,7 @@ import (
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/tonistiigi/fsutil"
 )
 
 func Build(
@@ -70,10 +71,18 @@ func Build(
 		solveOptions.FrontendAttrs["platform"] = platform
 	}
 
-	// add context and dockerfile to local dirs
-	solveOptions.LocalDirs = map[string]string{}
-	solveOptions.LocalDirs["context"] = options.Context
-	solveOptions.LocalDirs["dockerfile"] = filepath.Dir(options.Dockerfile)
+	// add context and dockerfile to local mounts
+	solveOptions.LocalMounts = map[string]fsutil.FS{}
+	contextFS, err := fsutil.NewFS(options.Context)
+	if err != nil {
+		return fmt.Errorf("failed to create build context fs: %w", err)
+	}
+	solveOptions.LocalMounts["context"] = contextFS
+	dockerfileFS, err := fsutil.NewFS(filepath.Dir(options.Dockerfile))
+	if err != nil {
+		return fmt.Errorf("failed to create dockerfile fs: %w", err)
+	}
+	solveOptions.LocalMounts["dockerfile"] = dockerfileFS
 
 	// multi contexts
 	for k, v := range options.Contexts {
@@ -88,7 +97,11 @@ func Build(
 		if k == "context" || k == "dockerfile" {
 			localName = "_" + k // underscore to avoid collisions
 		}
-		solveOptions.LocalDirs[localName] = v
+		contextMountFS, err := fsutil.NewFS(v)
+		if err != nil {
+			return fmt.Errorf("failed to create fs for build context %v: %w", k, err)
+		}
+		solveOptions.LocalMounts[localName] = contextMountFS
 		solveOptions.FrontendAttrs["context:"+k] = "local:" + localName
 	}
 
