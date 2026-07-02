@@ -19,7 +19,7 @@ require (
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
-	github.com/devsy-org/apiserver v1.5.0
+	github.com/devsy-org/apiserver v1.5.3
 	github.com/devsy-org/ssh v1.2.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.1+incompatible
@@ -312,7 +312,7 @@ require (
 	k8s.io/apiserver v0.36.2 // indirect
 	k8s.io/cli-runtime v0.36.2 // indirect
 	k8s.io/component-base v0.36.2 // indirect
-	k8s.io/kube-openapi v0.0.0-20260330154417-16be699c7b31 // indirect
+	k8s.io/kube-openapi v0.0.0-20260624041617-8f3fa4921821 // indirect
 	k8s.io/metrics v0.36.2 // indirect
 	k8s.io/streaming v0.36.2 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
