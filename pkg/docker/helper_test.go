@@ -2,11 +2,13 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -144,6 +146,55 @@ esac
 	// previously matched it on the last label alone), and c3's empty inspect
 	// result must not panic.
 	assert.Equal(t, []string{"c1"}, got)
+}
+
+func TestWaitContainerRunning_RunningSucceeds(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  inspect) echo '[{"ID":"c1","State":{"Status":"running"}}]' ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	require.NoError(t, h.WaitContainerRunning(context.Background(), "c1"))
+}
+
+func TestWaitContainerRunning_ExitedFailsFast(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  inspect) echo '[{"ID":"c1","State":{"Status":"exited","ExitCode":137,"Error":"OOM"}}]' ;;
+  logs) echo 'boom' ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	start := time.Now()
+	err := h.WaitContainerRunning(context.Background(), "c1")
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrContainerExited), "expected exited sentinel, got %v", err)
+	assert.False(t, errors.Is(err, ErrContainerTerminal), "exited must not be terminal")
+	assert.Contains(t, err.Error(), "137")
+	assert.Contains(t, err.Error(), "OOM")
+	assert.Less(t, time.Since(start), 10*time.Second)
+}
+
+func TestWaitContainerRunning_DeadFailsFast(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  inspect) echo '[{"ID":"c1","State":{"Status":"dead","ExitCode":1}}]' ;;
+  logs) echo '' ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.WaitContainerRunning(context.Background(), "c1")
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrContainerTerminal), "expected terminal sentinel, got %v", err)
 }
 
 func TestGPUSupportEnabled_CommandFailure(t *testing.T) {
