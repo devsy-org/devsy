@@ -469,8 +469,13 @@ func (r *DockerHelper) containerStateError(
 
 // tailContainerLogs returns the tail of the container's logs for diagnostics,
 // or "" if the logs cannot be retrieved.
-func (r *DockerHelper) tailContainerLogs(ctx context.Context, containerID string, lines int) string {
-	out, err := r.buildCmd(ctx, "logs", containerID, "--tail", fmt.Sprintf("%d", lines)).CombinedOutput()
+func (r *DockerHelper) tailContainerLogs(
+	ctx context.Context,
+	containerID string,
+	lines int,
+) string {
+	out, err := r.buildCmd(ctx, "logs", containerID, "--tail", fmt.Sprintf("%d", lines)).
+		CombinedOutput()
 	if err != nil {
 		return ""
 	}
