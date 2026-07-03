@@ -55,6 +55,16 @@ func (d *darwinPathManager) StateDir() (string, error) {
 	return ensureDir(filepath.Join(home, "."+RepoName, "state"))
 }
 
+// RuntimeDir returns a directory for runtime state, such as sockets and PID files.
 func (d *darwinPathManager) RuntimeDir() (string, error) {
-	return ensureDir(filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("runtime dir: %w", err)
+	}
+
+	dir, err := ensureDir(filepath.Join(home, "."+RepoName, "run"))
+	if err != nil {
+		return "", err
+	}
+	return dir, nil
 }
