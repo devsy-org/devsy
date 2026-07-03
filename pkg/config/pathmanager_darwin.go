@@ -14,7 +14,7 @@ type darwinPathManager struct {
 
 func newPlatformPathManager() PathManager {
 	pm := &darwinPathManager{}
-	pm.basePathManager.pm = pm
+	pm.pm = pm
 
 	return pm
 }
@@ -25,7 +25,7 @@ func (d *darwinPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "."+RepoName))
+	return ensureDir(filepath.Join(home, ".config", RepoName))
 }
 
 func (d *darwinPathManager) DataDir() (string, error) {
