@@ -88,6 +88,20 @@ func TestCleanupAgentSocketDir(t *testing.T) {
 	})
 }
 
+func TestCheckAgentSocketPathLen_Boundary(t *testing.T) {
+	dirFor := func(pathLen int) string {
+		suffixLen := len(string(os.PathSeparator)) + len(agentListenFile)
+		return strings.Repeat("a", pathLen-suffixLen)
+	}
+
+	assert.NoError(t, checkAgentSocketPathLen(dirFor(maxAgentSocketPath-1)),
+		"path of maxAgentSocketPath-1 must be accepted")
+	assert.Error(t, checkAgentSocketPathLen(dirFor(maxAgentSocketPath)),
+		"path of exactly maxAgentSocketPath must be rejected (kernel returns EINVAL)")
+	assert.Error(t, checkAgentSocketPathLen(dirFor(maxAgentSocketPath+1)),
+		"path over maxAgentSocketPath must be rejected")
+}
+
 func TestSetupConnectionAgentListener_BadRuntimeDir(t *testing.T) {
 	if runtime.GOOS == osWindows {
 		t.Skip("unix socket based test")

@@ -15,11 +15,8 @@ import (
 const (
 	agentSocketDirPrefix = "devsy-ssh-agent-"
 
-	// maxAgentSocketPath is the most restrictive Unix-domain socket path
-	// length across supported platforms (macOS/BSD: sun_path[104];
-	// Linux: sun_path[108]). bind(2) returns EINVAL when exceeded, which
-	// surfaces as "invalid argument" — a confusing error far from the cause.
-	// We check eagerly and fail with a clear message instead.
+	// maxAgentSocketPath is the size of the OS sun_path array. bind(2) returns
+	// EINVAL when the path length reaches this limit.
 	maxAgentSocketPath = 104
 
 	// agentListenFile mirrors the socket filename ssh.NewAgentListener
@@ -149,20 +146,12 @@ func SweepStaleAgentSockets() {
 }
 
 // checkAgentSocketPathLen verifies the eventual unix socket path fits within
-// the OS sun_path limit. bind(2) returns the unhelpful EINVAL when it does
-// not, so we validate up front and emit a clear, actionable error that
-// names the offending path and the limit.
+// the OS sun_path limit.
 func checkAgentSocketPathLen(dir string) error {
 	sockPath := filepath.Join(dir, agentListenFile)
-	if len(sockPath) > maxAgentSocketPath {
-		log.Warnf(
-			"agent socket path exceeds max (%d > %d): %s",
-			len(sockPath),
-			maxAgentSocketPath,
-			sockPath,
-		)
+	if len(sockPath) >= maxAgentSocketPath {
 		return fmt.Errorf(
-			"agent socket path exceeds max (%d > %d): %s",
+			"agent socket path exceeds max (%d >= %d): %s",
 			len(sockPath),
 			maxAgentSocketPath,
 			sockPath,
