@@ -50,6 +50,7 @@ func TestLinuxDefaults(t *testing.T) {
 		{"CacheDir", pm.CacheDir, filepath.Join(home, ".cache", RepoName)},
 		{"StateDir", pm.StateDir, filepath.Join(home, "."+RepoName, "state")},
 		{"RuntimeDir", pm.RuntimeDir, wantRuntime},
+		{"SystemBinDir", pm.SystemBinDir, "/usr/local/bin"},
 	}
 
 	for _, tt := range tests {

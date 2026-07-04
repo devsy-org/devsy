@@ -3,7 +3,7 @@ package gitcredentials
 import (
 	"context"
 	"fmt"
-	netUrl "net/url"
+	netURL "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +13,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/git"
-	"github.com/devsy-org/devsy/pkg/scanner"
 )
 
+// GitCredentials is the git credential-helper record. Its wire form is git's
+// documented key=value line protocol (see gitcredentials(7)).
 type GitCredentials struct {
 	Protocol string `json:"protocol,omitempty"`
 	URL      string `json:"url,omitempty"`
@@ -25,235 +26,247 @@ type GitCredentials struct {
 	Password string `json:"password,omitempty"`
 }
 
+// GitUser is a git identity (user.name / user.email).
 type GitUser struct {
 	Name  string `json:"name,omitempty"`
 	Email string `json:"email,omitempty"`
 }
 
-func ConfigureHelper(binaryPath, userName string, port int) error {
-	gitConfigPath, err := getGlobalGitConfigPath(userName)
-	if err != nil {
-		return err
+// Encode renders the credentials in git's key=value line format, terminated by
+// a trailing newline. Only non-empty fields are emitted, matching git's helper
+// protocol.
+func (c GitCredentials) Encode() string {
+	var b strings.Builder
+	writeField := func(key, value string) {
+		if value != "" {
+			b.WriteString(key)
+			b.WriteByte('=')
+			b.WriteString(value)
+			b.WriteByte('\n')
+		}
 	}
+	writeField("protocol", c.Protocol)
+	writeField("url", c.URL)
+	writeField("path", c.Path)
+	writeField("host", c.Host)
+	writeField("username", c.Username)
+	writeField("password", c.Password)
+	return b.String()
+}
 
-	out, err := os.ReadFile(gitConfigPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
+// ParseCredentials parses git's key=value credential line format. It is the
+// inverse of Encode. Unknown keys are ignored, matching git's tolerant parsing.
+func ParseCredentials(raw string) GitCredentials {
+	var c GitCredentials
+	fields := map[string]*string{
+		"protocol": &c.Protocol,
+		"url":      &c.URL,
+		"path":     &c.Path,
+		"host":     &c.Host,
+		"username": &c.Username,
+		"password": &c.Password,
 	}
+	for line := range strings.SplitSeq(raw, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		if field, known := fields[key]; known {
+			*field = value
+		}
+	}
+	return c
+}
 
-	helper := fmt.Sprintf(`helper = !'%s' internal agent git-credentials`, binaryPath)
+// credentialHelperValue builds the `credential.helper` value that runs devsy's
+// own credential helper subcommand.
+func credentialHelperValue(binaryPath string, port int) string {
+	helper := fmt.Sprintf(`!'%s' internal agent git-credentials`, binaryPath)
 	if port != -1 {
 		helper += fmt.Sprintf(` --port %d`, port)
 	}
-
-	config := string(out)
-	if !strings.Contains(config, helper) {
-		content := removeCredentialHelper(config) + fmt.Sprintf(`
-[credential]
-        %s
-`, helper)
-
-		err = os.WriteFile(gitConfigPath, []byte(content), 0o600)
-		if err != nil {
-			return fmt.Errorf("write git config: %w", err)
-		}
-
-		err = file.Chown(userName, gitConfigPath)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return helper
 }
 
-func RemoveHelper(userName string) error {
+// ConfigureHelper installs credential helper into the user's global git
+// config, replacing any previously configured helper.
+func ConfigureHelper(ctx context.Context, binaryPath, userName string, port int) error {
 	gitConfigPath, err := getGlobalGitConfigPath(userName)
 	if err != nil {
 		return err
 	}
 
-	return RemoveHelperFromPath(gitConfigPath)
-}
+	cfg := git.At("").Config()
+	scope := git.ScopeFile(gitConfigPath)
+	helper := credentialHelperValue(binaryPath, port)
 
-func RemoveHelperFromPath(gitConfigPath string) error {
-	out, err := os.ReadFile(gitConfigPath)
-	if err != nil && !os.IsNotExist(err) {
+	existing, err := cfg.GetAll(ctx, "credential.helper", scope)
+	if err != nil {
+		return err
+	}
+	if len(existing) == 1 && existing[0] == helper {
+		return nil
+	}
+
+	if err := cfg.UnsetAll(ctx, "credential.helper", scope); err != nil {
+		return err
+	}
+	if err := cfg.Add(ctx, "credential.helper", helper, scope); err != nil {
 		return err
 	}
 
-	if strings.Contains(string(out), "[credential]") {
-		err = os.WriteFile(gitConfigPath, []byte(removeCredentialHelper(string(out))), 0o600)
-		if err != nil {
-			return fmt.Errorf("write git config: %w", err)
-		}
-	}
-
-	return nil
+	return file.Chown(userName, gitConfigPath)
 }
 
-func Parse(raw string) (*GitCredentials, error) {
-	credentials := &GitCredentials{}
-	lines := strings.SplitSeq(raw, "\n")
-	for line := range lines {
-		line = strings.TrimSpace(line)
-		splitted := strings.Split(line, "=")
-		if len(splitted) == 1 {
+// RemoveHelper removes credential helper from the user's global config.
+func RemoveHelper(ctx context.Context, userName string) error {
+	gitConfigPath, err := getGlobalGitConfigPath(userName)
+	if err != nil {
+		return err
+	}
+	return RemoveHelperFromPath(ctx, gitConfigPath)
+}
+
+// RemoveHelperFromPath removes the credential.helper setting from the config at
+// path, leaving any other credential.* settings intact.
+func RemoveHelperFromPath(ctx context.Context, gitConfigPath string) error {
+	return git.At("").Config().
+		UnsetAll(ctx, "credential.helper", git.ScopeFile(gitConfigPath))
+}
+
+// SetUser sets the global git identity for the given OS user.
+func SetUser(ctx context.Context, userName string, user *GitUser) error {
+	scope, err := identityScope(userName)
+	if err != nil {
+		return err
+	}
+
+	cfg := git.At("").Config()
+	fields := []struct{ key, value string }{
+		{"user.name", user.Name},
+		{"user.email", user.Email},
+	}
+	wrote := false
+	for _, f := range fields {
+		if f.value == "" {
 			continue
 		}
-
-		switch splitted[0] {
-		case "protocol":
-			credentials.Protocol = strings.Join(splitted[1:], "=")
-		case "host":
-			credentials.Host = strings.Join(splitted[1:], "=")
-		case "username":
-			credentials.Username = strings.Join(splitted[1:], "=")
-		case "password":
-			credentials.Password = strings.Join(splitted[1:], "=")
-		case "url":
-			credentials.URL = strings.Join(splitted[1:], "=")
-		case "path":
-			credentials.Path = strings.Join(splitted[1:], "=")
+		if err := cfg.Set(ctx, f.key, f.value, scope); err != nil {
+			return err
 		}
+		wrote = true
 	}
 
-	return credentials, nil
-}
-
-func ToString(credentials *GitCredentials) string {
-	request := []string{}
-	if credentials.Protocol != "" {
-		request = append(request, "protocol="+credentials.Protocol)
-	}
-	if credentials.URL != "" {
-		request = append(request, "url="+credentials.URL)
-	}
-	if credentials.Path != "" {
-		request = append(request, "path="+credentials.Path)
-	}
-	if credentials.Host != "" {
-		request = append(request, "host="+credentials.Host)
-	}
-	if credentials.Username != "" {
-		request = append(request, "username="+credentials.Username)
-	}
-	if credentials.Password != "" {
-		request = append(request, "password="+credentials.Password)
-	}
-
-	return strings.Join(request, "\n") + "\n"
-}
-
-func SetUser(userName string, user *GitUser) error {
-	if user.Name != "" {
-		shellCommand := fmt.Sprintf(`git config --global user.name "%s"`, user.Name)
-		args := []string{}
-		if userName != "" {
-			args = append(args, "su", userName, "-c", shellCommand)
-		} else {
-			args = append(args, "sh", "-c", shellCommand)
-		}
-
-		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	// Only reassign ownership when we actually wrote the named user's config.
+	// Chowning unconditionally would fail on the not-yet-created file when
+	// neither field was provided.
+	if wrote && userName != "" {
+		path, err := getGlobalGitConfigPath(userName)
 		if err != nil {
-			return fmt.Errorf(
-				"set user.name %q: %w",
-				strings.Join(args, " "),
-				command.WrapCommandError(out, err),
-			)
+			return err
 		}
-	}
-	if user.Email != "" {
-		shellCommand := fmt.Sprintf(`git config --global user.email "%s"`, user.Email)
-		args := []string{}
-		if userName != "" {
-			args = append(args, "su", userName, "-c", shellCommand)
-		} else {
-			args = append(args, "sh", "-c", shellCommand)
-		}
-
-		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf(
-				"set user.email %q: %w",
-				strings.Join(args, " "),
-				command.WrapCommandError(out, err),
-			)
-		}
+		return file.Chown(userName, path)
 	}
 	return nil
 }
 
-func GetUser(userName string, workingDir string) (*GitUser, error) {
-	gitUser := &GitUser{}
-
-	scopeArgs := []string{"config"}
-	if userName != "" {
-		p, err := getGlobalGitConfigPath(userName)
-		if err != nil {
-			return gitUser, fmt.Errorf("get git global dir for %s: %w", userName, err)
-		}
-		scopeArgs = append(scopeArgs, "--file", p)
-	} else if workingDir == "" {
-		scopeArgs = append(scopeArgs, "--global")
-	}
-
-	nameCmd := exec.Command("git", append(scopeArgs, "user.name")...)   // #nosec G204
-	emailCmd := exec.Command("git", append(scopeArgs, "user.email")...) // #nosec G204
-
+// GetUser reads the git identity visible from workingDir, or the named user's
+// global identity when workingDir is empty.
+func GetUser(ctx context.Context, userName, workingDir string) (*GitUser, error) {
+	scope := git.ScopeGlobal
 	if workingDir != "" {
-		nameCmd.Dir = workingDir
-		emailCmd.Dir = workingDir
+		scope = git.ScopeDefault
+	}
+	if userName != "" {
+		path, err := getGlobalGitConfigPath(userName)
+		if err != nil {
+			return nil, fmt.Errorf("get git global dir for %s: %w", userName, err)
+		}
+		scope = git.ScopeFile(path)
 	}
 
-	// we ignore the error here, because if email is empty we don't care
-	name, _ := nameCmd.Output()
-	gitUser.Name = strings.TrimSpace(string(name))
-
-	email, _ := emailCmd.Output()
-	gitUser.Email = strings.TrimSpace(string(email))
-
-	return gitUser, nil
+	cfg := git.At(workingDir).Config()
+	name, _ := cfg.Get(ctx, "user.name", scope)
+	email, _ := cfg.Get(ctx, "user.email", scope)
+	return &GitUser{Name: name, Email: email}, nil
 }
 
-func GetCredentials(requestObj *GitCredentials) (*GitCredentials, error) {
-	// run in git helper mode if we have a port
-	gitHelperPort := os.Getenv(config.EnvGitHelperPort)
-	if gitHelperPort != "" {
-		binaryPath, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
-
-		//nolint:gosec // binaryPath is from os.Executable(), not user input
-		c := exec.Command(
-			binaryPath,
-			"internal",
-			"agent",
-			"git-credentials",
-			"--port",
-			gitHelperPort,
-			"get",
-		)
-
-		c.Stdin = strings.NewReader(ToString(requestObj))
-		stdout, err := c.Output()
-		if err != nil {
-			return nil, err
-		}
-
-		return Parse(string(stdout))
+// identityScope resolves the config scope for setting a user's identity: the
+// named user's global config file, or the current user's global config.
+func identityScope(userName string) (git.ConfigScope, error) {
+	if userName == "" {
+		return git.ScopeGlobal, nil
 	}
+	path, err := getGlobalGitConfigPath(userName)
+	if err != nil {
+		return git.ConfigScope{}, err
+	}
+	return git.ScopeFile(path), nil
+}
 
-	// use local credentials if not
-	c := git.CommandContext(context.TODO(), git.GetDefaultExtraEnv(false), "credential", "fill")
-	c.Stdin = strings.NewReader(ToString(requestObj))
-	stdout, err := c.Output()
+// GetCredentials resolves credentials for a request, using devsy's credential
+// server when a helper port is configured, otherwise `git credential fill`.
+func GetCredentials(ctx context.Context, request *GitCredentials) (*GitCredentials, error) {
+	if port := os.Getenv(config.EnvGitHelperPort); port != "" {
+		return credentialsViaServer(ctx, request, port)
+	}
+	return credentialsViaGit(ctx, request)
+}
+
+// credentialsViaServer asks devsy's own credential helper process (used inside
+// agent containers, addressed by port).
+func credentialsViaServer(
+	ctx context.Context,
+	request *GitCredentials,
+	port string,
+) (*GitCredentials, error) {
+	binaryPath, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	return Parse(string(stdout))
+
+	//nolint:gosec // binaryPath is from os.Executable(), not user input
+	cmd := exec.CommandContext(
+		ctx,
+		binaryPath,
+		"internal", "agent", "git-credentials", "--port", port, "get",
+	)
+	cmd.Stdin = strings.NewReader(request.Encode())
+	stdout, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	creds := ParseCredentials(string(stdout))
+	return &creds, nil
+}
+
+// credentialsViaGit resolves credentials through `git credential fill`, which
+// consults the host's configured credential helpers.
+func credentialsViaGit(ctx context.Context, request *GitCredentials) (*GitCredentials, error) {
+	stdout, err := git.At("", git.WithStrictHostKeyChecking(false)).
+		CredentialFill(ctx, request.Encode())
+	if err != nil {
+		return nil, err
+	}
+	creds := ParseCredentials(stdout)
+	return &creds, nil
+}
+
+// Resolver adapts GetCredentials to download.CredentialResolver, letting the
+// download package authenticate private assets without depending on this
+// package (dependency inversion).
+type Resolver struct{}
+
+// Resolve implements download.CredentialResolver.
+func (Resolver) Resolve(
+	ctx context.Context,
+	protocol, host, path string,
+) (username, password string, err error) {
+	creds, err := GetCredentials(ctx, &GitCredentials{Protocol: protocol, Host: host, Path: path})
+	if err != nil || creds == nil {
+		return "", "", err
+	}
+	return creds.Username, creds.Password, nil
 }
 
 type GetHttpPathParameters struct {
@@ -263,73 +276,38 @@ type GetHttpPathParameters struct {
 	Repository  string
 }
 
-// GetHTTPPath checks for gits `credential.useHttpPath` setting for a given host+protocol and returns the path component
-// of `GitCredential` if the setting is true.
+// GetHTTPPath returns the repository path component when git's
+// `credential.<url>.useHttpPath` is enabled for the host+protocol, else "".
 func GetHTTPPath(ctx context.Context, params GetHttpPathParameters) (string, error) {
-	// No need to look up the HTTP Path if we already have one
 	if params.CurrentPath != "" {
 		return params.CurrentPath, nil
 	}
 
-	// Check if we need to respect gits `credential.useHttpPath`
-	// The actual format for the key is `credential.$PROTOCOL://$HOST.useHttpPath`, i.e. `credential.https://github.com.useHttpPath`
-	// We need to ignore the error as git will always exit with 1 if the key doesn't exist
 	configKey := fmt.Sprintf("credential.%s://%s.useHttpPath", params.Protocol, params.Host)
-	out, _ := git.CommandContext(ctx, git.GetDefaultExtraEnv(false), "config", "--get", configKey).
-		Output()
-	if strings.TrimSpace(string(out)) != config.BoolTrue {
+	value, _ := git.At("", git.WithStrictHostKeyChecking(false)).
+		Config().Get(ctx, configKey, git.ScopeDefault)
+	if value != config.BoolTrue {
 		return "", nil
 	}
-	// We can assume the GitRepository is always HTTP(S) based as otherwise we wouldn't
-	// request credentials for it
-	url, err := netUrl.Parse(params.Repository)
+
+	parsed, err := netURL.Parse(params.Repository)
 	if err != nil {
 		return "", fmt.Errorf("parse workspace repository: %w", err)
 	}
-
-	return url.Path, nil
+	return parsed.Path, nil
 }
 
-func SetupGpgGitKey(gitSignKey string) error {
-	gitConfigCmd := exec.Command(
-		"git",
-		[]string{"config", "--global", "user.signingKey", gitSignKey}...)
-
-	out, err := gitConfigCmd.Output()
-	if err != nil {
-		return fmt.Errorf("git signkey: %s: %w", string(out), err)
+// SetupGpgGitKey sets the global signing key.
+func SetupGpgGitKey(ctx context.Context, gitSignKey string) error {
+	if err := git.At("").Config().
+		Set(ctx, "user.signingKey", gitSignKey, git.ScopeGlobal); err != nil {
+		return fmt.Errorf("git signkey: %w", err)
 	}
-
 	return nil
 }
 
-func removeCredentialHelper(content string) string {
-	scan := scanner.NewScanner(strings.NewReader(content))
-
-	isCredential := false
-	out := []string{}
-	for scan.Scan() {
-		line := scan.Text()
-		if strings.TrimSpace(line) == "[credential]" {
-			isCredential = true
-			continue
-		} else if isCredential {
-			trimmed := strings.TrimSpace(line)
-			if len(trimmed) > 0 && trimmed[0] == '[' {
-				isCredential = false
-			} else {
-				continue
-			}
-		}
-
-		out = append(out, line)
-	}
-
-	return strings.Join(out, "\n")
-}
-
-// getGlobalGitConfigPath resolves the global git config for the specified user according to
-// https://git-scm.com/docs/git-config/#Documentation/git-config.txt-XDGCONFIGHOMEgitconfig
+// getGlobalGitConfigPath resolves the global git config for the specified user
+// per https://git-scm.com/docs/git-config/#Documentation/git-config.txt-XDGCONFIGHOMEgitconfig
 func getGlobalGitConfigPath(userName string) (string, error) {
 	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
 		return filepath.Join(xdgConfigHome, "git", "config"), nil
@@ -339,11 +317,10 @@ func getGlobalGitConfigPath(userName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get homedir for %s: %w", userName, err)
 	}
-
 	return filepath.Join(home, ".gitconfig"), nil
 }
 
-// GetLocalGitConfigPath resolves the local git config for the specified repository path.
+// GetLocalGitConfigPath resolves the local git config for a repository path.
 func GetLocalGitConfigPath(repoPath string) string {
 	return filepath.Join(repoPath, ".git", "config")
 }

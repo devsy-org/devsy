@@ -9,8 +9,9 @@ import (
 // NewWorkspaceCmd builds the 'devsy workspace' parent command.
 func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "workspace",
-		Short: "Manage devcontainer workspaces",
+		Use:     "workspace",
+		Aliases: []string{"ws"},
+		Short:   "Manage devcontainer workspaces",
 	}
 	cmd.AddCommand(up.NewUpCmd(globalFlags))
 	cmd.AddCommand(NewStopCmd(globalFlags))

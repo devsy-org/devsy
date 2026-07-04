@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ const testBaseCommand = "devsy internal agent container credentials-server --use
 
 func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 	command := testBaseCommand
-	result := addGitSSHSigningKey(command, "/path/to/key.pub", "")
+	result := addGitSSHSigningKey(context.Background(), command, "/path/to/key.pub", "")
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("/path/to/key.pub"))
 	assert.Equal(t, command+" --git-user-signing-key "+encoded, result)
@@ -69,7 +70,7 @@ func TestAddGitSSHSigningKey_ExplicitKeyTakesPrecedence(t *testing.T) {
 	// of what ExtractGitConfiguration might return from host .gitconfig.
 	command := testBaseCommand
 	explicitKey := "/explicit/key.pub"
-	result := addGitSSHSigningKey(command, explicitKey, "")
+	result := addGitSSHSigningKey(context.Background(), command, explicitKey, "")
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(explicitKey))
 	assert.Equal(t, command+" --git-user-signing-key "+encoded, result)
@@ -82,7 +83,7 @@ func TestAddGitSSHSigningKey_EmptyExplicitKey_FallsBackToHostConfig(t *testing.T
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpHome)
 
-	result := addGitSSHSigningKey(command, "", "")
+	result := addGitSSHSigningKey(context.Background(), command, "", "")
 
 	assert.Equal(t, command, result)
 	assert.NotContains(t, result, "--git-user-signing-key")
@@ -94,7 +95,7 @@ func TestBuildCredentialsCommand_IncludesSigningKey(t *testing.T) {
 		ConfigureGitSSHSignatureHelper: true,
 		GitSSHSigningKey:               "/my/key.pub",
 	}
-	command := buildCredentialsCommand(opts)
+	command := buildCredentialsCommand(context.Background(), opts)
 
 	encoded := base64.StdEncoding.EncodeToString([]byte("/my/key.pub"))
 	assert.Contains(t, command, "--git-user-signing-key "+encoded)
@@ -106,7 +107,7 @@ func TestBuildCredentialsCommand_NoSigningKey(t *testing.T) {
 		User:                           "testuser",
 		ConfigureGitSSHSignatureHelper: false,
 	}
-	command := buildCredentialsCommand(opts)
+	command := buildCredentialsCommand(context.Background(), opts)
 
 	assert.NotContains(t, command, "--git-user-signing-key")
 }

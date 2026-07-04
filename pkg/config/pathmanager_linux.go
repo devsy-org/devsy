@@ -58,3 +58,7 @@ func (l *linuxPathManager) StateDir() (string, error) {
 func (l *linuxPathManager) RuntimeDir() (string, error) {
 	return ensureDir(filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())))
 }
+
+func (l *linuxPathManager) SystemBinDir() (string, error) {
+	return "/usr/local/bin", nil
+}

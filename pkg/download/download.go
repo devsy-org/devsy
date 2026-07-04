@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,10 +9,27 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/log"
 )
+
+// CredentialResolver resolves a username/password (token) for a host, used to
+// authenticate downloads of private assets.
+type CredentialResolver interface {
+	Resolve(ctx context.Context, protocol, host, path string) (username, password string, err error)
+}
+
+type options struct {
+	resolver CredentialResolver
+}
+
+// Option configures a download.
+type Option func(*options)
+
+// WithCredentialResolver enables authenticated retries for private assets.
+func WithCredentialResolver(resolver CredentialResolver) Option {
+	return func(o *options) { o.resolver = resolver }
+}
 
 // HTTPStatusError wraps HTTP status code errors for better error handling.
 type HTTPStatusError struct {
@@ -57,8 +75,8 @@ func sanitizeURL(raw string) string {
 	return scheme + "://" + afterAt
 }
 
-func Head(rawURL string) (int, error) {
-	req, err := http.NewRequest(http.MethodHead, rawURL, nil)
+func Head(ctx context.Context, rawURL string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -72,19 +90,19 @@ func Head(rawURL string) (int, error) {
 	return resp.StatusCode, nil
 }
 
-func File(rawURL string) (io.ReadCloser, error) {
+func File(ctx context.Context, rawURL string, opts ...Option) (io.ReadCloser, error) {
+	cfg := &options{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if parsed.Host == "github.com" {
-		body, err := tryGithubPrivateDownload(parsed)
+	if parsed.Host == "github.com" && cfg.resolver != nil {
+		body, err := fetchGithubPrivateRelease(ctx, parsed, cfg.resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -93,10 +111,22 @@ func File(rawURL string) (io.ReadCloser, error) {
 		}
 	}
 
+	return getURL(ctx, rawURL)
+}
+
+// getURL performs an anonymous GET and returns the response body, mapping
+// non-2xx/3xx responses to an HTTPStatusError.
+func getURL(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download file: %w", err)
-	} else if resp.StatusCode >= 400 {
+	}
+	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_ = resp.Body.Close()
 		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, URL: rawURL, Body: string(body)}
@@ -105,12 +135,17 @@ func File(rawURL string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-// tryGithubPrivateDownload attempts to download a GitHub release asset using
-// git credentials when the URL returns a 404 (indicating a private repo).
-// Returns (nil, nil) if the URL is not a private GitHub release or credentials
-// are unavailable, allowing the caller to fall through to a normal download.
-func tryGithubPrivateDownload(parsed *url.URL) (io.ReadCloser, error) {
-	code, err := Head(parsed.String())
+// fetchGithubPrivateRelease attempts to download a GitHub release asset using
+// credentials from the resolver when the URL returns a 404 (indicating a
+// private repo). Returns (nil, nil) if the URL is not a private GitHub release
+// or credentials are unavailable, allowing the caller to fall through to a
+// normal download.
+func fetchGithubPrivateRelease(
+	ctx context.Context,
+	parsed *url.URL,
+	resolver CredentialResolver,
+) (io.ReadCloser, error) {
+	code, err := Head(ctx, parsed.String())
 	if err != nil {
 		return nil, err
 	}
@@ -123,18 +158,14 @@ func tryGithubPrivateDownload(parsed *url.URL) (io.ReadCloser, error) {
 		return nil, nil
 	}
 
-	log.Debugf("Try to find credentials for github")
-	credentials, err := gitcredentials.GetCredentials(&gitcredentials.GitCredentials{
-		Protocol: parsed.Scheme,
-		Host:     parsed.Host,
-		Path:     parsed.Path,
-	})
-	if err != nil || credentials == nil || credentials.Password == "" {
+	log.Debugf("try to find credentials for github")
+	_, password, err := resolver.Resolve(ctx, parsed.Scheme, parsed.Host, parsed.Path)
+	if err != nil || password == "" {
 		return nil, nil
 	}
 
-	log.Debugf("Make request with credentials")
-	return downloadGithubRelease(ref, credentials.Password)
+	log.Debugf("make request with credentials")
+	return downloadGithubRelease(ctx, ref, password)
 }
 
 type githubReleaseRef struct {
@@ -150,13 +181,17 @@ type GithubReleaseAsset struct {
 	Name string `json:"name,omitempty"`
 }
 
-func downloadGithubRelease(ref githubReleaseRef, token string) (io.ReadCloser, error) {
-	assetID, err := fetchGithubReleaseAssetID(ref, token)
+func downloadGithubRelease(
+	ctx context.Context,
+	ref githubReleaseRef,
+	token string,
+) (io.ReadCloser, error) {
+	assetID, err := fetchGithubReleaseAssetID(ctx, ref, token)
 	if err != nil {
 		return nil, err
 	}
 
-	return downloadGithubAsset(ref.org, ref.repo, assetID, token)
+	return downloadGithubAsset(ctx, ref, assetID, token)
 }
 
 func (ref githubReleaseRef) releaseURL() string {
@@ -183,8 +218,8 @@ func (ref githubReleaseRef) releaseURL() string {
 	}).String()
 }
 
-func githubAPIGetJSON(apiURL, token string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+func githubAPIGetJSON(ctx context.Context, apiURL, token string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +244,14 @@ func githubAPIGetJSON(apiURL, token string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) {
+func fetchGithubReleaseAssetID(
+	ctx context.Context,
+	ref githubReleaseRef,
+	token string,
+) (int, error) {
 	releaseURL := ref.releaseURL()
 
-	raw, err := githubAPIGetJSON(releaseURL, token)
+	raw, err := githubAPIGetJSON(ctx, releaseURL, token)
 	if err != nil {
 		return 0, err
 	}
@@ -231,11 +270,16 @@ func fetchGithubReleaseAssetID(ref githubReleaseRef, token string) (int, error) 
 	return 0, fmt.Errorf("couldn't find asset %s in github release (%s)", ref.file, releaseURL)
 }
 
-func downloadGithubAsset(org, repo string, assetID int, token string) (io.ReadCloser, error) {
+func downloadGithubAsset(
+	ctx context.Context,
+	ref githubReleaseRef,
+	assetID int,
+	token string,
+) (io.ReadCloser, error) {
 	assetPath := fmt.Sprintf(
 		"/repos/%s/%s/releases/assets/%d",
-		url.PathEscape(org),
-		url.PathEscape(repo),
+		url.PathEscape(ref.org),
+		url.PathEscape(ref.repo),
 		assetID,
 	)
 	assetURL := (&url.URL{
@@ -244,7 +288,7 @@ func downloadGithubAsset(org, repo string, assetID int, token string) (io.ReadCl
 		Path:   assetPath,
 	}).String()
 
-	req, err := http.NewRequest(http.MethodGet, assetURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -74,8 +74,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	tunnelClient, credentialsDir, err := initWorkspace(initWorkspaceParams{
-		ctx:                 cancelCtx,
+	tunnelClient, credentialsDir, err := initWorkspace(cancelCtx, initWorkspaceParams{
 		workspaceInfo:       workspaceInfo,
 		debug:               cmd.Debug,
 		shouldInstallDaemon: cmd.shouldInstallDaemon(workspaceInfo),
@@ -215,6 +214,7 @@ func CreateRunner(
 }
 
 func InitContentFolder(
+	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (bool, error) {
 	exists, err := contentFolderExists(workspaceInfo.ContentFolder)
@@ -229,7 +229,7 @@ func InitContentFolder(
 		return false, err
 	}
 
-	if err := downloadWorkspaceBinaries(workspaceInfo); err != nil {
+	if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
 		_ = os.RemoveAll(workspaceInfo.ContentFolder)
 		return false, err
 	}
@@ -265,6 +265,7 @@ func createContentFolder(path string) error {
 }
 
 func downloadWorkspaceBinaries(
+	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
 	binariesDir, err := agent.GetAgentBinariesDir(
@@ -280,7 +281,7 @@ func downloadWorkspaceBinaries(
 		)
 	}
 
-	_, err = provider.DownloadBinaries(workspaceInfo.Agent.Binaries, binariesDir)
+	_, err = provider.DownloadBinaries(ctx, workspaceInfo.Agent.Binaries, binariesDir)
 	if err != nil {
 		return fmt.Errorf(
 			"error downloading workspace %s binaries: %w",
@@ -293,7 +294,6 @@ func downloadWorkspaceBinaries(
 }
 
 type workspaceInitializer struct {
-	ctx                  context.Context
 	workspaceInfo        *provider.AgentWorkspaceInfo
 	debug                bool
 	shouldInstallDaemon  bool
@@ -304,39 +304,40 @@ type workspaceInitializer struct {
 }
 
 type initWorkspaceParams struct {
-	ctx                 context.Context
 	workspaceInfo       *provider.AgentWorkspaceInfo
 	debug               bool
 	shouldInstallDaemon bool
 }
 
-func initWorkspace(params initWorkspaceParams) (tunnel.TunnelClient, string, error) {
+func initWorkspace(
+	ctx context.Context,
+	params initWorkspaceParams,
+) (tunnel.TunnelClient, string, error) {
 	init := &workspaceInitializer{
-		ctx:                 params.ctx,
 		workspaceInfo:       params.workspaceInfo,
 		debug:               params.debug,
 		shouldInstallDaemon: params.shouldInstallDaemon,
 	}
 
-	if err := init.initialize(); err != nil {
+	if err := init.initialize(ctx); err != nil {
 		return nil, init.dockerCredentialsDir, err
 	}
 
 	return init.tunnelClient, init.dockerCredentialsDir, nil
 }
 
-func (w *workspaceInitializer) initialize() error {
-	if err := w.initializeTunnel(); err != nil {
+func (w *workspaceInitializer) initialize(ctx context.Context) error {
+	if err := w.initializeTunnel(ctx); err != nil {
 		return err
 	}
 
-	if err := w.setupCredentials(); err != nil {
+	if err := w.setupCredentials(ctx); err != nil {
 		log.Warnf("failed to set up docker/git credentials (continuing without them): %v", err)
 	}
 
 	dockerErrChan := w.installDockerAsync()
 
-	if err := w.prepareWorkspaceContent(); err != nil {
+	if err := w.prepareWorkspaceContent(ctx); err != nil {
 		return err
 	}
 
@@ -346,7 +347,7 @@ func (w *workspaceInitializer) initialize() error {
 		return err
 	}
 
-	w.tryConfigureDockerDaemon()
+	w.tryConfigureDockerDaemon(ctx)
 	return nil
 }
 
@@ -358,12 +359,12 @@ func (w *workspaceInitializer) setupDaemonIfNeeded() {
 	}
 }
 
-func (w *workspaceInitializer) tryConfigureDockerDaemon() {
+func (w *workspaceInitializer) tryConfigureDockerDaemon(ctx context.Context) {
 	if !w.shouldConfigureDockerDaemon() {
 		log.Debug("skipping configuring docker daemon")
 		return
 	}
-	if err := configureDockerDaemon(w.ctx); err != nil {
+	if err := configureDockerDaemon(ctx); err != nil {
 		log.Warn(
 			"could not find docker daemon config file, if using the registry cache, " +
 				"ensure the daemon is configured with containerd-snapshotter=true, " +
@@ -372,25 +373,24 @@ func (w *workspaceInitializer) tryConfigureDockerDaemon() {
 	}
 }
 
-func (w *workspaceInitializer) initializeTunnel() error {
+func (w *workspaceInitializer) initializeTunnel(ctx context.Context) error {
 	client, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, 0)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}
 	w.tunnelClient = client
-	w.logger = tunnelserver.NewTunnelLogger(w.ctx, w.tunnelClient, w.debug)
+	w.logger = tunnelserver.NewTunnelLogger(ctx, w.tunnelClient, w.debug)
 	log.Debugf("created logger")
 
-	if _, err := w.tunnelClient.Ping(w.ctx, &tunnel.Empty{}); err != nil {
+	if _, err := w.tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
 	return nil
 }
 
-func (w *workspaceInitializer) setupCredentials() error {
-	dockerCredentialsDir, gitCredentialsHelper, err := configureCredentials(credentialsConfig{
-		ctx:           w.ctx,
+func (w *workspaceInitializer) setupCredentials(ctx context.Context) error {
+	dockerCredentialsDir, gitCredentialsHelper, err := configureCredentials(ctx, credentialsConfig{
 		workspaceInfo: w.workspaceInfo,
 		client:        w.tunnelClient,
 	})
@@ -489,9 +489,8 @@ func (w *workspaceInitializer) isDockerInstallDisabled() bool {
 	return err == nil && !install
 }
 
-func (w *workspaceInitializer) prepareWorkspaceContent() error {
-	return prepareWorkspace(prepareWorkspaceParams{
-		ctx:           w.ctx,
+func (w *workspaceInitializer) prepareWorkspaceContent(ctx context.Context) error {
+	return prepareWorkspace(ctx, prepareWorkspaceParams{
 		workspaceInfo: w.workspaceInfo,
 		client:        w.tunnelClient,
 		gitHelper:     w.gitCredentialsHelper,
@@ -530,7 +529,6 @@ func (w *workspaceInitializer) shouldConfigureDockerDaemon() bool {
 }
 
 type prepareWorkspaceParams struct {
-	ctx           context.Context
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
 	gitHelper     string
@@ -539,7 +537,7 @@ type prepareWorkspaceParams struct {
 
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
 // Note: This function modifies params.workspaceInfo.ContentFolder when platform is enabled with a local folder.
-func prepareWorkspace(params prepareWorkspaceParams) error {
+func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error {
 	if params.workspaceInfo.CLIOptions.Platform.Enabled &&
 		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
 		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
@@ -547,7 +545,7 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		)
 	}
 
-	exists, err := InitContentFolder(params.workspaceInfo)
+	exists, err := InitContentFolder(ctx, params.workspaceInfo)
 	if err != nil {
 		return err
 	}
@@ -556,45 +554,44 @@ func prepareWorkspace(params prepareWorkspaceParams) error {
 		return nil
 	}
 
-	if params.workspaceInfo.Workspace.Source.GitRepository != "" {
-		return prepareGitWorkspace(prepareGitWorkspaceParams{
-			ctx:           params.ctx,
+	return prepareWorkspaceSource(ctx, params, exists)
+}
+
+// prepareWorkspaceSource dispatches on the workspace source type (git, local
+// folder, image, or container).
+func prepareWorkspaceSource(ctx context.Context, params prepareWorkspaceParams, exists bool) error {
+	source := params.workspaceInfo.Workspace.Source
+	switch {
+	case source.GitRepository != "":
+		return prepareGitWorkspace(ctx, prepareGitWorkspaceParams{
 			workspaceInfo: params.workspaceInfo,
 			gitHelper:     params.gitHelper,
 			exists:        exists,
 			logger:        params.logger,
 		})
-	}
-
-	if params.workspaceInfo.Workspace.Source.LocalFolder != "" {
-		return prepareLocalWorkspace(params.ctx, params.workspaceInfo, params.client)
-	}
-
-	if params.workspaceInfo.Workspace.Source.Image != "" {
+	case source.LocalFolder != "":
+		return prepareLocalWorkspace(ctx, params.workspaceInfo, params.client)
+	case source.Image != "":
 		params.logger.Debugf("prepare image")
-		return prepareImage(
-			params.workspaceInfo.ContentFolder,
-			params.workspaceInfo.Workspace.Source.Image,
-		)
-	}
-
-	if params.workspaceInfo.Workspace.Source.Container != "" {
+		return prepareImage(params.workspaceInfo.ContentFolder, source.Image)
+	case source.Container != "":
 		params.logger.Debugf("workspace is a container, nothing to do")
 		return nil
+	default:
+		return fmt.Errorf(
+			"either workspace repository, image, container or local-folder is required",
+		)
 	}
-
-	return fmt.Errorf("either workspace repository, image, container or local-folder is required")
 }
 
 type prepareGitWorkspaceParams struct {
-	ctx           context.Context
 	workspaceInfo *provider.AgentWorkspaceInfo
 	gitHelper     string
 	exists        bool
 	logger        tunnelserver.Logger
 }
 
-func prepareGitWorkspace(params prepareGitWorkspaceParams) error {
+func prepareGitWorkspace(ctx context.Context, params prepareGitWorkspaceParams) error {
 	if params.workspaceInfo.CLIOptions.Reset {
 		params.logger.Info("resetting git based workspace, removing old content folder")
 		if err := os.RemoveAll(params.workspaceInfo.ContentFolder); err != nil {
@@ -619,7 +616,7 @@ func prepareGitWorkspace(params prepareGitWorkspaceParams) error {
 	}
 
 	return agent.CloneRepositoryForWorkspace(
-		params.ctx,
+		ctx,
 		&params.workspaceInfo.Workspace.Source,
 		&params.workspaceInfo.Agent,
 		params.workspaceInfo.ContentFolder,
@@ -675,18 +672,17 @@ func ensureLastDevContainerJson(workspaceInfo *provider.AgentWorkspaceInfo) erro
 }
 
 type credentialsConfig struct {
-	ctx           context.Context
 	workspaceInfo *provider.AgentWorkspaceInfo
 	client        tunnel.TunnelClient
 }
 
-func configureCredentials(cfg credentialsConfig) (string, string, error) {
+func configureCredentials(ctx context.Context, cfg credentialsConfig) (string, string, error) {
 	if cfg.workspaceInfo.Agent.InjectDockerCredentials != config.BoolTrue &&
 		cfg.workspaceInfo.Agent.InjectGitCredentials != config.BoolTrue {
 		return "", "", nil
 	}
 
-	serverPort, err := credentials.StartCredentialsServer(cfg.ctx, cfg.client)
+	serverPort, err := credentials.StartCredentialsServer(ctx, cfg.client)
 	if err != nil {
 		return "", "", err
 	}
@@ -700,15 +696,9 @@ func configureCredentials(cfg credentialsConfig) (string, string, error) {
 		return "", "", fmt.Errorf("workspace folder is not set")
 	}
 
-	dockerCredentials := ""
-	if cfg.workspaceInfo.Agent.InjectDockerCredentials == config.BoolTrue {
-		dockerCredentials, err = dockercredentials.ConfigureCredentialsMachine(
-			cfg.workspaceInfo.Origin,
-			serverPort,
-		)
-		if err != nil {
-			return "", "", err
-		}
+	dockerCredentials, err := configureDockerCredentials(cfg, serverPort)
+	if err != nil {
+		return "", "", err
 	}
 
 	gitCredentials := ""
@@ -722,6 +712,15 @@ func configureCredentials(cfg credentialsConfig) (string, string, error) {
 	}
 
 	return dockerCredentials, gitCredentials, nil
+}
+
+// configureDockerCredentials sets up the docker credential helper machine when
+// requested, returning the resulting credentials string (empty when disabled).
+func configureDockerCredentials(cfg credentialsConfig, serverPort int) (string, error) {
+	if cfg.workspaceInfo.Agent.InjectDockerCredentials != config.BoolTrue {
+		return "", nil
+	}
+	return dockercredentials.ConfigureCredentialsMachine(cfg.workspaceInfo.Origin, serverPort)
 }
 
 func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo) error {

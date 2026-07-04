@@ -805,18 +805,14 @@ func configureSystemGitCredentials(
 	)
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
-	err = git.CommandContext(ctx, git.GetDefaultExtraEnv(false), "config", "--system", "--add",
-		"credential.helper", gitCredentials).
-		Run()
-	if err != nil {
+	gitConfig := git.At("", git.WithStrictHostKeyChecking(false)).Config()
+	if err = gitConfig.Add(ctx, "credential.helper", gitCredentials, git.ScopeSystem); err != nil {
 		return nil, fmt.Errorf("add git credential helper: %w", err)
 	}
 
 	cleanup := func() {
 		log.Debug("unset setup system credential helper")
-		err = git.CommandContext(ctx, git.GetDefaultExtraEnv(false), "config", "--system", "--unset", "credential.helper").
-			Run()
-		if err != nil {
+		if err = gitConfig.Unset(ctx, "credential.helper", git.ScopeSystem); err != nil {
 			log.Errorf("unset system credential helper %v", err)
 		}
 	}

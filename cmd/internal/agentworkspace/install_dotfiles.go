@@ -56,13 +56,8 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 		log.Infof("Cloning dotfiles %s", cmd.Repository)
 
 		gitInfo := git.NormalizeRepository(cmd.Repository)
-		if err := git.CloneRepository(
-			ctx,
-			gitInfo,
-			targetDir,
-			"",
-			cmd.StrictHostKeyChecking,
-		); err != nil {
+		if err := git.At(targetDir, git.WithStrictHostKeyChecking(cmd.StrictHostKeyChecking)).
+			CloneFromInfo(ctx, gitInfo, ""); err != nil {
 			return err
 		}
 	} else {

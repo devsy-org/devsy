@@ -232,7 +232,7 @@ func (t *tunnelServer) GitUser(ctx context.Context, empty *tunnel.Empty) (*tunne
 	if t.workspace != nil {
 		workingDir = t.workspace.Source.LocalFolder
 	}
-	gitUser, err := gitcredentials.GetUser("", workingDir)
+	gitUser, err := gitcredentials.GetUser(ctx, "", workingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +304,7 @@ func (t *tunnelServer) GitCredentials(
 			log.Warn("workspace is not available for git credentials")
 		}
 
-		response, err := gitcredentials.GetCredentials(credentials)
+		response, err := gitcredentials.GetCredentials(ctx, credentials)
 		if err != nil {
 			return nil, fmt.Errorf("get git response: %w", err)
 		}

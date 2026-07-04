@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 // CheckProviderUpdate currently only ensures the local provider is in sync with the remote for Devsy Pro instances.
 // Potentially auto-upgrade other providers in the future.
 func CheckProviderUpdate(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	proInstance *provider2.ProInstance,
 ) error {
@@ -27,10 +29,11 @@ func CheckProviderUpdate(
 		return nil
 	}
 
-	return checkProviderUpdateForInstance(devsyConfig, proInstance)
+	return checkProviderUpdateForInstance(ctx, devsyConfig, proInstance)
 }
 
 func checkProviderUpdateForInstance(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	proInstance *provider2.ProInstance,
 ) error {
@@ -63,7 +66,7 @@ func checkProviderUpdateForInstance(
 		newVersion,
 	)
 
-	return applyProviderUpdate(devsyConfig, proInstance.Provider, newVersion)
+	return applyProviderUpdate(ctx, devsyConfig, proInstance.Provider, newVersion)
 }
 
 func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error) {
@@ -79,6 +82,7 @@ func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error)
 }
 
 func applyProviderUpdate(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName, newVersion string,
 ) error {
@@ -93,7 +97,7 @@ func applyProviderUpdate(
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = UpdateProvider(devsyConfig, providerName, providerSource)
+	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}

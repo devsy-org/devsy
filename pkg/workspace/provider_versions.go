@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -27,7 +28,11 @@ func ListProviderVersions(
 }
 
 // SetProviderVersion switches the provider to the given tag.
-func SetProviderVersion(devsyConfig *config.Config, providerName, tag string) error {
+func SetProviderVersion(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName, tag string,
+) error {
 	source, err := ResolveProviderSource(devsyConfig, providerName)
 	if err != nil {
 		return fmt.Errorf("resolve provider source: %w", err)
@@ -36,7 +41,7 @@ func SetProviderVersion(devsyConfig *config.Config, providerName, tag string) er
 	if err != nil {
 		return err
 	}
-	_, err = UpdateProvider(devsyConfig, providerName, rewritten)
+	_, err = UpdateProvider(ctx, devsyConfig, providerName, rewritten)
 	return err
 }
 

@@ -95,6 +95,10 @@ func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
 	buildCmd.Flags().
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
 			"If true will clone git submodule repositories recursively")
+	buildCmd.Flags().
+		Var(&cmd.GitLFSMode, "git-lfs-mode",
+			"How Devsy handles Git LFS after cloning. Can be full (default, download LFS "+
+				"content), setup-only (configure LFS but leave pointer files) or skip (ignore LFS)")
 
 	buildCmd.Flags().
 		StringVar(&cmd.ImageName, "image-name", "", "Alternative name for the built image")

@@ -124,10 +124,15 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 // When explicitKey is set (from --git-ssh-signing-key flag), it takes
 // precedence over the host's .gitconfig. This ensures signing works
 // even when user.signingkey is not in the host git configuration.
-func addGitSSHSigningKey(command string, explicitKey string, workingDir string) string {
+func addGitSSHSigningKey(
+	ctx context.Context,
+	command string,
+	explicitKey string,
+	workingDir string,
+) string {
 	userSigningKey := explicitKey
 	if userSigningKey == "" {
-		format, extracted, err := gitsshsigning.ExtractGitConfiguration(workingDir)
+		format, extracted, err := gitsshsigning.ExtractGitConfiguration(ctx, workingDir)
 		if err != nil {
 			log.Debugf("failed to extract git configuration: %v", err)
 			return command
@@ -143,7 +148,7 @@ func addGitSSHSigningKey(command string, explicitKey string, workingDir string) 
 }
 
 // buildCredentialsCommand builds the credentials server command.
-func buildCredentialsCommand(opts RunServicesOptions) string {
+func buildCredentialsCommand(ctx context.Context, opts RunServicesOptions) string {
 	command := fmt.Sprintf(
 		"%s%s internal agent container credentials-server --user %s",
 		agent.ContainerAgentEnvPrefix,
@@ -158,7 +163,7 @@ func buildCredentialsCommand(opts RunServicesOptions) string {
 		if opts.Workspace != nil {
 			workingDir = opts.Workspace.Source.LocalFolder
 		}
-		command = addGitSSHSigningKey(command, opts.GitSSHSigningKey, workingDir)
+		command = addGitSSHSigningKey(ctx, command, opts.GitSSHSigningKey, workingDir)
 	}
 	if opts.ConfigureDockerCredentials {
 		command += " --configure-docker-helper"
@@ -209,7 +214,7 @@ func runServicesIteration(
 	writer := log.Writer(log.LevelDebug)
 	defer func() { _ = writer.Close() }()
 
-	command := buildCredentialsCommand(opts)
+	command := buildCredentialsCommand(ctx, opts)
 
 	err = devssh.Run(cancelCtx, devssh.RunOptions{
 		Client:  opts.ContainerClient,

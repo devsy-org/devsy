@@ -74,7 +74,7 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 
 	if gpgConf.GitKey != "" {
 		log.Debugf("Setup git signing key")
-		if err := gitcredentials.SetupGpgGitKey(gpgConf.GitKey); err != nil {
+		if err := gitcredentials.SetupGpgGitKey(ctx, gpgConf.GitKey); err != nil {
 			log.Warnf("Setup git signing key failed (non-fatal): %v", err)
 		}
 	}

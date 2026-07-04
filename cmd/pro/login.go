@@ -86,7 +86,7 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 		return err
 	}
 
-	devsyConfig, err = cmd.ensureProvider(devsyConfig, currentInstance, fullURL)
+	devsyConfig, err = cmd.ensureProvider(ctx, devsyConfig, currentInstance, fullURL)
 	if err != nil {
 		return err
 	}
@@ -173,6 +173,7 @@ func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host str
 }
 
 func (cmd *LoginCmd) ensureProvider(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	currentInstance *provider.ProInstance,
 	fullURL string,
@@ -188,7 +189,7 @@ func (cmd *LoginCmd) ensureProvider(
 		CreationTimestamp: types.Now(),
 	}
 
-	if err := cmd.addProviderByVersion(devsyConfig, fullURL); err != nil {
+	if err := cmd.addProviderByVersion(ctx, devsyConfig, fullURL); err != nil {
 		return nil, err
 	}
 
@@ -199,7 +200,11 @@ func (cmd *LoginCmd) ensureProvider(
 	return config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 }
 
-func (cmd *LoginCmd) addProviderByVersion(devsyConfig *config.Config, fullURL string) error {
+func (cmd *LoginCmd) addProviderByVersion(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	fullURL string,
+) error {
 	remoteVersion, err := platform.GetDevsyVersion(fullURL)
 	if err != nil {
 		return err
@@ -213,10 +218,10 @@ func (cmd *LoginCmd) addProviderByVersion(devsyConfig *config.Config, fullURL st
 	if rv.LT(semver.Version{Major: 0, Minor: 6, Patch: 999}) &&
 		remoteVersion != versionpkg.DevVersion {
 		log.Debug("remote version < 0.7.0, installing proxy provider")
-		return cmd.addLoftProvider(devsyConfig, fullURL)
+		return cmd.addLoftProvider(ctx, devsyConfig, fullURL)
 	}
 
-	_, err = workspace.AddProvider(devsyConfig, cmd.Provider, "pro")
+	_, err = workspace.AddProvider(ctx, devsyConfig, cmd.Provider, "pro")
 	return err
 }
 
@@ -263,6 +268,7 @@ func (cmd *LoginCmd) loginAndConfigure(
 }
 
 func (cmd *LoginCmd) addLoftProvider(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	url string,
 ) error {
@@ -278,7 +284,7 @@ func (cmd *LoginCmd) addLoftProvider(
 	// is development?
 	if cmd.ProviderSource == config.RepoSlug+"@v0.0.0" {
 		log.Debugf("Add development provider")
-		_, err = workspace.AddProviderRaw(workspace.ProviderParams{
+		_, err = workspace.AddProviderRaw(ctx, workspace.ProviderParams{
 			DevsyConfig:  devsyConfig,
 			ProviderName: cmd.Provider,
 			Source:       &provider.ProviderSource{},
@@ -288,7 +294,7 @@ func (cmd *LoginCmd) addLoftProvider(
 			return err
 		}
 	} else {
-		_, err = workspace.AddProvider(devsyConfig, cmd.Provider, cmd.ProviderSource)
+		_, err = workspace.AddProvider(ctx, devsyConfig, cmd.Provider, cmd.ProviderSource)
 		if err != nil {
 			return err
 		}

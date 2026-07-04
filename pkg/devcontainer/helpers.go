@@ -1,7 +1,6 @@
 package devcontainer
 
 import (
-	"bufio"
 	"context"
 	"io/fs"
 	"path/filepath"
@@ -128,14 +127,8 @@ func findFilesInGitRepo(
 		SubPath:    opts.gitSubDir,
 	}
 	log.Debugf("Cloning Git repository into %s", opts.tmpDirPath)
-	err := git.CloneRepository(
-		ctx,
-		gitInfo,
-		opts.tmpDirPath,
-		"",
-		opts.strictHostKeyChecking,
-		git.WithCloneStrategy(git.BareCloneStrategy),
-	)
+	err := git.At(opts.tmpDirPath, git.WithStrictHostKeyChecking(opts.strictHostKeyChecking)).
+		CloneFromInfo(ctx, gitInfo, "", git.WithCloneStrategy(git.BareCloneStrategy))
 	if err != nil {
 		return nil, err
 	}
@@ -146,22 +139,13 @@ func findFilesInGitRepo(
 	if opts.gitBranch != "" {
 		ref = opts.gitBranch
 	}
-	// git ls-tree -r --full-name --name-only $REF
-	lsArgs := []string{"ls-tree", "-r", "--full-name", "--name-only", ref}
-	lsCmd := git.CommandContext(ctx, git.GetDefaultExtraEnv(opts.strictHostKeyChecking), lsArgs...)
-	lsCmd.Dir = opts.tmpDirPath
-	stdout, err := lsCmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	err = lsCmd.Start()
+	repo := git.At(opts.tmpDirPath, git.WithStrictHostKeyChecking(opts.strictHostKeyChecking))
+	paths, err := repo.LsTree(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
 
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		path := scanner.Text()
+	for _, path := range paths {
 		depth := strings.Count(path, string(filepath.Separator))
 		if depth > opts.maxDepth {
 			continue
@@ -169,11 +153,6 @@ func findFilesInGitRepo(
 		if isDevcontainerFilename(path) {
 			result.ConfigPaths = append(result.ConfigPaths, path)
 		}
-	}
-
-	err = lsCmd.Wait()
-	if err != nil {
-		return nil, err
 	}
 
 	return result, nil

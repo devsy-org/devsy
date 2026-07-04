@@ -104,15 +104,16 @@ func ProviderFromHost(
 }
 
 func AddProvider(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, providerSource, err := provider.ResolveProvider(providerSourceRaw)
+	providerRaw, providerSource, err := provider.ResolveProvider(ctx, providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
 
-	return AddProviderRaw(ProviderParams{
+	return AddProviderRaw(ctx, ProviderParams{
 		DevsyConfig:  devsyConfig,
 		ProviderName: providerName,
 		Source:       providerSource,
@@ -120,8 +121,8 @@ func AddProvider(
 	})
 }
 
-func AddProviderRaw(p ProviderParams) (*provider.ProviderConfig, error) {
-	providerConfig, err := installRawProvider(p)
+func AddProviderRaw(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
+	providerConfig, err := installRawProvider(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +144,7 @@ func AddProviderRaw(p ProviderParams) (*provider.ProviderConfig, error) {
 }
 
 func UpdateProvider(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
@@ -158,12 +160,12 @@ func UpdateProvider(
 		providerSourceRaw = s
 	}
 
-	providerRaw, providerSource, err := provider.ResolveProvider(providerSourceRaw)
+	providerRaw, providerSource, err := provider.ResolveProvider(ctx, providerSourceRaw)
 	if err != nil {
 		return nil, err
 	}
 
-	return updateProvider(ProviderParams{
+	return updateProvider(ctx, ProviderParams{
 		DevsyConfig:  devsyConfig,
 		ProviderName: providerName,
 		Raw:          providerRaw,
@@ -172,6 +174,7 @@ func UpdateProvider(
 }
 
 func CloneProvider(
+	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName, providerSourceRaw string,
 ) (*ProviderWithOptions, error) {
@@ -181,6 +184,7 @@ func CloneProvider(
 	}
 
 	providerConfig, err := installProvider(
+		ctx,
 		ProviderParams{
 			DevsyConfig:  devsyConfig,
 			ProviderName: providerName,
@@ -288,12 +292,12 @@ func loadProviderEntry(
 	return nil
 }
 
-func installRawProvider(p ProviderParams) (*provider.ProviderConfig, error) {
+func installRawProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
 	providerConfig, err := provider.ParseProvider(bytes.NewReader(p.Raw))
 	if err != nil {
 		return nil, err
 	}
-	return installProvider(ProviderParams{
+	return installProvider(ctx, ProviderParams{
 		DevsyConfig:  p.DevsyConfig,
 		ProviderName: p.ProviderName,
 		Source:       p.Source,
@@ -301,6 +305,7 @@ func installRawProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 }
 
 func installProvider(
+	ctx context.Context,
 	p ProviderParams,
 	providerConfig *provider.ProviderConfig,
 ) (*provider.ProviderConfig, error) {
@@ -317,14 +322,14 @@ func installProvider(
 		return nil, err
 	}
 
-	if err := downloadAndSaveProvider(p, providerConfig); err != nil {
+	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
 		return nil, err
 	}
 
 	return providerConfig, nil
 }
 
-func updateProvider(p ProviderParams) (*provider.ProviderConfig, error) {
+func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
 	providerConfig, err := parseAndValidateProvider(p)
 	if err != nil {
 		return nil, err
@@ -336,7 +341,7 @@ func updateProvider(p ProviderParams) (*provider.ProviderConfig, error) {
 		return nil, err
 	}
 
-	if err := downloadAndSaveProvider(p, providerConfig); err != nil {
+	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
 		return nil, err
 	}
 
@@ -380,7 +385,11 @@ func checkProviderNotExists(devsyConfig *config.Config, providerName string) err
 	return nil
 }
 
-func downloadAndSaveProvider(p ProviderParams, providerConfig *provider.ProviderConfig) error {
+func downloadAndSaveProvider(
+	ctx context.Context,
+	p ProviderParams,
+	providerConfig *provider.ProviderConfig,
+) error {
 	binariesDir, err := provider.GetProviderBinariesDir(
 		p.DevsyConfig.DefaultContext,
 		providerConfig.Name,
@@ -395,6 +404,7 @@ func downloadAndSaveProvider(p ProviderParams, providerConfig *provider.Provider
 	}
 
 	if _, err := provider.DownloadBinaries(
+		ctx,
 		providerConfig.Binaries,
 		binariesDir,
 	); err != nil {

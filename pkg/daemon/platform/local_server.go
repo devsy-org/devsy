@@ -721,7 +721,7 @@ func (l *localServer) getGitCredentials(
 		protocol = "https"
 	}
 
-	credentials, err := gitcredentials.GetCredentials(&gitcredentials.GitCredentials{
+	credentials, err := gitcredentials.GetCredentials(r.Context(), &gitcredentials.GitCredentials{
 		Protocol: protocol,
 		Host:     host,
 	})

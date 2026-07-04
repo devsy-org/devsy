@@ -90,6 +90,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			return fmt.Errorf("provider %s does not exist", cmd.FromExisting)
 		}
 		providerWithOptions, err := workspace.CloneProvider(
+			ctx,
 			devsyConfig,
 			providerName,
 			cmd.FromExisting,
@@ -109,7 +110,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			return fmt.Errorf("specify either a URL or path, " +
 				"e.g. devsy provider add https://path/to/my/provider.yaml")
 		}
-		c, err := workspace.AddProvider(devsyConfig, providerName, args[0])
+		c, err := workspace.AddProvider(ctx, devsyConfig, providerName, args[0])
 		if err != nil {
 			return err
 		}

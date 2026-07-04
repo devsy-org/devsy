@@ -67,7 +67,8 @@ func cloneDotfiles(ctx context.Context, repo, targetDir string) error {
 
 	log.Infof("Cloning dotfiles %s", repo)
 	gitInfo := git.NormalizeRepository(repo)
-	return git.CloneRepository(ctx, gitInfo, targetDir, "", false)
+	return git.At(targetDir, git.WithStrictHostKeyChecking(false)).
+		CloneFromInfo(ctx, gitInfo, "")
 }
 
 func installDotfiles(

@@ -189,6 +189,7 @@ func setupOptionalFeatures(ctx context.Context, cfg *ContainerSetupConfig) {
 
 	if cfg.PlatformOptions != nil {
 		if err := setupPlatformGitCredentials(
+			ctx,
 			config.GetRemoteUser(cfg.SetupInfo),
 			cfg.PlatformOptions,
 		); err != nil {
@@ -513,6 +514,7 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 }
 
 func setupPlatformGitCredentials(
+	ctx context.Context,
 	userName string,
 	platformOptions *devsy.PlatformOptions,
 ) error {
@@ -524,10 +526,10 @@ func setupPlatformGitCredentials(
 	// setup platform git user
 	if platformOptions.UserCredentials.GitUser != "" &&
 		platformOptions.UserCredentials.GitEmail != "" {
-		gitUser, err := gitcredentials.GetUser(userName, "")
+		gitUser, err := gitcredentials.GetUser(ctx, userName, "")
 		if err == nil && gitUser.Name == "" && gitUser.Email == "" {
 			log.Info("Setup workspace git user and email")
-			err := gitcredentials.SetUser(userName, &gitcredentials.GitUser{
+			err := gitcredentials.SetUser(ctx, userName, &gitcredentials.GitUser{
 				Name:  platformOptions.UserCredentials.GitUser,
 				Email: platformOptions.UserCredentials.GitEmail,
 			})
@@ -538,7 +540,7 @@ func setupPlatformGitCredentials(
 	}
 
 	// setup platform git http credentials
-	err := setupPlatformGitHTTPCredentials(userName, platformOptions)
+	err := setupPlatformGitHTTPCredentials(ctx, userName, platformOptions)
 	if err != nil {
 		log.Errorf("Error setting up platform git http credentials: %v", err)
 	}
@@ -553,6 +555,7 @@ func setupPlatformGitCredentials(
 }
 
 func setupPlatformGitHTTPCredentials(
+	ctx context.Context,
 	userName string,
 	platformOptions *devsy.PlatformOptions,
 ) error {
@@ -565,7 +568,7 @@ func setupPlatformGitHTTPCredentials(
 	if err != nil {
 		return err
 	}
-	err = gitcredentials.ConfigureHelper(binaryPath, userName, -1)
+	err = gitcredentials.ConfigureHelper(ctx, binaryPath, userName, -1)
 	if err != nil {
 		return fmt.Errorf("configure git helper: %w", err)
 	}

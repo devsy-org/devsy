@@ -58,3 +58,14 @@ func (w *windowsPathManager) StateDir() (string, error) {
 func (w *windowsPathManager) RuntimeDir() (string, error) {
 	return ensureDir(filepath.Join(os.TempDir(), RepoName))
 }
+
+// SystemBinDir returns a PATH directory for installing standalone tool binaries.
+// %LOCALAPPDATA%\Microsoft\WindowsApps is on PATH by default.
+func (w *windowsPathManager) SystemBinDir() (string, error) {
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		return "", fmt.Errorf("system bin dir: LOCALAPPDATA environment variable is not set")
+	}
+
+	return filepath.Join(localAppData, "Microsoft", "WindowsApps"), nil
+}
