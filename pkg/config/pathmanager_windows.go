@@ -14,7 +14,7 @@ type windowsPathManager struct {
 
 func newPlatformPathManager() PathManager {
 	pm := &windowsPathManager{}
-	pm.basePathManager.pm = pm
+	pm.pm = pm
 
 	return pm
 }

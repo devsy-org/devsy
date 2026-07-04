@@ -45,7 +45,7 @@ func TestLinuxDefaults(t *testing.T) {
 		fn   func() (string, error)
 		want string
 	}{
-		{"ConfigDir", pm.ConfigDir, filepath.Join(home, "."+RepoName)},
+		{"ConfigDir", pm.ConfigDir, filepath.Join(home, ".config", RepoName)},
 		{"DataDir", pm.DataDir, filepath.Join(home, "."+RepoName)},
 		{"CacheDir", pm.CacheDir, filepath.Join(home, ".cache", RepoName)},
 		{"StateDir", pm.StateDir, filepath.Join(home, "."+RepoName, "state")},
@@ -79,7 +79,7 @@ func TestConfigFilePathDefault(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	want := filepath.Join(home, "."+RepoName, ConfigFile)
+	want := filepath.Join(home, ".config", RepoName, ConfigFile)
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
