@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/creativeprojects/go-selfupdate"
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v88/github"
 )
 
 const releasesPerPage = 100
@@ -23,9 +24,13 @@ func newAllPagesSource() (*allPagesSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := github.NewClient(nil)
+	var opts []github.ClientOptionsFunc
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		client = client.WithAuthToken(token)
+		opts = append(opts, github.WithAuthToken(token))
+	}
+	client, err := github.NewClient(opts...)
+	if err != nil {
+		return nil, err
 	}
 	return &allPagesSource{GitHubSource: base, api: client}, nil
 }
@@ -47,7 +52,7 @@ func (s *allPagesSource) ListReleases(
 			return nil, fmt.Errorf("list releases for %s/%s: %w", owner, repo, err)
 		}
 		for _, rel := range page {
-			releases = append(releases, selfupdate.NewGitHubRelease(rel))
+			releases = append(releases, newSourceRelease(rel))
 		}
 		if resp.NextPage == 0 {
 			break
@@ -56,3 +61,42 @@ func (s *allPagesSource) ListReleases(
 	}
 	return releases, nil
 }
+
+// sourceRelease adapts a go-github RepositoryRelease to selfupdate.SourceRelease.
+// It exists so this package can track a newer go-github version than the one
+// go-selfupdate's NewGitHubRelease is compiled against.
+type sourceRelease struct {
+	*github.RepositoryRelease
+}
+
+func newSourceRelease(rel *github.RepositoryRelease) sourceRelease {
+	return sourceRelease{RepositoryRelease: rel}
+}
+
+func (r sourceRelease) GetReleaseNotes() string { return r.GetBody() }
+func (r sourceRelease) GetURL() string          { return r.GetHTMLURL() }
+func (r sourceRelease) GetPublishedAt() time.Time {
+	return r.RepositoryRelease.GetPublishedAt().Time
+}
+
+func (r sourceRelease) GetAssets() []selfupdate.SourceAsset {
+	assets := make([]selfupdate.SourceAsset, len(r.Assets))
+	for i, a := range r.Assets {
+		assets[i] = sourceAsset{ReleaseAsset: a}
+	}
+	return assets
+}
+
+// sourceAsset adapts a go-github ReleaseAsset to selfupdate.SourceAsset.
+type sourceAsset struct {
+	*github.ReleaseAsset
+}
+
+func (a sourceAsset) GetBrowserDownloadURL() string {
+	return a.ReleaseAsset.GetBrowserDownloadURL()
+}
+
+var (
+	_ selfupdate.SourceRelease = sourceRelease{}
+	_ selfupdate.SourceAsset   = sourceAsset{}
+)
