@@ -333,7 +333,7 @@ jobs:
     permissions:
       contents: write
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48@sha256:50fea670968fd3ec4aeeb3a91d9d807d0af6eab3c3b44c33d4c40c311832c8fa
       options: --privileged
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
