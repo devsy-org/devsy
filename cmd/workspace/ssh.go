@@ -19,6 +19,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/port"
@@ -698,7 +699,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 	gpgExtraSocketPath := strings.TrimSpace(string(gpgExtraSocketBytes))
 	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
 
-	gitKey := gpgSigningKey()
+	gitKey := gpgSigningKey(ctx)
 
 	cmd.ReverseForwardPorts = append(cmd.ReverseForwardPorts, gpgExtraSocketPath)
 
@@ -756,39 +757,34 @@ func (cmd *SSHCmd) setupGPGAgent(
 // gpgSigningKey returns the user's GPG signing key from git config,
 // or empty string if no key is configured or the signing format is SSH
 // (SSH signing keys are handled by the separate SSH signature helper).
-func gpgSigningKey() string {
-	format, err := exec.Command("git", "config", "--get", "gpg.format").Output()
-	formatStr := ""
-	if err == nil {
-		formatStr = strings.TrimSpace(string(format))
-	}
+func gpgSigningKey(ctx context.Context) string {
+	config := git.At("").Config()
+	formatStr, _ := config.Get(ctx, "gpg.format", git.ScopeDefault)
 	if formatStr == "ssh" {
 		log.Debugf(
-			"[GPG] gpg.format is ssh, skipping GPG signing key (handled by SSH signing helper)",
+			"gpg.format is ssh, skipping GPG signing key",
 		)
 		return ""
 	}
 
-	key, err := exec.Command("git", "config", "--get", "user.signingKey").Output()
+	result, err := config.Get(ctx, "user.signingKey", git.ScopeDefault)
 	if err != nil {
-		log.Debugf("[GPG] no git signkey detected, skipping")
+		log.Debugf("no git signkey detected, skipping")
 		return ""
 	}
-
-	result := strings.TrimSpace(string(key))
 
 	// GPG key IDs are hex fingerprints, not file paths. If the signing key
 	// looks like a file path and the format isn't x509 (which legitimately
 	// uses certificate file paths via gpgsm), it's an SSH key.
 	if (strings.HasPrefix(result, "/") || strings.HasPrefix(result, "~")) && formatStr != "x509" {
 		log.Debugf(
-			"[GPG] signing key %s looks like a file path, skipping (not a GPG key ID)",
+			"signing key %s looks like a file path, skipping",
 			result,
 		)
 		return ""
 	}
 
-	log.Debugf("[GPG] detected git sign key %s", result)
+	log.Debugf("detected git sign key %s", result)
 	return result
 }
 

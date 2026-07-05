@@ -123,14 +123,17 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		if err != nil {
 			return err
 		}
-		err = gitcredentials.ConfigureHelper(binaryPath, cmd.User, port)
+		err = gitcredentials.ConfigureHelper(ctx, binaryPath, cmd.User, port)
 		if err != nil {
 			return fmt.Errorf("configure git helper: %w", err)
 		}
 
-		// cleanup when we are done
+		// cleanup when we are done. This defer runs after the server loop
+		// returns on shutdown, when ctx is already canceled — use an uncanceled
+		// context so the helper is actually removed instead of aborting early.
+		cleanupCtx := context.WithoutCancel(ctx)
 		defer func(userName string) {
-			_ = gitcredentials.RemoveHelper(userName)
+			_ = gitcredentials.RemoveHelper(cleanupCtx, userName)
 		}(cmd.User)
 	}
 
@@ -165,7 +168,7 @@ func configureGitUserLocally(
 	client tunnel.TunnelClient,
 ) error {
 	// get local credentials
-	localGitUser, err := gitcredentials.GetUser(userName, "")
+	localGitUser, err := gitcredentials.GetUser(ctx, userName, "")
 	if err != nil {
 		return err
 	} else if localGitUser.Name != "" && localGitUser.Email != "" {
@@ -194,7 +197,7 @@ func configureGitUserLocally(
 	}
 
 	// set git user
-	err = gitcredentials.SetUser(userName, gitUser)
+	err = gitcredentials.SetUser(ctx, userName, gitUser)
 	if err != nil {
 		return fmt.Errorf("set git user & email: %w", err)
 	}

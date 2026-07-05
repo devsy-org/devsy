@@ -381,6 +381,7 @@ func CloneRepositoryForWorkspace(
 	defer func() {
 		if helper != "" {
 			if err := gitcredentials.RemoveHelperFromPath(
+				ctx,
 				gitcredentials.GetLocalGitConfigPath(workspaceDir),
 			); err != nil {
 				log.Errorf("Remove git credential helper: %v", err)
@@ -396,7 +397,7 @@ func CloneRepositoryForWorkspace(
 				"seems like git isn't installed on your system. Make sure to install git and make it available in the PATH",
 			)
 		}
-		if err := git.InstallBinary(); err != nil {
+		if err := git.InstallBinary(ctx); err != nil {
 			return err
 		}
 	}
@@ -512,14 +513,10 @@ func CloneRepositoryForWorkspace(
 		if options.Platform.GitSkipLFS {
 			log.Info("Skipping Git LFS")
 		}
-		err := git.CloneRepositoryWithEnv(
-			ctx,
-			gitInfo,
-			extraEnv,
-			workspaceDir,
-			helper,
-			options.StrictHostKeyChecking,
-			getGitOptions(options)...)
+		repo := git.At(workspaceDir,
+			git.WithStrictHostKeyChecking(options.StrictHostKeyChecking),
+			git.WithEnv(extraEnv))
+		err := repo.CloneFromInfo(ctx, gitInfo, helper, getGitOptions(options)...)
 		if err != nil {
 			// cleanup workspace dir if clone failed, otherwise we won't try to clone again when rebuilding this workspace
 			if cleanupErr := cleanupWorkspaceDir(workspaceDir); cleanupErr != nil {
@@ -563,8 +560,11 @@ func getGitOptions(options provider2.CLIOptions) []git.Option {
 			git.WithCloneStrategy(git.CloneStrategy(options.Platform.GitCloneStrategy)),
 		)
 	}
+	// Platform.GitSkipLFS forces skipping; otherwise honor the requested LFS mode.
 	if options.Platform.GitSkipLFS {
-		gitOpts = append(gitOpts, git.WithSkipLFS())
+		gitOpts = append(gitOpts, git.WithLFSMode(git.LFSSkip))
+	} else {
+		gitOpts = append(gitOpts, git.WithLFSMode(options.GitLFSMode))
 	}
 	if options.GitCloneRecursiveSubmodules {
 		gitOpts = append(gitOpts, git.WithRecursiveSubmodules())

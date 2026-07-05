@@ -61,7 +61,7 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// make sure content folder exists
-	_, err = agentworkspace.InitContentFolder(workspaceInfo)
+	_, err = agentworkspace.InitContentFolder(ctx, workspaceInfo)
 	if err != nil {
 		return err
 	}

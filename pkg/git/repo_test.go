@@ -1,0 +1,176 @@
+package git
+
+import (
+	"context"
+	"testing"
+
+	"gotest.tools/assert"
+	"gotest.tools/assert/cmp"
+)
+
+// Shared literals used across Repo tests.
+const (
+	testRepoURL   = "git@host:org/repo.git"
+	testPRRef     = "pull/996/head"
+	testPRLocal   = "PR996"
+	testPRRefSpec = testPRRef + ":" + testPRLocal
+	testCommit    = "abc123"
+	subFetch      = "fetch"
+	originRemote  = "origin"
+	testTarget    = "/tmp/target"
+)
+
+// fakeRunner records the invocations it receives and returns canned output,
+// letting git operations be tested without a real repository.
+type fakeRunner struct {
+	calls  []RunOptions
+	stdout []byte
+	err    error
+}
+
+func (f *fakeRunner) Run(_ context.Context, opts RunOptions) (RunResult, error) {
+	f.calls = append(f.calls, opts)
+	return RunResult{Stdout: f.stdout}, f.err
+}
+
+func (f *fakeRunner) lastArgs() []string {
+	if len(f.calls) == 0 {
+		return nil
+	}
+	return f.calls[len(f.calls)-1].Args
+}
+
+func TestRepoFetch(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	assert.NilError(t, repo.Fetch(context.Background(), testPRRefSpec))
+	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.lastArgs())
+	assert.Equal(t, "/tmp/repo", fake.calls[0].Dir)
+}
+
+func TestRepoReset(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	assert.NilError(t, repo.Reset(context.Background(), testCommit, ResetHard))
+	assert.DeepEqual(t, []string{"reset", "--hard", testCommit}, fake.lastArgs())
+}
+
+func TestRepoCheckoutPR(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	assert.NilError(t, repo.CheckoutPR(context.Background(), testPRRef))
+	// Expect a fetch of the PR ref into a local branch, then a switch to it.
+	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[1].Args)
+}
+
+func TestRepoLsRemote(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("", WithRunner(fake))
+
+	assert.NilError(t, repo.LsRemote(context.Background(), testRepoURL))
+	assert.DeepEqual(t, []string{"ls-remote", "--quiet", testRepoURL}, fake.lastArgs())
+}
+
+func TestRepoLsTree(t *testing.T) {
+	fake := &fakeRunner{stdout: []byte("a/b.txt\n\n  c.txt \nd/e/f.go\n")}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	paths, err := repo.LsTree(context.Background(), "HEAD")
+	assert.NilError(t, err)
+	assert.DeepEqual(
+		t,
+		[]string{"ls-tree", "-r", "--full-name", "--name-only", "HEAD"},
+		fake.lastArgs(),
+	)
+	// Blank lines dropped, surrounding whitespace trimmed.
+	assert.DeepEqual(t, []string{"a/b.txt", "c.txt", "d/e/f.go"}, paths)
+}
+
+func TestRepoCloneArgsThroughRunner(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At(testTarget, WithRunner(fake))
+
+	err := repo.Clone(context.Background(), testRepoURL,
+		WithCloneStrategy(ShallowCloneStrategy),
+		WithBranch(testBranch),
+	)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []string{
+		subClone, "--depth=1", flagBranch, testBranch,
+		testRepoURL, testTarget, flagProgress,
+	}, fake.lastArgs())
+}
+
+func TestRepoEnvThreadedToRunner(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake), WithEnv([]string{"GIT_TERMINAL_PROMPT=0"}))
+
+	assert.NilError(t, repo.Fetch(context.Background(), "main"))
+	assert.Assert(t, cmp.Contains(fake.calls[0].Env, "GIT_TERMINAL_PROMPT=0"))
+}
+
+func TestRepoEnvOptionsCompose(t *testing.T) {
+	fake := &fakeRunner{}
+	// Both env-setting options must contribute; neither should overwrite the other.
+	repo := At("/tmp/repo",
+		WithRunner(fake),
+		WithStrictHostKeyChecking(false),
+		WithEnv([]string{"CUSTOM=1"}),
+	)
+
+	assert.NilError(t, repo.Fetch(context.Background(), "main"))
+	env := fake.calls[0].Env
+	assert.Assert(t, cmp.Contains(env, "GIT_TERMINAL_PROMPT=0")) // from strict-host-key option
+	assert.Assert(t, cmp.Contains(env, "CUSTOM=1"))              // from WithEnv
+}
+
+func TestRepoCloneFromInfoBranch(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At(testTarget, WithRunner(fake))
+	info := &GitInfo{Repository: testRepoURL, Branch: testBranch}
+
+	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
+	// Branch becomes a clone flag; no separate checkout call.
+	assert.DeepEqual(t, []string{
+		subClone, flagBranch, testBranch,
+		testRepoURL, testTarget, flagProgress,
+	}, fake.calls[0].Args)
+}
+
+func TestRepoCloneFromInfoCommit(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At(testTarget, WithRunner(fake))
+	info := &GitInfo{Repository: testRepoURL, Commit: testCommit}
+
+	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
+	// clone, then hard reset to the commit.
+	assert.Equal(t, subClone, fake.calls[0].Args[0])
+	assert.DeepEqual(t, []string{"reset", "--hard", testCommit}, fake.calls[1].Args)
+}
+
+func TestRepoCloneFromInfoPR(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At(testTarget, WithRunner(fake))
+	info := &GitInfo{Repository: testRepoURL, PR: testPRRef}
+
+	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
+	assert.Equal(t, subClone, fake.calls[0].Args[0])
+	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[2].Args)
+}
+
+func TestRepoCloneFromInfoHelper(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At(testTarget, WithRunner(fake))
+	info := &GitInfo{Repository: "https://host/org/repo.git"}
+
+	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, "store"))
+	assert.DeepEqual(t, []string{
+		subClone, flagConfig, "credential.helper=store",
+		"https://host/org/repo.git", testTarget, flagProgress,
+	}, fake.calls[0].Args)
+}

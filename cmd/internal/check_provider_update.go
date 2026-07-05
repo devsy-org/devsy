@@ -75,7 +75,7 @@ func (cmd *CheckProviderUpdateCmd) Run(
 		return errProviderNotFound
 	}
 
-	latestProviderConfig, err := loadLatestProvider(providerSourceRaw)
+	latestProviderConfig, err := loadLatestProvider(ctx, providerSourceRaw)
 	if err != nil {
 		return err
 	}
@@ -108,9 +108,10 @@ func (cmd *CheckProviderUpdateCmd) Run(
 }
 
 func loadLatestProvider(
+	ctx context.Context,
 	providerSourceRaw string,
 ) (*provider.ProviderConfig, error) {
-	providerRaw, _, err := provider.ResolveProvider(providerSourceRaw)
+	providerRaw, _, err := provider.ResolveProvider(ctx, providerSourceRaw)
 	if err != nil {
 		return nil, fmt.Errorf("resolve provider: %w", err)
 	}

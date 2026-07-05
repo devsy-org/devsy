@@ -72,7 +72,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
-	_, err = workspace.UpdateProvider(devsyConfig, provider.Name, providerSource)
+	_, err = workspace.UpdateProvider(ctx, devsyConfig, provider.Name, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", provider.Name, err)
 	}

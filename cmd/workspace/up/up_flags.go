@@ -160,6 +160,10 @@ func (cmd *UpCmd) registerGitFlags(upCmd *cobra.Command) {
 		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
 			"If true will clone git submodule repositories recursively")
 	upCmd.Flags().
+		Var(&cmd.GitLFSMode, "git-lfs-mode",
+			"How Devsy handles Git LFS after cloning. Can be full (default, download LFS "+
+				"content), setup-only (configure LFS but leave pointer files) or skip (ignore LFS)")
+	upCmd.Flags().
 		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "",
 			"The ssh key to use when signing git commits. Used to explicitly setup Devsy's ssh signature "+
 				"forwarding with given key. Should be same format as value of `git config user.signingkey`")

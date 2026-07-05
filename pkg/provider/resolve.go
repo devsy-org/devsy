@@ -1,14 +1,17 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/download"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/providers"
@@ -18,6 +21,7 @@ import (
 // bytes and a ProviderSource describing the origin (internal, URL, file, or
 // GitHub release).
 func ResolveProvider(
+	ctx context.Context,
 	providerSource string,
 ) ([]byte, *ProviderSource, error) {
 	retSource := &ProviderSource{Raw: strings.TrimSpace(providerSource)}
@@ -27,6 +31,7 @@ func ResolveProvider(
 	}
 
 	if out, err := tryResolveURLProvider(
+		ctx,
 		providerSource,
 		retSource,
 	); hasOutputOrError(
@@ -40,7 +45,7 @@ func ResolveProvider(
 		return out, retSource, err
 	}
 
-	out, source, err := downloadProviderGithub(providerSource)
+	out, source, err := downloadProviderGithub(ctx, providerSource)
 	if len(out) > 0 || err != nil {
 		return out, source, err
 	}
@@ -55,10 +60,11 @@ func hasOutputOrError(out []byte, err error) bool {
 }
 
 func tryResolveURLProvider(
+	ctx context.Context,
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, error) {
-	out, ok, err := resolveURLProvider(providerSource, retSource)
+	out, ok, err := resolveURLProvider(ctx, providerSource, retSource)
 	if !ok {
 		return nil, nil
 	}
@@ -77,6 +83,7 @@ func tryResolveFileProvider(
 }
 
 func downloadProviderGithub(
+	ctx context.Context,
 	originalPath string,
 ) ([]byte, *ProviderSource, error) {
 	path := strings.TrimPrefix(originalPath, "github.com/")
@@ -100,7 +107,11 @@ func downloadProviderGithub(
 
 	requestURL := buildGithubURL(path, release)
 
-	body, err := download.File(requestURL)
+	body, err := download.File(
+		ctx,
+		requestURL,
+		download.WithCredentialResolver(gitcredentials.Resolver{}),
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("download: %w", err)
 	}
@@ -130,6 +141,7 @@ func resolveInternalProvider(
 }
 
 func resolveURLProvider(
+	ctx context.Context,
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
@@ -139,7 +151,7 @@ func resolveURLProvider(
 	}
 
 	log.Infof("downloading provider from %s", providerSource)
-	out, err := downloadProvider(providerSource)
+	out, err := downloadProvider(ctx, providerSource)
 	if err != nil {
 		return nil, true, fmt.Errorf("download provider: %w", err)
 	}
@@ -176,8 +188,12 @@ func resolveFileProvider(
 	return out, true, nil
 }
 
-func downloadProvider(url string) ([]byte, error) {
-	resp, err := devsyhttp.GetHTTPClient().Get(url)
+func downloadProvider(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := devsyhttp.GetHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download binary: %w", err)
 	}

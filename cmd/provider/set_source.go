@@ -50,7 +50,7 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	if cmd.Version != "" {
-		return cmd.runPinVersion(devsyConfig, args)
+		return cmd.runPinVersion(ctx, devsyConfig, args)
 	}
 
 	if len(args) != 1 && len(args) != 2 {
@@ -63,7 +63,7 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		providerSource = args[1]
 	}
 
-	providerConfig, err := workspace.UpdateProvider(devsyConfig, args[0], providerSource)
+	providerConfig, err := workspace.UpdateProvider(ctx, devsyConfig, args[0], providerSource)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,11 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	return writeDefaultProvider(cmd.Context, providerConfig.Name)
 }
 
-func (cmd *SetSourceCmd) runPinVersion(devsyConfig *config.Config, args []string) error {
+func (cmd *SetSourceCmd) runPinVersion(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	args []string,
+) error {
 	if len(args) == 0 {
 		return fmt.Errorf("provider name must be provided when using --version")
 	}
@@ -96,7 +100,12 @@ func (cmd *SetSourceCmd) runPinVersion(devsyConfig *config.Config, args []string
 		return fmt.Errorf("--version and a source argument are mutually exclusive")
 	}
 	providerName := args[0]
-	if err := workspace.SetProviderVersion(devsyConfig, providerName, cmd.Version); err != nil {
+	if err := workspace.SetProviderVersion(
+		ctx,
+		devsyConfig,
+		providerName,
+		cmd.Version,
+	); err != nil {
 		return err
 	}
 	log.Infof("pinned provider %s to version %s", providerName, cmd.Version)

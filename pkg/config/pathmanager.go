@@ -33,6 +33,10 @@ type PathManager interface {
 	StateDir() (string, error)
 	RuntimeDir() (string, error)
 
+	// SystemBinDir is a directory on the user's PATH where standalone tool
+	// binaries (e.g. a git-lfs release fallback) can be installed.
+	SystemBinDir() (string, error)
+
 	// Config paths.
 	ConfigFilePath() (string, error)
 

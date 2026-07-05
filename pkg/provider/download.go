@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/download"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
 	"k8s.io/client-go/util/retry"
@@ -103,12 +105,13 @@ func GetBinaries(context string, config *ProviderConfig) (map[string]string, err
 }
 
 func DownloadBinaries(
+	ctx context.Context,
 	binaries map[string][]*ProviderBinary,
 	targetFolder string,
 ) (map[string]string, error) {
 	retBinaries := map[string]string{}
 	for binaryName, binaryLocations := range binaries {
-		binaryPath, err := downloadBinaryForPlatform(binaryName, binaryLocations, targetFolder)
+		binaryPath, err := downloadBinaryForPlatform(ctx, binaryName, binaryLocations, targetFolder)
 		if err != nil {
 			return nil, err
 		}
@@ -119,6 +122,7 @@ func DownloadBinaries(
 }
 
 func downloadBinaryForPlatform(
+	ctx context.Context,
 	binaryName string,
 	binaryLocations []*ProviderBinary,
 	targetFolder string,
@@ -137,7 +141,7 @@ func downloadBinaryForPlatform(
 		}
 
 		// try to download the binary
-		binaryPath, err := downloadWithRetry(binaryName, binary, binaryTargetFolder)
+		binaryPath, err := downloadWithRetry(ctx, binaryName, binary, binaryTargetFolder)
 		if err != nil {
 			return "", err
 		}
@@ -149,13 +153,14 @@ func downloadBinaryForPlatform(
 }
 
 func downloadWithRetry(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
 ) (string, error) {
 	var binaryPath string
 	err := retry.OnError(downloadBackoff, isRetriableError, func() error {
-		path, err := downloadBinary(binaryName, binary, targetFolder)
+		path, err := downloadBinary(ctx, binaryName, binary, targetFolder)
 		if err != nil {
 			return err
 		}
@@ -389,6 +394,7 @@ func isRemotePath(p string) bool {
 }
 
 func downloadBinary(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
@@ -397,7 +403,7 @@ func downloadBinary(
 		if err := os.MkdirAll(targetFolder, dirPerms); err != nil {
 			return "", fmt.Errorf("create folder: %w", err)
 		}
-		return downloadRemoteBinary(binaryName, binary, targetFolder)
+		return downloadRemoteBinary(ctx, binaryName, binary, targetFolder)
 	}
 
 	if _, err := os.Stat(binary.Path); err == nil {
@@ -434,6 +440,7 @@ func handleNonHTTPBinary(binary *ProviderBinary, targetFolder string) (string, e
 }
 
 func downloadRemoteBinary(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
@@ -442,9 +449,9 @@ func downloadRemoteBinary(
 	var err error
 
 	if binary.ArchivePath != "" {
-		targetPath, err = downloadArchive(binaryName, binary, targetFolder)
+		targetPath, err = downloadArchive(ctx, binaryName, binary, targetFolder)
 	} else {
-		targetPath, err = downloadFile(binaryName, binary, targetFolder)
+		targetPath, err = downloadFile(ctx, binaryName, binary, targetFolder)
 	}
 
 	if err != nil {
@@ -462,6 +469,7 @@ func downloadRemoteBinary(
 }
 
 func downloadFile(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
@@ -473,17 +481,22 @@ func downloadFile(
 	// (could be partial download from previous failed attempt)
 	_ = os.Remove(targetPath)
 
-	return downloadAndSaveFile(binaryName, binary, targetPath)
+	return downloadAndSaveFile(ctx, binaryName, binary, targetPath)
 }
 
 func downloadAndSaveFile(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetPath string,
 ) (string, error) {
 	log.Infof("downloading binary %s from %s", binaryName, binary.Path)
 
-	body, err := download.File(binary.Path)
+	body, err := download.File(
+		ctx,
+		binary.Path,
+		download.WithCredentialResolver(gitcredentials.Resolver{}),
+	)
 	if err != nil {
 		return "", fmt.Errorf("download binary: %w", err)
 	}
@@ -505,6 +518,7 @@ func downloadAndSaveFile(
 }
 
 func downloadArchive(
+	ctx context.Context,
 	binaryName string,
 	binary *ProviderBinary,
 	targetFolder string,
@@ -518,7 +532,7 @@ func downloadArchive(
 	// (could be partial download from previous failed attempt)
 	_ = os.Remove(targetPath)
 
-	return extractArchive(archiveDownloadParams{
+	return extractArchive(ctx, archiveDownloadParams{
 		binaryName:   binaryName,
 		binary:       binary,
 		targetFolder: targetFolder,
@@ -533,10 +547,14 @@ type archiveDownloadParams struct {
 	targetPath   string
 }
 
-func extractArchive(params archiveDownloadParams) (string, error) {
+func extractArchive(ctx context.Context, params archiveDownloadParams) (string, error) {
 	log.Infof("downloading binary %s from %s", params.binaryName, params.binary.Path)
 
-	body, err := download.File(params.binary.Path)
+	body, err := download.File(
+		ctx,
+		params.binary.Path,
+		download.WithCredentialResolver(gitcredentials.Resolver{}),
+	)
 	if err != nil {
 		return "", err
 	}

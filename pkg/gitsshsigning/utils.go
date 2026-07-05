@@ -1,8 +1,9 @@
 package gitsshsigning
 
 import (
-	"os/exec"
-	"strings"
+	"context"
+
+	"github.com/devsy-org/devsy/pkg/git"
 )
 
 const (
@@ -11,28 +12,18 @@ const (
 	GPGFormatSSH             = "ssh"
 )
 
-func ExtractGitConfiguration(workingDir string) (string, string, error) {
-	format, err := readGitConfigValue(GPGFormatConfigKey, workingDir)
+func ExtractGitConfiguration(ctx context.Context, workingDir string) (string, string, error) {
+	config := git.At(workingDir).Config()
+
+	format, err := config.Get(ctx, GPGFormatConfigKey, git.ScopeDefault)
 	if err != nil {
 		return "", "", err
 	}
 
-	signingKey, err := readGitConfigValue(UsersSigningKeyConfigKey, workingDir)
+	signingKey, err := config.Get(ctx, UsersSigningKeyConfigKey, git.ScopeDefault)
 	if err != nil {
 		return "", "", err
 	}
 
 	return format, signingKey, nil
-}
-
-func readGitConfigValue(key string, workingDir string) (string, error) {
-	cmd := exec.Command("git", "config", "--get", key)
-	if workingDir != "" {
-		cmd.Dir = workingDir
-	}
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
 }

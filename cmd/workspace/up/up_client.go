@@ -97,7 +97,7 @@ func (cmd *UpCmd) prepareClient(
 	}
 	if !cmd.Platform.Enabled {
 		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-		if err := workspace2.CheckProviderUpdate(devsyConfig, proInstance); err != nil {
+		if err := workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance); err != nil {
 			return nil, err
 		}
 	}

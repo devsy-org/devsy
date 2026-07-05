@@ -68,3 +68,8 @@ func (d *darwinPathManager) RuntimeDir() (string, error) {
 	}
 	return dir, nil
 }
+
+// SystemBinDir returns a PATH directory for installing standalone tool binaries.
+func (d *darwinPathManager) SystemBinDir() (string, error) {
+	return "/usr/local/bin", nil
+}

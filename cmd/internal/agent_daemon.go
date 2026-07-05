@@ -178,7 +178,7 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
 	// get environ
-	environ, err := custom.ToEnvironWithBinaries(workspace)
+	environ, err := custom.ToEnvironWithBinaries(ctx, workspace)
 	if err != nil {
 		log.Errorf("%v", err)
 		return
