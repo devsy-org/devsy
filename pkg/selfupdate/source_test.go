@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/creativeprojects/go-selfupdate"
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,10 +33,9 @@ func TestAllPagesSourceListReleasesPaginates(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := github.NewClient(nil)
-	baseURL, err := url.Parse(srv.URL + "/")
+	baseURL := srv.URL + "/"
+	client, err := github.NewClient(github.WithURLs(&baseURL, &baseURL))
 	require.NoError(t, err)
-	client.BaseURL = baseURL
 
 	src := &allPagesSource{api: client}
 
