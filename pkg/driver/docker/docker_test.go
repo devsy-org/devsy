@@ -15,6 +15,7 @@ const (
 	testOSLinux             = "linux"
 	testRemoteUser          = "vscode"
 	testRunArg              = "run"
+	testDockerCmd           = "docker"
 	testContainerUser       = "container"
 )
 

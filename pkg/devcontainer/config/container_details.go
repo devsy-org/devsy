@@ -45,4 +45,6 @@ type ContainerDetailsConfig struct {
 type ContainerDetailsState struct {
 	Status    string `json:"Status,omitempty"`
 	StartedAt string `json:"StartedAt,omitempty"`
+	ExitCode  int    `json:"ExitCode,omitempty"`
+	Error     string `json:"Error,omitempty"`
 }

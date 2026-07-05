@@ -30,6 +30,17 @@ const (
 	DockerBuilderBuildKit
 )
 
+const (
+	containerRunningPollInterval = 500 * time.Millisecond
+	containerRunningTimeout      = 30 * time.Second
+	containerExitGrace           = 2 * time.Second
+)
+
+var (
+	ErrContainerTerminal = errors.New("container in terminal state")
+	ErrContainerExited   = errors.New("container exited after start")
+)
+
 func (db DockerBuilder) String() string {
 	return [...]string{"", "buildx", "buildkit"}[db]
 }
@@ -232,20 +243,11 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 	return nil
 }
 
-// ErrContainerTerminal indicates a container entered an unrecoverable state
-// (e.g. "dead" or "removing") and cannot be restarted.
-var ErrContainerTerminal = errors.New("container in terminal state")
-
-const (
-	containerRunningPollInterval = 500 * time.Millisecond
-	containerRunningTimeout      = 30 * time.Second
-)
-
-// WaitContainerRunning polls docker inspect until the container reports
-// status "running" or the context/timeout expires. It does not start
-// the container — the caller is responsible for that.
+// WaitContainerRunning waits for the given container to be running, returning an error if
+// it is in a terminal state or does not become running within a timeout.
 func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID string) error {
 	var lastErr error
+	start := time.Now()
 	pollErr := wait.PollUntilContextTimeout(
 		ctx, containerRunningPollInterval, containerRunningTimeout, true,
 		func(ctx context.Context) (bool, error) {
@@ -255,31 +257,8 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 				log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
 				return false, nil
 			}
-			if len(details) == 0 {
-				return false, fmt.Errorf(
-					"container %s disappeared while waiting for it to start",
-					containerID,
-				)
-			}
 			lastErr = nil
-			status := strings.ToLower(details[0].State.Status)
-			if status == "running" {
-				return true, nil
-			}
-			if status == "removing" || status == "dead" {
-				return false, fmt.Errorf(
-					"%w: container %s is %q",
-					ErrContainerTerminal,
-					containerID,
-					status,
-				)
-			}
-			log.Debugf(
-				"WaitContainerRunning: container %s status=%s, waiting",
-				containerID,
-				status,
-			)
-			return false, nil
+			return r.evaluateContainerState(ctx, containerID, details, time.Since(start))
 		},
 	)
 	if pollErr != nil && lastErr != nil {
@@ -462,6 +441,85 @@ func (r *DockerHelper) GetContainerLogs(
 	cmd.Stderr = stderr
 
 	return cmd.Run()
+}
+
+// containerStateError returns an error describing the container's state, including its
+// exit code and logs.
+func (r *DockerHelper) containerStateError(
+	ctx context.Context,
+	containerID string,
+	state config.ContainerDetailsState,
+	sentinel error,
+) error {
+	detail := fmt.Sprintf("exit code %d", state.ExitCode)
+	if state.Error != "" {
+		detail += fmt.Sprintf(", error: %s", state.Error)
+	}
+	if logs := r.tailContainerLogs(ctx, containerID, 20); logs != "" {
+		detail += fmt.Sprintf("\nlogs:\n%s", logs)
+	}
+	return fmt.Errorf(
+		"%w: container %s is %q (%s)",
+		sentinel,
+		containerID,
+		strings.ToLower(state.Status),
+		detail,
+	)
+}
+
+// tailContainerLogs returns the tail of the container's logs for diagnostics,
+// or "" if the logs cannot be retrieved.
+func (r *DockerHelper) tailContainerLogs(
+	ctx context.Context,
+	containerID string,
+	lines int,
+) string {
+	out, err := r.buildCmd(ctx, "logs", containerID, "--tail", fmt.Sprintf("%d", lines)).
+		CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// evaluateContainerState checks the container's state and returns true if it is running.
+// If the container is in a terminal state or has exited after the grace period, it returns an error.
+func (r *DockerHelper) evaluateContainerState(
+	ctx context.Context,
+	containerID string,
+	details []config.ContainerDetails,
+	elapsed time.Duration,
+) (bool, error) {
+	if len(details) == 0 {
+		return false, fmt.Errorf(
+			"container %s disappeared while waiting for it to start",
+			containerID,
+		)
+	}
+	state := details[0].State
+	status := strings.ToLower(state.Status)
+	if status == "running" {
+		return true, nil
+	}
+	if sentinel := failedBootSentinel(status, elapsed > containerExitGrace); sentinel != nil {
+		return false, r.containerStateError(ctx, containerID, state, sentinel)
+	}
+	log.Debugf("WaitContainerRunning: container %s status=%s, waiting", containerID, status)
+	return false, nil
+}
+
+// failedBootSentinel returns an error if the container is in a terminal state or has exited
+// after the grace period, or nil if it is still booting.
+func failedBootSentinel(status string, graceElapsed bool) error {
+	switch status {
+	case "dead", "removing":
+		return ErrContainerTerminal
+	case "exited", "created":
+		if graceElapsed {
+			return ErrContainerExited
+		}
+	}
+	return nil
 }
 
 func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {

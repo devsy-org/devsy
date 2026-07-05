@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 )
+
+const containerRestartAttempts = 3
 
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
@@ -35,8 +38,9 @@ func (d *dockerDriver) CommandDevContainer(
 	return d.Docker.Run(ctx, args, params.Stdin, params.Stdout, params.Stderr)
 }
 
-// ensureContainerRunning restarts a stopped container and waits for it to come
-// up. A container in a terminal state (dead/removing) is reported as an error.
+// ensureContainerRunning checks that the given container is running, and if
+// not, attempts to start it and wait for it to be running. If the container is
+// in a terminal state (dead or removing), it returns an error.
 func (d *dockerDriver) ensureContainerRunning(
 	ctx context.Context,
 	container *config.ContainerDetails,
@@ -54,17 +58,40 @@ func (d *dockerDriver) ensureContainerRunning(
 		return nil
 	}
 
-	log.Infof(
-		"container %s is not running (status=%s), restarting",
-		container.ID, status,
+	var lastErr error
+	for attempt := 1; attempt <= containerRestartAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		log.Infof(
+			"container %s is not running (status=%s), restarting (attempt %d/%d)",
+			container.ID, status, attempt, containerRestartAttempts,
+		)
+		err := d.restartAndWait(ctx, container.ID)
+		if err == nil {
+			log.Infof("container %s is now running", container.ID)
+			return nil
+		}
+		if errors.Is(err, docker.ErrContainerTerminal) {
+			return err
+		}
+		lastErr = err
+		log.Debugf("container %s restart attempt %d failed: %v", container.ID, attempt, err)
+	}
+
+	return fmt.Errorf(
+		"%w: container %s did not stay running after %d restart attempts: %v",
+		docker.ErrContainerTerminal, container.ID, containerRestartAttempts, lastErr,
 	)
-	if err := d.Docker.StartContainer(ctx, container.ID); err != nil {
+}
+
+func (d *dockerDriver) restartAndWait(ctx context.Context, containerID string) error {
+	if err := d.Docker.StartContainer(ctx, containerID); err != nil {
 		return fmt.Errorf("restart container: %w", err)
 	}
-	if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
+	if err := d.Docker.WaitContainerRunning(ctx, containerID); err != nil {
 		return fmt.Errorf("wait for container to be running: %w", err)
 	}
-	log.Infof("container %s is now running", container.ID)
 	return nil
 }
 
