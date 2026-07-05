@@ -15,9 +15,9 @@ type ConfigScope struct {
 
 var (
 	ScopeDefault = ConfigScope{}
-	ScopeLocal = ConfigScope{flag: "--local"}
-	ScopeGlobal = ConfigScope{flag: flagGlobal}
-	ScopeSystem = ConfigScope{flag: flagSystem}
+	ScopeLocal   = ConfigScope{flag: "--local"}
+	ScopeGlobal  = ConfigScope{flag: flagGlobal}
+	ScopeSystem  = ConfigScope{flag: flagSystem}
 )
 
 // ScopeFile targets a specific config file.

@@ -18,12 +18,12 @@ import (
 )
 
 type releaseSource struct {
-	version string
-	assetName func(goos, goarch, version string) (string, error)
-	downloadURL func(version, asset string) string
-	checksums map[string]string
+	version         string
+	assetName       func(goos, goarch, version string) (string, error)
+	downloadURL     func(version, asset string) string
+	checksums       map[string]string
 	binaryInArchive string
-	installDir string
+	installDir      string
 }
 
 var gitLFSRelease = releaseSource{
@@ -85,9 +85,9 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 	}
 
 	req := fetchRequest{
-		binary:  binary,
-		url:     s.downloadURL(s.version, asset),
-		wantSum: wantSum,
+		binary:   binary,
+		url:      s.downloadURL(s.version, asset),
+		wantSum:  wantSum,
 		execName: executableName(s.binaryInArchive, runtime.GOOS),
 	}
 	src, cleanup, err := s.fetchBinary(ctx, req)

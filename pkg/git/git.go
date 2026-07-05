@@ -2,8 +2,6 @@ package git
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -15,7 +13,8 @@ const (
 	CommitDelimiter      string = "@sha256:"
 	PullRequestReference string = "pull/([0-9]+)/head"
 	SubPathDelimiter     string = "@subpath:"
-	repoBaseRegEx        string = `((?:(?:https?|git|ssh|file):\/\/)?\/?(?:[^@\/\n]+@)?(?:[^:\/\n]+)(?:[:\/][^\/\n]+)+(?:\.git)?)`
+	repoBaseRegEx        string = `((?:(?:https?|git|ssh|file):\/\/)?\/?(?:[^@\/\n]+@)?` +
+		`(?:[^:\/\n]+)(?:[:\/][^\/\n]+)+(?:\.git)?)`
 )
 
 // WARN: Make sure this matches the regex in /desktop/src/views/Workspaces/CreateWorkspace/CreateWorkspaceInput.tsx!
@@ -75,12 +74,6 @@ func canonicalizeURL(str string) string {
 		}
 	}
 	return "https://" + str
-}
-
-func CommandContext(ctx context.Context, extraEnv []string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = append(os.Environ(), extraEnv...)
-	return cmd
 }
 
 func PingRepository(str string, extraEnv []string) bool {

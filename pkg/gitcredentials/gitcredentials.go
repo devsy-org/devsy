@@ -168,8 +168,7 @@ func SetUser(ctx context.Context, userName string, user *GitUser) error {
 	return nil
 }
 
-// GetUser reads the git identity visible from workingDir, or the named user's
-// global identity when workingDir is empty.
+// GetUser retrieves the global git identity for the given OS user.
 func GetUser(ctx context.Context, userName, workingDir string) (*GitUser, error) {
 	scope := git.ScopeGlobal
 	if workingDir != "" {
