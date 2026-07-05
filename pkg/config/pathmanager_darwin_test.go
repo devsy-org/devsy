@@ -14,7 +14,7 @@ func newTestDarwinPM() PathManager {
 	return pm
 }
 
-func TestDarwinConfigDir_IsUnderXDGConfig(t *testing.T) {
+func TestDarwinConfigDir_SharesDataRoot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -25,7 +25,7 @@ func TestDarwinConfigDir_IsUnderXDGConfig(t *testing.T) {
 		t.Fatalf("ConfigDir: %v", err)
 	}
 
-	want := filepath.Join(home, ".config", RepoName)
+	want := filepath.Join(home, "."+RepoName)
 	if got != want {
 		t.Errorf("ConfigDir = %q, want %q", got, want)
 	}
@@ -34,8 +34,8 @@ func TestDarwinConfigDir_IsUnderXDGConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DataDir: %v", err)
 	}
-	if got == dataDir {
-		t.Errorf("ConfigDir and DataDir must be distinct, both = %q", got)
+	if got != dataDir {
+		t.Errorf("ConfigDir and DataDir must share the same root: config=%q data=%q", got, dataDir)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestDarwinConfigFilePath(t *testing.T) {
 		t.Fatalf("ConfigFilePath: %v", err)
 	}
 
-	want := filepath.Join(home, ".config", RepoName, ConfigFile)
+	want := filepath.Join(home, "."+RepoName, ConfigFile)
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

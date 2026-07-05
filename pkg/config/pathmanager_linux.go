@@ -25,7 +25,7 @@ func (l *linuxPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".config", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (l *linuxPathManager) DataDir() (string, error) {
