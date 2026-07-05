@@ -25,7 +25,7 @@ func (d *darwinPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".config", RepoName))
+	return ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (d *darwinPathManager) DataDir() (string, error) {
