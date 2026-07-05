@@ -114,7 +114,7 @@ func TestConfigFilePathMigratesLegacyConfig(t *testing.T) {
 		t.Errorf("ConfigFilePath = %q, want %q", got, newPath)
 	}
 
-	migrated, err := os.ReadFile(newPath)
+	migrated, err := os.ReadFile(newPath) // #nosec G304 -- test-controlled temp path
 	if err != nil {
 		t.Fatalf("read migrated config: %v", err)
 	}
@@ -139,7 +139,8 @@ func TestConfigFilePathKeepsExistingConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DataDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dataDir, ConfigFile), []byte("legacy\n"), 0o600); err != nil {
+	legacyPath := filepath.Join(dataDir, ConfigFile)
+	if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o600); err != nil {
 		t.Fatalf("seed legacy config: %v", err)
 	}
 
@@ -156,7 +157,7 @@ func TestConfigFilePathKeepsExistingConfig(t *testing.T) {
 		t.Fatalf("ConfigFilePath: %v", err)
 	}
 
-	got, err := os.ReadFile(newPath)
+	got, err := os.ReadFile(newPath) // #nosec G304 -- test-controlled temp path
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}

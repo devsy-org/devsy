@@ -79,8 +79,6 @@ type basePathManager struct {
 	pm PathManager // self-reference wired after construction
 }
 
-// --- Config paths ---
-
 func (b *basePathManager) ConfigFilePath() (string, error) {
 	if p := os.Getenv(EnvConfig); p != "" {
 		return p, nil
@@ -98,37 +96,6 @@ func (b *basePathManager) ConfigFilePath() (string, error) {
 
 	return configPath, nil
 }
-
-func (b *basePathManager) migrateLegacyConfigFile(configPath string) error {
-	if _, err := os.Stat(configPath); err == nil || !os.IsNotExist(err) {
-		return err
-	}
-
-	dataDir, err := b.pm.DataDir()
-	if err != nil {
-		return err
-	}
-
-	legacyPath := filepath.Join(dataDir, ConfigFile)
-	if legacyPath == configPath {
-		return nil
-	}
-	if _, err := os.Stat(legacyPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	if err := os.Rename(legacyPath, configPath); err != nil {
-		return fmt.Errorf("migrate config from %s to %s: %w", legacyPath, configPath, err)
-	}
-
-	return nil
-}
-
-// --- Data sub-paths (context-relative) ---
 
 func (b *basePathManager) ContextDir(context string) (string, error) {
 	dir, err := b.pm.DataDir()
@@ -287,8 +254,6 @@ func (b *basePathManager) LocksDir(context string) (string, error) {
 	return filepath.Join(dir, "locks"), nil
 }
 
-// --- Cache sub-paths ---
-
 func (b *basePathManager) AgentCacheDir() (string, error) {
 	dir, err := b.pm.CacheDir()
 	if err != nil {
@@ -333,8 +298,6 @@ func (b *basePathManager) SSHKeysDir() (string, error) {
 
 	return filepath.Join(dir, "keys"), nil
 }
-
-// --- Runtime sub-paths ---
 
 func (b *basePathManager) DaemonPIDFile() (string, error) {
 	dir, err := b.pm.RuntimeDir()
@@ -390,8 +353,6 @@ func (b *basePathManager) ProcessStreamsFile(name string) (string, error) {
 	return filepath.Join(dir, name+".streams"), nil
 }
 
-// --- State sub-paths ---
-
 func (b *basePathManager) LogDir() (string, error) {
 	dir, err := b.pm.StateDir()
 	if err != nil {
@@ -401,7 +362,34 @@ func (b *basePathManager) LogDir() (string, error) {
 	return filepath.Join(dir, "logs"), nil
 }
 
-// --- Singleton management ---
+func (b *basePathManager) migrateLegacyConfigFile(configPath string) error {
+	if _, err := os.Stat(configPath); err == nil || !os.IsNotExist(err) {
+		return err
+	}
+
+	dataDir, err := b.pm.DataDir()
+	if err != nil {
+		return err
+	}
+
+	legacyPath := filepath.Join(dataDir, ConfigFile)
+	if legacyPath == configPath {
+		return nil
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	if err := os.Rename(legacyPath, configPath); err != nil {
+		return fmt.Errorf("migrate config from %s to %s: %w", legacyPath, configPath, err)
+	}
+
+	return nil
+}
 
 var (
 	defaultPM     PathManager
