@@ -92,8 +92,6 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	} else {
 		cmd.Stdout = &outBuf
 	}
-	// Always capture stderr into errBuf so CommandError carries git's message,
-	// teeing to the caller's writer when one is provided.
 	if opts.Stderr != nil {
 		cmd.Stderr = io.MultiWriter(opts.Stderr, &errBuf)
 	} else {
@@ -109,8 +107,7 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			Stderr:   strings.TrimSpace(errBuf.String()),
 			Err:      err,
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			cmdErr.ExitCode = exitErr.ExitCode()
 		}
 		return result, cmdErr

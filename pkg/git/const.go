@@ -1,7 +1,5 @@
 package git
 
-// Shared git subcommands, flags, and binary names used to build command lines.
-// Centralized so repeated literals stay consistent (and satisfy goconst).
 const (
 	binGit    = "git"
 	binGitLFS = "git-lfs"

@@ -17,29 +17,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// releaseSource describes how to fetch a tool binary from a GitHub release.
 type releaseSource struct {
-	// version is the release tag without the leading "v" (e.g. "3.5.1").
 	version string
-	// assetName builds the release asset filename for the given GOOS/GOARCH.
 	assetName func(goos, goarch, version string) (string, error)
-	// downloadURL builds the download URL for a resolved asset filename.
 	downloadURL func(version, asset string) string
-	// checksums maps asset filename to its expected lowercase-hex SHA-256. The
-	// download is rejected if its digest is absent or does not match, pinning
-	// the exact bytes we install (defense against a compromised release host).
 	checksums map[string]string
-	// binaryInArchive is the name of the executable within the extracted
-	// archive (it may sit under a versioned subdirectory).
 	binaryInArchive string
-	// installDir is the directory the binary is placed into; it must be on PATH.
-	// Empty defaults to the platform's SystemBinDir (see pkg/config).
 	installDir string
 }
 
-// gitLFSRelease pins a git-lfs release used when no package manager is present.
-// git-lfs publishes per-OS/arch archives (.tar.gz on linux, .zip on darwin and
-// windows) each containing a single git-lfs binary (git-lfs.exe on windows).
 var gitLFSRelease = releaseSource{
 	version:         "3.5.1",
 	binaryInArchive: binGitLFS,
@@ -68,8 +54,6 @@ var gitLFSRelease = releaseSource{
 			version, asset,
 		)
 	},
-	// SHA-256 digests from git-lfs v3.5.1 sha256sums.asc for the OS/arch pairs
-	// assetName can resolve. Update alongside version.
 	checksums: map[string]string{
 		"git-lfs-linux-amd64-v3.5.1.tar.gz": "6f28eb19faa7a968882dca190d92adc82493378b933958d67ceaeb9ebe4d731e",
 		"git-lfs-linux-arm64-v3.5.1.tar.gz": "4f8700aacaa0fd26ae5300fb0996aed14d1fd0ce1a63eb690629c132ff5163a9",
@@ -104,7 +88,6 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 		binary:  binary,
 		url:     s.downloadURL(s.version, asset),
 		wantSum: wantSum,
-		// git-lfs on windows ships as git-lfs.exe inside the archive.
 		execName: executableName(s.binaryInArchive, runtime.GOOS),
 	}
 	src, cleanup, err := s.fetchBinary(ctx, req)
@@ -125,10 +108,10 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 
 // fetchRequest describes a single release-asset download and extraction.
 type fetchRequest struct {
-	binary   string // human-facing tool name for logs/errors
-	url      string // resolved asset download URL
-	wantSum  string // pinned lowercase-hex SHA-256 of the asset
-	execName string // executable filename to locate inside the archive
+	binary   string
+	url      string
+	wantSum  string
+	execName string
 }
 
 // executableName returns the platform-specific executable filename, appending
@@ -178,8 +161,7 @@ func (s *releaseSource) fetchBinary(
 	return src, cleanup, nil
 }
 
-// readVerified reads r fully and returns a reader over its bytes only if the
-// content's SHA-256 matches wantSum (lowercase hex).
+// readVerified reads all data from r, computes its SHA-256, and compares it to wantSum.
 func readVerified(r io.Reader, wantSum string) (io.Reader, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -215,9 +197,7 @@ func findBinary(root, name string) (string, error) {
 	return found, nil
 }
 
-// moveExecutable copies src to dst with executable permissions. Both paths are
-// internally constructed (temp extraction dir and the configured install dir),
-// not user input.
+// moveExecutable copies src to dst with executable permissions.
 func moveExecutable(src, dst string) error {
 	data, err := os.ReadFile(src) // #nosec G304 -- src is within our temp extraction dir
 	if err != nil {

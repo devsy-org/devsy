@@ -157,9 +157,7 @@ func SetUser(ctx context.Context, userName string, user *GitUser) error {
 		wrote = true
 	}
 
-	// Only reassign ownership when we actually wrote the named user's config.
-	// Chowning unconditionally would fail on the not-yet-created file when
-	// neither field was provided.
+	// If config was written, chown the config file to the named user.
 	if wrote && userName != "" {
 		path, err := getGlobalGitConfigPath(userName)
 		if err != nil {
@@ -191,8 +189,7 @@ func GetUser(ctx context.Context, userName, workingDir string) (*GitUser, error)
 	return &GitUser{Name: name, Email: email}, nil
 }
 
-// identityScope resolves the config scope for setting a user's identity: the
-// named user's global config file, or the current user's global config.
+// identityScope resolves the config scope for setting a user's identity.
 func identityScope(userName string) (git.ConfigScope, error) {
 	if userName == "" {
 		return git.ScopeGlobal, nil
@@ -252,9 +249,6 @@ func credentialsViaGit(ctx context.Context, request *GitCredentials) (*GitCreden
 	return &creds, nil
 }
 
-// Resolver adapts GetCredentials to download.CredentialResolver, letting the
-// download package authenticate private assets without depending on this
-// package (dependency inversion).
 type Resolver struct{}
 
 // Resolve implements download.CredentialResolver.

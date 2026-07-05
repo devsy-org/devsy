@@ -65,10 +65,7 @@ func newInstaller(runner Runner) *Installer {
 	}
 }
 
-// ensure installs the tool if it is not already available. Strategies are tried
-// in order; a strategy that fails (e.g. apt present but no root/network) does
-// not abort the sequence, so a later fallback like the GitHub release can still
-// succeed.
+// ensure installs the tool if it is not already available.
 func (i *Installer) ensure(ctx context.Context, t tool) error {
 	if command.Exists(t.binary) {
 		return nil
@@ -101,7 +98,6 @@ func (i *Installer) ensure(ctx context.Context, t tool) error {
 	return fmt.Errorf("install %s (tried: %v): %w", t.binary, tried, errors.Join(errs...))
 }
 
-// pkgManagerStrategy installs via a system package manager (apt, apk).
 type pkgManagerStrategy struct {
 	manager     string
 	runner      Runner

@@ -43,10 +43,6 @@ func TestGetUser_WorkingDirResolvesIncludeIf(t *testing.T) {
 	assert.Equal(t, "project@example.com", user.Email)
 }
 
-// tempDirResolved returns a t.TempDir() with symlinks resolved. On macOS the
-// temp dir lives under /var (a symlink to /private/var); git's `includeIf
-// gitdir:` matches against the resolved path, so tests that build such patterns
-// must use the resolved form or they silently fail to match.
 func tempDirResolved(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
@@ -150,15 +146,10 @@ func TestSetUserEmptyIdentityIsNoOp(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
-	// A named user with an empty identity must not attempt to chown a config
-	// file that was never written (regression: unconditional chown failed with
-	// ENOENT, aborting container credential/signing setup).
 	require.NoError(t, SetUser(context.Background(), "", &GitUser{}))
 	assert.NoFileExists(t, filepath.Join(tmpHome, ".gitconfig"))
 }
 
-// helperTestEnv points git's global config at a temp HOME so ConfigureHelper /
-// RemoveHelper operate on an isolated file. It returns the config path.
 func helperTestEnv(t *testing.T) string {
 	t.Helper()
 	tmpHome := t.TempDir()

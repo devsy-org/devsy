@@ -14,13 +14,9 @@ type ConfigScope struct {
 }
 
 var (
-	// ScopeDefault targets the default config file (repository, global, or system).
 	ScopeDefault = ConfigScope{}
-	// ScopeLocal targets the repository's .git/config.
 	ScopeLocal = ConfigScope{flag: "--local"}
-	// ScopeGlobal targets the user's global config.
 	ScopeGlobal = ConfigScope{flag: flagGlobal}
-	// ScopeSystem targets the system-wide config.
 	ScopeSystem = ConfigScope{flag: flagSystem}
 )
 

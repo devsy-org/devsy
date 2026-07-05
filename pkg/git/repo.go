@@ -79,12 +79,9 @@ func (r *Repo) Switch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// CheckoutPR fetches a pull request head reference into a local branch and
-// switches to it. prRef is a reference like "pull/996/head"; the local branch
-// is derived via GetBranchNameForPR (e.g. "PR996"). This mirrors GitHub's
-// documented "checking out pull requests locally" flow.
+// CheckoutPR fetches the given pull request refspec and switches to a local branch for it.
 func (r *Repo) CheckoutPR(ctx context.Context, prRef string) error {
-	log.Debugf("Fetching pull request : %s", prRef)
+	log.Debugf("fetching pull request: %s", prRef)
 
 	prBranch := GetBranchNameForPR(prRef)
 	if err := r.Fetch(ctx, prRef+":"+prBranch); err != nil {
