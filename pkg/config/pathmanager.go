@@ -91,7 +91,41 @@ func (b *basePathManager) ConfigFilePath() (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(dir, ConfigFile), nil
+	configPath := filepath.Join(dir, ConfigFile)
+	if err := b.migrateLegacyConfigFile(configPath); err != nil {
+		return "", err
+	}
+
+	return configPath, nil
+}
+
+func (b *basePathManager) migrateLegacyConfigFile(configPath string) error {
+	if _, err := os.Stat(configPath); err == nil || !os.IsNotExist(err) {
+		return err
+	}
+
+	dataDir, err := b.pm.DataDir()
+	if err != nil {
+		return err
+	}
+
+	legacyPath := filepath.Join(dataDir, ConfigFile)
+	if legacyPath == configPath {
+		return nil
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	if err := os.Rename(legacyPath, configPath); err != nil {
+		return fmt.Errorf("migrate config from %s to %s: %w", legacyPath, configPath, err)
+	}
+
+	return nil
 }
 
 // --- Data sub-paths (context-relative) ---
