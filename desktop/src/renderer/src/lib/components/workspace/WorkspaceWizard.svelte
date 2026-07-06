@@ -200,7 +200,6 @@ let ideSearch = $state("")
 // Launch state
 let commandId = $state<string | null>(null)
 let outputLines = $state<string[]>([])
-let outputEl = $state<HTMLDivElement | null>(null)
 let launchRunning = $state(false)
 let launchError = $state("")
 let launchSuccess = $state(false)
@@ -418,7 +417,6 @@ function flushLines() {
   if (pendingLines.length === 0) return
   outputLines = [...outputLines, ...pendingLines]
   pendingLines = []
-  outputEl?.scrollIntoView?.({ block: "end", behavior: "smooth" })
 }
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {
@@ -1149,10 +1147,7 @@ function selectTemplate(t: { name: string; source: string }) {
                   Copy
                 </Button>
               </div>
-              <div class="max-h-80 overflow-auto rounded-md border">
-                <LogTable lines={outputLines} />
-                <div bind:this={outputEl}></div>
-              </div>
+              <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
             </div>
           {:else if launchRunning}
             <div class="flex items-center justify-center py-8">

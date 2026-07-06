@@ -1,62 +1,118 @@
 <script lang="ts">
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
-import * as Table from "$lib/components/ui/table/index.js"
 import { parseLogLine } from "$lib/utils/log-parser.js"
 
 let {
   lines,
   class: className = "",
-  maxLines = 5000,
-}: { lines: string[]; class?: string; maxLines?: number } = $props()
+  maxHeightClass = "max-h-96",
+  rowHeight = 28,
+  overscan = 12,
+  follow = false,
+}: {
+  lines: string[]
+  class?: string
+  maxHeightClass?: string
+  rowHeight?: number
+  overscan?: number
+  follow?: boolean
+} = $props()
 
-let truncated = $derived(lines.length > maxLines)
-let hiddenCount = $derived(truncated ? lines.length - maxLines : 0)
-let visibleLines = $derived(truncated ? lines.slice(lines.length - maxLines) : lines)
-let parsed = $derived(visibleLines.map(parseLogLine))
+let viewport = $state<HTMLDivElement | null>(null)
+let scrollTop = $state(0)
+let viewportHeight = $state(0)
+let pinnedToBottom = $state(true)
+
+let total = $derived(lines.length)
+let totalHeight = $derived(total * rowHeight)
+
+let startIndex = $derived(
+  Math.max(0, Math.floor(scrollTop / rowHeight) - overscan),
+)
+let endIndex = $derived(
+  Math.min(
+    total,
+    Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscan,
+  ),
+)
+
+let visible = $derived(
+  lines.slice(startIndex, endIndex).map((raw, i) => ({
+    index: startIndex + i,
+    line: parseLogLine(raw),
+  })),
+)
+
+function onScroll() {
+  if (!viewport) return
+  scrollTop = viewport.scrollTop
+  const distanceFromBottom =
+    viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+  pinnedToBottom = distanceFromBottom <= rowHeight
+}
+
+$effect(() => {
+  if (!viewport) return
+  const observer = new ResizeObserver(() => {
+    if (viewport) viewportHeight = viewport.clientHeight
+  })
+  observer.observe(viewport)
+  viewportHeight = viewport.clientHeight
+  return () => observer.disconnect()
+})
+
+$effect(() => {
+  // Follow the tail as new lines arrive, but only while the user is at the bottom.
+  void total
+  if (follow && pinnedToBottom && viewport) {
+    viewport.scrollTop = viewport.scrollHeight
+  }
+})
 </script>
 
-<Table.Root class="w-full table-fixed {className}">
-  <Table.Header class="sticky top-0 z-10 bg-background">
-    <Table.Row>
-      <Table.Head class="w-20">Time</Table.Head>
-      <Table.Head class="w-24">Level</Table.Head>
-      <Table.Head class="max-w-0">Message</Table.Head>
-    </Table.Row>
-  </Table.Header>
-  <Table.Body>
-    {#if truncated}
-      <Table.Row>
-        <Table.Cell colspan={3} class="text-center text-xs text-muted-foreground">
-          {hiddenCount.toLocaleString()} earlier lines hidden — showing the most recent {maxLines.toLocaleString()}
-        </Table.Cell>
-      </Table.Row>
-    {/if}
-    {#each parsed as line, i (i)}
-      <Table.Row
+<div
+  bind:this={viewport}
+  onscroll={onScroll}
+  class="relative overflow-auto rounded-md border {maxHeightClass} {className}"
+>
+  <div
+    class="sticky top-0 z-10 grid grid-cols-[5rem_6rem_1fr] border-b bg-background text-start font-medium"
+    style="height: {rowHeight}px"
+  >
+    <div class="flex items-center px-2">Time</div>
+    <div class="flex items-center px-2">Level</div>
+    <div class="flex items-center px-2">Message</div>
+  </div>
+
+  <div class="relative" style="height: {totalHeight}px">
+    {#each visible as row (row.index)}
+      <div
         class={[
-          line.level === "fatal" || line.level === "error" ? "bg-destructive/5" : "",
-          line.level === "warn" ? "bg-amber-500/5" : "",
+          "absolute grid w-full grid-cols-[5rem_6rem_1fr] items-center border-b",
+          row.line.level === "fatal" || row.line.level === "error" ? "bg-destructive/5" : "",
+          row.line.level === "warn" ? "bg-amber-500/5" : "",
         ].filter(Boolean).join(" ")}
+        style="top: {row.index * rowHeight}px; height: {rowHeight}px"
       >
-        <Table.Cell class="font-mono text-xs text-muted-foreground">{line.time}</Table.Cell>
-        <Table.Cell>
-          {#if line.level}
+        <div class="truncate px-2 font-mono text-xs text-muted-foreground">{row.line.time}</div>
+        <div class="px-2">
+          {#if row.line.level}
             <span
               class={badgeVariants({
                 variant:
-                  line.level === "fatal" || line.level === "error"
+                  row.line.level === "fatal" || row.line.level === "error"
                     ? "destructive"
-                    : line.level === "warn"
+                    : row.line.level === "warn"
                       ? "outline"
                       : "secondary",
               })}
             >
-              {line.level}
+              {row.line.level}
             </span>
           {/if}
-        </Table.Cell>
-        <Table.Cell class="text-sm max-w-0 whitespace-normal break-words" title={line.message}>{line.message}</Table.Cell>
-      </Table.Row>
+        </div>
+        <div class="truncate px-2 text-sm" title={row.line.message}>{row.line.message}</div>
+      </div>
     {/each}
-  </Table.Body>
-</Table.Root>
+  </div>
+</div>
