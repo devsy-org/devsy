@@ -3,6 +3,7 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -83,13 +84,16 @@ func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) e
 	if err != nil {
 		return err
 	}
+	// Attempt every volume so one transient failure does not orphan the rest.
+	var errs []error
 	for _, name := range volumes {
 		if err := d.removeVolume(ctx, name); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		log.Infof("removed devsy-managed volume: %s", name)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (d *LocalDockerDelivery) ensureCurrentBinary(
@@ -306,7 +310,7 @@ func (d *LocalDockerDelivery) listManagedVolumes(
 ) ([]string, error) {
 	out, err := d.cmd(ctx,
 		"volume", "ls", "--quiet",
-		"--filter", "label="+pkgconfig.DockerManagedLabel+"=true",
+		"--filter", "label="+pkgconfig.DockerManagedLabel+"="+pkgconfig.LabelValueTrue,
 		"--filter", "label="+pkgconfig.DockerWorkspaceIDLabel+"="+workspaceID,
 	).CombinedOutput()
 	if err != nil {

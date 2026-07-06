@@ -359,8 +359,7 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
 	s.Equal("/existing-target", substitutedConfig.Config.Mounts[0].Target)
 }
 
-//go:fix inline
-func ptr(s string) *string { return &s }
+func ptr(s string) *string { return new(s) }
 
 func TestWorkspaceMountFolderWarning(t *testing.T) {
 	tests := []struct {

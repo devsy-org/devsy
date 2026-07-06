@@ -52,7 +52,6 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 			if root.Annotations == nil {
 				root.Annotations = map[string]string{}
 			}
-			// Don't print debug message
 			root.Annotations[config.AgentExecutedAnnotation] = "true"
 		},
 	}

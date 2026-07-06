@@ -35,14 +35,18 @@ func SelectByID(id string) ConfigSelector {
 // than one config exists, listing the available ids so the caller can choose.
 func SelectSingle(folder string) ConfigSelector {
 	return func(candidates []string) (string, error) {
-		if len(candidates) > 1 {
+		switch {
+		case len(candidates) == 0:
+			return "", fmt.Errorf("no devcontainer configuration found")
+		case len(candidates) > 1:
 			ids, _ := ListDevContainerIDs(folder)
 			return "", fmt.Errorf(
 				"multiple devcontainer configurations found. Detected: %v",
 				ids,
 			)
+		default:
+			return candidates[0], nil
 		}
-		return candidates[0], nil
 	}
 }
 

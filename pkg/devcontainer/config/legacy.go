@@ -31,7 +31,18 @@ func migrateLegacyExtensions(config *DevContainerConfig, vsCode *VSCodeCustomiza
 	if len(config.Extensions) == 0 {
 		return
 	}
-	vsCode.Extensions = config.Extensions
+	// Append legacy extensions to any new-style ones rather than replacing, and
+	// de-duplicate so a config that sets both does not lose entries.
+	seen := make(map[string]bool, len(vsCode.Extensions))
+	for _, ext := range vsCode.Extensions {
+		seen[ext] = true
+	}
+	for _, ext := range config.Extensions {
+		if !seen[ext] {
+			vsCode.Extensions = append(vsCode.Extensions, ext)
+			seen[ext] = true
+		}
+	}
 	config.Extensions = nil
 }
 
@@ -51,9 +62,13 @@ func migrateLegacySettings(config *DevContainerConfig, vsCode *VSCodeCustomizati
 }
 
 func migrateLegacyDevPort(config *DevContainerConfig, vsCode *VSCodeCustomizations) {
-	if vsCode.DevPort != 0 {
+	if config.DevPort == 0 {
 		return
 	}
-	vsCode.DevPort = config.DevPort
+	// Only backfill when the new-style value is unset, but always clear the
+	// deprecated field so it is not re-emitted on save.
+	if vsCode.DevPort == 0 {
+		vsCode.DevPort = config.DevPort
+	}
 	config.DevPort = 0
 }
