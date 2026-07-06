@@ -17,6 +17,7 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
@@ -498,10 +499,10 @@ var _ = ginkgo.Describe(
 			ids, err := tc.dockerHelper.FindContainer(ctx, []string{
 				fmt.Sprintf(
 					"%s=%s",
-					compose.ProjectLabel,
+					pkgconfig.ComposeProjectLabel,
 					tc.composeHelper.GetProjectName(workspace.UID),
 				),
-				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+				fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
@@ -552,10 +553,10 @@ var _ = ginkgo.Describe(
 			ids, err := tc.dockerHelper.FindContainer(ctx, []string{
 				fmt.Sprintf(
 					"%s=%s",
-					compose.ProjectLabel,
+					pkgconfig.ComposeProjectLabel,
 					tc.composeHelper.GetProjectName(workspace.UID),
 				),
-				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+				fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
@@ -586,10 +587,10 @@ var _ = ginkgo.Describe(
 			ids, err := tc.dockerHelper.FindContainer(ctx, []string{
 				fmt.Sprintf(
 					"%s=%s",
-					compose.ProjectLabel,
+					pkgconfig.ComposeProjectLabel,
 					tc.composeHelper.GetProjectName(workspace.UID),
 				),
-				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+				fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")

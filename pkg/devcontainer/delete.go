@@ -42,10 +42,11 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	return nil
 }
 
+// cleanupDeliveryVolume removes the devsy-managed volumes created for this
+// workspace. Best-effort: failures are logged, not returned.
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
-	strategy := r.newAgentDelivery()
-	if err := strategy.Cleanup(ctx, r.ID); err != nil {
-		log.Debugf("best-effort agent delivery volume cleanup: %v", err)
+	if err := r.newAgentDelivery().Cleanup(ctx, r.ID); err != nil {
+		log.Debugf("best-effort delivery volume cleanup: %v", err)
 	}
 }
 

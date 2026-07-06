@@ -43,9 +43,15 @@ type PostStartOptions struct {
 	Arch             string
 }
 
+// Cleaner removes the resources a delivery created for a workspace. Cleanup is
+// best-effort and safe to call when nothing was created.
+type Cleaner interface {
+	Cleanup(ctx context.Context, workspaceID string) error
+}
+
 type AgentDelivery interface {
+	Cleaner
 	Phase() DeliveryPhase
 	DeliverPreStart(ctx context.Context, opts PreStartOptions) error
 	DeliverPostStart(ctx context.Context, opts PostStartOptions) error
-	Cleanup(ctx context.Context, workspaceID string) error
 }

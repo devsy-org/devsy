@@ -24,6 +24,10 @@ const (
 	volumePrefix       = "devsy-agent-"
 	volumeMountPath    = "/opt/devsy"
 	defaultHelperImage = "busybox:latest"
+
+	// cmdRun / flagRM build throwaway helper-container invocations.
+	cmdRun = "run"
+	flagRM = "--rm"
 )
 
 type LocalDockerDelivery struct {
@@ -44,7 +48,8 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 
 	volumeName := volumePrefix + opts.WorkspaceID
 
-	if err := d.createVolume(ctx, volumeName); err != nil {
+	labels := pkgconfig.DockerVolumeLabels(opts.WorkspaceID, pkgconfig.VolumeRoleAgent)
+	if err := d.createVolume(ctx, volumeName, labels); err != nil {
 		return fmt.Errorf("create agent volume: %w", err)
 	}
 
@@ -70,8 +75,21 @@ func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOpt
 	return fmt.Errorf("LocalDockerDelivery does not support post-start delivery")
 }
 
+// Cleanup removes every devsy-managed volume owned by the workspace (the agent
+// volume and any seeded workspace volume), identified by labels. Only labeled
+// volumes are removed, so foreign/external volumes are left untouched.
 func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) error {
-	return d.removeVolume(ctx, workspaceID)
+	volumes, err := d.listManagedVolumes(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, name := range volumes {
+		if err := d.removeVolume(ctx, name); err != nil {
+			return err
+		}
+		log.Infof("removed devsy-managed volume: %s", name)
+	}
+	return nil
 }
 
 func (d *LocalDockerDelivery) ensureCurrentBinary(
@@ -92,7 +110,7 @@ func (d *LocalDockerDelivery) ensureCurrentBinary(
 	}
 
 	if actual != "" {
-		log.Infof("upgraded remote agent from %s → %s", actual, expected)
+		log.Infof("upgraded remote agent from %s to %s", actual, expected)
 	}
 
 	if err := d.populateVolume(ctx, volumeName, binarySource, arch); err != nil {
@@ -104,8 +122,14 @@ func (d *LocalDockerDelivery) ensureCurrentBinary(
 	return nil
 }
 
-func (d *LocalDockerDelivery) createVolume(ctx context.Context, name string) error {
-	out, err := d.cmd(ctx, "volume", "create", name).CombinedOutput()
+func (d *LocalDockerDelivery) createVolume(
+	ctx context.Context,
+	name string,
+	labels map[string]string,
+) error {
+	args := append([]string{"volume", "create"}, pkgconfig.LabelArgs(labels)...)
+	args = append(args, name)
+	out, err := d.cmd(ctx, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
@@ -133,7 +157,7 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 		binaryPath, binaryPath,
 	)
 	args := []string{
-		"run", "--rm",
+		cmdRun, flagRM,
 		"-v", volumeName + ":" + volumeMountPath,
 		d.helperImageName(),
 		"sh", "-c", script,
@@ -184,7 +208,7 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 		volumeMountPath, binaryName(), volumeMountPath, binaryName(),
 	)
 	args := []string{
-		"run", "--rm",
+		cmdRun, flagRM,
 		"--name", containerName,
 		"-v", volumeName + ":" + volumeMountPath,
 		"-i",
@@ -263,13 +287,38 @@ func (d *LocalDockerDelivery) volumeMountpoint(
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (d *LocalDockerDelivery) removeVolume(ctx context.Context, workspaceID string) error {
-	volumeName := volumePrefix + workspaceID
-	out, err := d.cmd(ctx, "volume", "rm", "-f", volumeName).CombinedOutput()
+// removeVolume force-removes a single named volume. It is safe to call for a
+// non-existent volume since removal is forced.
+func (d *LocalDockerDelivery) removeVolume(ctx context.Context, name string) error {
+	out, err := d.cmd(ctx, "volume", "rm", "-f", name).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
 	return nil
+}
+
+// listManagedVolumes returns the names of devsy-managed volumes owned by the
+// given workspace, identified by labels. Only labeled volumes are returned, so
+// foreign (user-created) volumes are never included.
+func (d *LocalDockerDelivery) listManagedVolumes(
+	ctx context.Context,
+	workspaceID string,
+) ([]string, error) {
+	out, err := d.cmd(ctx,
+		"volume", "ls", "--quiet",
+		"--filter", "label="+pkgconfig.DockerManagedLabel+"=true",
+		"--filter", "label="+pkgconfig.DockerWorkspaceIDLabel+"="+workspaceID,
+	).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", string(out), err)
+	}
+	var names []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 func (d *LocalDockerDelivery) cmd(ctx context.Context, args ...string) *exec.Cmd {

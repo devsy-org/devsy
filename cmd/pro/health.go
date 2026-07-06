@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -57,7 +56,7 @@ func NewHealthCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				root.Annotations = map[string]string{}
 			}
 			// Don't print debug message
-			root.Annotations[cmdinternal.AgentExecutedAnnotation] = "true" //nolint:goconst
+			root.Annotations[config.AgentExecutedAnnotation] = "true" //nolint:goconst
 		},
 	}
 

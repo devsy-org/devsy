@@ -92,9 +92,13 @@ func (cmd *OutdatedCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
 
 	var parsedConfig *devconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = devconfig.ParseDevContainerJSONFile(cmd.Config)
+		parsedConfig, err = devconfig.ParseDevContainerJSONFile(context.Background(), cmd.Config)
 	} else {
-		parsedConfig, err = devconfig.ParseDevContainerJSON(workspaceFolder, "")
+		parsedConfig, err = devconfig.ParseDevContainerJSON(
+			context.Background(),
+			workspaceFolder,
+			"",
+		)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)

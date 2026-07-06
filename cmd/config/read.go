@@ -191,9 +191,10 @@ func (cmd *ReadCmd) resolveConfig() (
 
 	var parsedConfig *devcconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = devcconfig.ParseDevContainerJSONFile(cmd.Config)
+		parsedConfig, err = devcconfig.ParseDevContainerJSONFile(context.Background(), cmd.Config)
 	} else {
 		parsedConfig, err = devcconfig.ParseDevContainerJSON(
+			context.Background(),
 			workspaceFolder,
 			"",
 		)

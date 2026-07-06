@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ func TestExtends_BasicScalarOverride(t *testing.T) {
 		"remoteUser": "vscode"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +79,7 @@ func TestExtends_MapDeepMerge_ContainerEnv(t *testing.T) {
 		}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestExtends_MapDeepMerge_Features(t *testing.T) {
 		}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestExtends_ArrayReplacement(t *testing.T) {
 		"capAdd": ["NET_ADMIN", "SYS_ADMIN"]
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +181,7 @@ func TestExtends_LifecycleHookReplacement(t *testing.T) {
 		"postCreateCommand": "echo child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +216,7 @@ func TestExtends_CycleDetection(t *testing.T) {
 		"name": "b"
 	}`)
 
-	_, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "a.json"))
+	_, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "a.json"))
 	if err == nil {
 		t.Fatal("expected cycle detection error")
 	}
@@ -231,7 +232,7 @@ func TestExtends_MissingFile(t *testing.T) {
 		"name": "child"
 	}`)
 
-	_, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	_, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err == nil {
 		t.Fatal("expected error for missing extends file")
 	}
@@ -260,7 +261,7 @@ func TestExtends_MultiLevel(t *testing.T) {
 		"containerEnv": {"LEVEL": "child"}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +293,10 @@ func TestExtends_NoExtends(t *testing.T) {
 		"image": "node:18"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "standalone.json"))
+	cfg, err := ParseDevContainerJSONFile(
+		context.Background(),
+		filepath.Join(tmpDir, "standalone.json"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +313,7 @@ func TestExtends_OriginPreserved(t *testing.T) {
 	writeJSON(t, tmpDir, "parent.json", `{"name": "parent", "image": "ubuntu:20.04"}`)
 	childPath := writeJSON(t, tmpDir, "child.json", `{"extends": "parent.json", "name": "child"}`)
 
-	cfg, err := ParseDevContainerJSONFile(childPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +341,7 @@ func TestExtends_NestedStructBuildMerge(t *testing.T) {
 		}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +434,7 @@ func TestMergeExtendsConfigs_Maps(t *testing.T) {
 	parent := &DevContainerConfig{
 		DevContainerConfigBase: DevContainerConfigBase{
 			Features:  map[string]any{"feat-a": map[string]any{}},
-			RemoteEnv: map[string]*string{"A": strPtr("1")},
+			RemoteEnv: map[string]*string{"A": new("1")},
 		},
 		NonComposeBase: NonComposeBase{
 			ContainerEnv: map[string]string{"X": "parent"},
@@ -441,7 +445,7 @@ func TestMergeExtendsConfigs_Maps(t *testing.T) {
 	child := &DevContainerConfig{
 		DevContainerConfigBase: DevContainerConfigBase{
 			Features:  map[string]any{"feat-b": map[string]any{}},
-			RemoteEnv: map[string]*string{"B": strPtr("2")},
+			RemoteEnv: map[string]*string{"B": new("2")},
 		},
 		NonComposeBase: NonComposeBase{
 			ContainerEnv: map[string]string{"X": testNameChild, "Y": testNameChild},
@@ -513,7 +517,7 @@ func TestExtends_ArraySingleRef(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(childPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +545,7 @@ func TestExtends_ArrayMultipleRefs_Scalars(t *testing.T) {
 		"containerEnv": {"FROM_CHILD": "child-val"}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(childPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +576,7 @@ func TestExtends_ArrayMultipleRefs_EnvMerge(t *testing.T) {
 		"containerEnv": {"FROM_CHILD": "child-val"}
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(childPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +603,7 @@ func TestExtends_ArrayOrderMatters(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(childPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +623,7 @@ func TestExtends_ArrayCycleDetection(t *testing.T) {
 		"extends": ["a.json"]
 	}`)
 
-	_, err := ParseDevContainerJSONFile(childPath)
+	_, err := ParseDevContainerJSONFile(context.Background(), childPath)
 	if err == nil {
 		t.Fatal("expected cycle error")
 	}
@@ -697,7 +701,10 @@ func TestExtends_LocalEnvInPath(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(childDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(
+		context.Background(),
+		filepath.Join(childDir, "child.json"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -727,7 +734,7 @@ func TestExtends_LocalWorkspaceFolderInPath(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +753,7 @@ func TestExtends_MissingEnvResolvesToEmpty(t *testing.T) {
 		"name": "child"
 	}`)
 
-	_, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	_, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err == nil {
 		t.Fatal("expected error due to invalid path from empty env var")
 	}
@@ -781,7 +788,7 @@ func TestExtends_LocalEnvDefaultValue(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -812,7 +819,7 @@ func TestExtends_LocalWorkspaceFolderBasenameInPath(t *testing.T) {
 		"name": "child"
 	}`)
 
-	cfg, err := ParseDevContainerJSONFile(filepath.Join(tmpDir, "child.json"))
+	cfg, err := ParseDevContainerJSONFile(context.Background(), filepath.Join(tmpDir, "child.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -824,6 +831,7 @@ func TestExtends_LocalWorkspaceFolderBasenameInPath(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func strPtr(s string) *string {
-	return &s
+	return new(s)
 }

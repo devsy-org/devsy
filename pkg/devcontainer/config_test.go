@@ -359,4 +359,65 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
 	s.Equal("/existing-target", substitutedConfig.Config.Mounts[0].Target)
 }
 
+//go:fix inline
 func ptr(s string) *string { return &s }
+
+func TestWorkspaceMountFolderWarning(t *testing.T) {
+	tests := []struct {
+		name    string
+		conf    *config.DevContainerConfig
+		wantMsg bool
+	}{
+		{name: "nil config", conf: nil, wantMsg: false},
+		{
+			name:    "neither set",
+			conf:    &config.DevContainerConfig{},
+			wantMsg: false,
+		},
+		{
+			name: "both set",
+			conf: &config.DevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{
+					WorkspaceFolder: "/workspace",
+				},
+				NonComposeBase: config.NonComposeBase{WorkspaceMount: new("source=v")},
+			},
+			wantMsg: false,
+		},
+		{
+			name: "mount without folder",
+			conf: &config.DevContainerConfig{
+				NonComposeBase: config.NonComposeBase{WorkspaceMount: new("source=v")},
+			},
+			wantMsg: true,
+		},
+		{
+			name: "folder without mount",
+			conf: &config.DevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{
+					WorkspaceFolder: "/workspace",
+				},
+			},
+			wantMsg: true,
+		},
+		{
+			name: "empty-string mount satisfies the pairing",
+			conf: &config.DevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{
+					WorkspaceFolder: "/workspace",
+				},
+				NonComposeBase: config.NonComposeBase{WorkspaceMount: new("")},
+			},
+			wantMsg: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := workspaceMountFolderWarning(tt.conf)
+			if (got != "") != tt.wantMsg {
+				t.Errorf("workspaceMountFolderWarning() = %q, wantMsg=%v", got, tt.wantMsg)
+			}
+		})
+	}
+}

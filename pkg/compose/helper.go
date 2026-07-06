@@ -14,14 +14,10 @@ import (
 	"github.com/blang/semver/v4"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
-)
-
-const (
-	ProjectLabel = "com.docker.compose.project"
-	ServiceLabel = "com.docker.compose.service"
 )
 
 func LoadDockerComposeProject(
@@ -207,8 +203,8 @@ func (h *ComposeHelper) FindDevContainer(
 	projectName, serviceName string,
 ) (*config.ContainerDetails, error) {
 	containerIDs, err := h.Docker.FindContainer(ctx, []string{
-		fmt.Sprintf("%s=%s", ProjectLabel, projectName),
-		fmt.Sprintf("%s=%s", ServiceLabel, serviceName),
+		fmt.Sprintf("%s=%s", pkgconfig.ComposeProjectLabel, projectName),
+		fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, serviceName),
 	})
 	if err != nil {
 		return nil, err

@@ -22,8 +22,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-const ProjectLabel = "devsy.sh/project"
-
 func List(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -253,7 +251,7 @@ func listProWorkspacesForProvider(
 		}
 
 		// project
-		projectName := instance.GetLabels()[ProjectLabel]
+		projectName := instance.GetLabels()[config.K8sProjectLabel]
 
 		// source
 		source := providerpkg.WorkspaceSource{}

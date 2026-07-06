@@ -10,13 +10,13 @@ import (
 	"time"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
-	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/gorilla/handlers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -465,7 +465,7 @@ func collectProjectWorkspaces(
 		if instance.GetLabels() == nil {
 			instance.Labels = map[string]string{}
 		}
-		instance.Labels[labels.ProjectLabel] = p.GetName()
+		instance.Labels[config.K8sProjectLabel] = p.GetName()
 		instances = append(instances, instance)
 	}
 	return instances, nil

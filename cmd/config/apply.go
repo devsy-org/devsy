@@ -177,13 +177,16 @@ func (cmd *ApplyCmd) loadConfig(
 	var err error
 
 	if cmd.Config != "" {
-		devContainerConfig, err = devcconfig.ParseDevContainerJSONFile(cmd.Config)
+		devContainerConfig, err = devcconfig.ParseDevContainerJSONFile(
+			context.Background(),
+			cmd.Config,
+		)
 	} else {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
 			return nil, fmt.Errorf("get working directory: %w", cwdErr)
 		}
-		devContainerConfig, err = devcconfig.ParseDevContainerJSON(cwd, "")
+		devContainerConfig, err = devcconfig.ParseDevContainerJSON(context.Background(), cwd, "")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)

@@ -6,6 +6,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"gopkg.in/yaml.v3"
@@ -157,7 +158,7 @@ func (r *runner) buildServiceLabels(additionalLabels map[string]string) composet
 			labels[k] = escapeComposeLabelValue(v)
 		}
 	} else {
-		labels[config.DockerIDLabel] = r.ID
+		labels[pkgconfig.DevcontainerIDLabel] = r.ID
 	}
 	for k, v := range additionalLabels {
 		labels.Add(k, escapeComposeLabelValue(v))

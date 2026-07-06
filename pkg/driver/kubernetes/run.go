@@ -23,16 +23,12 @@ import (
 const (
 	DevContainerName  = pkgconfig.BinaryName
 	InitContainerName = pkgconfig.BinaryName + "-init"
-)
 
-const (
-	DevsyCreatedLabel      = pkgconfig.BinaryName + ".sh/created"
-	DevsyWorkspaceLabel    = pkgconfig.BinaryName + ".sh/workspace"
-	DevsyWorkspaceUIDLabel = pkgconfig.BinaryName + ".sh/workspace-uid"
-
-	DevsyInfoAnnotation                    = pkgconfig.BinaryName + ".sh/info"
-	DevsyLastAppliedAnnotation             = pkgconfig.BinaryName + ".sh/last-applied-configuration"
-	ClusterAutoscalerSaveToEvictAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict"
+	DevsyCreatedLabel          = pkgconfig.K8sCreatedLabel
+	DevsyWorkspaceLabel        = pkgconfig.K8sWorkspaceLabel
+	DevsyWorkspaceUIDLabel     = pkgconfig.K8sWorkspaceUIDLabel
+	DevsyInfoAnnotation        = pkgconfig.K8sInfoAnnotation
+	DevsyLastAppliedAnnotation = pkgconfig.K8sLastAppliedAnnotation
 )
 
 var ExtraDevsyLabels = map[string]string{
@@ -329,7 +325,7 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[DevsyLastAppliedAnnotation] = string(lastAppliedConfigRaw)
-	pod.Annotations[ClusterAutoscalerSaveToEvictAnnotation] = "false"
+	pod.Annotations[pkgconfig.ClusterAutoscalerSafeToEvictAnnotation] = "false"
 
 	// marshal the pod
 	podRaw, err := json.Marshal(pod)

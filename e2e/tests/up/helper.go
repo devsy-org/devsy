@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/scanner"
@@ -61,7 +61,7 @@ func (dtc *dockerTestContext) findWorkspaceContainer(
 ) ([]string, error) {
 	return dtc.dockerHelper.FindContainer(
 		ctx,
-		[]string{fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID)},
+		[]string{fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID)},
 	)
 }
 

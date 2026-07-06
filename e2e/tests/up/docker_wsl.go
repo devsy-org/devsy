@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -48,7 +48,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 		projectName := workspace.ID
 
 		ids, err := dockerHelper.FindContainer(ctx, []string{
-			fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID),
+			fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 		})
 		framework.ExpectNoError(err)
 		gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")

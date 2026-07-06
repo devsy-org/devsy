@@ -10,6 +10,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	ConfigFilesLabel                = "com.docker.compose.project.config_files"
+	ConfigFilesLabel                = pkgconfig.ComposeConfigFilesLabel
 	FeaturesBuildOverrideFilePrefix = "docker-compose.devcontainer.build"
 	FeaturesStartOverrideFilePrefix = "docker-compose.devcontainer.containerFeatures"
 
@@ -839,7 +840,10 @@ func mergeImageMetadataConfig(
 		if imageMetadata == nil {
 			imageMetadata = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(extraDevContainerPath)
+		extraConfig, err := config.ParseDevContainerJSONFile(
+			context.Background(),
+			extraDevContainerPath,
+		)
 		if err != nil {
 			return nil, err
 		}

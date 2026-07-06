@@ -39,7 +39,7 @@ type DevContainerConfig struct {
 
 func CloneDevContainerConfig(config *DevContainerConfig) *DevContainerConfig {
 	out := &DevContainerConfig{}
-	_ = Convert(config, out)
+	_ = convert(config, out)
 	out.Origin = config.Origin
 	return out
 }
@@ -502,6 +502,10 @@ type Mount struct {
 	Other    []string `json:"other,omitempty"`
 }
 
+// String renders the mount as a docker/podman --mount argument. The external
+// flag is intentionally omitted: it is a Docker Compose volume-level directive
+// (handled separately in the compose path) and is not a valid --mount option,
+// so emitting it here would produce an invalid argument.
 func (m *Mount) String() string {
 	components := []string{}
 	if m.Type != "" {
@@ -512,9 +516,6 @@ func (m *Mount) String() string {
 	}
 	if m.Target != "" {
 		components = append(components, "dst="+m.Target)
-	}
-	if m.External {
-		components = append(components, "external="+strconv.FormatBool(m.External))
 	}
 	components = append(components, m.Other...)
 	return strings.Join(components, ",")

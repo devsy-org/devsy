@@ -272,7 +272,11 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 		configFolder = "."
 	}
 
-	devContainerConfig, err := devcconfig.ParseDevContainerJSON(configFolder, cmd.Config)
+	devContainerConfig, err := devcconfig.ParseDevContainerJSON(
+		context.Background(),
+		configFolder,
+		cmd.Config,
+	)
 	if err != nil {
 		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)
