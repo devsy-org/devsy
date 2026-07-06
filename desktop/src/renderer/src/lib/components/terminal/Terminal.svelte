@@ -32,6 +32,8 @@ let containerEl: HTMLDivElement | undefined = $state()
 let term: Terminal | undefined
 let fitAddon: FitAddon | undefined
 let resizeObserver: ResizeObserver | undefined
+let lastCols = -1
+let lastRows = -1
 
 const darkTheme = {
   background: "#1e1e2e",
@@ -187,11 +189,13 @@ onMount(async () => {
   }
 
   resizeObserver = new ResizeObserver(() => {
-    if (fitAddon && term) {
-      fitAddon.fit()
-      term.refresh(0, term.rows - 1)
-      terminalResize(sessionId, term.cols, term.rows)
-    }
+    if (!fitAddon || !term) return
+    fitAddon.fit()
+    if (term.cols === lastCols && term.rows === lastRows) return
+    lastCols = term.cols
+    lastRows = term.rows
+    term.refresh(0, term.rows - 1)
+    terminalResize(sessionId, term.cols, term.rows)
   })
   resizeObserver.observe(containerEl)
 })
