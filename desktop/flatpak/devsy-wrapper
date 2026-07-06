@@ -15,4 +15,4 @@ if [ -f "/.flatpak-info" ]; then
     fi
 fi
 
-exec /app/devsy/devsy-desktop "$@"
+exec zypak-wrapper /app/devsy/devsy-desktop "$@"
