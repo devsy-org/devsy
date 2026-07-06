@@ -336,6 +336,7 @@ func (r *runner) finalizeComposeContainer(
 	}
 
 	mergedConfig, err := mergeImageMetadataConfig(
+		ctx,
 		parsedConfig,
 		imageMetadataConfig,
 		options.ExtraDevContainerPath,
@@ -774,6 +775,7 @@ func (r *runner) buildComposeOverrideArgs(
 	}
 
 	overrideComposeUpFilePath, err := r.generateComposeUpOverride(
+		ctx,
 		params,
 		extendResult,
 		imageDetails,
@@ -792,6 +794,7 @@ func (r *runner) buildComposeOverrideArgs(
 // generateComposeUpOverride merges the image metadata into the devcontainer
 // config and writes the compose "up" override file, returning its path.
 func (r *runner) generateComposeUpOverride(
+	ctx context.Context,
 	params *composeOverrideParams,
 	extendResult composeExtendResult,
 	imageDetails *config.ImageDetails,
@@ -799,6 +802,7 @@ func (r *runner) generateComposeUpOverride(
 	start := params.startParams
 
 	mergedConfig, err := mergeImageMetadataConfig(
+		ctx,
 		start.parsedConfig,
 		extendResult.imageMetadata,
 		start.options.ExtraDevContainerPath,
@@ -832,6 +836,7 @@ func (r *runner) generateComposeUpOverride(
 // metadata, merges it with the parsed config, and applies extra remote env,
 // returning the resulting merged devcontainer config.
 func mergeImageMetadataConfig(
+	ctx context.Context,
 	parsedConfig *config.SubstitutedConfig,
 	imageMetadata *config.ImageMetadataConfig,
 	extraDevContainerPath string,
@@ -840,10 +845,7 @@ func mergeImageMetadataConfig(
 		if imageMetadata == nil {
 			imageMetadata = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(
-			context.Background(),
-			extraDevContainerPath,
-		)
+		extraConfig, err := config.ParseDevContainerJSONFile(ctx, extraDevContainerPath)
 		if err != nil {
 			return nil, err
 		}
@@ -855,7 +857,7 @@ func mergeImageMetadataConfig(
 		return nil, fmt.Errorf("merge configuration: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(mergedConfig, extraDevContainerPath); err != nil {
+	if err := config.MergeExtraRemoteEnv(ctx, mergedConfig, extraDevContainerPath); err != nil {
 		return nil, err
 	}
 

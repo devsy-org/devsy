@@ -18,11 +18,15 @@ const (
 	gpuOptional = "optional"
 )
 
-func MergeExtraRemoteEnv(mergedConfig *MergedDevContainerConfig, extraConfigPath string) error {
+func MergeExtraRemoteEnv(
+	ctx context.Context,
+	mergedConfig *MergedDevContainerConfig,
+	extraConfigPath string,
+) error {
 	if extraConfigPath == "" {
 		return nil
 	}
-	extraConfig, err := ParseDevContainerJSONFile(context.Background(), extraConfigPath)
+	extraConfig, err := ParseDevContainerJSONFile(ctx, extraConfigPath)
 	if err != nil {
 		return err
 	}

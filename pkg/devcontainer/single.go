@@ -159,7 +159,7 @@ func (r *runner) resolveExistingContainer(
 		p.substitutionContext.ContainerWorkspaceFolder = containerDetails.Config.WorkingDir
 	}
 
-	mergedConfig, err := r.mergeExistingContainerConfig(containerDetails, p)
+	mergedConfig, err := r.mergeExistingContainerConfig(ctx, containerDetails, p)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +194,7 @@ func (r *runner) ensureRunning(
 // mergeExistingContainerConfig extracts image metadata from the running
 // container and merges it with the parsed devcontainer configuration.
 func (r *runner) mergeExistingContainerConfig(
+	ctx context.Context,
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
@@ -210,7 +211,7 @@ func (r *runner) mergeExistingContainerConfig(
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
 		extraConfig, parseErr := config.ParseDevContainerJSONFile(
-			context.Background(),
+			ctx,
 			p.options.ExtraDevContainerPath,
 		)
 		if parseErr != nil {
@@ -228,7 +229,7 @@ func (r *runner) mergeExistingContainerConfig(
 	}
 
 	if err := config.MergeExtraRemoteEnv(
-		mergedConfig, p.options.ExtraDevContainerPath,
+		ctx, mergedConfig, p.options.ExtraDevContainerPath,
 	); err != nil {
 		return nil, err
 	}
@@ -332,6 +333,7 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	if err := config.MergeExtraRemoteEnv(
+		ctx,
 		mergedConfig,
 		p.options.ExtraDevContainerPath,
 	); err != nil {
