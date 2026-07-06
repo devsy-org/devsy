@@ -41,7 +41,7 @@
     "@types/dompurify": "3.0.5",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
-    "bits-ui": "2.18.0",
+    "bits-ui": "2.18.1",
     "clsx": "2.1.1",
     "electron": "35.7.5",
     "electron-builder": "25.1.8",
