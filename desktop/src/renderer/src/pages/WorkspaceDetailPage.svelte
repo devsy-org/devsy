@@ -112,6 +112,8 @@ let operationLabel = $state("")
 let operationRunning = $state(false)
 let unlisten: UnlistenFn | null = null
 let tableEndEl = $state<HTMLDivElement | null>(null)
+let pendingLines: string[] = []
+let flushHandle: number | null = null
 
 let logEntries = $state<LogEntry[]>([])
 let selectedLog = $state<string | null>(null)
@@ -155,6 +157,14 @@ function scrollToBottom() {
   }
 }
 
+function flushLines() {
+  flushHandle = null
+  if (pendingLines.length === 0) return
+  outputLines = [...outputLines, ...pendingLines]
+  pendingLines = []
+  scrollToBottom()
+}
+
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -169,10 +179,16 @@ onMount(async () => {
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
         if (progress.message) {
-          outputLines = [...outputLines, progress.message]
-          requestAnimationFrame(scrollToBottom)
+          pendingLines.push(progress.message)
+          if (flushHandle === null) {
+            flushHandle = requestAnimationFrame(flushLines)
+          }
         }
         if (progress.done) {
+          if (flushHandle !== null) {
+            cancelAnimationFrame(flushHandle)
+          }
+          flushLines()
           operationRunning = false
           const success = isCommandSuccess(progress.message)
           if (success) {
@@ -213,6 +229,10 @@ onMount(async () => {
 
 onDestroy(() => {
   unlisten?.()
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   // Clean up SSH session if navigating away
   if (sshSessionId) {
     if (!sshExited) {
@@ -313,6 +333,11 @@ function startStreamingOp(label: string) {
   operationLabel = label
   operationRunning = true
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   activeTab = "logs"
 }
 

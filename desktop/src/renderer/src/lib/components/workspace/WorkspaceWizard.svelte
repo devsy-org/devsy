@@ -208,6 +208,8 @@ let launchedWorkspaceId = $state<string | null>(null)
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
+let pendingLines: string[] = []
+let flushHandle: number | null = null
 
 // Image platform compatibility (image source only)
 let hostPlatform = $state("")
@@ -331,6 +333,11 @@ function reset() {
   ideSearch = ""
   commandId = null
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   launchRunning = false
   launchError = ""
   launchSuccess = false
@@ -400,16 +407,32 @@ onMount(() => {
 onDestroy(() => {
   unlisten?.()
   clearWatchdog()
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
 })
+
+function flushLines() {
+  flushHandle = null
+  if (pendingLines.length === 0) return
+  outputLines = [...outputLines, ...pendingLines]
+  pendingLines = []
+  outputEl?.scrollIntoView?.({ block: "end", behavior: "smooth" })
+}
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   if (progress.message) {
-    outputLines = [...outputLines, progress.message]
-    requestAnimationFrame(() => {
-      outputEl?.scrollIntoView?.({ block: "end", behavior: "smooth" })
-    })
+    pendingLines.push(progress.message)
+    if (flushHandle === null) {
+      flushHandle = requestAnimationFrame(flushLines)
+    }
   }
   if (progress.done) {
+    if (flushHandle !== null) {
+      cancelAnimationFrame(flushHandle)
+    }
+    flushLines()
     launchRunning = false
     clearWatchdog()
     if (isCommandSuccess(progress.message)) {
@@ -430,6 +453,11 @@ async function handleLaunch() {
   launchError = ""
   launchSuccess = false
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   commandId = null
   launchedWorkspaceId = null
   clearWatchdog()
