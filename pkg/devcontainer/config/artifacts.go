@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 var buildArtifactNames = []string{
@@ -18,6 +20,9 @@ func BuildArtifactExcludes() []string {
 // RemoveBuildArtifacts deletes devsy's build artifacts from contextPath.
 func RemoveBuildArtifacts(contextPath string) {
 	for _, name := range buildArtifactNames {
-		_ = os.RemoveAll(filepath.Join(contextPath, name))
+		path := filepath.Join(contextPath, name)
+		if err := os.RemoveAll(path); err != nil {
+			log.Debugf("failed to remove build artifact %s: %v", path, err)
+		}
 	}
 }
