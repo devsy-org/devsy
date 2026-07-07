@@ -11,13 +11,10 @@ var buildArtifactNames = []string{
 	DevsyContextFeatureFolder,
 }
 
-// BuildArtifactExcludes returns the build artifact names to exclude when
-// copying, streaming, or hashing a workspace tree.
 func BuildArtifactExcludes() []string {
 	return append([]string(nil), buildArtifactNames...)
 }
 
-// RemoveBuildArtifacts deletes devsy's build artifacts from contextPath.
 func RemoveBuildArtifacts(contextPath string) {
 	for _, name := range buildArtifactNames {
 		path := filepath.Join(contextPath, name)

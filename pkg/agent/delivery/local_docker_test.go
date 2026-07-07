@@ -453,8 +453,6 @@ func TestLocalDockerDelivery_SeedExcludesBuildInternal(t *testing.T) {
 func TestLocalDockerDelivery_Seed_CopyAndCleanupFailureJoined(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Fresh volume (inspect fails), copy fails, and cleanup (volume rm) also
-	// fails: both errors must surface rather than be swallowed.
 	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"inspect\" ]; then exit 1; fi\n" +

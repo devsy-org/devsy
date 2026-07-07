@@ -60,9 +60,6 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 	}
 
 	if err := d.copyDirIntoVolume(ctx, opts.SourceDir, opts.VolumeName); err != nil {
-		// The volume is now labeled seeded but holds partial contents. Removing
-		// it lets the next up re-seed; if removal also fails, surface both so a
-		// partial volume is never silently treated as complete.
 		if rmErr := d.removeVolume(ctx, opts.VolumeName); rmErr != nil {
 			return errors.Join(
 				fmt.Errorf("seed workspace volume: %w", err),
@@ -141,8 +138,6 @@ func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) boo
 	return err == nil
 }
 
-// copyDirIntoVolume copies sourceDir into the volume root via a throwaway
-// helper container, excluding devsy's build artifacts.
 func (d *LocalDockerDelivery) copyDirIntoVolume(
 	ctx context.Context,
 	sourceDir, volumeName string,
