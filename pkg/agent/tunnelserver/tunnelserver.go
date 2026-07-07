@@ -453,7 +453,6 @@ func (t *tunnelServer) StreamWorkspace(
 		}
 	}
 
-	// Keep transient build artifacts out of the workspace tree we ship remote.
 	excludes = append(excludes, config.BuildArtifactExcludes()...)
 
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
@@ -500,7 +499,6 @@ func (t *tunnelServer) StreamMount(
 		}
 	}
 
-	// Keep transient build artifacts out of the mount tree we ship remote.
 	excludes = append(excludes, config.BuildArtifactExcludes()...)
 
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)

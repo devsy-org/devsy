@@ -15,7 +15,6 @@ func TestBuildArtifactExcludesIncludesFeatureFolder(t *testing.T) {
 }
 
 func TestBuildArtifactExcludesReturnsCopy(t *testing.T) {
-	// Mutating the returned slice must not affect the source of truth.
 	got := BuildArtifactExcludes()
 	if len(got) == 0 {
 		t.Fatal("expected at least one artifact")
@@ -33,7 +32,6 @@ func TestRemoveBuildArtifacts(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(artifactDir, "0"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A real workspace file that must survive.
 	keep := filepath.Join(contextPath, "keep.txt")
 	// #nosec G306 -- test fixture
 	if err := os.WriteFile(keep, []byte("x"), 0o644); err != nil {
@@ -51,6 +49,5 @@ func TestRemoveBuildArtifacts(t *testing.T) {
 }
 
 func TestRemoveBuildArtifactsAbsentIsNoError(t *testing.T) {
-	// Safe to call when nothing exists.
 	RemoveBuildArtifacts(t.TempDir())
 }

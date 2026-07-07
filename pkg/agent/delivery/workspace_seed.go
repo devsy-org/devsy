@@ -52,8 +52,6 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 		return nil
 	}
 
-	// Seeded state is a label, not a file: the volume mounts at the workspace
-	// folder, so a marker file at its root would show up as untracked content.
 	labels := pkgconfig.DockerVolumeLabels(opts.WorkspaceID, pkgconfig.VolumeRoleWorkspace)
 	labels[pkgconfig.DockerSeededLabel] = pkgconfig.LabelValueTrue
 	if err := d.createVolume(ctx, opts.VolumeName, labels); err != nil {
@@ -61,8 +59,6 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 	}
 
 	if err := d.copyDirIntoVolume(ctx, opts.SourceDir, opts.VolumeName); err != nil {
-		// Remove the volume so its seeded label does not persist for an empty
-		// volume; the next up re-creates and re-seeds.
 		if rmErr := d.removeVolume(ctx, opts.VolumeName); rmErr != nil {
 			log.Debugf("failed to remove volume after seed failure: %v", rmErr)
 		}
@@ -112,8 +108,6 @@ func (d *LocalDockerDelivery) prepareSeedTarget(
 	return true, nil
 }
 
-// volumeSeedState reports whether the volume is devsy-managed and whether it
-// has already been seeded, both read from the volume's labels.
 func (d *LocalDockerDelivery) volumeSeedState(
 	ctx context.Context,
 	name string,
@@ -141,8 +135,7 @@ func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) boo
 }
 
 // copyDirIntoVolume copies sourceDir into the volume root via a throwaway
-// helper container, excluding devsy's build artifacts so they never surface as
-// untracked files in the seeded workspace tree.
+// helper container, excluding devsy's build artifacts.
 func (d *LocalDockerDelivery) copyDirIntoVolume(
 	ctx context.Context,
 	sourceDir, volumeName string,

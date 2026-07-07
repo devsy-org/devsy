@@ -420,8 +420,6 @@ func TestLocalDockerDelivery_SeedExcludesBuildInternal(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "run.log")
 
-	// Fake docker records the `run` invocation so the test can assert the copy
-	// command excludes devsy's build-internal folder.
 	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"inspect\" ]; then exit 1; fi\n" +
