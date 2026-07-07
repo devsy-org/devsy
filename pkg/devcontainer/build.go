@@ -672,8 +672,7 @@ func getContainerContextAndDockerfile(
 }
 
 func cleanupBuildInformation(c *config.DevContainerConfig) {
-	contextPath := config.GetContextPath(c)
-	_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
+	config.RemoveBuildArtifacts(config.GetContextPath(c))
 }
 
 func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {

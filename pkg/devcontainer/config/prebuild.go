@@ -42,7 +42,9 @@ func CalculatePrebuildHash(params PrebuildHashParams) (string, error) {
 		log.Debugf("failed to read .dockerignore: %v", err)
 		return "", fmt.Errorf("failed to read dockerignore: %w", err)
 	}
-	excludes = append(excludes, DevsyContextFeatureFolder+"/")
+	for _, artifact := range BuildArtifactExcludes() {
+		excludes = append(excludes, artifact+"/")
+	}
 
 	var includes []string
 	if params.BuildInfo != nil && params.BuildInfo.Dockerfile != nil {

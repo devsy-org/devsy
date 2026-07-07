@@ -453,6 +453,8 @@ func (t *tunnelServer) StreamWorkspace(
 		}
 	}
 
+	excludes = append(excludes, config.BuildArtifactExcludes()...)
+
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err = extract.WriteTarExclude(buf, t.workspace.Source.LocalFolder, false, excludes)
 	if err != nil {
@@ -496,6 +498,8 @@ func (t *tunnelServer) StreamMount(
 			}
 		}
 	}
+
+	excludes = append(excludes, config.BuildArtifactExcludes()...)
 
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)

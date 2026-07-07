@@ -3,8 +3,6 @@ package devcontainer
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
@@ -27,11 +25,7 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 
 	prebuildRepo := getPrebuildRepository(substitutedConfig)
 
-	// remove build information
-	defer func() {
-		contextPath := config.GetContextPath(substitutedConfig.Config)
-		_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
-	}()
+	defer config.RemoveBuildArtifacts(config.GetContextPath(substitutedConfig.Config))
 
 	// check if we need to build container
 	buildInfo, err := r.build(ctx, substitutedConfig, substitutionContext, options)
