@@ -1,6 +1,7 @@
 <script lang="ts">
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import { parseLogLine } from "$lib/utils/log-parser.js"
+import { cn } from "$lib/utils.js"
 
 let {
   lines,
@@ -75,7 +76,7 @@ $effect(() => {
   onscroll={onScroll}
   role="table"
   aria-rowcount={total}
-  class="relative overflow-auto rounded-md border {maxHeightClass} {className}"
+  class={cn("relative overflow-auto rounded-md border", maxHeightClass, className)}
 >
   <div
     role="row"
