@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,7 +84,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 			if instance.GetLabels() == nil {
 				instance.Labels = map[string]string{}
 			}
-			instance.Labels[labels.ProjectLabel] = p.GetName()
+			instance.Labels[config.K8sProjectLabel] = p.GetName()
 
 			workspaces = append(workspaces, instance)
 		}

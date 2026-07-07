@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -17,11 +18,15 @@ const (
 	gpuOptional = "optional"
 )
 
-func MergeExtraRemoteEnv(mergedConfig *MergedDevContainerConfig, extraConfigPath string) error {
+func MergeExtraRemoteEnv(
+	ctx context.Context,
+	mergedConfig *MergedDevContainerConfig,
+	extraConfigPath string,
+) error {
 	if extraConfigPath == "" {
 		return nil
 	}
-	extraConfig, err := ParseDevContainerJSONFile(extraConfigPath)
+	extraConfig, err := ParseDevContainerJSONFile(ctx, extraConfigPath)
 	if err != nil {
 		return err
 	}
@@ -444,8 +449,8 @@ func some[T any](entries []T, m func(entry T) *bool) *bool {
 
 func ReverseSlice[T comparable](s []T) []T {
 	var r []T
-	for i := len(s) - 1; i >= 0; i-- {
-		r = append(r, s[i])
+	for _, v := range slices.Backward(s) {
+		r = append(r, v)
 	}
 	return r
 }

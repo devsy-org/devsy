@@ -193,7 +193,7 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 		return err
 	}
 
-	result, err := cmd.loadContainerIDConfig(containerDetails)
+	result, err := cmd.loadContainerIDConfig(ctx, containerDetails)
 	if err != nil {
 		return err
 	}
@@ -265,6 +265,7 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 }
 
 func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
+	ctx context.Context,
 	containerDetails *devcconfig.ContainerDetails,
 ) (*devcconfig.Result, error) {
 	configFolder := cmd.WorkspaceFolder
@@ -272,7 +273,11 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 		configFolder = "."
 	}
 
-	devContainerConfig, err := devcconfig.ParseDevContainerJSON(configFolder, cmd.Config)
+	devContainerConfig, err := devcconfig.ParseDevContainerJSON(
+		ctx,
+		configFolder,
+		cmd.Config,
+	)
 	if err != nil {
 		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)
@@ -290,7 +295,11 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 	}
 
 	if cmd.OverrideConfig != "" {
-		if err := devcconfig.MergeExtraRemoteEnv(mergedConfig, cmd.OverrideConfig); err != nil {
+		if err := devcconfig.MergeExtraRemoteEnv(
+			ctx,
+			mergedConfig,
+			cmd.OverrideConfig,
+		); err != nil {
 			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 			return nil, fmt.Errorf("apply override config: %w", err)
 		}
@@ -353,6 +362,7 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 
 	if cmd.OverrideConfig != "" {
 		if err := devcconfig.MergeExtraRemoteEnv(
+			ctx,
 			result.MergedConfig,
 			cmd.OverrideConfig,
 		); err != nil {

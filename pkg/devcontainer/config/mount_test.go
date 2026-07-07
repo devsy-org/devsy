@@ -172,3 +172,34 @@ func TestMountTmpfsAccessors(t *testing.T) {
 		t.Errorf("TmpfsMode() empty = %q, want \"\"", got)
 	}
 }
+
+func TestMountString(t *testing.T) {
+	tests := []struct {
+		name string
+		m    *Mount
+		want string
+	}{
+		{
+			"volume with external is omitted from --mount arg",
+			&Mount{Type: "volume", Source: "vol", Target: "/workspace", External: true},
+			"type=volume,src=vol,dst=/workspace",
+		},
+		{
+			"bind mount",
+			&Mount{Type: "bind", Source: "/host", Target: "/container"},
+			"type=bind,src=/host,dst=/container",
+		},
+		{
+			"other options preserved",
+			&Mount{Type: "volume", Source: "vol", Target: "/w", Other: []string{"volume-nocopy"}},
+			"type=volume,src=vol,dst=/w,volume-nocopy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.m.String(); got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

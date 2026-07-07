@@ -12,6 +12,7 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -73,10 +74,10 @@ var _ = ginkgo.Describe(
 				ids, err = dockerHelper.FindContainer(ctx, []string{
 					fmt.Sprintf(
 						"%s=%s",
-						compose.ProjectLabel,
+						pkgconfig.ComposeProjectLabel,
 						composeHelper.GetProjectName(workspace.UID),
 					),
-					fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+					fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 				})
 				if err != nil {
 					return 0
@@ -116,10 +117,10 @@ var _ = ginkgo.Describe(
 			ids2, err := dockerHelper.FindContainer(ctx, []string{
 				fmt.Sprintf(
 					"%s=%s",
-					compose.ProjectLabel,
+					pkgconfig.ComposeProjectLabel,
 					composeHelper.GetProjectName(workspace.UID),
 				),
-				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+				fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(ids2[0]).To(gomega.Equal(ids[0]), "Should use original container")
@@ -146,10 +147,10 @@ var _ = ginkgo.Describe(
 				ids, err = dockerHelper.FindContainer(ctx, []string{
 					fmt.Sprintf(
 						"%s=%s",
-						compose.ProjectLabel,
+						pkgconfig.ComposeProjectLabel,
 						composeHelper.GetProjectName(workspace.UID),
 					),
-					fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+					fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 				})
 				if err != nil {
 					return 0
@@ -168,10 +169,10 @@ var _ = ginkgo.Describe(
 			ids2, err := dockerHelper.FindContainer(ctx, []string{
 				fmt.Sprintf(
 					"%s=%s",
-					compose.ProjectLabel,
+					pkgconfig.ComposeProjectLabel,
 					composeHelper.GetProjectName(workspace.UID),
 				),
-				fmt.Sprintf("%s=%s", compose.ServiceLabel, "app"),
+				fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, "app"),
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(ids2[0]).NotTo(gomega.Equal(ids[0]), "Should restart container")

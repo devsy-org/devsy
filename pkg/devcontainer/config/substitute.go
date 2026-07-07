@@ -64,7 +64,7 @@ var preContainerFields = []string{containerEnvField, remoteEnvField}
 
 func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error {
 	newVal := map[string]any{}
-	err := Convert(config, &newVal)
+	err := convert(config, &newVal)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 		maps.Copy(retMap, preFieldValues)
 	}
 
-	err = Convert(retVal, out)
+	err = convert(retVal, out)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 
 func SubstituteContainerEnv(containerEnv map[string]string, config any, out any) error {
 	newVal := map[string]any{}
-	err := Convert(config, &newVal)
+	err := convert(config, &newVal)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func SubstituteContainerEnv(containerEnv map[string]string, config any, out any)
 		return replaceWithContainerEnv(containerEnv, match, variable, args)
 	})
 
-	err = Convert(retVal, out)
+	err = convert(retVal, out)
 	if err != nil {
 		return err
 	}

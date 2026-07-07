@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 
-	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
@@ -53,8 +52,7 @@ func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
 			if root.Annotations == nil {
 				root.Annotations = map[string]string{}
 			}
-			// Don't print debug message
-			root.Annotations[cmdinternal.AgentExecutedAnnotation] = "true"
+			root.Annotations[config.AgentExecutedAnnotation] = "true"
 		},
 	}
 

@@ -162,7 +162,7 @@ func checkFeatureCache(id string) (string, bool) {
 	if err == nil {
 		// make sure feature.json is there as well
 		_, err = os.Stat(
-			filepath.Join(featureExtractedFolder, config.DEVCONTAINER_FEATURE_FILE_NAME),
+			filepath.Join(featureExtractedFolder, config.DevContainerFeatureFileName),
 		)
 		if err == nil {
 			log.Debugf("feature already cached: folder=%s", featureExtractedFolder)

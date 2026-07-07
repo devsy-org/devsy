@@ -7,7 +7,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 )
 
-const UserLabel = pkgconfig.BinaryName + ".user"
+const UserLabel = pkgconfig.DockerUserLabel
 
 type Result struct {
 	DevContainerConfigWithPath *DevContainerConfigWithPath `json:"DevContainerConfigWithPath"`
@@ -85,7 +85,7 @@ func GetDevsyCustomizations(parsedConfig *DevContainerConfig) *DevsyCustomizatio
 	}
 
 	devsy := &DevsyCustomizations{}
-	err := Convert(parsedConfig.Customizations[pkgconfig.BinaryName], devsy)
+	err := convert(parsedConfig.Customizations[pkgconfig.BinaryName], devsy)
 	if err != nil {
 		return &DevsyCustomizations{}
 	}
@@ -104,7 +104,7 @@ func GetVSCodeConfiguration(mergedConfig *MergedDevContainerConfig) *VSCodeCusto
 	}
 	for _, customization := range mergedConfig.Customizations["vscode"] {
 		vsCode := &VSCodeCustomizations{}
-		err := Convert(customization, vsCode)
+		err := convert(customization, vsCode)
 		if err != nil {
 			continue
 		}
@@ -136,7 +136,7 @@ func GetJetBrainsConfiguration(mergedConfig *MergedDevContainerConfig) *JetBrain
 	}
 	for _, customization := range mergedConfig.Customizations["jetbrains"] {
 		jetBrains := &JetBrainsCustomizations{}
-		err := Convert(customization, jetBrains)
+		err := convert(customization, jetBrains)
 		if err != nil {
 			continue
 		}

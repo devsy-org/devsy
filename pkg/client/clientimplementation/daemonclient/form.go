@@ -11,11 +11,11 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/devsy/pkg/platform/labels"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
@@ -100,7 +100,7 @@ func createInstanceInteractive(
 			Labels: map[string]string{
 				storagev1.DevsyWorkspaceIDLabel:  id,
 				storagev1.DevsyWorkspaceUIDLabel: uid,
-				labels.ProjectLabel:              selectedProject.GetName(),
+				config.K8sProjectLabel:           selectedProject.GetName(),
 			},
 			Annotations: map[string]string{
 				storagev1.DevsyWorkspacePictureAnnotation: picture,

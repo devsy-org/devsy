@@ -126,7 +126,7 @@ func (cmd *ApplyCmd) prepareContainer(
 		return nil, nil, err
 	}
 
-	result, err := cmd.loadConfig(containerDetails)
+	result, err := cmd.loadConfig(ctx, containerDetails)
 	if err != nil {
 		emitErr(emitJSON, err)
 		return nil, nil, err
@@ -171,19 +171,20 @@ func (cmd *ApplyCmd) inspectRunningContainer(
 }
 
 func (cmd *ApplyCmd) loadConfig(
+	ctx context.Context,
 	containerDetails *devcconfig.ContainerDetails,
 ) (*devcconfig.Result, error) {
 	var devContainerConfig *devcconfig.DevContainerConfig
 	var err error
 
 	if cmd.Config != "" {
-		devContainerConfig, err = devcconfig.ParseDevContainerJSONFile(cmd.Config)
+		devContainerConfig, err = devcconfig.ParseDevContainerJSONFile(ctx, cmd.Config)
 	} else {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
 			return nil, fmt.Errorf("get working directory: %w", cwdErr)
 		}
-		devContainerConfig, err = devcconfig.ParseDevContainerJSON(cwd, "")
+		devContainerConfig, err = devcconfig.ParseDevContainerJSON(ctx, cwd, "")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)

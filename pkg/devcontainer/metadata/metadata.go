@@ -3,11 +3,12 @@ package metadata
 import (
 	"encoding/json"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-const ImageMetadataLabel = "devcontainer.metadata"
+const ImageMetadataLabel = pkgconfig.DevcontainerMetadataLabel
 
 const metadataLabelSizeWarningThreshold = 100 * 1024
 

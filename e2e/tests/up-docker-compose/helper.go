@@ -14,6 +14,7 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/docker/docker/api/types/container"
@@ -197,8 +198,12 @@ func findComposeContainer(
 	workspaceUID, serviceName string,
 ) ([]string, error) {
 	return dockerHelper.FindContainer(ctx, []string{
-		fmt.Sprintf("%s=%s", compose.ProjectLabel, composeHelper.GetProjectName(workspaceUID)),
-		fmt.Sprintf("%s=%s", compose.ServiceLabel, serviceName),
+		fmt.Sprintf(
+			"%s=%s",
+			pkgconfig.ComposeProjectLabel,
+			composeHelper.GetProjectName(workspaceUID),
+		),
+		fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, serviceName),
 	})
 }
 

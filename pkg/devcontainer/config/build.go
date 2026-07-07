@@ -9,15 +9,13 @@ import (
 )
 
 const (
-	DockerIDLabel           = "dev.containers.id"
-	DockerfileDefaultTarget = "dev_container_auto_added_stage_label"
-
+	DockerfileDefaultTarget        = "dev_container_auto_added_stage_label"
 	DevsyContextFeatureFolder      = pkgconfig.ConfigDirName + "-internal"
 	DevsyDockerlessBuildInfoFolder = "/workspaces/.dockerless"
 )
 
 func GetDockerLabelForID(id string) []string {
-	return []string{DockerIDLabel + "=" + id}
+	return []string{pkgconfig.DevcontainerIDLabel + "=" + id}
 }
 
 func GetIDLabels(id string, idLabels []string) []string {

@@ -8,6 +8,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/stretchr/testify/suite"
@@ -555,8 +556,12 @@ func TestBuildServiceLabels(t *testing.T) {
 
 		labels := r.buildServiceLabels(nil)
 
-		if labels[config.DockerIDLabel] != "workspace-id" {
-			t.Errorf("default ID label = %q, want %q", labels[config.DockerIDLabel], "workspace-id")
+		if labels[pkgconfig.DevcontainerIDLabel] != "workspace-id" {
+			t.Errorf(
+				"default ID label = %q, want %q",
+				labels[pkgconfig.DevcontainerIDLabel],
+				"workspace-id",
+			)
 		}
 	})
 

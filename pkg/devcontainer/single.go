@@ -159,7 +159,7 @@ func (r *runner) resolveExistingContainer(
 		p.substitutionContext.ContainerWorkspaceFolder = containerDetails.Config.WorkingDir
 	}
 
-	mergedConfig, err := r.mergeExistingContainerConfig(containerDetails, p)
+	mergedConfig, err := r.mergeExistingContainerConfig(ctx, containerDetails, p)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +194,7 @@ func (r *runner) ensureRunning(
 // mergeExistingContainerConfig extracts image metadata from the running
 // container and merges it with the parsed devcontainer configuration.
 func (r *runner) mergeExistingContainerConfig(
+	ctx context.Context,
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
@@ -209,7 +210,10 @@ func (r *runner) mergeExistingContainerConfig(
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
 		}
-		extraConfig, parseErr := config.ParseDevContainerJSONFile(p.options.ExtraDevContainerPath)
+		extraConfig, parseErr := config.ParseDevContainerJSONFile(
+			ctx,
+			p.options.ExtraDevContainerPath,
+		)
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -225,7 +229,7 @@ func (r *runner) mergeExistingContainerConfig(
 	}
 
 	if err := config.MergeExtraRemoteEnv(
-		mergedConfig, p.options.ExtraDevContainerPath,
+		ctx, mergedConfig, p.options.ExtraDevContainerPath,
 	); err != nil {
 		return nil, err
 	}
@@ -274,6 +278,10 @@ func (r *runner) resolveNewContainer(
 		if preStartErr := r.deliverPreStart(ctx, runOptions); preStartErr != nil {
 			log.Debugf("pre-start delivery skipped or failed, will use post-start: %v", preStartErr)
 		}
+	}
+
+	if seedErr := r.seedWorkspaceVolume(ctx, p); seedErr != nil {
+		return nil, fmt.Errorf("seed workspace volume: %w", seedErr)
 	}
 
 	err = r.runContainer(ctx, p, mergedConfig, buildInfo)
@@ -325,6 +333,7 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	if err := config.MergeExtraRemoteEnv(
+		ctx,
 		mergedConfig,
 		p.options.ExtraDevContainerPath,
 	); err != nil {
@@ -459,6 +468,38 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 		RunOptions:   runOptions,
 		BinarySource: binarySource,
 		Arch:         arch,
+	})
+}
+
+// seedWorkspaceVolume populates a named workspace volume from the local source
+// folder when the workspace source is a local folder and workspaceMount is a
+// named volume. This gives an isolated, disposable snapshot of the working
+// tree. It is skipped for git/image sources, bind mounts, and volumes devsy
+// does not manage. A reset removes the managed volume so it is re-seeded.
+func (r *runner) seedWorkspaceVolume(ctx context.Context, p *resolveParams) error {
+	if r.WorkspaceConfig == nil || r.WorkspaceConfig.Workspace == nil {
+		return nil
+	}
+	if r.WorkspaceConfig.Workspace.Source.LocalFolder == "" {
+		return nil
+	}
+
+	mount := parseWorkspaceMount(p.substitutionContext)
+	if mount == nil || mount.Type != "volume" || mount.Source == "" {
+		return nil
+	}
+
+	seeder, ok := r.newAgentDelivery().(delivery.WorkspaceVolumeSeeder)
+	if !ok {
+		log.Debugf("delivery strategy cannot seed workspace volumes; skipping")
+		return nil
+	}
+
+	return seeder.SeedWorkspaceVolume(ctx, delivery.WorkspaceSeedOptions{
+		WorkspaceID: r.ID,
+		VolumeName:  mount.Source,
+		SourceDir:   r.LocalWorkspaceFolder,
+		Reset:       r.WorkspaceConfig.CLIOptions.Reset,
 	})
 }
 

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -78,7 +78,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				container, err := dockerHelper.FindDevContainer(ctx, []string{
-					fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID),
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 				})
 				framework.ExpectNoError(err)
 
@@ -95,7 +95,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{
-					fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID),
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 				})
 				framework.ExpectNoError(err)
 
@@ -124,7 +124,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				container, err := dockerHelper.FindDevContainer(ctx, []string{
-					fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID),
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 				})
 				framework.ExpectNoError(err)
 
@@ -142,7 +142,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{
-					fmt.Sprintf("%s=%s", config.DockerIDLabel, workspace.UID),
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 				})
 				framework.ExpectNoError(err)
 

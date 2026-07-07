@@ -386,3 +386,32 @@ func TestExpectedVersion_FallsBackToGetVersion(t *testing.T) {
 	d := &LocalDockerDelivery{}
 	assert.NotEmpty(t, d.expectedVersion())
 }
+
+func TestLocalDockerDelivery_Cleanup_RemovesManagedVolumes(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "calls.log")
+
+	// Fake docker: `volume ls` lists two managed volumes; `volume rm` records
+	// the removed name so the test can assert both were cleaned up.
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"ls\" ]; then\n" +
+		"  printf 'devsy-agent-ws1\\nws1-workspace\\n'; exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"rm\" ]; then\n" +
+		"  echo \"$@\" >> \"" + logPath + "\"; exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	require.NoError(t, d.Cleanup(context.Background(), "ws1"))
+
+	logged, err := os.ReadFile(logPath) //nolint:gosec // test reads a temp file we control
+	require.NoError(t, err)
+	removed := string(logged)
+	assert.Contains(t, removed, "devsy-agent-ws1")
+	assert.Contains(t, removed, "ws1-workspace")
+}

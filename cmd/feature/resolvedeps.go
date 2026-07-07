@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ func buildResolvedList(sorted []*config.FeatureSet) []resolvedFeature {
 
 func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
 	if cmd.Config != "" {
-		return config.ParseDevContainerJSONFile(cmd.Config)
+		return config.ParseDevContainerJSONFile(context.Background(), cmd.Config)
 	}
 
 	absPath, err := filepath.Abs(cmd.WorkspaceFolder)
@@ -130,7 +131,7 @@ func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
 		return nil, err
 	}
 
-	return config.ParseDevContainerJSON(absPath, "")
+	return config.ParseDevContainerJSON(context.Background(), absPath, "")
 }
 
 func (cmd *ResolveDepsCmd) printText(resolved []resolvedFeature) error {

@@ -48,7 +48,7 @@ func (r *runner) build(
 		if buildInfo.ImageMetadata == nil {
 			buildInfo.ImageMetadata = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(options.ExtraDevContainerPath)
+		extraConfig, err := config.ParseDevContainerJSONFile(ctx, options.ExtraDevContainerPath)
 		if err != nil {
 			return nil, err
 		}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ func TestParseSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := ParseDevContainerJSONFile(configPath)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestSecretsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loaded, err := ParseDevContainerJSONFile(cfg.Origin)
+	loaded, err := ParseDevContainerJSONFile(context.Background(), cfg.Origin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +210,8 @@ func TestListDevContainerIDs(t *testing.T) {
 	}
 }
 
-func TestParseDevContainerJSONWithSelector(t *testing.T) {
+//nolint:cyclop,funlen // table-style test with many subtests
+func TestParseDevContainerJSONDiscovery(t *testing.T) {
 	t.Run("explicit path", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "custom.json")
@@ -218,7 +220,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "custom.json", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "custom.json")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +231,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 
 	t.Run("explicit path not found", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		_, err := ParseDevContainerJSONWithSelector(tmpDir, "missing.json", nil)
+		_, err := ParseDevContainerJSON(context.Background(), tmpDir, "missing.json")
 		if err == nil {
 			t.Error("expected error for missing file")
 		}
@@ -247,7 +249,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -264,7 +266,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -285,7 +287,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -316,17 +318,11 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(
+		config, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
 			tmpDir,
 			"",
-			func(matches []string) (string, error) {
-				for _, match := range matches {
-					if filepath.Base(filepath.Dir(match)) == "python" {
-						return match, nil
-					}
-				}
-				return "", errors.New("not found")
-			},
+			ParseOptions{Selector: SelectByID("python")},
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -358,7 +354,7 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -388,11 +384,14 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := ParseDevContainerJSONWithSelector(
+		_, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
 			tmpDir,
 			"",
-			func(matches []string) (string, error) {
-				return "", errors.New("selector failed")
+			ParseOptions{
+				Selector: func([]string) (string, error) {
+					return "", errors.New("selector failed")
+				},
 			},
 		)
 		if err == nil || err.Error() != "selector failed" {
@@ -402,12 +401,116 @@ func TestParseDevContainerJSONWithSelector(t *testing.T) {
 
 	t.Run("no config found", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		config, err := ParseDevContainerJSONWithSelector(tmpDir, "", nil)
+		config, err := ParseDevContainerJSON(context.Background(), tmpDir, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if config != nil {
 			t.Error("expected nil config")
+		}
+	})
+}
+
+//nolint:cyclop,funlen // table-style test with many subtests
+func TestParseDevContainerJSONWithOptions_ExplicitSelection(t *testing.T) {
+	// writeConfig creates .devcontainer/<sub>/devcontainer.json (or the root
+	// .devcontainer/devcontainer.json when sub is empty) with the given name.
+	writeConfig := func(t *testing.T, dir, sub, name string) {
+		t.Helper()
+		var configPath string
+		if sub == "" {
+			configPath = filepath.Join(dir, ".devcontainer", "devcontainer.json")
+		} else {
+			configPath = filepath.Join(dir, ".devcontainer", sub, "devcontainer.json")
+		}
+		// #nosec G301 -- test fixture
+		if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// #nosec G306 -- test fixture
+		if err := os.WriteFile(configPath, []byte(`{"name":"`+name+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("nested id is selected despite root config present", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		writeConfig(t, tmpDir, "", "Root")
+		writeConfig(t, tmpDir, "skevetter", "Skevetter")
+
+		config, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
+			tmpDir,
+			"",
+			ParseOptions{Selector: SelectByID("skevetter"), ForceSelect: true},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Name != "Skevetter" {
+			t.Errorf("expected Skevetter, got %s", config.Name)
+		}
+	})
+
+	t.Run("root config shadows nested id without explicit selection", func(t *testing.T) {
+		// Without ForceSelect the root config short-circuits, so the selector
+		// never runs and the nested id is not chosen.
+		tmpDir := t.TempDir()
+		writeConfig(t, tmpDir, "", "Root")
+		writeConfig(t, tmpDir, "skevetter", "Skevetter")
+
+		config, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
+			tmpDir,
+			"",
+			ParseOptions{Selector: SelectByID("skevetter")},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Name != "Root" {
+			t.Errorf("expected Root (short-circuit), got %s", config.Name)
+		}
+	})
+
+	t.Run("mismatched id errors even with single config", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		writeConfig(t, tmpDir, "skevetter", "Skevetter")
+
+		_, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
+			tmpDir,
+			"",
+			ParseOptions{Selector: SelectByID("does-not-exist"), ForceSelect: true},
+		)
+		if err == nil {
+			t.Error("expected error for mismatched --devcontainer-id, got nil")
+		}
+	})
+
+	t.Run("explicit path still wins over explicit selection", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		writeConfig(t, tmpDir, "skevetter", "Skevetter")
+		// #nosec G306 -- test fixture
+		if err := os.WriteFile(
+			filepath.Join(tmpDir, "custom.json"),
+			[]byte(`{"name":"Custom"}`),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		config, err := ParseDevContainerJSONWithOptions(
+			context.Background(),
+			tmpDir,
+			"custom.json",
+			ParseOptions{Selector: SelectByID("skevetter"), ForceSelect: true},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Name != "Custom" {
+			t.Errorf("expected Custom, got %s", config.Name)
 		}
 	})
 }

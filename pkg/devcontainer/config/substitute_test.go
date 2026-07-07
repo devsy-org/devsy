@@ -351,13 +351,13 @@ func TestSubstituteRemoteEnvScoping(t *testing.T) {
 	}{
 		{
 			name:  testCaseResolvesCWF,
-			input: map[string]*string{"V": strPtr("/prefix${containerWorkspaceFolder}")},
-			want:  map[string]*string{"V": strPtr("/prefix/workspaces/project")},
+			input: map[string]*string{"V": new("/prefix${containerWorkspaceFolder}")},
+			want:  map[string]*string{"V": new("/prefix/workspaces/project")},
 		},
 		{
 			name:  testCaseResolvesCWFBasename,
-			input: map[string]*string{"V": strPtr(testContainerWorkspaceFolderBasenameVar)},
-			want:  map[string]*string{"V": strPtr(testProjectName)},
+			input: map[string]*string{"V": new(testContainerWorkspaceFolderBasenameVar)},
+			want:  map[string]*string{"V": new(testProjectName)},
 		},
 	}
 	for _, tt := range tests {
@@ -380,8 +380,8 @@ func TestSubstituteMixedScoping(t *testing.T) {
 			testLOCKey: testLocalWorkspaceFolderVar,
 		},
 		RemoteEnv: map[string]*string{
-			testCWFKey: strPtr(testContainerWorkspaceFolderVar),
-			testLOCKey: strPtr(testLocalWorkspaceFolderVar),
+			testCWFKey: new(testContainerWorkspaceFolderVar),
+			testLOCKey: new(testLocalWorkspaceFolderVar),
 		},
 	}
 	var out scopeTestConfig
@@ -394,8 +394,8 @@ func TestSubstituteMixedScoping(t *testing.T) {
 		testLOCKey: testWorkspaceFolder,
 	})
 	assertRemoteEnv(t, out.RemoteEnv, map[string]*string{
-		testCWFKey: strPtr(testContainerWorkspaceFolder),
-		testLOCKey: strPtr(testWorkspaceFolder),
+		testCWFKey: new(testContainerWorkspaceFolder),
+		testLOCKey: new(testWorkspaceFolder),
 	})
 }
 

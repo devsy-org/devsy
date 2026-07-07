@@ -12,8 +12,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var AgentExecutedAnnotation = "devsy.sh/agent-executed"
-
 // NewAgentCmd is the hidden parent for commands that run inside a workspace or
 // container, invoked by the daemon over the agent tunnel.
 func NewAgentCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -48,7 +46,7 @@ func agentPreRunE(globalFlags *flags.GlobalFlags) func(*cobra.Command, []string)
 		if root.Annotations == nil {
 			root.Annotations = map[string]string{}
 		}
-		root.Annotations[AgentExecutedAnnotation] = "true"
+		root.Annotations[config.AgentExecutedAnnotation] = "true"
 
 		log.Init(log.Config{
 			Quiet:  globalFlags.Quiet,

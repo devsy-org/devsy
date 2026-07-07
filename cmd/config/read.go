@@ -161,10 +161,10 @@ func (cmd *ReadCmd) resolve(ctx context.Context) (
 	if len(cmd.IDLabels) > 0 {
 		return cmd.resolveConfigFromIDLabels(ctx)
 	}
-	return cmd.resolveConfig()
+	return cmd.resolveConfig(ctx)
 }
 
-func (cmd *ReadCmd) resolveConfig() (
+func (cmd *ReadCmd) resolveConfig(ctx context.Context) (
 	*devcconfig.DevContainerConfig,
 	string,
 	error,
@@ -191,12 +191,9 @@ func (cmd *ReadCmd) resolveConfig() (
 
 	var parsedConfig *devcconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = devcconfig.ParseDevContainerJSONFile(cmd.Config)
+		parsedConfig, err = devcconfig.ParseDevContainerJSONFile(ctx, cmd.Config)
 	} else {
-		parsedConfig, err = devcconfig.ParseDevContainerJSON(
-			workspaceFolder,
-			"",
-		)
+		parsedConfig, err = devcconfig.ParseDevContainerJSON(ctx, workspaceFolder, "")
 	}
 	if err != nil {
 		return nil, "", fmt.Errorf("parse devcontainer config: %w", err)

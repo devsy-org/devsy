@@ -211,7 +211,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
 		DownloadURL:                 pkgconfig.DefaultAgentDownloadURL(),
-		PreferDownloadFromRemoteUrl: agent.Bool(false),
+		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     timeout,
 	})
 	if err != nil {

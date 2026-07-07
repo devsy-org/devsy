@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
@@ -71,8 +72,8 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	}
 
 	labels := map[string]string{}
-	labels[DevsyWorkspaceUIDLabel] = options.UID
 	maps.Copy(labels, ExtraDevsyLabels)
+	maps.Copy(labels, pkgconfig.K8sVolumeLabels(options.UID, pkgconfig.VolumeRoleWorkspace))
 
 	annotations := map[string]string{}
 	annotations[DevsyInfoAnnotation] = containerInfo

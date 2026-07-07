@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"slices"
@@ -603,7 +604,7 @@ func TestMergeConfiguration_NilMetadata_ParsedFromJSONFile(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	cfg, err := ParseDevContainerJSONFile(path)
+	cfg, err := ParseDevContainerJSONFile(context.Background(), path)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
