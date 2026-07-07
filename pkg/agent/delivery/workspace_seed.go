@@ -52,9 +52,8 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 		return nil
 	}
 
-	// The seeded state is recorded as a volume label rather than a file so
-	// nothing is written into the workspace tree (the volume is mounted at the
-	// workspace folder, so a file at its root would appear as untracked content).
+	// Seeded state is a label, not a file: the volume mounts at the workspace
+	// folder, so a marker file at its root would show up as untracked content.
 	labels := pkgconfig.DockerVolumeLabels(opts.WorkspaceID, pkgconfig.VolumeRoleWorkspace)
 	labels[pkgconfig.DockerSeededLabel] = pkgconfig.LabelValueTrue
 	if err := d.createVolume(ctx, opts.VolumeName, labels); err != nil {
@@ -63,7 +62,7 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 
 	if err := d.copyDirIntoVolume(ctx, opts.SourceDir, opts.VolumeName); err != nil {
 		// Remove the volume so its seeded label does not persist for an empty
-		// volume; the next up then re-creates and re-seeds cleanly.
+		// volume; the next up re-creates and re-seeds.
 		if rmErr := d.removeVolume(ctx, opts.VolumeName); rmErr != nil {
 			log.Debugf("failed to remove volume after seed failure: %v", rmErr)
 		}
@@ -141,17 +140,13 @@ func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) boo
 	return err == nil
 }
 
-// copyDirIntoVolume copies the contents of sourceDir into the volume root using
-// a throwaway helper container. The source is bind-mounted read-only. devsy's
-// own transient build artifacts are excluded so they do not appear as untracked
-// files in the seeded workspace tree.
+// copyDirIntoVolume copies sourceDir into the volume root via a throwaway
+// helper container, excluding devsy's build artifacts so they never surface as
+// untracked files in the seeded workspace tree.
 func (d *LocalDockerDelivery) copyDirIntoVolume(
 	ctx context.Context,
 	sourceDir, volumeName string,
 ) error {
-	// tar preserves attributes and recurses; excluding devsy's build artifacts
-	// keeps its scaffolding out of the seeded workspace tree. As a safety net —
-	// build cleanup should already have removed them before seeding runs.
 	var script strings.Builder
 	script.WriteString("cd /source && tar -c")
 	for _, artifact := range config.BuildArtifactExcludes() {
