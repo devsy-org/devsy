@@ -43,15 +43,6 @@ func (r *runner) build(
 		return nil, err
 	}
 
-	// Remove artifacts eagerly so they are gone before any later step copies
-	// the workspace tree (e.g. volume seeding); the deferred cleanup in Up
-	// covers the error paths above. Dockerless builds are the exception: the
-	// image is built later inside the container, so their artifacts must
-	// survive and are cleaned up by the dockerless flow itself.
-	if buildInfo.Dockerless == nil {
-		config.RemoveBuildArtifacts(config.GetContextPath(parsedConfig.Config))
-	}
-
 	// Add extra devcontainer config if provided
 	if options.ExtraDevContainerPath != "" {
 		if buildInfo.ImageMetadata == nil {

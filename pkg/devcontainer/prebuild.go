@@ -25,7 +25,8 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 
 	prebuildRepo := getPrebuildRepository(substitutedConfig)
 
-	// remove build information (safety net; build() also cleans up eagerly)
+	// Tidy up transient build artifacts once the build completes; correctness
+	// relies on the exclude at copy time, not on this cleanup.
 	defer config.RemoveBuildArtifacts(config.GetContextPath(substitutedConfig.Config))
 
 	// check if we need to build container
