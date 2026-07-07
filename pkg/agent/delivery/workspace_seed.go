@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -148,17 +149,21 @@ func (d *LocalDockerDelivery) copyDirIntoVolume(
 	ctx context.Context,
 	sourceDir, volumeName string,
 ) error {
-	// Preserve attributes (-p), recurse into everything, and drop devsy's
-	// build-internal folder wherever it appears in the tree.
-	script := "cd /source && tar -c" +
-		" --exclude='" + pkgconfig.ConfigDirName + "-internal'" +
-		" . | tar -x -C /target"
+	// tar preserves attributes and recurses; excluding devsy's build artifacts
+	// keeps its scaffolding out of the seeded workspace tree. As a safety net —
+	// build cleanup should already have removed them before seeding runs.
+	var script strings.Builder
+	script.WriteString("cd /source && tar -c")
+	for _, artifact := range config.BuildArtifactExcludes() {
+		script.WriteString(" --exclude='" + artifact + "'")
+	}
+	script.WriteString(" . | tar -x -C /target")
 	args := []string{
 		cmdRun, flagRM,
 		"-v", sourceDir + ":/source:ro",
 		"-v", volumeName + ":/target",
 		d.helperImageName(),
-		"sh", "-c", script,
+		"sh", "-c", script.String(),
 	}
 	out, err := d.cmd(ctx, args...).CombinedOutput()
 	if err != nil {

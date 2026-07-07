@@ -43,6 +43,14 @@ func (r *runner) build(
 		return nil, err
 	}
 
+	// The build has consumed the on-disk artifacts (feature scaffolding,
+	// generated Dockerfiles), so remove them eagerly here rather than relying
+	// solely on the deferred cleanup in Up. This ensures they are gone before
+	// any later step that copies the workspace tree (e.g. volume seeding), so
+	// devsy's scaffolding never leaks into the workspace. The deferred cleanup
+	// remains as a safety net for the error paths above.
+	config.RemoveBuildArtifacts(config.GetContextPath(parsedConfig.Config))
+
 	// Add extra devcontainer config if provided
 	if options.ExtraDevContainerPath != "" {
 		if buildInfo.ImageMetadata == nil {
@@ -672,8 +680,7 @@ func getContainerContextAndDockerfile(
 }
 
 func cleanupBuildInformation(c *config.DevContainerConfig) {
-	contextPath := config.GetContextPath(c)
-	_ = os.RemoveAll(filepath.Join(contextPath, config.DevsyContextFeatureFolder))
+	config.RemoveBuildArtifacts(config.GetContextPath(c))
 }
 
 func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {
