@@ -534,7 +534,7 @@ func (r *runner) runContainer(
 		return dockerDriver.RunDockerDevContainer(ctx, &driver.RunDockerDevContainerParams{
 			WorkspaceID:          r.ID,
 			Options:              runOptions,
-			ParsedConfig:         p.parsedConfig.Config,
+			ParsedConfig:         withResolvedUser(p.parsedConfig.Config, mergedConfig),
 			IDE:                  r.WorkspaceConfig.Workspace.IDE.Name,
 			IDEOptions:           r.WorkspaceConfig.Workspace.IDE.Options,
 			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
@@ -544,6 +544,21 @@ func (r *runner) runContainer(
 
 	// build run options for regular driver
 	return r.Driver.RunDevContainer(ctx, r.ID, runOptions)
+}
+
+// withResolvedUser returns a copy of parsedConfig carrying the effective user
+// identity from the merged config. remoteUser/containerUser/updateRemoteUserUID
+// often come from image metadata rather than the raw devcontainer.json, so the
+// container UID/GID remap must see the merged values or it silently skips.
+func withResolvedUser(
+	parsedConfig *config.DevContainerConfig,
+	mergedConfig *config.MergedDevContainerConfig,
+) *config.DevContainerConfig {
+	resolved := config.CloneDevContainerConfig(parsedConfig)
+	resolved.RemoteUser = mergedConfig.RemoteUser
+	resolved.ContainerUser = mergedConfig.ContainerUser
+	resolved.UpdateRemoteUserUID = mergedConfig.UpdateRemoteUserUID
+	return resolved
 }
 
 // parseWorkspaceMount parses the substituted workspace mount, returning nil when
