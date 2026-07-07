@@ -450,37 +450,6 @@ func TestLocalDockerDelivery_SeedExcludesBuildInternal(t *testing.T) {
 	assert.Contains(t, string(logged), ".devsy-internal")
 }
 
-func TestLocalDockerDelivery_Seed_LegacySentinelNotReseeded(t *testing.T) {
-	tmpDir := t.TempDir()
-	logPath := filepath.Join(tmpDir, "run.log")
-
-	// Managed volume with no seeded label but the legacy sentinel present:
-	// inspect reports managed=true, seeded empty; the sentinel probe (run sh -c
-	// "[ -e ... ]") succeeds. Seeding must be skipped, so no copy runs.
-	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
-	script := "#!/bin/sh\n" +
-		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"inspect\" ] && [ \"$3\" = \"--format\" ]; then\n" +
-		"  echo 'true,'; exit 0\n" +
-		"fi\n" +
-		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"inspect\" ]; then exit 0; fi\n" +
-		"if [ \"$1\" = \"run\" ]; then echo \"$@\" >> \"" + logPath + "\"; exit 0; fi\n" +
-		"exit 0\n"
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
-	// #nosec G302 -- test script must be executable
-	require.NoError(t, os.Chmod(scriptPath, 0o755))
-
-	d := &LocalDockerDelivery{DockerCommand: scriptPath}
-	err := d.SeedWorkspaceVolume(context.Background(), WorkspaceSeedOptions{
-		WorkspaceID: testSeedWorkspaceID,
-		VolumeName:  testSeedVolumeName,
-		SourceDir:   testSeedSourceDir,
-	})
-	require.NoError(t, err)
-
-	logged, _ := os.ReadFile(logPath) //nolint:gosec // test reads a temp file we control
-	assert.NotContains(t, string(logged), "/source", "copy must not run for a legacy-seeded volume")
-}
-
 func TestLocalDockerDelivery_Seed_CopyAndCleanupFailureJoined(t *testing.T) {
 	tmpDir := t.TempDir()
 

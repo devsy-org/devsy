@@ -11,11 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// legacySeededSentinel is the pre-label marker file older devsy versions wrote
-// into a seeded volume. Retained only to recognize volumes seeded before the
-// seeded label existed.
-const legacySeededSentinel = ".devsy-seeded"
-
 // WorkspaceSeedOptions describes a request to seed a named workspace volume
 // from a local source directory.
 type WorkspaceSeedOptions struct {
@@ -138,28 +133,7 @@ func (d *LocalDockerDelivery) volumeSeedState(
 		return false, false, fmt.Errorf("inspect volume %s: %s: %w", name, string(out), err)
 	}
 	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(string(out)), ",")
-	managed = managedStr == pkgconfig.LabelValueTrue
-	seeded = seededStr == pkgconfig.LabelValueTrue
-
-	// Volumes seeded by older versions predate the seeded label and are only
-	// marked by a sentinel file; treat that as seeded so they are not
-	// re-seeded over user changes.
-	if managed && !seeded && d.volumeHasLegacySentinel(ctx, name) {
-		seeded = true
-	}
-	return managed, seeded, nil
-}
-
-// volumeHasLegacySentinel reports whether the pre-label seeded marker file is
-// present in the volume.
-func (d *LocalDockerDelivery) volumeHasLegacySentinel(ctx context.Context, name string) bool {
-	args := []string{
-		cmdRun, flagRM,
-		"-v", name + ":/target:ro",
-		d.helperImageName(),
-		"sh", "-c", "[ -e /target/" + legacySeededSentinel + " ]",
-	}
-	return d.cmd(ctx, args...).Run() == nil
+	return managedStr == pkgconfig.LabelValueTrue, seededStr == pkgconfig.LabelValueTrue, nil
 }
 
 func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) bool {
