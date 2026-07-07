@@ -415,3 +415,33 @@ func TestLocalDockerDelivery_Cleanup_RemovesManagedVolumes(t *testing.T) {
 	assert.Contains(t, removed, "devsy-agent-ws1")
 	assert.Contains(t, removed, "ws1-workspace")
 }
+
+func TestLocalDockerDelivery_SeedExcludesBuildInternal(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "run.log")
+
+	// Fake docker records the `run` invocation so the test can assert the copy
+	// command excludes devsy's build-internal folder.
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"inspect\" ]; then exit 1; fi\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"create\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"run\" ]; then echo \"$@\" >> \"" + logPath + "\"; exit 0; fi\n" +
+		"exit 0\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.SeedWorkspaceVolume(context.Background(), WorkspaceSeedOptions{
+		WorkspaceID: "ws1",
+		VolumeName:  "ws1-workspace",
+		SourceDir:   "/local/src",
+	})
+	require.NoError(t, err)
+
+	logged, err := os.ReadFile(logPath) //nolint:gosec // test reads a temp file we control
+	require.NoError(t, err)
+	assert.Contains(t, string(logged), "--exclude")
+	assert.Contains(t, string(logged), ".devsy-internal")
+}

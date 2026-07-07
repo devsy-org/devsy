@@ -51,19 +51,24 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 		return nil
 	}
 
+	// The seeded state is recorded as a volume label rather than a file so
+	// nothing is written into the workspace tree (the volume is mounted at the
+	// workspace folder, so a file at its root would appear as untracked content).
 	labels := pkgconfig.DockerVolumeLabels(opts.WorkspaceID, pkgconfig.VolumeRoleWorkspace)
+	labels[pkgconfig.DockerSeededLabel] = pkgconfig.LabelValueTrue
 	if err := d.createVolume(ctx, opts.VolumeName, labels); err != nil {
 		return fmt.Errorf("create workspace volume: %w", err)
 	}
 
 	if err := d.copyDirIntoVolume(ctx, opts.SourceDir, opts.VolumeName); err != nil {
-		// Leave the volume in place but unseeded so a retry re-copies.
+		// Remove the volume so its seeded label does not persist for an empty
+		// volume; the next up then re-creates and re-seeds cleanly.
+		if rmErr := d.removeVolume(ctx, opts.VolumeName); rmErr != nil {
+			log.Debugf("failed to remove volume after seed failure: %v", rmErr)
+		}
 		return fmt.Errorf("seed workspace volume: %w", err)
 	}
 
-	if err := d.markVolumeSeeded(ctx, opts.VolumeName); err != nil {
-		log.Debugf("failed to mark volume %s seeded: %v", opts.VolumeName, err)
-	}
 	log.Infof("seeded workspace volume %s from %s", opts.VolumeName, opts.SourceDir)
 	return nil
 }
@@ -107,10 +112,8 @@ func (d *LocalDockerDelivery) prepareSeedTarget(
 	return true, nil
 }
 
-// volumeSeedState reports whether the volume is devsy-managed (from its label)
-// and whether it has already been seeded (from a sentinel file written inside
-// the volume after a successful copy). Docker cannot add labels to an existing
-// volume, so seeded state is tracked with the sentinel rather than a label.
+// volumeSeedState reports whether the volume is devsy-managed and whether it
+// has already been seeded, both read from the volume's labels.
 func (d *LocalDockerDelivery) volumeSeedState(
 	ctx context.Context,
 	name string,
@@ -121,26 +124,15 @@ func (d *LocalDockerDelivery) volumeSeedState(
 
 	out, err := d.cmd(ctx,
 		"volume", "inspect",
-		"--format", "{{index .Labels \""+pkgconfig.DockerManagedLabel+"\"}}",
+		"--format", "{{index .Labels \""+pkgconfig.DockerManagedLabel+"\"}},"+
+			"{{index .Labels \""+pkgconfig.DockerSeededLabel+"\"}}",
 		name,
 	).CombinedOutput()
 	if err != nil {
 		return false, false, fmt.Errorf("inspect volume %s: %s: %w", name, string(out), err)
 	}
-	managed = strings.TrimSpace(string(out)) == "true"
-
-	return managed, d.volumeSeeded(ctx, name), nil
-}
-
-// volumeSeeded reports whether the seeded sentinel file exists in the volume.
-func (d *LocalDockerDelivery) volumeSeeded(ctx context.Context, name string) bool {
-	args := []string{
-		cmdRun, flagRM,
-		"-v", name + ":/target:ro",
-		d.helperImageName(),
-		"sh", "-c", "[ -e /target/" + seededSentinel + " ]",
-	}
-	return d.cmd(ctx, args...).Run() == nil
+	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(string(out)), ",")
+	return managedStr == pkgconfig.LabelValueTrue, seededStr == pkgconfig.LabelValueTrue, nil
 }
 
 func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) bool {
@@ -149,17 +141,24 @@ func (d *LocalDockerDelivery) volumeExists(ctx context.Context, name string) boo
 }
 
 // copyDirIntoVolume copies the contents of sourceDir into the volume root using
-// a throwaway helper container. The source is bind-mounted read-only.
+// a throwaway helper container. The source is bind-mounted read-only. devsy's
+// own transient build artifacts are excluded so they do not appear as untracked
+// files in the seeded workspace tree.
 func (d *LocalDockerDelivery) copyDirIntoVolume(
 	ctx context.Context,
 	sourceDir, volumeName string,
 ) error {
+	// Preserve attributes (-p), recurse into everything, and drop devsy's
+	// build-internal folder wherever it appears in the tree.
+	script := "cd /source && tar -c" +
+		" --exclude='" + pkgconfig.ConfigDirName + "-internal'" +
+		" . | tar -x -C /target"
 	args := []string{
 		cmdRun, flagRM,
 		"-v", sourceDir + ":/source:ro",
 		"-v", volumeName + ":/target",
 		d.helperImageName(),
-		"sh", "-c", "cp -a /source/. /target/",
+		"sh", "-c", script,
 	}
 	out, err := d.cmd(ctx, args...).CombinedOutput()
 	if err != nil {
@@ -167,22 +166,3 @@ func (d *LocalDockerDelivery) copyDirIntoVolume(
 	}
 	return nil
 }
-
-// markVolumeSeeded records that the volume has been populated by writing a
-// sentinel file inside it. Docker cannot add labels to an existing volume, so
-// the sentinel is the source of truth for seeded state.
-func (d *LocalDockerDelivery) markVolumeSeeded(ctx context.Context, volumeName string) error {
-	args := []string{
-		cmdRun, flagRM,
-		"-v", volumeName + ":/target",
-		d.helperImageName(),
-		"sh", "-c", "touch /target/" + seededSentinel,
-	}
-	out, err := d.cmd(ctx, args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-	return nil
-}
-
-const seededSentinel = ".devsy-seeded"
