@@ -86,7 +86,24 @@ function tryParseInnerLog(
  *
  * ANSI codes are stripped before parsing.
  */
+const parseCache = new Map<string, ParsedLogLine>()
+const PARSE_CACHE_MAX = 10_000
+
 export function parseLogLine(raw: string): ParsedLogLine {
+  const cached = parseCache.get(raw)
+  if (cached) return cached
+
+  const result = parseLogLineUncached(raw)
+
+  if (parseCache.size >= PARSE_CACHE_MAX) {
+    const oldest = parseCache.keys().next().value
+    if (oldest !== undefined) parseCache.delete(oldest)
+  }
+  parseCache.set(raw, result)
+  return result
+}
+
+function parseLogLineUncached(raw: string): ParsedLogLine {
   const clean = stripAnsi(raw)
 
   // Zap console format (tab-separated): ISO8601\tLEVEL\tmessage\tsource.go:NNN

@@ -111,7 +111,8 @@ let commandId = $state<string | null>(null)
 let operationLabel = $state("")
 let operationRunning = $state(false)
 let unlisten: UnlistenFn | null = null
-let tableEndEl = $state<HTMLDivElement | null>(null)
+let pendingLines: string[] = []
+let flushHandle: number | null = null
 
 let logEntries = $state<LogEntry[]>([])
 let selectedLog = $state<string | null>(null)
@@ -149,10 +150,11 @@ let filteredIdes = $derived(
   ),
 )
 
-function scrollToBottom() {
-  if (tableEndEl) {
-    tableEndEl.scrollIntoView({ block: "end", behavior: "smooth" })
-  }
+function flushLines() {
+  flushHandle = null
+  if (pendingLines.length === 0) return
+  outputLines.push(...pendingLines)
+  pendingLines.length = 0
 }
 
 async function copyToClipboard(text: string) {
@@ -169,10 +171,16 @@ onMount(async () => {
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
         if (progress.message) {
-          outputLines = [...outputLines, progress.message]
-          requestAnimationFrame(scrollToBottom)
+          pendingLines.push(progress.message)
+          if (flushHandle === null) {
+            flushHandle = requestAnimationFrame(flushLines)
+          }
         }
         if (progress.done) {
+          if (flushHandle !== null) {
+            cancelAnimationFrame(flushHandle)
+          }
+          flushLines()
           operationRunning = false
           const success = isCommandSuccess(progress.message)
           if (success) {
@@ -213,6 +221,10 @@ onMount(async () => {
 
 onDestroy(() => {
   unlisten?.()
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   // Clean up SSH session if navigating away
   if (sshSessionId) {
     if (!sshExited) {
@@ -313,6 +325,11 @@ function startStreamingOp(label: string) {
   operationLabel = label
   operationRunning = true
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   activeTab = "logs"
 }
 
@@ -683,18 +700,15 @@ async function handleRenameConfirmed() {
                     </Tooltip.Root>
                   </div>
                 {/if}
-                <div class="max-h-96 overflow-auto rounded-md border">
-                  {#if outputLines.length === 0}
-                    <div class="flex items-center justify-center p-4">
-                      <p class="text-sm text-muted-foreground">
-                        {operationRunning ? "Waiting for output..." : "No output yet. Run an operation to see live output."}
-                      </p>
-                    </div>
-                  {:else}
-                    <LogTable lines={outputLines} />
-                    <div bind:this={tableEndEl}></div>
-                  {/if}
-                </div>
+                {#if outputLines.length === 0}
+                  <div class="flex items-center justify-center rounded-md border p-4">
+                    <p class="text-sm text-muted-foreground">
+                      {operationRunning ? "Waiting for output..." : "No output yet. Run an operation to see live output."}
+                    </p>
+                  </div>
+                {:else}
+                  <LogTable lines={outputLines} follow />
+                {/if}
               </Accordion.Content>
             </Accordion.Item>
 
@@ -761,13 +775,11 @@ async function handleRenameConfirmed() {
                           </div>
                         </div>
                         <Accordion.Content>
-                          <div class="max-h-96 overflow-auto rounded-md border">
-                            {#if selectedLog === entry.filename}
-                              <LogTable lines={logContent.split("\n")} />
-                            {:else}
-                              <p class="p-4 text-sm text-muted-foreground">Loading...</p>
-                            {/if}
-                          </div>
+                          {#if selectedLog === entry.filename}
+                            <LogTable lines={logContent.split("\n")} />
+                          {:else}
+                            <p class="rounded-md border p-4 text-sm text-muted-foreground">Loading...</p>
+                          {/if}
                         </Accordion.Content>
                       </Accordion.Item>
                     {/each}

@@ -200,7 +200,6 @@ let ideSearch = $state("")
 // Launch state
 let commandId = $state<string | null>(null)
 let outputLines = $state<string[]>([])
-let outputEl = $state<HTMLDivElement | null>(null)
 let launchRunning = $state(false)
 let launchError = $state("")
 let launchSuccess = $state(false)
@@ -208,6 +207,8 @@ let launchedWorkspaceId = $state<string | null>(null)
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
+let pendingLines: string[] = []
+let flushHandle: number | null = null
 
 // Image platform compatibility (image source only)
 let hostPlatform = $state("")
@@ -331,6 +332,11 @@ function reset() {
   ideSearch = ""
   commandId = null
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   launchRunning = false
   launchError = ""
   launchSuccess = false
@@ -400,16 +406,31 @@ onMount(() => {
 onDestroy(() => {
   unlisten?.()
   clearWatchdog()
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
 })
+
+function flushLines() {
+  flushHandle = null
+  if (pendingLines.length === 0) return
+  outputLines.push(...pendingLines)
+  pendingLines.length = 0
+}
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   if (progress.message) {
-    outputLines = [...outputLines, progress.message]
-    requestAnimationFrame(() => {
-      outputEl?.scrollIntoView?.({ block: "end", behavior: "smooth" })
-    })
+    pendingLines.push(progress.message)
+    if (flushHandle === null) {
+      flushHandle = requestAnimationFrame(flushLines)
+    }
   }
   if (progress.done) {
+    if (flushHandle !== null) {
+      cancelAnimationFrame(flushHandle)
+    }
+    flushLines()
     launchRunning = false
     clearWatchdog()
     if (isCommandSuccess(progress.message)) {
@@ -430,6 +451,11 @@ async function handleLaunch() {
   launchError = ""
   launchSuccess = false
   outputLines = []
+  pendingLines = []
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+    flushHandle = null
+  }
   commandId = null
   launchedWorkspaceId = null
   clearWatchdog()
@@ -1121,10 +1147,7 @@ function selectTemplate(t: { name: string; source: string }) {
                   Copy
                 </Button>
               </div>
-              <div class="max-h-80 overflow-auto rounded-md border">
-                <LogTable lines={outputLines} />
-                <div bind:this={outputEl}></div>
-              </div>
+              <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
             </div>
           {:else if launchRunning}
             <div class="flex items-center justify-center py-8">
