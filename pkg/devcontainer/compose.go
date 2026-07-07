@@ -331,10 +331,6 @@ func (r *runner) finalizeComposeContainer(
 		return nil, fmt.Errorf("get image metadata from container: %w", err)
 	}
 
-	if err := r.updateContainerUserUID(ctx, parsedConfig); err != nil {
-		return nil, err
-	}
-
 	mergedConfig, err := mergeImageMetadataConfig(
 		ctx,
 		parsedConfig,
@@ -342,6 +338,11 @@ func (r *runner) finalizeComposeContainer(
 		options.ExtraDevContainerPath,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	resolvedConfig := withResolvedUser(parsedConfig.Config, mergedConfig)
+	if err := r.updateContainerUserUID(ctx, resolvedConfig); err != nil {
 		return nil, err
 	}
 
@@ -372,7 +373,7 @@ func (r *runner) finalizeComposeContainer(
 // updateContainerUserUID updates the container user's UID/GID on Docker drivers.
 func (r *runner) updateContainerUserUID(
 	ctx context.Context,
-	parsedConfig *config.SubstitutedConfig,
+	parsedConfig *config.DevContainerConfig,
 ) error {
 	dockerDriver, ok := r.Driver.(driver.DockerDriver)
 	if !ok {
@@ -383,7 +384,7 @@ func (r *runner) updateContainerUserUID(
 	if err := dockerDriver.UpdateContainerUserUID(
 		ctx,
 		r.ID,
-		parsedConfig.Config,
+		parsedConfig,
 		writer,
 	); err != nil {
 		log.Errorf("failed to update container user UID/GID: error=%v", err)

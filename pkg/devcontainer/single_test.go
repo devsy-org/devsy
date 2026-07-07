@@ -91,3 +91,32 @@ func TestWorkspaceMountDestination(t *testing.T) { //nolint:funlen // table-driv
 		})
 	}
 }
+
+func TestWithResolvedUser(t *testing.T) {
+	parsed := &config.DevContainerConfig{}
+	parsed.RunArgs = []string{"--cap-add=SYS_PTRACE"}
+
+	uid := true
+	merged := &config.MergedDevContainerConfig{}
+	merged.RemoteUser = "vscode"
+	merged.ContainerUser = "node"
+	merged.UpdateRemoteUserUID = &uid
+
+	got := withResolvedUser(parsed, merged)
+
+	if got.RemoteUser != "vscode" {
+		t.Errorf("RemoteUser = %q, want vscode", got.RemoteUser)
+	}
+	if got.ContainerUser != "node" {
+		t.Errorf("ContainerUser = %q, want node", got.ContainerUser)
+	}
+	if got.UpdateRemoteUserUID == nil || !*got.UpdateRemoteUserUID {
+		t.Errorf("UpdateRemoteUserUID = %v, want true", got.UpdateRemoteUserUID)
+	}
+	if len(got.RunArgs) != 1 || got.RunArgs[0] != "--cap-add=SYS_PTRACE" {
+		t.Errorf("RunArgs not preserved: %v", got.RunArgs)
+	}
+	if parsed.RemoteUser != "" {
+		t.Error("source config must not be mutated")
+	}
+}
