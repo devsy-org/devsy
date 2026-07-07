@@ -153,8 +153,8 @@ let filteredIdes = $derived(
 function flushLines() {
   flushHandle = null
   if (pendingLines.length === 0) return
-  outputLines = [...outputLines, ...pendingLines]
-  pendingLines = []
+  outputLines.push(...pendingLines)
+  pendingLines.length = 0
 }
 
 async function copyToClipboard(text: string) {

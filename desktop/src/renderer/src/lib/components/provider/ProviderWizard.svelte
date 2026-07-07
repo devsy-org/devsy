@@ -529,14 +529,10 @@ function handleDone() {
                 >
                   Show logs
                 </summary>
-                <div class="max-h-48 overflow-y-auto border-t">
-                  <LogTable lines={initLines} />
-                </div>
+                <LogTable lines={initLines} maxHeightClass="max-h-48" class="border-x-0 border-b-0 rounded-none" />
               </details>
             {:else}
-              <div class="max-h-48 overflow-y-auto rounded-md border bg-muted/30">
-                <LogTable lines={initLines} />
-              </div>
+              <LogTable lines={initLines} maxHeightClass="max-h-48" follow />
             {/if}
           {:else if initRunning}
             <div class="flex items-center justify-center py-8">

@@ -415,8 +415,8 @@ onDestroy(() => {
 function flushLines() {
   flushHandle = null
   if (pendingLines.length === 0) return
-  outputLines = [...outputLines, ...pendingLines]
-  pendingLines = []
+  outputLines.push(...pendingLines)
+  pendingLines.length = 0
 }
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {

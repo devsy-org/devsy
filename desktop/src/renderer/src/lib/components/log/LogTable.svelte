@@ -73,20 +73,25 @@ $effect(() => {
 <div
   bind:this={viewport}
   onscroll={onScroll}
+  role="table"
+  aria-rowcount={total}
   class="relative overflow-auto rounded-md border {maxHeightClass} {className}"
 >
   <div
+    role="row"
     class="sticky top-0 z-10 grid grid-cols-[5rem_6rem_1fr] border-b bg-background text-start font-medium"
     style="height: {rowHeight}px"
   >
-    <div class="flex items-center px-2">Time</div>
-    <div class="flex items-center px-2">Level</div>
-    <div class="flex items-center px-2">Message</div>
+    <div role="columnheader" class="flex items-center px-2">Time</div>
+    <div role="columnheader" class="flex items-center px-2">Level</div>
+    <div role="columnheader" class="flex items-center px-2">Message</div>
   </div>
 
-  <div class="relative" style="height: {totalHeight}px">
+  <div role="rowgroup" class="relative" style="height: {totalHeight}px">
     {#each visible as row (row.index)}
       <div
+        role="row"
+        aria-rowindex={row.index + 1}
         class={[
           "absolute grid w-full grid-cols-[5rem_6rem_1fr] items-center border-b",
           row.line.level === "fatal" || row.line.level === "error" ? "bg-destructive/5" : "",
@@ -94,8 +99,8 @@ $effect(() => {
         ].filter(Boolean).join(" ")}
         style="top: {row.index * rowHeight}px; height: {rowHeight}px"
       >
-        <div class="truncate px-2 font-mono text-xs text-muted-foreground">{row.line.time}</div>
-        <div class="px-2">
+        <div role="cell" class="truncate px-2 font-mono text-xs text-muted-foreground">{row.line.time}</div>
+        <div role="cell" class="px-2">
           {#if row.line.level}
             <span
               class={badgeVariants({
@@ -111,7 +116,7 @@ $effect(() => {
             </span>
           {/if}
         </div>
-        <div class="truncate px-2 text-sm" title={row.line.message}>{row.line.message}</div>
+        <div role="cell" class="truncate px-2 text-sm" title={row.line.message}>{row.line.message}</div>
       </div>
     {/each}
   </div>
