@@ -123,6 +123,8 @@ let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 let confirmRenameOpen = $state(false)
 let pendingRenameTarget = $state("")
+let confirmRebuildOpen = $state(false)
+let confirmResetOpen = $state(false)
 
 let hasContainer = $derived.by(() => {
   const status = workspace?.status?.toLowerCase()
@@ -379,6 +381,7 @@ async function handleStop() {
 }
 
 async function handleRebuild() {
+  confirmRebuildOpen = false
   startStreamingOp("Rebuild")
   try {
     commandId = await workspaceRebuild(id, isDebug())
@@ -389,6 +392,7 @@ async function handleRebuild() {
 }
 
 async function handleReset() {
+  confirmResetOpen = false
   startStreamingOp("Reset")
   try {
     commandId = await workspaceReset(id, isDebug())
@@ -526,11 +530,11 @@ async function handleRenameConfirmed() {
           {/snippet}
         </DropdownMenu.Trigger>
         <DropdownMenu.Content align="end">
-          <DropdownMenu.Item onclick={handleRebuild} disabled={operationRunning}>
+          <DropdownMenu.Item onclick={() => (confirmRebuildOpen = true)} disabled={operationRunning}>
             <RotateCcw class="mr-2 h-4 w-4" />
             Rebuild
           </DropdownMenu.Item>
-          <DropdownMenu.Item onclick={handleReset} disabled={operationRunning}>
+          <DropdownMenu.Item onclick={() => (confirmResetOpen = true)} disabled={operationRunning}>
             <RefreshCw class="mr-2 h-4 w-4" />
             Reset
           </DropdownMenu.Item>
@@ -832,6 +836,23 @@ async function handleRenameConfirmed() {
     </Tabs.Root>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={confirmRebuildOpen}
+  title="Rebuild workspace"
+  description="This recreates the container for '{id}' from its devcontainer config. Your source code is kept, but anything installed inside the container outside the devcontainer config (e.g. manual 'apt install', files outside bind mounts) will be lost. Use this to pick up devcontainer changes or recover from a broken container."
+  confirmLabel="Rebuild"
+  variant="default"
+  onconfirm={handleRebuild}
+/>
+
+<ConfirmDialog
+  bind:open={confirmResetOpen}
+  title="Reset workspace"
+  description="This removes the container for '{id}' along with its cloned source code, then recreates everything from scratch. Any uncommitted changes and files not pushed to your repository will be permanently lost. This action cannot be undone."
+  confirmLabel="Reset"
+  onconfirm={handleReset}
+/>
 
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
