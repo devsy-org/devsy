@@ -1,6 +1,7 @@
 package devcontainer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ type initializeCommand struct {
 // the host. Named sub-commands run concurrently; their errors are collected and
 // returned together.
 func runInitializeCommand(
+	ctx context.Context,
 	workspaceFolder string,
 	conf *config.DevContainerConfig,
 	extraEnv []string,
@@ -46,7 +48,7 @@ func runInitializeCommand(
 	)
 	for name, cmd := range conf.InitializeCommand {
 		wg.Go(func() {
-			if err := init.run(name, cmd); err != nil {
+			if err := init.run(ctx, name, cmd); err != nil {
 				mu.Lock()
 				errs = append(errs, err)
 				mu.Unlock()
@@ -73,7 +75,7 @@ func hostShell() []string {
 
 // run executes a single named sub-command. A single-element command is run as a
 // shell string; a multi-element command is executed argv-style.
-func (c *initializeCommand) run(name string, cmd []string) error {
+func (c *initializeCommand) run(ctx context.Context, name string, cmd []string) error {
 	if len(cmd) == 0 {
 		return fmt.Errorf("initializeCommand %q is empty", name)
 	}
@@ -95,7 +97,7 @@ func (c *initializeCommand) run(name string, cmd []string) error {
 	defer func() { _ = stderr.Close() }()
 
 	// args come from devcontainer.json initializeCommand, a trusted local config.
-	command := exec.Command(args[0], args[1:]...) //nolint:gosec // G204
+	command := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // G204
 	command.Dir = c.workspaceFolder
 	command.Env = append(command.Environ(), c.extraEnv...)
 	command.Stdout = stdout

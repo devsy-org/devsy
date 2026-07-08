@@ -126,7 +126,7 @@ func (r *runner) Up(
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
-	if err := r.runInitializeCommand(substitutedConfig.Config, options); err != nil {
+	if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
 		return nil, err
 	}
 
@@ -174,14 +174,18 @@ func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
 
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is
 // never executed in platform mode.
-func (r *runner) runInitializeCommand(conf *config.DevContainerConfig, options UpOptions) error {
+func (r *runner) runInitializeCommand(
+	ctx context.Context,
+	conf *config.DevContainerConfig,
+	options UpOptions,
+) error {
 	if options.Platform.Enabled {
 		if len(conf.InitializeCommand) > 0 {
 			log.Info("Skipping initializeCommand on platform")
 		}
 		return nil
 	}
-	return runInitializeCommand(r.localWorkspaceFolder, conf, options.InitEnv)
+	return runInitializeCommand(ctx, r.localWorkspaceFolder, conf, options.InitEnv)
 }
 
 // runDefaultContainer handles configs missing image/dockerfile/compose by
@@ -197,7 +201,7 @@ func (r *runner) runDefaultContainer(
 		"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties"
 
 	if fallback := params.options.FallbackImage; fallback != "" {
-		log.Warn(missingProps + ", using fallback image " + fallback)
+		log.Warnf("%s, using fallback image %q", missingProps, fallback)
 		conf.ImageContainer = config.ImageContainer{Image: fallback}
 		return r.runSingleContainer(ctx, params)
 	}
