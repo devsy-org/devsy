@@ -146,8 +146,7 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 			// update workspace remotely
 			buf := &bytes.Buffer{}
 			command := fmt.Sprintf(
-				"%s%q internal agent workspace update-config --workspace-info %q",
-				agent.ContainerAgentEnvPrefix,
+				"%q internal agent workspace update-config --workspace-info %q",
 				c.client.AgentPath(),
 				workspaceInfo,
 			)
@@ -243,8 +242,7 @@ func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts container
 	defer log.Debugf("Container tunnel exited")
 
 	command := fmt.Sprintf(
-		"%s%q internal agent container-tunnel --workspace-info %q",
-		agent.ContainerAgentEnvPrefix,
+		"%q internal agent container-tunnel --workspace-info %q",
 		c.client.AgentPath(),
 		opts.workspaceInfo,
 	)

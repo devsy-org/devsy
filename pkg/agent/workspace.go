@@ -35,42 +35,12 @@ var extraSearchLocations = []string{
 	config.ContainerDataDir + "/agent",
 }
 
-// EnvAgentInContainer is set to "1" by every SSH command builder that
-// launches `devsy agent ...` inside the workspace container or machine.
-// It is the single signal used by IsHostAgentInvocation to distinguish a
-// container-side invocation from a host-side one. The host never sets it.
-const EnvAgentInContainer = "DEVSY_AGENT_IN_CONTAINER"
-
-// EnvAgentInContainerTrue is the value the env var takes when set.
-const EnvAgentInContainerTrue = "1"
-
-// ContainerAgentEnvPrefix is the inline env-var assignment SSH command
-// builders prepend to the shell snippet that launches `devsy agent ...`
-// inside the workspace container or machine. POSIX shells parse leading
-// `NAME=value cmd ...` as a one-shot environment assignment for `cmd`,
-// so this works without requiring the SSH server to honour SetEnv (which
-// is often disabled).
-const ContainerAgentEnvPrefix = EnvAgentInContainer + "=" + EnvAgentInContainerTrue + " "
-
-// AgentCommandEnvPrefix omits the container env prefix when the command
-// will be executed on the host (provider agent.local=true); prepending it
-// there would mislabel the host process and trip IsHostAgentInvocation's
-// stale-env warning.
-func AgentCommandEnvPrefix(isLocal bool) string {
-	if isLocal {
-		return ""
-	}
-	return ContainerAgentEnvPrefix
-}
-
 var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
 // GetAgentDaemonLogFolder returns the folder that holds agent-daemon.log.
-// The daemon is a container/machine-side process: it is started by the
-// inject-and-run path during `devsy up` and the SSH command builder sets
-// DEVSY_AGENT_IN_CONTAINER=1. A host-side invocation has no daemon to
-// inspect and therefore is rejected explicitly instead of silently
-// resolving to the legacy `<DEVSY_HOME>/agent` glob.
+// The daemon runs inside the workspace devcontainer, so a host-side
+// invocation has no daemon to inspect and is rejected explicitly instead of
+// silently resolving to the legacy `<DEVSY_HOME>/agent` glob.
 func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
 	if IsHostAgentInvocation(agentFolder) {
 		return "", fmt.Errorf(
@@ -229,39 +199,30 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 	return "", os.ErrNotExist
 }
 
-// IsHostAgentInvocation reports whether this `devsy agent ...` call is
-// running on the user's host (as opposed to inside the workspace container
-// or machine). The signal is explicit: every SSH command builder that
-// launches `devsy agent ...` inside the container sets
-// DEVSY_AGENT_IN_CONTAINER=1; the host never sets it. An explicit
-// --agent-dir (agentFolder != "") also forces a non-host (legacy/explicit)
-// routing, so unit tests and unusual deployments can still pin a folder.
-//
-// When this returns true, per-workspace agent state lives under the
-// canonical PathManager.WorkspaceAgentDir so a single
-// os.RemoveAll(WorkspaceDir) wipes it on delete. DEVSY_HOME is NOT
-// consulted here — it is purely a host-side config-dir relocation knob
-// and must not double as a container marker.
-// containerDetector is the package-level seam used by IsHostAgentInvocation
-// to detect whether the process is running inside a container. Tests
-// override this to make the predicate deterministic across platforms.
+// containerDetector reports whether the current process runs inside a
+// container. It is a package var so tests can substitute a deterministic
+// implementation; production uses the filesystem-marker probe.
 var containerDetector = isLikelyContainer
 
+// IsHostAgentInvocation reports whether this `devsy agent ...` call runs
+// host-side — the user's CLI or a bare (non-containerized) SSH machine — as
+// opposed to inside a container (the workspace devcontainer, or a machine
+// provider whose "machine" is itself a container).
+//
+// The distinction drives per-workspace state layout, and it depends on where
+// the agent physically runs, which the orchestrator cannot know: a machine
+// provider's exec command is an opaque template that may `docker exec` into a
+// container or ssh into bare metal. So the running agent detects its own
+// environment via container markers. An explicit --agent-dir (agentFolder)
+// pins a folder for tests and unusual deployments, bypassing detection.
+//
+// DEVSY_HOME is deliberately NOT consulted: it is a host-side config-dir
+// relocation knob and must not double as a container marker.
 func IsHostAgentInvocation(agentFolder string) bool {
 	if agentFolder != "" {
 		return false
 	}
-	if os.Getenv(EnvAgentInContainer) != EnvAgentInContainerTrue {
-		return true
-	}
-	if !containerDetector() {
-		log.Debugf(
-			"%s=1 is set but no container indicator file found; treating as host invocation",
-			EnvAgentInContainer,
-		)
-		return true
-	}
-	return false
+	return !containerDetector()
 }
 
 func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, error) {
