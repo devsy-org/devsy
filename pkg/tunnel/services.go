@@ -14,7 +14,6 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/api/pkg/devsy"
-	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -150,8 +149,7 @@ func addGitSSHSigningKey(
 // buildCredentialsCommand builds the credentials server command.
 func buildCredentialsCommand(ctx context.Context, opts RunServicesOptions) string {
 	command := fmt.Sprintf(
-		"%s%s internal agent container credentials-server --user %s",
-		agent.ContainerAgentEnvPrefix,
+		"%s internal agent container credentials-server --user %s",
 		shellescape.Quote(config.ContainerDevsyHelperLocation),
 		shellescape.Quote(opts.User),
 	)

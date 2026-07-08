@@ -39,16 +39,6 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *LogsCmd) Run(ctx context.Context) error {
-	// `agent workspace logs` returns devcontainer logs from inside the
-	// workspace container/machine. Reject host invocations explicitly
-	// to avoid silently reading from the wrong place.
-	if agent.IsHostAgentInvocation(cmd.AgentDir) {
-		return fmt.Errorf(
-			"`devsy internal agent workspace logs` is only valid inside the workspace container or machine",
-		)
-	}
-
-	// get workspace info
 	shouldExit, workspaceInfo, err := agent.ReadAgentWorkspaceInfo(
 		cmd.AgentDir,
 		cmd.Context,
@@ -59,8 +49,10 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 	} else if shouldExit {
 		return nil
 	}
+	if workspaceInfo == nil {
+		return fmt.Errorf("workspace %q not found", cmd.ID)
+	}
 
-	// create new runner
 	runner, err := devcontainer.NewRunner(
 		config.ContainerDevsyHelperLocation,
 		config.DefaultAgentDownloadURL(),
@@ -70,6 +62,5 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("create runner: %w", err)
 	}
 
-	// write devcontainer logs to stdout
 	return runner.Logs(ctx, os.Stdout)
 }
