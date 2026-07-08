@@ -6,8 +6,6 @@ import (
 
 const explicitAgentDir = "/some/dir"
 
-// withContainerDetector swaps the package-level container detector for
-// the duration of the test, restoring the previous value on cleanup.
 func withContainerDetector(t *testing.T, fn func() bool) {
 	t.Helper()
 	prev := containerDetector
@@ -53,8 +51,6 @@ func hostInvocationCases() []hostInvocationCase {
 	}
 }
 
-// TestIsHostAgentInvocation covers the matrix of
-// (agentFolder empty/non-empty) x (in a container or not).
 func TestIsHostAgentInvocation(t *testing.T) {
 	for _, tc := range hostInvocationCases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -71,9 +67,6 @@ func TestIsHostAgentInvocation(t *testing.T) {
 	}
 }
 
-// TestIsHostAgentInvocation_IgnoresDevsyHome guards the regression that
-// setting DEVSY_HOME on the host must NOT flip the predicate to the
-// container side — only actually running in a container does that.
 func TestIsHostAgentInvocation_IgnoresDevsyHome(t *testing.T) {
 	t.Setenv("DEVSY_HOME", "/custom/devsy/home")
 	withContainerDetector(t, func() bool { return false })

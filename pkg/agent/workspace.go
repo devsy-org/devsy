@@ -37,10 +37,8 @@ var extraSearchLocations = []string{
 
 var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
 
-// GetAgentDaemonLogFolder returns the folder that holds agent-daemon.log.
-// The daemon runs inside the workspace devcontainer, so a host-side
-// invocation has no daemon to inspect and is rejected explicitly instead of
-// silently resolving to the legacy `<DEVSY_HOME>/agent` glob.
+// GetAgentDaemonLogFolder returns the path to the agent daemon log folder, which is only
+// available inside the workspace container or machine.
 func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
 	if IsHostAgentInvocation(agentFolder) {
 		return "", fmt.Errorf(
@@ -199,25 +197,9 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 	return "", os.ErrNotExist
 }
 
-// containerDetector reports whether the current process runs inside a
-// container. It is a package var so tests can substitute a deterministic
-// implementation; production uses the filesystem-marker probe.
 var containerDetector = isLikelyContainer
 
-// IsHostAgentInvocation reports whether this `devsy agent ...` call runs
-// host-side — the user's CLI or a bare (non-containerized) SSH machine — as
-// opposed to inside a container (the workspace devcontainer, or a machine
-// provider whose "machine" is itself a container).
-//
-// The distinction drives per-workspace state layout, and it depends on where
-// the agent physically runs, which the orchestrator cannot know: a machine
-// provider's exec command is an opaque template that may `docker exec` into a
-// container or ssh into bare metal. So the running agent detects its own
-// environment via container markers. An explicit --agent-dir (agentFolder)
-// pins a folder for tests and unusual deployments, bypassing detection.
-//
-// DEVSY_HOME is deliberately NOT consulted: it is a host-side config-dir
-// relocation knob and must not double as a container marker.
+// IsHostAgentInvocation determines whether the current invocation is a host-side invocation of the agent.
 func IsHostAgentInvocation(agentFolder string) bool {
 	if agentFolder != "" {
 		return false
