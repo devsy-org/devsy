@@ -152,13 +152,13 @@ exec "$$@"
 // are merged in. All values are escaped to prevent compose variable expansion.
 func (r *runner) buildServiceLabels(additionalLabels map[string]string) composetypes.Labels {
 	labels := composetypes.Labels{}
-	if len(r.IDLabels) > 0 {
-		for _, l := range r.IDLabels {
+	if len(r.idLabels) > 0 {
+		for _, l := range r.idLabels {
 			k, v, _ := strings.Cut(l, "=")
 			labels[k] = escapeComposeLabelValue(v)
 		}
 	} else {
-		labels[pkgconfig.DevcontainerIDLabel] = r.ID
+		labels[pkgconfig.DevcontainerIDLabel] = r.id
 	}
 	for k, v := range additionalLabels {
 		labels.Add(k, escapeComposeLabelValue(v))
@@ -189,7 +189,7 @@ func namedVolumesFromMounts(mounts []*config.Mount) map[string]composetypes.Volu
 }
 
 func (r *runner) resolveComposeGPUAvailability(composeHelper *compose.ComposeHelper) bool {
-	switch r.WorkspaceConfig.CLIOptions.GPUAvailability {
+	switch r.workspaceConfig.CLIOptions.GPUAvailability {
 	case stringTrue:
 		return true
 	case stringFalse:

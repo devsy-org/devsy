@@ -10,7 +10,7 @@ import (
 )
 
 func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
-	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return fmt.Errorf("find dev container: %w", err)
 	}
@@ -27,13 +27,13 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 		}
 	} else {
 		if strings.ToLower(containerDetails.State.Status) == "running" {
-			err = r.Driver.StopDevContainer(ctx, r.ID)
+			err = r.driver.StopDevContainer(ctx, r.id)
 			if err != nil {
 				return err
 			}
 		}
 
-		err = r.Driver.DeleteDevContainer(ctx, r.ID)
+		err = r.driver.DeleteDevContainer(ctx, r.id)
 		if err != nil {
 			return err
 		}
@@ -45,13 +45,13 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 // cleanupDeliveryVolume removes the devsy-managed volumes created for this
 // workspace. Best-effort: failures are logged, not returned.
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
-	if err := r.newAgentDelivery().Cleanup(ctx, r.ID); err != nil {
+	if err := r.newAgentDelivery().Cleanup(ctx, r.id); err != nil {
 		log.Debugf("best-effort delivery volume cleanup: %v", err)
 	}
 }
 
 func (r *runner) Stop(ctx context.Context) error {
-	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return fmt.Errorf("find dev container: %w", err)
 	} else if containerDetails == nil {
@@ -72,18 +72,18 @@ func (r *runner) Stop(ctx context.Context) error {
 		if isCompose {
 			return r.stopDockerCompose(ctx, projectName)
 		}
-		return r.Driver.StopDevContainer(ctx, r.ID)
+		return r.driver.StopDevContainer(ctx, r.id)
 	default:
-		return r.Driver.StopDevContainer(ctx, r.ID)
+		return r.driver.StopDevContainer(ctx, r.id)
 	}
 }
 
 func (r *runner) getShutdownAction(isCompose bool) string {
-	if r.WorkspaceConfig != nil &&
-		r.WorkspaceConfig.LastDevContainerConfig != nil &&
-		r.WorkspaceConfig.LastDevContainerConfig.Config != nil &&
-		r.WorkspaceConfig.LastDevContainerConfig.Config.ShutdownAction != "" {
-		return r.WorkspaceConfig.LastDevContainerConfig.Config.ShutdownAction
+	if r.workspaceConfig != nil &&
+		r.workspaceConfig.LastDevContainerConfig != nil &&
+		r.workspaceConfig.LastDevContainerConfig.Config != nil &&
+		r.workspaceConfig.LastDevContainerConfig.Config.ShutdownAction != "" {
+		return r.workspaceConfig.LastDevContainerConfig.Config.ShutdownAction
 	}
 	if isCompose {
 		return config.ShutdownActionStopCompose

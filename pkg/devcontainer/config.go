@@ -37,16 +37,16 @@ func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainer
 // rawConfigFromWorkspace returns the config embedded in the workspace metadata,
 // or nil when none is present.
 func (r *runner) rawConfigFromWorkspace() *config.DevContainerConfig {
-	if r.WorkspaceConfig.Workspace.DevContainerConfig == nil {
+	if r.workspaceConfig.Workspace.DevContainerConfig == nil {
 		return nil
 	}
 
-	rawConfig := config.CloneDevContainerConfig(r.WorkspaceConfig.Workspace.DevContainerConfig)
-	if devContainerPath := r.WorkspaceConfig.Workspace.DevContainerPath; devContainerPath != "" {
-		rawConfig.Origin = path.Join(filepath.ToSlash(r.LocalWorkspaceFolder), devContainerPath)
+	rawConfig := config.CloneDevContainerConfig(r.workspaceConfig.Workspace.DevContainerConfig)
+	if devContainerPath := r.workspaceConfig.Workspace.DevContainerPath; devContainerPath != "" {
+		rawConfig.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), devContainerPath)
 	} else {
 		rawConfig.Origin = path.Join(
-			filepath.ToSlash(r.LocalWorkspaceFolder),
+			filepath.ToSlash(r.localWorkspaceFolder),
 			".devcontainer."+pkgconfig.BinaryName+".json",
 		)
 	}
@@ -56,7 +56,7 @@ func (r *runner) rawConfigFromWorkspace() *config.DevContainerConfig {
 // rawConfigFromContainer returns a synthetic config for a running-container
 // source, or nil when the source is not a container.
 func (r *runner) rawConfigFromContainer() *config.DevContainerConfig {
-	containerID := r.WorkspaceConfig.Workspace.Source.Container
+	containerID := r.workspaceConfig.Workspace.Source.Container
 	if containerID == "" {
 		return nil
 	}
@@ -75,14 +75,14 @@ func (r *runner) rawConfigFromContainer() *config.DevContainerConfig {
 func (r *runner) rawConfigFromCrane(
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	localWorkspaceFolder, err := crane.PullConfigFromSource(r.WorkspaceConfig, &options)
+	localWorkspaceFolder, err := crane.PullConfigFromSource(r.workspaceConfig, &options)
 	if err != nil {
 		return nil, err
 	}
 	return config.ParseDevContainerJSON(
 		context.Background(),
 		localWorkspaceFolder,
-		r.WorkspaceConfig.Workspace.DevContainerPath,
+		r.workspaceConfig.Workspace.DevContainerPath,
 	)
 }
 
@@ -91,8 +91,8 @@ func (r *runner) rawConfigFromCrane(
 func (r *runner) rawConfigFromFilesystem(
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	localWorkspaceFolder := r.LocalWorkspaceFolder
-	if subPath := r.WorkspaceConfig.Workspace.Source.GitSubPath; subPath != "" {
+	localWorkspaceFolder := r.localWorkspaceFolder
+	if subPath := r.workspaceConfig.Workspace.Source.GitSubPath; subPath != "" {
 		localWorkspaceFolder = filepath.Join(localWorkspaceFolder, subPath)
 	}
 
@@ -109,7 +109,7 @@ func (r *runner) rawConfigFromFilesystem(
 	rawConfig, err := config.ParseDevContainerJSONWithOptions(
 		context.Background(),
 		localWorkspaceFolder,
-		r.WorkspaceConfig.Workspace.DevContainerPath,
+		r.workspaceConfig.Workspace.DevContainerPath,
 		opts,
 	)
 	// A missing devcontainer.json is not an error: fall back to auto-detection.
@@ -160,10 +160,10 @@ func (r *runner) getDefaultConfig(
 		defaultConfig.ImageContainer = config.ImageContainer{Image: options.FallbackImage}
 	} else {
 		log.Infof("Try detecting project programming language")
-		defaultConfig = language.DefaultConfig(r.LocalWorkspaceFolder)
+		defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
 	}
 
-	defaultConfig.Origin = path.Join(filepath.ToSlash(r.LocalWorkspaceFolder), ".devcontainer.json")
+	defaultConfig.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), ".devcontainer.json")
 	if err := config.SaveDevContainerJSON(defaultConfig); err != nil {
 		return nil, fmt.Errorf("write default devcontainer.json: %w", err)
 	}
@@ -214,8 +214,8 @@ func (r *runner) buildSubstitutionContext(
 ) *config.SubstitutionContext {
 	configFile := rawParsedConfig.Origin
 	workspaceMount, containerWorkspaceFolder := getWorkspace(
-		r.LocalWorkspaceFolder,
-		r.WorkspaceConfig.Workspace.ID,
+		r.localWorkspaceFolder,
+		r.workspaceConfig.Workspace.ID,
 		rawParsedConfig,
 	)
 
@@ -225,8 +225,8 @@ func (r *runner) buildSubstitutionContext(
 	}
 
 	return &config.SubstitutionContext{
-		DevContainerID:           config.DeriveDevContainerID(r.LocalWorkspaceFolder, configFile),
-		LocalWorkspaceFolder:     r.LocalWorkspaceFolder,
+		DevContainerID:           config.DeriveDevContainerID(r.localWorkspaceFolder, configFile),
+		LocalWorkspaceFolder:     r.localWorkspaceFolder,
 		ContainerWorkspaceFolder: containerWorkspaceFolder,
 		Env:                      env,
 		WorkspaceMount:           workspaceMount,

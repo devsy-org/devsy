@@ -13,7 +13,7 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if !ok {
 		return "", fmt.Errorf("building only supported with docker driver")
 	}
@@ -47,7 +47,7 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 	} else if prebuildRepo != "" {
 		prebuildImage = prebuildRepo + ":" + buildInfo.PrebuildHash
 	} else {
-		prebuildImage = build.GetImageName(r.LocalWorkspaceFolder, buildInfo.PrebuildHash)
+		prebuildImage = build.GetImageName(r.localWorkspaceFolder, buildInfo.PrebuildHash)
 	}
 
 	if buildInfo.ImageName == prebuildImage {

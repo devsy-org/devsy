@@ -10,13 +10,13 @@ import (
 )
 
 func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.ImageDetails, error) {
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if ok {
 		return dockerDriver.InspectImage(ctx, imageName)
 	}
 
 	// Get target architecture from the driver
-	targetArch, err := r.Driver.TargetArchitecture(ctx, r.ID)
+	targetArch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get target architecture: %w", err)
 	}
@@ -44,7 +44,7 @@ func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.Im
 }
 
 func (r *runner) getImageTag(ctx context.Context, imageID string) (string, error) {
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if ok {
 		return dockerDriver.GetImageTag(ctx, imageID)
 	}

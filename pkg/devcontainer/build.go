@@ -416,7 +416,7 @@ func (r *runner) buildImage(
 	parsedConfig := params.parsedConfig
 	options := params.options
 
-	targetArch, err := r.Driver.TargetArchitecture(ctx, r.ID)
+	targetArch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,7 @@ func (r *runner) executeBuild(
 			ExtendedBuildInfo:    params.extendedBuildInfo,
 			DockerfilePath:       params.dockerfilePath,
 			DockerfileContent:    params.dockerfileContent,
-			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
+			LocalWorkspaceFolder: r.localWorkspaceFolder,
 			Options:              options,
 			TargetArch:           targetArch,
 		})
@@ -484,16 +484,16 @@ func (r *runner) executeBuild(
 
 	// check if we should fallback to dockerless.
 	// This should only be OSS kubernetes as of March 06, 2025.
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if options.ForceDockerless || !ok {
-		if r.WorkspaceConfig.Agent.Dockerless.Disabled == pkgconfig.BoolTrue {
+		if r.workspaceConfig.Agent.Dockerless.Disabled == pkgconfig.BoolTrue {
 			return nil, fmt.Errorf(
 				"cannot build devcontainer because driver is non-docker and dockerless fallback is disabled",
 			)
 		}
 
 		return dockerlessFallback(&dockerlessFallbackParams{
-			localWorkspaceFolder:     r.LocalWorkspaceFolder,
+			localWorkspaceFolder:     r.localWorkspaceFolder,
 			containerWorkspaceFolder: params.substitutionContext.ContainerWorkspaceFolder,
 			parsedConfig:             params.parsedConfig,
 			buildInfo:                params.buildInfo,
@@ -509,7 +509,7 @@ func (r *runner) executeBuild(
 		ExtendedBuildInfo:    params.extendedBuildInfo,
 		DockerfilePath:       params.dockerfilePath,
 		DockerfileContent:    params.dockerfileContent,
-		LocalWorkspaceFolder: r.LocalWorkspaceFolder,
+		LocalWorkspaceFolder: r.localWorkspaceFolder,
 		Options:              options,
 	})
 }

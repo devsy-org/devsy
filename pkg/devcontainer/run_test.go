@@ -1,6 +1,7 @@
 package devcontainer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +21,7 @@ func TestRunInitializeCommand_ParallelTiming(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := runInitializeCommand(tmpDir, conf, nil)
+	err := runInitializeCommand(context.Background(), tmpDir, conf, nil)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -41,7 +42,7 @@ func TestRunInitializeCommand_ParallelErrorCollection(t *testing.T) {
 		"will-succeed": {"sh", "-c", "printf ok > " + markerFile},
 	}
 
-	err := runInitializeCommand(tmpDir, conf, nil)
+	err := runInitializeCommand(context.Background(), tmpDir, conf, nil)
 	if err == nil {
 		t.Fatal("expected error from failing command")
 	}
@@ -67,7 +68,7 @@ func TestRunInitializeCommand_SingleKey(t *testing.T) {
 		"write-file": {"sh", "-c", "printf single > " + outFile},
 	}
 
-	err := runInitializeCommand(tmpDir, conf, nil)
+	err := runInitializeCommand(context.Background(), tmpDir, conf, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestRunInitializeCommand_StringFormat(t *testing.T) {
 		"": {"printf stringfmt > " + outFile},
 	}
 
-	err := runInitializeCommand(tmpDir, conf, nil)
+	err := runInitializeCommand(context.Background(), tmpDir, conf, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,14 +109,30 @@ func TestRunInitializeCommand_StringFormat(t *testing.T) {
 func TestRunInitializeCommand_Empty(t *testing.T) {
 	// nil config
 	conf := &config.DevContainerConfig{}
-	if err := runInitializeCommand(t.TempDir(), conf, nil); err != nil {
+	if err := runInitializeCommand(context.Background(), t.TempDir(), conf, nil); err != nil {
 		t.Fatalf("nil InitializeCommand should return nil, got: %v", err)
 	}
 
 	// empty map
 	conf.InitializeCommand = types.LifecycleHook{}
-	if err := runInitializeCommand(t.TempDir(), conf, nil); err != nil {
+	if err := runInitializeCommand(context.Background(), t.TempDir(), conf, nil); err != nil {
 		t.Fatalf("empty InitializeCommand should return nil, got: %v", err)
+	}
+}
+
+func TestRunInitializeCommand_EmptyEntry(t *testing.T) {
+	conf := &config.DevContainerConfig{}
+	conf.InitializeCommand = types.LifecycleHook{
+		"noop": {},
+	}
+
+	// An empty command slice must produce a normal error, not a panic.
+	err := runInitializeCommand(context.Background(), t.TempDir(), conf, nil)
+	if err == nil {
+		t.Fatal("expected error for empty command entry")
+	}
+	if !contains(err.Error(), "noop") {
+		t.Fatalf("error should name the empty command, got: %v", err)
 	}
 }
 
@@ -278,6 +295,12 @@ func TestMountSetConsistency(t *testing.T) {
 			mount: "type=bind,source=/s,target=/t,consistency=cached",
 			value: testConsistency,
 			want:  "type=bind,source=/s,target=/t," + wantSuffix,
+		},
+		{
+			name:  "preserves suppressed (empty) mount",
+			mount: "",
+			value: testConsistency,
+			want:  "",
 		},
 	}
 	for _, tt := range tests {

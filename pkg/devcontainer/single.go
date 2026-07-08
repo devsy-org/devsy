@@ -57,7 +57,7 @@ func (r *runner) runSingleContainer(
 	options := runParams.options
 	timeout := runParams.timeout
 
-	log.Debugf("starting devcontainer for workspace %s", r.ID)
+	log.Debugf("starting devcontainer for workspace %s", r.id)
 
 	substitutionContext.Userns = options.Userns
 	substitutionContext.UidMap = options.UidMap
@@ -127,14 +127,14 @@ func (r *runner) findExistingDevContainer(
 	ctx context.Context,
 ) (*config.ContainerDetails, error) {
 	dockerCmd := "docker"
-	if r.WorkspaceConfig.Agent.Docker.Path != "" {
-		dockerCmd = r.WorkspaceConfig.Agent.Docker.Path
+	if r.workspaceConfig.Agent.Docker.Path != "" {
+		dockerCmd = r.workspaceConfig.Agent.Docker.Path
 	}
 	if !command.Exists(dockerCmd) {
 		return nil, nil
 	}
 
-	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
 	}
@@ -185,7 +185,7 @@ func (r *runner) ensureRunning(
 		return containerDetails, nil
 	}
 
-	if err := r.Driver.StartDevContainer(ctx, r.ID); err != nil {
+	if err := r.driver.StartDevContainer(ctx, r.id); err != nil {
 		return nil, err
 	}
 	return r.findRunningContainerOrFail(ctx, "start")
@@ -243,12 +243,12 @@ func (r *runner) reprovisionIfNeeded(
 	ctx context.Context,
 	containerDetails *config.ContainerDetails,
 ) (*config.ContainerDetails, error) {
-	d, ok := r.Driver.(driver.ReprovisioningDriver)
+	d, ok := r.driver.(driver.ReprovisioningDriver)
 	if !ok || !d.CanReprovision() {
 		return containerDetails, nil
 	}
 
-	if err := r.Driver.RunDevContainer(ctx, r.ID, nil); err != nil {
+	if err := r.driver.RunDevContainer(ctx, r.id, nil); err != nil {
 		return nil, fmt.Errorf("runner driver run dev container: %w", err)
 	}
 	return r.findRunningContainerOrFail(ctx, "reprovision")
@@ -364,14 +364,14 @@ func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
 // deleteForRecreate removes the existing container before recreating it.
 // Docker containers are fully deleted; other drivers stop the container.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
-	if _, ok := r.Driver.(driver.DockerDriver); ok {
+	if _, ok := r.driver.(driver.DockerDriver); ok {
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete devcontainer: %w", err)
 		}
 		return nil
 	}
 
-	if err := r.Driver.StopDevContainer(ctx, r.ID); err != nil {
+	if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 		return fmt.Errorf("stop devcontainer: %w", err)
 	}
 	return nil
@@ -390,7 +390,7 @@ func (r *runner) injectDaemonEntrypoint(
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
 		p.options.Platform,
-		r.WorkspaceConfig.Workspace,
+		r.workspaceConfig.Workspace,
 		p.substitutionContext,
 		mergedConfig,
 	)
@@ -409,12 +409,12 @@ func (r *runner) findRunningContainerOrFail(
 	ctx context.Context,
 	operation string,
 ) (*config.ContainerDetails, error) {
-	details, err := r.Driver.FindDevContainer(ctx, r.ID)
+	details, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return nil, fmt.Errorf("find dev container after %s: %w", operation, err)
 	}
 	if details == nil {
-		return nil, fmt.Errorf("dev container %s not found after %s", r.ID, operation)
+		return nil, fmt.Errorf("dev container %s not found after %s", r.id, operation)
 	}
 	return details, nil
 }
@@ -464,7 +464,7 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 	}
 
 	return strategy.DeliverPreStart(ctx, delivery.PreStartOptions{
-		WorkspaceID:  r.ID,
+		WorkspaceID:  r.id,
 		RunOptions:   runOptions,
 		BinarySource: binarySource,
 		Arch:         arch,
@@ -477,10 +477,10 @@ func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOpti
 // tree. It is skipped for git/image sources, bind mounts, and volumes devsy
 // does not manage. A reset removes the managed volume so it is re-seeded.
 func (r *runner) seedWorkspaceVolume(ctx context.Context, p *resolveParams) error {
-	if r.WorkspaceConfig == nil || r.WorkspaceConfig.Workspace == nil {
+	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
 		return nil
 	}
-	if r.WorkspaceConfig.Workspace.Source.LocalFolder == "" {
+	if r.workspaceConfig.Workspace.Source.LocalFolder == "" {
 		return nil
 	}
 
@@ -496,10 +496,10 @@ func (r *runner) seedWorkspaceVolume(ctx context.Context, p *resolveParams) erro
 	}
 
 	return seeder.SeedWorkspaceVolume(ctx, delivery.WorkspaceSeedOptions{
-		WorkspaceID: r.ID,
+		WorkspaceID: r.id,
 		VolumeName:  mount.Source,
-		SourceDir:   r.LocalWorkspaceFolder,
-		Reset:       r.WorkspaceConfig.CLIOptions.Reset,
+		SourceDir:   r.localWorkspaceFolder,
+		Reset:       r.workspaceConfig.CLIOptions.Reset,
 	})
 }
 
@@ -529,21 +529,21 @@ func (r *runner) runContainer(
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 
 	// check if docker
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if ok {
 		return dockerDriver.RunDockerDevContainer(ctx, &driver.RunDockerDevContainerParams{
-			WorkspaceID:          r.ID,
+			WorkspaceID:          r.id,
 			Options:              runOptions,
 			ParsedConfig:         withResolvedUser(p.parsedConfig.Config, mergedConfig),
-			IDE:                  r.WorkspaceConfig.Workspace.IDE.Name,
-			IDEOptions:           r.WorkspaceConfig.Workspace.IDE.Options,
-			LocalWorkspaceFolder: r.LocalWorkspaceFolder,
-			GPUAvailability:      r.WorkspaceConfig.CLIOptions.GPUAvailability,
+			IDE:                  r.workspaceConfig.Workspace.IDE.Name,
+			IDEOptions:           r.workspaceConfig.Workspace.IDE.Options,
+			LocalWorkspaceFolder: r.localWorkspaceFolder,
+			GPUAvailability:      r.workspaceConfig.CLIOptions.GPUAvailability,
 		})
 	}
 
 	// build run options for regular driver
-	return r.Driver.RunDevContainer(ctx, r.ID, runOptions)
+	return r.driver.RunDevContainer(ctx, r.id, runOptions)
 }
 
 // withResolvedUser returns a copy of parsedConfig carrying the effective user
@@ -573,8 +573,8 @@ func parseWorkspaceMount(substitutionContext *config.SubstitutionContext) *confi
 
 // workspaceUID returns the workspace UID, or an empty string when unavailable.
 func (r *runner) workspaceUID() string {
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil {
-		return r.WorkspaceConfig.Workspace.UID
+	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil {
+		return r.workspaceConfig.Workspace.UID
 	}
 	return ""
 }
@@ -624,15 +624,15 @@ func (r *runner) getDockerlessRunOptions(
 	}
 
 	image := dockerlessImage
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Agent.Dockerless.Image != "" {
-		image = r.WorkspaceConfig.Agent.Dockerless.Image
+	if r.workspaceConfig != nil && r.workspaceConfig.Agent.Dockerless.Image != "" {
+		image = r.workspaceConfig.Agent.Dockerless.Image
 	}
 
 	// we need to add an extra mount here, because otherwise the build config might get lost
 	mounts := mergedConfig.Mounts
 	mounts = append(mounts, &config.Mount{
 		Type:   "volume",
-		Source: "dockerless-" + r.ID,
+		Source: "dockerless-" + r.id,
 		Target: "/workspaces/.dockerless",
 	})
 
@@ -732,7 +732,7 @@ func (r *runner) getRunOptions(
 		Userns:         substitutionContext.Userns,
 		UidMap:         substitutionContext.UidMap,
 		GidMap:         substitutionContext.GidMap,
-		Platform:       r.WorkspaceConfig.CLIOptions.RunPlatform,
+		Platform:       r.workspaceConfig.CLIOptions.RunPlatform,
 	}, nil
 }
 
@@ -745,13 +745,13 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 
 	env[DevsyExtraEnvVar] = stringTrue
 	env[RemoteContainersExtraEnvVar] = stringTrue
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil &&
-		r.WorkspaceConfig.Workspace.ID != "" {
-		env[pkgconfig.EnvWorkspaceID] = r.WorkspaceConfig.Workspace.ID
+	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
+		r.workspaceConfig.Workspace.ID != "" {
+		env[pkgconfig.EnvWorkspaceID] = r.workspaceConfig.Workspace.ID
 	}
-	if r.WorkspaceConfig != nil && r.WorkspaceConfig.Workspace != nil &&
-		r.WorkspaceConfig.Workspace.UID != "" {
-		env[pkgconfig.EnvWorkspaceUID] = r.WorkspaceConfig.Workspace.UID
+	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
+		r.workspaceConfig.Workspace.UID != "" {
+		env[pkgconfig.EnvWorkspaceUID] = r.workspaceConfig.Workspace.UID
 	}
 
 	return env
