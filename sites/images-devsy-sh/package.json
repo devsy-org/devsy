@@ -15,7 +15,7 @@
     "@sveltejs/vite-plugin-svelte": "5.1.1",
     "@tailwindcss/vite": "4.3.2",
     "@testing-library/jest-dom": "6.9.1",
-    "@testing-library/svelte": "5.3.1",
+    "@testing-library/svelte": "5.4.2",
     "@types/node": "22.19.20",
     "jsdom": "29.1.1",
     "svelte": "5.56.4",
