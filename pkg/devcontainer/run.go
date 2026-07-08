@@ -2,14 +2,8 @@ package devcontainer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"runtime"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -18,22 +12,17 @@ import (
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/language"
 	"github.com/devsy-org/devsy/pkg/log"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
+// Runner drives the lifecycle of a single workspace's dev container.
 type Runner interface {
 	Up(ctx context.Context, options UpOptions, timeout time.Duration) (*config.Result, error)
-
-	Build(ctx context.Context, options provider2.BuildOptions) (string, error)
-
+	Build(ctx context.Context, options provider.BuildOptions) (string, error)
 	Find(ctx context.Context) (*config.ContainerDetails, error)
-
 	Command(ctx context.Context, params CommandParams) error
-
 	Stop(ctx context.Context) error
-
 	Delete(ctx context.Context, options DeleteOptions) error
-
 	Logs(ctx context.Context, writer io.Writer) error
 }
 
@@ -41,8 +30,7 @@ type DeleteOptions struct {
 	RemoveVolumes bool
 }
 
-// CommandParams groups the inputs for running a command inside the dev
-// container.
+// CommandParams groups the inputs for running a command inside the dev container.
 type CommandParams struct {
 	User    string
 	Command string
@@ -51,43 +39,9 @@ type CommandParams struct {
 	Stderr  io.Writer
 }
 
-func NewRunner(
-	agentPath, agentDownloadURL string,
-	workspaceConfig *provider2.AgentWorkspaceInfo,
-) (Runner, error) {
-	driver, err := drivercreate.NewDriver(workspaceConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// we use the workspace uid as id to avoid conflicts between container names
-	return &runner{
-		Driver: driver,
-
-		AgentPath:            agentPath,
-		AgentDownloadURL:     agentDownloadURL,
-		LocalWorkspaceFolder: workspaceConfig.ContentFolder,
-		ID:                   GetRunnerIDFromWorkspace(workspaceConfig.Workspace),
-		IDLabels:             workspaceConfig.CLIOptions.IDLabels,
-		WorkspaceConfig:      workspaceConfig,
-	}, nil
-}
-
-type runner struct {
-	Driver driver.Driver
-
-	WorkspaceConfig  *provider2.AgentWorkspaceInfo
-	AgentPath        string
-	AgentDownloadURL string
-
-	LocalWorkspaceFolder string
-
-	ID       string
-	IDLabels []string
-}
-
+// UpOptions configures a single Up invocation.
 type UpOptions struct {
-	provider2.CLIOptions
+	provider.CLIOptions
 
 	// NoBuild is set by the container tunnel to force pre-built images; it is
 	// distinct from the embedded CLIOptions.NoBuild used by the build command.
@@ -97,24 +51,62 @@ type UpOptions struct {
 	RegistryCache string
 }
 
-// toBuildOptions derives the BuildOptions for an up-triggered build. It carries
-// the full embedded CLIOptions (so build flags like Pull/ForceBuild are never
-// dropped) and applies the up-specific NoBuild/RegistryCache overrides.
-func (o UpOptions) toBuildOptions() provider2.BuildOptions {
-	return provider2.BuildOptions{
+// toBuildOptions derives the BuildOptions for an up-triggered build, carrying
+// the embedded CLIOptions and applying the up-specific overrides.
+func (o UpOptions) toBuildOptions() provider.BuildOptions {
+	return provider.BuildOptions{
 		CLIOptions:    o.CLIOptions,
 		RegistryCache: o.RegistryCache,
 		NoBuild:       o.NoBuild,
 	}
 }
 
-// runContainerParams groups the inputs shared by the runSingleContainer,
-// runDockerCompose, and runDefaultContainer dispatch methods.
+// runContainerParams groups the inputs shared by the container dispatch methods.
 type runContainerParams struct {
 	parsedConfig        *config.SubstitutedConfig
 	substitutionContext *config.SubstitutionContext
 	options             UpOptions
 	timeout             time.Duration
+}
+
+type runner struct {
+	driver driver.Driver
+
+	workspaceConfig  *provider.AgentWorkspaceInfo
+	agentPath        string
+	agentDownloadURL string
+
+	localWorkspaceFolder string
+
+	id       string
+	idLabels []string
+}
+
+func NewRunner(
+	agentPath, agentDownloadURL string,
+	workspaceConfig *provider.AgentWorkspaceInfo,
+) (Runner, error) {
+	drv, err := drivercreate.NewDriver(workspaceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return &runner{
+		driver:               drv,
+		agentPath:            agentPath,
+		agentDownloadURL:     agentDownloadURL,
+		localWorkspaceFolder: workspaceConfig.ContentFolder,
+		id:                   GetRunnerIDFromWorkspace(workspaceConfig.Workspace),
+		idLabels:             workspaceConfig.CLIOptions.IDLabels,
+		workspaceConfig:      workspaceConfig,
+	}, nil
+}
+
+func GetRunnerIDFromWorkspace(workspace *provider.Workspace) string {
+	if encoding.IsLegacyUID(workspace.UID) {
+		return workspace.ID
+	}
+	return workspace.UID
 }
 
 func (r *runner) Up(
@@ -124,7 +116,7 @@ func (r *runner) Up(
 ) (*config.Result, error) {
 	log.Debugf(
 		"Up devcontainer for workspace %q with timeout %s",
-		r.WorkspaceConfig.Workspace.ID,
+		r.workspaceConfig.Workspace.ID,
 		timeout,
 	)
 
@@ -134,20 +126,11 @@ func (r *runner) Up(
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
-	// do not run initialize command in platform mode
-	if !options.Platform.Enabled {
-		if err := runInitializeCommand(
-			r.LocalWorkspaceFolder,
-			substitutedConfig.Config,
-			options.InitEnv,
-		); err != nil {
-			return nil, err
-		}
-	} else if len(substitutedConfig.Config.InitializeCommand) > 0 {
-		log.Info("Skipping initializeCommand on platform")
+	if err := r.runInitializeCommand(substitutedConfig.Config, options); err != nil {
+		return nil, err
 	}
 
-	runParams := &runContainerParams{
+	params := &runContainerParams{
 		parsedConfig:        substitutedConfig,
 		substitutionContext: substitutionContext,
 		options:             options,
@@ -158,17 +141,17 @@ func (r *runner) Up(
 	case isDockerFileConfig(substitutedConfig.Config),
 		substitutedConfig.Config.Image != "",
 		substitutedConfig.Config.ContainerID != "":
-		return r.runSingleContainer(ctx, runParams)
+		return r.runSingleContainer(ctx, params)
 	case isDockerComposeConfig(substitutedConfig.Config):
-		return r.runDockerCompose(ctx, runParams)
+		return r.runDockerCompose(ctx, params)
 	default:
-		return r.runDefaultContainer(ctx, runParams)
+		return r.runDefaultContainer(ctx, params)
 	}
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
-	return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.ID,
+	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID: r.id,
 		User:        params.User,
 		Command:     params.Command,
 		Stdin:       params.Stdin,
@@ -178,245 +161,58 @@ func (r *runner) Command(ctx context.Context, params CommandParams) error {
 }
 
 func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
-	containerDetails, err := r.Driver.FindDevContainer(ctx, r.ID)
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
 	}
-
 	return containerDetails, nil
 }
 
 func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
-	return r.Driver.GetDevContainerLogs(ctx, r.ID, writer, writer)
+	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
 }
 
+// runInitializeCommand runs the host-side initializeCommand hook. The hook is
+// never executed in platform mode.
+func (r *runner) runInitializeCommand(conf *config.DevContainerConfig, options UpOptions) error {
+	if options.Platform.Enabled {
+		if len(conf.InitializeCommand) > 0 {
+			log.Info("Skipping initializeCommand on platform")
+		}
+		return nil
+	}
+	return runInitializeCommand(r.localWorkspaceFolder, conf, options.InitEnv)
+}
+
+// runDefaultContainer handles configs missing image/dockerfile/compose by
+// selecting a fallback image or auto-detecting the project language, then
+// delegating to the single-container path.
 func (r *runner) runDefaultContainer(
 	ctx context.Context,
 	params *runContainerParams,
 ) (*config.Result, error) {
-	options := params.options
-	substitutedConfig := params.parsedConfig
-	if options.FallbackImage != "" {
-		log.Warn(
-			"dev container config is missing one of \"image\", \"dockerFile\" or \"dockerComposeFile\" properties, " +
-				"using fallback image " + options.FallbackImage,
-		)
+	conf := params.parsedConfig.Config
 
-		substitutedConfig.Config.ImageContainer = config.ImageContainer{
-			Image: options.FallbackImage,
-		}
-	} else {
-		log.Warn(
-			"dev container config is missing one of \"image\", \"dockerFile\" or \"dockerComposeFile\" properties, " +
-				"defaulting to auto-detection",
-		)
+	const missingProps = "dev container config is missing one of " +
+		"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties"
 
-		lang, err := language.DetectLanguage(r.LocalWorkspaceFolder)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"could not detect project language and dev container config is missing one of " +
-					"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties",
-			)
-		}
-
-		if language.MapConfig[lang] == nil {
-			return nil, fmt.Errorf(
-				"could not detect project language and dev container config is missing one of " +
-					"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties",
-			)
-		}
-		substitutedConfig.Config.ImageContainer = language.MapConfig[lang].ImageContainer
+	if fallback := params.options.FallbackImage; fallback != "" {
+		log.Warn(missingProps + ", using fallback image " + fallback)
+		conf.ImageContainer = config.ImageContainer{Image: fallback}
+		return r.runSingleContainer(ctx, params)
 	}
+
+	log.Warn(missingProps + ", defaulting to auto-detection")
+
+	lang, err := language.DetectLanguage(r.localWorkspaceFolder)
+	if err != nil || language.MapConfig[lang] == nil {
+		return nil, fmt.Errorf("could not detect project language and %s", missingProps)
+	}
+	conf.ImageContainer = language.MapConfig[lang].ImageContainer
 
 	return r.runSingleContainer(ctx, params)
 }
 
 func isDockerFileConfig(config *config.DevContainerConfig) bool {
 	return config.GetDockerfile() != ""
-}
-
-// initCmdContext groups shared execution state for initializeCommand sub-commands.
-type initCmdContext struct {
-	shellArgs       []string
-	workspaceFolder string
-	extraEnvVars    []string
-}
-
-func runInitializeCommand(
-	workspaceFolder string,
-	conf *config.DevContainerConfig,
-	extraEnvVars []string,
-) error {
-	if len(conf.InitializeCommand) == 0 {
-		return nil
-	}
-
-	shellArgs := []string{"sh", "-c"}
-	// According to the devcontainer spec, `initializeCommand` needs to be run on the host.
-	// On Windows we can't assume everyone has `sh` added to their PATH so we need to use
-	// Windows default shell (usually cmd.exe).
-	if runtime.GOOS == "windows" {
-		comSpec := os.Getenv("COMSPEC")
-		if comSpec != "" {
-			shellArgs = []string{comSpec, "/c"}
-		} else {
-			shellArgs = []string{"cmd.exe", "/c"}
-		}
-	}
-
-	ctx := &initCmdContext{
-		shellArgs:       shellArgs,
-		workspaceFolder: workspaceFolder,
-		extraEnvVars:    extraEnvVars,
-	}
-
-	if len(conf.InitializeCommand) > 1 {
-		return ctx.runParallel(conf.InitializeCommand)
-	}
-
-	for name, cmd := range conf.InitializeCommand {
-		if err := ctx.runSingle(name, cmd); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// runParallel executes all named sub-commands concurrently, collects errors, and returns them joined.
-func (c *initCmdContext) runParallel(hook map[string][]string) error {
-	var (
-		wg   sync.WaitGroup
-		mu   sync.Mutex
-		errs []error
-	)
-
-	wg.Add(len(hook))
-	for name, cmd := range hook {
-		go func() {
-			defer wg.Done()
-			if err := c.runSingle(name, cmd); err != nil {
-				mu.Lock()
-				errs = append(errs, fmt.Errorf("named command %q failed: %w", name, err))
-				mu.Unlock()
-			}
-		}()
-	}
-
-	wg.Wait()
-	return errors.Join(errs...)
-}
-
-// runSingle executes a single initializeCommand sub-command.
-func (c *initCmdContext) runSingle(name string, cmd []string) error {
-	var args []string
-	if len(cmd) == 1 {
-		args = make([]string, len(c.shellArgs)+1)
-		copy(args, c.shellArgs)
-		args[len(c.shellArgs)] = cmd[0]
-	} else {
-		args = cmd
-	}
-
-	log.Infof(
-		"Running initializeCommand %q from devcontainer.json: %q",
-		name,
-		strings.Join(args, " "),
-	)
-
-	writer := log.Writer(log.LevelInfo)
-	errwriter := log.Writer(log.LevelError)
-	defer func() { _ = writer.Close() }()
-	defer func() { _ = errwriter.Close() }()
-
-	// args come from devcontainer.json initializeCommand, a trusted local config.
-	c2 := exec.Command(args[0], args[1:]...) //nolint:gosec // G204
-	env := c2.Environ()
-	env = append(env, c.extraEnvVars...)
-
-	c2.Stdout = writer
-	c2.Stderr = errwriter
-	c2.Dir = c.workspaceFolder
-	c2.Env = env
-	if err := c2.Run(); err != nil {
-		return fmt.Errorf("initializeCommand %q failed: %w", name, err)
-	}
-	return nil
-}
-
-func mountHasConsistency(mount string) bool {
-	for part := range strings.SplitSeq(mount, ",") {
-		if strings.HasPrefix(part, "consistency=") {
-			return true
-		}
-	}
-	return false
-}
-
-func mountSetConsistency(mount, value string) string {
-	quoted := "consistency='" + value + "'"
-	var parts []string
-	for part := range strings.SplitSeq(mount, ",") {
-		if strings.HasPrefix(part, "consistency=") {
-			parts = append(parts, quoted)
-		} else {
-			parts = append(parts, part)
-		}
-	}
-	if !mountHasConsistency(mount) {
-		parts = append(parts, quoted)
-	}
-	return strings.Join(parts, ",")
-}
-
-func needsDefaultConsistency() bool {
-	return runtime.GOOS != goosLinux
-}
-
-func getWorkspace(
-	workspaceFolder, workspaceID string,
-	conf *config.DevContainerConfig,
-) (string, string) {
-	if conf.WorkspaceMount != nil {
-		// Explicit empty string means suppress the workspace mount entirely.
-		if *conf.WorkspaceMount == "" {
-			containerMountFolder := conf.WorkspaceFolder
-			if containerMountFolder == "" {
-				containerMountFolder = "/workspaces/" + workspaceID
-			}
-			return "", containerMountFolder
-		}
-
-		mount := config.ParseMount(*conf.WorkspaceMount)
-		ws := *conf.WorkspaceMount
-		if needsDefaultConsistency() && !mountHasConsistency(ws) {
-			ws += ",consistency='consistent'"
-		}
-		return ws, mount.Target
-	}
-
-	containerMountFolder := conf.WorkspaceFolder
-	if containerMountFolder == "" {
-		containerMountFolder = "/workspaces/" + workspaceID
-	}
-
-	consistency := ""
-	if needsDefaultConsistency() {
-		consistency = ",consistency='consistent'"
-	}
-
-	return fmt.Sprintf(
-		"type=bind,source=%s,target=%s%s",
-		workspaceFolder,
-		containerMountFolder,
-		consistency,
-	), containerMountFolder
-}
-
-func GetRunnerIDFromWorkspace(workspace *provider2.Workspace) string {
-	ID := workspace.UID
-	if encoding.IsLegacyUID(workspace.UID) {
-		ID = workspace.ID
-	}
-
-	return ID
 }

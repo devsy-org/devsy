@@ -115,29 +115,29 @@ type podExecCapableDriver interface {
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	dockerCmd := "docker"
 	var dockerEnv []string
-	if r.WorkspaceConfig.Agent.Docker.Path != "" {
-		dockerCmd = r.WorkspaceConfig.Agent.Docker.Path
+	if r.workspaceConfig.Agent.Docker.Path != "" {
+		dockerCmd = r.workspaceConfig.Agent.Docker.Path
 	}
-	for k, v := range r.WorkspaceConfig.Agent.Docker.Env {
+	for k, v := range r.workspaceConfig.Agent.Docker.Env {
 		dockerEnv = append(dockerEnv, k+"="+v)
 	}
 
-	execFn := delivery.CommandFunc(r.Driver.CommandDevContainer, r.ID)
+	execFn := delivery.CommandFunc(r.driver.CommandDevContainer, r.id)
 
 	var podExec delivery.PodExecFunc
-	if d, ok := r.Driver.(podExecCapableDriver); ok {
+	if d, ok := r.driver.(podExecCapableDriver); ok {
 		podExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
-			return d.CommandContainerArgv(ctx, r.ID, argv, streams)
+			return d.CommandContainerArgv(ctx, r.id, argv, streams)
 		}
 	}
 
 	return delivery.NewAgentDelivery(delivery.FactoryOptions{
-		WorkspaceConfig: r.WorkspaceConfig,
-		WorkspaceID:     r.ID,
+		WorkspaceConfig: r.workspaceConfig,
+		WorkspaceID:     r.id,
 		DockerCommand:   dockerCmd,
 		DockerEnv:       dockerEnv,
-		HelperImage:     r.WorkspaceConfig.Agent.Docker.HelperImage,
-		ContainerID:     r.ID,
+		HelperImage:     r.workspaceConfig.Agent.Docker.HelperImage,
+		ContainerID:     r.id,
 		ExecFunc:        execFn,
 		PodExec:         podExec,
 	})
@@ -148,10 +148,10 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 // than guessing the host arch: streaming a wrong-arch binary would succeed here
 // but fail when the agent starts, after the legacy fallback can no longer run.
 func (r *runner) deliveryArch(ctx context.Context) (string, error) {
-	if r.WorkspaceConfig.Agent.Driver != provider2.KubernetesDriver {
+	if r.workspaceConfig.Agent.Driver != provider2.KubernetesDriver {
 		return runtime.GOARCH, nil
 	}
-	arch, err := r.Driver.TargetArchitecture(ctx, r.ID)
+	arch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
 		return "", fmt.Errorf("resolve cluster architecture: %w", err)
 	}
@@ -173,7 +173,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 	}
 
 	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID:  r.ID,
+		WorkspaceID:  r.id,
 		BinarySource: binarySource,
 		Arch:         arch,
 	})
@@ -184,7 +184,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 }
 
 func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
-	downloadURL := r.AgentDownloadURL
+	downloadURL := r.agentDownloadURL
 	if downloadURL == "" {
 		downloadURL = pkgconfig.DefaultAgentDownloadURL()
 	}
@@ -199,8 +199,8 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 	err := agent.InjectAgent(&agent.InjectOptions{
 		Ctx: ctx,
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return r.Driver.CommandDevContainer(ctx, &driver.CommandParams{
-				WorkspaceID: r.ID,
+			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+				WorkspaceID: r.id,
 				User:        containerRootUser,
 				Command:     command,
 				Stdin:       stdin,
@@ -244,7 +244,7 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 	result := &config.Result{
 		DevContainerConfigWithPath: &config.DevContainerConfigWithPath{
 			Config: params.rawConfig,
-			Path:   getRelativeDevContainerJson(params.rawConfig.Origin, r.LocalWorkspaceFolder),
+			Path:   getRelativeDevContainerJson(params.rawConfig.Origin, r.localWorkspaceFolder),
 		},
 		MergedConfig:        params.mergedConfig,
 		SubstitutionContext: params.substitutionContext,
@@ -252,21 +252,21 @@ func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 		HostWarnings:        params.hostWarnings,
 	}
 
-	if r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe != "" {
-		result.MergedConfig.UserEnvProbe = r.WorkspaceConfig.CLIOptions.DefaultUserEnvProbe
+	if r.workspaceConfig.CLIOptions.DefaultUserEnvProbe != "" {
+		result.MergedConfig.UserEnvProbe = r.workspaceConfig.CLIOptions.DefaultUserEnvProbe
 	}
-	if r.WorkspaceConfig.CLIOptions.ContainerUser != "" {
-		result.MergedConfig.ContainerUser = r.WorkspaceConfig.CLIOptions.ContainerUser
+	if r.workspaceConfig.CLIOptions.ContainerUser != "" {
+		result.MergedConfig.ContainerUser = r.workspaceConfig.CLIOptions.ContainerUser
 	}
-	if r.WorkspaceConfig.CLIOptions.RemoteUser != "" {
-		result.MergedConfig.RemoteUser = r.WorkspaceConfig.CLIOptions.RemoteUser
+	if r.workspaceConfig.CLIOptions.RemoteUser != "" {
+		result.MergedConfig.RemoteUser = r.workspaceConfig.CLIOptions.RemoteUser
 	}
 
-	if r.WorkspaceConfig.Agent.Local == stringTrue &&
-		r.WorkspaceConfig.CLIOptions.Platform.Enabled {
+	if r.workspaceConfig.Agent.Local == stringTrue &&
+		r.workspaceConfig.CLIOptions.Platform.Enabled {
 		result.MergedConfig.Mounts = filterWorkspaceMounts(
 			result.MergedConfig.Mounts,
-			r.WorkspaceConfig.ContentFolder,
+			r.workspaceConfig.ContentFolder,
 		)
 	}
 
@@ -287,17 +287,17 @@ func (r *runner) compressResult(result *config.Result) (string, error) {
 
 func (r *runner) compressWorkspaceConfig() (string, error) {
 	workspaceConfig := &provider2.ContainerWorkspaceInfo{
-		IDE:              r.WorkspaceConfig.Workspace.IDE,
-		CLIOptions:       r.WorkspaceConfig.CLIOptions,
-		Dockerless:       r.WorkspaceConfig.Agent.Dockerless,
-		ContainerTimeout: r.WorkspaceConfig.Agent.ContainerTimeout,
-		Source:           r.WorkspaceConfig.Workspace.Source,
-		Agent:            r.WorkspaceConfig.Agent,
-		ContentFolder:    r.WorkspaceConfig.ContentFolder,
+		IDE:              r.workspaceConfig.Workspace.IDE,
+		CLIOptions:       r.workspaceConfig.CLIOptions,
+		Dockerless:       r.workspaceConfig.Agent.Dockerless,
+		ContainerTimeout: r.workspaceConfig.Agent.ContainerTimeout,
+		Source:           r.workspaceConfig.Workspace.Source,
+		Agent:            r.workspaceConfig.Agent,
+		ContentFolder:    r.workspaceConfig.ContentFolder,
 	}
 	workspaceConfig.PullFromInsideContainer = resolvePullFromInsideContainer(
-		r.WorkspaceConfig.CLIOptions,
-		r.WorkspaceConfig.Workspace.Source.GitRepository,
+		r.workspaceConfig.CLIOptions,
+		r.workspaceConfig.Workspace.Source.GitRepository,
 	)
 
 	workspaceConfigRaw, err := json.Marshal(workspaceConfig)
@@ -325,7 +325,7 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 }
 
 func (r *runner) addSetupFlags(args *[]string) {
-	_, isDockerDriver := r.Driver.(driver.DockerDriver)
+	_, isDockerDriver := r.driver.(driver.DockerDriver)
 
 	r.addChownFlag(args, isDockerDriver)
 	r.addDriverFlags(args, isDockerDriver)
@@ -352,20 +352,20 @@ func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
 // isPodmanRuntime reports whether the docker driver is backed by the Podman
 // runtime (agent.docker.runtime: podman).
 func (r *runner) isPodmanRuntime() bool {
-	return strings.EqualFold(r.WorkspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
+	return strings.EqualFold(r.workspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
 func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {
 	if !isDockerDriver {
 		*args = append(*args, "--stream-mounts")
 	}
-	if r.WorkspaceConfig.Agent.InjectGitCredentials != stringFalse {
+	if r.workspaceConfig.Agent.InjectGitCredentials != stringFalse {
 		*args = append(*args, "--inject-git-credentials")
 	}
 }
 
 func (r *runner) addPlatformFlags(args *[]string) {
-	platform := r.WorkspaceConfig.CLIOptions.Platform
+	platform := r.workspaceConfig.CLIOptions.Platform
 	if platform.AccessKey != "" {
 		*args = append(*args, "--access-key", shellescape.Quote(platform.AccessKey))
 	}
@@ -378,7 +378,7 @@ func (r *runner) addPlatformFlags(args *[]string) {
 }
 
 func (r *runner) addDotfilesFlags(args *[]string) {
-	cli := r.WorkspaceConfig.CLIOptions
+	cli := r.workspaceConfig.CLIOptions
 	if cli.DotfilesRepo != "" {
 		*args = append(*args, "--dotfiles-repo", shellescape.Quote(cli.DotfilesRepo))
 	}
@@ -388,7 +388,7 @@ func (r *runner) addDotfilesFlags(args *[]string) {
 }
 
 func (r *runner) addPrebuildFlag(args *[]string) {
-	if r.WorkspaceConfig.CLIOptions.Prebuild {
+	if r.workspaceConfig.CLIOptions.Prebuild {
 		*args = append(*args, "--prebuild")
 	}
 }
@@ -413,10 +413,10 @@ func (r *runner) executeSetup(
 			ctx,
 			stdout,
 			stdin,
-			r.WorkspaceConfig.Agent.InjectGitCredentials != stringFalse,
-			r.WorkspaceConfig.Agent.InjectDockerCredentials != stringFalse,
+			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
+			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			config.GetMounts(result),
-			tunnelserver.WithPlatformOptions(&r.WorkspaceConfig.CLIOptions.Platform),
+			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 		)
 	}
 
@@ -428,8 +428,8 @@ func (r *runner) executeSetup(
 		sshTunnelStdinReader, sshTunnelStdoutWriter *os.File,
 		writer io.WriteCloser,
 	) error {
-		return r.Driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
-			WorkspaceID: r.ID,
+		return r.driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
+			WorkspaceID: r.id,
 			User:        containerRootUser,
 			Command:     sshCmd,
 			Stdin:       sshTunnelStdinReader,
@@ -454,11 +454,11 @@ func (r *runner) buildSSHTunnelCommand() string {
 		"internal", "ssh-server", "--stdio",
 	}
 
-	if ide.ReusesAuthSock(r.WorkspaceConfig.Workspace.IDE.Name) {
+	if ide.ReusesAuthSock(r.workspaceConfig.Workspace.IDE.Name) {
 		args = append(
 			args,
 			"--reuse-ssh-auth-sock",
-			shellescape.Quote(r.WorkspaceConfig.CLIOptions.SSHAuthSockID),
+			shellescape.Quote(r.workspaceConfig.CLIOptions.SSHAuthSockID),
 		)
 	}
 	if r.isDebugMode() {

@@ -96,7 +96,7 @@ type composeUpParams struct {
 }
 
 func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if !ok {
 		return nil, fmt.Errorf(
 			"docker compose is not supported by this provider, choose a different one",
@@ -112,7 +112,7 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.WorkspaceConfig.CLIOptions)
+	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
 	if err != nil {
 		return fmt.Errorf("get parsed config: %w", err)
 	}
@@ -140,7 +140,7 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.WorkspaceConfig.CLIOptions)
+	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
 	if err != nil {
 		return fmt.Errorf("get parsed config: %w", err)
 	}
@@ -235,7 +235,7 @@ func (r *runner) loadComposeProject(
 	if err != nil {
 		return nil, fmt.Errorf("load docker compose project: %w", err)
 	}
-	project.Name = composeHelper.GetProjectName(r.ID)
+	project.Name = composeHelper.GetProjectName(r.id)
 	log.Debugf("Loaded project %s", project.Name)
 
 	if err := validateRunServices(parsedConfig.Config.RunServices, project); err != nil {
@@ -375,7 +375,7 @@ func (r *runner) updateContainerUserUID(
 	ctx context.Context,
 	parsedConfig *config.DevContainerConfig,
 ) error {
-	dockerDriver, ok := r.Driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if !ok {
 		return nil
 	}
@@ -383,7 +383,7 @@ func (r *runner) updateContainerUserUID(
 	defer func() { _ = writer.Close() }()
 	if err := dockerDriver.UpdateContainerUserUID(
 		ctx,
-		r.ID,
+		r.id,
 		parsedConfig,
 		writer,
 	); err != nil {
@@ -604,7 +604,7 @@ func composeFileFromEnv(envFiles []string) (string, error) {
 
 func (r *runner) getEnvFiles() []string {
 	var envFiles []string
-	envFile := path.Join(r.LocalWorkspaceFolder, ".env")
+	envFile := path.Join(r.localWorkspaceFolder, ".env")
 	envFileStat, err := os.Stat(envFile)
 	if err == nil && envFileStat.Mode().IsRegular() {
 		envFiles = append(envFiles, envFile)
@@ -873,11 +873,11 @@ func (r *runner) recreateDevContainer(
 ) error {
 	log.Debugf("Deleting dev container %s due to --recreate", container.ID)
 
-	if err := r.Driver.StopDevContainer(ctx, r.ID); err != nil {
+	if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 		return fmt.Errorf("stop dev container: %w", err)
 	}
 
-	if err := r.Driver.DeleteDevContainer(ctx, r.ID); err != nil {
+	if err := r.driver.DeleteDevContainer(ctx, r.id); err != nil {
 		return fmt.Errorf("delete dev container: %w", err)
 	}
 	return nil
@@ -954,7 +954,7 @@ func getDockerComposeFolder(workspaceOriginFolder string) string {
 // docker-compose folder using a collision-safe unique name that retains the
 // given prefix (so checkForPersistedFile can still match it by prefix).
 func (r *runner) writeComposeOverrideFile(prefix string, data []byte) (string, error) {
-	dockerComposeFolder := getDockerComposeFolder(r.WorkspaceConfig.Origin)
+	dockerComposeFolder := getDockerComposeFolder(r.workspaceConfig.Origin)
 	if err := os.MkdirAll(dockerComposeFolder, 0o750); err != nil {
 		return "", err
 	}

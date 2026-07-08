@@ -67,9 +67,9 @@ func (m *mockDriver) GetDevContainerLogs(
 
 func newTestRunner(d driver.Driver) *runner {
 	return &runner{
-		Driver: d,
-		ID:     "test-workspace",
-		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+		driver: d,
+		id:     "test-workspace",
+		workspaceConfig: &provider.AgentWorkspaceInfo{
 			Agent: provider.ProviderAgentConfig{
 				Driver: provider.CustomDriver,
 			},

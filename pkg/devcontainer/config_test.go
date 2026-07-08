@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testWorkspaceFolder = "/workspace"
+
 type SubstituteTestSuite struct {
 	suite.Suite
 	runner *runner
@@ -20,9 +22,9 @@ func TestSubstituteTestSuite(t *testing.T) {
 
 func (s *SubstituteTestSuite) SetupTest() {
 	s.runner = &runner{
-		ID:                   "test-id",
-		LocalWorkspaceFolder: "/workspace",
-		WorkspaceConfig: &provider2.AgentWorkspaceInfo{
+		id:                   "test-id",
+		localWorkspaceFolder: testWorkspaceFolder,
+		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			Workspace: &provider2.Workspace{
 				ID: "test-workspace",
 			},
@@ -377,7 +379,7 @@ func TestWorkspaceMountFolderWarning(t *testing.T) {
 			name: "both set",
 			conf: &config.DevContainerConfig{
 				DevContainerConfigBase: config.DevContainerConfigBase{
-					WorkspaceFolder: "/workspace",
+					WorkspaceFolder: testWorkspaceFolder,
 				},
 				NonComposeBase: config.NonComposeBase{WorkspaceMount: new("source=v")},
 			},
@@ -394,7 +396,7 @@ func TestWorkspaceMountFolderWarning(t *testing.T) {
 			name: "folder without mount",
 			conf: &config.DevContainerConfig{
 				DevContainerConfigBase: config.DevContainerConfigBase{
-					WorkspaceFolder: "/workspace",
+					WorkspaceFolder: testWorkspaceFolder,
 				},
 			},
 			wantMsg: true,
@@ -403,7 +405,7 @@ func TestWorkspaceMountFolderWarning(t *testing.T) {
 			name: "empty-string mount satisfies the pairing",
 			conf: &config.DevContainerConfig{
 				DevContainerConfigBase: config.DevContainerConfigBase{
-					WorkspaceFolder: "/workspace",
+					WorkspaceFolder: testWorkspaceFolder,
 				},
 				NonComposeBase: config.NonComposeBase{WorkspaceMount: new("")},
 			},

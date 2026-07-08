@@ -76,7 +76,7 @@ func TestRunnerIsPodmanRuntime(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := &runner{
-				WorkspaceConfig: &provider2.AgentWorkspaceInfo{
+				workspaceConfig: &provider2.AgentWorkspaceInfo{
 					Agent: provider2.ProviderAgentConfig{
 						Docker: provider2.ProviderDockerDriverConfig{Runtime: c.runtime},
 					},
@@ -133,7 +133,7 @@ const testLoginInteractiveShell = "loginInteractiveShell"
 
 func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 	r := &runner{
-		WorkspaceConfig: &provider2.AgentWorkspaceInfo{
+		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			CLIOptions: provider2.CLIOptions{
 				DefaultUserEnvProbe: "none",
 			},
@@ -158,7 +158,7 @@ func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 
 func TestBuildResult_DefaultUserEnvProbeEmpty(t *testing.T) {
 	r := &runner{
-		WorkspaceConfig: &provider2.AgentWorkspaceInfo{
+		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			CLIOptions: provider2.CLIOptions{},
 		},
 	}

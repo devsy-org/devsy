@@ -552,7 +552,7 @@ func TestEscapeComposeLabelValueRoundTrip(t *testing.T) {
 func TestBuildServiceLabels(t *testing.T) {
 	t.Run("uses default ID label when no ID labels", func(t *testing.T) {
 		r := &runner{}
-		r.ID = "workspace-id"
+		r.id = "workspace-id"
 
 		labels := r.buildServiceLabels(nil)
 
@@ -567,7 +567,7 @@ func TestBuildServiceLabels(t *testing.T) {
 
 	t.Run("escapes dollars but preserves other characters", func(t *testing.T) {
 		r := &runner{}
-		r.IDLabels = []string{"id.label=$value"}
+		r.idLabels = []string{"id.label=$value"}
 
 		labels := r.buildServiceLabels(map[string]string{"extra": "it's $here"})
 
@@ -582,7 +582,7 @@ func TestBuildServiceLabels(t *testing.T) {
 
 	t.Run("splits ID label only on first equals sign", func(t *testing.T) {
 		r := &runner{}
-		r.IDLabels = []string{"id.label=a=b=c"}
+		r.idLabels = []string{"id.label=a=b=c"}
 
 		labels := r.buildServiceLabels(nil)
 
@@ -593,7 +593,7 @@ func TestBuildServiceLabels(t *testing.T) {
 
 	t.Run("additional labels merge alongside ID labels", func(t *testing.T) {
 		r := &runner{}
-		r.IDLabels = []string{"id.label=v"}
+		r.idLabels = []string{"id.label=v"}
 
 		labels := r.buildServiceLabels(map[string]string{"k": "plain"})
 
