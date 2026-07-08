@@ -32,7 +32,7 @@
   "devDependencies": {
     "@electron/rebuild": "3.7.2",
     "@internationalized/date": "3.12.2",
-    "@lucide/svelte": "1.8.0",
+    "@lucide/svelte": "1.23.0",
     "@playwright/test": "1.59.1",
     "@sveltejs/vite-plugin-svelte": "5.1.1",
     "@tailwindcss/vite": "4.3.2",
