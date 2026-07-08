@@ -119,6 +119,22 @@ func TestRunInitializeCommand_Empty(t *testing.T) {
 	}
 }
 
+func TestRunInitializeCommand_EmptyEntry(t *testing.T) {
+	conf := &config.DevContainerConfig{}
+	conf.InitializeCommand = types.LifecycleHook{
+		"noop": {},
+	}
+
+	// An empty command slice must produce a normal error, not a panic.
+	err := runInitializeCommand(t.TempDir(), conf, nil)
+	if err == nil {
+		t.Fatal("expected error for empty command entry")
+	}
+	if !contains(err.Error(), "noop") {
+		t.Fatalf("error should name the empty command, got: %v", err)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }
@@ -278,6 +294,12 @@ func TestMountSetConsistency(t *testing.T) {
 			mount: "type=bind,source=/s,target=/t,consistency=cached",
 			value: testConsistency,
 			want:  "type=bind,source=/s,target=/t," + wantSuffix,
+		},
+		{
+			name:  "preserves suppressed (empty) mount",
+			mount: "",
+			value: testConsistency,
+			want:  "",
 		},
 	}
 	for _, tt := range tests {

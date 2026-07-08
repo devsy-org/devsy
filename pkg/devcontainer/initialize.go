@@ -74,6 +74,10 @@ func hostShell() []string {
 // run executes a single named sub-command. A single-element command is run as a
 // shell string; a multi-element command is executed argv-style.
 func (c *initializeCommand) run(name string, cmd []string) error {
+	if len(cmd) == 0 {
+		return fmt.Errorf("initializeCommand %q is empty", name)
+	}
+
 	args := cmd
 	if len(cmd) == 1 {
 		args = append(append([]string{}, c.shell...), cmd[0])

@@ -67,6 +67,12 @@ func mountHasConsistency(mount string) bool {
 // mountSetConsistency returns the mount string with its consistency option set
 // to value, replacing any existing value or appending one when absent.
 func mountSetConsistency(mount, value string) string {
+	// An empty mount is the "suppress the workspace mount" signal; keep it empty
+	// rather than synthesizing a malformed consistency-only mount.
+	if mount == "" {
+		return ""
+	}
+
 	quoted := "consistency='" + value + "'"
 
 	replaced := false
