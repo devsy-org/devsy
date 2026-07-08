@@ -8,8 +8,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
-// defaultConsistency is applied to bind mounts on non-Linux hosts, where the
-// file sharing layer benefits from an explicit consistency mode.
+// defaultConsistency is applied to the workspace mount on non-Linux hosts, where
+// the file sharing layer benefits from an explicit consistency mode.
 const defaultConsistency = "consistent"
 
 func needsDefaultConsistency() bool {
