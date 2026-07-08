@@ -39,11 +39,6 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *LogsCmd) Run(ctx context.Context) error {
-	// `agent workspace logs` fetches the devcontainer's logs from the docker
-	// daemon (docker logs). It runs wherever that daemon and the per-workspace
-	// state live — inside the devcontainer, or on the machine/host that hosts
-	// it — so it is NOT gated on running inside a container. Missing workspace
-	// state (e.g. the user's own CLI with no such workspace) surfaces below.
 	shouldExit, workspaceInfo, err := agent.ReadAgentWorkspaceInfo(
 		cmd.AgentDir,
 		cmd.Context,
@@ -58,7 +53,6 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("workspace %q not found", cmd.ID)
 	}
 
-	// create new runner
 	runner, err := devcontainer.NewRunner(
 		config.ContainerDevsyHelperLocation,
 		config.DefaultAgentDownloadURL(),
@@ -68,6 +62,5 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("create runner: %w", err)
 	}
 
-	// write devcontainer logs to stdout
 	return runner.Logs(ctx, os.Stdout)
 }
