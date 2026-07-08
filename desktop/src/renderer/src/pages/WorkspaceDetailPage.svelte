@@ -747,8 +747,8 @@ async function handleRenameConfirmed() {
                                     <button
                                       type="button"
                                       class="rounded p-1.5 opacity-0 transition-opacity hover:bg-muted group-hover/log:opacity-60 hover:!opacity-100"
-                                      onclick={() => copyToClipboard(logContent)}
                                       {...props}
+                                      onclick={() => copyToClipboard(logContent)}
                                     >
                                       <ClipboardCopy class="h-3.5 w-3.5" />
                                     </button>
@@ -763,8 +763,8 @@ async function handleRenameConfirmed() {
                                   <button
                                     type="button"
                                     class="rounded p-1.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover/log:opacity-60 hover:!opacity-100"
-                                    onclick={() => deleteLog(entry)}
                                     {...props}
+                                    onclick={() => deleteLog(entry)}
                                   >
                                     <Trash2 class="h-3.5 w-3.5" />
                                   </button>
