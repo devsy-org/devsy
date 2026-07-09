@@ -54,7 +54,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	github.com/tidwall/gjson v1.19.0
-	github.com/tonistiigi/fsutil v0.0.0-20260630114638-b1eb15549b43
+	github.com/tonistiigi/fsutil v0.0.0-20260709161336-e151d4ef75ea
 	github.com/u-root/u-root v0.16.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/zap v1.28.0
