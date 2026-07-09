@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTopLevelCommand verifies the classifier that gates the Flatpak host
-// re-exec: the daemon lives under `internal`, which must stay in-sandbox, while
-// user-facing commands like `up`/`ssh` must be routed to the host.
 func TestTopLevelCommand(t *testing.T) {
 	rootCmd, _ := BuildRoot()
 
@@ -20,9 +17,9 @@ func TestTopLevelCommand(t *testing.T) {
 	}{
 		{"daemon stays in sandbox", []string{internalCommand, "daemon-local"}, internalCommand},
 		{"nested internal command", []string{internalCommand, "ssh-server"}, internalCommand},
-		{"workspace up routes to host", []string{"workspace", "up", "."}, "workspace"},
-		{"workspace ssh routes to host", []string{"workspace", "ssh", "my-ws"}, "workspace"},
-		{"provider list routes to host", []string{"provider", "list"}, "provider"},
+		{"workspace up routes to host", []string{cmdWorkspace, "up", "."}, cmdWorkspace},
+		{"workspace ssh routes to host", []string{cmdWorkspace, "ssh", "my-ws"}, cmdWorkspace},
+		{"provider list routes to host", []string{cmdProvider, cmdList}, cmdProvider},
 		{"bare root", []string{}, ""},
 	}
 
