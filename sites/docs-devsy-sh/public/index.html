@@ -165,15 +165,34 @@
         color: var(--ink);
       }
 
+      .nav-link-single {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--slate);
+      }
+
+      .nav-link-single:hover {
+        color: var(--ink);
+      }
+
       .nav-cta {
         display: flex;
         align-items: center;
         gap: 14px;
       }
 
+      /* Docs link surfaced in nav-cta only on mobile, where nav-links hides */
+      .nav-docs-mobile {
+        display: none;
+      }
+
       @media (max-width: 820px) {
         .nav-links {
           display: none;
+        }
+
+        .nav-docs-mobile {
+          display: inline-flex;
         }
       }
 
@@ -558,10 +577,12 @@
           <a href="/docs/what-is-devsy">Docs</a>
         </nav>
         <div class="nav-cta">
+          <a class="nav-link-single nav-docs-mobile" href="/docs/what-is-devsy"
+            >Docs</a
+          >
           <a
-            class="nav-links"
+            class="nav-link-single"
             href="https://github.com/devsy-org/devsy"
-            style="display: inline-flex"
             aria-label="GitHub"
             >GitHub</a
           >
