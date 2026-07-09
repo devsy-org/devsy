@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -48,6 +49,8 @@ const (
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
 	envProEnabled = "DEVSY_PRO_ENABLED"
+
+	internalCommand = "internal"
 )
 
 func proEnabled() bool {
@@ -61,23 +64,30 @@ func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	rootCmd, globalFlags := BuildRoot()
+	os.Exit(run())
+}
 
-	// Bootstrap pre-Execute so subcommands that override PersistentPreRunE
-	// without chaining (e.g. pro, agent) still get telemetry.
+// run builds and executes the root command, returning the process exit code.
+func run() int {
+	rootCmd, globalFlags := BuildRoot()
 	target := rootCmd
 	if found, _, findErr := rootCmd.Find(os.Args[1:]); findErr == nil && found != nil {
 		target = found
 	}
 	collector := telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+	defer func() { collector.Flush() }()
+	if topLevelCommand(target) != internalCommand {
+		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
+			collector.RecordCLI(err)
+			return exitCodeForError(err, globalFlags)
+		} else if shouldExit {
+			return 0
+		}
+	}
 
 	err := rootCmd.Execute()
-
-	// Re-apply opt-out post-Execute for the same PreRunE-bypass case.
 	if devsyConfig, cfgErr := config.LoadConfig(
 		globalFlags.Context,
 		globalFlags.Provider,
@@ -86,45 +96,54 @@ func Execute() {
 	}
 
 	collector.RecordCLI(err)
-	collector.Flush()
 	if err != nil {
-		//nolint:all
-		if sshExitErr, ok := err.(*ssh.ExitError); ok {
-			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
-			os.Exit(sshExitErr.ExitStatus())
-		}
-
-		//nolint:all
-		if execExitErr, ok := err.(*exec.ExitError); ok {
-			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
-			os.Exit(execExitErr.ExitCode())
-		}
-
-		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
-		// Always emit the error through zap so the configured log encoder
-		// (json/logfmt/text) governs the wire format. JSONError preserves
-		// the full err.Error() chain in the top-level "msg" field and ships
-		// the structured CLIError under "cliError" for the desktop IPC.
-		log.JSONError(cliErr)
-		// In human-friendly text mode, follow up with hint/doc affordances
-		// that don't fit cleanly into the zap line. These extras are
-		// suppressed in machine-readable modes so log streams stay parseable.
-		if !isMachineLogFormat(globalFlags.LogOutput) {
-			if cliErr.Hint != "" {
-				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
-			}
-			if cliErr.DocURL != "" {
-				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-			}
-		}
-		// Signal workspace-not-found via a distinct exit code so parent
-		// processes (e.g. SetupBackhaul) can detect the registration race
-		// without parsing stderr.
-		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			os.Exit(exitcode.WorkspaceNotFound)
-		}
-		os.Exit(1)
+		return exitCodeForError(err, globalFlags)
 	}
+	return 0
+}
+
+func topLevelCommand(cmd *cobra.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	for cmd.HasParent() {
+		if !cmd.Parent().HasParent() {
+			return cmd.Name()
+		}
+		cmd = cmd.Parent()
+	}
+	return ""
+}
+
+// exitCodeForError emits err through the configured log encoder and returns the
+// process exit code that reflects the failure.
+func exitCodeForError(err error, globalFlags *flags.GlobalFlags) int {
+	if err == nil {
+		return 0
+	}
+	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
+		log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+		return sshExitErr.ExitStatus()
+	}
+	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+		return execExitErr.ExitCode()
+	}
+
+	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+	log.JSONError(cliErr)
+	if !isMachineLogFormat(globalFlags.LogOutput) {
+		if cliErr.Hint != "" {
+			fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
+		}
+		if cliErr.DocURL != "" {
+			fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
+		}
+	}
+	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+		return exitcode.WorkspaceNotFound
+	}
+	return 1
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed
