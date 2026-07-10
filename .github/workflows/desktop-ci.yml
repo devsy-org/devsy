@@ -74,8 +74,6 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      # Static build (matches goreleaser): the CLI is injected as the workspace
-      # agent and must exec in musl-based containers (e.g. alpine).
       - name: Build CLI (unix)
         if: runner.os != 'Windows'
         env:

@@ -70,9 +70,6 @@ func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
-// logOutputFromArgs extracts the --log-output / --log-format value from raw
-// args before cobra binds the persistent flags. Returns "" when absent so
-// callers can distinguish an unset flag from an explicit "text".
 func logOutputFromArgs(args []string) string {
 	for i, arg := range args {
 		for _, name := range []string{flagLogOutput, flagLogFormat} {
@@ -87,15 +84,6 @@ func logOutputFromArgs(args []string) string {
 	return ""
 }
 
-// isMachineConsumer reports whether output is being consumed by a machine
-// rather than read by a human at a terminal. Cobra's usage/error text and other
-// human affordances are suppressed for machine consumers so they cannot corrupt
-// a parsed stream. Signals, in order:
-//   - the internal subtree drives the agent protocol on stdout;
-//   - DEVSY_UI marks a process spawned by the desktop app (provenance);
-//   - an explicit structured --log-output (json/logfmt);
-//   - as a fallback, output redirected off a terminal (piped) with no explicit
-//     --log-output, matching conventional CLI behavior.
 func isMachineConsumer(logOutput string, isInternal bool) bool {
 	switch {
 	case isInternal:
@@ -113,7 +101,6 @@ func Execute() {
 	os.Exit(run())
 }
 
-// run builds and executes the root command, returning the process exit code.
 func run() int {
 	rootCmd, globalFlags := BuildRoot()
 	target := rootCmd
@@ -151,11 +138,6 @@ func run() int {
 	return 0
 }
 
-// configureOutput sets cobra's error/usage silencing and initializes logging,
-// returning whether output is machine-consumed. Cobra prints its own
-// error/usage only for an interactive human; machine consumers stay silent so
-// their stream is not corrupted. Logging is set up before Execute so errors on
-// paths that skip PersistentPreRunE still surface.
 func configureOutput(
 	rootCmd *cobra.Command,
 	globalFlags *flags.GlobalFlags,
@@ -192,8 +174,6 @@ func topLevelCommand(cmd *cobra.Command) string {
 	return ""
 }
 
-// exitCodeForError renders err and returns the process exit code that reflects
-// the failure.
 func exitCodeForError(err error, machineMode bool) int {
 	if err == nil {
 		return 0
@@ -210,8 +190,6 @@ func exitCodeForError(err error, machineMode bool) int {
 	return 1
 }
 
-// passthroughExitCode returns the exit status of a subprocess or SSH command
-// error verbatim. The second result is false when err is neither.
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		if machineMode {
@@ -228,8 +206,6 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	return 0, false
 }
 
-// renderCLIError emits the structured cliError in machine mode; in text mode
-// cobra already printed the error line, so only hint/doc affordances are added.
 func renderCLIError(err error, machineMode bool) {
 	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
 	if machineMode {
@@ -261,8 +237,6 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
-		// Args parsed cleanly by now, so any later error is a runtime failure:
-		// suppress cobra's usage dump. Parse errors occur before this hook.
 		cobraCmd.SilenceUsage = true
 
 		log.Init(log.Config{

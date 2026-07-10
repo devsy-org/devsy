@@ -305,9 +305,6 @@ func (r *runner) resolveNewContainer(
 	}, nil
 }
 
-// lingerWarning surfaces a warning when a newly created container runs under
-// rootless Podman without systemd linger, where it would be reaped on session
-// end. Returns "" for other drivers/runtimes or when the state cannot be read.
 func (r *runner) lingerWarning(ctx context.Context) string {
 	dockerDriver, ok := r.driver.(driver.DockerDriver)
 	if !ok {

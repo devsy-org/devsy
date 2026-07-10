@@ -1,4 +1,3 @@
-// Package flatpak handles running the CLI outside the Flatpak sandbox.
 package flatpak
 
 import (
@@ -28,7 +27,6 @@ func HostBinaryPath() string {
 	return filepath.Join(dataHome, "devsy", "devsy")
 }
 
-// ReexecOnHost re-executes the current process on the host via `flatpak-spawn --host`.
 func ReexecOnHost() (bool, error) {
 	if !InSandbox() {
 		return false, nil

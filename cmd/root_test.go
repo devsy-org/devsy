@@ -75,10 +75,6 @@ func TestIsMachineLogFormat(t *testing.T) {
 	assert.False(t, isMachineLogFormat(""))
 }
 
-// TestIsMachineConsumer locks in the output contract: only an interactive human
-// (no machine signal, attached to a terminal) reads human-formatted output.
-// The internal subtree (agent protocol), the desktop app (DEVSY_UI), and an
-// explicit structured --log-output are all machine consumers.
 func TestIsMachineConsumer(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -104,17 +100,12 @@ func TestIsMachineConsumer(t *testing.T) {
 	}
 }
 
-// TestIsMachineConsumer_TTYFallback verifies that with no explicit signal the
-// decision falls back to whether stderr is a terminal. Tests do not run on a
-// TTY, so a bare invocation is treated as machine (piped) output.
 func TestIsMachineConsumer_TTYFallback(t *testing.T) {
 	t.Setenv(config.EnvUI, "")
 	assert.True(t, isMachineConsumer("", false),
 		"non-terminal stderr with no explicit format should be machine mode")
 }
 
-// TestConfigureOutput_SilencesCobra locks in that configureOutput mirrors the
-// machine/human decision into cobra's error/usage silencing.
 func TestConfigureOutput_SilencesCobra(t *testing.T) {
 	cases := []struct {
 		name       string
