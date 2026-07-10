@@ -74,11 +74,8 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      # CGO_ENABLED=0 + netgo/osusergo produce a static binary, matching the
-      # goreleaser release build. This is required because the CLI is also
-      # injected as the workspace agent into containers: a glibc-dynamic build
-      # cannot exec in musl-based images (e.g. alpine), which surfaces as
-      # "inject agent: EOF" during workspace up.
+      # Static build (matches goreleaser): the CLI is injected as the workspace
+      # agent and must exec in musl-based containers (e.g. alpine).
       - name: Build CLI (unix)
         if: runner.os != 'Windows'
         env:
