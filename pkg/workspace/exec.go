@@ -55,12 +55,24 @@ func ResolveDockerCommand(
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
-		if expanded := os.ExpandEnv(providerConfig.Agent.Docker.Path); expanded != "" {
+		if expanded := expandWithOptions(
+			providerConfig.Agent.Docker.Path,
+			workspace.Provider.Options,
+		); expanded != "" {
 			return expanded
 		}
 	}
 
 	return DefaultDockerCommand
+}
+
+func expandWithOptions(s string, options map[string]config.OptionValue) string {
+	return os.Expand(s, func(key string) string {
+		if opt, ok := options[key]; ok && opt.Value != "" {
+			return opt.Value
+		}
+		return os.Getenv(key)
+	})
 }
 
 func LoadExecResult(

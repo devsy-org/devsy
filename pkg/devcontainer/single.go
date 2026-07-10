@@ -294,11 +294,27 @@ func (r *runner) resolveNewContainer(
 		return nil, err
 	}
 
+	if w := r.lingerWarning(ctx); w != "" {
+		hostWarnings = append(hostWarnings, w)
+	}
+
 	return &resolvedContainer{
 		details:      containerDetails,
 		mergedConfig: mergedConfig,
 		hostWarnings: hostWarnings,
 	}, nil
+}
+
+func (r *runner) lingerWarning(ctx context.Context) string {
+	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	if !ok {
+		return ""
+	}
+	helper, err := dockerDriver.DockerHelper()
+	if err != nil {
+		return ""
+	}
+	return helper.LingerWarning(ctx)
 }
 
 // buildNewContainerConfig builds the image (deleting the existing container

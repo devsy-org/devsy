@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
@@ -24,6 +25,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -31,12 +33,17 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"k8s.io/klog/v2"
 )
 
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+	logOutputText   = "text"
+
+	flagLogOutput = "--log-output"
+	flagLogFormat = "--log-format"
 
 	groupCore         = "core"
 	groupConfig       = "config"
@@ -48,6 +55,8 @@ const (
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
 	envProEnabled = "DEVSY_PRO_ENABLED"
+
+	internalCommand = "internal"
 )
 
 func proEnabled() bool {
@@ -61,23 +70,60 @@ func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	rootCmd, globalFlags := BuildRoot()
+func logOutputFromArgs(args []string) string {
+	for i, arg := range args {
+		for _, name := range []string{flagLogOutput, flagLogFormat} {
+			if val, ok := strings.CutPrefix(arg, name+"="); ok {
+				return val
+			}
+			if arg == name && i+1 < len(args) {
+				return args[i+1]
+			}
+		}
+	}
+	return ""
+}
 
-	// Bootstrap pre-Execute so subcommands that override PersistentPreRunE
-	// without chaining (e.g. pro, agent) still get telemetry.
+func isMachineConsumer(logOutput string, isInternal bool) bool {
+	switch {
+	case isInternal:
+		return true
+	case os.Getenv(config.EnvUI) == config.BoolTrue:
+		return true
+	case logOutput != "":
+		return isMachineLogFormat(logOutput)
+	default:
+		return !term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // fd fits in int
+	}
+}
+
+func Execute() {
+	os.Exit(run())
+}
+
+func run() int {
+	rootCmd, globalFlags := BuildRoot()
 	target := rootCmd
 	if found, _, findErr := rootCmd.Find(os.Args[1:]); findErr == nil && found != nil {
 		target = found
 	}
 	collector := telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+	defer func() { collector.Flush() }()
+
+	isInternal := topLevelCommand(target) == internalCommand
+	machineMode := configureOutput(rootCmd, globalFlags, isInternal)
+
+	if !isInternal {
+		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
+			collector.RecordCLI(err)
+			return exitCodeForError(err, machineMode)
+		} else if shouldExit {
+			return 0
+		}
+	}
 
 	err := rootCmd.Execute()
-
-	// Re-apply opt-out post-Execute for the same PreRunE-bypass case.
 	if devsyConfig, cfgErr := config.LoadConfig(
 		globalFlags.Context,
 		globalFlags.Provider,
@@ -86,44 +132,91 @@ func Execute() {
 	}
 
 	collector.RecordCLI(err)
-	collector.Flush()
 	if err != nil {
-		//nolint:all
-		if sshExitErr, ok := err.(*ssh.ExitError); ok {
+		return exitCodeForError(err, machineMode)
+	}
+	return 0
+}
+
+func configureOutput(
+	rootCmd *cobra.Command,
+	globalFlags *flags.GlobalFlags,
+	isInternal bool,
+) bool {
+	logOutput := logOutputFromArgs(os.Args[1:])
+	machineMode := isMachineConsumer(logOutput, isInternal)
+	rootCmd.SilenceErrors = machineMode
+	rootCmd.SilenceUsage = machineMode
+
+	format := logOutput
+	if format == "" {
+		format = logOutputText
+	}
+	log.Init(log.Config{
+		Verbosity: globalFlags.Verbosity,
+		Quiet:     globalFlags.Quiet,
+		Debug:     globalFlags.Debug,
+		Format:    format,
+	})
+	return machineMode
+}
+
+func topLevelCommand(cmd *cobra.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	for cmd.HasParent() {
+		if !cmd.Parent().HasParent() {
+			return cmd.Name()
+		}
+		cmd = cmd.Parent()
+	}
+	return ""
+}
+
+func exitCodeForError(err error, machineMode bool) int {
+	if err == nil {
+		return 0
+	}
+
+	if code, ok := passthroughExitCode(err, machineMode); ok {
+		return code
+	}
+
+	renderCLIError(err, machineMode)
+	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
+		return exitcode.WorkspaceNotFound
+	}
+	return 1
+}
+
+func passthroughExitCode(err error, machineMode bool) (int, bool) {
+	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
+		if machineMode {
 			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
-			os.Exit(sshExitErr.ExitStatus())
 		}
-
-		//nolint:all
-		if execExitErr, ok := err.(*exec.ExitError); ok {
+		return sshExitErr.ExitStatus(), true
+	}
+	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if machineMode {
 			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
-			os.Exit(execExitErr.ExitCode())
 		}
+		return execExitErr.ExitCode(), true
+	}
+	return 0, false
+}
 
-		cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
-		// Always emit the error through zap so the configured log encoder
-		// (json/logfmt/text) governs the wire format. JSONError preserves
-		// the full err.Error() chain in the top-level "msg" field and ships
-		// the structured CLIError under "cliError" for the desktop IPC.
+func renderCLIError(err error, machineMode bool) {
+	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+	if machineMode {
 		log.JSONError(cliErr)
-		// In human-friendly text mode, follow up with hint/doc affordances
-		// that don't fit cleanly into the zap line. These extras are
-		// suppressed in machine-readable modes so log streams stay parseable.
-		if !isMachineLogFormat(globalFlags.LogOutput) {
-			if cliErr.Hint != "" {
-				fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
-			}
-			if cliErr.DocURL != "" {
-				fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-			}
-		}
-		// Signal workspace-not-found via a distinct exit code so parent
-		// processes (e.g. SetupBackhaul) can detect the registration race
-		// without parsing stderr.
-		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			os.Exit(exitcode.WorkspaceNotFound)
-		}
-		os.Exit(1)
+		return
+	}
+	if cliErr.Hint != "" {
+		fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
+	}
+	if cliErr.DocURL != "" {
+		fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
 	}
 }
 
@@ -144,6 +237,8 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
+		cobraCmd.SilenceUsage = true
+
 		log.Init(log.Config{
 			Verbosity: globalFlags.Verbosity,
 			Quiet:     globalFlags.Quiet,
