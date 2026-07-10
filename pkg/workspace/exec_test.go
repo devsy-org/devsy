@@ -6,8 +6,36 @@ import (
 	"io"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
+
+func TestExpandWithOptions(t *testing.T) {
+	t.Setenv("DEVSY_TEST_OSVAR", "from-os")
+	opts := map[string]config.OptionValue{
+		"DOCKER_PATH": {Value: "podman"},
+		"EMPTY":       {Value: ""},
+	}
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"resolves from options", "${DOCKER_PATH}", "podman"},
+		{"literal passthrough", "docker", "docker"},
+		{"empty option falls back to os env", "${EMPTY}", ""},
+		{"unknown key falls back to os env", "${DEVSY_TEST_OSVAR}", "from-os"},
+		{"missing everywhere is empty", "${DEVSY_TEST_ABSENT}", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := expandWithOptions(tc.in, opts); got != tc.want {
+				t.Fatalf("expandWithOptions(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestExecOneShotOptions_ResolveTimeout_Clamp(t *testing.T) {
 	opts := ExecOneShotOptions{

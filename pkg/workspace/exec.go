@@ -55,12 +55,30 @@ func ResolveDockerCommand(
 	}
 
 	if providerConfig.Agent.Docker.Path != "" {
-		if expanded := os.ExpandEnv(providerConfig.Agent.Docker.Path); expanded != "" {
+		// agent.docker.path is typically a provider-option template such as
+		// "${DOCKER_PATH}". Expand it against the workspace's resolved provider
+		// options (falling back to the OS environment) so the configured value
+		// is honored — the options are not present in the process environment.
+		if expanded := expandWithOptions(
+			providerConfig.Agent.Docker.Path,
+			workspace.Provider.Options,
+		); expanded != "" {
 			return expanded
 		}
 	}
 
 	return DefaultDockerCommand
+}
+
+// expandWithOptions expands ${VAR} references in s using the given resolved
+// provider options first, then the OS environment.
+func expandWithOptions(s string, options map[string]config.OptionValue) string {
+	return os.Expand(s, func(key string) string {
+		if opt, ok := options[key]; ok && opt.Value != "" {
+			return opt.Value
+		}
+		return os.Getenv(key)
+	})
 }
 
 func LoadExecResult(
