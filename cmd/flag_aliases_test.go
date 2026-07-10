@@ -13,7 +13,6 @@ import (
 const (
 	flagConfig                  = "--config"
 	flagDevcontainerPath        = "devcontainer-path"
-	flagLogFormat               = "--log-format"
 	flagOverrideConfig          = "--override-config"
 	flagExtraDevContainerPath   = "extra-devcontainer-path"
 	flagDotfilesRepository      = "--dotfiles-repository"

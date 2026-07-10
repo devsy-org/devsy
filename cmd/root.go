@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
@@ -38,6 +39,12 @@ import (
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+	logOutputText   = "text"
+
+	// flagLogOutput and flagLogFormat are the persistent flags (and alias) that
+	// select the log encoder; flagLogFormat is a hidden alias for flagLogOutput.
+	flagLogOutput = "--log-output"
+	flagLogFormat = "--log-format"
 
 	groupCore         = "core"
 	groupConfig       = "config"
@@ -64,6 +71,26 @@ func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
+// logOutputFromArgs extracts the --log-output / --log-format value from raw args
+// before cobra parses them. This is needed to decide, up front, whether cobra
+// should print its own human-readable error/usage text: an unknown command or
+// flag error is raised before the persistent flags are bound, so the parsed
+// GlobalFlags value is not yet available at that point. Returns the default
+// "text" when the flag is absent.
+func logOutputFromArgs(args []string) string {
+	for i, arg := range args {
+		for _, name := range []string{flagLogOutput, flagLogFormat} {
+			if val, ok := strings.CutPrefix(arg, name+"="); ok {
+				return val
+			}
+			if arg == name && i+1 < len(args) {
+				return args[i+1]
+			}
+		}
+	}
+	return logOutputText
+}
+
 func Execute() {
 	os.Exit(run())
 }
@@ -78,10 +105,38 @@ func run() int {
 	collector := telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
 	defer func() { collector.Flush() }()
+
+	// Errors from an unknown command or a bad flag surface before cobra binds
+	// the persistent flags, so globalFlags.LogOutput is not yet populated on
+	// those paths. Recover the intended format from the raw args so both the
+	// early logger and the error renderer agree on the output mode.
+	logOutput := logOutputFromArgs(os.Args[1:])
+	machineMode := isMachineLogFormat(logOutput)
+
+	// In interactive text mode let cobra print its own error+usage text for
+	// malformed invocations (unknown command, bad flag) — the idiomatic CLI
+	// behavior, including "Did you mean" suggestions. In machine mode keep cobra
+	// silent so only the structured cliError reaches the stream. exitCodeForError
+	// mirrors this split to avoid double-printing.
+	rootCmd.SilenceErrors = machineMode
+	rootCmd.SilenceUsage = machineMode
+
+	// Initialize the logger up front so failures that occur before (or instead
+	// of) PersistentPreRunE — an unknown command, a flag parse error — still
+	// reach the user instead of being swallowed by the default no-op logger.
+	// PersistentPreRunE re-initializes with the fully parsed flags for the
+	// normal path; Init is idempotent.
+	log.Init(log.Config{
+		Verbosity: globalFlags.Verbosity,
+		Quiet:     globalFlags.Quiet,
+		Debug:     globalFlags.Debug,
+		Format:    logOutput,
+	})
+
 	if topLevelCommand(target) != internalCommand {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
 			collector.RecordCLI(err)
-			return exitCodeForError(err, globalFlags)
+			return exitCodeForError(err, logOutput)
 		} else if shouldExit {
 			return 0
 		}
@@ -97,7 +152,7 @@ func run() int {
 
 	collector.RecordCLI(err)
 	if err != nil {
-		return exitCodeForError(err, globalFlags)
+		return exitCodeForError(err, logOutput)
 	}
 	return 0
 }
@@ -115,35 +170,67 @@ func topLevelCommand(cmd *cobra.Command) string {
 	return ""
 }
 
-// exitCodeForError emits err through the configured log encoder and returns the
-// process exit code that reflects the failure.
-func exitCodeForError(err error, globalFlags *flags.GlobalFlags) int {
+// exitCodeForError renders err and returns the process exit code that reflects
+// the failure.
+//
+// In machine mode the structured cliError is emitted through the log encoder
+// for the desktop IPC to parse. In interactive text mode cobra has already
+// printed the "Error: <msg>" line (SilenceErrors is off), so we only add the
+// human-facing hint/doc affordances cobra does not know about, avoiding a
+// duplicate error line.
+func exitCodeForError(err error, logOutput string) int {
 	if err == nil {
 		return 0
 	}
-	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
-		log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
-		return sshExitErr.ExitStatus()
-	}
-	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
-		return execExitErr.ExitCode()
+
+	machineMode := isMachineLogFormat(logOutput)
+
+	// A remote SSH command or a spawned subprocess carries its own exit status;
+	// surface it verbatim.
+	if code, ok := passthroughExitCode(err, machineMode); ok {
+		return code
 	}
 
-	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
-	log.JSONError(cliErr)
-	if !isMachineLogFormat(globalFlags.LogOutput) {
-		if cliErr.Hint != "" {
-			fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
-		}
-		if cliErr.DocURL != "" {
-			fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-		}
-	}
+	renderCLIError(err, machineMode)
 	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 		return exitcode.WorkspaceNotFound
 	}
 	return 1
+}
+
+// passthroughExitCode returns the exit status of a subprocess or SSH command
+// error verbatim. The second result is false when err is neither.
+func passthroughExitCode(err error, machineMode bool) (int, bool) {
+	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
+		if machineMode {
+			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+		}
+		return sshExitErr.ExitStatus(), true
+	}
+	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if machineMode {
+			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+		}
+		return execExitErr.ExitCode(), true
+	}
+	return 0, false
+}
+
+// renderCLIError emits err for the user. Machine mode ships the structured
+// cliError through the log encoder for the desktop IPC; text mode adds only the
+// hint/doc affordances, since cobra already printed the "Error: <msg>" line.
+func renderCLIError(err error, machineMode bool) {
+	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+	if machineMode {
+		log.JSONError(cliErr)
+		return
+	}
+	if cliErr.Hint != "" {
+		fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
+	}
+	if cliErr.DocURL != "" {
+		fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
+	}
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed
@@ -163,6 +250,14 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
+		// Reaching PersistentPreRunE means args and flags parsed cleanly, so the
+		// invocation is valid: any error from here on is a runtime failure, not a
+		// usage mistake. Silence cobra's usage dump so runtime errors render as a
+		// clean message (via exitCodeForError) rather than a full help screen.
+		// Usage/parse errors occur before this hook and still get cobra's native
+		// error+usage output in text mode.
+		cobraCmd.SilenceUsage = true
+
 		log.Init(log.Config{
 			Verbosity: globalFlags.Verbosity,
 			Quiet:     globalFlags.Quiet,
