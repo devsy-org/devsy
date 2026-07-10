@@ -100,23 +100,10 @@ func run() int {
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
 	defer func() { collector.Flush() }()
 
-	// Cobra prints its own error/usage in text mode; machine mode stays silent
-	// so only the structured cliError reaches the stream.
-	logOutput := logOutputFromArgs(os.Args[1:])
-	machineMode := isMachineLogFormat(logOutput)
-	rootCmd.SilenceErrors = machineMode
-	rootCmd.SilenceUsage = machineMode
+	isInternal := topLevelCommand(target) == internalCommand
+	logOutput := configureOutput(rootCmd, globalFlags, isInternal)
 
-	// Initialize logging before Execute so errors on paths that skip
-	// PersistentPreRunE (unknown command, flag parse error) still surface.
-	log.Init(log.Config{
-		Verbosity: globalFlags.Verbosity,
-		Quiet:     globalFlags.Quiet,
-		Debug:     globalFlags.Debug,
-		Format:    logOutput,
-	})
-
-	if topLevelCommand(target) != internalCommand {
+	if !isInternal {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
 			collector.RecordCLI(err)
 			return exitCodeForError(err, logOutput)
@@ -138,6 +125,30 @@ func run() int {
 		return exitCodeForError(err, logOutput)
 	}
 	return 0
+}
+
+// configureOutput sets cobra's error/usage silencing and initializes logging,
+// returning the resolved log output format. Cobra prints its own error/usage in
+// text mode; machine mode (structured --log-output, or the internal subtree
+// which drives the agent protocol on stdout) stays silent. Logging is set up
+// before Execute so errors on paths that skip PersistentPreRunE still surface.
+func configureOutput(
+	rootCmd *cobra.Command,
+	globalFlags *flags.GlobalFlags,
+	isInternal bool,
+) string {
+	logOutput := logOutputFromArgs(os.Args[1:])
+	machineMode := isMachineLogFormat(logOutput) || isInternal
+	rootCmd.SilenceErrors = machineMode
+	rootCmd.SilenceUsage = machineMode
+
+	log.Init(log.Config{
+		Verbosity: globalFlags.Verbosity,
+		Quiet:     globalFlags.Quiet,
+		Debug:     globalFlags.Debug,
+		Format:    logOutput,
+	})
+	return logOutput
 }
 
 func topLevelCommand(cmd *cobra.Command) string {
