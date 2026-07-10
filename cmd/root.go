@@ -33,6 +33,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"k8s.io/klog/v2"
 )
 
@@ -69,8 +70,9 @@ func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
-// logOutputFromArgs extracts the --log-output / --log-format value from raw args
-// before cobra binds the persistent flags. Returns "text" when absent.
+// logOutputFromArgs extracts the --log-output / --log-format value from raw
+// args before cobra binds the persistent flags. Returns "" when absent so
+// callers can distinguish an unset flag from an explicit "text".
 func logOutputFromArgs(args []string) string {
 	for i, arg := range args {
 		for _, name := range []string{flagLogOutput, flagLogFormat} {
@@ -82,7 +84,29 @@ func logOutputFromArgs(args []string) string {
 			}
 		}
 	}
-	return logOutputText
+	return ""
+}
+
+// isMachineConsumer reports whether output is being consumed by a machine
+// rather than read by a human at a terminal. Cobra's usage/error text and other
+// human affordances are suppressed for machine consumers so they cannot corrupt
+// a parsed stream. Signals, in order:
+//   - the internal subtree drives the agent protocol on stdout;
+//   - DEVSY_UI marks a process spawned by the desktop app (provenance);
+//   - an explicit structured --log-output (json/logfmt);
+//   - as a fallback, output redirected off a terminal (piped) with no explicit
+//     --log-output, matching conventional CLI behavior.
+func isMachineConsumer(logOutput string, isInternal bool) bool {
+	switch {
+	case isInternal:
+		return true
+	case os.Getenv(config.EnvUI) == config.BoolTrue:
+		return true
+	case logOutput != "":
+		return isMachineLogFormat(logOutput)
+	default:
+		return !term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // fd fits in int
+	}
 }
 
 func Execute() {
@@ -101,12 +125,12 @@ func run() int {
 	defer func() { collector.Flush() }()
 
 	isInternal := topLevelCommand(target) == internalCommand
-	logOutput := configureOutput(rootCmd, globalFlags, isInternal)
+	machineMode := configureOutput(rootCmd, globalFlags, isInternal)
 
 	if !isInternal {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
 			collector.RecordCLI(err)
-			return exitCodeForError(err, logOutput)
+			return exitCodeForError(err, machineMode)
 		} else if shouldExit {
 			return 0
 		}
@@ -122,33 +146,37 @@ func run() int {
 
 	collector.RecordCLI(err)
 	if err != nil {
-		return exitCodeForError(err, logOutput)
+		return exitCodeForError(err, machineMode)
 	}
 	return 0
 }
 
 // configureOutput sets cobra's error/usage silencing and initializes logging,
-// returning the resolved log output format. Cobra prints its own error/usage in
-// text mode; machine mode (structured --log-output, or the internal subtree
-// which drives the agent protocol on stdout) stays silent. Logging is set up
-// before Execute so errors on paths that skip PersistentPreRunE still surface.
+// returning whether output is machine-consumed. Cobra prints its own
+// error/usage only for an interactive human; machine consumers stay silent so
+// their stream is not corrupted. Logging is set up before Execute so errors on
+// paths that skip PersistentPreRunE still surface.
 func configureOutput(
 	rootCmd *cobra.Command,
 	globalFlags *flags.GlobalFlags,
 	isInternal bool,
-) string {
+) bool {
 	logOutput := logOutputFromArgs(os.Args[1:])
-	machineMode := isMachineLogFormat(logOutput) || isInternal
+	machineMode := isMachineConsumer(logOutput, isInternal)
 	rootCmd.SilenceErrors = machineMode
 	rootCmd.SilenceUsage = machineMode
 
+	format := logOutput
+	if format == "" {
+		format = logOutputText
+	}
 	log.Init(log.Config{
 		Verbosity: globalFlags.Verbosity,
 		Quiet:     globalFlags.Quiet,
 		Debug:     globalFlags.Debug,
-		Format:    logOutput,
+		Format:    format,
 	})
-	return logOutput
+	return machineMode
 }
 
 func topLevelCommand(cmd *cobra.Command) string {
@@ -166,12 +194,11 @@ func topLevelCommand(cmd *cobra.Command) string {
 
 // exitCodeForError renders err and returns the process exit code that reflects
 // the failure.
-func exitCodeForError(err error, logOutput string) int {
+func exitCodeForError(err error, machineMode bool) int {
 	if err == nil {
 		return 0
 	}
 
-	machineMode := isMachineLogFormat(logOutput)
 	if code, ok := passthroughExitCode(err, machineMode); ok {
 		return code
 	}
