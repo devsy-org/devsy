@@ -74,27 +74,36 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
+      # CGO_ENABLED=0 + netgo/osusergo produce a static binary, matching the
+      # goreleaser release build. This is required because the CLI is also
+      # injected as the workspace agent into containers: a glibc-dynamic build
+      # cannot exec in musl-based images (e.g. alpine), which surfaces as
+      # "inject agent: EOF" during workspace up.
       - name: Build CLI (unix)
         if: runner.os != 'Windows'
+        env:
+          CGO_ENABLED: "0"
         run: |
           if [ "${{ matrix.go-arch }}" = "universal" ]; then
             # macOS universal binary: build both architectures and lipo them
-            GOOS=darwin GOARCH=amd64 go build -o devsy-amd64 .
-            GOOS=darwin GOARCH=arm64 go build -o devsy-arm64 .
+            GOOS=darwin GOARCH=amd64 go build -tags netgo,osusergo -o devsy-amd64 .
+            GOOS=darwin GOARCH=arm64 go build -tags netgo,osusergo -o devsy-arm64 .
             lipo -create -output desktop/resources/bin/devsy devsy-amd64 devsy-arm64
             rm devsy-amd64 devsy-arm64
           else
-            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -o desktop/resources/bin/devsy .
+            GOOS=${{ matrix.go-os }} GOARCH=${{ matrix.go-arch }} go build -tags netgo,osusergo -o desktop/resources/bin/devsy .
           fi
           chmod +x desktop/resources/bin/devsy
 
       - name: Build CLI (windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          CGO_ENABLED: "0"
         run: |
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
-          go build -o desktop/resources/bin/devsy.exe .
+          go build -tags netgo,osusergo -o desktop/resources/bin/devsy.exe .
 
       - name: Configure Windows build tools
         if: runner.os == 'Windows'
