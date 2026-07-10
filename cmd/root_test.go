@@ -38,13 +38,25 @@ func TestLogOutputFromArgs(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"absent defaults to text", []string{cmdProvider, cmdList}, "text"},
-		{"space-separated log-output", []string{"up", "--log-output", "json"}, "json"},
-		{"equals-form log-output", []string{"up", "--log-output=json"}, "json"},
-		{"log-format alias", []string{"up", "--log-format", "logfmt"}, "logfmt"},
-		{"equals-form log-format alias", []string{"--log-format=json", "up"}, "json"},
-		{"flag before unknown command", []string{"--log-output", "json", "bogus"}, "json"},
-		{"trailing flag with no value", []string{"up", "--log-output"}, "text"},
+		{"absent defaults to text", []string{cmdProvider, cmdList}, logOutputText},
+		{"space-separated log-output", []string{"up", flagLogOutput, logOutputJSON}, logOutputJSON},
+		{
+			"equals-form log-output",
+			[]string{"up", flagLogOutput + "=" + logOutputJSON},
+			logOutputJSON,
+		},
+		{"log-format alias", []string{"up", flagLogFormat, logOutputLogfmt}, logOutputLogfmt},
+		{
+			"equals-form log-format alias",
+			[]string{flagLogFormat + "=" + logOutputJSON, "up"},
+			logOutputJSON,
+		},
+		{
+			"flag before unknown command",
+			[]string{flagLogOutput, logOutputJSON, "bogus"},
+			logOutputJSON,
+		},
+		{"trailing flag with no value", []string{"up", flagLogOutput}, logOutputText},
 	}
 
 	for _, tc := range cases {
@@ -57,6 +69,6 @@ func TestLogOutputFromArgs(t *testing.T) {
 func TestIsMachineLogFormat(t *testing.T) {
 	assert.True(t, isMachineLogFormat(logOutputJSON))
 	assert.True(t, isMachineLogFormat(logOutputLogfmt))
-	assert.False(t, isMachineLogFormat("text"))
+	assert.False(t, isMachineLogFormat(logOutputText))
 	assert.False(t, isMachineLogFormat(""))
 }
