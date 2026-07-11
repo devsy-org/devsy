@@ -28,8 +28,11 @@ const (
 	// WebsiteBaseURL is the project website used for asset URLs.
 	WebsiteBaseURL = "https://" + RepoName + ".sh"
 
+	// DownloadBaseURL is the object storage host serving release artifacts and image assets.
+	DownloadBaseURL = "https://dl." + RepoName + ".sh"
+
 	// WebsiteAssetsURL is the base URL for icon/image assets.
-	WebsiteAssetsURL = WebsiteBaseURL + "/assets"
+	WebsiteAssetsURL = DownloadBaseURL + "/assets"
 
 	// AgentDownloadBaseURL is the prefix under which versioned agent binaries are published.
 	AgentDownloadBaseURL = GitHubReleasesURL + "/download/"
