@@ -65,7 +65,7 @@ var AllowedIDEs = []AllowedIDE{
 		Name:        config.IDECodeServer,
 		DisplayName: "code-server",
 		Options:     codeserver.Options,
-		Icon:        "https://raw.githubusercontent.com/coder/code-server/main/src/browser/media/favicon.svg",
+		Icon:        config.WebsiteAssetsURL + "/code-server.svg",
 		Group:       config.IDEGroupPrimary,
 	},
 	{
@@ -228,7 +228,8 @@ var AllowedIDEs = []AllowedIDE{
 		Name:        config.IDEBob,
 		DisplayName: "IBM Bob",
 		Options:     vscode.Options,
-		Icon:        "https://devsy.sh/assets/bob.svg",
+		Icon:        config.WebsiteAssetsURL + "/bob.svg",
+		IconDark:    config.WebsiteAssetsURL + "/bob_dark.svg",
 		Group:       config.IDEGroupPrimary,
 	},
 }

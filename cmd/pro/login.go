@@ -368,7 +368,7 @@ func login(
 
 var fallbackProvider = `name: devsy-pro
 version: v0.0.0
-icon: https://devsy.sh/assets/devsy.svg
+icon: https://dl.devsy.sh/assets/devsy.svg
 description: Devsy Pro
 options:
   DEVSY_CONFIG:
