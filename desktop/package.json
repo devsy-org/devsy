@@ -30,7 +30,7 @@
     "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "3.7.2",
+    "@electron/rebuild": "4.2.0",
     "@internationalized/date": "3.12.2",
     "@lucide/svelte": "1.23.0",
     "@playwright/test": "1.61.1",
