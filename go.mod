@@ -45,7 +45,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
-	github.com/pkg/sftp v1.13.10
+	github.com/pkg/sftp v1.13.11
 	github.com/posthog/posthog-go v1.17.5
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
