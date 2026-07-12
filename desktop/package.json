@@ -34,7 +34,7 @@
     "@internationalized/date": "3.12.2",
     "@lucide/svelte": "1.23.0",
     "@playwright/test": "1.61.1",
-    "@sveltejs/vite-plugin-svelte": "5.1.1",
+    "@sveltejs/vite-plugin-svelte": "7.2.0",
     "@tailwindcss/vite": "4.3.2",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/svelte": "5.4.2",
