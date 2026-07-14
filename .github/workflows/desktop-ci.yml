@@ -3,13 +3,7 @@ name: Desktop CI
 on:
   push:
     branches: [electron-ui, main]
-    paths:
-      - "desktop/**"
-      - ".github/workflows/desktop-ci.yml"
   pull_request:
-    paths:
-      - "desktop/**"
-      - ".github/workflows/desktop-ci.yml"
   workflow_dispatch:
 
 concurrency:
@@ -17,31 +11,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
+        id: filter
+        with:
+          filters: |
+            desktop:
+              - 'desktop/**'
+              - '.github/workflows/desktop-ci.yml'
+
   lint-and-test:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        if: needs.changes.outputs.desktop == 'true'
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: needs.changes.outputs.desktop == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
         run: npm ci
 
       - name: Type check
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
         run: npm run check
 
       - name: Unit tests
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
         run: npm run test
 
   build-desktop:
-    needs: lint-and-test
+    needs: [changes, lint-and-test]
+    if: needs.changes.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -156,7 +174,8 @@ jobs:
           if-no-files-found: warn
 
   build-flatpak:
-    needs: build-desktop
+    needs: [changes, build-desktop]
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48@sha256:50fea670968fd3ec4aeeb3a91d9d807d0af6eab3c3b44c33d4c40c311832c8fa
