@@ -81,6 +81,24 @@
       "matchManagers": ["github-actions"],
       "enabled": false,
       "description": "Do not automatically update Ubuntu runner versions"
+    },
+    {
+      "matchPackageNames": ["vite"],
+      "matchFileNames": ["desktop/**"],
+      "allowedVersions": "<8.0.0",
+      "description": "desktop: electron-vite 5 only supports vite <=7; unpin when electron-vite ships stable vite 8 support"
+    },
+    {
+      "matchPackageNames": ["@sveltejs/vite-plugin-svelte"],
+      "matchFileNames": ["desktop/**"],
+      "allowedVersions": "<7.0.0",
+      "description": "desktop: vite-plugin-svelte 7 requires vite 8, which electron-vite 5 rejects; unpin alongside vite 8"
+    },
+    {
+      "matchPackageNames": ["typescript"],
+      "matchFileNames": ["desktop/**"],
+      "allowedVersions": "<7.0.0",
+      "description": "desktop: typescript 7 crashes svelte-check 4; unpin when svelte-check supports TS 7"
     }
   ]
 }
