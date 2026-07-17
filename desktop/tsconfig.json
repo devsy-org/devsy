@@ -6,7 +6,12 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "$lib": ["./src/renderer/src/lib"],
+      "$lib/*": ["./src/renderer/src/lib/*"],
+      "$shared/*": ["./src/shared/*"]
+    }
   },
   "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }
