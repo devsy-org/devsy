@@ -232,11 +232,11 @@ test.describe
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Node.js template. Scope to the active tab panel
-      // (Git) so the template button doesn't collide with the Image catalog's
-      // "Node.js 20" card, which is also present in the DOM.
+      // Step 2 — Source: click Node.js template. Scope to the active source
+      // panel (Git) so the template button doesn't collide with the Image
+      // catalog's "Node.js 20" card.
       await dialog
-        .getByRole("tabpanel")
+        .getByTestId("source-panel")
         .locator("button", { hasText: "Node.js" })
         .click()
       const sourceInput = dialog.locator('input[placeholder*="github"]')
@@ -376,10 +376,10 @@ test.describe
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Python template (scope to the active Git tab
-      // panel so it doesn't match the Image tab catalog's "Python 3.12" entry)
+      // Step 2 — Source: click Python template (scope to the active Git source
+      // panel so it doesn't match the Image catalog's "Python 3.12" entry)
       await dialog
-        .getByRole("tabpanel")
+        .getByTestId("source-panel")
         .locator("button", { hasText: "Python" })
         .click()
       const sourceInput = dialog.locator('input[placeholder*="github"]')

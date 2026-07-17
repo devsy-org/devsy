@@ -849,7 +849,7 @@ function selectTemplate(t: { name: string; source: string }) {
 
           <!-- GIT -->
           {#if sourceType === "git"}
-            <div class="space-y-4 pt-2">
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-2">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
                 <div class="grid grid-cols-3 gap-2">
@@ -880,7 +880,7 @@ function selectTemplate(t: { name: string; source: string }) {
 
           <!-- LOCAL -->
           {:else if sourceType === "local"}
-            <div class="space-y-4 pt-2">
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-1.5">
                 <Label class="text-sm">Local Directory *</Label>
                 <div class="flex gap-2">
@@ -901,7 +901,7 @@ function selectTemplate(t: { name: string; source: string }) {
 
           <!-- IMAGE -->
           {:else}
-            <div class="space-y-4 pt-2">
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <ImagePicker bind:value={imageRef} />
             </div>
           {/if}
