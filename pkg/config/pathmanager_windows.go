@@ -20,6 +20,10 @@ func newPlatformPathManager() PathManager {
 }
 
 func (w *windowsPathManager) ConfigDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	appData := os.Getenv("APPDATA")
 	if appData == "" {
 		return "", fmt.Errorf("config dir: APPDATA environment variable is not set")
@@ -29,6 +33,10 @@ func (w *windowsPathManager) ConfigDir() (string, error) {
 }
 
 func (w *windowsPathManager) DataDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		return "", fmt.Errorf("data dir: LOCALAPPDATA environment variable is not set")
@@ -38,6 +46,10 @@ func (w *windowsPathManager) DataDir() (string, error) {
 }
 
 func (w *windowsPathManager) CacheDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("cache"); ok {
+		return dir, err
+	}
+
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		return "", fmt.Errorf("cache dir: LOCALAPPDATA environment variable is not set")
@@ -47,6 +59,10 @@ func (w *windowsPathManager) CacheDir() (string, error) {
 }
 
 func (w *windowsPathManager) StateDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("state"); ok {
+		return dir, err
+	}
+
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		return "", fmt.Errorf("state dir: LOCALAPPDATA environment variable is not set")
@@ -56,6 +72,10 @@ func (w *windowsPathManager) StateDir() (string, error) {
 }
 
 func (w *windowsPathManager) RuntimeDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("run"); ok {
+		return dir, err
+	}
+
 	return ensureDir(filepath.Join(os.TempDir(), RepoName))
 }
 

@@ -20,6 +20,10 @@ func newPlatformPathManager() PathManager {
 }
 
 func (l *linuxPathManager) ConfigDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("config dir: %w", err)
@@ -29,6 +33,10 @@ func (l *linuxPathManager) ConfigDir() (string, error) {
 }
 
 func (l *linuxPathManager) DataDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("data dir: %w", err)
@@ -38,6 +46,10 @@ func (l *linuxPathManager) DataDir() (string, error) {
 }
 
 func (l *linuxPathManager) CacheDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("cache"); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cache dir: %w", err)
@@ -47,6 +59,10 @@ func (l *linuxPathManager) CacheDir() (string, error) {
 }
 
 func (l *linuxPathManager) StateDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("state"); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("state dir: %w", err)
@@ -56,6 +72,10 @@ func (l *linuxPathManager) StateDir() (string, error) {
 }
 
 func (l *linuxPathManager) RuntimeDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("run"); ok {
+		return dir, err
+	}
+
 	return ensureDir(filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d", RepoName, os.Getuid())))
 }
 

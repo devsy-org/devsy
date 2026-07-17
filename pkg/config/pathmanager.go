@@ -22,6 +22,19 @@ func ensureDir(path string) (string, error) {
 	return path, nil
 }
 
+// homeOverrideDir roots sub beneath DEVSY_HOME when set, returning ok=false so
+// callers fall through to the OS-native default when it is unset.
+func homeOverrideDir(sub ...string) (string, bool, error) {
+	home := os.Getenv(EnvHome)
+	if home == "" {
+		return "", false, nil
+	}
+
+	dir, err := ensureDir(filepath.Join(append([]string{home}, sub...)...))
+
+	return dir, true, err
+}
+
 // PathManager centralises all filesystem path computation for the Devsy CLI.
 // Per-OS implementations supply the five top-level directory methods; every
 // sub-path is derived from those by the shared basePathManager.
