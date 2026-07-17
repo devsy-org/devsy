@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -44,6 +45,55 @@ func TestResetPathManager(t *testing.T) {
 
 	if pm1 == pm2 {
 		t.Error("ResetPathManager did not clear the singleton — same instance returned")
+	}
+}
+
+func TestDevsyHomeOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(EnvHome, home)
+
+	pm := NewPathManager()
+
+	tests := []struct {
+		name string
+		fn   func() (string, error)
+		want string
+	}{
+		{"ConfigDir", pm.ConfigDir, home},
+		{"DataDir", pm.DataDir, home},
+		{"CacheDir", pm.CacheDir, filepath.Join(home, "cache")},
+		{"StateDir", pm.StateDir, filepath.Join(home, "state")},
+		{"RuntimeDir", pm.RuntimeDir, filepath.Join(home, "run")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.fn()
+			if err != nil {
+				t.Fatalf("%s: unexpected error: %v", tt.name, err)
+			}
+			if got != tt.want {
+				t.Errorf("%s = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDevsyHomeOverrideConfigFilePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(EnvHome, home)
+	t.Setenv(EnvConfig, "")
+
+	pm := NewPathManager()
+
+	got, err := pm.ConfigFilePath()
+	if err != nil {
+		t.Fatalf("ConfigFilePath: %v", err)
+	}
+
+	want := filepath.Join(home, ConfigFile)
+	if got != want {
+		t.Errorf("ConfigFilePath = %q, want %q", got, want)
 	}
 }
 

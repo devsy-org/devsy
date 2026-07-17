@@ -20,6 +20,10 @@ func newPlatformPathManager() PathManager {
 }
 
 func (d *darwinPathManager) ConfigDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("config dir: %w", err)
@@ -29,6 +33,10 @@ func (d *darwinPathManager) ConfigDir() (string, error) {
 }
 
 func (d *darwinPathManager) DataDir() (string, error) {
+	if dir, ok, err := homeOverrideDir(); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("data dir: %w", err)
@@ -38,6 +46,10 @@ func (d *darwinPathManager) DataDir() (string, error) {
 }
 
 func (d *darwinPathManager) CacheDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("cache"); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cache dir: %w", err)
@@ -47,6 +59,10 @@ func (d *darwinPathManager) CacheDir() (string, error) {
 }
 
 func (d *darwinPathManager) StateDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("state"); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("state dir: %w", err)
@@ -57,6 +73,10 @@ func (d *darwinPathManager) StateDir() (string, error) {
 
 // RuntimeDir returns a directory for runtime state, such as sockets and PID files.
 func (d *darwinPathManager) RuntimeDir() (string, error) {
+	if dir, ok, err := homeOverrideDir("run"); ok {
+		return dir, err
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("runtime dir: %w", err)
