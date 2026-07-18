@@ -24,7 +24,6 @@ import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
-import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Accordion from "$lib/components/ui/accordion/index.js"
 import * as Tabs from "$lib/components/ui/tabs/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
@@ -58,6 +57,11 @@ import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
+// Segmented pill tabs: the active tab reads as a raised solid pill (elevated
+// background, primary text, semibold) against the muted track.
+const tabTriggerClass =
+  "px-4 text-muted-foreground data-active:text-primary data-active:font-semibold"
+
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
   { value: "vscode", label: "VS Code" },
@@ -90,6 +94,8 @@ const IDE_OPTIONS = [
 
 let id = $derived(params.id ?? "")
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
+// ".devsy" matches config.SSHHostSuffix on the backend (".<binary-name>").
+let sshHost = $derived(`${id}.devsy`)
 
 let isRunning = $derived(workspace?.status?.toLowerCase() === "running")
 let isStopped = $derived(
@@ -454,114 +460,136 @@ async function handleRenameConfirmed() {
 }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-6">
-  <div class="flex items-center gap-4">
-    <Button variant="ghost" size="sm" onclick={() => goto("/workspaces")}>
-      &larr; Back
-    </Button>
-    {#if renaming}
-      <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
-        <Input
-          data-slot="workspace-rename-input"
-          value={renameValue}
-          oninput={(e) => (renameValue = e.currentTarget.value)}
-          class="h-8 w-56 text-lg font-bold"
-          disabled={renameSaving}
-        />
-        <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
-          {renameSaving ? "Saving..." : "Save"}
-        </Button>
-        <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
-          Cancel
-        </Button>
-      </form>
-    {:else}
-      <h1 class="text-2xl font-bold">{id}</h1>
-      <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
-        <Pencil class="h-4 w-4" />
-        <span class="sr-only">Rename</span>
-      </Button>
-    {/if}
-    {#if workspace?.provider?.name}
-      <span class={badgeVariants({ variant: "secondary" })}>{workspace.provider.name}</span>
-    {/if}
-    {#if workspace?.status}
-      <span class={badgeVariants({ variant: statusBadgeVariant() })}>{workspace.status}</span>
-    {/if}
-  </div>
-
-  {#if workspace}
-    <ButtonGroup.Root>
-      {#if isRunning || isBusy}
-        <Button variant="outline" size="sm" onclick={handleStop} disabled={operationRunning}>
-          {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
-          Stop
-        </Button>
-      {:else}
-        <Button variant="outline" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
-          {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
-          Start
-        </Button>
-      {/if}
-
-      <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
-        {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
-        Open IDE
-      </Button>
-      {#if sshSessionId && !sshExited}
-        <Button variant="outline" size="sm" onclick={handleDisconnect}>
-          <SquareTerminal class="h-4 w-4" />
-          Disconnect
-        </Button>
-      {:else}
-        <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
-          {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
-          SSH Terminal
-        </Button>
-      {/if}
-
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="outline" size="icon-sm">
-              <Ellipsis class="h-4 w-4" />
-              <span class="sr-only">More actions</span>
-            </Button>
-          {/snippet}
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content align="end">
-          <DropdownMenu.Item onclick={() => (confirmRebuildOpen = true)} disabled={operationRunning}>
-            <RotateCcw class="mr-2 h-4 w-4" />
-            Rebuild
-          </DropdownMenu.Item>
-          <DropdownMenu.Item onclick={() => (confirmResetOpen = true)} disabled={operationRunning}>
-            <RefreshCw class="mr-2 h-4 w-4" />
-            Reset
-          </DropdownMenu.Item>
-          <DropdownMenu.Separator />
-          <DropdownMenu.Item
-            class="text-destructive data-[highlighted]:text-destructive"
-            onclick={() => (confirmDeleteOpen = true)}
-            disabled={operationRunning}
-          >
-            <Trash2 class="mr-2 h-4 w-4" />
-            Delete
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Root>
-    </ButtonGroup.Root>
-  {/if}
-
-  <Separator />
+<div class="flex min-h-0 flex-1 flex-col gap-4">
+  <Button variant="ghost" size="sm" class="w-fit" onclick={() => goto("/workspaces")}>
+    &larr; Back
+  </Button>
 
   {#if !workspace}
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
+    <!-- Hero banner -->
+    <div class="rounded-xl border bg-card p-5">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="min-w-0 space-y-2">
+          <div class="flex flex-wrap items-center gap-3">
+            {#if renaming}
+              <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
+                <Input
+                  data-slot="workspace-rename-input"
+                  value={renameValue}
+                  oninput={(e) => (renameValue = e.currentTarget.value)}
+                  class="h-8 w-56 text-lg font-bold"
+                  disabled={renameSaving}
+                />
+                <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
+                  {renameSaving ? "Saving..." : "Save"}
+                </Button>
+                <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
+                  Cancel
+                </Button>
+              </form>
+            {:else}
+              <h1 class="truncate text-2xl font-bold">{id}</h1>
+              <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
+                <Pencil class="h-4 w-4" />
+                <span class="sr-only">Rename</span>
+              </Button>
+            {/if}
+            {#if workspace.status}
+              <span class={badgeVariants({ variant: statusBadgeVariant() })}>{workspace.status}</span>
+            {/if}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>{workspace.provider?.name ?? "No provider"}</span>
+            {#if workspace.machine?.id}<span aria-hidden="true">&middot;</span><span>{workspace.machine.id}</span>{/if}
+            {#if workspace.context}<span aria-hidden="true">&middot;</span><span>{workspace.context}</span>{/if}
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <code class="rounded bg-muted px-2 py-1 font-mono text-xs">ssh {sshHost}</code>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Button variant="ghost" size="icon-sm" {...props} onclick={() => copyToClipboard(`ssh ${sshHost}`)}>
+                    <ClipboardCopy class="h-3.5 w-3.5" />
+                    <span class="sr-only">Copy SSH command</span>
+                  </Button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Copy SSH command</Tooltip.Content>
+            </Tooltip.Root>
+          </div>
+        </div>
+
+        <ButtonGroup.Root class="shrink-0">
+          {#if isRunning || isBusy}
+            <Button variant="destructive" size="sm" onclick={handleStop} disabled={operationRunning}>
+              {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
+              Stop
+            </Button>
+          {:else}
+            <Button variant="default" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
+              {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
+              Start
+            </Button>
+          {/if}
+
+          <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
+            {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
+            Open IDE
+          </Button>
+          {#if sshSessionId && !sshExited}
+            <Button variant="secondary" size="sm" onclick={handleDisconnect}>
+              <SquareTerminal class="h-4 w-4" />
+              Disconnect
+            </Button>
+          {:else}
+            <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
+              {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
+              SSH Terminal
+            </Button>
+          {/if}
+
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button {...props} variant="outline" size="icon-sm">
+                  <Ellipsis class="h-4 w-4" />
+                  <span class="sr-only">More actions</span>
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content align="end">
+              <DropdownMenu.Item onclick={() => (confirmRebuildOpen = true)} disabled={operationRunning}>
+                <RotateCcw class="mr-2 h-4 w-4" />
+                Rebuild
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onclick={() => (confirmResetOpen = true)} disabled={operationRunning}>
+                <RefreshCw class="mr-2 h-4 w-4" />
+                Reset
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item
+                class="text-destructive data-[highlighted]:text-destructive"
+                onclick={() => (confirmDeleteOpen = true)}
+                disabled={operationRunning}
+              >
+                <Trash2 class="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </ButtonGroup.Root>
+      </div>
+    </div>
+
     <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 overflow-hidden">
-      <Tabs.List variant="line">
-        <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
-        <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
-        <Tabs.Trigger value="terminal">Terminal</Tabs.Trigger>
+      <Tabs.List class="h-9 w-fit">
+        <Tabs.Trigger value="overview" class={tabTriggerClass}>Overview</Tabs.Trigger>
+        <Tabs.Trigger value="logs" class={tabTriggerClass}>Logs</Tabs.Trigger>
+        <Tabs.Trigger value="terminal" class={tabTriggerClass}>Terminal</Tabs.Trigger>
       </Tabs.List>
 
       <Tabs.Content value="overview">
@@ -571,12 +599,6 @@ async function handleRenameConfirmed() {
 
           <div class="text-muted-foreground">UID</div>
           <div>{workspace.uid ?? "N/A"}</div>
-
-          <div class="text-muted-foreground">Provider</div>
-          <div>{workspace.provider?.name ?? "N/A"}</div>
-
-          <div class="text-muted-foreground">Machine</div>
-          <div>{workspace.machine?.id ?? "N/A"}</div>
 
           <div class="text-muted-foreground">IDE</div>
           <div>
@@ -662,17 +684,11 @@ async function handleRenameConfirmed() {
             <div>{workspace.source.gitBranch}</div>
           {/if}
 
-          <div class="text-muted-foreground">Status</div>
-          <div>{workspace.status ?? "Unknown"}</div>
-
           <div class="text-muted-foreground">Created</div>
           <div>{workspace.creationTimestamp ? formatTimestamp(workspace.creationTimestamp) : "N/A"}</div>
 
           <div class="text-muted-foreground">Last Used</div>
           <div>{workspace.lastUsed ? formatTimestamp(workspace.lastUsed) : "N/A"}</div>
-
-          <div class="text-muted-foreground">Context</div>
-          <div>{workspace.context ?? "N/A"}</div>
         </div>
       </Tabs.Content>
 
