@@ -54,12 +54,13 @@ $effect(() => {
   bind:this={viewport}
   onscroll={onScroll}
   role="table"
-  aria-rowcount={lines.length}
+  aria-rowcount={lines.length + 1}
   class={cn("relative overflow-auto rounded-md border", maxHeightClass, className)}
 >
   <div
     role="row"
-    class="sticky top-0 z-10 grid grid-cols-[5rem_5rem_1fr] gap-2 border-b bg-background px-2 py-1 text-start text-xs font-medium"
+    aria-rowindex={1}
+    class="sticky top-0 z-10 grid grid-cols-[5rem_5rem_minmax(0,1fr)] gap-2 border-b bg-background px-2 py-1 text-start text-xs font-medium"
   >
     <div role="columnheader">Time</div>
     <div role="columnheader">Level</div>
@@ -76,9 +77,9 @@ $effect(() => {
     {@const line = parseLogLine(raw)}
     <div
       role="row"
-      aria-rowindex={i + 1}
+      aria-rowindex={hiddenCount + i + 2}
       class={cn(
-        "grid grid-cols-[5rem_5rem_1fr] items-start gap-2 border-b px-2 py-1 [contain-intrinsic-size:auto_1.75rem] [content-visibility:auto]",
+        "grid grid-cols-[5rem_5rem_minmax(0,1fr)] items-start gap-2 border-b px-2 py-1 [contain-intrinsic-size:auto_1.75rem] [content-visibility:auto]",
         levelRowClass(line.level),
       )}
     >
@@ -99,7 +100,7 @@ $effect(() => {
           </span>
         {/if}
       </span>
-      <span role="cell" class="font-mono text-xs break-words whitespace-pre-wrap">{line.message}</span>
+      <span role="cell" class="min-w-0 font-mono text-xs whitespace-pre-wrap wrap-anywhere">{line.message}</span>
     </div>
   {/each}
 </div>
