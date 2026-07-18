@@ -8,6 +8,9 @@ import {
   AlertCircle,
   TriangleAlert,
   Loader2,
+  GitBranch,
+  FolderOpen,
+  Container,
 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
@@ -16,7 +19,7 @@ import { Label } from "$lib/components/ui/label/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
-import * as Tabs from "$lib/components/ui/tabs/index.js"
+import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import { Progress } from "$lib/components/ui/progress/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
@@ -132,6 +135,17 @@ const TEMPLATES = [
   { name: "C++", source: "https://github.com/microsoft/vscode-remote-try-cpp" },
   { name: ".NET", source: "https://github.com/microsoft/vscode-remote-try-dotnet" },
   { name: "Ruby", source: "https://github.com/skevetter/devsy-quickstart-ruby" },
+]
+
+const SOURCE_TYPES: {
+  value: WorkspaceSourceType
+  label: string
+  hint: string
+  icon: typeof GitBranch
+}[] = [
+  { value: "git", label: "Git Repo", hint: "Clone a repository", icon: GitBranch },
+  { value: "local", label: "Local Directory", hint: "Use a folder on this machine", icon: FolderOpen },
+  { value: "image", label: "Image", hint: "Start from a container image", icon: Container },
 ]
 
 const LAUNCH_TIMEOUT_MS = 10 * 60 * 1000
@@ -813,15 +827,29 @@ function selectTemplate(t: { name: string; source: string }) {
             </p>
           </div>
 
-          <Tabs.Root value={sourceType} onValueChange={(v) => (sourceType = v as WorkspaceSourceType)}>
-            <Tabs.List class="grid w-full grid-cols-3">
-              <Tabs.Trigger value="git">Git Repo</Tabs.Trigger>
-              <Tabs.Trigger value="local">Local Directory</Tabs.Trigger>
-              <Tabs.Trigger value="image">Image</Tabs.Trigger>
-            </Tabs.List>
+          <ToggleGroup.Root
+            type="single"
+            variant="outline"
+            value={sourceType}
+            onValueChange={(v) => { if (v) sourceType = v as WorkspaceSourceType }}
+            class="w-full"
+          >
+            {#each SOURCE_TYPES as source (source.value)}
+              <ToggleGroup.Item
+                value={source.value}
+                aria-label={source.label}
+                class="h-auto flex-col gap-1 py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/5 data-[state=on]:text-primary"
+              >
+                <source.icon class="h-5 w-5" />
+                <span class="text-sm font-medium">{source.label}</span>
+                <span class="text-xs text-muted-foreground">{source.hint}</span>
+              </ToggleGroup.Item>
+            {/each}
+          </ToggleGroup.Root>
 
-            <!-- GIT -->
-            <Tabs.Content value="git" class="space-y-4 pt-2">
+          <!-- GIT -->
+          {#if sourceType === "git"}
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-2">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
                 <div class="grid grid-cols-3 gap-2">
@@ -848,10 +876,11 @@ function selectTemplate(t: { name: string; source: string }) {
               </div>
 
               {@render advancedSection(true)}
-            </Tabs.Content>
+            </div>
 
-            <!-- LOCAL -->
-            <Tabs.Content value="local" class="space-y-4 pt-2">
+          <!-- LOCAL -->
+          {:else if sourceType === "local"}
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-1.5">
                 <Label class="text-sm">Local Directory *</Label>
                 <div class="flex gap-2">
@@ -868,13 +897,14 @@ function selectTemplate(t: { name: string; source: string }) {
               </div>
 
               {@render advancedSection(false)}
-            </Tabs.Content>
+            </div>
 
-            <!-- IMAGE -->
-            <Tabs.Content value="image" class="space-y-4 pt-2">
+          <!-- IMAGE -->
+          {:else}
+            <div class="space-y-4 pt-2" data-testid="source-panel">
               <ImagePicker bind:value={imageRef} />
-            </Tabs.Content>
-          </Tabs.Root>
+            </div>
+          {/if}
 
           <div class="flex justify-between gap-2 pt-2">
             <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
