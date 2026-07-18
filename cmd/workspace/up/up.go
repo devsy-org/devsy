@@ -424,46 +424,48 @@ func (cmd *UpCmd) executeDevsyUp(
 	return &workspaceContext{result: result, user: user, workdir: workdir}, nil
 }
 
+var shutdownSignals = []os.Signal{
+	os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT,
+}
+
+// WithSignals returns a context cancelled on the first shutdown signal so
+// deferred cleanup can run, and forces exit on a second signal. The returned
+// func must be called to release the signal handler.
 func WithSignals(ctx context.Context) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(ctx)
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
+	ctx, stop := signal.NotifyContext(ctx, shutdownSignals...)
 
-	// done lets cleanup unblock goroutines parked on <-signals; signal.Stop
-	// alone wouldn't wake them.
+	// done lets the force-shutdown watcher exit once cleanup runs; stop()
+	// alone wouldn't wake it.
 	done := make(chan struct{})
-
-	go func() {
-		select {
-		case <-signals:
-			cancel()
-		case <-ctx.Done():
-		case <-done:
-		}
-	}()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-done:
-			return
-		}
-		// Skip the second-signal wait if cleanup already closed done.
-		select {
-		case <-done:
-			return
-		default:
-		}
-		select {
-		case <-signals:
-			os.Exit(1) // second signal — force shutdown
-		case <-done:
-		}
-	}()
+	go watchForForceShutdown(ctx, done)
 
 	return ctx, func() {
-		cancel()
-		signal.Stop(signals)
+		stop()
 		close(done)
+	}
+}
+
+// watchForForceShutdown waits for the first-signal cancellation, then forces
+// exit if a second signal arrives before cleanup closes done.
+func watchForForceShutdown(ctx context.Context, done <-chan struct{}) {
+	select {
+	case <-ctx.Done():
+	case <-done:
+		return
+	}
+	// Skip the second-signal wait if cleanup already closed done.
+	select {
+	case <-done:
+		return
+	default:
+	}
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, shutdownSignals...)
+	select {
+	case <-signals:
+		os.Exit(1) // second signal — force shutdown
+	case <-done:
+		signal.Stop(signals)
 	}
 }
