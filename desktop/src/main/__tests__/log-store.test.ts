@@ -25,10 +25,11 @@ describe("LogStore", () => {
     expect(logPath).toMatch(/\.log$/)
   })
 
-  it("appends lines to a log file", () => {
+  it("appends lines to a log file", async () => {
     const logPath = store.createLogFile(CTX, "ws-1")
     store.appendLog(logPath, "line 1")
     store.appendLog(logPath, "line 2")
+    await store.closeLog(logPath)
     const content = store.readLogByPath(logPath)
     expect(content).toContain("line 1")
     expect(content).toContain("line 2")
@@ -54,9 +55,10 @@ describe("LogStore", () => {
     expect(store.listLogs(CTX, "nonexistent")).toEqual([])
   })
 
-  it("reads a log file by workspace and filename", () => {
+  it("reads a log file by workspace and filename", async () => {
     const logPath = store.createLogFile(CTX, "ws-1")
     store.appendLog(logPath, "test content")
+    await store.closeLog(logPath)
     const entries = store.listLogs(CTX, "ws-1")
     const content = store.readLog(CTX, "ws-1", entries[0].filename)
     expect(content).toContain("test content")

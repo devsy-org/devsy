@@ -1,11 +1,12 @@
 import {
-  appendFileSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
   unlinkSync,
+  type WriteStream,
   writeFileSync,
 } from "node:fs"
 import { basename, join } from "node:path"
@@ -52,6 +53,11 @@ let counter = 0
 export class LogStore {
   constructor(private logsDir: string) {}
 
+  // Append-mode write streams keyed by log path. Buffered async writes keep
+  // per-line disk I/O off the main event loop; synchronous appends here would
+  // stall the whole process under a high-volume command.
+  private streams = new Map<string, WriteStream>()
+
   private workspaceLogDir(context: string, workspaceId: string): string {
     return join(this.logsDir, "workspaces", context, workspaceId)
   }
@@ -68,14 +74,29 @@ export class LogStore {
   }
 
   appendLog(logPath: string, line: string): void {
-    try {
-      appendFileSync(logPath, `${line}\n`)
-    } catch (err) {
-      // Defensive: the workspace dir under the desktop logs root is owned by
-      // this process, but a manual `rm -rf` of the logs tree (or any other
-      // out-of-band removal) shouldn't crash the main process.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err
+    let stream = this.streams.get(logPath)
+    if (!stream) {
+      stream = createWriteStream(logPath, { flags: "a" })
+      stream.on("error", (err) => {
+        // A manual `rm -rf` of the logs tree (or any out-of-band removal) can
+        // make late writes fail; don't crash the main process over it.
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error(`log write failed for ${logPath}:`, err)
+        }
+      })
+      this.streams.set(logPath, stream)
     }
+    stream.write(`${line}\n`)
+  }
+
+  // Flushes and closes the append stream for a log once its command finishes,
+  // so file handles don't leak across many commands. Resolves after the buffered
+  // data has been flushed to disk, so a subsequent read sees the full log.
+  closeLog(logPath: string): Promise<void> {
+    const stream = this.streams.get(logPath)
+    if (!stream) return Promise.resolve()
+    this.streams.delete(logPath)
+    return new Promise((resolve) => stream.end(resolve))
   }
 
   readLogByPath(logPath: string): string {

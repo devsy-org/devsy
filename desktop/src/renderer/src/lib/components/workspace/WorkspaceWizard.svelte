@@ -426,16 +426,25 @@ onDestroy(() => {
   }
 })
 
+// Cap the in-memory live buffer so a noisy build can't grow it without bound.
+// Trim to TRIM_TARGET only once the cap is exceeded (see WorkspaceDetailPage).
+const MAX_LOG_LINES = 5000
+const TRIM_TARGET = 4000
+
 function flushLines() {
   flushHandle = null
   if (pendingLines.length === 0) return
   outputLines.push(...pendingLines)
   pendingLines.length = 0
+  if (outputLines.length > MAX_LOG_LINES) {
+    outputLines.splice(0, outputLines.length - TRIM_TARGET)
+  }
 }
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {
-  if (progress.message) {
-    pendingLines.push(progress.message)
+  const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
+  if (incoming.length > 0) {
+    pendingLines.push(...incoming)
     if (flushHandle === null) {
       flushHandle = requestAnimationFrame(flushLines)
     }
