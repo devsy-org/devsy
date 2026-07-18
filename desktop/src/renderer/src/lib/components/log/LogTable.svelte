@@ -14,17 +14,12 @@ let {
   class?: string
   maxHeightClass?: string
   follow?: boolean
-  /** Hard cap on rendered rows; older lines are dropped from the view. */
   maxLines?: number
 } = $props()
 
 let viewport = $state<HTMLDivElement | null>(null)
 let pinnedToBottom = $state(true)
 
-// Bound the number of DOM rows regardless of how many lines are passed in, so a
-// huge saved log can't create hundreds of thousands of nodes. Offscreen rows
-// are skipped by the browser via content-visibility; this cap only guards the
-// DOM node count.
 let hiddenCount = $derived(Math.max(0, lines.length - maxLines))
 let visible = $derived(hiddenCount > 0 ? lines.slice(-maxLines) : lines)
 

@@ -84,28 +84,13 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
 }
 
 interface ProgressSink {
-  /**
-   * Buffer a streamed line; flushes on a timer or when the batch fills. Returns
-   * false when the underlying log write stream is saturated, so the caller can
-   * apply backpressure to the source.
-   */
   line(formatted: string): boolean
-  /**
-   * Emit the final line and mark the command done. Awaits the log flush first
-   * so any post-`done` read of the log file sees the complete output.
-   */
   done(
     finalLine: string,
     extra?: { level?: "info" | "warn" | "error"; cliError?: CLIError },
   ): Promise<void>
 }
 
-/**
- * Coalesces streamed log lines into batched `command-progress` events so a
- * high-volume command doesn't emit one IPC message per line (which floods the
- * channel and stalls both processes). Lines flush on a short timer or once the
- * batch fills, whichever comes first.
- */
 function createLogSink(
   getWin: () => BrowserWindow | null,
   commandId: string,
@@ -147,8 +132,6 @@ function createLogSink(
     async done(finalLine, extra) {
       appendLog?.(finalLine)
       buf.push(finalLine)
-      // Flush the log file before signalling completion so a post-done read
-      // (e.g. the detail page reloading its log list) can't see partial output.
       await flush?.()
       post(true, { message: finalLine, ...extra })
     },

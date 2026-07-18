@@ -53,9 +53,6 @@ let counter = 0
 export class LogStore {
   constructor(private logsDir: string) {}
 
-  // Append-mode write streams keyed by log path. Buffered async writes keep
-  // per-line disk I/O off the main event loop; synchronous appends here would
-  // stall the whole process under a high-volume command.
   private streams = new Map<string, WriteStream>()
 
   private workspaceLogDir(context: string, workspaceId: string): string {
@@ -73,17 +70,11 @@ export class LogStore {
     return filePath
   }
 
-  // Returns false when the write stream's buffer is full (per Node's
-  // `Writable.write` contract). Callers should stop feeding lines and wait for
-  // `onDrain` before continuing, so a producer faster than disk can't grow the
-  // buffer without bound.
   appendLog(logPath: string, line: string): boolean {
     let stream = this.streams.get(logPath)
     if (!stream) {
       stream = createWriteStream(logPath, { flags: "a" })
       stream.on("error", (err) => {
-        // A manual `rm -rf` of the logs tree (or any out-of-band removal) can
-        // make late writes fail; don't crash the main process over it.
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
           console.error(`log write failed for ${logPath}:`, err)
         }
@@ -93,18 +84,12 @@ export class LogStore {
     return stream.write(`${line}\n`)
   }
 
-  // Resolves once the write stream has drained after a saturating `appendLog`
-  // (or immediately if the stream is gone). Lets the caller apply backpressure
-  // to the upstream reader.
   onDrain(logPath: string): Promise<void> {
     const stream = this.streams.get(logPath)
     if (!stream) return Promise.resolve()
     return new Promise((resolve) => stream.once("drain", resolve))
   }
 
-  // Flushes and closes the append stream for a log once its command finishes,
-  // so file handles don't leak across many commands. Resolves after the buffered
-  // data has been flushed to disk, so a subsequent read sees the full log.
   closeLog(logPath: string): Promise<void> {
     const stream = this.streams.get(logPath)
     if (!stream) return Promise.resolve()

@@ -158,10 +158,6 @@ let filteredIdes = $derived(
   ),
 )
 
-// Cap the in-memory live buffer so a noisy long-running command can't grow it
-// without bound. The full log is always persisted to disk (Log Files section).
-// Trim down to TRIM_TARGET only once the cap is exceeded, so steady-state
-// appends don't reshuffle the array (and re-render the table) on every batch.
 const MAX_LOG_LINES = 5000
 const TRIM_TARGET = 4000
 

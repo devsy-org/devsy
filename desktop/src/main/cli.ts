@@ -9,9 +9,6 @@ import { getAnalyticsDistinctId } from "./analytics.js"
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
 
-// When onLine returns a promise (the consumer is applying backpressure, e.g. a
-// saturated log write stream), pause the source until it resolves so a fast
-// producer can't outrun the consumer. A counter guards overlapping pauses.
 function backpressureController(source: Readable): (r: void | Promise<void>) => void {
   let pending = 0
   return (result) => {

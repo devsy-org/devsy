@@ -123,16 +123,7 @@ export interface Context {
 
 export interface CommandProgress {
   commandId: string
-  /**
-   * Batched output lines. High-volume workspace commands coalesce many lines
-   * into one event to avoid flooding the IPC channel. When present, prefer this
-   * over `message`.
-   */
   lines?: string[]
-  /**
-   * Single output line. Used by low-volume streams (e.g. provider init) and as
-   * the summary line on the final `done: true` event (for success detection).
-   */
   message?: string
   /** Optional log level; populated when the underlying stderr line was JSON. */
   level?: "info" | "warn" | "error"

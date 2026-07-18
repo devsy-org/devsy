@@ -426,8 +426,6 @@ onDestroy(() => {
   }
 })
 
-// Cap the in-memory live buffer so a noisy build can't grow it without bound.
-// Trim to TRIM_TARGET only once the cap is exceeded (see WorkspaceDetailPage).
 const MAX_LOG_LINES = 5000
 const TRIM_TARGET = 4000
 
