@@ -58,10 +58,10 @@ import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
-// Make the active tab unmistakable: primary text, semibold, and a solid 2px
-// primary underline instead of the faint default line-variant indicator.
+// Segmented pill tabs: the active tab reads as a raised solid pill (elevated
+// background, primary text, semibold) against the muted track.
 const tabTriggerClass =
-  "px-3 text-muted-foreground data-active:text-primary data-active:font-semibold data-active:after:h-[3px] data-active:after:bg-primary data-active:after:opacity-100"
+  "px-4 text-muted-foreground data-active:text-primary data-active:font-semibold"
 
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
@@ -565,7 +565,7 @@ async function handleRenameConfirmed() {
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
     <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 overflow-hidden">
-      <Tabs.List variant="line" class="w-full justify-start gap-1 border-b">
+      <Tabs.List class="h-9 w-fit">
         <Tabs.Trigger value="overview" class={tabTriggerClass}>Overview</Tabs.Trigger>
         <Tabs.Trigger value="logs" class={tabTriggerClass}>Logs</Tabs.Trigger>
         <Tabs.Trigger value="terminal" class={tabTriggerClass}>Terminal</Tabs.Trigger>
