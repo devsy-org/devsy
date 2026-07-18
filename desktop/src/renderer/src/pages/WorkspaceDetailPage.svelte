@@ -58,6 +58,11 @@ import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
+// Make the active tab unmistakable: primary text, semibold, and a solid 2px
+// primary underline instead of the faint default line-variant indicator.
+const tabTriggerClass =
+  "px-3 text-muted-foreground data-active:text-primary data-active:font-semibold data-active:after:h-[3px] data-active:after:bg-primary data-active:after:opacity-100"
+
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
   { value: "vscode", label: "VS Code" },
@@ -90,6 +95,8 @@ const IDE_OPTIONS = [
 
 let id = $derived(params.id ?? "")
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
+// ".devsy" matches config.SSHHostSuffix on the backend (".<binary-name>").
+let sshHost = $derived(`${id}.devsy`)
 
 let isRunning = $derived(workspace?.status?.toLowerCase() === "running")
 let isStopped = $derived(
@@ -493,12 +500,12 @@ async function handleRenameConfirmed() {
   {#if workspace}
     <ButtonGroup.Root>
       {#if isRunning || isBusy}
-        <Button variant="outline" size="sm" onclick={handleStop} disabled={operationRunning}>
+        <Button variant="destructive" size="sm" onclick={handleStop} disabled={operationRunning}>
           {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
           Stop
         </Button>
       {:else}
-        <Button variant="outline" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
+        <Button variant="default" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
           {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
           Start
         </Button>
@@ -509,7 +516,7 @@ async function handleRenameConfirmed() {
         Open IDE
       </Button>
       {#if sshSessionId && !sshExited}
-        <Button variant="outline" size="sm" onclick={handleDisconnect}>
+        <Button variant="secondary" size="sm" onclick={handleDisconnect}>
           <SquareTerminal class="h-4 w-4" />
           Disconnect
         </Button>
@@ -558,10 +565,10 @@ async function handleRenameConfirmed() {
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
     <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 overflow-hidden">
-      <Tabs.List variant="line">
-        <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
-        <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
-        <Tabs.Trigger value="terminal">Terminal</Tabs.Trigger>
+      <Tabs.List variant="line" class="w-full justify-start gap-1 border-b">
+        <Tabs.Trigger value="overview" class={tabTriggerClass}>Overview</Tabs.Trigger>
+        <Tabs.Trigger value="logs" class={tabTriggerClass}>Logs</Tabs.Trigger>
+        <Tabs.Trigger value="terminal" class={tabTriggerClass}>Terminal</Tabs.Trigger>
       </Tabs.List>
 
       <Tabs.Content value="overview">
@@ -577,6 +584,34 @@ async function handleRenameConfirmed() {
 
           <div class="text-muted-foreground">Machine</div>
           <div>{workspace.machine?.id ?? "N/A"}</div>
+
+          <div class="text-muted-foreground">SSH</div>
+          <div>
+            <span class="inline-flex items-center gap-2">
+              <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">ssh {sshHost}</code>
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}
+                    <Button variant="ghost" size="icon-sm" {...props} onclick={() => copyToClipboard(`ssh ${sshHost}`)}>
+                      <ClipboardCopy class="h-3.5 w-3.5" />
+                      <span class="sr-only">Copy SSH command</span>
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content>Copy SSH command</Tooltip.Content>
+              </Tooltip.Root>
+              <Button
+                variant="outline"
+                size="sm"
+                class="h-7 text-xs"
+                onclick={async () => { if (sshSessionId) await handleDisconnect(); activeTab = "terminal"; handleConnect() }}
+                disabled={!isRunning || connecting}
+              >
+                {#if connecting}<Spinner />{:else}<SquareTerminal class="h-3.5 w-3.5" />{/if}
+                Connect
+              </Button>
+            </span>
+          </div>
 
           <div class="text-muted-foreground">IDE</div>
           <div>
