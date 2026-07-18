@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"maps"
 	"slices"
 
@@ -8,6 +9,19 @@ import (
 )
 
 const UserLabel = pkgconfig.DockerUserLabel
+
+// ErrNoAgentResult indicates the agent exited without forwarding a result.
+var ErrNoAgentResult = errors.New("agent exited without sending a result")
+
+// Err returns the structured error the agent forwarded in this result, or nil
+// if the result carries no error. A nil receiver returns nil so callers can
+// check the transport error separately.
+func (r *Result) Err() error {
+	if r == nil || r.Error == "" {
+		return nil
+	}
+	return errors.New(r.Error)
+}
 
 type Result struct {
 	DevContainerConfigWithPath *DevContainerConfigWithPath `json:"DevContainerConfigWithPath"`

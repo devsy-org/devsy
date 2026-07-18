@@ -371,23 +371,8 @@ func (cmd *UpCmd) executeDevsyUp(
 	client client2.BaseWorkspaceClient,
 ) (*workspaceContext, error) {
 	result, err := cmd.devsyUp(ctx, devsyConfig, client)
-	// Prefer the structured error message forwarded from the agent over
-	// the generic SSH-level wrapper, so callers see the actual cause
-	// (e.g. host requirements not met) instead of a generic fallback.
-	if result != nil && result.Error != "" {
-		if err != nil {
-			return nil, fmt.Errorf("start workspace: %s: %w", result.Error, err)
-		}
-		return nil, fmt.Errorf("start workspace: %s", result.Error)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("start workspace: %w", err)
-	}
-	if result == nil {
-		return nil, fmt.Errorf(
-			"agent exited without sending a result; the underlying error was logged " +
-				"to the agent's stderr above — re-run with --debug for the full trace",
-		)
+	if err := validateUpResult(result, err); err != nil {
+		return nil, err
 	}
 	if cmd.Platform.Enabled {
 		return nil, nil
@@ -405,6 +390,36 @@ func (cmd *UpCmd) executeDevsyUp(
 	}
 
 	user := config2.GetRemoteUser(result)
+	workdir := cmd.resolveWorkdir(result, client)
+	return &workspaceContext{result: result, user: user, workdir: workdir}, nil
+}
+
+// validateUpResult turns the (result, err) pair from devsyUp into a single
+// error. It prefers the structured message the agent forwarded in the result
+// over the generic transport error so callers see the actual cause; when both
+// are present the transport error is wrapped for the full chain.
+func validateUpResult(result *config2.Result, err error) error {
+	if resultErr := result.Err(); resultErr != nil {
+		if err != nil {
+			return fmt.Errorf("start workspace: %s: %w", resultErr, err)
+		}
+		return fmt.Errorf("start workspace: %w", resultErr)
+	}
+	if err != nil {
+		return fmt.Errorf("start workspace: %w", err)
+	}
+	if result == nil {
+		return config2.ErrNoAgentResult
+	}
+	return nil
+}
+
+// resolveWorkdir determines the container workspace folder, honoring a git
+// subpath and an explicit --workspace-folder override.
+func (cmd *UpCmd) resolveWorkdir(
+	result *config2.Result,
+	client client2.BaseWorkspaceClient,
+) string {
 	workdir := ""
 	if result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
 		workdir = result.MergedConfig.WorkspaceFolder
@@ -420,8 +435,7 @@ func (cmd *UpCmd) executeDevsyUp(
 		result.SubstitutionContext.ContainerWorkspaceFolder = cmd.WorkspaceFolder
 		workdir = cmd.WorkspaceFolder
 	}
-
-	return &workspaceContext{result: result, user: user, workdir: workdir}, nil
+	return workdir
 }
 
 func WithSignals(ctx context.Context) (context.Context, func()) {
