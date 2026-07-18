@@ -73,7 +73,11 @@ export class LogStore {
     return filePath
   }
 
-  appendLog(logPath: string, line: string): void {
+  // Returns false when the write stream's buffer is full (per Node's
+  // `Writable.write` contract). Callers should stop feeding lines and wait for
+  // `onDrain` before continuing, so a producer faster than disk can't grow the
+  // buffer without bound.
+  appendLog(logPath: string, line: string): boolean {
     let stream = this.streams.get(logPath)
     if (!stream) {
       stream = createWriteStream(logPath, { flags: "a" })
@@ -86,7 +90,16 @@ export class LogStore {
       })
       this.streams.set(logPath, stream)
     }
-    stream.write(`${line}\n`)
+    return stream.write(`${line}\n`)
+  }
+
+  // Resolves once the write stream has drained after a saturating `appendLog`
+  // (or immediately if the stream is gone). Lets the caller apply backpressure
+  // to the upstream reader.
+  onDrain(logPath: string): Promise<void> {
+    const stream = this.streams.get(logPath)
+    if (!stream) return Promise.resolve()
+    return new Promise((resolve) => stream.once("drain", resolve))
   }
 
   // Flushes and closes the append stream for a log once its command finishes,

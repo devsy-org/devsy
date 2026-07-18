@@ -1,12 +1,28 @@
 import type { ChildProcess } from "node:child_process"
 import { execFile as execFileCb, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
+import type { Readable } from "node:stream"
 import { promisify } from "node:util"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
+
+// When onLine returns a promise (the consumer is applying backpressure, e.g. a
+// saturated log write stream), pause the source until it resolves so a fast
+// producer can't outrun the consumer. A counter guards overlapping pauses.
+function backpressureController(source: Readable): (r: void | Promise<void>) => void {
+  let pending = 0
+  return (result) => {
+    if (!result || typeof (result as Promise<void>).then !== "function") return
+    pending++
+    if (pending === 1) source.pause()
+    void (result as Promise<void>).finally(() => {
+      if (--pending === 0) source.resume()
+    })
+  }
+}
 
 export interface StreamLine {
   /** Raw line text from the CLI (already ANSI-stripped upstream is not assumed). */
@@ -190,7 +206,7 @@ export class CliRunner {
       line: string,
       stream: "stdout" | "stderr",
       meta?: StreamLine,
-    ) => void,
+    ) => void | Promise<void>,
     onExit: (code: number, cliError?: CLIError) => void,
     workspaceId?: string,
   ): Promise<ChildProcess> {
@@ -214,11 +230,13 @@ export class CliRunner {
     let lastCliError: CLIError | undefined
 
     if (child.stdout) {
+      const applyBackpressure = backpressureController(child.stdout)
       const rl = createInterface({ input: child.stdout })
-      rl.on("line", (line) => onLine(line, "stdout"))
+      rl.on("line", (line) => applyBackpressure(onLine(line, "stdout")))
     }
 
     if (child.stderr) {
+      const applyBackpressure = backpressureController(child.stderr)
       const rl = createInterface({ input: child.stderr })
       rl.on("line", (line) => {
         const parsed = parseStderrLine(line)
@@ -231,7 +249,7 @@ export class CliRunner {
           cliError: parsed?.cliError,
           level: normalizeLevel(parsed?.level),
         }
-        onLine(line, "stderr", meta)
+        applyBackpressure(onLine(line, "stderr", meta))
       })
     }
 

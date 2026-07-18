@@ -84,8 +84,12 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
 }
 
 interface ProgressSink {
-  /** Buffer a streamed line; flushes on a timer or when the batch fills. */
-  line(formatted: string): void
+  /**
+   * Buffer a streamed line; flushes on a timer or when the batch fills. Returns
+   * false when the underlying log write stream is saturated, so the caller can
+   * apply backpressure to the source.
+   */
+  line(formatted: string): boolean
   /**
    * Emit the final line and mark the command done. Awaits the log flush first
    * so any post-`done` read of the log file sees the complete output.
@@ -105,7 +109,7 @@ interface ProgressSink {
 function createLogSink(
   getWin: () => BrowserWindow | null,
   commandId: string,
-  appendLog?: (line: string) => void,
+  appendLog?: (line: string) => boolean,
   flush?: () => Promise<void>,
 ): ProgressSink {
   const FLUSH_MS = 64
@@ -134,10 +138,11 @@ function createLogSink(
 
   return {
     line(formatted) {
-      appendLog?.(formatted)
+      const ok = appendLog?.(formatted) ?? true
       buf.push(formatted)
       if (buf.length >= MAX_BATCH) post(false)
       else if (!timer) timer = setTimeout(() => post(false), FLUSH_MS)
+      return ok
     },
     async done(finalLine, extra) {
       appendLog?.(finalLine)
@@ -645,7 +650,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             return
           }
 
-          sink.line(formatted)
+          if (!sink.line(formatted)) return logStore.onDrain(logPath)
         },
         (code) => {
           if (tunnelProcesses.get(wsId) === child) {
@@ -682,7 +687,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       cli.runStreaming(
         cliArgs,
-        (line) => sink.line(formatLogLine(line)),
+        (line) => {
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+        },
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
@@ -720,7 +727,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       cli.runStreaming(
         cliArgs,
-        (line) => sink.line(formatLogLine(line)),
+        (line) => {
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+        },
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
@@ -751,7 +760,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       cli.runStreaming(
         cliArgs,
-        (line) => sink.line(formatLogLine(line)),
+        (line) => {
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+        },
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
@@ -782,7 +793,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       cli.runStreaming(
         cliArgs,
-        (line) => sink.line(formatLogLine(line)),
+        (line) => {
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+        },
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
