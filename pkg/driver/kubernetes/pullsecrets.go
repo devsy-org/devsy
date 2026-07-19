@@ -24,9 +24,12 @@ func (k *KubernetesDriver) EnsurePullSecret(
 	}
 
 	dockerCredentials, err := dockercredentials.GetAuthConfig(host)
-	if err != nil || dockerCredentials == nil || dockerCredentials.Username == "" ||
+	if err != nil {
+		return false, fmt.Errorf("retrieve credentials for %s: %w", host, err)
+	}
+	if dockerCredentials == nil || dockerCredentials.Username == "" ||
 		dockerCredentials.Secret == "" {
-		log.Debugf("Couldn't retrieve credentials for registry: %s", host)
+		log.Debugf("no credentials configured for registry %s; pulling anonymously", host)
 		return false, nil
 	}
 
