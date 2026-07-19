@@ -35,7 +35,7 @@ func (cmd *UpCmd) devsyUp(
 		// Preserve a structured error envelope the agent may have forwarded
 		// over the tunnel before exiting non-zero (e.g. host requirements
 		// not met), so the caller can surface the real cause.
-		if result != nil && result.Error != "" {
+		if result.Err() != nil {
 			return result, err
 		}
 		return nil, err
