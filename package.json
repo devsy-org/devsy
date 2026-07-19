@@ -2,6 +2,6 @@
   "name": "devsy",
   "private": true,
   "devDependencies": {
-    "@biomejs/biome": "2.5.3"
+    "@biomejs/biome": "2.5.4"
   }
 }
