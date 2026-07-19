@@ -1,11 +1,12 @@
 import {
-  appendFileSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
   unlinkSync,
+  type WriteStream,
   writeFileSync,
 } from "node:fs"
 import { basename, join } from "node:path"
@@ -52,6 +53,8 @@ let counter = 0
 export class LogStore {
   constructor(private logsDir: string) {}
 
+  private streams = new Map<string, WriteStream>()
+
   private workspaceLogDir(context: string, workspaceId: string): string {
     return join(this.logsDir, "workspaces", context, workspaceId)
   }
@@ -67,15 +70,31 @@ export class LogStore {
     return filePath
   }
 
-  appendLog(logPath: string, line: string): void {
-    try {
-      appendFileSync(logPath, `${line}\n`)
-    } catch (err) {
-      // Defensive: the workspace dir under the desktop logs root is owned by
-      // this process, but a manual `rm -rf` of the logs tree (or any other
-      // out-of-band removal) shouldn't crash the main process.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err
+  appendLog(logPath: string, line: string): boolean {
+    let stream = this.streams.get(logPath)
+    if (!stream) {
+      stream = createWriteStream(logPath, { flags: "a" })
+      stream.on("error", (err) => {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error(`log write failed for ${logPath}:`, err)
+        }
+      })
+      this.streams.set(logPath, stream)
     }
+    return stream.write(`${line}\n`)
+  }
+
+  onDrain(logPath: string): Promise<void> {
+    const stream = this.streams.get(logPath)
+    if (!stream) return Promise.resolve()
+    return new Promise((resolve) => stream.once("drain", resolve))
+  }
+
+  closeLog(logPath: string): Promise<void> {
+    const stream = this.streams.get(logPath)
+    if (!stream) return Promise.resolve()
+    this.streams.delete(logPath)
+    return new Promise((resolve) => stream.end(resolve))
   }
 
   readLogByPath(logPath: string): string {

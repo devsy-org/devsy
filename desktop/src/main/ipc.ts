@@ -83,6 +83,61 @@ function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
 }
 
+interface ProgressSink {
+  line(formatted: string): boolean
+  done(
+    finalLine: string,
+    extra?: { level?: "info" | "warn" | "error"; cliError?: CLIError },
+  ): Promise<void>
+}
+
+function createLogSink(
+  getWin: () => BrowserWindow | null,
+  commandId: string,
+  appendLog?: (line: string) => boolean,
+  flush?: () => Promise<void>,
+): ProgressSink {
+  const FLUSH_MS = 64
+  const MAX_BATCH = 250
+  let buf: string[] = []
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  function post(
+    done: boolean,
+    extra?: { message?: string; level?: "info" | "warn" | "error"; cliError?: CLIError },
+  ): void {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (!done && buf.length === 0) return
+    const lines = buf
+    buf = []
+    getWin()?.webContents.send("command-progress", {
+      commandId,
+      lines,
+      done,
+      ...extra,
+    })
+  }
+
+  return {
+    line(formatted) {
+      const ok = appendLog?.(formatted) ?? true
+      buf.push(formatted)
+      if (buf.length >= MAX_BATCH) post(false)
+      else if (!timer) timer = setTimeout(() => post(false), FLUSH_MS)
+      return ok
+    },
+    async done(finalLine, extra) {
+      appendLog?.(finalLine)
+      buf.push(finalLine)
+      await flush?.()
+      post(true, { message: finalLine, ...extra })
+    },
+  }
+}
+
 export function registerIpcHandlers(deps: IpcDependencies): {
   tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
   scheduleProviderUpdateCheck: () => void
@@ -549,7 +604,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
-      const win = deps.getMainWindow()
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
       let signalledDone = false
 
       // Kill any existing tunnel process for this workspace before starting a new one
@@ -562,45 +622,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const child = await cli.runStreaming(
         cliArgs,
         (line) => {
+          if (signalledDone) return
           const formatted = formatLogLine(line)
 
-          if (!signalledDone && line.includes('"outcome":"success"')) {
-            logStore.appendLog(logPath, formatted)
+          if (line.includes('"outcome":"success"')) {
             signalledDone = true
             // Track this as a tunnel process (it stays alive for the tunnel)
             tunnelProcesses.set(wsId, child)
-            win?.webContents.send("command-progress", {
-              commandId: cmdId,
-              message: formatted,
-              done: true,
-            })
+            void sink.done(formatted)
             return
           }
 
-          if (!signalledDone) {
-            logStore.appendLog(logPath, formatted)
-            win?.webContents.send("command-progress", {
-              commandId: cmdId,
-              message: formatted,
-              done: false,
-            })
-          }
+          if (!sink.line(formatted)) return logStore.onDrain(logPath)
         },
         (code) => {
           if (tunnelProcesses.get(wsId) === child) {
             tunnelProcesses.delete(wsId)
           }
           if (signalledDone) return
-          const exitMsg = formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
+          void sink.done(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
           )
-          logStore.appendLog(logPath, exitMsg)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: exitMsg,
-            done: true,
-          })
         },
         wsId,
       )
@@ -616,7 +658,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
-      const win = deps.getMainWindow()
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
 
       const cliArgs = ["workspace", "stop", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
@@ -624,25 +671,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       cli.runStreaming(
         cliArgs,
         (line) => {
-          const formatted = formatLogLine(line)
-          logStore.appendLog(logPath, formatted)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: formatted,
-            done: false,
-          })
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code) => {
-          const exitMsg = formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
+          void sink.done(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
           )
-          logStore.appendLog(logPath, exitMsg)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: exitMsg,
-            done: true,
-          })
         },
         args.workspaceId,
       )
@@ -663,7 +697,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
-      const win = deps.getMainWindow()
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
 
       const cliArgs = ["workspace", "delete", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
@@ -672,25 +711,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       cli.runStreaming(
         cliArgs,
         (line) => {
-          const formatted = formatLogLine(line)
-          logStore.appendLog(logPath, formatted)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: formatted,
-            done: false,
-          })
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code) => {
-          const exitMsg = formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
+          void sink.done(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
           )
-          logStore.appendLog(logPath, exitMsg)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: exitMsg,
-            done: true,
-          })
         },
         args.workspaceId,
       )
@@ -705,7 +731,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("workspace_rebuild")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
-      const win = deps.getMainWindow()
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
 
       const cliArgs = ["workspace", "up", args.workspaceId, "--recreate"]
       if (args.debug) cliArgs.push("--debug")
@@ -713,25 +744,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       cli.runStreaming(
         cliArgs,
         (line) => {
-          const formatted = formatLogLine(line)
-          logStore.appendLog(logPath, formatted)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: formatted,
-            done: false,
-          })
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code) => {
-          const exitMsg = formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
+          void sink.done(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
           )
-          logStore.appendLog(logPath, exitMsg)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: exitMsg,
-            done: true,
-          })
         },
         args.workspaceId,
       )
@@ -746,7 +764,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("workspace_reset")
       const cmdId = crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
-      const win = deps.getMainWindow()
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
 
       const cliArgs = ["workspace", "up", args.workspaceId, "--reset"]
       if (args.debug) cliArgs.push("--debug")
@@ -754,25 +777,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       cli.runStreaming(
         cliArgs,
         (line) => {
-          const formatted = formatLogLine(line)
-          logStore.appendLog(logPath, formatted)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: formatted,
-            done: false,
-          })
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code) => {
-          const exitMsg = formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
+          void sink.done(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
           )
-          logStore.appendLog(logPath, exitMsg)
-          win?.webContents.send("command-progress", {
-            commandId: cmdId,
-            message: exitMsg,
-            done: true,
-          })
         },
         args.workspaceId,
       )

@@ -123,7 +123,8 @@ export interface Context {
 
 export interface CommandProgress {
   commandId: string
-  message: string
+  lines?: string[]
+  message?: string
   /** Optional log level; populated when the underlying stderr line was JSON. */
   level?: "info" | "warn" | "error"
   done: boolean

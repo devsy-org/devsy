@@ -158,11 +158,17 @@ let filteredIdes = $derived(
   ),
 )
 
+const MAX_LOG_LINES = 5000
+const TRIM_TARGET = 4000
+
 function flushLines() {
   flushHandle = null
   if (pendingLines.length === 0) return
   outputLines.push(...pendingLines)
   pendingLines.length = 0
+  if (outputLines.length > MAX_LOG_LINES) {
+    outputLines.splice(0, outputLines.length - TRIM_TARGET)
+  }
 }
 
 async function copyToClipboard(text: string) {
@@ -178,8 +184,9 @@ onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
-        if (progress.message) {
-          pendingLines.push(progress.message)
+        const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
+        if (incoming.length > 0) {
+          pendingLines.push(...incoming)
           if (flushHandle === null) {
             flushHandle = requestAnimationFrame(flushLines)
           }
