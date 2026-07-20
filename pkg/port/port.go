@@ -9,14 +9,11 @@ import (
 
 func FindAvailablePort(start int) (int, error) {
 	for i := start; i < start+1000; i++ {
-		available, err := IsAvailable("localhost:" + strconv.Itoa(i))
-		if err != nil {
-			return 0, err
-		} else if !available {
-			continue
+		// A probe error means this port can't be bound (e.g. already in use),
+		// so keep scanning rather than aborting the whole search.
+		if available, err := IsAvailable("localhost:" + strconv.Itoa(i)); err == nil && available {
+			return i, nil
 		}
-
-		return i, nil
 	}
 
 	return 0, fmt.Errorf("couldn't find an available port")
