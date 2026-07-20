@@ -16,6 +16,7 @@ import {
 import { contextUse, contextCreate } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { trackEngagement } from "$lib/analytics.js"
 
 let selectedContext = $state<string | null>(null)
 let sheetOpen = $state(false)
@@ -57,6 +58,7 @@ async function handleUse(e: Event, name: string) {
   e.stopPropagation()
   try {
     await contextUse(name)
+    trackEngagement("context_switch")
     toasts.success(`Switched to context "${name}"`)
   } catch (err) {
     toasts.error(`Failed to switch context: ${extractErrorMessage(err)}`)

@@ -38,6 +38,9 @@ const (
 
 type CLICollector interface {
 	RecordCLI(err error)
+
+	RecordWorkspaceGauge(count int)
+
 	SetClient(client devsyclient.BaseWorkspaceClient)
 
 	// Flush makes sure all events are sent to the backend
@@ -162,18 +165,42 @@ func (d *cliCollector) RecordCLI(err error) {
 		eventType = config.BinaryName + "_cli_runner"
 	}
 
-	// build the event and record
+	d.recordEvent(eventType, eventProperties, userProperties)
+}
+
+func (d *cliCollector) RecordWorkspaceGauge(count int) {
+	timezone, _ := time.Now().Zone()
+	d.recordEvent(
+		config.BinaryName+"_workspace_count",
+		map[string]any{
+			"count":   count,
+			"version": version.GetVersion(),
+			"desktop": os.Getenv(config.EnvUI) == config.BoolTrue,
+		},
+		map[string]any{
+			"os_name":  runtime.GOOS,
+			"os_arch":  runtime.GOARCH,
+			"timezone": timezone,
+		},
+	)
+}
+
+func (d *cliCollector) recordEvent(
+	eventType string,
+	eventProperties, userProperties map[string]any,
+) {
+	machineID := GetMachineID()
 	eventPropertiesRaw, _ := json.Marshal(eventProperties)
 	userPropertiesRaw, _ := json.Marshal(userProperties)
 	d.analyticsClient.RecordEvent(analytics.Event{
 		"event": {
 			"type":       eventType,
-			"machine_id": GetMachineID(),
+			"machine_id": machineID,
 			"properties": string(eventPropertiesRaw),
 			"timestamp":  time.Now().Unix(),
 		},
 		"user": {
-			"machine_id": GetMachineID(),
+			"machine_id": machineID,
 			"properties": string(userPropertiesRaw),
 			"timestamp":  time.Now().Unix(),
 		},

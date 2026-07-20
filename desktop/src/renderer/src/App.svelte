@@ -13,15 +13,26 @@ import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
 import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
-import { initSettings, syncAutoUpdateFromMain, autoUpdate } from "$lib/stores/settings.js"
+import {
+  initSettings,
+  syncAutoUpdateFromMain,
+  autoUpdate,
+} from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
+import { initSessionTracking } from "$lib/analytics.js"
 import { location } from "$lib/router.js"
 import UpdateBadge from "$lib/components/update/UpdateBadge.svelte"
 import UpdateDialog from "$lib/components/update/UpdateDialog.svelte"
-import { initUpdateStore, disposeUpdateStore } from "$lib/stores/updates.svelte.js"
-import { initUpdateToasts, bindDialogOpener } from "$lib/components/update/update-toasts.js"
+import {
+  initUpdateStore,
+  disposeUpdateStore,
+} from "$lib/stores/updates.svelte.js"
+import {
+  initUpdateToasts,
+  bindDialogOpener,
+} from "$lib/components/update/update-toasts.js"
 
 import DashboardPage from "./pages/DashboardPage.svelte"
 import WorkspacesPage from "./pages/WorkspacesPage.svelte"
@@ -87,12 +98,35 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 let unsubLocation: (() => void) | undefined
+let stopSessionTracking: (() => void) | undefined
 
 function normalizeAnalyticsPath(path: string): string {
-  if (/^\/workspaces\/[^/]+$/.test(path)) return "/workspaces/:id"
-  if (/^\/providers\/[^/]+$/.test(path)) return "/providers/:id"
+  // Match id segments but not the static sub-routes that share the prefix.
+  if (path !== "/workspaces/new" && /^\/workspaces\/[^/]+$/.test(path))
+    return "/workspaces/:id"
+  if (path !== "/providers/add" && /^\/providers\/[^/]+$/.test(path))
+    return "/providers/:id"
   if (/^\/machines\/[^/]+$/.test(path)) return "/machines/:id"
   return path
+}
+
+function screenName(path: string): string {
+  const names: Record<string, string> = {
+    "/": "dashboard",
+    "/workspaces": "workspaces",
+    "/workspaces/new": "workspace_new",
+    "/workspaces/:id": "workspace_detail",
+    "/providers": "providers",
+    "/providers/add": "provider_add",
+    "/providers/:id": "provider_detail",
+    "/machines": "machines",
+    "/machines/:id": "machine_detail",
+    "/contexts": "contexts",
+    "/settings": "settings",
+    "/ssh-keys": "ssh_keys",
+    "/terminals": "terminals",
+  }
+  return names[path] ?? path
 }
 
 onMount(async () => {
@@ -102,8 +136,14 @@ onMount(async () => {
   initContexts()
   destroySettings = initSettings()
 
+  stopSessionTracking = initSessionTracking()
+
   unsubLocation = location.subscribe((path) => {
-    analyticsTrack("page_view", { path: normalizeAnalyticsPath(path) })
+    const normalized = normalizeAnalyticsPath(path)
+    analyticsTrack("page_view", {
+      path: normalized,
+      screen: screenName(normalized),
+    })
   })
 
   // Signal the backend that the frontend is ready
@@ -124,6 +164,7 @@ onMount(async () => {
 onDestroy(() => {
   unsubscribeToasts?.()
   disposeUpdateStore()
+  stopSessionTracking?.()
   unsubLocation?.()
   destroyWorkspaces()
   destroyProviders()

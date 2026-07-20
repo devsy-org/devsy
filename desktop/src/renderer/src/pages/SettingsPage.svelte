@@ -33,6 +33,7 @@ import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { trackEngagement } from "$lib/analytics.js"
 
 // ── Theme ───────────────────────────────────────────────────────────
 
@@ -148,6 +149,8 @@ onMount(() => {
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
   saveLocalOption(key, value)
   ;(local as unknown as Record<string, string | boolean>)[key] = value
+  // Key only, never the value: values can be paths, URLs, or free text.
+  trackEngagement("settings_changed", { setting: key })
 }
 
 function toggleLocal(key: keyof LocalOptions) {

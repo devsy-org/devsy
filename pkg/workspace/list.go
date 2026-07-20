@@ -146,6 +146,15 @@ func ListLocalWorkspaces(
 	return retWorkspaces, nil
 }
 
+// CountLocalWorkspaces counts on-disk workspaces without any network calls.
+func CountLocalWorkspaces(contextName string) (int, error) {
+	workspaces, err := ListLocalWorkspaces(contextName, false)
+	if err != nil {
+		return 0, err
+	}
+	return len(workspaces), nil
+}
+
 type listProWorkspacesResult struct {
 	workspaces []*providerpkg.Workspace
 	err        error
