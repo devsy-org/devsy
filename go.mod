@@ -27,7 +27,7 @@ require (
 	github.com/docker/docker-credential-helpers v0.9.8
 	github.com/docker/go-connections v0.7.0
 	github.com/evanphx/json-patch/v5 v5.9.11
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
