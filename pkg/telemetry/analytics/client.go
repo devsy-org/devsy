@@ -47,8 +47,8 @@ func (c *client) RecordEvent(event Event) {
 		return
 	}
 
-	machineID, _ := eventData["machine_id"].(string)
-	eventType, _ := eventData["type"].(string)
+	machineID, _ := eventData[KeyMachineID].(string)
+	eventType, _ := eventData[KeyType].(string)
 	properties := buildProperties(event)
 
 	if Dry {
@@ -76,7 +76,7 @@ func (c *client) RecordEvent(event Event) {
 // Reserved keys carry event routing/identity, not analytics properties, so
 // they are excluded from the flattened property set.
 func isReservedKey(k string) bool {
-	return k == "type" || k == "machine_id" || k == "timestamp"
+	return k == KeyType || k == KeyMachineID || k == KeyTimestamp
 }
 
 func buildProperties(event Event) posthog.Properties {

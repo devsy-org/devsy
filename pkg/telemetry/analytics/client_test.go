@@ -5,15 +5,15 @@ import "testing"
 func TestBuildProperties_MergesEventAndUserWithoutCollision(t *testing.T) {
 	event := Event{
 		"event": {
-			"type":       "devsy_workspace_count",
-			"machine_id": "m",
-			"timestamp":  int64(1),
+			KeyType:      "devsy_workspace_count",
+			KeyMachineID: "m",
+			KeyTimestamp: int64(1),
 			"count":      7,
 			"version":    "1.2.3",
 		},
 		"user": {
-			"machine_id": "m",
-			"timestamp":  int64(1),
+			KeyMachineID: "m",
+			KeyTimestamp: int64(1),
 			"os_name":    "darwin",
 			"os_arch":    "arm64",
 		},
@@ -37,20 +37,20 @@ func TestBuildProperties_MergesEventAndUserWithoutCollision(t *testing.T) {
 func TestBuildProperties_ExcludesReservedKeys(t *testing.T) {
 	event := Event{
 		"event": {
-			"type":       "devsy_cli",
-			"machine_id": "m",
-			"timestamp":  int64(1),
+			KeyType:      "devsy_cli",
+			KeyMachineID: "m",
+			KeyTimestamp: int64(1),
 			"command":    "up",
 		},
 		"user": {
-			"machine_id": "m",
-			"timestamp":  int64(1),
+			KeyMachineID: "m",
+			KeyTimestamp: int64(1),
 		},
 	}
 
 	got := buildProperties(event)
 
-	for _, reserved := range []string{"type", "machine_id", "timestamp"} {
+	for _, reserved := range []string{KeyType, KeyMachineID, KeyTimestamp} {
 		if _, ok := got[reserved]; ok {
 			t.Errorf("reserved key %q should not appear in properties", reserved)
 		}
