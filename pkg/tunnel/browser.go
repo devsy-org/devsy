@@ -213,18 +213,14 @@ func SetupBackhaul(
 	return err
 }
 
-// isTransientBackhaulErr returns true when the `devsy ssh` subprocess exited
-// with exitcode.WorkspaceNotFound, indicating the workspace registration has
-// not yet propagated (a race with concurrent workspace.json writers). The
-// exit-code contract is set in cmd/root.go and the constant lives in
-// pkg/exitcode; using it here keeps this decision typed rather than relying
-// on stderr substring matching.
+// isTransientBackhaulErr reports whether the `devsy ssh` subprocess exited with
+// a retryable status (e.g. a workspace-registration race).
 func isTransientBackhaulErr(err error) bool {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
 		return false
 	}
-	return exitErr.ExitCode() == exitcode.WorkspaceNotFound
+	return exitErr.ExitCode() == exitcode.Retryable
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.

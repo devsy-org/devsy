@@ -269,8 +269,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
 	)
 	if err := cmd.Run(); err != nil {
 		stderrOutput := strings.TrimSpace(stderrBuf.String())
-		log.Errorf("dockerless build failed: %v: stderr output: %s", err, stderrOutput)
-		return err
+		return fmt.Errorf("dockerless build failed: %w: stderr: %s", err, stderrOutput)
 	}
 
 	log.Debugf("dockerless build completed")

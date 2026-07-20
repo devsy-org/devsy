@@ -67,7 +67,7 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 }
 
 func TestIsTransientBackhaulErr(t *testing.T) {
-	transient := exitError(t, exitcode.WorkspaceNotFound)
+	transient := exitError(t, exitcode.Retryable)
 	otherExit := exitError(t, 1)
 
 	tests := []struct {

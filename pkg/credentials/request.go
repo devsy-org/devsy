@@ -10,7 +10,6 @@ import (
 	"time"
 
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
-	"github.com/devsy-org/devsy/pkg/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -31,8 +30,7 @@ func PostWithRetry(port int, endpoint string, body io.Reader) ([]byte, error) {
 		url := fmt.Sprintf("http://localhost:%s/%s", strconv.Itoa(port), endpoint)
 		response, err := devsyhttp.GetHTTPClient().Post(url, "application/json", body)
 		if err != nil {
-			log.Errorf("Error calling %s: %v", endpoint, err)
-			return err
+			return fmt.Errorf("call %s: %w", endpoint, err)
 		}
 		defer func() { _ = response.Body.Close() }()
 

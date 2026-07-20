@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	cliErrors "github.com/devsy-org/devsy/pkg/errors"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
@@ -160,14 +160,7 @@ func Warn(args ...any)  { sugar.Load().Warn(args...) }
 func Error(args ...any) { sugar.Load().Error(args...) }
 func Fatal(args ...any) { sugar.Load().Fatal(args...) }
 
-// JSONError writes a single structured zap entry carrying a *CLIError under
-// the "cliError" field. The desktop IPC layer parses this field by name.
-//
-// The top-level "msg" is set to the original error chain (when available) so
-// that log consumers grepping the textual message still see the underlying
-// cause. The friendly, user-facing summary remains in cliError.message and is
-// what the desktop UI surfaces.
-func JSONError(cliErr *cliErrors.CLIError) {
+func JSONError(cliErr *clierr.CLIError) {
 	if cliErr == nil {
 		return
 	}
@@ -176,8 +169,6 @@ func JSONError(cliErr *cliErrors.CLIError) {
 		if s := wrapped.Error(); s != "" {
 			msg = s
 		}
-	} else if cliErr.Cause != "" {
-		msg = cliErr.Cause
 	}
 	sugar.Load().Desugar().Error(msg, zap.Object("cliError", cliErr))
 }

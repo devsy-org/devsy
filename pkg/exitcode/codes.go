@@ -1,10 +1,10 @@
-// Package exitcode defines process exit codes used as a contract between
-// devsy and any parent process that spawns it as a subprocess (e.g. the
-// backhaul SSH command). Keeping these in a leaf package avoids import
-// cycles between the packages that emit and consume them.
+// Package exitcode defines the CLI's process exit codes.
 package exitcode
 
-// WorkspaceNotFound is emitted when devsy exits because the requested
-// workspace could not be located. Parent processes may treat this as a
-// transient signal (e.g. during a workspace-registration race) and retry.
-const WorkspaceNotFound = 75
+const (
+	Success = 0
+	Failure = 1
+
+	// Retryable marks a transient failure the caller may retry (sysexits EX_TEMPFAIL).
+	Retryable = 75
+)

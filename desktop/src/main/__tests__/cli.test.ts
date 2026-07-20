@@ -79,14 +79,8 @@ describe("CliRunner", () => {
         typeof vi.fn
       >
       const cliErrorPayload = {
-        code: "AWS_PROFILE_MISSING",
-        message: "AWS credentials are not configured.",
-        hint: "Set AWS_PROFILE or create ~/.aws/credentials.",
-        docUrl:
-          "https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
-        provider: "aws",
-        cause:
-          "init: exit status 1: failed to get shared config profile, default",
+        code: "RATE_LIMITED",
+        message: "Rate limited by an upstream API. Wait and retry, or authenticate for a higher limit.",
       }
       const stderrLine = JSON.stringify({
         level: "error",

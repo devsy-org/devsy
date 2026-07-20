@@ -96,7 +96,6 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 			PushDuringBuild: workspaceInfo.CLIOptions.PushDuringBuild,
 		})
 		if err != nil {
-			log.Errorf("Error building image: %v", err)
 			return fmt.Errorf("build: %w", err)
 		}
 

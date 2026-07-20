@@ -8,8 +8,8 @@ import (
 	"time"
 
 	devsyclient "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry/analytics"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -151,9 +151,7 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 	// Raw err.Error() strings can leak paths, hostnames, tokens.
 	if err != nil {
-		eventProperties["error_code"] = string(
-			cliErrors.Classify(err, cliErrors.ClassifyContext{}).Code,
-		)
+		eventProperties["error_code"] = string(clierr.Classify(err).Code)
 	}
 
 	eventType := config.BinaryName + "_cli"

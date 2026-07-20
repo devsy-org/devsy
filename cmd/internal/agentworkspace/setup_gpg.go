@@ -86,8 +86,7 @@ func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
 	log.Debugf("Fetching public key")
 	rawPublicKeys, err := getPublicKeys()
 	if err != nil {
-		log.Errorf("Fetch public key: %v", err)
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("fetch public key: %w", err)
 	}
 
 	log.Debugf("Decoding public key")
@@ -108,46 +107,39 @@ func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
 func configureGPGAgent(gpgConf *gpg.GPGConf) error {
 	log.Debugf("Stopping container gpg-agent")
 	if err := gpgConf.StopGpgAgent(); err != nil {
-		log.Errorf("stop container gpg-agent: %v", err)
-		return err
+		return fmt.Errorf("stop container gpg-agent: %w", err)
 	}
 
 	log.Debugf("Importing gpg public key in container")
 	if err := gpgConf.ImportGpgKey(); err != nil {
-		log.Errorf("Import gpg public key in container: %v", err)
-		return err
+		return fmt.Errorf("import gpg public key in container: %w", err)
 	}
 
 	log.Debugf("Importing gpg owner trust in container")
 	if err := gpgConf.ImportOwnerTrust(); err != nil {
-		log.Errorf("Import gpg owner trust in container: %v", err)
-		return err
+		return fmt.Errorf("import gpg owner trust in container: %w", err)
 	}
 
 	log.Debugf("Ensuring paths existence and permissions")
 	if err := gpgConf.SetupRemoteSocketDirTree(); err != nil {
-		log.Errorf("Ensure paths existence and permissions: %v", err)
-		return err
+		return fmt.Errorf("ensure paths existence and permissions: %w", err)
 	}
 
 	// Now we again kill the agent and remove the socket to really be sure every
 	// thing is clean
 	log.Debugf("Ensure stopping container gpg-agent")
 	if err := gpgConf.StopGpgAgent(); err != nil {
-		log.Errorf("Ensure stopping container gpg-agent: %v", err)
-		return err
+		return fmt.Errorf("ensure stopping container gpg-agent: %w", err)
 	}
 
 	log.Debugf("Setup local gnupg socket links")
 	if err := gpgConf.SetupRemoteSocketLink(); err != nil {
-		log.Errorf("Setup local gnupg socket links: %v", err)
-		return err
+		return fmt.Errorf("setup local gnupg socket links: %w", err)
 	}
 
 	log.Debugf("Setup gpg.conf")
 	if err := gpgConf.SetupGpgConf(); err != nil {
-		log.Errorf("Setup gpg.conf: %v", err)
-		return err
+		return fmt.Errorf("setup gpg.conf: %w", err)
 	}
 
 	return nil

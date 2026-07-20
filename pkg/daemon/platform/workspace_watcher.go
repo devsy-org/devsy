@@ -119,10 +119,12 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 		return err
 	}
 
+	watcherPanic := make(chan error, 1)
 	go func() {
 		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("panic in workspace watcher: %v\n%s", err, debug.Stack())
+			if r := recover(); r != nil {
+				log.Errorf("panic in workspace watcher: %v\n%s", r, debug.Stack())
+				watcherPanic <- fmt.Errorf("workspace watcher panicked: %v", r)
 			}
 		}()
 
@@ -131,16 +133,17 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 		factory.WaitForCacheSync(ctx.Done())
 		started.Store(true)
 
-		// Kick off initial message
 		onChange(instanceStore.List())
-
-		// periodically collect workspace metrics
 		instanceStore.collectWorkspaceMetrics(ctx, onChange)
 	}()
 
-	<-ctx.Done()
-	log.Debug("workspace watcher done")
-	return nil
+	select {
+	case <-ctx.Done():
+		log.Debug("workspace watcher done")
+		return nil
+	case err := <-watcherPanic:
+		return err
+	}
 }
 
 type instanceStore struct {

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/clierr"
 )
 
 func TestListGitHubReleases_Success(t *testing.T) {
@@ -71,7 +73,7 @@ func TestListGitHubReleases_RateLimit(t *testing.T) {
 	}))
 	defer server.Close()
 	_, err := ListGitHubReleases(server.URL, "x", "y", false)
-	if err == nil || !errors.Is(err, ErrVersionListRateLimited) {
+	if err == nil || !errors.Is(err, clierr.ErrRateLimited) {
 		t.Fatalf("expected rate-limited sentinel, got %v", err)
 	}
 }

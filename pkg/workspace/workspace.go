@@ -30,10 +30,8 @@ var errProvideWorkspaceArg = errors.New(
 	"provide a workspace name, e.g. 'devsy workspace up ./my-folder', " +
 		"'devsy workspace up github.com/my-org/my-repo' or 'devsy workspace up ubuntu'")
 
-// ErrWorkspaceNotFound is returned by Get when the requested workspace is not
-// present in the local store or any configured provider. Callers should use
-// errors.Is to detect it; the wrapping message includes the args for context.
-// See pkg/exitcode.WorkspaceNotFound for the corresponding process exit code.
+// ErrWorkspaceNotFound maps to the Retryable exit code, which the backhaul SSH
+// command retries on.
 var ErrWorkspaceNotFound = errors.New("workspace not found")
 
 // RemoteCreator defines the interface for clients that support remote workspace creation.

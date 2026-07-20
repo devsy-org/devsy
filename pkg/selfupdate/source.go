@@ -49,7 +49,9 @@ func (s *allPagesSource) ListReleases(
 	for {
 		page, resp, err := s.api.Repositories.ListReleases(ctx, owner, repo, opts)
 		if err != nil {
-			return nil, fmt.Errorf("list releases for %s/%s: %w", owner, repo, err)
+			return nil, classifyGitHubError(
+				fmt.Errorf("list releases for %s/%s: %w", owner, repo, err),
+			)
 		}
 		for _, rel := range page {
 			releases = append(releases, newSourceRelease(rel))

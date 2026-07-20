@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 )
 
@@ -45,7 +46,7 @@ func fetchGitHubReleases(baseURL, org, repo string) ([]githubRelease, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden && resp.Header.Get("X-RateLimit-Remaining") == "0" {
-		return nil, ErrVersionListRateLimited
+		return nil, clierr.ErrRateLimited
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
