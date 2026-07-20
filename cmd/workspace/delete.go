@@ -75,7 +75,8 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	// Emit even when a delete failed; the gauge reflects what remains on disk.
-	if count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext); countErr != nil {
+	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
+	if countErr != nil {
 		log.Debugf("skipping workspace count gauge: %v", countErr)
 	} else {
 		telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
