@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
