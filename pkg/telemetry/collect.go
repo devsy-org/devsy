@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"runtime"
 	"time"
@@ -190,20 +189,28 @@ func (d *cliCollector) recordEvent(
 	eventProperties, userProperties map[string]any,
 ) {
 	machineID := GetMachineID()
-	eventPropertiesRaw, _ := json.Marshal(eventProperties)
-	userPropertiesRaw, _ := json.Marshal(userProperties)
+	timestamp := time.Now().Unix()
+
+	// Flatten properties into each payload so the backend receives queryable
+	// fields. Reserved keys are set last so a stray property can't shadow them.
+	eventPayload := map[string]any{}
+	for k, v := range eventProperties {
+		eventPayload[k] = v
+	}
+	eventPayload["type"] = eventType
+	eventPayload["machine_id"] = machineID
+	eventPayload["timestamp"] = timestamp
+
+	userPayload := map[string]any{}
+	for k, v := range userProperties {
+		userPayload[k] = v
+	}
+	userPayload["machine_id"] = machineID
+	userPayload["timestamp"] = timestamp
+
 	d.analyticsClient.RecordEvent(analytics.Event{
-		"event": {
-			"type":       eventType,
-			"machine_id": machineID,
-			"properties": string(eventPropertiesRaw),
-			"timestamp":  time.Now().Unix(),
-		},
-		"user": {
-			"machine_id": machineID,
-			"properties": string(userPropertiesRaw),
-			"timestamp":  time.Now().Unix(),
-		},
+		"event": eventPayload,
+		"user":  userPayload,
 	})
 }
 

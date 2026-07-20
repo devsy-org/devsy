@@ -73,18 +73,24 @@ func (c *client) RecordEvent(event Event) {
 	}
 }
 
+// Reserved keys carry event routing/identity, not analytics properties, so
+// they are excluded from the flattened property set.
+func isReservedKey(k string) bool {
+	return k == "type" || k == "machine_id" || k == "timestamp"
+}
+
 func buildProperties(event Event) posthog.Properties {
 	properties := posthog.NewProperties()
 
 	for k, v := range event["event"] {
-		if k == "machine_id" || k == "timestamp" {
+		if isReservedKey(k) {
 			continue
 		}
 		properties.Set(k, v)
 	}
 
 	for k, v := range event["user"] {
-		if k == "machine_id" || k == "timestamp" {
+		if isReservedKey(k) {
 			continue
 		}
 		properties.Set(k, v)
