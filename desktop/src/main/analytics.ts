@@ -18,9 +18,6 @@ export function getAnalyticsDistinctId(): string {
   return distinctId || getDistinctId()
 }
 
-// Stable key for correlating a workspace's events; never the raw name, which
-// can leak repo names or paths. Returns "" when analytics is off so callers
-// don't pay to derive the machine id for a ref that would be discarded.
 export function hashWorkspaceRef(workspaceId: string): string {
   if (!client) return ""
   return createHmac("sha256", getAnalyticsDistinctId())

@@ -38,12 +38,8 @@ const (
 
 type CLICollector interface {
 	RecordCLI(err error)
-
 	RecordWorkspaceGauge(count int)
-
 	SetClient(client devsyclient.BaseWorkspaceClient)
-
-	// Flush makes sure all events are sent to the backend
 	Flush()
 }
 
@@ -192,8 +188,6 @@ func (d *cliCollector) recordEvent(
 	machineID := GetMachineID()
 	timestamp := time.Now().Unix()
 
-	// Flatten properties into each payload so the backend receives queryable
-	// fields. Reserved keys are set last so a stray property can't shadow them.
 	eventPayload := map[string]any{}
 	maps.Copy(eventPayload, eventProperties)
 	eventPayload[analytics.KeyType] = eventType

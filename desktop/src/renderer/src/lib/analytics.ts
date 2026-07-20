@@ -1,7 +1,7 @@
 import { analyticsTrack } from "$lib/ipc/commands.js"
 
 // A hidden window ends its session after this, so a backgrounded window
-// doesn't inflate session duration.
+// does not inflate session duration.
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
 let sessionStartedAt = 0

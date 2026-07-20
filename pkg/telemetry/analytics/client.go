@@ -73,8 +73,7 @@ func (c *client) RecordEvent(event Event) {
 	}
 }
 
-// Reserved keys carry event routing/identity, not analytics properties, so
-// they are excluded from the flattened property set.
+// Exclude reserved keys for event routing/identity.
 func isReservedKey(k string) bool {
 	return k == KeyType || k == KeyMachineID || k == KeyTimestamp
 }

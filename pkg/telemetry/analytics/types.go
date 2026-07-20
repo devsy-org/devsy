@@ -1,7 +1,6 @@
 package analytics
 
-// Reserved payload keys that carry event routing/identity rather than
-// analytics properties.
+// Reserved routing/identity keys.
 const (
 	KeyType      = "type"
 	KeyMachineID = "machine_id"

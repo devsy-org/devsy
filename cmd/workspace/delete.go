@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -74,7 +73,6 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 		err = cmd.deleteMultiple(ctx, devsyConfig, args)
 	}
 
-	// Emit even when a delete failed; the gauge reflects what remains on disk.
 	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
 	if countErr != nil {
 		log.Debugf("skipping workspace count gauge: %v", countErr)
