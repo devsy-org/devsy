@@ -94,6 +94,10 @@ func (cmd *DaemonCmd) pollInterval() time.Duration {
 		log.Errorf("parse interval %q, using %s: %v", cmd.Interval, defaultPatrolInterval, err)
 		return defaultPatrolInterval
 	}
+	if parsed <= 0 {
+		log.Errorf("non-positive interval %q, using %s", cmd.Interval, defaultPatrolInterval)
+		return defaultPatrolInterval
+	}
 	return parsed
 }
 
@@ -187,20 +191,23 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	shutdown := strings.Join(workspace.Agent.Exec.Shutdown, " ")
 	log.Infof("running shutdown command for workspace %s: %s", workspace.Workspace.ID, shutdown)
 
-	buf := &bytes.Buffer{}
+	var stdout, stderr bytes.Buffer
 	err = clientimplementation.RunCommand(clientimplementation.RunCommandOptions{
 		Ctx:     ctx,
 		Command: workspace.Agent.Exec.Shutdown,
 		Environ: environ,
-		Stdout:  buf,
-		Stderr:  buf,
+		Stdout:  &stdout,
+		Stderr:  &stderr,
 	})
 	if err != nil {
-		log.Errorf("run shutdown command %s: %v (output: %s)", shutdown, err, buf.String())
+		log.Errorf(
+			"run shutdown command %s: %v (stdout: %s, stderr: %s)",
+			shutdown, err, stdout.String(), stderr.String(),
+		)
 		return
 	}
 
-	log.Infof("ran shutdown command: %s", buf.String())
+	log.Infof("ran shutdown command (stdout: %s, stderr: %s)", stdout.String(), stderr.String())
 }
 
 func (cmd *DaemonCmd) initialTouch() {
