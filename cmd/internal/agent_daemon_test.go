@@ -42,7 +42,7 @@ func TestGetActivity_ShutdownConfigured(t *testing.T) {
 
 	stat, err := os.Stat(cfg)
 	require.NoError(t, err)
-	assert.True(t, activity.Equal(stat.ModTime()))
+	assert.Equal(t, stat.ModTime(), *activity)
 }
 
 func TestGetActivity_NoShutdownReturnsNil(t *testing.T) {
@@ -65,7 +65,7 @@ func TestGetActivity_BusyFileAddsGrace(t *testing.T) {
 
 	stat, err := os.Stat(cfg)
 	require.NoError(t, err)
-	assert.True(t, activity.Equal(stat.ModTime().Add(busyGracePeriod)))
+	assert.Equal(t, stat.ModTime().Add(busyGracePeriod), *activity)
 }
 
 func TestGetActivity_ReadError(t *testing.T) {
@@ -78,15 +78,17 @@ func TestFindLatestActivity_PicksLatest(t *testing.T) {
 	older := writeWorkspaceConfig(t, filepath.Join(base, "a"), types.StrArray{testEcho})
 	newer := writeWorkspaceConfig(t, filepath.Join(base, "b"), types.StrArray{testEcho})
 
-	oldTime := time.Now().Add(-2 * time.Hour)
+	// Truncate to whole seconds so the assertion holds on filesystems with
+	// coarse mtime granularity (and to strip the monotonic clock reading).
+	oldTime := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
 	require.NoError(t, os.Chtimes(older, oldTime, oldTime))
-	recentTime := time.Now().Add(-time.Minute)
+	recentTime := time.Now().Add(-time.Minute).Truncate(time.Second)
 	require.NoError(t, os.Chtimes(newer, recentTime, recentTime))
 
 	activity, ws := findLatestActivity([]string{older, newer})
 	require.NotNil(t, activity)
 	require.NotNil(t, ws)
-	assert.True(t, activity.Equal(recentTime))
+	assert.Equal(t, recentTime, *activity)
 }
 
 // TestEffectiveActivity covers the fix: an interactive session's activity-file
@@ -95,7 +97,9 @@ func TestEffectiveActivity(t *testing.T) {
 	orig := activityFilePath
 	t.Cleanup(func() { activityFilePath = orig })
 
-	configActivity := time.Now().Add(-30 * time.Minute)
+	// Truncate to whole seconds so file mtimes round-trip exactly across
+	// filesystems (and to strip the monotonic clock reading).
+	configActivity := time.Now().Add(-30 * time.Minute).Truncate(time.Second)
 
 	touch := func(name string, mtime time.Time) string {
 		path := filepath.Join(t.TempDir(), name)
@@ -106,14 +110,14 @@ func TestEffectiveActivity(t *testing.T) {
 
 	// absent heartbeat file: fall back to the config activity
 	activityFilePath = filepath.Join(t.TempDir(), "absent.activity")
-	assert.True(t, effectiveActivity(configActivity).Equal(configActivity))
+	assert.Equal(t, configActivity, effectiveActivity(configActivity))
 
 	// fresh heartbeat (newer than config): the machine is active
-	freshTime := time.Now().Add(-time.Minute)
+	freshTime := time.Now().Add(-time.Minute).Truncate(time.Second)
 	activityFilePath = touch("fresh.activity", freshTime)
-	assert.True(t, effectiveActivity(configActivity).Equal(freshTime))
+	assert.Equal(t, freshTime, effectiveActivity(configActivity))
 
 	// stale heartbeat (older than config): keep the config activity
-	activityFilePath = touch("stale.activity", time.Now().Add(-2*time.Hour))
-	assert.True(t, effectiveActivity(configActivity).Equal(configActivity))
+	activityFilePath = touch("stale.activity", time.Now().Add(-2*time.Hour).Truncate(time.Second))
+	assert.Equal(t, configActivity, effectiveActivity(configActivity))
 }
