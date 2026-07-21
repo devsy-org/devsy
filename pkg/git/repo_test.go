@@ -40,7 +40,12 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(_ context.Context, opts RunOptions) (RunResult, error) {
 	f.calls = append(f.calls, opts)
 	if len(f.calls) <= f.errUntil {
-		return RunResult{}, errors.New("couldn't find remote ref")
+		return RunResult{}, &CommandError{
+			Args:     opts.Args,
+			ExitCode: 128,
+			Stderr:   "fatal: couldn't find remote ref " + opts.Args[len(opts.Args)-1],
+			Err:      errors.New("exit status 128"),
+		}
 	}
 	return RunResult{Stdout: f.stdout}, f.err
 }
@@ -119,6 +124,24 @@ func TestRepoCheckoutPRFallback(t *testing.T) {
 	assert.DeepEqual(t, []string{subFetch, originRemote, "pull/7/head:PR7"}, fake.calls[0].Args)
 	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[1].Args)
 	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[2].Args)
+}
+
+// A non-ref fetch failure (auth, network, …) must surface immediately without
+// being masked by the alternate-provider fallback.
+func TestRepoCheckoutPRNonRefErrorNoFallback(t *testing.T) {
+	authErr := &CommandError{
+		Args:     []string{subFetch},
+		ExitCode: 128,
+		Stderr:   "fatal: Authentication failed for 'https://host/org/repo.git'",
+		Err:      errors.New("exit status 128"),
+	}
+	fake := &fakeRunner{err: authErr}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
+	assert.ErrorContains(t, err, "Authentication failed")
+	// Only the first candidate is attempted; the auth error is not retried.
+	assert.Equal(t, 1, len(fake.calls))
 }
 
 func TestRepoLsRemote(t *testing.T) {

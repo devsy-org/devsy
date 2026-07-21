@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -96,13 +97,32 @@ func (r *Repo) CheckoutPR(ctx context.Context, repoURL, prRef string) error {
 		prBranch := host.BranchName(number)
 		log.Debugf("fetching %s request: %s", host.Name, refspec)
 
-		if err := r.Fetch(ctx, refspec+":"+prBranch); err != nil {
-			lastErr = err
-			continue
+		err := r.Fetch(ctx, refspec+":"+prBranch)
+		if err == nil {
+			return r.Switch(ctx, prBranch)
 		}
-		return r.Switch(ctx, prBranch)
+		// Only try the next provider's convention when this refspec is genuinely
+		// absent; auth, network, and cancellation errors must surface as-is
+		// rather than be masked by a subsequent lookup's failure.
+		if !isMissingRefError(err) {
+			return err
+		}
+		lastErr = err
 	}
 	return lastErr
+}
+
+// isMissingRefError reports whether err is git failing to find the requested
+// remote ref, as opposed to an auth, network, or cancellation failure.
+func isMissingRefError(err error) bool {
+	var cmdErr *CommandError
+	if !errors.As(err, &cmdErr) {
+		return false
+	}
+	msg := strings.ToLower(cmdErr.Stderr)
+	return strings.Contains(msg, "couldn't find remote ref") ||
+		strings.Contains(msg, "no such ref") ||
+		strings.Contains(msg, "not found in upstream")
 }
 
 // Reset moves HEAD to commit using the given mode.

@@ -51,13 +51,31 @@ func (h Host) BranchName(number string) string {
 // It is best-effort: self-hosted instances on custom domains won't be
 // recognized, which is why the fetch path falls back to the other convention.
 func DetectHost(repoURL string) Host {
-	lower := strings.ToLower(repoURL)
+	// Match only the hostname so an owner or path segment (e.g. a GitHub repo
+	// named "gitlab-ci") cannot masquerade as another provider.
+	host := strings.ToLower(hostFromURL(repoURL))
 	for _, h := range knownHosts {
-		if strings.Contains(lower, h.hostHint) {
+		if strings.Contains(host, h.hostHint) {
 			return h
 		}
 	}
 	return HostGitHub
+}
+
+// hostFromURL extracts the hostname from SSH (git@host:path) and URL
+// (scheme://[user@]host/path) forms, returning "" when none is present.
+func hostFromURL(repoURL string) string {
+	s := repoURL
+	if i := strings.Index(s, "://"); i != -1 {
+		s = s[i+3:]
+	}
+	if i := strings.Index(s, "@"); i != -1 {
+		s = s[i+1:]
+	}
+	if i := strings.IndexAny(s, "/:"); i != -1 {
+		s = s[:i]
+	}
+	return s
 }
 
 // hostForRef infers the provider from the ref itself, which already encodes the

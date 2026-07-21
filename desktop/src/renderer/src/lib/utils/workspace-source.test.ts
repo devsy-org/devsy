@@ -80,6 +80,13 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).toBe("git@gitlab.example.com:org/repo.git@merge-requests/7/head")
   })
 
+  it("git: PR ref uses pull/N/head when only the owner/path says gitlab", () => {
+    const out = buildWorkspaceSource(
+      gitForm({ repoUrl: "git@github.com:gitlab-org/repo.git", refType: "pr", refValue: "7" }),
+    )
+    expect(out.source).toBe("git@github.com:gitlab-org/repo.git@pull/7/head")
+  })
+
   it("git: subpath appends @subpath: after ref", () => {
     const out = buildWorkspaceSource(
       gitForm({

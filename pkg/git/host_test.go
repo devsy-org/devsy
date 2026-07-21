@@ -16,6 +16,9 @@ func TestDetectHost(t *testing.T) {
 		{"https://github.com/org/repo.git", hostNameGitHub},
 		{"git@gitlab.com:org/repo.git", hostNameGitLab},
 		{"https://gitlab.example.com/org/repo.git", hostNameGitLab},
+		// Only the hostname decides: a "gitlab" owner/path on github.com is GitHub.
+		{"git@github.com:gitlab-org/repo.git", hostNameGitHub},
+		{"https://github.com/org/gitlab-mirror.git", hostNameGitHub},
 		{
 			"https://git.internal.example/org/repo.git",
 			hostNameGitHub,

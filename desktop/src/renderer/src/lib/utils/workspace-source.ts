@@ -34,11 +34,25 @@ export interface WorkspaceSourceResult {
   prebuildRepository?: string
 }
 
+// hostFromUrl extracts the hostname from SSH (git@host:path) and URL
+// (scheme://[user@]host/path) forms, so an owner or path segment can't sway
+// provider detection.
+function hostFromUrl(repoUrl: string): string {
+  let s = repoUrl
+  const scheme = s.indexOf("://")
+  if (scheme !== -1) s = s.slice(scheme + 3)
+  const at = s.indexOf("@")
+  if (at !== -1) s = s.slice(at + 1)
+  const sep = s.search(/[/:]/)
+  if (sep !== -1) s = s.slice(0, sep)
+  return s
+}
+
 // GitLab exposes merge requests at merge-requests/N/head; every other host
 // uses pull/N/head. Detection is best-effort — the CLI fetch falls back to the
 // other convention when the detected one has no such ref.
 function prRefspec(repoUrl: string, number: string): string {
-  const segment = /gitlab/i.test(repoUrl) ? "merge-requests" : "pull"
+  const segment = /gitlab/i.test(hostFromUrl(repoUrl)) ? "merge-requests" : "pull"
   return `@${segment}/${number}/head`
 }
 
