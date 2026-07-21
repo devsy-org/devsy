@@ -29,9 +29,9 @@ const (
 // fakeRunner records the invocations it receives and returns canned output,
 // letting git operations be tested without a real repository.
 type fakeRunner struct {
-	calls  []RunOptions
-	stdout []byte
-	err    error
+	calls    []RunOptions
+	stdout   []byte
+	err      error
 	errUntil int
 }
 
