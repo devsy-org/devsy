@@ -59,12 +59,13 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
 		return nil
 	}
 
-	logFolder, err := agent.GetAgentDaemonLogFolder(cmd.AgentDir)
+	logDir, err := agent.GetAgentDaemonLogDir(cmd.AgentDir)
 	if err != nil {
 		return err
 	}
 
-	f, err := os.Open(filepath.Join(logFolder, "agent-daemon.log"))
+	// #nosec G304 -- reads the agent's own daemon log at a derived path.
+	f, err := os.Open(filepath.Join(logDir, "agent-daemon.log"))
 	if err != nil {
 		return fmt.Errorf("open agent-daemon.log: %w", err)
 	}

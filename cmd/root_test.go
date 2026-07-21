@@ -1,13 +1,25 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestExitCodeForError_WorkspaceNotFound(t *testing.T) {
+	err := fmt.Errorf("get workspace: %w", workspace.ErrWorkspaceNotFound)
+	assert.Equal(t, exitcode.Retryable, exitCodeForError(err, true))
+}
+
+func TestExitCodeForError_GenericFailure(t *testing.T) {
+	assert.Equal(t, exitcode.Failure, exitCodeForError(fmt.Errorf("boom"), true))
+}
 
 func TestTopLevelCommand(t *testing.T) {
 	rootCmd, _ := BuildRoot()
@@ -129,7 +141,7 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 			os.Args = append([]string{"devsy"}, tc.args...)
 			machineMode := configureOutput(rootCmd, globalFlags, tc.isInternal)
 			assert.Equal(t, tc.wantSilent, machineMode)
-			assert.Equal(t, tc.wantSilent, rootCmd.SilenceErrors)
+			assert.True(t, rootCmd.SilenceErrors)
 			assert.Equal(t, tc.wantSilent, rootCmd.SilenceUsage)
 		})
 	}

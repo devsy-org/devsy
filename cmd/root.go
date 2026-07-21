@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/completion"
@@ -22,8 +23,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliErrors "github.com/devsy-org/devsy/pkg/errors"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -101,18 +102,26 @@ func Execute() {
 	os.Exit(run())
 }
 
-func run() int {
+func run() (code int) {
+	machineMode := false
+	collector := telemetry.FromContext(gocontext.Background()) // noop until BootstrapCLI
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("panic: %v\n%s", r, debug.Stack())
+			panicErr := clierr.NewPanic(r)
+			collector.RecordCLI(panicErr)
+			code = exitCodeForError(panicErr, machineMode)
+		}
+		collector.Flush()
+	}()
+
 	rootCmd, globalFlags := BuildRoot()
-	target := rootCmd
-	if found, _, findErr := rootCmd.Find(os.Args[1:]); findErr == nil && found != nil {
-		target = found
-	}
-	collector := telemetry.BootstrapCLI(target)
+	target := resolveTarget(rootCmd)
+	collector = telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
-	defer func() { collector.Flush() }()
 
 	isInternal := topLevelCommand(target) == internalCommand
-	machineMode := configureOutput(rootCmd, globalFlags, isInternal)
+	machineMode = configureOutput(rootCmd, globalFlags, isInternal)
 
 	if !isInternal {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
@@ -138,6 +147,13 @@ func run() int {
 	return 0
 }
 
+func resolveTarget(rootCmd *cobra.Command) *cobra.Command {
+	if found, _, err := rootCmd.Find(os.Args[1:]); err == nil && found != nil {
+		return found
+	}
+	return rootCmd
+}
+
 func configureOutput(
 	rootCmd *cobra.Command,
 	globalFlags *flags.GlobalFlags,
@@ -145,7 +161,7 @@ func configureOutput(
 ) bool {
 	logOutput := logOutputFromArgs(os.Args[1:])
 	machineMode := isMachineConsumer(logOutput, isInternal)
-	rootCmd.SilenceErrors = machineMode
+	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = machineMode
 
 	format := logOutput
@@ -176,18 +192,23 @@ func topLevelCommand(cmd *cobra.Command) string {
 
 func exitCodeForError(err error, machineMode bool) int {
 	if err == nil {
-		return 0
+		return exitcode.Success
 	}
 
-	if code, ok := passthroughExitCode(err, machineMode); ok {
-		return code
+	cliErr := clierr.Classify(err)
+
+	// Stay transparent for unclassified child-process exits (e.g. `devsy ssh -- cmd`).
+	if cliErr.Code == clierr.CodeUnknown {
+		if code, ok := passthroughExitCode(err, machineMode); ok {
+			return code
+		}
 	}
 
-	renderCLIError(err, machineMode)
+	renderCLIError(cliErr, machineMode)
 	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-		return exitcode.WorkspaceNotFound
+		return exitcode.Retryable
 	}
-	return 1
+	return exitcode.Failure
 }
 
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
@@ -206,18 +227,15 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	return 0, false
 }
 
-func renderCLIError(err error, machineMode bool) {
-	cliErr := cliErrors.Classify(err, cliErrors.ClassifyContext{})
+func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
+	if cliErr == nil {
+		return
+	}
 	if machineMode {
 		log.JSONError(cliErr)
 		return
 	}
-	if cliErr.Hint != "" {
-		fmt.Fprintf(os.Stderr, "Hint:  %s\n", cliErr.Hint)
-	}
-	if cliErr.DocURL != "" {
-		fmt.Fprintf(os.Stderr, "See:   %s\n", cliErr.DocURL)
-	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", cliErr.Message)
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed

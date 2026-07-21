@@ -446,14 +446,13 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 		return nil
 	}
 
-	return agent.CloneRepositoryForWorkspace(ctx,
-		&workspaceInfo.Source,
-		&workspaceInfo.Agent,
-		setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-		"",
-		workspaceInfo.CLIOptions,
-		true,
-	)
+	return agent.CloneRepositoryForWorkspace(ctx, agent.CloneWorkspaceParams{
+		Source:           &workspaceInfo.Source,
+		AgentConfig:      &workspaceInfo.Agent,
+		WorkspaceDir:     setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
+		Options:          workspaceInfo.CLIOptions,
+		OverwriteContent: true,
+	})
 }
 
 func (cmd *SetupContainerCmd) startContainerDaemon(

@@ -35,6 +35,10 @@ func (e *Error) Error() string {
 	return message + e.err.Error()
 }
 
+func (e *Error) Unwrap() error {
+	return e.err
+}
+
 func Exists(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil

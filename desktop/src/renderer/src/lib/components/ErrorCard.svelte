@@ -1,5 +1,5 @@
 <script lang="ts">
-import { AlertCircle, ExternalLink } from "@lucide/svelte"
+import { AlertCircle } from "@lucide/svelte"
 import type { CLIError } from "../../../../shared/cli-error.js"
 
 let {
@@ -23,24 +23,6 @@ let {
           <p class="text-xs font-mono text-destructive/70">{cliError.code}</p>
         {/if}
       </div>
-
-      {#if cliError.hint}
-        <p class="text-sm text-foreground/90 break-words">
-          {cliError.hint}
-        </p>
-      {/if}
-
-      {#if cliError.docUrl}
-        <a
-          href={cliError.docUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex items-center gap-1 text-xs font-medium text-destructive hover:underline"
-        >
-          Learn more
-          <ExternalLink class="size-3" />
-        </a>
-      {/if}
     </div>
   </div>
 </div>

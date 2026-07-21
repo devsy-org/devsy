@@ -3,6 +3,7 @@ package cmdinternal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	agentconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -19,7 +21,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// DaemonCmd holds the cmd flags.
+const (
+	defaultPatrolInterval = time.Minute
+	busyGracePeriod       = 20 * time.Minute
+)
+
 type DaemonCmd struct {
 	*flags.GlobalFlags
 
@@ -27,11 +33,8 @@ type DaemonCmd struct {
 	ShutdownAction string
 }
 
-// NewDaemonCmd creates a new command.
 func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
-	cmd := &DaemonCmd{
-		GlobalFlags: flags,
-	}
+	cmd := &DaemonCmd{GlobalFlags: flags}
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Watches for activity and stops the server due to inactivity",
@@ -51,125 +54,145 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DaemonCmd) Run(ctx context.Context) error {
-	// The agent daemon is a container/machine-side process; the host
-	// never runs `devsy agent daemon`. Reject host invocations explicitly
-	// to avoid silently scanning a non-existent legacy glob.
+	// The daemon runs only container/machine-side; the host never invokes it.
 	if agent.IsHostAgentInvocation(cmd.AgentDir) {
-		return fmt.Errorf(
+		return errors.New(
 			"`devsy internal agent daemon` is only valid inside the workspace container or machine",
 		)
 	}
 
-	logFolder, err := agent.GetAgentDaemonLogFolder(cmd.AgentDir)
+	logDir, err := agent.GetAgentDaemonLogDir(cmd.AgentDir)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("starting Devsy daemon patrol at %s", logFolder)
-
-	// start patrolling
+	log.Infof("starting Devsy daemon patrol at %s", logDir)
 	cmd.patrol(ctx)
-
 	return nil
 }
 
 func (cmd *DaemonCmd) patrol(ctx context.Context) {
-	// make sure we don't immediately resleep on startup
 	cmd.initialTouch()
 
-	// parse the daemon interval
-	interval := time.Second * 60
-	if cmd.Interval != "" {
-		parsed, err := time.ParseDuration(cmd.Interval)
-		if err == nil {
-			interval = parsed
-		}
-	}
-
-	// loop over workspace configs and check their last ModTime
+	ticker := time.NewTicker(cmd.pollInterval())
+	defer ticker.Stop()
 	for {
-		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return
-		case <-timer.C:
-			cmd.doOnce(ctx)
+		case <-ticker.C:
+			cmd.patrolOnce(ctx)
 		}
 	}
 }
 
-func (cmd *DaemonCmd) doOnce(ctx context.Context) {
-	var latestActivity *time.Time
-	var workspace *provider2.AgentWorkspaceInfo
-
-	// get base folder — only reachable from Run, which rejects host
-	// invocations, so FindAgentHomeFolder always resolves the legacy
-	// container/machine layout here.
-	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
+func (cmd *DaemonCmd) pollInterval() time.Duration {
+	if cmd.Interval == "" {
+		return defaultPatrolInterval
+	}
+	parsed, err := time.ParseDuration(cmd.Interval)
 	if err != nil {
+		log.Errorf("parse interval %q, using %s: %v", cmd.Interval, defaultPatrolInterval, err)
+		return defaultPatrolInterval
+	}
+	if parsed <= 0 {
+		log.Errorf("non-positive interval %q, using %s", cmd.Interval, defaultPatrolInterval)
+		return defaultPatrolInterval
+	}
+	return parsed
+}
+
+func (cmd *DaemonCmd) workspaceConfigs() (baseDir string, configs []string, err error) {
+	baseDir, err = agent.FindAgentHomeDir(cmd.AgentDir)
+	if err != nil {
+		return "", nil, err
+	}
+	pattern := filepath.Join(
+		baseDir,
+		"contexts",
+		"*",
+		"workspaces",
+		"*",
+		provider2.WorkspaceConfigFile,
+	)
+	configs, err = filepath.Glob(pattern)
+	if err != nil {
+		return "", nil, fmt.Errorf("glob %s: %w", pattern, err)
+	}
+	return baseDir, configs, nil
+}
+
+func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
+	baseDir, configs, err := cmd.workspaceConfigs()
+	if err != nil {
+		log.Errorf("list workspace configs: %v", err)
 		return
 	}
 
-	// get all workspace configs
-	pattern := baseFolder + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Errorf("error globing pattern %s: %v", pattern, err)
-		return
-	}
-
-	// check when the last touch was
-	latestActivity, workspace = findLatestActivity(matches)
-
-	// should we run shutdown command?
+	latestActivity, workspace := findLatestActivity(configs)
 	if latestActivity == nil {
-		if len(matches) == 0 {
-			log.Infof("no workspaces found in path %q", baseFolder)
+		if len(configs) == 0 {
+			log.Infof("no workspaces found in %q", baseDir)
 		} else {
 			log.Infof(
-				"%d workspaces found in path %q, but none of them had any auto-stop "+
-					"configured or were still running / never completed",
-				len(matches),
-				baseFolder,
+				"%d workspaces found in %q, but none had auto-stop configured or were still running",
+				len(configs),
+				baseDir,
 			)
 		}
 		return
 	}
 
-	cmd.checkAndShutdown(ctx, latestActivity, workspace)
+	cmd.checkAndShutdown(ctx, effectiveActivity(*latestActivity), workspace)
+}
+
+var activityFilePath = agentconfig.ContainerActivityFile
+
+func effectiveActivity(configActivity time.Time) time.Time {
+	if hb := activityHeartbeat(); hb.After(configActivity) {
+		return hb
+	}
+	return configActivity
+}
+
+func activityHeartbeat() time.Time {
+	stat, err := os.Stat(activityFilePath)
+	if err != nil {
+		return time.Time{}
+	}
+	return stat.ModTime()
 }
 
 func (cmd *DaemonCmd) checkAndShutdown(
 	ctx context.Context,
-	latestActivity *time.Time,
+	latestActivity time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
 	if cmd.ShutdownAction == config.ShutdownActionNone {
 		return
 	}
 
-	// check timeout
 	timeout := agent.DefaultInactivityTimeout
 	if workspace.Agent.Timeout != "" {
-		var err error
-		timeout, err = time.ParseDuration(workspace.Agent.Timeout)
+		parsed, err := time.ParseDuration(workspace.Agent.Timeout)
 		if err != nil {
-			log.Errorf("error parsing inactivity timeout: %v", err)
-			timeout = agent.DefaultInactivityTimeout
+			log.Errorf("parse inactivity timeout, using %s: %v", timeout, err)
+		} else {
+			timeout = parsed
 		}
 	}
-	if latestActivity.Add(timeout).After(time.Now()) {
+
+	deadline := latestActivity.Add(timeout)
+	if deadline.After(time.Now()) {
 		log.Infof(
-			"Workspace %q has latest activity at %q, will auto-stop machine in %s",
+			"workspace %q last active %s, auto-stop in %s",
 			workspace.Workspace.ID,
-			latestActivity.String(),
-			time.Until(latestActivity.Add(timeout)).String(),
+			latestActivity.Format(time.RFC3339),
+			time.Until(deadline).Round(time.Second),
 		)
 		return
 	}
 
-	// run shutdown command
 	cmd.runShutdownCommand(ctx, workspace)
 }
 
@@ -177,81 +200,61 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	ctx context.Context,
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
-	// get environ
 	environ, err := custom.ToEnvironWithBinaries(ctx, workspace)
 	if err != nil {
-		log.Errorf("%v", err)
+		log.Errorf("build shutdown environment: %v", err)
 		return
 	}
 
-	// we run the timeout command now
-	buf := &bytes.Buffer{}
-	log.Infof(
-		"run shutdown command for workspace %s: %s",
-		workspace.Workspace.ID,
-		strings.Join(workspace.Agent.Exec.Shutdown, " "),
-	)
+	shutdown := strings.Join(workspace.Agent.Exec.Shutdown, " ")
+	log.Infof("running shutdown command for workspace %s: %s", workspace.Workspace.ID, shutdown)
+
+	var stdout, stderr bytes.Buffer
 	err = clientimplementation.RunCommand(clientimplementation.RunCommandOptions{
 		Ctx:     ctx,
 		Command: workspace.Agent.Exec.Shutdown,
 		Environ: environ,
-		Stdout:  buf,
-		Stderr:  buf,
+		Stdout:  &stdout,
+		Stderr:  &stderr,
 	})
 	if err != nil {
 		log.Errorf(
-			"error running %s %s: %v",
-			strings.Join(workspace.Agent.Exec.Shutdown, " "),
-			buf.String(),
-			err,
+			"run shutdown command %s: %v (stdout: %s, stderr: %s)",
+			shutdown, err, stdout.String(), stderr.String(),
 		)
 		return
 	}
 
-	log.Infof("ran command: %s", buf.String())
+	log.Infof("ran shutdown command (stdout: %s, stderr: %s)", stdout.String(), stderr.String())
 }
 
 func (cmd *DaemonCmd) initialTouch() {
-	// get base folder — only reachable from Run, which rejects host
-	// invocations, so this always resolves the legacy container/machine
-	// layout.
-	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
+	_, configs, err := cmd.workspaceConfigs()
 	if err != nil {
+		log.Errorf("list workspace configs: %v", err)
 		return
 	}
 
-	// get workspace configs
-	pattern := baseFolder + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		log.Errorf("error globbing pattern %s: %v", pattern, err)
-		return
-	}
-
-	// check when the last touch was
 	now := time.Now()
-	for _, match := range matches {
-		if err := os.Chtimes(match, now, now); err != nil {
-			log.Errorf("error touching workspace config %s: %v", match, err)
-			continue
+	for _, cfg := range configs {
+		if err := os.Chtimes(cfg, now, now); err != nil {
+			log.Errorf("touch workspace config %s: %v", cfg, err)
 		}
 	}
 }
 
-func findLatestActivity(
-	matches []string,
-) (*time.Time, *provider2.AgentWorkspaceInfo) {
+func findLatestActivity(configs []string) (*time.Time, *provider2.AgentWorkspaceInfo) {
 	var latestActivity *time.Time
 	var workspace *provider2.AgentWorkspaceInfo
-	for _, match := range matches {
-		activity, activityWorkspace, err := getActivity(match)
+	for _, cfg := range configs {
+		activity, activityWorkspace, err := getActivity(cfg)
 		if err != nil {
-			log.Errorf("error checking for inactivity: %v", err)
-			continue
-		} else if activity == nil {
+			log.Errorf("check inactivity for %s: %v", cfg, err)
 			continue
 		}
-
+		if activity == nil {
+			continue
+		}
 		if latestActivity == nil || activity.After(*latestActivity) {
 			latestActivity = activity
 			workspace = activityWorkspace
@@ -260,32 +263,23 @@ func findLatestActivity(
 	return latestActivity, workspace
 }
 
-func getActivity(
-	workspaceConfig string,
-) (*time.Time, *provider2.AgentWorkspaceInfo, error) {
+func getActivity(workspaceConfig string) (*time.Time, *provider2.AgentWorkspaceInfo, error) {
 	workspace, err := agent.ParseAgentWorkspaceInfo(workspaceConfig)
 	if err != nil {
-		log.Errorf("error reading %s: %v", workspaceConfig, err)
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("read %s: %w", workspaceConfig, err)
 	}
-
-	// check if shutdown is configured
 	if len(workspace.Agent.Exec.Shutdown) == 0 {
 		return nil, nil, nil
 	}
 
-	// check last access time
 	stat, err := os.Stat(workspaceConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// check if workspace is locked
-	t := stat.ModTime()
+	activity := stat.ModTime()
 	if agent.HasWorkspaceBusyFile(filepath.Dir(workspaceConfig)) {
-		t = t.Add(time.Minute * 20)
+		activity = activity.Add(busyGracePeriod)
 	}
-
-	// check if timeout
-	return &t, workspace, nil
+	return &activity, workspace, nil
 }

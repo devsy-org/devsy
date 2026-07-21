@@ -146,8 +146,7 @@ func (s *workspaceClient) RefreshOptions(
 		userOptions,
 	)
 	if err != nil {
-		log.Errorf("failed to resolve and save options workspace: error=%v", err)
-		return err
+		return fmt.Errorf("resolve and save workspace options: %w", err)
 	}
 
 	if workspace != nil {
