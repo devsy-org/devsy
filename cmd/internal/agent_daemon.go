@@ -145,18 +145,23 @@ func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 
 	// Interactive `devsy ssh` sessions heartbeat the activity file but do not
 	// touch the workspace config, so honor whichever signal is more recent.
-	activity := *latestActivity
-	if hb := activityHeartbeat(); hb.After(activity) {
-		activity = hb
-	}
+	cmd.checkAndShutdown(ctx, effectiveActivity(*latestActivity), workspace)
+}
 
-	cmd.checkAndShutdown(ctx, activity, workspace)
+// activityFilePath is a var so tests can point it at a temp file.
+var activityFilePath = agentconfig.ContainerActivityFile
+
+func effectiveActivity(configActivity time.Time) time.Time {
+	if hb := activityHeartbeat(); hb.After(configActivity) {
+		return hb
+	}
+	return configActivity
 }
 
 // activityHeartbeat returns the mtime of the SSH/fleet activity file, or the
 // zero time when it is absent (no session has run).
 func activityHeartbeat() time.Time {
-	stat, err := os.Stat(agentconfig.ContainerActivityFile)
+	stat, err := os.Stat(activityFilePath)
 	if err != nil {
 		return time.Time{}
 	}
