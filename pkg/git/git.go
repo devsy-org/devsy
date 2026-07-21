@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	CommitDelimiter string = "@sha256:"
+	CommitDelimiter      string = "@sha256:"
 	PullRequestReference string = "(?:pull|merge-requests)/([0-9]+)/head"
 	SubPathDelimiter     string = "@subpath:"
 	repoBaseRegEx        string = `((?:(?:https?|git|ssh|file):\/\/)?\/?(?:[^@\/\n]+@)?` +
 		`(?:[^:\/\n]+)(?:[:\/][^\/\n]+)+(?:\.git)?)`
 )
 
-// WARN: Keep these in sync with the ref parsing in UI
+// WARN: Keep these in sync with the ref parsing in UI.
 var (
 	branchRegEx = regexp.MustCompile(`^` + repoBaseRegEx + `@([a-zA-Z0-9\./\-\_]+)$`)
 	commitRegEx = regexp.MustCompile(
