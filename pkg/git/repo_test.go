@@ -32,8 +32,6 @@ type fakeRunner struct {
 	calls  []RunOptions
 	stdout []byte
 	err    error
-	// errUntil makes the first errUntil calls fail, simulating a missing
-	// remote ref that triggers the CheckoutPR fallback.
 	errUntil int
 }
 
@@ -80,7 +78,6 @@ func TestRepoCheckoutPR(t *testing.T) {
 
 	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
 	assert.NilError(t, err)
-	// Expect a fetch of the PR ref into a local branch, then a switch to it.
 	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[0].Args)
 	assert.DeepEqual(t, []string{subSwitch, testPRLocal}, fake.calls[1].Args)
 }
@@ -95,8 +92,6 @@ func TestRepoCheckoutPRGitLab(t *testing.T) {
 	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
 }
 
-// A GitLab MR requested with a GitHub-style ref still resolves: host detection
-// from the URL picks GitLab and rewrites the refspec to merge-requests/N/head.
 func TestRepoCheckoutPRGitLabFromGitHubStyleRef(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("/tmp/repo", WithRunner(fake))
@@ -107,14 +102,10 @@ func TestRepoCheckoutPRGitLabFromGitHubStyleRef(t *testing.T) {
 	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
 }
 
-// When the detected host's ref is missing (undetectable self-hosted instance),
-// the fetch falls back to the other known convention.
 func TestRepoCheckoutPRFallback(t *testing.T) {
 	fake := &fakeRunner{errUntil: 1}
 	repo := At("/tmp/repo", WithRunner(fake))
 
-	// URL detection yields GitHub (default); its fetch fails, so the checkout
-	// falls back to the GitLab convention.
 	err := repo.CheckoutPR(
 		context.Background(),
 		"https://git.internal.example/org/repo.git",
@@ -126,8 +117,6 @@ func TestRepoCheckoutPRFallback(t *testing.T) {
 	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[2].Args)
 }
 
-// A non-ref fetch failure (auth, network, …) must surface immediately without
-// being masked by the alternate-provider fallback.
 func TestRepoCheckoutPRNonRefErrorNoFallback(t *testing.T) {
 	authErr := &CommandError{
 		Args:     []string{subFetch},
@@ -140,7 +129,6 @@ func TestRepoCheckoutPRNonRefErrorNoFallback(t *testing.T) {
 
 	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
 	assert.ErrorContains(t, err, "Authentication failed")
-	// Only the first candidate is attempted; the auth error is not retried.
 	assert.Equal(t, 1, len(fake.calls))
 }
 

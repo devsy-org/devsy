@@ -101,9 +101,6 @@ func (r *Repo) CheckoutPR(ctx context.Context, repoURL, prRef string) error {
 		if err == nil {
 			return r.Switch(ctx, prBranch)
 		}
-		// Only try the next provider's convention when this refspec is genuinely
-		// absent; auth, network, and cancellation errors must surface as-is
-		// rather than be masked by a subsequent lookup's failure.
 		if !isMissingRefError(err) {
 			return err
 		}

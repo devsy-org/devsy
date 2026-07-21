@@ -35,7 +35,6 @@ var (
 		hostHint:   hostNameGitLab,
 	}
 
-	// GitHub first: it is both the detection default and the first fallback.
 	knownHosts = []Host{HostGitHub, HostGitLab}
 )
 
@@ -48,11 +47,7 @@ func (h Host) BranchName(number string) string {
 }
 
 // DetectHost picks the provider from a repository URL, defaulting to GitHub.
-// It is best-effort: self-hosted instances on custom domains won't be
-// recognized, which is why the fetch path falls back to the other convention.
 func DetectHost(repoURL string) Host {
-	// Match only the hostname so an owner or path segment (e.g. a GitHub repo
-	// named "gitlab-ci") cannot masquerade as another provider.
 	host := strings.ToLower(hostFromURL(repoURL))
 	for _, h := range knownHosts {
 		if strings.Contains(host, h.hostHint) {
@@ -78,8 +73,7 @@ func hostFromURL(repoURL string) string {
 	return s
 }
 
-// hostForRef infers the provider from the ref itself, which already encodes the
-// convention exactly (unlike DetectHost's URL heuristic).
+// hostForRef infers the provider from the ref itself.
 func hostForRef(ref string) Host {
 	if strings.Contains(ref, HostGitLab.refPrefix+"/") {
 		return HostGitLab
@@ -94,8 +88,7 @@ func prNumber(ref string) string {
 	return ""
 }
 
-// prCandidates orders the hosts to try for a checkout: detected host first,
-// remaining conventions as fallbacks.
+// prCandidates orders the hosts to try for a checkout.
 func prCandidates(repoURL string) []Host {
 	primary := DetectHost(repoURL)
 	candidates := []Host{primary}

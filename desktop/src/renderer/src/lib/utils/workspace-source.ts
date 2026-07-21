@@ -35,8 +35,7 @@ export interface WorkspaceSourceResult {
 }
 
 // hostFromUrl extracts the hostname from SSH (git@host:path) and URL
-// (scheme://[user@]host/path) forms, so an owner or path segment can't sway
-// provider detection.
+// (scheme://[user@]host/path) forms.
 function hostFromUrl(repoUrl: string): string {
   let s = repoUrl
   const scheme = s.indexOf("://")
@@ -49,8 +48,7 @@ function hostFromUrl(repoUrl: string): string {
 }
 
 // GitLab exposes merge requests at merge-requests/N/head; every other host
-// uses pull/N/head. Detection is best-effort — the CLI fetch falls back to the
-// other convention when the detected one has no such ref.
+// uses pull/N/head.
 function prRefspec(repoUrl: string, number: string): string {
   const segment = /gitlab/i.test(hostFromUrl(repoUrl)) ? "merge-requests" : "pull"
   return `@${segment}/${number}/head`
