@@ -12,11 +12,14 @@ func TestDetectHost(t *testing.T) {
 		url  string
 		want string
 	}{
-		{"git@github.com:org/repo.git", "github"},
-		{"https://github.com/org/repo.git", "github"},
-		{"git@gitlab.com:org/repo.git", "gitlab"},
-		{"https://gitlab.example.com/org/repo.git", "gitlab"},
-		{"https://git.internal.example/org/repo.git", "github"}, // unknown host defaults to GitHub
+		{"git@github.com:org/repo.git", hostNameGitHub},
+		{"https://github.com/org/repo.git", hostNameGitHub},
+		{"git@gitlab.com:org/repo.git", hostNameGitLab},
+		{"https://gitlab.example.com/org/repo.git", hostNameGitLab},
+		{
+			"https://git.internal.example/org/repo.git",
+			hostNameGitHub,
+		}, // unknown host defaults to GitHub
 	}
 	for _, c := range cases {
 		assert.Check(t, cmp.Equal(c.want, DetectHost(c.url).Name), "url=%s", c.url)
@@ -39,6 +42,6 @@ func TestPRNumber(t *testing.T) {
 func TestPRCandidatesOrder(t *testing.T) {
 	got := prCandidates("git@gitlab.com:org/repo.git")
 	assert.Equal(t, 2, len(got))
-	assert.Equal(t, "gitlab", got[0].Name) // detected host first
-	assert.Equal(t, "github", got[1].Name) // fallback
+	assert.Equal(t, hostNameGitLab, got[0].Name) // detected host first
+	assert.Equal(t, hostNameGitHub, got[1].Name) // fallback
 }

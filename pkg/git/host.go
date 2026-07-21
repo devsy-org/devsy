@@ -7,6 +7,11 @@ import (
 
 var prNumberRegEx = regexp.MustCompile(`(?:pull|merge-requests)/([0-9]+)/head`)
 
+const (
+	hostNameGitHub = "github"
+	hostNameGitLab = "gitlab"
+)
+
 // Host is a git provider's convention for referencing pull/merge requests:
 // GitHub exposes them at pull/N/head, GitLab at merge-requests/N/head.
 type Host struct {
@@ -17,8 +22,18 @@ type Host struct {
 }
 
 var (
-	HostGitHub = Host{Name: "github", refPrefix: "pull", branchAbbr: "PR", hostHint: "github"}
-	HostGitLab = Host{Name: "gitlab", refPrefix: "merge-requests", branchAbbr: "MR", hostHint: "gitlab"}
+	HostGitHub = Host{
+		Name:       hostNameGitHub,
+		refPrefix:  "pull",
+		branchAbbr: "PR",
+		hostHint:   hostNameGitHub,
+	}
+	HostGitLab = Host{
+		Name:       hostNameGitLab,
+		refPrefix:  "merge-requests",
+		branchAbbr: "MR",
+		hostHint:   hostNameGitLab,
+	}
 
 	// GitHub first: it is both the detection default and the first fallback.
 	knownHosts = []Host{HostGitHub, HostGitLab}

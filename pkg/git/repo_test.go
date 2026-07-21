@@ -12,11 +12,16 @@ import (
 // Shared literals used across Repo tests.
 const (
 	testRepoURL   = "git@host:org/repo.git"
+	testGitHubURL = "https://github.com/org/repo.git"
+	testGitLabURL = "git@gitlab.com:org/repo.git"
 	testPRRef     = "pull/996/head"
 	testPRLocal   = "PR996"
 	testPRRefSpec = testPRRef + ":" + testPRLocal
+	testMRLocal   = "MR7"
+	testMRRefSpec = "merge-requests/7/head:" + testMRLocal
 	testCommit    = "abc123"
 	subFetch      = "fetch"
+	subSwitch     = "switch"
 	originRemote  = "origin"
 	testTarget    = "/tmp/target"
 )
@@ -68,20 +73,21 @@ func TestRepoCheckoutPR(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("/tmp/repo", WithRunner(fake))
 
-	assert.NilError(t, repo.CheckoutPR(context.Background(), "https://github.com/org/repo.git", testPRRef))
+	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
+	assert.NilError(t, err)
 	// Expect a fetch of the PR ref into a local branch, then a switch to it.
 	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[0].Args)
-	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subSwitch, testPRLocal}, fake.calls[1].Args)
 }
 
 func TestRepoCheckoutPRGitLab(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("/tmp/repo", WithRunner(fake))
 
-	err := repo.CheckoutPR(context.Background(), "git@gitlab.com:org/repo.git", "merge-requests/7/head")
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
 	assert.NilError(t, err)
-	assert.DeepEqual(t, []string{subFetch, originRemote, "merge-requests/7/head:MR7"}, fake.calls[0].Args)
-	assert.DeepEqual(t, []string{"switch", "MR7"}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
 }
 
 // A GitLab MR requested with a GitHub-style ref still resolves: host detection
@@ -90,10 +96,10 @@ func TestRepoCheckoutPRGitLabFromGitHubStyleRef(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("/tmp/repo", WithRunner(fake))
 
-	err := repo.CheckoutPR(context.Background(), "git@gitlab.com:org/repo.git", "pull/7/head")
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "pull/7/head")
 	assert.NilError(t, err)
-	assert.DeepEqual(t, []string{subFetch, originRemote, "merge-requests/7/head:MR7"}, fake.calls[0].Args)
-	assert.DeepEqual(t, []string{"switch", "MR7"}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
 }
 
 // When the detected host's ref is missing (undetectable self-hosted instance),
@@ -104,11 +110,15 @@ func TestRepoCheckoutPRFallback(t *testing.T) {
 
 	// URL detection yields GitHub (default); its fetch fails, so the checkout
 	// falls back to the GitLab convention.
-	err := repo.CheckoutPR(context.Background(), "https://git.internal.example/org/repo.git", "pull/7/head")
+	err := repo.CheckoutPR(
+		context.Background(),
+		"https://git.internal.example/org/repo.git",
+		"pull/7/head",
+	)
 	assert.NilError(t, err)
 	assert.DeepEqual(t, []string{subFetch, originRemote, "pull/7/head:PR7"}, fake.calls[0].Args)
-	assert.DeepEqual(t, []string{subFetch, originRemote, "merge-requests/7/head:MR7"}, fake.calls[1].Args)
-	assert.DeepEqual(t, []string{"switch", "MR7"}, fake.calls[2].Args)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[2].Args)
 }
 
 func TestRepoLsRemote(t *testing.T) {
@@ -204,7 +214,7 @@ func TestRepoCloneFromInfoPR(t *testing.T) {
 	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
 	assert.Equal(t, subClone, fake.calls[0].Args[0])
 	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[1].Args)
-	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[2].Args)
+	assert.DeepEqual(t, []string{subSwitch, testPRLocal}, fake.calls[2].Args)
 }
 
 func TestRepoCloneFromInfoHelper(t *testing.T) {
