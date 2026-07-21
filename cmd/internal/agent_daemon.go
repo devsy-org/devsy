@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	agentconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -142,7 +143,24 @@ func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 		return
 	}
 
-	cmd.checkAndShutdown(ctx, *latestActivity, workspace)
+	// Interactive `devsy ssh` sessions heartbeat the activity file but do not
+	// touch the workspace config, so honor whichever signal is more recent.
+	activity := *latestActivity
+	if hb := activityHeartbeat(); hb.After(activity) {
+		activity = hb
+	}
+
+	cmd.checkAndShutdown(ctx, activity, workspace)
+}
+
+// activityHeartbeat returns the mtime of the SSH/fleet activity file, or the
+// zero time when it is absent (no session has run).
+func activityHeartbeat() time.Time {
+	stat, err := os.Stat(agentconfig.ContainerActivityFile)
+	if err != nil {
+		return time.Time{}
+	}
+	return stat.ModTime()
 }
 
 func (cmd *DaemonCmd) checkAndShutdown(
