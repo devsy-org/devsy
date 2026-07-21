@@ -96,7 +96,7 @@ func ReadAgentWorkspaceInfo(
 	)
 
 	workspaceInfo, err := readAgentWorkspaceInfo(agentFolder, context, id)
-	if err != nil && !errors.Is(err, ErrFindAgentHomeFolder) && !errors.Is(err, os.ErrPermission) {
+	if err != nil && !errors.Is(err, ErrFindAgentHomeDir) && !errors.Is(err, os.ErrPermission) {
 		log.Errorf(
 			"failed to read agent workspace info: error=%v, agentFolder=%s, context=%s, workspaceId=%s",
 			err,
@@ -107,7 +107,7 @@ func ReadAgentWorkspaceInfo(
 		return false, nil, err
 	}
 
-	if errors.Is(err, ErrFindAgentHomeFolder) {
+	if errors.Is(err, ErrFindAgentHomeDir) {
 		log.Debugf(
 			"agent home folder not found: agentFolder=%s, context=%s, workspaceId=%s",
 			agentFolder,
@@ -135,7 +135,7 @@ func ReadAgentWorkspaceInfo(
 		return true, nil, nil
 	} else if workspaceInfo == nil {
 		log.Debug("no workspace info available and not rerunning as root")
-		return false, nil, ErrFindAgentHomeFolder
+		return false, nil, ErrFindAgentHomeDir
 	}
 
 	log.Debugf(

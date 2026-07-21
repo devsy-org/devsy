@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -33,152 +31,106 @@ var extraSearchLocations = []string{
 	config.ContainerDataDir + "/agent",
 }
 
-var ErrFindAgentHomeFolder = fmt.Errorf("couldn't find devsy home directory")
+var ErrFindAgentHomeDir = errors.New("could not find devsy home directory")
 
-// GetAgentDaemonLogFolder returns the path to the agent daemon log folder, which is only
-// available inside the workspace container or machine.
-func GetAgentDaemonLogFolder(agentFolder string) (string, error) {
-	if IsHostAgentInvocation(agentFolder) {
-		return "", fmt.Errorf(
-			"agent daemon log folder is only available inside the workspace container or machine",
+func GetAgentDaemonLogDir(agentDir string) (string, error) {
+	if IsHostAgentInvocation(agentDir) {
+		return "", errors.New(
+			"agent daemon log directory is only available inside the workspace container or machine",
 		)
 	}
-	return FindAgentHomeFolder(agentFolder)
+	return FindAgentHomeDir(agentDir)
 }
 
-func findDir(agentFolder string, validate func(path string) bool) string {
-	// get agent folder
-	if agentFolder != "" {
-		if !validate(agentFolder) {
-			return ""
+func findDir(agentDir string, validate func(path string) bool) string {
+	if agentDir != "" {
+		if validate(agentDir) {
+			return agentDir
 		}
-
-		return agentFolder
+		return ""
 	}
 
-	// check environment
-	homeFolder := os.Getenv(config.EnvHome)
-	if homeFolder != "" {
-		homeFolder = filepath.Join(homeFolder, "agent")
-		if !validate(homeFolder) {
-			return ""
+	if home := os.Getenv(config.EnvHome); home != "" {
+		agentDir := filepath.Join(home, "agent")
+		if validate(agentDir) {
+			return agentDir
 		}
-
-		return homeFolder
+		return ""
 	}
 
-	// check home folder first
-	homeDir, _ := util.UserHomeDir()
-	if homeDir != "" {
-		homeDir = filepath.Join(homeDir, config.ConfigDirName, "agent")
-		if validate(homeDir) {
-			return homeDir
-		}
-	}
-
-	// check root folder
-	homeDir, _ = command.GetHome("root")
-	if homeDir != "" {
-		homeDir = filepath.Join(homeDir, config.ConfigDirName, "agent")
-		if validate(homeDir) {
-			return homeDir
-		}
-	}
-
-	// check current directory
-	execDir, _ := os.Executable()
-	if execDir != "" {
-		execDir = filepath.Join(filepath.Dir(execDir), "agent")
-		if validate(execDir) {
-			return execDir
-		}
-	}
-
-	// check other folders
-	for _, dir := range extraSearchLocations {
+	for _, dir := range candidateAgentDirs() {
 		if validate(dir) {
 			return dir
 		}
 	}
-
 	return ""
 }
 
-func FindAgentHomeFolder(agentFolder string) (string, error) {
-	homeDir := findDir(agentFolder, isDevsyHome)
+func candidateAgentDirs() []string {
+	var dirs []string
+	if home, _ := util.UserHomeDir(); home != "" {
+		dirs = append(dirs, filepath.Join(home, config.ConfigDirName, "agent"))
+	}
+	if root, _ := command.GetHome("root"); root != "" {
+		dirs = append(dirs, filepath.Join(root, config.ConfigDirName, "agent"))
+	}
+	if execPath, _ := os.Executable(); execPath != "" {
+		dirs = append(dirs, filepath.Join(filepath.Dir(execPath), "agent"))
+	}
+	return append(dirs, extraSearchLocations...)
+}
+
+func FindAgentHomeDir(agentDir string) (string, error) {
+	homeDir := findDir(agentDir, isDevsyHome)
 	if homeDir != "" {
 		return homeDir, nil
 	}
 
-	return "", ErrFindAgentHomeFolder
+	return "", ErrFindAgentHomeDir
 }
 
 func isDevsyHome(dir string) bool {
+	// #nosec G703 -- read-only existence probe of a derived agent path.
 	_, err := os.Stat(filepath.Join(dir, "contexts"))
 	return err == nil
 }
 
-func PrepareAgentHomeFolder(agentFolder string) (string, error) {
-	// try to find agent home folder first
-	homeFolder, err := FindAgentHomeFolder(agentFolder)
+func PrepareAgentHomeDir(agentDir string) (string, error) {
+	homeDir, err := FindAgentHomeDir(agentDir)
 	if err == nil {
-		return homeFolder, nil
-	}
-
-	// try to find an executable directory
-	homeDir := findDir(agentFolder, func(path string) bool {
-		ok, _ := isDirExecutable(path)
-		return ok
-	})
-	if homeDir != "" {
 		return homeDir, nil
 	}
 
-	// check if agentFolder is set
-	if agentFolder != "" {
-		_, err := isDirExecutable(agentFolder)
+	execDir := findDir(agentDir, func(path string) bool {
+		ok, _ := isDirExecutable(path)
+		return ok
+	})
+	if execDir != "" {
+		return execDir, nil
+	}
+
+	if agentDir != "" {
+		_, err := isDirExecutable(agentDir)
 		return "", err
 	}
 
-	// return generic error here
-	return "", fmt.Errorf("couldn't find an executable directory")
+	return "", errors.New("could not find an executable directory")
 }
 
 func isDirExecutable(dir string) (bool, error) {
 	if !filepath.IsAbs(dir) {
-		var err error
-		dir, err = filepath.Abs(dir)
+		abs, err := filepath.Abs(dir)
 		if err != nil {
 			return false, err
 		}
+		dir = abs
 	}
 
 	// #nosec G301,G703 -- TODO Consider using a more secure permission setting and ownership if needed.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, err
 	}
-
-	testFile := filepath.Join(dir, config.BinaryName+"_test.sh")
-	// #nosec G306,G703 -- TODO Consider using a more secure permission setting and ownership if needed.
-	if err := os.WriteFile(testFile, []byte(`#!/bin/sh
-echo Devsy
-`), 0o755); err != nil {
-		return false, err
-	}
-	defer func() { _ = os.Remove(testFile) }()
-	if runtime.GOOS != "linux" {
-		return true, nil
-	}
-
-	// try to execute
-	out, err := exec.Command(testFile).Output()
-	if err != nil {
-		return false, err
-	} else if strings.TrimSpace(string(out)) != "Devsy" {
-		return false, fmt.Errorf("received %s, expected Devsy", strings.TrimSpace(string(out)))
-	}
-
-	return true, nil
+	return dirAllowsExec(dir)
 }
 
 func GetAgentWorkspaceContentDir(workspaceDir string) string {
@@ -186,7 +138,6 @@ func GetAgentWorkspaceContentDir(workspaceDir string) string {
 }
 
 func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
-	// check if it already exists
 	_, err := os.Stat(workspaceDir)
 	if err == nil {
 		return filepath.Join(workspaceDir, "binaries"), nil
@@ -197,19 +148,18 @@ func GetAgentBinariesDirFromWorkspaceDir(workspaceDir string) (string, error) {
 
 var containerDetector = isLikelyContainer
 
-// IsHostAgentInvocation determines whether the current invocation is a host-side invocation of the agent.
-func IsHostAgentInvocation(agentFolder string) bool {
-	if agentFolder != "" {
+func IsHostAgentInvocation(agentDir string) bool {
+	if agentDir != "" {
 		return false
 	}
 	return !containerDetector()
 }
 
-func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, error) {
+func GetAgentBinariesDir(agentDir, context, workspaceID string) (string, error) {
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if IsHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentDir) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err
@@ -217,23 +167,21 @@ func GetAgentBinariesDir(agentFolder, context, workspaceID string) (string, erro
 		return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
 	}
 
-	homeFolder, err := FindAgentHomeFolder(agentFolder)
+	homeDir, err := FindAgentHomeDir(agentDir)
 	if err != nil {
 		return "", err
 	}
 
-	// workspace folder
-	workspaceDir := filepath.Join(homeFolder, "contexts", context, "workspaces", workspaceID)
+	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
 
-	// get from workspace folder
 	return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
 }
 
-func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+func GetAgentWorkspaceDir(agentDir, context, workspaceID string) (string, error) {
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if IsHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentDir) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err
@@ -244,15 +192,13 @@ func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, err
 		return "", os.ErrNotExist
 	}
 
-	homeFolder, err := FindAgentHomeFolder(agentFolder)
+	homeDir, err := FindAgentHomeDir(agentDir)
 	if err != nil {
 		return "", err
 	}
 
-	// workspace folder
-	workspaceDir := filepath.Join(homeFolder, "contexts", context, "workspaces", workspaceID)
+	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
 
-	// check if it already exists
 	_, err = os.Stat(workspaceDir)
 	if err == nil {
 		return workspaceDir, nil
@@ -261,11 +207,11 @@ func GetAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, err
 	return "", os.ErrNotExist
 }
 
-func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, error) {
+func CreateAgentWorkspaceDir(agentDir, context, workspaceID string) (string, error) {
 	if context == "" {
 		context = config.DefaultContext
 	}
-	if IsHostAgentInvocation(agentFolder) {
+	if IsHostAgentInvocation(agentDir) {
 		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
 		if err != nil {
 			return "", err
@@ -277,16 +223,14 @@ func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, 
 		return workspaceDir, nil
 	}
 
-	homeFolder, err := PrepareAgentHomeFolder(agentFolder)
+	homeDir, err := PrepareAgentHomeDir(agentDir)
 	if err != nil {
 		return "", err
 	}
 
-	// workspace folder
-	workspaceDir := filepath.Join(homeFolder, "contexts", context, "workspaces", workspaceID)
+	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
 
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	// create workspace folder
 	err = os.MkdirAll(workspaceDir, 0o755)
 	if err != nil {
 		return "", err
@@ -295,197 +239,217 @@ func CreateAgentWorkspaceDir(agentFolder, context, workspaceID string) (string, 
 	return workspaceDir, nil
 }
 
-func CloneRepositoryForWorkspace(
-	ctx context.Context,
-	source *provider2.WorkspaceSource,
-	agentConfig *provider2.ProviderAgentConfig,
-	workspaceDir, helper string,
-	options provider2.CLIOptions,
-	overwriteContent bool,
-) error {
-	log.Info("Clone repository")
-	log.Infof("URL: %s\n", source.GitRepository)
-	if source.GitBranch != "" {
-		log.Infof("Branch: %s\n", source.GitBranch)
-	}
-	if source.GitCommit != "" {
-		log.Infof("Commit: %s\n", source.GitCommit)
-	}
-	if source.GitSubPath != "" {
-		log.Infof("Subpath: %s\n", source.GitSubPath)
-	}
-	if source.GitPRReference != "" {
-		log.Infof("PR: %s\n", source.GitPRReference)
+type CloneWorkspaceParams struct {
+	Source           *provider2.WorkspaceSource
+	AgentConfig      *provider2.ProviderAgentConfig
+	WorkspaceDir     string
+	Helper           string
+	Options          provider2.CLIOptions
+	OverwriteContent bool
+}
+
+func CloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) error {
+	logCloneSource(p.Source)
+	defer removeGitCredentialHelper(ctx, p.Helper, p.WorkspaceDir)
+
+	if err := ensureGit(ctx, p.AgentConfig); err != nil {
+		return err
 	}
 
-	// remove the credential helper or otherwise we will receive strange errors within the container
-	defer func() {
-		if helper != "" {
-			if err := gitcredentials.RemoveHelperFromPath(
-				ctx,
-				gitcredentials.GetLocalGitConfigPath(workspaceDir),
-			); err != nil {
-				log.Errorf("Remove git credential helper: %v", err)
-			}
-		}
-	}()
-
-	// check if command exists
-	if !command.Exists("git") {
-		local, _ := agentConfig.Local.Bool()
-		if local {
-			return fmt.Errorf(
-				"seems like git isn't installed on your system. Make sure to install git and make it available in the PATH",
-			)
-		}
-		if err := git.InstallBinary(ctx); err != nil {
-			return err
+	if p.OverwriteContent {
+		if err := removeDirContents(p.WorkspaceDir); err != nil {
+			return fmt.Errorf("cleanup workspace: %w", err)
 		}
 	}
 
-	if overwriteContent {
-		if err := removeDirContents(workspaceDir); err != nil {
-			log.Infof("Failed cleanup")
-			return err
-		}
+	extraEnv, cleanupSSH, err := setupGitSSH(p.Options, p.AgentConfig)
+	if err != nil {
+		return err
 	}
+	defer cleanupSSH()
 
-	// setup private ssh key if passed in
-	extraEnv := []string{}
-	gitSshCredentials := append(
-		options.Platform.UserCredentials.GitSsh,
-		options.Platform.ProjectCredentials.GitSsh...)
-	if len(gitSshCredentials) > 0 {
-		keys := []string{}
-		for _, key := range gitSshCredentials {
-			keys = append(keys, key.Key)
-		}
-
-		sshExtraEnv, cleanUpSSHKey, err := setupSSHKey(keys, agentConfig.Path)
-		if err != nil {
-			return err
-		}
-		defer cleanUpSSHKey()
-		extraEnv = append(extraEnv, sshExtraEnv...)
-	}
-
-	// run git command
-	gitInfo := &git.GitInfo{
-		Repository: source.GitRepository,
-		Branch:     source.GitBranch,
-		Commit:     source.GitCommit,
-		PR:         source.GitPRReference,
-		SubPath:    source.GitSubPath,
-	}
-
-	// should run with platform git cache?
-	platformGitcacheEnabled := options.Platform.Enabled && options.Platform.RunnerSocket != ""
-	if platformGitcacheEnabled {
-		_, err := os.Stat(options.Platform.RunnerSocket)
-		if err != nil {
-			platformGitcacheEnabled = false
-		}
-	}
-
-	// try to clone with platform gitcache
-	if platformGitcacheEnabled {
-		dialer := &net.Dialer{}
-		conn, err := dialer.DialContext(ctx, "unix", options.Platform.RunnerSocket)
-		if err != nil {
-			return fmt.Errorf("dial platform gitcache: %w", err)
-		}
-		defer func() { _ = conn.Close() }()
-
-		// Set up a connection to the server.
-		grpcClient, err := grpc.NewClient(
-			"unix://"+options.Platform.RunnerSocket,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithIdleTimeout(
-				180*time.Minute,
-			), // cloning can take a long time for large monorepos
-		)
-		if err != nil {
-			return fmt.Errorf("create platform gitcache client: %w", err)
-		}
-
-		// marshal options
-		jsonOptions, err := json.Marshal(&devsy.CloneOptions{
-			Repository:        source.GitRepository,
-			Branch:            source.GitBranch,
-			Commit:            source.GitCommit,
-			PRReference:       source.GitPRReference,
-			SubPath:           source.GitSubPath,
-			CredentialsHelper: helper,
-			ExtraEnv: append(
-				git.GetDefaultExtraEnv(options.StrictHostKeyChecking),
-				extraEnv...),
-		})
-		if err != nil {
-			return fmt.Errorf("marshal git options: %w", err)
-		}
-
-		// create client
-		log.Infof("Cloning repository %s in platform", source.GitRepository)
-		_, err = devsy.NewRunnerClient(grpcClient).Clone(ctx, &devsy.CloneRequest{
-			TargetPath: workspaceDir,
-			Options:    string(jsonOptions),
-		})
-		if err != nil {
-			// cleanup workspace dir if clone failed, otherwise we won't try to clone again when rebuilding this workspace
-			if cleanupErr := cleanupWorkspaceDir(workspaceDir); cleanupErr != nil {
-				return fmt.Errorf(
-					"clone repository (with gitcache): %w, cleanup workspace: %w",
-					err,
-					cleanupErr,
-				)
-			}
-			return fmt.Errorf("clone repository (with gitcache): %w", err)
-		}
-	} else {
-		if options.Platform.GitCloneStrategy != "" {
-			log.Infof("Using a %s clone", options.Platform.GitCloneStrategy)
-		}
-		if options.Platform.GitSkipLFS {
-			log.Info("Skipping Git LFS")
-		}
-		repo := git.At(workspaceDir,
-			git.WithStrictHostKeyChecking(options.StrictHostKeyChecking),
-			git.WithEnv(extraEnv))
-		err := repo.CloneFromInfo(ctx, gitInfo, helper, getGitOptions(options)...)
-		if err != nil {
-			// cleanup workspace dir if clone failed, otherwise we won't try to clone again when rebuilding this workspace
-			if cleanupErr := cleanupWorkspaceDir(workspaceDir); cleanupErr != nil {
-				return fmt.Errorf("clone repository: %w, cleanup workspace: %w", err, cleanupErr)
-			}
-			return fmt.Errorf("clone repository: %w", err)
-		}
+	if err := cloneRepository(ctx, p, extraEnv); err != nil {
+		return err
 	}
 
 	log.Info("cloned repository")
+	return applyDevsyIgnore(p.WorkspaceDir)
+}
 
-	// Get .devsyignore files to exclude
+func logCloneSource(source *provider2.WorkspaceSource) {
+	log.Info("cloning repository")
+	log.Infof("URL: %s", source.GitRepository)
+	if source.GitBranch != "" {
+		log.Infof("branch: %s", source.GitBranch)
+	}
+	if source.GitCommit != "" {
+		log.Infof("commit: %s", source.GitCommit)
+	}
+	if source.GitSubPath != "" {
+		log.Infof("subpath: %s", source.GitSubPath)
+	}
+	if source.GitPRReference != "" {
+		log.Infof("PR: %s", source.GitPRReference)
+	}
+}
+
+func removeGitCredentialHelper(ctx context.Context, helper, workspaceDir string) {
+	if helper == "" {
+		return
+	}
+	if err := gitcredentials.RemoveHelperFromPath(
+		ctx,
+		gitcredentials.GetLocalGitConfigPath(workspaceDir),
+	); err != nil {
+		log.Errorf("remove git credential helper: %v", err)
+	}
+}
+
+func ensureGit(ctx context.Context, agentConfig *provider2.ProviderAgentConfig) error {
+	if command.Exists("git") {
+		return nil
+	}
+	if local, _ := agentConfig.Local.Bool(); local {
+		return errors.New("git not installed: install git and add it to PATH")
+	}
+	return git.InstallBinary(ctx)
+}
+
+func setupGitSSH(
+	options provider2.CLIOptions,
+	agentConfig *provider2.ProviderAgentConfig,
+) ([]string, func(), error) {
+	noop := func() {}
+	credentials := slices.Concat(
+		options.Platform.UserCredentials.GitSsh,
+		options.Platform.ProjectCredentials.GitSsh,
+	)
+	if len(credentials) == 0 {
+		return nil, noop, nil
+	}
+
+	keys := make([]string, 0, len(credentials))
+	for _, key := range credentials {
+		keys = append(keys, key.Key)
+	}
+
+	extraEnv, cleanup, err := setupSSHKey(keys, agentConfig.Path)
+	if err != nil {
+		return nil, noop, err
+	}
+	return extraEnv, cleanup, nil
+}
+
+func cloneRepository(ctx context.Context, p CloneWorkspaceParams, extraEnv []string) error {
+	if usePlatformGitcache(p.Options) {
+		return cloneViaPlatformGitcache(ctx, p, extraEnv)
+	}
+	return cloneViaGit(ctx, p, extraEnv)
+}
+
+func usePlatformGitcache(options provider2.CLIOptions) bool {
+	if !options.Platform.Enabled || options.Platform.RunnerSocket == "" {
+		return false
+	}
+	_, err := os.Stat(options.Platform.RunnerSocket)
+	return err == nil
+}
+
+func cloneViaPlatformGitcache(
+	ctx context.Context,
+	p CloneWorkspaceParams,
+	extraEnv []string,
+) error {
+	grpcClient, err := grpc.NewClient(
+		"unix://"+p.Options.Platform.RunnerSocket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithIdleTimeout(180*time.Minute),
+	)
+	if err != nil {
+		return fmt.Errorf("create platform gitcache client: %w", err)
+	}
+	defer func() { _ = grpcClient.Close() }()
+
+	jsonOptions, err := json.Marshal(&devsy.CloneOptions{
+		Repository:        p.Source.GitRepository,
+		Branch:            p.Source.GitBranch,
+		Commit:            p.Source.GitCommit,
+		PRReference:       p.Source.GitPRReference,
+		SubPath:           p.Source.GitSubPath,
+		CredentialsHelper: p.Helper,
+		ExtraEnv: append(
+			git.GetDefaultExtraEnv(p.Options.StrictHostKeyChecking),
+			extraEnv...),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal git options: %w", err)
+	}
+
+	log.Infof("cloning repository %s via platform gitcache", p.Source.GitRepository)
+	_, err = devsy.NewRunnerClient(grpcClient).Clone(ctx, &devsy.CloneRequest{
+		TargetPath: p.WorkspaceDir,
+		Options:    string(jsonOptions),
+	})
+	if err != nil {
+		return failedClone(p.WorkspaceDir, "clone repository (with gitcache)", err)
+	}
+	return nil
+}
+
+func cloneViaGit(ctx context.Context, p CloneWorkspaceParams, extraEnv []string) error {
+	if p.Options.Platform.GitCloneStrategy != "" {
+		log.Infof("using %s clone strategy", p.Options.Platform.GitCloneStrategy)
+	}
+	if p.Options.Platform.GitSkipLFS {
+		log.Info("skipping Git LFS")
+	}
+
+	gitInfo := &git.GitInfo{
+		Repository: p.Source.GitRepository,
+		Branch:     p.Source.GitBranch,
+		Commit:     p.Source.GitCommit,
+		PR:         p.Source.GitPRReference,
+		SubPath:    p.Source.GitSubPath,
+	}
+	repo := git.At(p.WorkspaceDir,
+		git.WithStrictHostKeyChecking(p.Options.StrictHostKeyChecking),
+		git.WithEnv(extraEnv))
+	if err := repo.CloneFromInfo(ctx, gitInfo, p.Helper, getGitOptions(p.Options)...); err != nil {
+		return failedClone(p.WorkspaceDir, "clone repository", err)
+	}
+	return nil
+}
+
+func failedClone(workspaceDir, label string, cloneErr error) error {
+	if cleanupErr := cleanupWorkspaceDir(workspaceDir); cleanupErr != nil {
+		return fmt.Errorf("%s: %w, cleanup workspace: %w", label, cloneErr, cleanupErr)
+	}
+	return fmt.Errorf("%s: %w", label, cloneErr)
+}
+
+func applyDevsyIgnore(workspaceDir string) error {
 	f, err := os.Open(
 		filepath.Join(workspaceDir, config.IgnoreFileName),
 	) // #nosec G304 -- path is controlled by the application, not user input
 	if err != nil {
 		return nil
 	}
+	defer func() { _ = f.Close() }()
+
 	excludes, err := ignorefile.ReadAll(f)
 	if err != nil {
-		log.Warn(config.IgnoreFileName+" file is invalid : ", err)
+		log.Warnf("%s is invalid: %v", config.IgnoreFileName, err)
 		return nil
 	}
-	// Remove files from workspace content folder
 	for _, exclude := range excludes {
 		_ = os.RemoveAll(filepath.Join(workspaceDir, exclude))
 	}
-	log.Debug("Ignore files from "+config.IgnoreFileName+" ", excludes)
-
+	log.Debugf("ignoring files from %s: %v", config.IgnoreFileName, excludes)
 	return nil
 }
 
 func getGitOptions(options provider2.CLIOptions) []git.Option {
-	gitOpts := []git.Option{}
+	var gitOpts []git.Option
 	if options.GitCloneStrategy != "" {
 		gitOpts = append(gitOpts, git.WithCloneStrategy(options.GitCloneStrategy))
 	}
@@ -495,7 +459,6 @@ func getGitOptions(options provider2.CLIOptions) []git.Option {
 			git.WithCloneStrategy(git.CloneStrategy(options.Platform.GitCloneStrategy)),
 		)
 	}
-	// Platform.GitSkipLFS forces skipping; otherwise honor the requested LFS mode.
 	if options.Platform.GitSkipLFS {
 		gitOpts = append(gitOpts, git.WithLFSMode(git.LFSSkip))
 	} else {
@@ -512,39 +475,49 @@ func cleanupWorkspaceDir(workspaceDir string) error {
 }
 
 func setupSSHKey(keys []string, agentPath string) ([]string, func(), error) {
-	keyFiles := []string{}
-	for _, key := range keys {
-		keyFile, err := os.CreateTemp("", "")
-		if err != nil {
-			return nil, nil, err
-		}
-		defer func() { _ = keyFile.Close() }()
-
-		if err := writeSSHKey(keyFile, key); err != nil {
-			return nil, nil, err
-		}
-
-		if err := os.Chmod(keyFile.Name(), 0o400); err != nil {
-			return nil, nil, err
-		}
-
-		keyFiles = append(keyFiles, keyFile.Name())
-	}
-
-	env := []string{"GIT_TERMINAL_PROMPT=0"}
-	gitSSHCmd := []string{agentPath, "internal", "ssh-git-clone"}
-	for _, keyFile := range keyFiles {
-		gitSSHCmd = append(gitSSHCmd, "--key-file="+keyFile)
-	}
-
-	env = append(env, "GIT_SSH_COMMAND="+command.Quote(gitSSHCmd))
+	keyFiles := make([]string, 0, len(keys))
 	cleanup := func() {
 		for _, keyFile := range keyFiles {
 			_ = os.Remove(keyFile)
 		}
 	}
 
+	for _, key := range keys {
+		keyFile, err := writeTempSSHKey(key)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		keyFiles = append(keyFiles, keyFile)
+	}
+
+	gitSSHCmd := []string{agentPath, "internal", "ssh-git-clone"}
+	for _, keyFile := range keyFiles {
+		gitSSHCmd = append(gitSSHCmd, "--key-file="+keyFile)
+	}
+	env := []string{
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_SSH_COMMAND=" + command.Quote(gitSSHCmd),
+	}
 	return env, cleanup, nil
+}
+
+func writeTempSSHKey(key string) (string, error) {
+	keyFile, err := os.CreateTemp("", "")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = keyFile.Close() }()
+
+	if err := writeSSHKey(keyFile, key); err != nil {
+		_ = os.Remove(keyFile.Name())
+		return "", err
+	}
+	if err := os.Chmod(keyFile.Name(), 0o400); err != nil {
+		_ = os.Remove(keyFile.Name())
+		return "", err
+	}
+	return keyFile.Name(), nil
 }
 
 func writeSSHKey(key *os.File, sshKey string) error {
@@ -553,7 +526,7 @@ func writeSSHKey(key *os.File, sshKey string) error {
 		return err
 	}
 
-	_, err = key.WriteString(string(data))
+	_, err = key.Write(data)
 	return err
 }
 

@@ -60,12 +60,12 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 		)
 	}
 
-	logFolder, err := agent.GetAgentDaemonLogFolder(cmd.AgentDir)
+	logDir, err := agent.GetAgentDaemonLogDir(cmd.AgentDir)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("starting Devsy daemon patrol at %s", logFolder)
+	log.Infof("starting Devsy daemon patrol at %s", logDir)
 
 	// start patrolling
 	cmd.patrol(ctx)
@@ -103,16 +103,16 @@ func (cmd *DaemonCmd) doOnce(ctx context.Context) {
 	var latestActivity *time.Time
 	var workspace *provider2.AgentWorkspaceInfo
 
-	// get base folder — only reachable from Run, which rejects host
-	// invocations, so FindAgentHomeFolder always resolves the legacy
+	// get base directory — only reachable from Run, which rejects host
+	// invocations, so FindAgentHomeDir always resolves the legacy
 	// container/machine layout here.
-	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
+	baseDir, err := agent.FindAgentHomeDir(cmd.AgentDir)
 	if err != nil {
 		return
 	}
 
 	// get all workspace configs
-	pattern := baseFolder + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
+	pattern := baseDir + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		log.Errorf("error globing pattern %s: %v", pattern, err)
@@ -125,13 +125,13 @@ func (cmd *DaemonCmd) doOnce(ctx context.Context) {
 	// should we run shutdown command?
 	if latestActivity == nil {
 		if len(matches) == 0 {
-			log.Infof("no workspaces found in path %q", baseFolder)
+			log.Infof("no workspaces found in path %q", baseDir)
 		} else {
 			log.Infof(
 				"%d workspaces found in path %q, but none of them had any auto-stop "+
 					"configured or were still running / never completed",
 				len(matches),
-				baseFolder,
+				baseDir,
 			)
 		}
 		return
@@ -212,16 +212,16 @@ func (cmd *DaemonCmd) runShutdownCommand(
 }
 
 func (cmd *DaemonCmd) initialTouch() {
-	// get base folder — only reachable from Run, which rejects host
+	// get base directory — only reachable from Run, which rejects host
 	// invocations, so this always resolves the legacy container/machine
 	// layout.
-	baseFolder, err := agent.FindAgentHomeFolder(cmd.AgentDir)
+	baseDir, err := agent.FindAgentHomeDir(cmd.AgentDir)
 	if err != nil {
 		return
 	}
 
 	// get workspace configs
-	pattern := baseFolder + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
+	pattern := baseDir + "/contexts/*/workspaces/*/" + provider2.WorkspaceConfigFile
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		log.Errorf("error globbing pattern %s: %v", pattern, err)

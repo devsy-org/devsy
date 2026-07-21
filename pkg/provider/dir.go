@@ -76,7 +76,7 @@ func GetWorkspaceDir(context, workspaceID string) (string, error) {
 
 // GetWorkspaceAgentDir returns the host-side per-workspace agent dir
 // (.../workspaces/<id>/agent). Container-side agent code keeps using
-// FindAgentHomeFolder.
+// FindAgentHomeDir.
 func GetWorkspaceAgentDir(context, workspaceID string) (string, error) {
 	if workspaceID == "" {
 		return "", fmt.Errorf("workspace id is empty")

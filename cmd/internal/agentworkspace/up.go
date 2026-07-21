@@ -615,15 +615,13 @@ func prepareGitWorkspace(ctx context.Context, params prepareGitWorkspaceParams) 
 		return nil
 	}
 
-	return agent.CloneRepositoryForWorkspace(
-		ctx,
-		&params.workspaceInfo.Workspace.Source,
-		&params.workspaceInfo.Agent,
-		params.workspaceInfo.ContentFolder,
-		params.gitHelper,
-		params.workspaceInfo.CLIOptions,
-		false,
-	)
+	return agent.CloneRepositoryForWorkspace(ctx, agent.CloneWorkspaceParams{
+		Source:       &params.workspaceInfo.Workspace.Source,
+		AgentConfig:  &params.workspaceInfo.Agent,
+		WorkspaceDir: params.workspaceInfo.ContentFolder,
+		Helper:       params.gitHelper,
+		Options:      params.workspaceInfo.CLIOptions,
+	})
 }
 
 func prepareLocalWorkspace(
