@@ -79,15 +79,30 @@ func (r *Repo) Switch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// CheckoutPR fetches the given pull request refspec and switches to a local branch for it.
-func (r *Repo) CheckoutPR(ctx context.Context, prRef string) error {
-	log.Debugf("fetching pull request: %s", prRef)
-
-	prBranch := GetBranchNameForPR(prRef)
-	if err := r.Fetch(ctx, prRef+":"+prBranch); err != nil {
-		return err
+// CheckoutPR fetches a pull/merge request into a local branch and switches to
+// it. The request number is taken from prRef; the remote refspec is resolved
+// against repoURL's hosting provider, falling back to the other known
+// conventions when the detected one has no such ref (e.g. self-hosted GitLab on
+// a custom domain that URL detection can't recognize).
+func (r *Repo) CheckoutPR(ctx context.Context, repoURL, prRef string) error {
+	number := prNumber(prRef)
+	if number == "" {
+		return fmt.Errorf("not a pull/merge request reference: %q", prRef)
 	}
-	return r.Switch(ctx, prBranch)
+
+	var lastErr error
+	for _, host := range prCandidates(repoURL) {
+		refspec := host.Refspec(number)
+		prBranch := host.BranchName(number)
+		log.Debugf("fetching %s request: %s", host.Name, refspec)
+
+		if err := r.Fetch(ctx, refspec+":"+prBranch); err != nil {
+			lastErr = err
+			continue
+		}
+		return r.Switch(ctx, prBranch)
+	}
+	return lastErr
 }
 
 // Reset moves HEAD to commit using the given mode.
@@ -140,7 +155,7 @@ func (r *Repo) CloneFromInfo(
 
 	switch {
 	case gitInfo.PR != "":
-		if err := r.CheckoutPR(ctx, gitInfo.PR); err != nil {
+		if err := r.CheckoutPR(ctx, gitInfo.Repository, gitInfo.PR); err != nil {
 			return err
 		}
 	case gitInfo.Commit != "":

@@ -34,7 +34,19 @@ export interface WorkspaceSourceResult {
   prebuildRepository?: string
 }
 
-function refSuffix(refType: GitRefType, refValue: string): string {
+// GitLab exposes merge requests at merge-requests/N/head; every other host
+// uses pull/N/head. Detection is best-effort — the CLI fetch falls back to the
+// other convention when the detected one has no such ref.
+function prRefspec(repoUrl: string, number: string): string {
+  const segment = /gitlab/i.test(repoUrl) ? "merge-requests" : "pull"
+  return `@${segment}/${number}/head`
+}
+
+function refSuffix(
+  refType: GitRefType,
+  refValue: string,
+  repoUrl: string,
+): string {
   const value = refValue.trim()
   if (!value) return ""
   switch (refType) {
@@ -43,7 +55,7 @@ function refSuffix(refType: GitRefType, refValue: string): string {
     case "commit":
       return `@sha256:${value}`
     case "pr":
-      return `@pull/${value}/head`
+      return prRefspec(repoUrl, value)
   }
 }
 
@@ -72,7 +84,8 @@ export function buildWorkspaceSource(
     }
   }
 
-  const source = `${form.repoUrl.trim()}${refSuffix(form.refType, form.refValue)}${subPathSuffix(form.subPath)}`
+  const repoUrl = form.repoUrl.trim()
+  const source = `${repoUrl}${refSuffix(form.refType, form.refValue, repoUrl)}${subPathSuffix(form.subPath)}`
 
   return {
     source,

@@ -152,6 +152,14 @@ var normalizeRepositoryCases = []testCaseNormalizeRepository{
 		expectedSubpath:     "",
 	},
 	{
+		in:                  "git@gitlab.com:h3upperbounds/data/data-team.git@merge-requests/7125/head",
+		expectedRepo:        "git@gitlab.com:h3upperbounds/data/data-team.git",
+		expectedPRReference: "merge-requests/7125/head",
+		expectedBranch:      "",
+		expectedCommit:      "",
+		expectedSubpath:     "",
+	},
+	{
 		in:                  "github.com/devsy-org/devsy-without-protocol-with-slash.git@subpath:/test/path",
 		expectedRepo:        repoDevsyNoProtoSlash,
 		expectedPRReference: "",
@@ -259,6 +267,10 @@ func TestGetBranchNameForPRReference(t *testing.T) {
 		{
 			in:             testPRRef,
 			expectedBranch: "PR996",
+		},
+		{
+			in:             "merge-requests/7125/head",
+			expectedBranch: "MR7125",
 		},
 		{
 			in:             "pull/abc/head",
