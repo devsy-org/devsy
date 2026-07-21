@@ -33,8 +33,7 @@ import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-
-// ── Theme ───────────────────────────────────────────────────────────
+import { trackEngagement } from "$lib/analytics.js"
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "light", label: "Light" },
@@ -47,15 +46,11 @@ function setTheme(value: Theme) {
   applyTheme(value)
 }
 
-// ── Color Scheme ────────────────────────────────────────────────────
-
 const COLOR_SCHEMES: { value: ColorScheme; label: string; swatch: string }[] = [
   { value: "default", label: "White", swatch: "bg-foreground" },
   { value: "emerald", label: "Emerald", swatch: "bg-emerald-600" },
   { value: "purple", label: "Purple", swatch: "bg-purple-600" },
 ]
-
-// ── UI Scale ────────────────────────────────────────────────────────
 
 const UI_SCALES: { value: UIScale; label: string }[] = [
   { value: "xs", label: "Extra Small" },
@@ -69,8 +64,6 @@ function setUIScale(value: UIScale) {
   uiScale.set(value)
   applyUIScale(value)
 }
-
-// ── IDE Options ─────────────────────────────────────────────────────
 
 const IDE_OPTIONS = [
   { value: "none", label: "None" },
@@ -100,8 +93,6 @@ const IDE_OPTIONS = [
   { value: "rstudio", label: "RStudio Server" },
 ]
 
-// ── State ───────────────────────────────────────────────────────────
-
 let activeTab = $state("general")
 let loading = $state(true)
 let saving = $state(false)
@@ -116,7 +107,6 @@ let filteredIdes = $derived(
     : IDE_OPTIONS,
 )
 
-// Local-only options (not stored in Devsy CLI)
 let local = $state<LocalOptions>({
   debugFlag: false,
   sshKeyPath: "",
@@ -128,16 +118,12 @@ let local = $state<LocalOptions>({
   experimentalMultiDevcontainer: false,
 })
 
-// ── Keyboard shortcuts ──────────────────────────────────────────────
-
 const shortcuts = [
   { keys: "Cmd/Ctrl + K", action: "Open command palette" },
   { keys: "Cmd/Ctrl + N", action: "New workspace" },
   { keys: "Cmd/Ctrl + 1-7", action: "Navigate sections" },
   { keys: "Escape", action: "Close dialogs and palette" },
 ]
-
-// ── Load / Save ─────────────────────────────────────────────────────
 
 onMount(() => {
   local = loadLocalOptions()
@@ -148,6 +134,7 @@ onMount(() => {
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
   saveLocalOption(key, value)
   ;(local as unknown as Record<string, string | boolean>)[key] = value
+  trackEngagement("settings_changed", { setting: key })
 }
 
 function toggleLocal(key: keyof LocalOptions) {
@@ -167,7 +154,6 @@ function toggleLocal(key: keyof LocalOptions) {
       <Tabs.Trigger value="experimental">Experimental</Tabs.Trigger>
     </Tabs.List>
 
-    <!-- ═══ GENERAL ═══ -->
     <Tabs.Content value="general" class="w-full">
       {#if loading}
         <div class="mt-4 space-y-6">
@@ -278,7 +264,6 @@ function toggleLocal(key: keyof LocalOptions) {
       {/if}
     </Tabs.Content>
 
-    <!-- ═══ APPEARANCE ═══ -->
     <Tabs.Content value="appearance" class="w-full">
       <div class="mt-4 space-y-6">
         <div class="space-y-2">
@@ -343,7 +328,6 @@ function toggleLocal(key: keyof LocalOptions) {
       </div>
     </Tabs.Content>
 
-    <!-- ═══ EXPERIMENTAL ═══ -->
     <Tabs.Content value="experimental" class="w-full">
       <div class="mt-4 space-y-6">
         <div class="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">

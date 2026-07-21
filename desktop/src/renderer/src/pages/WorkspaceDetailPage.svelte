@@ -46,9 +46,14 @@ import {
   workspaceLogDelete,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
-import { loadLocalOptions, getWorkspaceFolder, setWorkspaceFolder } from "$lib/stores/settings.js"
+import {
+  loadLocalOptions,
+  getWorkspaceFolder,
+  setWorkspaceFolder,
+} from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { trackEngagement } from "$lib/analytics.js"
 import type { LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
@@ -184,7 +189,8 @@ onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
-        const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
+        const incoming =
+          progress.lines ?? (progress.message ? [progress.message] : [])
         if (incoming.length > 0) {
           pendingLines.push(...incoming)
           if (flushHandle === null) {
@@ -298,6 +304,7 @@ async function handleConnect() {
       type: "ssh",
       workspaceId: id,
     })
+    trackEngagement("terminal_open", { type: "ssh" })
     activeTab = "terminal"
     toasts.success(`Connected to ${id}`)
   } catch (err) {
@@ -368,6 +375,7 @@ async function handleStart() {
 async function handleOpenIde() {
   const ide = currentIde
   const folder = customFolder || undefined
+  trackEngagement("ide_open", { ide })
   startStreamingOp("Open IDE")
   try {
     commandId = await workspaceUp({

@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -68,10 +69,19 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 
 	ctx := cobraCmd.Context()
 	if len(args) <= 1 {
-		return cmd.deleteSingle(ctx, devsyConfig, args)
+		err = cmd.deleteSingle(ctx, devsyConfig, args)
+	} else {
+		err = cmd.deleteMultiple(ctx, devsyConfig, args)
 	}
 
-	return cmd.deleteMultiple(ctx, devsyConfig, args)
+	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
+	if countErr != nil {
+		log.Debugf("skipping workspace count gauge: %v", countErr)
+	} else {
+		telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
+	}
+
+	return err
 }
 
 func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {

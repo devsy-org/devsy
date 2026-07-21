@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const electronUpdaterMock = {
   autoUpdater: {
@@ -76,37 +76,56 @@ describe("updater", () => {
       "update-status",
       expect.objectContaining({
         state: "downloading",
-        progress: { percent: 42, bytesPerSecond: 1000, transferred: 100, total: 200 },
+        progress: {
+          percent: 42,
+          bytesPerSecond: 1000,
+          transferred: 100,
+          total: 200,
+        },
       }),
     )
   })
 
   it("respects autoDownload setting on update-available", async () => {
-    const { initAutoUpdater, setAutoDownloadEnabled } = await import("../updater.js")
+    const { initAutoUpdater, setAutoDownloadEnabled } = await import(
+      "../updater.js"
+    )
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
     setAutoDownloadEnabled(false)
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
-    expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "9.9.9",
+    })
+    expect(
+      electronUpdaterMock.autoUpdater.downloadUpdate,
+    ).not.toHaveBeenCalled()
   })
 
   it("sets app.isQuitting before quitAndInstall so the window can close", async () => {
     const electron = await import("electron")
-    ;(electron.app as { isQuitting: boolean }).isQuitting = false
+    ;(
+      electron.app as typeof electron.app & { isQuitting?: boolean }
+    ).isQuitting = false
     let quittingWhenInstalled: boolean | undefined
     electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementation(() => {
-      quittingWhenInstalled = (electron.app as { isQuitting: boolean }).isQuitting
+      quittingWhenInstalled = (
+        electron.app as typeof electron.app & { isQuitting?: boolean }
+      ).isQuitting
     })
     const { installUpdate } = await import("../updater.js")
     await installUpdate()
     expect(quittingWhenInstalled).toBe(true)
-    expect(electronUpdaterMock.autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1)
+    expect(
+      electronUpdaterMock.autoUpdater.quitAndInstall,
+    ).toHaveBeenCalledTimes(1)
   })
 
   it("swallows a channel-missing rejection from check_for_updates", async () => {
     electronUpdaterMock.autoUpdater.checkForUpdates.mockRejectedValueOnce(
-      new Error('Cannot find channel "latest-mac.yml" update info: HttpError: 404'),
+      new Error(
+        'Cannot find channel "latest-mac.yml" update info: HttpError: 404',
+      ),
     )
     const { checkForUpdates } = await import("../updater.js")
     await expect(checkForUpdates()).resolves.toBeUndefined()
@@ -126,8 +145,12 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
-    electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "9.9.9" })
-    expect((electron.dialog.showMessageBox as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
+    electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+      version: "9.9.9",
+    })
+    expect(
+      electron.dialog.showMessageBox as ReturnType<typeof vi.fn>,
+    ).not.toHaveBeenCalled()
   })
 
   it("checks at boot and again on the recheck interval", async () => {
@@ -138,16 +161,24 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).not.toHaveBeenCalled()
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).toHaveBeenCalledTimes(1)
 
       await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).toHaveBeenCalledTimes(2)
 
       stopAutoUpdater()
       await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
@@ -164,7 +195,9 @@ describe("updater", () => {
       // Quit before the 10s boot delay elapses.
       stopAutoUpdater()
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
@@ -179,11 +212,17 @@ describe("updater", () => {
       await initAutoUpdater(() => win)
 
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).toHaveBeenCalledTimes(1)
 
-      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "9.9.9" })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+        version: "9.9.9",
+      })
       await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
-      expect(electronUpdaterMock.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      expect(
+        electronUpdaterMock.autoUpdater.checkForUpdates,
+      ).toHaveBeenCalledTimes(1)
 
       stopAutoUpdater()
     } finally {

@@ -6,10 +6,7 @@ import { providerVersions } from "$lib/stores/providerVersions.js"
 import { initializingProviders } from "$lib/stores/providers.js"
 import type { Provider } from "$lib/types/index.js"
 
-let {
-  provider,
-  onopen,
-}: { provider: Provider; onopen?: () => void } = $props()
+let { provider, onopen }: { provider: Provider; onopen?: () => void } = $props()
 
 let isInitializing = $derived($initializingProviders.has(provider.name))
 
@@ -30,7 +27,7 @@ function sourceDisplay(p: Provider): string {
     <span
       class="absolute top-3 right-3 size-2 rounded-full bg-amber-500"
       title="Update available: {$providerVersions.updates[provider.name]?.latest}"
-    />
+    ></span>
   {/if}
   <div class="flex items-start justify-between gap-3">
     <div class="flex items-center gap-3 min-w-0">

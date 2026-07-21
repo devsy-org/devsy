@@ -20,6 +20,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -93,7 +94,20 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 		return fmt.Errorf("extra devcontainer file is only supported with local provider")
 	}
 	telemetry.FromContext(ctx).SetClient(client)
-	return cmd.Run(ctx, devsyConfig, client, args)
+	if err := cmd.Run(ctx, devsyConfig, client, args); err != nil {
+		return err
+	}
+	recordWorkspaceGauge(ctx, devsyConfig)
+	return nil
+}
+
+func recordWorkspaceGauge(ctx context.Context, devsyConfig *config.Config) {
+	count, err := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
+	if err != nil {
+		log.Debugf("skipping workspace count gauge: %v", err)
+		return
+	}
+	telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
 }
 
 func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
@@ -298,7 +312,11 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	telemetry.FromContext(cobraCmd.Context()).SetClient(client)
-	return cmd.Run(ctx, devsyConfig, client, args)
+	if err := cmd.Run(ctx, devsyConfig, client, args); err != nil {
+		return err
+	}
+	recordWorkspaceGauge(ctx, devsyConfig)
+	return nil
 }
 
 // workspaceContext holds the result of workspace preparation.

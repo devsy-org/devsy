@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
-import { trackEvent } from "./analytics.js"
+import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
@@ -104,7 +104,11 @@ function createLogSink(
 
   function post(
     done: boolean,
-    extra?: { message?: string; level?: "info" | "warn" | "error"; cliError?: CLIError },
+    extra?: {
+      message?: string
+      level?: "info" | "warn" | "error"
+      cliError?: CLIError
+    },
   ): void {
     if (timer) {
       clearTimeout(timer)
@@ -144,7 +148,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   runInitialProviderUpdateCheck: () => void
 } {
   const { cli, state, logStore, pty } = deps
-  const tunnelProcesses = new Map<string, import("node:child_process").ChildProcess>()
+  const tunnelProcesses = new Map<
+    string,
+    import("node:child_process").ChildProcess
+  >()
 
   /**
    * Terminate every desktop-spawned process tied to a workspace and wait for
@@ -179,9 +186,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       providers.map(async (p) => {
         const version = typeof p.version === "string" ? p.version : ""
         try {
-          const versions = await cli.run<Array<{ tag: string; current?: boolean }>>(
-            ["provider", "versions", p.name, "--json", "--no-cache"],
-          )
+          const versions = await cli.run<
+            Array<{ tag: string; current?: boolean }>
+          >(["provider", "versions", p.name, "--json", "--no-cache"])
           const list = versions ?? []
           const current = list.find((v) => v.current)?.tag ?? version
           const latest = list[0]?.tag ?? ""
@@ -235,19 +242,26 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_rename",
-    async (
-      _event,
-      args: { workspaceId: string; newWorkspaceId: string },
-    ) => {
-      trackEvent("workspace_rename", { workspaceId: args.workspaceId })
-      await cli.runRaw(["workspace", "rename", args.workspaceId, args.newWorkspaceId])
+    async (_event, args: { workspaceId: string; newWorkspaceId: string }) => {
+      trackEvent("workspace_rename", {
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
+      await cli.runRaw([
+        "workspace",
+        "rename",
+        args.workspaceId,
+        args.newWorkspaceId,
+      ])
     },
   )
 
   ipcMain.handle(
     "workspace_set_ide",
     async (_event, args: { workspaceId: string; ide: string }) => {
-      trackEvent("workspace_set_ide", { ide: args.ide })
+      trackEvent("workspace_set_ide", {
+        ide: args.ide,
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
       await cli.runRaw(["workspace", "set-ide", args.workspaceId, args.ide])
     },
   )
@@ -383,7 +397,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "provider_set_version",
     async (_event, args: { name: string; tag: string }) => {
-      await cli.runRaw(["provider", "set-source", args.name, "--version", args.tag])
+      await cli.runRaw([
+        "provider",
+        "set-source",
+        args.name,
+        "--version",
+        args.tag,
+      ])
     },
   )
 
@@ -523,17 +543,20 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return cli.runRaw(["--version"])
   })
 
-  ipcMain.handle(
-    "devsy_upgrade",
-    async (_event, args: { version: string }) => {
-      return cli.runRaw(["feature", "upgrade", "--version", args.version])
-    },
-  )
+  ipcMain.handle("devsy_upgrade", async (_event, args: { version: string }) => {
+    return cli.runRaw(["feature", "upgrade", "--version", args.version])
+  })
 
   ipcMain.handle(
     "devsy_upgrade_dry_run",
     async (_event, args: { version: string }) => {
-      return cli.runRaw(["feature", "upgrade", "--version", args.version, "--dry-run"])
+      return cli.runRaw([
+        "feature",
+        "upgrade",
+        "--version",
+        args.version,
+        "--dry-run",
+      ])
     },
   )
 
@@ -587,14 +610,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         platform?: string
       },
     ) => {
-      trackEvent("workspace_create", { provider: args.provider })
+      trackEvent("workspace_create", {
+        provider: args.provider,
+        workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
+      })
       const cliArgs = ["workspace", "up", args.source]
       if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
       if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
       if (args.debug) cliArgs.push("--debug")
-      if (args.workspaceFolder) cliArgs.push("--workspace-folder", args.workspaceFolder)
+      if (args.workspaceFolder)
+        cliArgs.push("--workspace-folder", args.workspaceFolder)
       if (args.devcontainerPath)
         cliArgs.push("--devcontainer-path", args.devcontainerPath)
       if (args.prebuildRepository)
@@ -654,10 +681,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "workspace_stop",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
-      trackEvent("workspace_stop")
+      trackEvent("workspace_stop", {
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
       await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
+      const logPath = logStore.createLogFile(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
       const sink = createLogSink(
         deps.getMainWindow,
         cmdId,
@@ -688,7 +720,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "workspace_delete",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
-      trackEvent("workspace_delete")
+      trackEvent("workspace_delete", {
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
       // Replaces the old `devsy down` command which the CLI overhaul removed:
       // before invoking delete, terminate every desktop-spawned child tied to
       // this workspace and wait for them to actually exit. Otherwise late
@@ -696,7 +730,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       // an ENOENT crash in the main process.
       await quiesceWorkspace(args.workspaceId)
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
+      const logPath = logStore.createLogFile(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
       const sink = createLogSink(
         deps.getMainWindow,
         cmdId,
@@ -728,9 +765,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "workspace_rebuild",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
-      trackEvent("workspace_rebuild")
+      trackEvent("workspace_rebuild", {
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
+      const logPath = logStore.createLogFile(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
       const sink = createLogSink(
         deps.getMainWindow,
         cmdId,
@@ -761,9 +803,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "workspace_reset",
     async (_event, args: { workspaceId: string; debug?: boolean }) => {
-      trackEvent("workspace_reset")
+      trackEvent("workspace_reset", {
+        workspace_ref: hashWorkspaceRef(args.workspaceId),
+      })
       const cmdId = crypto.randomUUID()
-      const logPath = logStore.createLogFile(state.workspaceContext(args.workspaceId), args.workspaceId)
+      const logPath = logStore.createLogFile(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
       const sink = createLogSink(
         deps.getMainWindow,
         cmdId,

@@ -26,6 +26,7 @@ import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { trackEngagement } from "$lib/analytics.js"
 import { onMount } from "svelte"
 
 let activeSessionId: string | undefined = $state()
@@ -59,6 +60,7 @@ async function createShell() {
     const id = await terminalCreate(80, 24)
     const count = $terminals.filter((t) => t.type === "shell").length + 1
     addTerminal({ id, label: `Shell ${count}`, type: "shell" })
+    trackEngagement("terminal_open", { type: "shell" })
     activeSessionId = id
   } catch (e) {
     console.error("Failed to create terminal:", e)
@@ -69,6 +71,7 @@ async function createSsh(workspaceId: string) {
   try {
     const id = await terminalCreateSsh(workspaceId, 80, 24)
     addTerminal({ id, label: `SSH: ${workspaceId}`, type: "ssh", workspaceId })
+    trackEngagement("terminal_open", { type: "ssh" })
     activeSessionId = id
     toasts.success(`Connected to ${workspaceId}`)
   } catch (e) {

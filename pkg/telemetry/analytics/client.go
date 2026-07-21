@@ -21,7 +21,7 @@ var Dry = false
 
 func NewClient() Client {
 	if posthogAPIKey == "" {
-		log.Debugf("PostHog API key not configured; analytics disabled")
+		log.Debugf("analytics disabled: API key not configured")
 		return NewNoopClient()
 	}
 
@@ -29,7 +29,7 @@ func NewClient() Client {
 		Endpoint: posthogEndpoint,
 	})
 	if err != nil {
-		log.Debugf("failed to create PostHog client: %v", err)
+		log.Debugf("failed to initialize analytics client: %v", err)
 		return NewNoopClient()
 	}
 
@@ -47,8 +47,8 @@ func (c *client) RecordEvent(event Event) {
 		return
 	}
 
-	machineID, _ := eventData["machine_id"].(string)
-	eventType, _ := eventData["type"].(string)
+	machineID, _ := eventData[KeyMachineID].(string)
+	eventType, _ := eventData[KeyType].(string)
 	properties := buildProperties(event)
 
 	if Dry {
@@ -69,22 +69,27 @@ func (c *client) RecordEvent(event Event) {
 		Event:      eventType,
 		Properties: properties,
 	}); err != nil {
-		log.Debugf("error enqueuing PostHog event: %v", err)
+		log.Debugf("error recording analytics event: %v", err)
 	}
+}
+
+// Exclude reserved keys for event routing/identity.
+func isReservedKey(k string) bool {
+	return k == KeyType || k == KeyMachineID || k == KeyTimestamp
 }
 
 func buildProperties(event Event) posthog.Properties {
 	properties := posthog.NewProperties()
 
 	for k, v := range event["event"] {
-		if k == "machine_id" || k == "timestamp" {
+		if isReservedKey(k) {
 			continue
 		}
 		properties.Set(k, v)
 	}
 
 	for k, v := range event["user"] {
-		if k == "machine_id" || k == "timestamp" {
+		if isReservedKey(k) {
 			continue
 		}
 		properties.Set(k, v)
@@ -97,17 +102,17 @@ func (c *client) Flush() {
 	if Dry {
 		return
 	}
-	// posthog-go's Close drains the queue but can only be called once.
+	// The underlying client's Close drains the queue but can only be called once.
 	c.closeOnce.Do(func() {
 		done := make(chan error, 1)
 		go func() { done <- c.phClient.Close() }()
 		select {
 		case err := <-done:
 			if err != nil {
-				log.Debugf("error flushing PostHog client: %v", err)
+				log.Debugf("error flushing analytics client: %v", err)
 			}
 		case <-time.After(flushTimeout):
-			log.Debugf("PostHog flush timed out after %s; dropping queued events", flushTimeout)
+			log.Debugf("analytics flush timed out after %s; dropping queued events", flushTimeout)
 		}
 	})
 }

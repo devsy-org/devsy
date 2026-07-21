@@ -2,7 +2,7 @@ package telemetry
 
 import (
 	"context"
-	"encoding/json"
+	"maps"
 	"os"
 	"runtime"
 	"time"
@@ -38,9 +38,8 @@ const (
 
 type CLICollector interface {
 	RecordCLI(err error)
+	RecordWorkspaceGauge(count int)
 	SetClient(client devsyclient.BaseWorkspaceClient)
-
-	// Flush makes sure all events are sent to the backend
 	Flush()
 }
 
@@ -162,21 +161,47 @@ func (d *cliCollector) RecordCLI(err error) {
 		eventType = config.BinaryName + "_cli_runner"
 	}
 
-	// build the event and record
-	eventPropertiesRaw, _ := json.Marshal(eventProperties)
-	userPropertiesRaw, _ := json.Marshal(userProperties)
+	d.recordEvent(eventType, eventProperties, userProperties)
+}
+
+func (d *cliCollector) RecordWorkspaceGauge(count int) {
+	timezone, _ := time.Now().Zone()
+	d.recordEvent(
+		config.BinaryName+"_workspace_count",
+		map[string]any{
+			"count":   count,
+			"version": version.GetVersion(),
+			"desktop": os.Getenv(config.EnvUI) == config.BoolTrue,
+		},
+		map[string]any{
+			"os_name":  runtime.GOOS,
+			"os_arch":  runtime.GOARCH,
+			"timezone": timezone,
+		},
+	)
+}
+
+func (d *cliCollector) recordEvent(
+	eventType string,
+	eventProperties, userProperties map[string]any,
+) {
+	machineID := GetMachineID()
+	timestamp := time.Now().Unix()
+
+	eventPayload := map[string]any{}
+	maps.Copy(eventPayload, eventProperties)
+	eventPayload[analytics.KeyType] = eventType
+	eventPayload[analytics.KeyMachineID] = machineID
+	eventPayload[analytics.KeyTimestamp] = timestamp
+
+	userPayload := map[string]any{}
+	maps.Copy(userPayload, userProperties)
+	userPayload[analytics.KeyMachineID] = machineID
+	userPayload[analytics.KeyTimestamp] = timestamp
+
 	d.analyticsClient.RecordEvent(analytics.Event{
-		"event": {
-			"type":       eventType,
-			"machine_id": GetMachineID(),
-			"properties": string(eventPropertiesRaw),
-			"timestamp":  time.Now().Unix(),
-		},
-		"user": {
-			"machine_id": GetMachineID(),
-			"properties": string(userPropertiesRaw),
-			"timestamp":  time.Now().Unix(),
-		},
+		"event": eventPayload,
+		"user":  userPayload,
 	})
 }
 

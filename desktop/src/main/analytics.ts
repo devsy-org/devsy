@@ -18,12 +18,25 @@ export function getAnalyticsDistinctId(): string {
   return distinctId || getDistinctId()
 }
 
+export function hashWorkspaceRef(workspaceId: string): string {
+  if (!client) return ""
+  return createHmac("sha256", getAnalyticsDistinctId())
+    .update(workspaceId)
+    .digest("hex")
+    .slice(0, 16)
+}
+
+// machineIdSync spawns a subprocess; cache so it runs at most once per process.
+let cachedDistinctId = ""
+
 function getDistinctId(): string {
+  if (cachedDistinctId) return cachedDistinctId
   const id = machineIdSync()
   const home = homedir()
   const mac = createHmac("sha256", id)
   mac.update(home)
-  return mac.digest("hex")
+  cachedDistinctId = mac.digest("hex")
+  return cachedDistinctId
 }
 
 function isTelemetryDisabled(): boolean {
@@ -33,7 +46,7 @@ function isTelemetryDisabled(): boolean {
 export function initAnalytics(): void {
   if (isTelemetryDisabled()) return
   if (!DEVSY_POSTHOG_API_KEY) {
-    console.warn("[telemetry] PostHog API key not configured; analytics disabled")
+    console.warn("[telemetry] analytics disabled: API key not configured")
     return
   }
 
