@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
@@ -83,6 +84,10 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 	if cmd.Provider == "" && devsyConfig.Current().DefaultProvider == "" {
 		return fmt.Errorf("no provider specified and no default provider configured for context %q",
 			cmd.Context)
+	}
+
+	if _, err := devcontainer.ParseSourceSpec(cmd.DevContainerSource); err != nil {
+		return err
 	}
 
 	args := []string{opts.Source}

@@ -58,8 +58,13 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 
 func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 	upCmd.Flags().
+		StringVar(&cmd.DevContainerSource, "devcontainer", "",
+			"Override where the devcontainer config comes from, ignoring the project's: "+
+				`"none" (ignore it; use --devcontainer-image or language detection) or `+
+				`"image:<ref>" (use only that image)`)
+	upCmd.Flags().
 		StringVar(&cmd.DevContainerImage, "devcontainer-image", "",
-			"The container image to use, this will override the devcontainer.json value in the project")
+			"The container image to use, this overrides the image in the resolved devcontainer config")
 	upCmd.Flags().
 		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
 	upCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
