@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/ci"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
@@ -340,5 +341,8 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	templateCmd := template.NewTemplateCmd(globalFlags)
 	templateCmd.GroupID = groupDevcontainer
 	rootCmd.AddCommand(templateCmd)
+	ciCmd := ci.NewCICmd(globalFlags)
+	ciCmd.GroupID = groupDevcontainer
+	rootCmd.AddCommand(ciCmd)
 	rootCmd.AddCommand(cmdinternal.NewInternalCmd(globalFlags))
 }

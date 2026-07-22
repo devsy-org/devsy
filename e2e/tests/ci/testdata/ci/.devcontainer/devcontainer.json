@@ -1,0 +1,4 @@
+{
+  "name": "CI Test",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu"
+}

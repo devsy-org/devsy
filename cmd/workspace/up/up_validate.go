@@ -49,25 +49,7 @@ func (cmd *UpCmd) validate() error {
 }
 
 func (cmd *UpCmd) resolveDevContainerSource() error {
-	spec, err := devcontainer.ParseSourceSpec(cmd.DevContainerSource)
-	if err != nil {
-		return err
-	}
-	if spec == nil {
-		return nil
-	}
-	switch spec.Kind {
-	case devcontainer.SourceID:
-		cmd.DevContainerID = spec.ID
-		cmd.DevContainerSource = ""
-	case devcontainer.SourcePath:
-		if !filepath.IsAbs(spec.Path) {
-			cmd.DevContainerPath = spec.Path
-			cmd.DevContainerSource = ""
-		}
-	case devcontainer.SourceNone, devcontainer.SourceImage:
-	}
-	return nil
+	return devcontainer.ResolveSourceSpec(&cmd.CLIOptions)
 }
 
 func (cmd *UpCmd) resolveExtraDevContainerPath() error {

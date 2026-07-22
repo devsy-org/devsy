@@ -138,7 +138,7 @@ func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
 	}
 
 	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
-	sshConfigPath, cleanup, err := newTempSSHConfig()
+	sshConfigPath, cleanup, err := NewTempSSHConfig()
 	if err != nil {
 		return err
 	}
@@ -226,13 +226,17 @@ func (cmd *BuildCmd) cleanupTempWorkspace(
 	}
 }
 
-// newTempSSHConfig creates a temporary ssh config file and returns its path and a cleanup func.
-func newTempSSHConfig() (string, func(), error) {
+// NewTempSSHConfig creates a temporary ssh config file and returns its path and a cleanup func.
+func NewTempSSHConfig() (string, func(), error) {
 	f, err := os.CreateTemp("", config.BinaryName+"ssh.config")
 	if err != nil {
 		return "", nil, err
 	}
 	path := f.Name()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", nil, err
+	}
 	return path, func() { _ = os.Remove(path) }, nil
 }
 

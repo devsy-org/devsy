@@ -1,0 +1,146 @@
+---
+title: Continuous Integration
+sidebar_label: Continuous Integration
+---
+
+## Continuous Integration
+
+`devsy ci` builds an ephemeral devcontainer, runs a command inside it, and tears
+the workspace down afterwards. It lets you verify — on every push or pull
+request — that your `devcontainer.json` still builds and that your project
+behaves correctly inside it.
+
+Because the logic lives in the Devsy CLI, the same command works on any CI
+system (GitHub Actions, GitLab CI, Jenkins, and others) — you install the binary
+and call `devsy ci`.
+
+### How it works
+
+1. Resolves an ephemeral workspace from the current directory (or a given
+   source).
+2. Builds and starts the devcontainer (equivalent to `devsy up`, without
+   launching an IDE or touching your SSH config).
+3. Runs the given command inside the running container.
+4. Deletes the workspace — always, even when the command fails — unless
+   `--keep` is passed.
+
+A non-zero exit from the command propagates as the exit code of `devsy ci`, so a
+failing test or build fails the CI job.
+
+### Usage
+
+```sh
+devsy ci [flags] [workspace-path|workspace-name] -- <cmd> [args...]
+```
+
+Run the test suite inside the devcontainer for the current project:
+
+```sh
+devsy ci -- make test
+```
+
+Target a specific project folder and pass environment variables:
+
+```sh
+devsy ci ./service -- npm test
+devsy ci --remote-env CI=true --remote-env NODE_ENV=test -- npm test
+```
+
+Select a specific devcontainer config (e.g. a named `.devcontainer/<name>` profile):
+
+```sh
+devsy ci --devcontainer id:ci -- make test
+```
+
+Keep the workspace around for debugging when the command fails:
+
+```sh
+devsy ci --keep -- ./run-integration-tests.sh
+```
+
+### Common flags
+
+| Flag | Description |
+| --- | --- |
+| `--run-cmd` | Shell command run inside the container via `sh -c` (alternative to an explicit argv after `--`). |
+| `--remote-env KEY=VALUE` | Set an environment variable in the container at run time. Repeatable. |
+| `--keep` | Keep the workspace instead of tearing it down. |
+| `--devcontainer` | Select the devcontainer config source: `none`, `image:<ref>`, `id:<name>`, or a path to a `devcontainer.json`. |
+| `--no-cache` | Build without using the cache. |
+| `--cache-from` | Reuse a pre-built image as a build cache source. Repeatable. |
+| `--platform` | Run the container under a specific platform via emulation (e.g. `linux/amd64`). |
+| `--workspace-env KEY=VALUE` | Env variables available at build and lifecycle time (not just at run time). Repeatable. |
+| `--workspace-env-file` | File(s) of `KEY=VALUE` build/lifecycle env variables. |
+| `--init-env KEY=VALUE` | Env variables injected during workspace initialization. Repeatable. |
+| `--secrets-file` | Dotenv-style file of secrets injected into lifecycle commands. |
+| `--feature-secrets-file` | JSON file of secret values for features. |
+
+### Pre-building and pushing images
+
+`devsy ci` focuses on running a command. To pre-build and publish a devcontainer
+image for reuse as a build cache, use `devsy build`:
+
+```sh
+devsy build --repository ghcr.io/my-org/my-devcontainer --tag latest --push
+```
+
+Downstream CI jobs can then reference that image via `--cache-from` to speed up
+builds.
+
+### GitHub Actions
+
+Install the CLI, configure the docker provider, then run `devsy ci`:
+
+```yaml
+name: Devcontainer CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  devcontainer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Devsy
+        run: |
+          curl -fsSL https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64 -o /usr/local/bin/devsy
+          chmod +x /usr/local/bin/devsy
+      - name: Run CI in devcontainer
+        run: |
+          devsy provider add docker && devsy provider use docker
+          devsy ci -- make test
+```
+
+### GitLab CI
+
+```yaml
+devcontainer:
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+  script:
+    - apk add --no-cache curl bash
+    - curl -fsSL https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64 -o /usr/local/bin/devsy
+    - chmod +x /usr/local/bin/devsy
+    - devsy provider add docker && devsy provider use docker
+    - devsy ci -- make test
+```
+
+The same approach works for Jenkins and any other runner with Docker access.
+
+For reproducible CI, pin a specific release instead of `latest` — replace
+`releases/latest/download` with `releases/download/<version>` (e.g. `v1.2.3`).
+
+### Limitations
+
+- **Local providers only.** `devsy ci` runs against local providers (docker,
+  podman). Proxy/Pro providers are not supported.
+- **No built-in timeout.** A hung build or command relies on your CI system's
+  job timeout to be interrupted; `devsy ci` tears the workspace down when it
+  receives the resulting cancellation signal.
+- **`--platform` is run-time emulation,** not a multi-architecture build target.
+  To build and publish multi-arch images, use `devsy build --platform`.

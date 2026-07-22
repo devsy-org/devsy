@@ -2,9 +2,11 @@ package devcontainer
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 type SourceSpec struct {
@@ -60,4 +62,36 @@ func ParseSourceSpec(value string) (*SourceSpec, error) {
 	default:
 		return &SourceSpec{Kind: SourcePath, Path: value}, nil
 	}
+}
+
+// ResolveSourceSpec parses opts.DevContainerSource (the --devcontainer selector)
+// and applies it to opts: an "id:" source and an in-repo relative path are
+// consumed into DevContainerID / DevContainerPath and the source string is
+// cleared. "none", "image:<ref>", and an external (absolute) path are left in
+// DevContainerSource so the runner can handle them (the external path is
+// imported into the workspace so its sibling assets resolve). A no-op when no
+// source is set.
+func ResolveSourceSpec(opts *provider.CLIOptions) error {
+	spec, err := ParseSourceSpec(opts.DevContainerSource)
+	if err != nil {
+		return err
+	}
+	if spec == nil {
+		return nil
+	}
+	switch spec.Kind {
+	case SourceID:
+		opts.DevContainerID = spec.ID
+		opts.DevContainerSource = ""
+	case SourcePath:
+		// An in-repo relative path is just a config path; an external absolute
+		// path is left in the source so the runner imports it (bringing its
+		// sibling assets — Dockerfile, features — into the workspace).
+		if !filepath.IsAbs(spec.Path) {
+			opts.DevContainerPath = spec.Path
+			opts.DevContainerSource = ""
+		}
+	case SourceNone, SourceImage:
+	}
+	return nil
 }

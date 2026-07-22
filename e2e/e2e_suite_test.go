@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
+	_ "github.com/devsy-org/devsy/e2e/tests/ci"
 	_ "github.com/devsy-org/devsy/e2e/tests/configapply"
 	_ "github.com/devsy-org/devsy/e2e/tests/configread"
 	_ "github.com/devsy-org/devsy/e2e/tests/context"

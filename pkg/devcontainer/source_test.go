@@ -3,10 +3,16 @@ package devcontainer
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/provider"
 	"gotest.tools/assert"
 )
 
-const testImage = "python"
+const (
+	testImage  = "python"
+	testID     = "default"
+	testPath   = ".devcontainer/custom.json"
+	testImgSrc = "image:python"
+)
 
 func TestParseSourceSpec(t *testing.T) {
 	cases := []struct {
@@ -28,12 +34,12 @@ func TestParseSourceSpec(t *testing.T) {
 			wantImage: "mcr.microsoft.com/devcontainers/python:3",
 		},
 		{in: "image: python ", wantKind: SourceImage, wantImage: "python"},
-		{in: "id:default", wantKind: SourceID, wantID: "default"},
+		{in: sourceIDPrefix + testID, wantKind: SourceID, wantID: testID},
 		{in: "id: claude ", wantKind: SourceID, wantID: "claude"},
 		{
-			in:       ".devcontainer/custom.json",
+			in:       testPath,
 			wantKind: SourcePath,
-			wantPath: ".devcontainer/custom.json",
+			wantPath: testPath,
 		},
 		{in: "/abs/path.json", wantKind: SourcePath, wantPath: "/abs/path.json"},
 		{in: "image:", wantErr: true},
@@ -54,5 +60,39 @@ func TestParseSourceSpec(t *testing.T) {
 		assert.Equal(t, c.wantImage, spec.Image, "input %q image", c.in)
 		assert.Equal(t, c.wantID, spec.ID, "input %q id", c.in)
 		assert.Equal(t, c.wantPath, spec.Path, "input %q path", c.in)
+	}
+}
+
+func TestResolveSourceSpec(t *testing.T) {
+	cases := []struct {
+		in        string
+		wantID    string
+		wantPath  string
+		wantImage string
+		wantSrc   string
+		wantErr   bool
+	}{
+		{in: ""},
+		{in: sourceIDPrefix + testID, wantID: testID},
+		{in: testPath, wantPath: testPath},
+		// An external (absolute) path stays in the source for the runner to import.
+		{in: "/abs/external/devcontainer.json", wantSrc: "/abs/external/devcontainer.json"},
+		// none/image stay in DevContainerSource for agent-side handling.
+		{in: string(SourceNone), wantSrc: string(SourceNone)},
+		{in: testImgSrc, wantSrc: testImgSrc},
+		{in: "image:", wantErr: true},
+	}
+	for _, c := range cases {
+		opts := &provider.CLIOptions{DevContainerSource: c.in}
+		err := ResolveSourceSpec(opts)
+		if c.wantErr {
+			assert.Assert(t, err != nil, "input %q should error", c.in)
+			continue
+		}
+		assert.NilError(t, err, "input %q", c.in)
+		assert.Equal(t, c.wantID, opts.DevContainerID, "input %q id", c.in)
+		assert.Equal(t, c.wantPath, opts.DevContainerPath, "input %q path", c.in)
+		assert.Equal(t, c.wantImage, opts.DevContainerImage, "input %q image", c.in)
+		assert.Equal(t, c.wantSrc, opts.DevContainerSource, "input %q source", c.in)
 	}
 }

@@ -67,6 +67,57 @@ type Options struct {
 	DevcontainerPath string // path to devcontainer.json, relative to project
 }
 
+// HeadlessOptions configures a non-interactive `up` for automation such as CI.
+type HeadlessOptions struct {
+	GlobalFlags        *flags.GlobalFlags
+	DevsyConfig        *config.Config
+	CLIOptions         provider2.CLIOptions
+	ProviderOptions    []string
+	SecretsFile        string
+	FeatureSecretsFile string
+}
+
+// RunHeadless builds and starts the devcontainer for an already-resolved client
+// without launching an IDE or configuring host SSH. The caller owns workspace
+// teardown.
+func RunHeadless(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	opts HeadlessOptions,
+) (*config2.Result, error) {
+	gCopy := *opts.GlobalFlags
+	cmd := &UpCmd{
+		GlobalFlags:        &gCopy,
+		CLIOptions:         opts.CLIOptions,
+		ProviderOptions:    opts.ProviderOptions,
+		SecretsFile:        opts.SecretsFile,
+		FeatureSecretsFile: opts.FeatureSecretsFile,
+		ConfigureSSH:       false,
+		IDELaunch:          opener.LaunchSkip,
+		Out:                io.Discard,
+	}
+	cmd.IDE = string(config.IDENone)
+	mountGitRootDefault := true
+	cmd.MountWorkspaceGitRoot = &mountGitRootDefault
+
+	if err := cmd.validate(); err != nil {
+		return nil, err
+	}
+	if err := cmd.prepareSecrets(); err != nil {
+		return nil, err
+	}
+	cmd.prepareWorkspace(client)
+
+	wctx, err := cmd.executeDevsyUp(ctx, opts.DevsyConfig, client)
+	if err != nil {
+		return nil, err
+	}
+	if wctx == nil {
+		return nil, fmt.Errorf("up returned no workspace context")
+	}
+	return wctx.result, nil
+}
+
 // RunFromOptions runs the up logic without cobra. Callers own ctx cancellation;
 // WithSignals is intentionally skipped.
 func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) error {
