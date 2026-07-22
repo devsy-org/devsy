@@ -3,6 +3,7 @@ package dockerfile
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/scanner"
@@ -185,8 +186,8 @@ func (d *Dockerfile) resolveFromArgs(
 	variable string,
 	stage *BaseStage,
 ) (string, bool) {
-	for i := len(stage.Args) - 1; i >= 0; i-- {
-		arg := &stage.Args[i]
+	for _, v := range slices.Backward(stage.Args) {
+		arg := &v
 		if arg.Key != variable {
 			continue
 		}
@@ -206,8 +207,8 @@ func (d *Dockerfile) resolveFromEnvs(
 	variable string,
 	stage *BaseStage,
 ) (string, bool) {
-	for i := len(stage.Envs) - 1; i >= 0; i-- {
-		env := &stage.Envs[i]
+	for _, v := range slices.Backward(stage.Envs) {
+		env := &v
 		if env.Key != variable {
 			continue
 		}

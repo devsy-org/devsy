@@ -830,8 +830,3 @@ func TestExtends_LocalWorkspaceFolderBasenameInPath(t *testing.T) {
 		t.Errorf("expected image 'alpine:3', got %q", cfg.Image)
 	}
 }
-
-//go:fix inline
-func strPtr(s string) *string {
-	return new(s)
-}

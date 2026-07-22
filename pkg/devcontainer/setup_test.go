@@ -9,8 +9,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-func boolPtr(v bool) *bool { return &v }
-
 func TestShouldChownWorkspace(t *testing.T) {
 	cases := []struct {
 		name           string
@@ -98,12 +96,12 @@ func TestResolvePullFromInsideContainer(t *testing.T) {
 	}{
 		{
 			name: "override true wins",
-			opts: provider2.CLIOptions{PullFromInsideContainerOverride: boolPtr(true)},
+			opts: provider2.CLIOptions{PullFromInsideContainerOverride: new(true)},
 			want: types.StrBool(stringTrue),
 		},
 		{
 			name: "override false wins even with git source",
-			opts: provider2.CLIOptions{PullFromInsideContainerOverride: boolPtr(false)},
+			opts: provider2.CLIOptions{PullFromInsideContainerOverride: new(false)},
 			repo: "https://github.com/example/repo",
 			want: types.StrBool(stringFalse),
 		},

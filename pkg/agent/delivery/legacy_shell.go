@@ -41,7 +41,7 @@ func (d *LegacyShellDelivery) DeliverPostStart(ctx context.Context, opts PostSta
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
 		DownloadURL:                 d.downloadURL(),
-		PreferDownloadFromRemoteUrl: agent.Bool(false),
+		PreferDownloadFromRemoteUrl: new(false),
 	}
 
 	if d.Timeout != nil {
