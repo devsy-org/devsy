@@ -651,18 +651,18 @@ function selectTemplate(t: { name: string; source: string }) {
               <Label class="text-sm">Ref Type</Label>
               <Select.Root type="single" bind:value={refType}>
                 <Select.Trigger class="h-8 w-full rounded-lg">
-                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull Request"}
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge Request"}
                 </Select.Trigger>
                 <Select.Content>
                   <Select.Item value="branch">Branch</Select.Item>
                   <Select.Item value="commit">Commit</Select.Item>
-                  <Select.Item value="pr">Pull Request</Select.Item>
+                  <Select.Item value="pr">Pull / Merge Request</Select.Item>
                 </Select.Content>
               </Select.Root>
             </div>
             <div class="space-y-1.5">
               <Label class="text-sm">
-                {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR number"}
+                {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR / MR number"}
               </Label>
               <Input
                 placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123…" : "42"}
@@ -1022,7 +1022,7 @@ function selectTemplate(t: { name: string; source: string }) {
             {#if sourceType === "git" && refValue.trim()}
               <div class="flex justify-between gap-3">
                 <span class="text-muted-foreground">
-                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull request"}
+                  {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge request"}
                 </span>
                 <span class="font-medium truncate">{refValue}</span>
               </div>

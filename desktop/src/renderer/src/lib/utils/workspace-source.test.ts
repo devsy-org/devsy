@@ -59,11 +59,32 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).toBe("github.com/org/repo@sha256:abc123")
   })
 
-  it("git: PR ref appends @pull/N/head", () => {
+  it("git: PR ref appends @pull/N/head for GitHub", () => {
     const out = buildWorkspaceSource(
       gitForm({ repoUrl: "github.com/org/repo", refType: "pr", refValue: "42" }),
     )
     expect(out.source).toBe("github.com/org/repo@pull/42/head")
+  })
+
+  it("git: MR ref appends @merge-requests/N/head for GitLab", () => {
+    const out = buildWorkspaceSource(
+      gitForm({ repoUrl: "gitlab.com/org/repo", refType: "pr", refValue: "7125" }),
+    )
+    expect(out.source).toBe("gitlab.com/org/repo@merge-requests/7125/head")
+  })
+
+  it("git: MR ref detects self-hosted GitLab by hostname", () => {
+    const out = buildWorkspaceSource(
+      gitForm({ repoUrl: "git@gitlab.example.com:org/repo.git", refType: "pr", refValue: "7" }),
+    )
+    expect(out.source).toBe("git@gitlab.example.com:org/repo.git@merge-requests/7/head")
+  })
+
+  it("git: PR ref uses pull/N/head when only the owner/path says gitlab", () => {
+    const out = buildWorkspaceSource(
+      gitForm({ repoUrl: "git@github.com:gitlab-org/repo.git", refType: "pr", refValue: "7" }),
+    )
+    expect(out.source).toBe("git@github.com:gitlab-org/repo.git@pull/7/head")
   })
 
   it("git: subpath appends @subpath: after ref", () => {

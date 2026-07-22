@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gotest.tools/assert"
@@ -11,11 +12,16 @@ import (
 // Shared literals used across Repo tests.
 const (
 	testRepoURL   = "git@host:org/repo.git"
+	testGitHubURL = "https://github.com/org/repo.git"
+	testGitLabURL = "git@gitlab.com:org/repo.git"
 	testPRRef     = "pull/996/head"
 	testPRLocal   = "PR996"
 	testPRRefSpec = testPRRef + ":" + testPRLocal
+	testMRLocal   = "MR7"
+	testMRRefSpec = "merge-requests/7/head:" + testMRLocal
 	testCommit    = "abc123"
 	subFetch      = "fetch"
+	subSwitch     = "switch"
 	originRemote  = "origin"
 	testTarget    = "/tmp/target"
 )
@@ -23,13 +29,22 @@ const (
 // fakeRunner records the invocations it receives and returns canned output,
 // letting git operations be tested without a real repository.
 type fakeRunner struct {
-	calls  []RunOptions
-	stdout []byte
-	err    error
+	calls    []RunOptions
+	stdout   []byte
+	err      error
+	errUntil int
 }
 
 func (f *fakeRunner) Run(_ context.Context, opts RunOptions) (RunResult, error) {
 	f.calls = append(f.calls, opts)
+	if len(f.calls) <= f.errUntil {
+		return RunResult{}, &CommandError{
+			Args:     opts.Args,
+			ExitCode: 128,
+			Stderr:   "fatal: couldn't find remote ref " + opts.Args[len(opts.Args)-1],
+			Err:      errors.New("exit status 128"),
+		}
+	}
 	return RunResult{Stdout: f.stdout}, f.err
 }
 
@@ -61,10 +76,60 @@ func TestRepoCheckoutPR(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("/tmp/repo", WithRunner(fake))
 
-	assert.NilError(t, repo.CheckoutPR(context.Background(), testPRRef))
-	// Expect a fetch of the PR ref into a local branch, then a switch to it.
+	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
+	assert.NilError(t, err)
 	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[0].Args)
-	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subSwitch, testPRLocal}, fake.calls[1].Args)
+}
+
+func TestRepoCheckoutPRGitLab(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
+}
+
+func TestRepoCheckoutPRGitLabFromGitHubStyleRef(t *testing.T) {
+	fake := &fakeRunner{}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "pull/7/head")
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
+}
+
+func TestRepoCheckoutPRFallback(t *testing.T) {
+	fake := &fakeRunner{errUntil: 1}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(
+		context.Background(),
+		"https://git.internal.example/org/repo.git",
+		"pull/7/head",
+	)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []string{subFetch, originRemote, "pull/7/head:PR7"}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[2].Args)
+}
+
+func TestRepoCheckoutPRNonRefErrorNoFallback(t *testing.T) {
+	authErr := &CommandError{
+		Args:     []string{subFetch},
+		ExitCode: 128,
+		Stderr:   "fatal: Authentication failed for 'https://host/org/repo.git'",
+		Err:      errors.New("exit status 128"),
+	}
+	fake := &fakeRunner{err: authErr}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitHubURL, testPRRef)
+	assert.ErrorContains(t, err, "Authentication failed")
+	assert.Equal(t, 1, len(fake.calls))
 }
 
 func TestRepoLsRemote(t *testing.T) {
@@ -160,7 +225,7 @@ func TestRepoCloneFromInfoPR(t *testing.T) {
 	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
 	assert.Equal(t, subClone, fake.calls[0].Args[0])
 	assert.DeepEqual(t, []string{subFetch, originRemote, testPRRefSpec}, fake.calls[1].Args)
-	assert.DeepEqual(t, []string{"switch", testPRLocal}, fake.calls[2].Args)
+	assert.DeepEqual(t, []string{subSwitch, testPRLocal}, fake.calls[2].Args)
 }
 
 func TestRepoCloneFromInfoHelper(t *testing.T) {

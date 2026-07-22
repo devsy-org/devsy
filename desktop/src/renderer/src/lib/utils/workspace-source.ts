@@ -34,7 +34,31 @@ export interface WorkspaceSourceResult {
   prebuildRepository?: string
 }
 
-function refSuffix(refType: GitRefType, refValue: string): string {
+// hostFromUrl extracts the hostname from SSH (git@host:path) and URL
+// (scheme://[user@]host/path) forms.
+function hostFromUrl(repoUrl: string): string {
+  let s = repoUrl
+  const scheme = s.indexOf("://")
+  if (scheme !== -1) s = s.slice(scheme + 3)
+  const at = s.indexOf("@")
+  if (at !== -1) s = s.slice(at + 1)
+  const sep = s.search(/[/:]/)
+  if (sep !== -1) s = s.slice(0, sep)
+  return s
+}
+
+// GitLab exposes merge requests at merge-requests/N/head; every other host
+// uses pull/N/head.
+function prRefspec(repoUrl: string, number: string): string {
+  const segment = /gitlab/i.test(hostFromUrl(repoUrl)) ? "merge-requests" : "pull"
+  return `@${segment}/${number}/head`
+}
+
+function refSuffix(
+  refType: GitRefType,
+  refValue: string,
+  repoUrl: string,
+): string {
   const value = refValue.trim()
   if (!value) return ""
   switch (refType) {
@@ -43,7 +67,7 @@ function refSuffix(refType: GitRefType, refValue: string): string {
     case "commit":
       return `@sha256:${value}`
     case "pr":
-      return `@pull/${value}/head`
+      return prRefspec(repoUrl, value)
   }
 }
 
@@ -72,7 +96,8 @@ export function buildWorkspaceSource(
     }
   }
 
-  const source = `${form.repoUrl.trim()}${refSuffix(form.refType, form.refValue)}${subPathSuffix(form.subPath)}`
+  const repoUrl = form.repoUrl.trim()
+  const source = `${repoUrl}${refSuffix(form.refType, form.refValue, repoUrl)}${subPathSuffix(form.subPath)}`
 
   return {
     source,

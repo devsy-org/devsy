@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,15 +80,46 @@ func (r *Repo) Switch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// CheckoutPR fetches the given pull request refspec and switches to a local branch for it.
-func (r *Repo) CheckoutPR(ctx context.Context, prRef string) error {
-	log.Debugf("fetching pull request: %s", prRef)
-
-	prBranch := GetBranchNameForPR(prRef)
-	if err := r.Fetch(ctx, prRef+":"+prBranch); err != nil {
-		return err
+// CheckoutPR fetches a pull/merge request into a local branch and switches to
+// it. The request number is taken from prRef; the remote refspec is resolved
+// against repoURL's hosting provider, falling back to the other known
+// conventions when the detected one has no such ref (e.g. self-hosted GitLab on
+// a custom domain that URL detection can't recognize).
+func (r *Repo) CheckoutPR(ctx context.Context, repoURL, prRef string) error {
+	number := prNumber(prRef)
+	if number == "" {
+		return fmt.Errorf("not a pull/merge request reference: %q", prRef)
 	}
-	return r.Switch(ctx, prBranch)
+
+	var lastErr error
+	for _, host := range prCandidates(repoURL) {
+		refspec := host.Refspec(number)
+		prBranch := host.BranchName(number)
+		log.Debugf("fetching %s request: %s", host.Name, refspec)
+
+		err := r.Fetch(ctx, refspec+":"+prBranch)
+		if err == nil {
+			return r.Switch(ctx, prBranch)
+		}
+		if !isMissingRefError(err) {
+			return err
+		}
+		lastErr = err
+	}
+	return lastErr
+}
+
+// isMissingRefError reports whether err is git failing to find the requested
+// remote ref, as opposed to an auth, network, or cancellation failure.
+func isMissingRefError(err error) bool {
+	var cmdErr *CommandError
+	if !errors.As(err, &cmdErr) {
+		return false
+	}
+	msg := strings.ToLower(cmdErr.Stderr)
+	return strings.Contains(msg, "couldn't find remote ref") ||
+		strings.Contains(msg, "no such ref") ||
+		strings.Contains(msg, "not found in upstream")
 }
 
 // Reset moves HEAD to commit using the given mode.
@@ -140,7 +172,7 @@ func (r *Repo) CloneFromInfo(
 
 	switch {
 	case gitInfo.PR != "":
-		if err := r.CheckoutPR(ctx, gitInfo.PR); err != nil {
+		if err := r.CheckoutPR(ctx, gitInfo.Repository, gitInfo.PR); err != nil {
 			return err
 		}
 	case gitInfo.Commit != "":

@@ -11,13 +11,13 @@ import (
 
 const (
 	CommitDelimiter      string = "@sha256:"
-	PullRequestReference string = "pull/([0-9]+)/head"
+	PullRequestReference string = "(?:pull|merge-requests)/([0-9]+)/head"
 	SubPathDelimiter     string = "@subpath:"
 	repoBaseRegEx        string = `((?:(?:https?|git|ssh|file):\/\/)?\/?(?:[^@\/\n]+@)?` +
 		`(?:[^:\/\n]+)(?:[:\/][^\/\n]+)+(?:\.git)?)`
 )
 
-// WARN: Make sure this matches the regex in /desktop/src/views/Workspaces/CreateWorkspace/CreateWorkspaceInput.tsx!
+// WARN: Keep these in sync with the ref parsing in UI.
 var (
 	branchRegEx = regexp.MustCompile(`^` + repoBaseRegEx + `@([a-zA-Z0-9\./\-\_]+)$`)
 	commitRegEx = regexp.MustCompile(
@@ -36,7 +36,8 @@ var recognizedSchemes = []string{"ssh://", "git@", "http://", "https://", "file:
 
 // NormalizeRepository parses a repository reference into its structured parts.
 // Accepts plain URLs, the "git:<url>" workspace-source scheme, and references
-// suffixed with @branch, @subpath:<path>, @sha256:<commit>, or @pull/N/head.
+// suffixed with @branch, @subpath:<path>, @sha256:<commit>, or a pull/merge
+// request ref (@pull/N/head or @merge-requests/N/head).
 // Bare host[/path] inputs are upgraded to https://.
 func NormalizeRepository(str string) *GitInfo {
 	str = canonicalizeURL(str)
@@ -87,14 +88,23 @@ func PingRepository(str string, extraEnv []string) bool {
 	return At("", WithEnv(extraEnv)).LsRemote(timeoutCtx, str) == nil
 }
 
+// GetBranchNameForPR returns the local branch name for a request ref, using the
+// provider convention encoded in the ref (PR<n> for GitHub, MR<n> for GitLab).
 func GetBranchNameForPR(ref string) string {
-	regex := regexp.MustCompile(PullRequestReference)
-	return regex.ReplaceAllString(ref, "PR${1}")
+	number := prNumber(ref)
+	if number == "" {
+		return ref
+	}
+	return hostForRef(ref).BranchName(number)
 }
 
+// GetIDForPR returns the lowercased request identifier used in workspace IDs.
 func GetIDForPR(ref string) string {
-	regex := regexp.MustCompile(PullRequestReference)
-	return regex.ReplaceAllString(ref, "pr${1}")
+	number := prNumber(ref)
+	if number == "" {
+		return ref
+	}
+	return strings.ToLower(hostForRef(ref).BranchName(number))
 }
 
 // GitInfo is the parsed form of a repository reference. Branch, Commit, PR,
