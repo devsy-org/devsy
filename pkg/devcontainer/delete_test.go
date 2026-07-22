@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -174,4 +175,37 @@ func TestCleanupDeliveryVolume_DoesNotPanic(t *testing.T) {
 	r := newTestRunner(d)
 
 	r.cleanupDeliveryVolume(context.Background())
+}
+
+func TestDelete_RemovesImportedDevContainer(t *testing.T) {
+	ws := t.TempDir()
+	external := filepath.Join(t.TempDir(), "devcontainer.json")
+	writeFile(t, external, `{"image":"alpine"}`)
+
+	r := newTestRunner(&mockDriver{findResult: nil})
+	r.localWorkspaceFolder = ws
+	r.workspaceConfig.Workspace = &provider.Workspace{
+		Source: provider.WorkspaceSource{LocalFolder: ws},
+	}
+
+	if _, err := r.importExternalDevContainer(external); err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if !dirExists(importedProfilePath(ws)) {
+		t.Fatal("expected imported profile before delete")
+	}
+
+	if err := r.Delete(context.Background(), DeleteOptions{}); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	if dirExists(importedProfilePath(ws)) {
+		t.Error("imported profile should be removed after Delete")
+	}
+}
+
+func TestDelete_NonLocalSource_KeepsNothingToClean(t *testing.T) {
+	r := newTestRunner(&mockDriver{findResult: nil})
+	if err := r.Delete(context.Background(), DeleteOptions{}); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
 }

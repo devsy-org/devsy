@@ -28,6 +28,16 @@ func TestResolveDevContainerSource_Path(t *testing.T) {
 	assert.Empty(t, cmd.DevContainerSource)
 }
 
+func TestResolveDevContainerSource_ExternalPathPassThrough(t *testing.T) {
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.DevContainerSource = "/abs/external/devcontainer.json"
+
+	require.NoError(t, cmd.resolveDevContainerSource())
+	assert.Equal(t, "/abs/external/devcontainer.json", cmd.DevContainerSource)
+	assert.Empty(t, cmd.DevContainerPath)
+	assert.Empty(t, cmd.DevContainerID)
+}
+
 func TestResolveDevContainerSource_NoneAndImagePassThrough(t *testing.T) {
 	for _, spec := range []string{srcNone, "image:python"} {
 		cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}

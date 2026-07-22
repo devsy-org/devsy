@@ -61,8 +61,10 @@ func (cmd *UpCmd) resolveDevContainerSource() error {
 		cmd.DevContainerID = spec.ID
 		cmd.DevContainerSource = ""
 	case devcontainer.SourcePath:
-		cmd.DevContainerPath = spec.Path
-		cmd.DevContainerSource = ""
+		if !filepath.IsAbs(spec.Path) {
+			cmd.DevContainerPath = spec.Path
+			cmd.DevContainerSource = ""
+		}
 	case devcontainer.SourceNone, devcontainer.SourceImage:
 	}
 	return nil

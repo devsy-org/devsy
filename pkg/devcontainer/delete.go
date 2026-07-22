@@ -15,6 +15,7 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 		return fmt.Errorf("find dev container: %w", err)
 	}
 	defer r.cleanupDeliveryVolume(ctx)
+	defer r.cleanupImportedDevContainer()
 	if containerDetails == nil {
 		return nil
 	}
@@ -42,11 +43,20 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	return nil
 }
 
-// cleanupDeliveryVolume removes the devsy-managed volumes created for this
-// workspace. Best-effort: failures are logged, not returned.
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
 	if err := r.newAgentDelivery().Cleanup(ctx, r.id); err != nil {
-		log.Debugf("best-effort delivery volume cleanup: %v", err)
+		log.Debugf("delivery volume cleanup: %v", err)
+	}
+}
+
+func (r *runner) cleanupImportedDevContainer() {
+	if r.workspaceConfig == nil ||
+		r.workspaceConfig.Workspace == nil ||
+		r.workspaceConfig.Workspace.Source.LocalFolder == "" {
+		return
+	}
+	if err := CleanupImportedDevContainers(r.localWorkspaceFolder); err != nil {
+		log.Debugf("imported devcontainer cleanup: %v", err)
 	}
 }
 
