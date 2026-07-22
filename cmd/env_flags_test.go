@@ -118,9 +118,6 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 	assert.Equal(t, "cli-value", seen, "CLI flag must override env value")
 }
 
-// TestOptInEnvFlags_EnvSatisfiesRequired drives cobra's full parse +
-// ValidateRequiredFlags pipeline to prove DEVSY_HOST satisfies
-// MarkFlagRequired(names.Host) at execution time, not just in static inspection.
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	t.Setenv(envProEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")

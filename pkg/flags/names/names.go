@@ -1,57 +1,67 @@
-// Package names is the single source of truth for devsy CLI flag names.
-//
-// Flags are registered in cmd/ but many are also used to re-invoke devsy from
-// pkg/ (e.g. building a "devsy workspace ssh ..." command line). This package
-// is a dependency-light leaf (imports only fmt) so both the cobra-coupled
-// pkg/flags builder and the pkg/ command builders can import it without
-// pulling in cobra. Defining each name once means a rename is a single edit the
-// compiler propagates to every registration and construction site.
-//
-// Names are the bare flag name (no leading "--"). Use Flag or FlagTrue/FlagFalse
-// to build a command-line token.
-//
-// Every name here is a devsy-owned CLI flag and can be renamed by editing its
-// value once. Some names deliberately mirror an external tool or spec — docker
-// build (--pull, --no-cache, --platform), podman (--userns, --uidmap, --gidmap),
-// git (--git-recurse-submodules), or the devcontainer.json schema (--features,
-// --user-env-probe, --update-remote-user-uid, --id-label). Renaming those is a
-// UX/compatibility decision, not a free change. (The literal flags passed
-// through to docker/podman themselves live at their construction sites, e.g.
-// pkg/driver/docker, not here.)
 package names
 
 import "fmt"
 
-// Flag renders a flag name as a command-line token, e.g. Flag(SSHGPGForwarding)
-// -> "--ssh-gpg-forwarding".
 func Flag(name string) string { return "--" + name }
 
-// FlagValue renders "--name=value".
 func FlagValue(name, value string) string { return fmt.Sprintf("--%s=%s", name, value) }
 
-// FlagTrue renders "--name=true".
 func FlagTrue(name string) string { return FlagValue(name, "true") }
 
-// FlagFalse renders "--name=false".
 func FlagFalse(name string) string { return FlagValue(name, "false") }
 
-// Workspace up / build / exec — devcontainer source & modifiers.
+// Workspace.
 const (
-	DevContainer          = "devcontainer"
-	DevContainerImage     = "devcontainer-image"
-	DevContainerPath      = "devcontainer-path"
-	DevContainerID        = "devcontainer-id"
-	DevContainerOverlay   = "devcontainer-overlay"
-	FallbackImage         = "fallback-image"
-	Features              = "features"
-	IDLabel               = "id-label"
-	UserEnvProbe          = "user-env-probe"
-	GPUAvailability       = "gpu-availability"
-	UpdateRemoteUserUID   = "update-remote-user-uid"
-	ContainerDataFolder   = "container-data-folder"
-	MountWorkspaceGitRoot = "mount-workspace-git-root"
-	ContainerUser         = "container-user"
-	RemoteUser            = "remote-user"
+	CacheFrom                 = "cache-from"
+	ContainerDataFolder       = "container-data-folder"
+	ContainerStatus           = "container-status"
+	ContainerUser             = "container-user"
+	Data                      = "data"
+	DevContainer              = "devcontainer"
+	DevContainerID            = "devcontainer-id"
+	DevContainerImage         = "devcontainer-image"
+	DevContainerOverlay       = "devcontainer-overlay"
+	DevContainerPath          = "devcontainer-path"
+	DisableDaemon             = "disable-daemon"
+	FallbackImage             = "fallback-image"
+	Features                  = "features"
+	FeatureSecretsFile        = "feature-secrets-file"
+	Force                     = "force"
+	GPUAvailability           = "gpu-availability"
+	GracePeriod               = "grace-period"
+	ID                        = "id"
+	IDLabel                   = "id-label"
+	IgnoreNotFound            = "ignore-not-found"
+	InitEnv                   = "init-env"
+	Machine                   = "machine"
+	MachineID                 = "machine-id"
+	MachineReuse              = "machine-reuse"
+	Mount                     = "mount"
+	MountWorkspaceGitRoot     = "mount-workspace-git-root"
+	NoCache                   = "no-cache"
+	Platform                  = "platform"
+	Prebuild                  = "prebuild"
+	PrebuildRepo              = "prebuild-repo"
+	ProviderID                = "provider-id"
+	ProviderOption            = "provider-option"
+	ProviderReuse             = "provider-reuse"
+	Pull                      = "pull"
+	PullFromInsideContainer   = "pull-from-inside-container"
+	Reconfigure               = "reconfigure"
+	Recreate                  = "recreate"
+	RemoteUser                = "remote-user"
+	RemoveVolumes             = "remove-volumes"
+	Reset                     = "reset"
+	SecretsFile               = "secrets-file"
+	Source                    = "source"
+	UpdateRemoteUserUID       = "update-remote-user-uid"
+	UserEnvProbe              = "user-env-probe"
+	WorkspaceEnv              = "workspace-env"
+	WorkspaceEnvFile          = "workspace-env-file"
+	WorkspaceFolder           = "workspace-folder"
+	WorkspaceID               = "workspace-id"
+	WorkspaceMountConsistency = "workspace-mount-consistency"
+    SkipPro                   = "skip-pro"
 )
 
 // SSH.
@@ -104,37 +114,6 @@ const (
 	TerminalRows            = "terminal-rows"
 )
 
-// Workspace behavior & identity.
-const (
-	ID                        = "id"
-	Machine                   = "machine"
-	Source                    = "source"
-	ProviderOption            = "provider-option"
-	Reconfigure               = "reconfigure"
-	Prebuild                  = "prebuild"
-	Pull                      = "pull"
-	NoCache                   = "no-cache"
-	Recreate                  = "recreate"
-	Reset                     = "reset"
-	PrebuildRepo              = "prebuild-repo"
-	WorkspaceEnv              = "workspace-env"
-	WorkspaceEnvFile          = "workspace-env-file"
-	SecretsFile               = "secrets-file"
-	FeatureSecretsFile        = "feature-secrets-file"
-	InitEnv                   = "init-env"
-	DisableDaemon             = "disable-daemon"
-	CacheFrom                 = "cache-from"
-	WorkspaceMountConsistency = "workspace-mount-consistency"
-	Mount                     = "mount"
-	Platform                  = "platform"
-	PullFromInsideContainer   = "pull-from-inside-container"
-	WorkspaceFolder           = "workspace-folder"
-	IgnoreNotFound            = "ignore-not-found"
-	GracePeriod               = "grace-period"
-	Force                     = "force"
-	RemoveVolumes             = "remove-volumes"
-)
-
 // IDE.
 const (
 	IDE       = "ide"
@@ -157,7 +136,7 @@ const (
 	RemoteEnv   = "remote-env"
 )
 
-// Agent container setup (internal self-invocation).
+// Agent container.
 const (
 	ContainerWorkspaceInfo = "container-workspace-info"
 	ChownWorkspace         = "chown-workspace"
@@ -168,26 +147,14 @@ const (
 	PlatformHost           = "platform-host"
 )
 
-// Dotfiles install (internal self-invocation).
+// Dotfiles.
 const (
 	Repository            = "repository"
 	StrictHostKeyChecking = "strict-host-key-checking"
 	InstallScript         = "install-script"
 )
 
-// Workspace list / status / describe / import.
-const (
-	SkipPro         = "skip-pro"
-	ContainerStatus = "container-status"
-	WorkspaceID     = "workspace-id"
-	MachineID       = "machine-id"
-	MachineReuse    = "machine-reuse"
-	ProviderID      = "provider-id"
-	ProviderReuse   = "provider-reuse"
-	Data            = "data"
-)
-
-// Build command.
+// Build.
 const (
 	SkipDelete            = "skip-delete"
 	Tag                   = "tag"
@@ -202,13 +169,13 @@ const (
 	ForceInternalBuildKit = "force-internal-buildkit"
 )
 
-// Testing-only (hidden).
+// Testing.
 const (
 	DaemonInterval  = "daemon-interval"
 	ForceDockerless = "force-dockerless"
 )
 
-// Common / global.
+// Miscellaneous.
 const (
 	Debug           = "debug"
 	Command         = "command"
@@ -306,7 +273,7 @@ const (
 	Wait             = "wait"
 )
 
-// Internal / agent commands (self-invocation, daemons, tunnels, servers).
+// Internal / agent commands.
 const (
 	Address               = "address"
 	AuthSockID            = "auth-sock-id"

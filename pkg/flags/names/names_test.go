@@ -6,11 +6,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
-// wireNames pins every flag-name constant to its literal command-line string.
-// The literals here are written out independently of the constants so that any
-// accidental change to a value in names.go breaks this test, forcing the wire
-// change to be intentional. This is the source of truth for the CLI's flag-name
-// contract and for devsy self-invocation command lines.
 var wireNames = []struct {
 	got  string
 	want string

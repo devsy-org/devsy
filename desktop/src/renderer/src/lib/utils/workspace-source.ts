@@ -1,18 +1,9 @@
 export type WorkspaceSourceType = "git" | "local" | "image"
 export type GitRefType = "branch" | "commit" | "pr"
-
-// DevcontainerMode selects how the workspace resolves its devcontainer config,
-// mapping 1:1 to the CLI's --devcontainer flag forms:
-//   auto  -> flag omitted (project discovery)
-//   path  -> --devcontainer <path>
-//   image -> --devcontainer image:<ref>
-//   id    -> --devcontainer id:<name>
-//   none  -> --devcontainer none
 export type DevcontainerMode = "auto" | "path" | "image" | "id" | "none"
 
 export interface DevcontainerConfig {
   mode: DevcontainerMode
-  // value backs the path/image/id modes; ignored for auto and none.
   value: string
 }
 
@@ -45,16 +36,10 @@ export type WorkspaceSourceForm =
 
 export interface WorkspaceSourceResult {
   source: string
-  // devcontainer is the value for the --devcontainer flag, or undefined when
-  // the flag should be omitted (auto-detect).
   devcontainer?: string
   prebuildRepository?: string
 }
 
-// buildDevcontainerArg renders a DevcontainerConfig into the --devcontainer
-// flag value, or undefined when the flag should be omitted. Modes that require
-// a value (path/image/id) fall back to omitting the flag when the value is
-// blank, so an empty input never produces an invalid "image:" / "id:" token.
 export function buildDevcontainerArg(
   config: DevcontainerConfig,
 ): string | undefined {

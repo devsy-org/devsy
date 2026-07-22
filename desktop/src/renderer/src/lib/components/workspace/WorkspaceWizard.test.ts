@@ -482,8 +482,6 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(launchBtn)
     await flushAsync()
 
-    // Devcontainer source defaults to auto-detect (flag omitted); the value
-    // mapping for each mode is covered by workspace-source.test.ts.
     expect(workspaceUp).toHaveBeenCalledWith(
       expect.objectContaining({
         source: "github.com/org/repo@subpath:pkg/api",

@@ -5,9 +5,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-// DevContainerModifierFlags holds the destinations a command binds the shared
-// devcontainer modifier flags to. A nil pointer skips that flag, letting each
-// command opt into only the modifiers it supports.
 type DevContainerModifierFlags struct {
 	Image               *string
 	Features            *string
@@ -16,9 +13,6 @@ type DevContainerModifierFlags struct {
 	ContainerDataFolder *string
 }
 
-// RegisterDevContainerModifierFlags registers the devcontainer modifier flags
-// shared across the up/build/exec commands so their names and descriptions
-// stay in sync.
 func RegisterDevContainerModifierFlags(fs *flag.FlagSet, opts DevContainerModifierFlags) {
 	if opts.Image != nil {
 		fs.StringVar(opts.Image, names.DevContainerImage, "",

@@ -7,9 +7,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-// Flag is a self-contained flag definition: its name, default, usage text, and
-// the destination it binds to. Definitions are attached to a command with Add,
-// which keeps registration uniform and lets shared flags be declared once.
 type Flag interface {
 	register(fs *flag.FlagSet)
 }
@@ -31,7 +28,6 @@ func AddPersistent(cmd *cobra.Command, defs ...Flag) {
 	}
 }
 
-// options are the settings common to every flag kind, tweaked via With* chaining.
 type options struct {
 	shorthand string
 	hidden    bool
@@ -162,7 +158,7 @@ func (f *StringSliceFlag) register(fs *flag.FlagSet) {
 	f.applyMeta(fs, f.name)
 }
 
-// StringArrayFlag defines a repeatable (not comma-split) string array flag.
+// StringArrayFlag defines a repeatable string array flag.
 type StringArrayFlag struct {
 	dest  *[]string
 	name  string
@@ -171,8 +167,7 @@ type StringArrayFlag struct {
 	options
 }
 
-// StringArray binds a repeatable string array flag to dest (values are not
-// comma-split, unlike StringSlice).
+// StringArray binds a repeatable string array flag.
 func StringArray(dest *[]string, name string, def []string, usage string) *StringArrayFlag {
 	return &StringArrayFlag{dest: dest, name: name, def: def, usage: usage}
 }

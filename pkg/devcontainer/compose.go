@@ -873,7 +873,7 @@ func (r *runner) recreateDevContainer(
 	container *config.ContainerDetails,
 ) error {
 	log.Debugf(
-		"Deleting dev container %s due to %s",
+		"deleting dev container %s due to %s",
 		container.ID,
 		names.Flag(names.Recreate),
 	)

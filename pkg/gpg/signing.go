@@ -40,7 +40,7 @@ func SigningKey(ctx context.Context) string {
 	}
 
 	// GPG key IDs are hex fingerprints, not file paths. If the signing key
-	// looks like a file path and the format isn't x509 (which legitimately
+	// looks like a file path and the format is not x509 (which legitimately
 	// uses certificate file paths via gpgsm), it's an SSH key.
 	if (strings.HasPrefix(result, "/") || strings.HasPrefix(result, "~")) && formatStr != "x509" {
 		log.Debugf("signing key %s looks like a file path, skipping", result)
