@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -420,5 +421,95 @@ func TestWorkspaceMountFolderWarning(t *testing.T) {
 				t.Errorf("workspaceMountFolderWarning() = %q, wantMsg=%v", got, tt.wantMsg)
 			}
 		})
+	}
+}
+
+func newRunnerAt(folder string) *runner {
+	return &runner{
+		id:                   "test-id",
+		localWorkspaceFolder: folder,
+		workspaceConfig: &provider2.AgentWorkspaceInfo{
+			Workspace: &provider2.Workspace{ID: "test-workspace"},
+		},
+	}
+}
+
+func seedAmbiguousProfiles(t *testing.T, folder string) {
+	t.Helper()
+	for _, id := range []string{"claude", "default"} {
+		dir := filepath.Join(folder, ".devcontainer", id)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		body := `{"image":"repo/image","features":{"ghcr.io/x/y:1":{}}}`
+		file := filepath.Join(dir, "devcontainer.json")
+		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestGetRawConfig_SourceImageBypassesDiscovery(t *testing.T) {
+	folder := t.TempDir()
+	seedAmbiguousProfiles(t, folder)
+	r := newRunnerAt(folder)
+
+	const image = "python"
+	conf, err := r.getRawConfig(provider2.CLIOptions{DevContainerSource: "image:" + image})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != image {
+		t.Errorf("Image = %q, want %q", conf.Image, image)
+	}
+	if len(conf.Features) != 0 {
+		t.Errorf("Features = %v, want none (project features must be ignored)", conf.Features)
+	}
+}
+
+func TestGetRawConfig_SourceNoneWithImageBypassesDiscovery(t *testing.T) {
+	folder := t.TempDir()
+	seedAmbiguousProfiles(t, folder)
+	r := newRunnerAt(folder)
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{
+		DevContainerSource: string(SourceNone),
+		FallbackImage:      "ubuntu",
+	})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if len(conf.Features) != 0 {
+		t.Errorf("Features = %v, want none", conf.Features)
+	}
+}
+
+func TestGetRawConfig_InvalidSource(t *testing.T) {
+	r := newRunnerAt(t.TempDir())
+	if _, err := r.getRawConfig(provider2.CLIOptions{DevContainerSource: "bogus"}); err == nil {
+		t.Fatal("expected error for invalid source spec")
+	}
+}
+
+func TestGetRawConfig_SourcePreservesRootDevcontainerJSON(t *testing.T) {
+	folder := t.TempDir()
+	rootConfig := filepath.Join(folder, ".devcontainer.json")
+	original := []byte(`{"image":"user/original","features":{"ghcr.io/x/y:1":{}}}`)
+	if err := os.WriteFile(rootConfig, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := newRunnerAt(folder)
+
+	opts := provider2.CLIOptions{DevContainerSource: "image:python"}
+	if _, err := r.getRawConfig(opts); err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+
+	got, err := os.ReadFile(rootConfig) //nolint:gosec // G304 — test temp file
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Errorf("root .devcontainer.json was modified:\n got:  %s\n want: %s", got, original)
 	}
 }

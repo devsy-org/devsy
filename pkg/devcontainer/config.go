@@ -22,6 +22,9 @@ import (
 // each supported source in order and falling back to an auto-detected default
 // when none applies.
 func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainerConfig, error) {
+	if options.DevContainerSource != "" {
+		return r.rawConfigFromSource(options)
+	}
 	if conf := r.rawConfigFromWorkspace(); conf != nil {
 		return conf, nil
 	}
@@ -149,6 +152,49 @@ func workspaceMountFolderWarning(conf *config.DevContainerConfig) string {
 			"the spec requires both. Falling back to the default workspace mount."
 	}
 	return ""
+}
+
+func (r *runner) rawConfigFromSource(
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
+	spec, err := ParseSourceSpec(options.DevContainerSource)
+	if err != nil {
+		return nil, err
+	}
+
+	switch spec.Kind {
+	case SourceImage:
+		log.Infof("ignoring project devcontainer, using image %s", spec.Image)
+		return r.saveSynthesizedConfig(&config.DevContainerConfig{
+			ImageContainer: config.ImageContainer{Image: spec.Image},
+		})
+	case SourceNone:
+		log.Infof("ignoring project devcontainer")
+		defaultConfig := &config.DevContainerConfig{}
+		if options.FallbackImage != "" {
+			log.Infof("Using fallback image %s", options.FallbackImage)
+			defaultConfig.ImageContainer = config.ImageContainer{Image: options.FallbackImage}
+		} else {
+			log.Infof("Try detecting project programming language")
+			defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
+		}
+		return r.saveSynthesizedConfig(defaultConfig)
+	default:
+		return nil, fmt.Errorf("unsupported devcontainer source kind %q", spec.Kind)
+	}
+}
+
+func (r *runner) saveSynthesizedConfig(
+	c *config.DevContainerConfig,
+) (*config.DevContainerConfig, error) {
+	c.Origin = path.Join(
+		filepath.ToSlash(r.localWorkspaceFolder),
+		".devcontainer."+pkgconfig.BinaryName+".json",
+	)
+	if err := config.SaveDevContainerJSON(c); err != nil {
+		return nil, fmt.Errorf("write synthesized devcontainer.json: %w", err)
+	}
+	return c, nil
 }
 
 func (r *runner) getDefaultConfig(

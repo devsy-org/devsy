@@ -215,6 +215,7 @@ type CLIOptions struct {
 	DevContainerImage           string            `json:"devContainerImage,omitempty"`
 	DevContainerPath            string            `json:"devContainerPath,omitempty"`
 	DevContainerID              string            `json:"devContainerID,omitempty"`
+	DevContainerSource          string            `json:"devContainerSource,omitempty"`
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
 	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
