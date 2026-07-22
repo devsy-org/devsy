@@ -21,21 +21,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// teardownTimeout bounds ephemeral-workspace deletion, which runs on its own
-// context so it completes even after the command context is cancelled.
-const teardownTimeout = 2 * time.Minute
+const (
+	teardownTimeout = 2 * time.Minute
+	runCmdFlag      = "run-cmd"
+	keepFlag        = "keep"
+)
 
 // CICmd holds the ci command flags.
 type CICmd struct {
 	*flags.GlobalFlags
 	provider.CLIOptions
 
-	ProviderOptions []string
-
-	// RunCmd is the argv executed in the container, resolved from either the
-	// tokens after "--" or a --run-cmd shell string.
-	RunCmd []string
-	// RunCmdString is the raw --run-cmd shell command, run via "sh -c".
+	ProviderOptions    []string
+	RunCmd             []string
 	RunCmdString       string
 	RemoteEnv          []string
 	Keep               bool
@@ -51,12 +49,8 @@ func NewCICmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "ci [flags] [workspace-path|workspace-name] -- <cmd> [args...]",
 		Short: "Build a devcontainer, run a command inside it, then tear it down",
 		Long: `Builds an ephemeral devcontainer, runs the given command inside it, and
-deletes the workspace afterwards. Useful for validating that a devcontainer
-builds and behaves correctly in CI. The command runs on any CI system by
-invoking the Devsy binary directly.
-
-The command to run is given after "--" or via --run-cmd. A non-zero exit from
-that command propagates as the exit code of "devsy ci".`,
+deletes the workspace afterwards. A non-zero exit from that command propagates as the
+exit code of "devsy ci".`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			source, runCmd, err := splitArgs(cobraCmd, args, cmd.RunCmdString)
 			if err != nil {
@@ -70,12 +64,6 @@ that command propagates as the exit code of "devsy ci".`,
 	cmd.registerFlags(ciCmd)
 	return ciCmd
 }
-
-// runCmdFlag is ci-specific and has no shared name constant.
-const runCmdFlag = "run-cmd"
-
-// keepFlag is ci-specific and has no shared name constant.
-const keepFlag = "keep"
 
 func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 	cliflags.Add(ciCmd,
@@ -131,9 +119,6 @@ func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 	})
 }
 
-// splitArgs separates the optional workspace source from the run command. The
-// command is the explicit argv after "--", or, when that is absent, the
-// --run-cmd shell string wrapped in "sh -c".
 func splitArgs(
 	cobraCmd *cobra.Command, args []string, runCmdString string,
 ) (string, []string, error) {
@@ -195,8 +180,7 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	if resolveErr != nil {
 		return resolveErr
 	}
-	// cleanup tears down the ephemeral workspace; its error is joined with the
-	// run result so a cleanup failure surfaces as a failed CI run.
+	// cleanup tears down the workspace; join error with the result.
 	defer func() { err = errors.Join(err, cleanup()) }()
 
 	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
@@ -218,9 +202,7 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	return cmd.runInContainer(ctx, workspaceClient)
 }
 
-// resolveWorkspace resolves (creating if needed) the workspace to run in. The
-// returned cleanup tears down only workspaces this command created, and only
-// when --keep was not passed.
+// resolveWorkspace resolves (creating if needed) the workspace to run in.
 func (cmd *CICmd) resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -263,8 +245,7 @@ func (cmd *CICmd) resolveWorkspace(
 	return workspaceClient, cleanup, nil
 }
 
-// runInContainer runs the command inside the started container, reusing the
-// exec command so it runs as the devcontainer's remote user.
+// runInContainer runs the command inside the started container.
 func (cmd *CICmd) runInContainer(ctx context.Context, c client.BaseWorkspaceClient) error {
 	execCmd := &workspacecmd.ExecCmd{
 		GlobalFlags:   cmd.GlobalFlags,
@@ -274,9 +255,6 @@ func (cmd *CICmd) runInContainer(ctx context.Context, c client.BaseWorkspaceClie
 	return execCmd.Run(ctx, cmd.RunCmd)
 }
 
-// teardown deletes the ephemeral workspace. It uses its own bounded context so
-// teardown still runs after the command context was cancelled (e.g. by a
-// cancelled CI job), which is the whole point of running it on the way out.
 func (cmd *CICmd) teardown(c client.BaseWorkspaceClient) error {
 	log.Infof("tearing down workspace")
 	ctx, cancel := context.WithTimeout(context.Background(), teardownTimeout)

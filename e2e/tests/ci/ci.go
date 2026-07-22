@@ -16,9 +16,6 @@ import (
 
 const ciCommand = "ci"
 
-// expectWorkspaceGone lists workspaces (asserting the list itself succeeds) and
-// verifies the given workspace is absent, so teardown failures aren't masked by
-// a generic list error.
 func expectWorkspaceGone(ctx context.Context, f *framework.Framework, name string) {
 	list, err := f.DevsyListParsed(ctx)
 	framework.ExpectNoError(err)
@@ -101,9 +98,6 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 		func(ctx context.Context) {
 			tempDir, f := setupCI(initialDir)
 
-			// --workspace-env is persisted to /etc/envfile.json during setup;
-			// assert it landed there rather than relying on shell env-loading,
-			// which varies between login and non-login (docker exec) shells.
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				ciCommand, tempDir,
 				"--workspace-env", "WS_CI_VAR=ws_value",
@@ -127,9 +121,6 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 
 	ginkgo.It("should inject secrets from --secrets-file into lifecycle commands",
 		func(ctx context.Context) {
-			// The postCreateCommand in this testdata writes $MY_SECRET to a file;
-			// secrets are injected into lifecycle commands, not the run command's
-			// own environment, so the run command reads it back from the file.
 			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
 
 			secretsFile := filepath.Join(tempDir, "ci.secrets")

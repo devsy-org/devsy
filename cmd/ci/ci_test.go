@@ -40,8 +40,6 @@ func TestValidateEnv(t *testing.T) {
 	}
 }
 
-// runSplit exercises splitArgs through a cobra command so ArgsLenAtDash is
-// populated the same way it is at runtime.
 func runSplit(t *testing.T, args []string, runCmdString string) (string, []string, error) {
 	t.Helper()
 	var (

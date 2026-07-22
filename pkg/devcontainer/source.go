@@ -64,13 +64,6 @@ func ParseSourceSpec(value string) (*SourceSpec, error) {
 	}
 }
 
-// ResolveSourceSpec parses opts.DevContainerSource (the --devcontainer selector)
-// and applies it to opts: an "id:" source and an in-repo relative path are
-// consumed into DevContainerID / DevContainerPath and the source string is
-// cleared. "none", "image:<ref>", and an external (absolute) path are left in
-// DevContainerSource so the runner can handle them (the external path is
-// imported into the workspace so its sibling assets resolve). A no-op when no
-// source is set.
 func ResolveSourceSpec(opts *provider.CLIOptions) error {
 	spec, err := ParseSourceSpec(opts.DevContainerSource)
 	if err != nil {
@@ -84,9 +77,8 @@ func ResolveSourceSpec(opts *provider.CLIOptions) error {
 		opts.DevContainerID = spec.ID
 		opts.DevContainerSource = ""
 	case SourcePath:
-		// An in-repo relative path is just a config path; an external absolute
-		// path is left in the source so the runner imports it (bringing its
-		// sibling assets — Dockerfile, features — into the workspace).
+		// An in-repo relative path is a config path; an external absolute
+		// path is left in the source so the runner imports it.
 		if !filepath.IsAbs(spec.Path) {
 			opts.DevContainerPath = spec.Path
 			opts.DevContainerSource = ""

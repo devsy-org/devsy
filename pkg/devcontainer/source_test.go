@@ -75,9 +75,7 @@ func TestResolveSourceSpec(t *testing.T) {
 		{in: ""},
 		{in: sourceIDPrefix + testID, wantID: testID},
 		{in: testPath, wantPath: testPath},
-		// An external (absolute) path stays in the source for the runner to import.
 		{in: "/abs/external/devcontainer.json", wantSrc: "/abs/external/devcontainer.json"},
-		// none/image stay in DevContainerSource for agent-side handling.
 		{in: string(SourceNone), wantSrc: string(SourceNone)},
 		{in: testImgSrc, wantSrc: testImgSrc},
 		{in: "image:", wantErr: true},

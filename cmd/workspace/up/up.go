@@ -67,7 +67,6 @@ type Options struct {
 	DevcontainerPath string // path to devcontainer.json, relative to project
 }
 
-// HeadlessOptions configures a non-interactive `up` for automation such as CI.
 type HeadlessOptions struct {
 	GlobalFlags        *flags.GlobalFlags
 	DevsyConfig        *config.Config
@@ -77,9 +76,6 @@ type HeadlessOptions struct {
 	FeatureSecretsFile string
 }
 
-// RunHeadless builds and starts the devcontainer for an already-resolved client
-// without launching an IDE or configuring host SSH. The caller owns workspace
-// teardown.
 func RunHeadless(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,

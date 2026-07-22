@@ -21,7 +21,7 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
-	if err := cmd.resolveDevContainerSource(); err != nil {
+	if err := devcontainer.ResolveSourceSpec(&cmd.CLIOptions); err != nil {
 		return err
 	}
 	if err := validatePodmanFlags(cmd); err != nil {
@@ -46,10 +46,6 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
-}
-
-func (cmd *UpCmd) resolveDevContainerSource() error {
-	return devcontainer.ResolveSourceSpec(&cmd.CLIOptions)
 }
 
 func (cmd *UpCmd) resolveExtraDevContainerPath() error {

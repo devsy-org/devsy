@@ -6,18 +6,12 @@ sidebar_label: Continuous Integration
 ## Continuous Integration
 
 `devsy ci` builds an ephemeral devcontainer, runs a command inside it, and tears
-the workspace down afterwards. It lets you verify — on every push or pull
-request — that your `devcontainer.json` still builds and that your project
-behaves correctly inside it.
-
-Because the logic lives in the Devsy CLI, the same command works on any CI
-system (GitHub Actions, GitLab CI, Jenkins, and others) — you install the binary
-and call `devsy ci`.
+the workspace down afterwards. It lets you verify that your `devcontainer.json`
+still builds.
 
 ### How it works
 
-1. Resolves an ephemeral workspace from the current directory (or a given
-   source).
+1. Resolves an workspace from the current directory (or a given source).
 2. Builds and starts the devcontainer (equivalent to `devsy up`, without
    launching an IDE or touching your SSH config).
 3. Runs the given command inside the running container.
@@ -112,35 +106,3 @@ jobs:
           devsy provider add docker && devsy provider use docker
           devsy ci -- make test
 ```
-
-### GitLab CI
-
-```yaml
-devcontainer:
-  image: docker:27
-  services:
-    - docker:27-dind
-  variables:
-    DOCKER_HOST: tcp://docker:2376
-  script:
-    - apk add --no-cache curl bash
-    - curl -fsSL https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64 -o /usr/local/bin/devsy
-    - chmod +x /usr/local/bin/devsy
-    - devsy provider add docker && devsy provider use docker
-    - devsy ci -- make test
-```
-
-The same approach works for Jenkins and any other runner with Docker access.
-
-For reproducible CI, pin a specific release instead of `latest` — replace
-`releases/latest/download` with `releases/download/<version>` (e.g. `v1.2.3`).
-
-### Limitations
-
-- **Local providers only.** `devsy ci` runs against local providers (docker,
-  podman). Proxy/Pro providers are not supported.
-- **No built-in timeout.** A hung build or command relies on your CI system's
-  job timeout to be interrupted; `devsy ci` tears the workspace down when it
-  receives the resulting cancellation signal.
-- **`--platform` is run-time emulation,** not a multi-architecture build target.
-  To build and publish multi-arch images, use `devsy build --platform`.
