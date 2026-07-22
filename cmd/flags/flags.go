@@ -1,6 +1,7 @@
 package flags
 
 import (
+	pkgflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	flag "github.com/spf13/pflag"
@@ -84,10 +85,10 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 	)
 	_ = flags.MarkHidden(names.AgentDir)
 
-	BindEnv(flags, names.Home)
-	BindEnv(flags, names.Context)
-	BindEnv(flags, names.Provider)
-	BindEnv(flags, names.Debug)
+	pkgflags.BindEnv(flags, names.Home)
+	pkgflags.BindEnv(flags, names.Context)
+	pkgflags.BindEnv(flags, names.Provider)
+	pkgflags.BindEnv(flags, names.Debug)
 
 	return globalFlags
 }
