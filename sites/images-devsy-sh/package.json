@@ -16,7 +16,7 @@
     "@tailwindcss/vite": "4.3.3",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/svelte": "5.4.2",
-    "@types/node": "22.20.1",
+    "@types/node": "24.13.3",
     "jsdom": "29.1.1",
     "svelte": "5.56.6",
     "svelte-check": "4.7.3",
