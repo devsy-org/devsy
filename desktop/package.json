@@ -21,7 +21,7 @@
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
-    "chokidar": "^4.0.0",
+    "chokidar": "^5.0.0",
     "dompurify": "^3.4.7",
     "electron-updater": "^6.8.3",
     "node-pty": "^1.0.0",
