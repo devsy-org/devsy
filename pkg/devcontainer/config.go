@@ -203,10 +203,11 @@ func (r *runner) rawConfigFromSource(
 }
 
 func (r *runner) importExternalDevContainer(srcPath string) (*config.DevContainerConfig, error) {
-	srcPath, err := filepath.Abs(srcPath)
+	absPath, err := filepath.Abs(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve devcontainer path %s: %w", srcPath, err)
 	}
+	srcPath = absPath
 	if _, err := os.Stat(srcPath); err != nil {
 		return nil, fmt.Errorf("devcontainer path %s does not exist: %w", srcPath, err)
 	}
@@ -265,19 +266,19 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// isSelfContainedDevContainer reports whether srcPath lives in a dedicated
+// devcontainer directory whose sibling assets (Dockerfile, features, compose)
+// belong with the config and must be copied alongside it. To avoid pulling in
+// arbitrary trees, this is limited to the spec's own layout: the config's
+// parent directory is ".devcontainer", or a profile directory nested directly
+// under ".devcontainer" (".devcontainer/<name>/devcontainer.json"). A config
+// that sits anywhere else (e.g. a project root) is treated as a bare file.
 func isSelfContainedDevContainer(srcPath string) bool {
 	dir := filepath.Dir(srcPath)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if e.Name() == filepath.Base(srcPath) {
-			continue
-		}
+	if filepath.Base(dir) == devcontainerProfileParent {
 		return true
 	}
-	return false
+	return filepath.Base(filepath.Dir(dir)) == devcontainerProfileParent
 }
 
 func isImportedProfileDir(dir string) bool {

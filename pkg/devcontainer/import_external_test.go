@@ -21,7 +21,8 @@ func importedProfilePath(ws string) string {
 }
 
 func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
-	external := t.TempDir()
+	// A dedicated .devcontainer/ folder with a sibling Dockerfile.
+	external := filepath.Join(t.TempDir(), ".devcontainer")
 	writeFile(t, filepath.Join(external, "devcontainer.json"),
 		`{"name":"ext","build":{"dockerfile":"Dockerfile"}}`)
 	writeFile(t, filepath.Join(external, "Dockerfile"), "FROM alpine\n")
@@ -40,6 +41,45 @@ func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
 	assert.Equal(t, "Dockerfile", cfg.GetDockerfile())
 	dockerfile := filepath.Join(filepath.Dir(cfg.Origin), cfg.GetDockerfile())
 	assert.FileExists(t, dockerfile)
+}
+
+func TestImportExternalDevContainer_ProjectRootCopiesOnlyConfig(t *testing.T) {
+	// A config that lives at a project root (parent is NOT .devcontainer) must
+	// copy only the config file — never the surrounding tree (secrets, .git,
+	// node_modules, ...).
+	external := t.TempDir()
+	writeFile(t, filepath.Join(external, "devcontainer.json"), `{"image":"alpine"}`)
+	writeFile(t, filepath.Join(external, "secret.env"), "TOKEN=shh")
+	writeFile(t, filepath.Join(external, ".git", "config"), "[core]")
+
+	ws := t.TempDir()
+	r := &runner{localWorkspaceFolder: ws}
+
+	_, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
+	require.NoError(t, err)
+
+	imported := importedProfilePath(ws)
+	assert.FileExists(t, filepath.Join(imported, "devcontainer.json"))
+	assert.NoFileExists(t, filepath.Join(imported, "secret.env"),
+		"must not copy sibling files from a non-.devcontainer parent")
+	assert.NoDirExists(t, filepath.Join(imported, ".git"),
+		"must not copy sibling dirs from a non-.devcontainer parent")
+}
+
+func TestImportExternalDevContainer_ProfileFolderIsSelfContained(t *testing.T) {
+	// A named profile (.devcontainer/<name>/devcontainer.json) is self-contained
+	// and its siblings travel with it.
+	external := filepath.Join(t.TempDir(), ".devcontainer", "backend")
+	writeFile(t, filepath.Join(external, "devcontainer.json"),
+		`{"build":{"dockerfile":"Dockerfile"}}`)
+	writeFile(t, filepath.Join(external, "Dockerfile"), "FROM alpine\n")
+
+	ws := t.TempDir()
+	r := &runner{localWorkspaceFolder: ws}
+
+	_, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(importedProfilePath(ws), "Dockerfile"))
 }
 
 func TestImportExternalDevContainer_BareFile(t *testing.T) {
