@@ -15,6 +15,7 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 		return fmt.Errorf("find dev container: %w", err)
 	}
 	defer r.cleanupDeliveryVolume(ctx)
+	defer r.cleanupImportedDevContainer()
 	if containerDetails == nil {
 		return nil
 	}
@@ -47,6 +48,21 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
 	if err := r.newAgentDelivery().Cleanup(ctx, r.id); err != nil {
 		log.Debugf("best-effort delivery volume cleanup: %v", err)
+	}
+}
+
+// cleanupImportedDevContainer removes any devcontainer profile the runner
+// imported from an external --devcontainer path into a local-folder source.
+// Other sources keep their content under a devsy-managed folder that the caller
+// deletes wholesale, so there is nothing to clean there. Best-effort.
+func (r *runner) cleanupImportedDevContainer() {
+	if r.workspaceConfig == nil ||
+		r.workspaceConfig.Workspace == nil ||
+		r.workspaceConfig.Workspace.Source.LocalFolder == "" {
+		return
+	}
+	if err := CleanupImportedDevContainers(r.localWorkspaceFolder); err != nil {
+		log.Debugf("best-effort imported devcontainer cleanup: %v", err)
 	}
 }
 

@@ -9,14 +9,33 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	copypkg "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/language"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/random"
+)
+
+// External --devcontainer configs are imported into the workspace as a named
+// devcontainer profile (.devcontainer/<binary>/), which the config discovery
+// already recognizes and which keeps config-relative assets (Dockerfile,
+// features, compose) resolving. importedProfileMarker is dropped inside the
+// imported dir so teardown can identify and remove it regardless of any
+// collision suffix.
+var (
+	importedProfileParent = filepath.ToSlash(devcontainerProfileParent)
+	importedProfileMarker = "." + pkgconfig.BinaryName + "-imported"
+)
+
+const (
+	devcontainerProfileParent = ".devcontainer"
+	importedProfileName       = pkgconfig.BinaryName
 )
 
 // getRawConfig resolves the raw devcontainer config for the workspace, trying
@@ -180,9 +199,173 @@ func (r *runner) rawConfigFromSource(
 			defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
 		}
 		return r.saveSynthesizedConfig(defaultConfig)
+	case SourcePath:
+		return r.importExternalDevContainer(spec.Path)
+	case SourceID:
+		return nil, fmt.Errorf("devcontainer id source must be resolved before build")
 	default:
 		return nil, fmt.Errorf("unsupported devcontainer source kind %q", spec.Kind)
 	}
+}
+
+// importExternalDevContainer copies a devcontainer config that lives outside the
+// workspace into it as a named profile (.devcontainer/<binary>/), so config
+// discovery finds it and config-relative assets (Dockerfile, features, compose)
+// resolve. A self-contained "<folder>/devcontainer.json" has its whole folder
+// copied; a bare file is copied on its own. The profile dir is added to the
+// repo's local git exclude so it doesn't dirty git status, and is marked so
+// teardown can remove it.
+func (r *runner) importExternalDevContainer(srcPath string) (*config.DevContainerConfig, error) {
+	srcPath, err := filepath.Abs(srcPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve devcontainer path %s: %w", srcPath, err)
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		return nil, fmt.Errorf("devcontainer path %s does not exist: %w", srcPath, err)
+	}
+
+	relDir := r.importedProfileRelDir()
+	destDir := filepath.Join(r.localWorkspaceFolder, filepath.FromSlash(relDir))
+	if err := copyExternalDevContainer(srcPath, destDir); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(destDir, importedProfileMarker), nil, 0o600); err != nil {
+		return nil, fmt.Errorf("mark imported devcontainer: %w", err)
+	}
+	if err := r.excludeFromGit(relDir); err != nil {
+		log.Debugf("could not add imported devcontainer to git exclude: %v", err)
+	}
+
+	origin := filepath.Join(destDir, filepath.Base(srcPath))
+	rawConfig, err := config.ParseDevContainerJSONFile(context.Background(), origin)
+	if err != nil {
+		return nil, fmt.Errorf("parse imported devcontainer.json: %w", err)
+	}
+	return rawConfig, nil
+}
+
+// importedProfileRelDir returns the workspace-relative profile directory to
+// import into: .devcontainer/<binary>, or .devcontainer/<binary>_<rand> when
+// the plain name already exists in the repo (so an imported profile never
+// clobbers a config the project ships).
+func (r *runner) importedProfileRelDir() string {
+	base := path.Join(importedProfileParent, importedProfileName)
+	plain := filepath.Join(r.localWorkspaceFolder, filepath.FromSlash(base))
+	if isImportedProfileDir(plain) || !dirExists(plain) {
+		return base // reusable (ours) or free
+	}
+	return base + "_" + random.String(6)
+}
+
+// copyExternalDevContainer copies the external config into destDir, replacing
+// any previous import. A self-contained config (its parent dir holds the
+// devcontainer.json plus sibling assets) is imported whole; otherwise only the
+// file is copied.
+func copyExternalDevContainer(srcPath, destDir string) error {
+	if err := os.RemoveAll(destDir); err != nil {
+		return fmt.Errorf("clear imported devcontainer dir: %w", err)
+	}
+	if isSelfContainedDevContainer(srcPath) {
+		if err := copypkg.Directory(filepath.Dir(srcPath), destDir); err != nil {
+			return fmt.Errorf("copy devcontainer folder: %w", err)
+		}
+		return nil
+	}
+	if err := copypkg.CreateIfNotExists(destDir, 0o755); err != nil {
+		return fmt.Errorf("create imported devcontainer dir: %w", err)
+	}
+	dest := filepath.Join(destDir, filepath.Base(srcPath))
+	if err := copypkg.File(srcPath, dest, 0o644); err != nil {
+		return fmt.Errorf("copy devcontainer file: %w", err)
+	}
+	return nil
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// isSelfContainedDevContainer reports whether the config at srcPath lives in a
+// dedicated folder alongside build assets (Dockerfile, features, compose), in
+// which case the whole folder must travel with it.
+func isSelfContainedDevContainer(srcPath string) bool {
+	dir := filepath.Dir(srcPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() == filepath.Base(srcPath) {
+			continue
+		}
+		return true // any sibling file/dir means the config isn't standalone
+	}
+	return false
+}
+
+// isImportedProfileDir reports whether dir is a previously imported profile
+// (identified by the marker file), meaning it is safe for devsy to overwrite.
+func isImportedProfileDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, importedProfileMarker))
+	return err == nil
+}
+
+// excludeFromGit adds relPath to the workspace repo's .git/info/exclude so the
+// imported files don't show up in git status. It is best-effort: a workspace
+// that isn't a git repo (no .git/info) is simply skipped.
+func (r *runner) excludeFromGit(relPath string) error {
+	excludePath := filepath.Join(r.localWorkspaceFolder, ".git", "info", "exclude")
+	if _, err := os.Stat(filepath.Dir(excludePath)); err != nil {
+		return nil // not a git repo (or no info dir); nothing to do
+	}
+	// #nosec G304 -- path is under the workspace .git dir
+	existing, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	entry := "/" + filepath.ToSlash(relPath)
+	for line := range strings.SplitSeq(string(existing), "\n") {
+		if strings.TrimSpace(line) == entry {
+			return nil // already excluded
+		}
+	}
+	// #nosec G304 -- path is under the workspace .git dir
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = fmt.Fprintf(f, "%s\n", entry)
+	return err
+}
+
+// CleanupImportedDevContainers removes any devcontainer profiles that devsy
+// imported into workspaceFolder from an external --devcontainer path (those
+// carrying importedProfileMarker). It is safe to call when none exist.
+func CleanupImportedDevContainers(workspaceFolder string) error {
+	parent := filepath.Join(workspaceFolder, filepath.FromSlash(importedProfileParent))
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(parent, e.Name())
+		if !isImportedProfileDir(dir) {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("remove imported devcontainer %s: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 func (r *runner) saveSynthesizedConfig(
