@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -44,8 +45,7 @@ func setupBrowserIDE(ctx context.Context, initialDir string) (*framework.Framewo
 }
 
 // upBrowserIDE runs `devsy up --ide=openvscode --ide-launch=headless` against
-// tempDir, optionally with extra args (e.g. "--recreate"). It returns the
-// resolved workspace's tunnel state, which is asserted non-nil.
+// tempDir, optionally with extra args.
 func upBrowserIDE(
 	ctx context.Context, f *framework.Framework, tempDir string, extraArgs ...string,
 ) *opener.TunnelState {
@@ -170,9 +170,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(syscall.Kill(pid1, 0)).NotTo(gomega.HaveOccurred(),
 					"expected helper PID %d to be alive before --recreate", pid1)
 
-				// Recreate the workspace; the existing browser tunnel must be
-				// killed before a new helper is spawned.
-				state2 := upBrowserIDE(ctx, f, tempDir, "--recreate")
+				state2 := upBrowserIDE(ctx, f, tempDir, names.Flag(names.Recreate))
 				pid2 := state2.PID
 
 				gomega.Expect(pid2).NotTo(gomega.Equal(pid1),

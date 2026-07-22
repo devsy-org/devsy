@@ -5,6 +5,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -12,7 +13,7 @@ import (
 
 func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) error {
 	if err := rootCmd.RegisterFlagCompletionFunc(
-		"provider",
+		names.Provider,
 		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return GetProviderSuggestions(
 				rootCmd,
@@ -28,7 +29,7 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 	}
 
 	if err := rootCmd.RegisterFlagCompletionFunc(
-		"context",
+		names.Context,
 		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return GetContextSuggestions(
 				rootCmd,

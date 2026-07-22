@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/telemetry"
@@ -57,9 +59,9 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
-	_ = c.MarkFlagRequired("host")
-	flags.BindEnv(c.Flags(), "host")
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	_ = c.MarkFlagRequired(names.Host)
+	flags.BindEnv(c.Flags(), names.Host)
 
 	return c
 }

@@ -7,6 +7,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/ideparse"
 	"github.com/spf13/cobra"
 )
@@ -43,8 +45,11 @@ with 'devsy ide list'.`,
 		},
 	}
 
-	setCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "IDE option in the form KEY=VALUE")
+	cliflags.Add(
+		setCmd,
+		cliflags.StringArray(&cmd.Options, names.Option, []string{}, "IDE option in the form KEY=VALUE").
+			Shorthand("o"),
+	)
 	return setCmd
 }
 

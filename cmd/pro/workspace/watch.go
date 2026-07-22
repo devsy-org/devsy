@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -49,14 +51,21 @@ func NewWatchCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
-	_ = c.MarkFlagRequired("host")
-	flags.BindEnv(c.Flags(), "host")
-	c.Flags().StringVar(&cmd.Project, "project", "", "The project to use")
-	_ = c.MarkFlagRequired("project")
-	flags.BindEnv(c.Flags(), "project")
-	c.Flags().
-		BoolVar(&cmd.FilterByOwner, "filter-by-owner", true, "If true only shows workspaces of current owner")
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	_ = c.MarkFlagRequired(names.Host)
+	flags.BindEnv(c.Flags(), names.Host)
+	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))
+	_ = c.MarkFlagRequired(names.Project)
+	flags.BindEnv(c.Flags(), names.Project)
+	cliflags.Add(
+		c,
+		cliflags.Bool(
+			&cmd.FilterByOwner,
+			names.FilterByOwner,
+			true,
+			"If true only shows workspaces of current owner",
+		),
+	)
 
 	return c
 }

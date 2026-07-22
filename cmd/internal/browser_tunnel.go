@@ -12,6 +12,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -50,25 +52,27 @@ func NewBrowserTunnelCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Workspace, "workspace", "", "Workspace name or ID")
-	c.Flags().StringVar(&cmd.TargetURL, "target-url", "", "Target URL for the browser IDE")
-	c.Flags().StringVar(&cmd.AuthSockID, "auth-sock-id", "", "Reused SSH_AUTH_SOCK id")
-	c.Flags().BoolVar(&cmd.ForwardPorts, "forward-ports", false, "Whether to forward ports")
-	c.Flags().StringArrayVar(&cmd.ExtraPorts, "extra-ports", nil, "Extra ports to forward")
-	c.Flags().StringVar(&cmd.User, "user", "", "Remote user")
-	c.Flags().
-		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "", "Git SSH signing key")
-	c.Flags().StringArrayVar(
-		&cmd.InheritListeners,
-		"inherit-listener",
-		nil,
-		"Inherited listener fd, format host:port=fd (repeatable, unix only)",
-	)
-	c.Flags().BoolVar(
-		&cmd.OpenBrowser,
-		"open-browser",
-		false,
-		"Open a host browser pointing at --target-url once the local listener is reachable",
+	cliflags.Add(
+		c,
+		cliflags.String(&cmd.Workspace, names.Workspace, "", "Workspace name or ID"),
+		cliflags.String(&cmd.TargetURL, names.TargetURL, "", "Target URL for the browser IDE"),
+		cliflags.String(&cmd.AuthSockID, names.AuthSockID, "", "Reused SSH_AUTH_SOCK id"),
+		cliflags.Bool(&cmd.ForwardPorts, names.ForwardPorts, false, "Whether to forward ports"),
+		cliflags.StringArray(&cmd.ExtraPorts, names.ExtraPorts, nil, "Extra ports to forward"),
+		cliflags.String(&cmd.User, names.User, "", "Remote user"),
+		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "", "Git SSH signing key"),
+		cliflags.StringArray(
+			&cmd.InheritListeners,
+			names.InheritListener,
+			nil,
+			"Inherited listener fd, format host:port=fd (repeatable, unix only)",
+		),
+		cliflags.Bool(
+			&cmd.OpenBrowser,
+			names.OpenBrowser,
+			false,
+			"Open a host browser pointing at --target-url once the local listener is reachable",
+		),
 	)
 	return c
 }

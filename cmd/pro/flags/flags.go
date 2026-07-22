@@ -2,6 +2,7 @@ package flags
 
 import (
 	rootflags "github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	flag "github.com/spf13/pflag"
 )
@@ -25,7 +26,7 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 
 	flags.StringVar(
 		&globalFlags.Config,
-		"config",
+		names.Config,
 		client.DefaultCacheConfig,
 		"The config to use (will be created if it does not exist)",
 	)

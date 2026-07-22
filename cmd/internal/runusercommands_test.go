@@ -6,6 +6,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/workspace"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,91 +70,91 @@ func TestNewRunUserCommandsCmd_ContainerIDWithoutConfigFails(t *testing.T) {
 
 func TestNewRunUserCommandsCmd_ContainerIDFlagExists(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("container-id")
+	f := cmd.Flags().Lookup(names.ContainerID)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewRunUserCommandsCmd_IDLabelFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("id-label")
+	f := cmd.Flags().Lookup(names.IDLabel)
 	require.NotNil(t, f)
 	assert.Equal(t, "stringArray", f.Value.Type())
 }
 
 func TestNewRunUserCommandsCmd_DockerPathFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("docker-path")
+	f := cmd.Flags().Lookup(names.DockerPath)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewRunUserCommandsCmd_ConfigFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("config")
+	f := cmd.Flags().Lookup(names.Config)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewRunUserCommandsCmd_OverrideConfigFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("override-config")
+	f := cmd.Flags().Lookup(names.OverrideConfig)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewRunUserCommandsCmd_RemoteEnvFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("remote-env")
+	f := cmd.Flags().Lookup(names.RemoteEnv)
 	require.NotNil(t, f)
 	assert.Equal(t, "stringArray", f.Value.Type())
 }
 
 func TestNewRunUserCommandsCmd_PrebuildFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("prebuild")
+	f := cmd.Flags().Lookup(names.Prebuild)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestNewRunUserCommandsCmd_SkipNonBlockingCommandsFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-non-blocking-commands")
+	f := cmd.Flags().Lookup(names.SkipNonBlockingCommands)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestRunUserCommandsCmd_SkipPostCreateFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-post-create")
+	f := cmd.Flags().Lookup(names.SkipPostCreate)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestRunUserCommandsCmd_SkipPostStartFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-post-start")
+	f := cmd.Flags().Lookup(names.SkipPostStart)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestRunUserCommandsCmd_SkipPostAttachFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-post-attach")
+	f := cmd.Flags().Lookup(names.SkipPostAttach)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestRunUserCommandsCmd_SkipOnCreateFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-on-create")
+	f := cmd.Flags().Lookup(names.SkipOnCreate)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestRunUserCommandsCmd_SkipUpdateContentFlag(t *testing.T) {
 	cmd := NewRunUserCommandsCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup("skip-update-content")
+	f := cmd.Flags().Lookup(names.SkipUpdateContent)
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 }
@@ -170,23 +171,23 @@ func TestRunUserCommandsCmd_SkipFlagsParseValues(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	val, err := cmd.Flags().GetBool("skip-post-create")
+	val, err := cmd.Flags().GetBool(names.SkipPostCreate)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = cmd.Flags().GetBool("skip-post-start")
+	val, err = cmd.Flags().GetBool(names.SkipPostStart)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = cmd.Flags().GetBool("skip-post-attach")
+	val, err = cmd.Flags().GetBool(names.SkipPostAttach)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = cmd.Flags().GetBool("skip-on-create")
+	val, err = cmd.Flags().GetBool(names.SkipOnCreate)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = cmd.Flags().GetBool("skip-update-content")
+	val, err = cmd.Flags().GetBool(names.SkipUpdateContent)
 	require.NoError(t, err)
 	assert.True(t, val)
 }
@@ -206,31 +207,31 @@ func TestRunUserCommandsCmd_NewFlagsParseValues(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	dockerPath, err := cmd.Flags().GetString("docker-path")
+	dockerPath, err := cmd.Flags().GetString(names.DockerPath)
 	require.NoError(t, err)
 	assert.Equal(t, "/usr/local/bin/podman", dockerPath)
 
-	configPath, err := cmd.Flags().GetString("config")
+	configPath, err := cmd.Flags().GetString(names.Config)
 	require.NoError(t, err)
 	assert.Equal(t, ".devcontainer/devcontainer.json", configPath)
 
-	overridePath, err := cmd.Flags().GetString("override-config")
+	overridePath, err := cmd.Flags().GetString(names.OverrideConfig)
 	require.NoError(t, err)
 	assert.Equal(t, "/tmp/override.json", overridePath)
 
-	remoteEnv, err := cmd.Flags().GetStringArray("remote-env")
+	remoteEnv, err := cmd.Flags().GetStringArray(names.RemoteEnv)
 	require.NoError(t, err)
 	assert.Equal(t, []string{testEnvFoo, testEnvBaz}, remoteEnv)
 
-	prebuild, err := cmd.Flags().GetBool("prebuild")
+	prebuild, err := cmd.Flags().GetBool(names.Prebuild)
 	require.NoError(t, err)
 	assert.True(t, prebuild)
 
-	skipNonBlocking, err := cmd.Flags().GetBool("skip-non-blocking-commands")
+	skipNonBlocking, err := cmd.Flags().GetBool(names.SkipNonBlockingCommands)
 	require.NoError(t, err)
 	assert.True(t, skipNonBlocking)
 
-	containerID, err := cmd.Flags().GetString("container-id")
+	containerID, err := cmd.Flags().GetString(names.ContainerID)
 	require.NoError(t, err)
 	assert.Equal(t, testContainerIDHex, containerID)
 }

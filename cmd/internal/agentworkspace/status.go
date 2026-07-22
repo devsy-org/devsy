@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 )
 
@@ -31,8 +33,11 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	statusCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
-	_ = statusCmd.MarkFlagRequired("workspace-info")
+	cliflags.Add(
+		statusCmd,
+		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
+	)
+	_ = statusCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return statusCmd
 }
 

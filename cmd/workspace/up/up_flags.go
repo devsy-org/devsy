@@ -1,6 +1,8 @@
 package up
 
 import (
+	"github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/spf13/cobra"
 )
@@ -17,37 +19,31 @@ func (cmd *UpCmd) registerFlags(upCmd *cobra.Command) {
 }
 
 func (cmd *UpCmd) registerSSHFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		BoolVar(&cmd.ConfigureSSH, "configure-ssh", true,
-			"If true will configure the ssh config to include the Devsy workspace")
-	upCmd.Flags().
-		BoolVar(&cmd.GPGAgentForwarding, "gpg-agent-forwarding", false,
-			"If true forward the local gpg-agent to the Devsy workspace")
-	upCmd.Flags().
-		StringVar(&cmd.SSHConfigPath, "ssh-config", "",
-			"The path to the ssh config to modify, if empty will use ~/.ssh/config")
-	upCmd.Flags().
-		BoolVar(&cmd.SSHTunnelMode, "ssh-tunnel-mode", false,
-			"If true will use a local TCP tunnel instead of ProxyCommand for SSH connections")
+	flags.Add(upCmd,
+		flags.Bool(&cmd.ConfigureSSH, names.SSHConfigure, true,
+			"Add the workspace to your SSH config"),
+		flags.Bool(&cmd.GPGAgentForwarding, names.SSHGPGForwarding, false,
+			"Forward the local gpg-agent into the workspace"),
+		flags.String(&cmd.SSHConfigPath, names.SSHConfig, "",
+			"Path to the SSH config to modify (default ~/.ssh/config)"),
+		flags.Bool(&cmd.SSHTunnelMode, names.SSHTunnel, false,
+			"Use a local TCP tunnel instead of ProxyCommand for SSH connections"),
+	)
 }
 
 func (cmd *UpCmd) registerDotfilesFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		StringVar(&cmd.DotfilesSource, "dotfiles", "", "The path or url to the dotfiles to use in the container")
-	upCmd.Flags().StringVar(&cmd.DotfilesSource, "dotfiles-repository", "", "Alias for --dotfiles")
-	_ = upCmd.Flags().MarkHidden("dotfiles-repository")
-	upCmd.Flags().
-		StringVar(&cmd.DotfilesScript, "dotfiles-script", "",
-			"The path in dotfiles directory to use to install the dotfiles, if empty will try to guess")
-	upCmd.Flags().
-		StringVar(&cmd.DotfilesTargetPath, "dotfiles-target-path", "",
-			"The target path inside the container to install dotfiles to (e.g., ~/dotfiles)")
-	upCmd.Flags().
-		StringSliceVar(&cmd.DotfilesScriptEnv, "dotfiles-script-env", []string{},
-			"Extra environment variables to put into the dotfiles install script, e.g. MY_ENV_VAR=MY_VALUE")
-	upCmd.Flags().
-		StringSliceVar(&cmd.DotfilesScriptEnvFile, "dotfiles-script-env-file", []string{},
-			"The path to files containing environment variables to set for the dotfiles install script")
+	flags.Add(upCmd,
+		flags.String(&cmd.DotfilesSource, names.Dotfiles, "",
+			"Path or URL to dotfiles to install in the container"),
+		flags.String(&cmd.DotfilesScript, names.DotfilesScript, "",
+			"Script within the dotfiles to run (auto-detected if unset)"),
+		flags.String(&cmd.DotfilesTargetPath, names.DotfilesTargetPath, "",
+			"Path inside the container to install dotfiles to (e.g. ~/dotfiles)"),
+		flags.StringSlice(&cmd.DotfilesScriptEnv, names.DotfilesScriptEnv, nil,
+			"Env var for the dotfiles script (KEY=VALUE, repeatable)"),
+		flags.StringSlice(&cmd.DotfilesScriptEnvFile, names.DotfilesScriptEnvFile, nil,
+			"File of env vars for the dotfiles script"),
+	)
 }
 
 func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
@@ -57,213 +53,187 @@ func (cmd *UpCmd) registerDevContainerFlags(upCmd *cobra.Command) {
 }
 
 func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		StringVar(&cmd.DevContainerSource, "devcontainer", "",
-			"Override where the devcontainer config comes from, ignoring the project's: "+
-				`"none" (ignore it; use --devcontainer-image or language detection) or `+
-				`"image:<ref>" (use only that image)`)
-	upCmd.Flags().
-		StringVar(&cmd.DevContainerImage, "devcontainer-image", "",
-			"The container image to use, this overrides the image in the resolved devcontainer config")
-	upCmd.Flags().
-		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
-	upCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
-	_ = upCmd.Flags().MarkHidden("config")
-	upCmd.Flags().
-		StringVar(&cmd.DevContainerID, "devcontainer-id", "",
-			"The ID of the devcontainer to use when multiple exist "+
-				"(e.g., folder name in .devcontainer/FOLDER/devcontainer.json)")
-	upCmd.Flags().
-		StringVar(&cmd.ExtraDevContainerPath, "extra-devcontainer-path", "",
-			"The path to an additional devcontainer.json file to override original devcontainer.json")
-	upCmd.Flags().
-		StringVar(&cmd.ExtraDevContainerPath, "override-config", "", "Alias for --extra-devcontainer-path")
-	_ = upCmd.Flags().MarkHidden("override-config")
-	upCmd.Flags().
-		StringVar(&cmd.FallbackImage, "fallback-image", "",
-			"The fallback image to use if no devcontainer configuration has been detected")
-	upCmd.Flags().
-		StringVar(&cmd.AdditionalFeatures, "additional-features", "",
-			`Additional features to apply to the dev container (JSON as per "features" section in devcontainer.json)`)
-	upCmd.Flags().
-		StringArrayVar(&cmd.IDLabels, "id-label", []string{},
-			"Override the default container identification labels (format: key=value, can be specified multiple times)")
-	upCmd.Flags().
-		StringVar(&cmd.DefaultUserEnvProbe, "default-user-env-probe", "",
-			"Override userEnvProbe from devcontainer.json (loginInteractiveShell, loginShell, interactiveShell, none)")
-	upCmd.Flags().
-		StringVar(&cmd.GPUAvailability, "gpu-availability", "",
-			"Override GPU availability detection (detect, true, false)")
-	upCmd.Flags().
-		StringVar(&cmd.UpdateRemoteUserUIDDefault, "update-remote-user-uid-default", "",
-			"Default for updateRemoteUserUID when not set in devcontainer.json (on, off)")
-	upCmd.Flags().
-		StringVar(&cmd.ContainerDataFolder, "container-data-folder", "",
-			"Custom path for container-specific data")
 	defaultMountGitRoot := true
 	cmd.MountWorkspaceGitRoot = &defaultMountGitRoot
-	upCmd.Flags().
-		BoolVar(cmd.MountWorkspaceGitRoot, "mount-workspace-git-root", true,
-			"Mount the workspace git root as the workspace folder")
+	flags.Add(upCmd,
+		flags.String(&cmd.DevContainerSource, names.DevContainer, "",
+			"Select the devcontainer config source, overriding project discovery: "+
+				`"none" (ignore the project config), "image:<ref>" (use only that image), `+
+				`"id:<name>" (a named .devcontainer/<name> profile), or a path to a devcontainer.json`),
+		flags.String(&cmd.ExtraDevContainerPath, names.DevContainerOverlay, "",
+			"Path to a devcontainer.json whose values merge on top of the resolved config"),
+		flags.String(&cmd.FallbackImage, names.FallbackImage, "",
+			"Image to use when no devcontainer config is found"),
+		flags.String(&cmd.GPUAvailability, names.GPUAvailability, "",
+			"Override GPU detection (detect, true, false)"),
+		flags.String(&cmd.UpdateRemoteUserUIDDefault, names.UpdateRemoteUserUID, "",
+			"Default for updateRemoteUserUID when unset in the config (on, off)"),
+		flags.Bool(cmd.MountWorkspaceGitRoot, names.MountWorkspaceGitRoot, true,
+			"Mount the workspace git root as the workspace folder"),
+	)
+	flags.RegisterDevContainerModifierFlags(upCmd.Flags(), flags.DevContainerModifierFlags{
+		Image:               &cmd.DevContainerImage,
+		Features:            &cmd.AdditionalFeatures,
+		UserEnvProbe:        &cmd.DefaultUserEnvProbe,
+		IDLabels:            &cmd.IDLabels,
+		ContainerDataFolder: &cmd.ContainerDataFolder,
+	})
 }
 
 func (cmd *UpCmd) registerLifecycleFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		IntVar(&cmd.TerminalColumns, "terminal-columns", 0,
-			"Terminal column count for lifecycle scripts")
-	upCmd.Flags().
-		IntVar(&cmd.TerminalRows, "terminal-rows", 0,
-			"Terminal row count for lifecycle scripts")
-	upCmd.Flags().
-		BoolVar(&cmd.SkipPostCreate, "skip-post-create", false,
-			"Skip the postCreateCommand lifecycle hook")
-	upCmd.Flags().
-		BoolVar(&cmd.SkipNonBlockingCommands, "skip-non-blocking-commands", false,
-			"Skip non-blocking lifecycle commands")
-	upCmd.Flags().
-		BoolVar(&cmd.SkipPostStart, "skip-post-start", false,
-			"Skip running postStartCommand")
-	upCmd.Flags().
-		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false,
-			"Skip running postAttachCommand")
-	upCmd.Flags().
-		BoolVar(&cmd.SkipHostRequirements, "skip-host-requirements", false,
-			"Skip host requirements validation and allow container creation even if the host does not meet minimum requirements")
+	flags.Add(upCmd,
+		flags.Int(&cmd.TerminalColumns, names.TerminalColumns, 0,
+			"Terminal column count for lifecycle scripts"),
+		flags.Int(&cmd.TerminalRows, names.TerminalRows, 0,
+			"Terminal row count for lifecycle scripts"),
+		flags.Bool(&cmd.SkipPostCreate, names.SkipPostCreate, false,
+			"Skip the postCreateCommand hook"),
+		flags.Bool(&cmd.SkipNonBlockingCommands, names.SkipNonBlockingCommands, false,
+			"Skip non-blocking lifecycle commands"),
+		flags.Bool(&cmd.SkipPostStart, names.SkipPostStart, false,
+			"Skip the postStartCommand hook"),
+		flags.Bool(&cmd.SkipPostAttach, names.SkipPostAttach, false,
+			"Skip the postAttachCommand hook"),
+		flags.Bool(&cmd.SkipHostRequirements, names.SkipHostRequirements, false,
+			"Skip host requirements validation"),
+	)
 }
 
 func (cmd *UpCmd) registerContainerOverrideFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		StringVar(&cmd.ContainerUser, "container-user", "",
-			"Override the user in the container")
-	upCmd.Flags().
-		StringVar(&cmd.RemoteUser, "remote-user", "",
-			"Override the remoteUser setting")
+	flags.Add(upCmd,
+		flags.String(&cmd.ContainerUser, names.ContainerUser, "",
+			"Override the container user"),
+		flags.String(&cmd.RemoteUser, names.RemoteUser, "",
+			"Override the remoteUser setting"),
+	)
 }
 
 func (cmd *UpCmd) registerIDEFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		StringVar(&cmd.IDE, "ide", "", "The IDE to open the workspace in. If empty will use vscode locally or in browser")
-	upCmd.Flags().
-		StringArrayVar(&cmd.IDEOptions, "ide-option", []string{}, "IDE option in the form KEY=VALUE")
 	cmd.IDELaunch = opener.LaunchAuto
-	upCmd.Flags().Var(
-		&cmd.IDELaunch,
-		"ide-launch",
-		"How to launch the IDE: auto opens it (default), headless skips the host browser/app, skip does not launch.",
+	flags.Add(
+		upCmd,
+		flags.String(&cmd.IDE, names.IDE, "",
+			"IDE to open the workspace in (defaults to vscode, locally or in browser)"),
+		flags.StringArray(
+			&cmd.IDEOptions,
+			names.IDEOption,
+			nil,
+			"IDE option (KEY=VALUE, repeatable)",
+		),
+		flags.Value(
+			&cmd.IDELaunch,
+			names.IDELaunch,
+			"How to launch the IDE: auto opens it (default), headless skips the host browser/app, skip does not launch",
+		),
+		flags.String(&cmd.WorkspaceFolder, names.WorkspaceFolder, "",
+			"Folder to open in the IDE (absolute path inside the container)"),
 	)
-	upCmd.Flags().
-		StringVar(&cmd.WorkspaceFolder, "workspace-folder", "",
-			"Override the folder path opened in the IDE (absolute path inside the container)")
 }
 
 func (cmd *UpCmd) registerGitFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
-			"The git clone strategy Devsy uses to checkout git based workspaces. "+
-				"Can be full (default), blobless, treeless or shallow")
-	upCmd.Flags().
-		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
-			"If true will clone git submodule repositories recursively")
-	upCmd.Flags().
-		Var(&cmd.GitLFSMode, "git-lfs-mode",
-			"How Devsy handles Git LFS after cloning. Can be full (default, download LFS "+
-				"content), setup-only (configure LFS but leave pointer files) or skip (ignore LFS)")
-	upCmd.Flags().
-		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "",
-			"The ssh key to use when signing git commits. Used to explicitly setup Devsy's ssh signature "+
-				"forwarding with given key. Should be same format as value of `git config user.signingkey`")
+	flags.Add(upCmd,
+		flags.Value(&cmd.GitCloneStrategy, names.GitCloneStrategy,
+			"Clone strategy for git workspaces: full (default), blobless, treeless or shallow"),
+		flags.Bool(&cmd.GitCloneRecursiveSubmodules, names.GitRecurseSubmodules, false,
+			"Clone submodules recursively"),
+		flags.Value(&cmd.GitLFSMode, names.GitLFSMode,
+			"Git LFS handling after cloning: full (default, download content), "+
+				"setup-only (configure LFS, leave pointer files) or skip (ignore LFS)"),
+		flags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "",
+			"SSH key to sign git commits with (same format as git config user.signingkey)"),
+	)
 }
 
 func (cmd *UpCmd) registerPodmanFlags(upCmd *cobra.Command) {
-	upCmd.Flags().
-		StringVar(&cmd.Userns, "userns", "",
-			"User namespace to use for the container (Podman only; e.g. \"keep-id\", \"host\", or \"auto\")")
-	upCmd.Flags().
-		StringSliceVar(&cmd.UidMap, "uidmap", []string{},
+	flags.Add(upCmd,
+		flags.String(
+			&cmd.Userns,
+			names.Userns,
+			"",
+			"User namespace to use for the container (Podman only; e.g. \"keep-id\", \"host\", or \"auto\")",
+		),
+		flags.StringSlice(&cmd.UidMap, names.UIDMap, nil,
 			"UID mapping for Podman user namespace "+
-				"(Podman only; format: container_id:host_id:amount, e.g. \"0:1000:1\")")
-	upCmd.Flags().
-		StringSliceVar(&cmd.GidMap, "gidmap", []string{},
+				"(Podman only; format: container_id:host_id:amount, e.g. \"0:1000:1\")"),
+		flags.StringSlice(&cmd.GidMap, names.GIDMap, nil,
 			"GID mapping for Podman user namespace "+
-				"(Podman only; format: container_id:host_id:amount, e.g. \"0:1000:1\")")
+				"(Podman only; format: container_id:host_id:amount, e.g. \"0:1000:1\")"),
+	)
+	upCmd.MarkFlagsMutuallyExclusive(names.Userns, names.UIDMap)
+	upCmd.MarkFlagsMutuallyExclusive(names.Userns, names.GIDMap)
 }
 
 func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
-	upCmd.Flags().StringVar(&cmd.ID, "id", "", "The id to use for the workspace")
-	upCmd.Flags().
-		StringVar(&cmd.Machine, "machine", "",
-			"The machine to use for this workspace. The machine needs to exist beforehand or the "+
-				"command will fail. If the workspace already exists, this option has no effect")
-	upCmd.Flags().
-		StringVar(&cmd.Source, "source", "", "Optional source for the workspace, e.g. git:https://github.com/my-org/my-repo")
-	upCmd.Flags().
-		StringArrayVar(&cmd.ProviderOptions, "provider-option", []string{}, "Provider option in the form KEY=VALUE")
-	upCmd.Flags().
-		BoolVar(&cmd.Reconfigure, "reconfigure", false,
-			"Reconfigure the options for this workspace. Only supported in Devsy Pro right now.")
-	upCmd.Flags().
-		BoolVar(&cmd.Prebuild, "prebuild", false,
-			"If true will only run the prebuild lifecycle (onCreateCommand + updateContentCommand) then stop")
-	upCmd.Flags().
-		BoolVar(&cmd.Pull, "pull", false,
-			"Always attempt to pull a newer version of the base image when building")
-	upCmd.Flags().
-		BoolVar(&cmd.NoCache, "no-cache", false,
-			"Do not use the build cache when building the image")
-	upCmd.Flags().
-		BoolVar(&cmd.Recreate, "recreate", false, "If true will remove any existing containers and recreate them")
-	upCmd.Flags().BoolVar(&cmd.Recreate, "remove-existing-container", false, "Alias for --recreate")
-	_ = upCmd.Flags().MarkHidden("remove-existing-container")
-	upCmd.Flags().
-		BoolVar(&cmd.Reset, "reset", false,
-			"If true will remove any existing containers including sources, and recreate them")
-	upCmd.Flags().
-		StringSliceVar(&cmd.PrebuildRepositories, "prebuild-repository", []string{},
-			"Docker repository that hosts devsy prebuilds for this workspace")
-	upCmd.Flags().
-		StringArrayVar(&cmd.WorkspaceEnv, "workspace-env", []string{},
-			"Extra env variables to put into the workspace, e.g. MY_ENV_VAR=MY_VALUE")
-	upCmd.Flags().
-		StringSliceVar(&cmd.WorkspaceEnvFile, "workspace-env-file", []string{},
-			"The path to files containing a list of extra env variables to put into the workspace, "+
-				"e.g. MY_ENV_VAR=MY_VALUE")
-	upCmd.Flags().
-		StringVar(&cmd.SecretsFile, "secrets-file", "",
-			"Path to a dotenv-style file containing KEY=VALUE secrets injected into lifecycle commands")
-	upCmd.Flags().
-		StringVar(&cmd.FeatureSecretsFile, "feature-secrets-file", "",
-			"Path to a JSON file containing secret values for features, format: "+
-				`{"featureId": {"optionName": "value"}}`)
-	upCmd.Flags().
-		StringArrayVar(&cmd.InitEnv, "init-env", []string{},
-			"Extra env variables to inject during the initialization of the workspace, e.g. MY_ENV_VAR=MY_VALUE")
-	upCmd.Flags().
-		BoolVar(&cmd.DisableDaemon, "disable-daemon", false,
-			"If enabled, will not install a daemon into the target machine to track activity")
-	upCmd.Flags().
-		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
-			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
-				"Takes priority over devcontainer.json build.cacheFrom")
-	upCmd.Flags().
-		StringVar(&cmd.WorkspaceMountConsistency, "workspace-mount-consistency", "",
-			"Consistency mode for the workspace bind mount (consistent, cached, delegated)")
-	upCmd.Flags().
-		StringArrayVar(&cmd.Mounts, "mount", []string{},
-			"Additional mount to add to the container (format: type=bind,source=/host/path,target=/container/path). "+
-				"Can be specified multiple times")
-	upCmd.Flags().
-		StringVar(&cmd.RunPlatform, "platform", "",
-			"Run the container under a specific platform via emulation (e.g. linux/amd64). "+
-				"Empty uses the host's native platform")
-	upCmd.Flags().
-		BoolVar(&cmd.pullFromInsideContainerFlag, "pull-from-inside-container", false,
-			"Clone the workspace source inside the container instead of bind-mounting "+
-				"from the host. Unset = auto-detect.")
+	flags.Add(
+		upCmd,
+		flags.String(&cmd.ID, names.ID, "", "ID for the workspace"),
+		flags.String(
+			&cmd.Machine,
+			names.Machine,
+			"",
+			"Existing machine to use for this workspace; no effect if the workspace already exists",
+		),
+		flags.String(&cmd.Source, names.Source, "",
+			"Workspace source (e.g. git:https://github.com/my-org/my-repo)"),
+		flags.StringArray(&cmd.ProviderOptions, names.ProviderOption, nil,
+			"Provider option (KEY=VALUE, repeatable)"),
+		flags.Bool(&cmd.Reconfigure, names.Reconfigure, false,
+			"Reconfigure this workspace's options (Devsy Pro only)"),
+		flags.Bool(&cmd.Prebuild, names.Prebuild, false,
+			"Run only the prebuild lifecycle (onCreateCommand + updateContentCommand), then stop"),
+		flags.Bool(&cmd.Pull, names.Pull, false, "Pull a newer base image when building"),
+		flags.Bool(&cmd.NoCache, names.NoCache, false, "Build without the image cache"),
+		flags.Bool(
+			&cmd.Recreate,
+			names.Recreate,
+			false,
+			"Remove and recreate existing containers",
+		),
+		flags.Bool(&cmd.Reset, names.Reset, false,
+			"Remove and recreate existing containers, including their sources"),
+		flags.StringSlice(&cmd.PrebuildRepositories, names.PrebuildRepo, nil,
+			"Docker repository hosting prebuilds for this workspace"),
+		flags.StringArray(&cmd.WorkspaceEnv, names.WorkspaceEnv, nil,
+			"Env var for the workspace (KEY=VALUE, repeatable)"),
+		flags.StringSlice(&cmd.WorkspaceEnvFile, names.WorkspaceEnvFile, nil,
+			"File of env vars for the workspace"),
+		flags.String(&cmd.SecretsFile, names.SecretsFile, "",
+			"Dotenv file of KEY=VALUE secrets for lifecycle commands"),
+		flags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",
+			`JSON file of feature secret values, format: {"featureId": {"optionName": "value"}}`),
+		flags.StringArray(&cmd.InitEnv, names.InitEnv, nil,
+			"Env var for workspace initialization (KEY=VALUE, repeatable)"),
+		flags.Bool(&cmd.DisableDaemon, names.DisableDaemon, false,
+			"Do not install the activity-tracking daemon on the target machine"),
+		flags.StringArray(&cmd.CacheFrom, names.CacheFrom, nil,
+			"Build cache source (e.g. myregistry.io/cache:latest or type=registry,ref=...); "+
+				"takes priority over devcontainer.json build.cacheFrom"),
+		flags.String(&cmd.WorkspaceMountConsistency, names.WorkspaceMountConsistency, "",
+			"Consistency mode for the workspace bind mount (consistent, cached, delegated)"),
+		flags.StringArray(
+			&cmd.Mounts,
+			names.Mount,
+			nil,
+			"Extra container mount (type=bind,source=/host/path,target=/container/path; repeatable)",
+		),
+		flags.String(
+			&cmd.RunPlatform,
+			names.Platform,
+			"",
+			"Run under a specific platform via emulation (e.g. linux/amd64); empty uses the host platform",
+		),
+		flags.Bool(
+			&cmd.pullFromInsideContainerFlag,
+			names.PullFromInsideContainer,
+			false,
+			"Clone the source inside the container instead of bind-mounting from the host (unset = auto-detect)",
+		),
+	)
 }
 
 func (cmd *UpCmd) registerTestingFlags(upCmd *cobra.Command) {
-	upCmd.Flags().StringVar(&cmd.DaemonInterval, "daemon-interval", "", "TESTING ONLY")
-	_ = upCmd.Flags().MarkHidden("daemon-interval")
-	upCmd.Flags().BoolVar(&cmd.ForceDockerless, "force-dockerless", false, "TESTING ONLY")
-	_ = upCmd.Flags().MarkHidden("force-dockerless")
+	flags.Add(upCmd,
+		flags.String(&cmd.DaemonInterval, names.DaemonInterval, "", "TESTING ONLY").Hidden(),
+		flags.Bool(&cmd.ForceDockerless, names.ForceDockerless, false, "TESTING ONLY").Hidden(),
+	)
 }

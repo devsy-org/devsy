@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/openvscode"
 	"github.com/devsy-org/devsy/pkg/ide/vscodeweb"
@@ -123,8 +125,11 @@ func newBrowserAsyncCmd(b browserIDE) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  cmd.Run,
 	}
-	cobraCmd.Flags().StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
-	_ = cobraCmd.MarkFlagRequired("setup-info")
+	cliflags.Add(
+		cobraCmd,
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+	)
+	_ = cobraCmd.MarkFlagRequired(names.SetupInfo)
 	return cobraCmd
 }
 

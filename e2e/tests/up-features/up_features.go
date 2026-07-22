@@ -492,17 +492,15 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
 
-			// This should not fail with "Parent does not exist" error
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			// Test that both features are installed correctly
 			out, err := f.DevsySSH(ctx, wsName, "python3 --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.ContainSubstring("Python 3.11"))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
-	) // This test compiles Python
+	)
 
 	ginkgo.It(
 		"should handle same feature in dependsOn and installsAfter",

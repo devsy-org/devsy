@@ -12,8 +12,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -86,10 +86,6 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 			cmd.Context)
 	}
 
-	if _, err := devcontainer.ParseSourceSpec(cmd.DevContainerSource); err != nil {
-		return err
-	}
-
 	args := []string{opts.Source}
 	client, err := cmd.prepareClient(ctx, devsyConfig, args)
 	if err != nil {
@@ -148,7 +144,7 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpCmd{GlobalFlags: f}
 	upCmd := &cobra.Command{
 		Use:   "up [flags] [workspace-path|workspace-name]",
-		Short: "Starts a new workspace",
+		Short: "Start a workspace",
 		RunE:  cmd.execute,
 	}
 	cmd.registerFlags(upCmd)
@@ -188,7 +184,7 @@ func (cmd *UpCmd) Run(
 }
 
 func (cmd *UpCmd) applyConfig(devsyConfig *config.Config) {
-	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
+	if devsyConfig.ContextOptionBool(config.ContextOptionSSHStrictHostKeyChecking) {
 		cmd.StrictHostKeyChecking = true
 	}
 	cmd.resolveDotfilesOptions(devsyConfig)
@@ -277,12 +273,9 @@ func reportErr(err error, emitJSON bool, out io.Writer) error {
 
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
 func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
-	containerID := ""
+	containerID := config2.GetContainerID(wctx.result)
 	var warnings []string
 	if wctx.result != nil {
-		if wctx.result.ContainerDetails != nil {
-			containerID = wctx.result.ContainerDetails.ID
-		}
 		warnings = wctx.result.HostWarnings
 	}
 	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
@@ -333,7 +326,7 @@ type workspaceContext struct {
 }
 
 func (cmd *UpCmd) applyPullFromInsideContainerOverride(cobraCmd *cobra.Command) {
-	if !cobraCmd.Flags().Changed("pull-from-inside-container") {
+	if !cobraCmd.Flags().Changed(names.PullFromInsideContainer) {
 		return
 	}
 	value := cmd.pullFromInsideContainerFlag

@@ -9,6 +9,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -49,11 +51,14 @@ func NewUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
-	_ = c.MarkFlagRequired("host")
-	flags.BindEnv(c.Flags(), "host")
-	c.Flags().StringVar(&cmd.Instance, "instance", "", "The workspace instance to update")
-	_ = c.MarkFlagRequired("instance")
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	_ = c.MarkFlagRequired(names.Host)
+	flags.BindEnv(c.Flags(), names.Host)
+	cliflags.Add(
+		c,
+		cliflags.String(&cmd.Instance, names.Instance, "", "The workspace instance to update"),
+	)
+	_ = c.MarkFlagRequired(names.Instance)
 
 	return c
 }

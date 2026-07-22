@@ -26,6 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
@@ -43,8 +44,8 @@ const (
 	logOutputLogfmt = "logfmt"
 	logOutputText   = "text"
 
-	flagLogOutput = "--log-output"
-	flagLogFormat = "--log-format"
+	flagLogOutput = "--" + names.LogOutput
+	flagLogFormat = "--" + names.LogFormat
 
 	groupCore         = "core"
 	groupConfig       = "config"

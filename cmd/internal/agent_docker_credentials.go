@@ -6,6 +6,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/docker/docker-credential-helpers/credentials"
 	"github.com/spf13/cobra"
@@ -30,9 +32,11 @@ func NewDockerCredentialsCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
-	dockerCredentialsCmd.Flags().
-		IntVar(&cmd.Port, "port", 0, "If specified, will use the given port")
-	_ = dockerCredentialsCmd.MarkFlagRequired("port")
+	cliflags.Add(
+		dockerCredentialsCmd,
+		cliflags.Int(&cmd.Port, names.Port, 0, "If specified, will use the given port"),
+	)
+	_ = dockerCredentialsCmd.MarkFlagRequired(names.Port)
 	return dockerCredentialsCmd
 }
 

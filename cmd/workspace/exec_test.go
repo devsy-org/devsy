@@ -4,18 +4,22 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	flagSkipPostCreate  = names.Flag(names.SkipPostCreate)
+	flagWorkspaceFolder = names.Flag(names.WorkspaceFolder)
+)
+
 const (
-	flagSkipPostCreate  = "--skip-post-create"
-	flagWorkspaceFolder = "--workspace-folder"
-	testTmpDir          = "/tmp"
-	testCmdEcho         = "echo"
-	testCmdHello        = "hello"
+	testTmpDir   = "/tmp"
+	testCmdEcho  = "echo"
+	testCmdHello = "hello"
 )
 
 func TestValidateRemoteEnv_Valid(t *testing.T) {
@@ -103,7 +107,7 @@ func TestResolveDockerCommand_OverrideBeatsDefault(t *testing.T) {
 
 func TestExecCmd_DockerPathFlag(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	flag := execCmd.Flags().Lookup("docker-path")
+	flag := execCmd.Flags().Lookup(names.DockerPath)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
@@ -133,7 +137,7 @@ func TestExecCmd_NonExistentContainerID(t *testing.T) {
 
 func TestExecCmd_ContainerDataFolderFlag(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	flag := execCmd.Flags().Lookup("container-data-folder")
+	flag := execCmd.Flags().Lookup(names.ContainerDataFolder)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
@@ -142,17 +146,17 @@ func TestExecCmd_ContainerDataFolderFlagParsesValue(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
 	err := execCmd.ParseFlags([]string{
 		flagWorkspaceFolder, testTmpDir,
-		"--container-data-folder", "/custom/data",
+		names.Flag(names.ContainerDataFolder), "/custom/data",
 	})
 	require.NoError(t, err)
 
-	flag := execCmd.Flags().Lookup("container-data-folder")
+	flag := execCmd.Flags().Lookup(names.ContainerDataFolder)
 	assert.Equal(t, "/custom/data", flag.Value.String())
 }
 
 func TestExecCmd_SkipPostCreateFlag(t *testing.T) {
 	execCmd := NewExecCmd(&flags.GlobalFlags{})
-	flag := execCmd.Flags().Lookup("skip-post-create")
+	flag := execCmd.Flags().Lookup(names.SkipPostCreate)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
@@ -165,7 +169,7 @@ func TestExecCmd_SkipPostCreateFlagParsesValue(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	val, err := execCmd.Flags().GetBool("skip-post-create")
+	val, err := execCmd.Flags().GetBool(names.SkipPostCreate)
 	require.NoError(t, err)
 	assert.True(t, val)
 }

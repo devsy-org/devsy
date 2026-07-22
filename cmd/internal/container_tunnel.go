@@ -15,6 +15,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -42,11 +44,11 @@ func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	containerTunnelCmd.Flags().
-		StringVar(&cmd.User, "user", "", "The user to create the tunnel with")
-	containerTunnelCmd.Flags().
-		StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
-	_ = containerTunnelCmd.MarkFlagRequired("workspace-info")
+	cliflags.Add(containerTunnelCmd,
+		cliflags.String(&cmd.User, names.User, "", "The user to create the tunnel with"),
+		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
+	)
+	_ = containerTunnelCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return containerTunnelCmd
 }
 

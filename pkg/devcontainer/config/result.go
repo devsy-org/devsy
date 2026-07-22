@@ -61,6 +61,14 @@ func GetMounts(result *Result) []*Mount {
 	return mounts
 }
 
+// GetContainerID returns the container ID from a result, or "" when absent.
+func GetContainerID(result *Result) string {
+	if result != nil && result.ContainerDetails != nil {
+		return result.ContainerDetails.ID
+	}
+	return ""
+}
+
 // GetRemoteUser determines the remote user using DevContainer specification priority order:
 // 1. remoteUser from configuration
 // 2. devsy.user label from container

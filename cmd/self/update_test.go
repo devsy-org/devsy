@@ -3,6 +3,7 @@ package self
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,21 +15,21 @@ func TestNewUpdateCmd_CommandName(t *testing.T) {
 
 func TestNewUpdateCmd_HasVersionFlag(t *testing.T) {
 	cmd := NewUpdateCmd()
-	f := cmd.Flags().Lookup("version")
+	f := cmd.Flags().Lookup(names.Version)
 	require.NotNil(t, f, "--version flag must exist")
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewUpdateCmd_HasDryRunFlag(t *testing.T) {
 	cmd := NewUpdateCmd()
-	f := cmd.Flags().Lookup("dry-run")
+	f := cmd.Flags().Lookup(names.DryRun)
 	require.NotNil(t, f, "--dry-run flag must exist")
 	assert.Equal(t, "false", f.DefValue)
 }
 
 func TestNewUpdateCmd_HasChannelFlag(t *testing.T) {
 	cmd := NewUpdateCmd()
-	f := cmd.Flags().Lookup("channel")
+	f := cmd.Flags().Lookup(names.Channel)
 	require.NotNil(t, f, "--channel flag must exist")
 	assert.Equal(t, channelStable, f.DefValue)
 }

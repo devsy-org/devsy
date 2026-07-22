@@ -30,6 +30,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
@@ -73,32 +75,54 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	setupContainerCmd.Flags().
-		BoolVar(&cmd.StreamMounts, "stream-mounts", false, "If true, will try to stream the bind mounts from the host")
-	setupContainerCmd.Flags().
-		BoolVar(&cmd.Prebuild, "prebuild", false,
-			"If true, only run prebuild lifecycle hooks (onCreateCommand + updateContentCommand)")
-	setupContainerCmd.Flags().
-		BoolVar(&cmd.ChownWorkspace, "chown-workspace", false, "If Devsy should chown the workspace to the remote user")
-	setupContainerCmd.Flags().
-		BoolVar(&cmd.InjectGitCredentials, "inject-git-credentials", false,
-			"If Devsy should inject git credentials during setup")
-	setupContainerCmd.Flags().
-		StringVar(&cmd.ContainerWorkspaceInfo, "container-workspace-info", "", "The container workspace info")
-	setupContainerCmd.Flags().
-		StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
-	setupContainerCmd.Flags().StringVar(&cmd.AccessKey, "access-key", "", "Access Key to use")
-	setupContainerCmd.Flags().
-		StringVar(&cmd.WorkspaceHost, "workspace-host", "", "Workspace hostname to use")
-	setupContainerCmd.Flags().StringVar(&cmd.PlatformHost, "platform-host", "", "Platform host")
-	setupContainerCmd.Flags().
-		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
-	setupContainerCmd.Flags().
-		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
-	_ = setupContainerCmd.MarkFlagRequired("setup-info")
+	cliflags.Add(
+		setupContainerCmd,
+		cliflags.Bool(
+			&cmd.StreamMounts,
+			names.StreamMounts,
+			false,
+			"If true, will try to stream the bind mounts from the host",
+		),
+		cliflags.Bool(
+			&cmd.Prebuild,
+			names.Prebuild,
+			false,
+			"If true, only run prebuild lifecycle hooks (onCreateCommand + updateContentCommand)",
+		),
+		cliflags.Bool(
+			&cmd.ChownWorkspace,
+			names.ChownWorkspace,
+			false,
+			"If Devsy should chown the workspace to the remote user",
+		),
+		cliflags.Bool(
+			&cmd.InjectGitCredentials,
+			names.InjectGitCredentials,
+			false,
+			"If Devsy should inject git credentials during setup",
+		),
+		cliflags.String(
+			&cmd.ContainerWorkspaceInfo,
+			names.ContainerWorkspaceInfo,
+			"",
+			"The container workspace info",
+		),
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+		cliflags.String(&cmd.AccessKey, names.AccessKey, "", "Access Key to use"),
+		cliflags.String(&cmd.WorkspaceHost, names.WorkspaceHost, "", "Workspace hostname to use"),
+		cliflags.String(&cmd.PlatformHost, names.PlatformHost, "", "Platform host"),
+		cliflags.String(&cmd.DotfilesRepo, names.DotfilesRepo, "", "Dotfiles repository URL"),
+		cliflags.String(
+			&cmd.DotfilesScript,
+			names.DotfilesScript,
+			"",
+			"Dotfiles install script path",
+		),
+	)
+	_ = setupContainerCmd.MarkFlagRequired(names.SetupInfo)
 
-	flags.BindEnv(setupContainerCmd.Flags(), "access-key")
-	flags.BindEnv(setupContainerCmd.Flags(), "platform-host")
+	flags.BindEnv(setupContainerCmd.Flags(), names.AccessKey)
+	flags.BindEnv(setupContainerCmd.Flags(), names.PlatformHost)
 
 	return setupContainerCmd
 }
@@ -310,19 +334,19 @@ func buildDeferredHooksCmd(
 
 	args := []string{
 		cmdInternal, cmdAgent, cmdContainer, "deferred-hooks",
-		"--setup-info", setupInfo,
+		names.Flag(names.SetupInfo), setupInfo,
 	}
 	if prebuild {
-		args = append(args, "--prebuild")
+		args = append(args, names.Flag(names.Prebuild))
 	}
 	if dotfilesRepo != "" {
-		args = append(args, "--dotfiles-repo", dotfilesRepo)
+		args = append(args, names.Flag(names.DotfilesRepo), dotfilesRepo)
 	}
 	if dotfilesScript != "" {
-		args = append(args, "--dotfiles-script", dotfilesScript)
+		args = append(args, names.Flag(names.DotfilesScript), dotfilesScript)
 	}
 	if len(secretsEnv) > 0 {
-		args = append(args, "--secrets-env", strings.Join(secretsEnv, ","))
+		args = append(args, names.Flag(names.SecretsEnv), strings.Join(secretsEnv, ","))
 	}
 
 	return &exec.Cmd{
@@ -478,10 +502,10 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 
 		args := []string{
 			cmdInternal, cmdAgent, cmdContainer, "daemon",
-			"--timeout", workspaceInfo.ContainerTimeout,
+			names.Flag(names.Timeout), workspaceInfo.ContainerTimeout,
 		}
 		if shutdownAction != "" {
-			args = append(args, "--shutdown-action", shutdownAction)
+			args = append(args, names.Flag(names.ShutdownAction), shutdownAction)
 		}
 
 		daemonCmd := &exec.Cmd{
@@ -506,12 +530,12 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 
 		args := []string{
 			cmdInternal, cmdAgent, cmdContainer, "post-attach",
-			"--setup-info", cmd.SetupInfo,
+			names.Flag(names.SetupInfo), cmd.SetupInfo,
 		}
 		if len(sctx.workspaceInfo.CLIOptions.SecretsEnv) > 0 {
 			args = append(
 				args,
-				"--secrets-env",
+				names.Flag(names.SecretsEnv),
 				strings.Join(sctx.workspaceInfo.CLIOptions.SecretsEnv, ","),
 			)
 		}
@@ -696,8 +720,8 @@ func (cmd *SetupContainerCmd) setupVSCode(
 
 			args := []string{
 				cmdInternal, cmdAgent, cmdContainer, "vscode-async",
-				"--setup-info", cmd.SetupInfo,
-				"--flavor", string(flavor),
+				names.Flag(names.SetupInfo), cmd.SetupInfo,
+				names.Flag(names.Flavor), string(flavor),
 			}
 
 			//nolint:gosec // binaryPath is from os.Executable(), not user input
@@ -773,7 +797,7 @@ func (cmd *SetupContainerCmd) startBrowserExtensionsInstall(
 			cmdAgent,
 			cmdContainer,
 			b.asyncCmd,
-			"--setup-info",
+			names.Flag(names.SetupInfo),
 			cmd.SetupInfo,
 		), nil
 	})

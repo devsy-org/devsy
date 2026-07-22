@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -374,24 +375,24 @@ func buildHelperArgs(
 ) []string {
 	args := []string{
 		"internal", "browser-tunnel",
-		"--context", contextName,
-		"--workspace", workspaceID,
-		"--target-url", tunnelParams.TargetURL,
-		"--auth-sock-id", tunnelParams.AuthSockID,
-		"--user", tunnelParams.User,
-		"--git-ssh-signing-key", tunnelParams.GitSSHSigningKey,
+		names.Flag(names.Context), contextName,
+		names.Flag(names.Workspace), workspaceID,
+		names.Flag(names.TargetURL), tunnelParams.TargetURL,
+		names.Flag(names.AuthSockID), tunnelParams.AuthSockID,
+		names.Flag(names.User), tunnelParams.User,
+		names.Flag(names.GitSSHSigningKey), tunnelParams.GitSSHSigningKey,
 	}
 	if tunnelParams.ForwardPorts {
-		args = append(args, "--forward-ports")
+		args = append(args, names.Flag(names.ForwardPorts))
 	}
 	for _, p := range tunnelParams.ExtraPorts {
-		args = append(args, "--extra-ports", p)
+		args = append(args, names.Flag(names.ExtraPorts), p)
 	}
 	if openBrowser {
-		args = append(args, "--open-browser")
+		args = append(args, names.Flag(names.OpenBrowser))
 	}
 	if pkglog.DebugEnabled() {
-		args = append(args, "--debug")
+		args = append(args, names.Flag(names.Debug))
 	}
 	return args
 }

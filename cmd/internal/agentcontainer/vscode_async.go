@@ -6,6 +6,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/spf13/cobra"
 )
@@ -27,11 +29,21 @@ func NewVSCodeAsyncCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  cmd.Run,
 	}
-	vsCodeAsyncCmd.Flags().StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
-	_ = vsCodeAsyncCmd.MarkFlagRequired("setup-info")
+	cliflags.Add(
+		vsCodeAsyncCmd,
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+	)
+	_ = vsCodeAsyncCmd.MarkFlagRequired(names.SetupInfo)
 
-	vsCodeAsyncCmd.Flags().
-		StringVar(&cmd.Flavor, "flavor", string(vscode.FlavorStable), "The flavor of the VSCode distribution")
+	cliflags.Add(
+		vsCodeAsyncCmd,
+		cliflags.String(
+			&cmd.Flavor,
+			names.Flavor,
+			string(vscode.FlavorStable),
+			"The flavor of the VSCode distribution",
+		),
+	)
 	return vsCodeAsyncCmd
 }
 

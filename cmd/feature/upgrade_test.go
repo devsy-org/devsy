@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,20 +24,20 @@ func TestNewUpgradeCmd_CreatesCommand(t *testing.T) {
 
 func TestNewUpgradeCmd_HasDryRunFlag(t *testing.T) {
 	cmd := NewUpgradeCmd(nil)
-	flag := cmd.Flags().Lookup("dry-run")
+	flag := cmd.Flags().Lookup(names.DryRun)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
 
 func TestNewUpgradeCmd_HasWorkspaceFolderFlag(t *testing.T) {
 	cmd := NewUpgradeCmd(nil)
-	flag := cmd.Flags().Lookup("workspace-folder")
+	flag := cmd.Flags().Lookup(names.WorkspaceFolder)
 	require.NotNil(t, flag)
 }
 
 func TestNewUpgradeCmd_HasConfigFlag(t *testing.T) {
 	cmd := NewUpgradeCmd(nil)
-	flag := cmd.Flags().Lookup("config")
+	flag := cmd.Flags().Lookup(names.Config)
 	require.NotNil(t, flag)
 }
 

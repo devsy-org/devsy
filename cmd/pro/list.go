@@ -9,6 +9,8 @@ import (
 
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -40,8 +42,15 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().
-		BoolVar(&cmd.Login, "login", false, "Check if the user is logged into the pro instance")
+	cliflags.Add(
+		listCmd,
+		cliflags.Bool(
+			&cmd.Login,
+			names.Login,
+			false,
+			"Check if the user is logged into the pro instance",
+		),
+	)
 	return listCmd
 }
 

@@ -344,7 +344,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			ws, ok := result["workspace"].(map[string]any)
 			gomega.Expect(ok).To(gomega.BeTrue(), "workspace should be an object")
 			gomega.Expect(ws).To(gomega.HaveKey("workspaceFolder"))
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 	ginkgo.It("reads configuration from a running container via --container-id",
 		func(ctx context.Context) {

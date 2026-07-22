@@ -9,6 +9,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -22,16 +24,16 @@ type DeleteCmd struct {
 }
 
 // NewDeleteCmd creates a new command.
-func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewDeleteCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &DeleteCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	deleteCmd := &cobra.Command{
 		Use:     "delete [flags] [workspace-path|workspace-name]",
 		Aliases: []string{"rm"},
-		Short:   "Deletes an existing workspace",
-		Long: `Deletes an existing workspace. You can specify the workspace by its path or name.
-If the workspace is not found, you can use the --ignore-not-found flag to treat it as a successful delete.`,
+		Short:   "Delete a workspace",
+		Long: `Delete a workspace by path or name.
+Use --ignore-not-found to treat a missing workspace as success.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd, args)
 		},
@@ -49,14 +51,16 @@ If the workspace is not found, you can use the --ignore-not-found flag to treat 
 		},
 	}
 
-	deleteCmd.Flags().
-		BoolVar(&cmd.IgnoreNotFound, "ignore-not-found", false, "Treat \"workspace not found\" as a successful delete")
-	deleteCmd.Flags().
-		StringVar(&cmd.GracePeriod, "grace-period", "", "The amount of time to give the command to delete the workspace")
-	deleteCmd.Flags().
-		BoolVar(&cmd.Force, "force", false, "Delete workspace even if it is not found remotely anymore")
-	deleteCmd.Flags().
-		BoolVar(&cmd.RemoveVolumes, "remove-volumes", false, "Remove named volumes associated with the workspace")
+	cliflags.Add(deleteCmd,
+		cliflags.Bool(&cmd.IgnoreNotFound, names.IgnoreNotFound, false,
+			"Treat \"workspace not found\" as a successful delete"),
+		cliflags.String(&cmd.GracePeriod, names.GracePeriod, "",
+			"The amount of time to give the command to delete the workspace"),
+		cliflags.Bool(&cmd.Force, names.Force, false,
+			"Delete workspace even if it is not found remotely anymore"),
+		cliflags.Bool(&cmd.RemoveVolumes, names.RemoveVolumes, false,
+			"Remove named volumes associated with the workspace"),
+	)
 	return deleteCmd
 }
 

@@ -26,6 +26,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/dockerinstall"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -52,8 +54,11 @@ func NewUpCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	upCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
-	_ = upCmd.MarkFlagRequired("workspace-info")
+	cliflags.Add(
+		upCmd,
+		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
+	)
+	_ = upCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return upCmd
 }
 

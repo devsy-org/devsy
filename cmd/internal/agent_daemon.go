@@ -16,6 +16,8 @@ import (
 	agentconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -43,13 +45,16 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	daemonCmd.Flags().
-		StringVar(&cmd.Interval, "interval", "", "The interval how to poll workspaces")
-	daemonCmd.Flags().
-		StringVar(
-			&cmd.ShutdownAction, "shutdown-action", "",
+	cliflags.Add(
+		daemonCmd,
+		cliflags.String(&cmd.Interval, names.Interval, "", "The interval how to poll workspaces"),
+		cliflags.String(
+			&cmd.ShutdownAction,
+			names.ShutdownAction,
+			"",
 			"The shutdown action (none, stopContainer, or stopCompose)",
-		)
+		),
+	)
 	return daemonCmd
 }
 

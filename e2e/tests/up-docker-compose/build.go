@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -110,7 +111,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			ginkgo.By("Starting Devsy again with --recreate")
-			err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
+			err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
 			framework.ExpectError(err)
 
 			ginkgo.By("Should leave original container running")
@@ -162,7 +163,7 @@ var _ = ginkgo.Describe(
 				Should(gomega.Equal(1), "1 compose container to be created")
 
 			ginkgo.By("Starting Devsy again with --recreate")
-			err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
+			err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
 			framework.ExpectNoError(err)
 
 			ginkgo.By("Should start a new docker-compose container on rebuild")

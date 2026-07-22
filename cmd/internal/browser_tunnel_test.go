@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
 // TestNewBrowserTunnelCmd_OpenBrowserFlag locks down the flag plumbing for
@@ -20,7 +21,7 @@ func TestNewBrowserTunnelCmd_OpenBrowserFlag(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	openFlag := c.Flags().Lookup("open-browser")
+	openFlag := c.Flags().Lookup(names.OpenBrowser)
 	if openFlag == nil {
 		t.Fatal("--open-browser flag not registered")
 	}
@@ -34,9 +35,9 @@ func TestNewBrowserTunnelCmd_OpenBrowserFlag(t *testing.T) {
 	if err := c2.ParseFlags([]string{"--workspace", "ws"}); err != nil {
 		t.Fatalf("ParseFlags (default): %v", err)
 	}
-	if c2.Flags().Lookup("open-browser").Value.String() != "false" {
+	if c2.Flags().Lookup(names.OpenBrowser).Value.String() != "false" {
 		t.Errorf("--open-browser default = %q, want false",
-			c2.Flags().Lookup("open-browser").Value.String())
+			c2.Flags().Lookup(names.OpenBrowser).Value.String())
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	command2 "github.com/devsy-org/devsy/pkg/command"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -27,9 +29,11 @@ func NewSSHGitCloneCmd() *cobra.Command {
 		},
 	}
 
-	sshCmd.Flags().StringArrayVar(&cmd.KeyFiles, "key-file", []string{}, "SSH Key file to use")
-	sshCmd.Flags().StringVar(&cmd.Port, "port", "22", "SSH port to use, defaults to 22")
-	_ = sshCmd.MarkFlagRequired("key-file")
+	cliflags.Add(sshCmd,
+		cliflags.StringArray(&cmd.KeyFiles, names.KeyFile, []string{}, "SSH Key file to use"),
+		cliflags.String(&cmd.Port, names.Port, "22", "SSH port to use, defaults to 22"),
+	)
+	_ = sshCmd.MarkFlagRequired(names.KeyFile)
 	return sshCmd
 }
 

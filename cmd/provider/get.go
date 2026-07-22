@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -49,8 +51,10 @@ func NewGetCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	getCmd.Flags().
-		BoolVar(&cmd.Hidden, "hidden", false, "If true, will also show hidden options.")
+	cliflags.Add(
+		getCmd,
+		cliflags.Bool(&cmd.Hidden, names.Hidden, false, "If true, will also show hidden options."),
+	)
 	return getCmd
 }
 

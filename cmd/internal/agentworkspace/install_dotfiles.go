@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
@@ -37,13 +39,22 @@ func NewInstallDotfilesCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	installDotfilesCmd.Flags().
-		StringVar(&cmd.Repository, "repository", "", "The dotfiles repository")
-	installDotfilesCmd.Flags().
-		StringVar(&cmd.InstallScript, "install-script", "", "The dotfiles install command to execute")
-	installDotfilesCmd.Flags().
-		BoolVar(&cmd.StrictHostKeyChecking, "strict-host-key-checking", false,
-			"Set to enable strict host key checking for git cloning via SSH")
+	cliflags.Add(
+		installDotfilesCmd,
+		cliflags.String(&cmd.Repository, names.Repository, "", "The dotfiles repository"),
+		cliflags.String(
+			&cmd.InstallScript,
+			names.InstallScript,
+			"",
+			"The dotfiles install command to execute",
+		),
+		cliflags.Bool(
+			&cmd.StrictHostKeyChecking,
+			names.StrictHostKeyChecking,
+			false,
+			"Set to enable strict host key checking for git cloning via SSH",
+		),
+	)
 	return installDotfilesCmd
 }
 

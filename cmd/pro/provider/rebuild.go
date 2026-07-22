@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
@@ -36,9 +38,9 @@ func NewRebuildCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Project, "project", "", "The project to use")
-	_ = c.MarkFlagRequired("project")
-	flags.BindEnv(c.Flags(), "project")
+	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))
+	_ = c.MarkFlagRequired(names.Project)
+	flags.BindEnv(c.Flags(), names.Project)
 
 	return c
 }

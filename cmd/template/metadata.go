@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
@@ -25,11 +27,16 @@ func NewMetadataCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	metadataCmd.Flags().StringVar(
-		&metadataFlags.TemplateID, "template-id", "",
-		"OCI reference of the template",
+	cliflags.Add(
+		metadataCmd,
+		cliflags.String(
+			&metadataFlags.TemplateID,
+			names.TemplateID,
+			"",
+			"OCI reference of the template",
+		),
 	)
-	_ = metadataCmd.MarkFlagRequired("template-id")
+	_ = metadataCmd.MarkFlagRequired(names.TemplateID)
 
 	return metadataCmd
 }

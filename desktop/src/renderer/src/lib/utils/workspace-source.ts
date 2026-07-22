@@ -1,5 +1,11 @@
 export type WorkspaceSourceType = "git" | "local" | "image"
 export type GitRefType = "branch" | "commit" | "pr"
+export type DevcontainerMode = "auto" | "path" | "image" | "id" | "none"
+
+export interface DevcontainerConfig {
+  mode: DevcontainerMode
+  value: string
+}
 
 export interface GitSourceForm {
   sourceType: "git"
@@ -7,14 +13,14 @@ export interface GitSourceForm {
   refType: GitRefType
   refValue: string
   subPath: string
-  devcontainerPath: string
+  devcontainer: DevcontainerConfig
   prebuildRepository: string
 }
 
 export interface LocalSourceForm {
   sourceType: "local"
   localPath: string
-  devcontainerPath: string
+  devcontainer: DevcontainerConfig
   prebuildRepository: string
 }
 
@@ -30,8 +36,26 @@ export type WorkspaceSourceForm =
 
 export interface WorkspaceSourceResult {
   source: string
-  devcontainerPath?: string
+  devcontainer?: string
   prebuildRepository?: string
+}
+
+export function buildDevcontainerArg(
+  config: DevcontainerConfig,
+): string | undefined {
+  const value = config.value.trim()
+  switch (config.mode) {
+    case "none":
+      return "none"
+    case "path":
+      return value || undefined
+    case "image":
+      return value ? `image:${value}` : undefined
+    case "id":
+      return value ? `id:${value}` : undefined
+    case "auto":
+      return undefined
+  }
 }
 
 // hostFromUrl extracts the hostname from SSH (git@host:path) and URL
@@ -91,7 +115,7 @@ export function buildWorkspaceSource(
   if (form.sourceType === "local") {
     return {
       source: form.localPath.trim(),
-      devcontainerPath: optional(form.devcontainerPath),
+      devcontainer: buildDevcontainerArg(form.devcontainer),
       prebuildRepository: optional(form.prebuildRepository),
     }
   }
@@ -101,7 +125,7 @@ export function buildWorkspaceSource(
 
   return {
     source,
-    devcontainerPath: optional(form.devcontainerPath),
+    devcontainer: buildDevcontainerArg(form.devcontainer),
     prebuildRepository: optional(form.prebuildRepository),
   }
 }

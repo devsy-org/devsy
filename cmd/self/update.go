@@ -3,6 +3,8 @@ package self
 import (
 	"fmt"
 
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
@@ -53,13 +55,26 @@ func NewUpdateCmd() *cobra.Command {
 		},
 	}
 
-	selfUpdateCmd.Flags().
-		StringVar(&cmd.Version, "version", "",
-			"The version to update to. Defaults to the latest stable version available")
-	selfUpdateCmd.Flags().
-		StringVar(&cmd.Channel, "channel", channelStable,
-			"Release channel: 'stable' for production releases, 'beta' for pre-release versions")
-	selfUpdateCmd.Flags().
-		BoolVar(&cmd.DryRun, "dry-run", false, "Show which version would be downloaded without actually updating")
+	cliflags.Add(
+		selfUpdateCmd,
+		cliflags.String(
+			&cmd.Version,
+			names.Version,
+			"",
+			"The version to update to. Defaults to the latest stable version available",
+		),
+		cliflags.String(
+			&cmd.Channel,
+			names.Channel,
+			channelStable,
+			"Release channel: 'stable' for production releases, 'beta' for pre-release versions",
+		),
+		cliflags.Bool(
+			&cmd.DryRun,
+			names.DryRun,
+			false,
+			"Show which version would be downloaded without actually updating",
+		),
+	)
 	return selfUpdateCmd
 }

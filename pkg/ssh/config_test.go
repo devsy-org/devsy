@@ -151,7 +151,7 @@ Host testhost
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
-  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace --gpg-agent-forwarding
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace --ssh-gpg-forwarding
   User testuser
 # Devsy End testhost`,
 		},
@@ -324,7 +324,7 @@ Host testhost
 			}
 
 			if tt.gpgagent {
-				assert.Contains(s.T(), result, "--gpg-agent-forwarding")
+				assert.Contains(s.T(), result, "--ssh-gpg-forwarding")
 			}
 
 			if tt.config != "" {

@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -116,21 +117,21 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 
-	ginkgo.It("should accept --update-remote-user-uid-default=on", func(ctx context.Context) {
+	ginkgo.It("should accept --update-remote-user-uid=on", func(ctx context.Context) {
 		if runtime.GOOS != "linux" {
 			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
 		}
 		_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
-			"--update-remote-user-uid-default", "on")
+			names.Flag(names.UpdateRemoteUserUID), "on")
 		framework.ExpectNoError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
-	ginkgo.It("should accept --update-remote-user-uid-default=off", func(ctx context.Context) {
+	ginkgo.It("should accept --update-remote-user-uid=off", func(ctx context.Context) {
 		if runtime.GOOS != "linux" {
 			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
 		}
 		tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
-			"--update-remote-user-uid-default", "off")
+			names.Flag(names.UpdateRemoteUserUID), "off")
 		framework.ExpectNoError(err)
 
 		out, err := dtc.execSSH(ctx, tempDir, "id -u")

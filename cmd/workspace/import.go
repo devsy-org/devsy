@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -33,13 +35,13 @@ type ImportCmd struct {
 }
 
 // NewImportCmd creates a new command.
-func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewImportCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ImportCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	importCmd := &cobra.Command{
 		Use:    "import",
-		Short:  "Imports a workspace configuration",
+		Short:  "Import workspace configuration",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
@@ -47,15 +49,17 @@ func NewImportCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	importCmd.Flags().StringVar(&cmd.WorkspaceID, "workspace-id", "", "To workspace id to use")
-	importCmd.Flags().StringVar(&cmd.MachineID, "machine-id", "", "The machine id to use")
-	importCmd.Flags().
-		BoolVar(&cmd.MachineReuse, "machine-reuse", false, "If machine already exists, reuse existing machine")
-	importCmd.Flags().StringVar(&cmd.ProviderID, "provider-id", "", "The provider id to use")
-	importCmd.Flags().
-		BoolVar(&cmd.ProviderReuse, "provider-reuse", false, "If provider already exists, reuse existing provider")
-	importCmd.Flags().StringVar(&cmd.Data, "data", "", "The data to import as raw json")
-	_ = importCmd.MarkFlagRequired("data")
+	cliflags.Add(importCmd,
+		cliflags.String(&cmd.WorkspaceID, names.WorkspaceID, "", "To workspace id to use"),
+		cliflags.String(&cmd.MachineID, names.MachineID, "", "The machine id to use"),
+		cliflags.Bool(&cmd.MachineReuse, names.MachineReuse, false,
+			"If machine already exists, reuse existing machine"),
+		cliflags.String(&cmd.ProviderID, names.ProviderID, "", "The provider id to use"),
+		cliflags.Bool(&cmd.ProviderReuse, names.ProviderReuse, false,
+			"If provider already exists, reuse existing provider"),
+		cliflags.String(&cmd.Data, names.Data, "", "The data to import as raw json"),
+	)
+	_ = importCmd.MarkFlagRequired(names.Data)
 	return importCmd
 }
 

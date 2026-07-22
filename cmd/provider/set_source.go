@@ -6,6 +6,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -39,12 +41,14 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	setSourceCmd.Flags().
-		BoolVar(&cmd.Use, "use", true, "If enabled will automatically activate the provider")
-	setSourceCmd.Flags().
-		StringVar(&cmd.Version, "version", "", "Pin the provider to a specific version tag")
-	setSourceCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
+	cliflags.Add(setSourceCmd,
+		cliflags.Bool(&cmd.Use, names.Use, true,
+			"If enabled will automatically activate the provider"),
+		cliflags.String(&cmd.Version, names.Version, "",
+			"Pin the provider to a specific version tag"),
+		cliflags.StringArray(&cmd.Options, names.Option, nil,
+			"Provider option in the form KEY=VALUE").Shorthand("o"),
+	)
 	return setSourceCmd
 }
 

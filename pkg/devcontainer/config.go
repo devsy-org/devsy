@@ -13,6 +13,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/language"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -357,7 +358,7 @@ func mergeAdditionalFeatures(parsedConfig *config.DevContainerConfig, raw string
 
 	additionalFeatures := make(map[string]any)
 	if err := json.Unmarshal([]byte(raw), &additionalFeatures); err != nil {
-		return fmt.Errorf("parse --additional-features JSON: %w", err)
+		return fmt.Errorf("parse %s JSON: %w", names.Flag(names.Features), err)
 	}
 
 	if parsedConfig.Features == nil {

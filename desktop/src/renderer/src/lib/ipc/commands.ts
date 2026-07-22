@@ -27,7 +27,7 @@ export async function workspaceUp(params: {
   ideLaunch?: "auto" | "headless" | "skip"
   debug?: boolean
   workspaceFolder?: string
-  devcontainerPath?: string
+  devcontainer?: string
   prebuildRepository?: string
   platform?: string
 }): Promise<string> {

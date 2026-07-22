@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -108,7 +109,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			framework.ExpectNoError(err)
 			ginkgo.GinkgoT().Setenv("GIT_CONFIG_GLOBAL", gitConfigPath)
 
-			err = f.DevsyUp(ctx, tempDir, "--gpg-agent-forwarding")
+			err = f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
 			framework.ExpectNoError(err)
 
 			devsySSHDeadline := time.Now().Add(20 * time.Second)

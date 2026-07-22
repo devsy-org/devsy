@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -121,7 +122,7 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdFeatures, cmdTest,
 				flagProjectFolder, projectDir,
-				"--features", featureNameA,
+				names.Flag(names.Features), featureNameA,
 			})
 			framework.ExpectNoError(err)
 

@@ -10,6 +10,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -40,27 +42,40 @@ func NewApplyCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	applyCmd.Flags().StringVar(
-		&applyFlags.WorkspaceFolder, "workspace-folder", ".",
-		"Target workspace folder to scaffold into",
+	cliflags.Add(
+		applyCmd,
+		cliflags.String(
+			&applyFlags.WorkspaceFolder,
+			names.WorkspaceFolder,
+			".",
+			"Target workspace folder to scaffold into",
+		),
+		cliflags.String(
+			&applyFlags.TemplateID,
+			names.TemplateID,
+			"",
+			"OCI reference of the template",
+		),
+		cliflags.StringSlice(
+			&applyFlags.TemplateArgs,
+			names.TemplateArgs,
+			nil,
+			"Template variable arguments as key=value pairs",
+		),
+		cliflags.StringSlice(
+			&applyFlags.Features,
+			names.Features,
+			nil,
+			"Feature IDs to add to the generated devcontainer.json",
+		),
+		cliflags.StringSlice(
+			&applyFlags.OmitPaths,
+			names.OmitPaths,
+			nil,
+			"Glob patterns for paths to skip during scaffolding",
+		),
 	)
-	applyCmd.Flags().StringVar(
-		&applyFlags.TemplateID, "template-id", "",
-		"OCI reference of the template",
-	)
-	applyCmd.Flags().StringSliceVar(
-		&applyFlags.TemplateArgs, "template-args", nil,
-		"Template variable arguments as key=value pairs",
-	)
-	applyCmd.Flags().StringSliceVar(
-		&applyFlags.Features, "features", nil,
-		"Feature IDs to add to the generated devcontainer.json",
-	)
-	applyCmd.Flags().StringSliceVar(
-		&applyFlags.OmitPaths, "omit-paths", nil,
-		"Glob patterns for paths to skip during scaffolding",
-	)
-	_ = applyCmd.MarkFlagRequired("template-id")
+	_ = applyCmd.MarkFlagRequired(names.TemplateID)
 
 	return applyCmd
 }
@@ -357,7 +372,10 @@ func shouldOmit(relPath string, omitPaths []string) bool {
 func addFeaturesToDevcontainer(workspaceFolder string, features []string) error {
 	devcontainerPath := findDevcontainerJSON(workspaceFolder)
 	if devcontainerPath == "" {
-		log.Warnf("no devcontainer.json found in workspace, --features not applied")
+		log.Warnf(
+			"no devcontainer.json found in workspace, %s not applied",
+			names.Flag(names.Features),
+		)
 		return nil
 	}
 

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -59,7 +60,11 @@ func prepareInheritedListeners(extraPorts []string) (inheritedListenerSetup, err
 			// fd 3 is the first ExtraFiles entry in the child.
 			childFD := 3 + len(files)
 			files = append(files, h.f)
-			args = append(args, "--inherit-listener", fmt.Sprintf("%s=%d", hostAddr, childFD))
+			args = append(
+				args,
+				names.Flag(names.InheritListener),
+				fmt.Sprintf("%s=%d", hostAddr, childFD),
+			)
 			holds = append(holds, h)
 		}
 	}

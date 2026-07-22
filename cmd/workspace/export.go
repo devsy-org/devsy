@@ -19,13 +19,13 @@ type ExportCmd struct {
 }
 
 // NewExportCmd creates a new command.
-func NewExportCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewExportCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ExportCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	exportCmd := &cobra.Command{
 		Use:    "export [flags] [workspace-path|workspace-name]",
-		Short:  "Exports a workspace configuration",
+		Short:  "Export workspace configuration",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()

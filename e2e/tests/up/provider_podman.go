@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -543,7 +544,12 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 
 					extraPath := path.Join(tempDir, "extra.json")
-					err = f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+					err = f.DevsyUp(
+						ctx,
+						tempDir,
+						names.Flag(names.DevContainerOverlay),
+						extraPath,
+					)
 					framework.ExpectNoError(err)
 
 					out, err := f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
@@ -569,7 +575,12 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						extraPath := path.Join(tempDir, "override.json")
-						err = f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+						err = f.DevsyUp(
+							ctx,
+							tempDir,
+							names.Flag(names.DevContainerOverlay),
+							extraPath,
+						)
 						framework.ExpectNoError(err)
 
 						out, err := f.DevsySSH(ctx, tempDir, "cat /tmp/test-var.out")
@@ -590,7 +601,12 @@ var _ = ginkgo.Describe(
 					)
 					framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, "--devcontainer-id", "python")
+					err = f.DevsyUp(
+						ctx,
+						tempDir,
+						names.Flag(names.DevContainer),
+						"id:python",
+					)
 					framework.ExpectNoError(err)
 
 					out, err := f.DevsySSH(
@@ -602,7 +618,7 @@ var _ = ginkgo.Describe(
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, "--devcontainer-id", "go")
+					err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
 					framework.ExpectNoError(err)
 
 					out, err = f.DevsySSH(
@@ -1177,7 +1193,12 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 
 					extraPath := path.Join(tempDir, "extra.json")
-					err = f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+					err = f.DevsyUp(
+						ctx,
+						tempDir,
+						names.Flag(names.DevContainerOverlay),
+						extraPath,
+					)
 					framework.ExpectNoError(err)
 
 					out, err := f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
@@ -1203,7 +1224,12 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						extraPath := path.Join(tempDir, "override.json")
-						err = f.DevsyUp(ctx, tempDir, "--extra-devcontainer-path", extraPath)
+						err = f.DevsyUp(
+							ctx,
+							tempDir,
+							names.Flag(names.DevContainerOverlay),
+							extraPath,
+						)
 						framework.ExpectNoError(err)
 
 						out, err := f.DevsySSH(ctx, tempDir, "cat /tmp/test-var.out")
@@ -1224,7 +1250,12 @@ var _ = ginkgo.Describe(
 					)
 					framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, "--devcontainer-id", "python")
+					err = f.DevsyUp(
+						ctx,
+						tempDir,
+						names.Flag(names.DevContainer),
+						"id:python",
+					)
 					framework.ExpectNoError(err)
 
 					out, err := f.DevsySSH(
@@ -1236,7 +1267,7 @@ var _ = ginkgo.Describe(
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, "--devcontainer-id", "go")
+					err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
 					framework.ExpectNoError(err)
 
 					out, err = f.DevsySSH(

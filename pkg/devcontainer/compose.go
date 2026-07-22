@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/joho/godotenv"
 )
@@ -871,7 +872,11 @@ func (r *runner) recreateDevContainer(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	log.Debugf("Deleting dev container %s due to --recreate", container.ID)
+	log.Debugf(
+		"deleting dev container %s due to %s",
+		container.ID,
+		names.Flag(names.Recreate),
+	)
 
 	if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 		return fmt.Errorf("stop dev container: %w", err)

@@ -605,7 +605,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         ideLaunch?: "auto" | "headless" | "skip"
         debug?: boolean
         workspaceFolder?: string
-        devcontainerPath?: string
+        devcontainer?: string
         prebuildRepository?: string
         platform?: string
       },
@@ -622,10 +622,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder)
         cliArgs.push("--workspace-folder", args.workspaceFolder)
-      if (args.devcontainerPath)
-        cliArgs.push("--devcontainer-path", args.devcontainerPath)
+      if (args.devcontainer)
+        cliArgs.push("--devcontainer", args.devcontainer)
       if (args.prebuildRepository)
-        cliArgs.push("--prebuild-repository", args.prebuildRepository)
+        cliArgs.push("--prebuild-repo", args.prebuildRepository)
       if (args.platform) cliArgs.push("--platform", args.platform)
 
       const wsId = args.workspaceId ?? args.source

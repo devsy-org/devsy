@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
@@ -193,13 +194,13 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 func buildDaemonArgs(executable, agentDir, interval, shutdownAction string) []string {
 	args := []string{executable, "internal", "agent", "daemon"}
 	if agentDir != "" {
-		args = append(args, "--agent-dir", agentDir)
+		args = append(args, names.Flag(names.AgentDir), agentDir)
 	}
 	if interval != "" {
-		args = append(args, "--interval", interval)
+		args = append(args, names.Flag(names.Interval), interval)
 	}
 	if shutdownAction != "" {
-		args = append(args, "--shutdown-action", shutdownAction)
+		args = append(args, names.Flag(names.ShutdownAction), shutdownAction)
 	}
 	return args
 }

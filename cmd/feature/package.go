@@ -9,6 +9,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -46,19 +48,28 @@ and creates gzipped tar archives suitable for OCI distribution.`,
 		},
 	}
 
-	packageCmd.Flags().StringVar(
-		&cmd.Target, "target", "",
-		"Path to directory containing feature source subdirectories",
+	cliflags.Add(
+		packageCmd,
+		cliflags.String(
+			&cmd.Target,
+			names.Target,
+			"",
+			"Path to directory containing feature source subdirectories",
+		),
+		cliflags.String(
+			&cmd.OutputFolder,
+			names.OutputFolder,
+			".",
+			"Where to write the .tgz files",
+		),
+		cliflags.Bool(
+			&cmd.ForceCleanOutputFolder,
+			names.ForceCleanOutputFolder,
+			false,
+			"Clean output folder before writing",
+		),
 	)
-	packageCmd.Flags().StringVar(
-		&cmd.OutputFolder, "output-folder", ".",
-		"Where to write the .tgz files",
-	)
-	packageCmd.Flags().BoolVar(
-		&cmd.ForceCleanOutputFolder, "force-clean-output-folder", false,
-		"Clean output folder before writing",
-	)
-	_ = packageCmd.MarkFlagRequired("target")
+	_ = packageCmd.MarkFlagRequired(names.Target)
 
 	return packageCmd
 }

@@ -31,7 +31,7 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	troubleshootCmd := &cobra.Command{
 		Use:   "troubleshoot [workspace-path|workspace-name]",
-		Short: "Prints the workspaces troubleshooting information",
+		Short: "Print workspace troubleshooting information",
 		Run: func(cobraCmd *cobra.Command, args []string) {
 			cmd.Run(cobraCmd.Context(), args)
 		},

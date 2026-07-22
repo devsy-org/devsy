@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,31 +19,31 @@ const (
 func TestTestCmd_FlagDefaults(t *testing.T) {
 	cmd := NewTestCmd(nil)
 
-	projectFolderFlag := cmd.Flags().Lookup("project-folder")
+	projectFolderFlag := cmd.Flags().Lookup(names.ProjectFolder)
 	require.NotNil(t, projectFolderFlag)
 	assert.Equal(t, "", projectFolderFlag.DefValue)
 
-	featuresFlag := cmd.Flags().Lookup("features")
+	featuresFlag := cmd.Flags().Lookup(names.Features)
 	require.NotNil(t, featuresFlag)
 	assert.Equal(t, "", featuresFlag.DefValue)
 
-	baseImageFlag := cmd.Flags().Lookup("base-image")
+	baseImageFlag := cmd.Flags().Lookup(names.BaseImage)
 	require.NotNil(t, baseImageFlag)
 	assert.Equal(t, defaultBaseImage, baseImageFlag.DefValue)
 
-	remoteUserFlag := cmd.Flags().Lookup("remote-user")
+	remoteUserFlag := cmd.Flags().Lookup(names.RemoteUser)
 	require.NotNil(t, remoteUserFlag)
 	assert.Equal(t, defaultRemoteUser, remoteUserFlag.DefValue)
 
-	skipScenariosFlag := cmd.Flags().Lookup("skip-scenarios")
+	skipScenariosFlag := cmd.Flags().Lookup(names.SkipScenarios)
 	require.NotNil(t, skipScenariosFlag)
 	assert.Equal(t, "false", skipScenariosFlag.DefValue)
 
-	quietFlag := cmd.Flags().Lookup("quiet")
+	quietFlag := cmd.Flags().Lookup(names.Quiet)
 	require.NotNil(t, quietFlag)
 	assert.Equal(t, "false", quietFlag.DefValue)
 
-	preserveFlag := cmd.Flags().Lookup("preserve-test-containers")
+	preserveFlag := cmd.Flags().Lookup(names.PreserveTestContainers)
 	require.NotNil(t, preserveFlag)
 	assert.Equal(t, "false", preserveFlag.DefValue)
 }

@@ -13,6 +13,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/types"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
@@ -52,71 +54,88 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 		RunE:  runE,
 	}
 
-	runCmd.Flags().
-		StringVar(
+	cliflags.Add(
+		runCmd,
+		cliflags.String(
 			&cmd.WorkspaceFolder,
-			"workspace-folder",
+			names.WorkspaceFolder,
 			"",
 			"Path to the workspace folder",
-		)
-	runCmd.Flags().
-		StringVar(
+		),
+		cliflags.String(
 			&cmd.ContainerID,
-			"container-id",
+			names.ContainerID,
 			"",
 			"Target a specific container by ID",
-		)
-	runCmd.Flags().
-		StringVar(
+		),
+		cliflags.String(
 			&cmd.DockerPath,
-			"docker-path",
+			names.DockerPath,
 			"",
 			"Path to the docker/podman executable (defaults to 'docker')",
-		)
-	runCmd.Flags().
-		StringVar(
+		),
+		cliflags.String(
 			&cmd.Config,
-			"config",
+			names.Config,
 			"",
 			"Path to the devcontainer.json configuration file",
-		)
-	runCmd.Flags().
-		StringVar(
+		),
+		cliflags.String(
 			&cmd.OverrideConfig,
-			"override-config",
+			names.OverrideConfig,
 			"",
 			"Path to an additional devcontainer.json file to override the primary configuration",
-		)
-	runCmd.Flags().
-		StringArrayVar(
+		),
+		cliflags.StringArray(
 			&cmd.RemoteEnv,
-			"remote-env",
+			names.RemoteEnv,
 			[]string{},
 			"Environment variables to set in the container (KEY=VALUE format, can be specified multiple times)",
-		)
-	runCmd.Flags().
-		StringArrayVar(
+		),
+		cliflags.StringArray(
 			&cmd.IDLabels,
-			"id-label",
+			names.IDLabel,
 			[]string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
-		)
-	runCmd.Flags().
-		BoolVar(&cmd.Prebuild, "prebuild", false,
-			"Stop lifecycle execution after onCreateCommand and updateContentCommand")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipNonBlockingCommands, "skip-non-blocking-commands", false,
-			"Skip non-blocking lifecycle commands (stop after the waitFor-configured command)")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipPostCreate, "skip-post-create", false, "Skip running postCreateCommand")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipPostStart, "skip-post-start", false, "Skip running postStartCommand")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipPostAttach, "skip-post-attach", false, "Skip running postAttachCommand")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipOnCreate, "skip-on-create", false, "Skip running onCreateCommand")
-	runCmd.Flags().
-		BoolVar(&cmd.SkipUpdateContent, "skip-update-content", false, "Skip running updateContentCommand")
+		),
+		cliflags.Bool(
+			&cmd.Prebuild,
+			names.Prebuild,
+			false,
+			"Stop lifecycle execution after onCreateCommand and updateContentCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipNonBlockingCommands,
+			names.SkipNonBlockingCommands,
+			false,
+			"Skip non-blocking lifecycle commands (stop after the waitFor-configured command)",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostCreate,
+			names.SkipPostCreate,
+			false,
+			"Skip running postCreateCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostStart,
+			names.SkipPostStart,
+			false,
+			"Skip running postStartCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostAttach,
+			names.SkipPostAttach,
+			false,
+			"Skip running postAttachCommand",
+		),
+		cliflags.Bool(&cmd.SkipOnCreate, names.SkipOnCreate, false, "Skip running onCreateCommand"),
+		cliflags.Bool(
+			&cmd.SkipUpdateContent,
+			names.SkipUpdateContent,
+			false,
+			"Skip running updateContentCommand",
+		),
+	)
 
 	return runCmd
 }
@@ -162,7 +181,11 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 
 func (cmd *RunUserCommandsCmd) validate() error {
 	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
-		return fmt.Errorf("either --workspace-folder or --container-id must be provided")
+		return fmt.Errorf(
+			"either %s or %s must be provided",
+			names.Flag(names.WorkspaceFolder),
+			names.Flag(names.ContainerID),
+		)
 	}
 	if cmd.ContainerID != "" && cmd.WorkspaceFolder == "" && cmd.Config == "" {
 		return fmt.Errorf(
@@ -405,7 +428,11 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 
 	for i, hook := range hooks {
 		if cmd.Prebuild && i >= 2 {
-			log.Infof("stopping lifecycle execution (--prebuild: after %s)", updateContentCommand)
+			log.Infof(
+				"stopping lifecycle execution (%s: after %s)",
+				names.Flag(names.Prebuild),
+				updateContentCommand,
+			)
 			return nil
 		}
 		if cmd.SkipNonBlockingCommands && i > waitForBoundary {

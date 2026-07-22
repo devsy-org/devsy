@@ -12,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
@@ -37,7 +39,7 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ExecCmd{GlobalFlags: f}
 	execCmd := &cobra.Command{
 		Use:   "exec [workspace-name] [flags] -- <cmd> [args...]",
-		Short: "Executes a command in a running workspace container",
+		Short: "Run a command in a workspace",
 		Args:  cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(
 			cobraCmd *cobra.Command, args []string, toComplete string,
@@ -72,62 +74,23 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	execCmd.Flags().
-		StringVar(
-			&cmd.WorkspaceFolder,
-			"workspace-folder",
-			"",
-			"Path to the workspace folder",
-		)
-	execCmd.Flags().
-		StringVar(
-			&cmd.ContainerID,
-			"container-id",
-			"",
-			"Target a specific container by ID",
-		)
-	execCmd.Flags().
-		StringVar(
-			&cmd.DockerPath,
-			"docker-path",
-			"",
-			"Path to the docker/podman executable (defaults to 'docker')",
-		)
-	execCmd.Flags().
-		StringSliceVar(
-			&cmd.RemoteEnv,
-			"remote-env",
-			[]string{},
-			"Environment variables to set in the container (KEY=VALUE format)",
-		)
-	execCmd.Flags().
-		StringVar(
-			&cmd.DefaultUserEnvProbe,
-			"default-user-env-probe",
-			"",
-			"Override userEnvProbe from config (loginInteractiveShell, loginShell, interactiveShell, none)",
-		)
-	execCmd.Flags().
-		StringArrayVar(
-			&cmd.IDLabels,
-			"id-label",
-			[]string{},
-			"Override the default container identification labels (format: key=value, can be specified multiple times)",
-		)
-	execCmd.Flags().
-		StringVar(
-			&cmd.ContainerDataFolder,
-			"container-data-folder",
-			"",
-			"Override the default container data folder path",
-		)
-	execCmd.Flags().
-		BoolVar(
-			&cmd.SkipPostCreate,
-			"skip-post-create",
-			false,
-			"Skip running postCreateCommand",
-		)
+	cliflags.Add(execCmd,
+		cliflags.String(&cmd.WorkspaceFolder, names.WorkspaceFolder, "",
+			"Path to the workspace folder"),
+		cliflags.String(&cmd.ContainerID, names.ContainerID, "",
+			"Target a specific container by ID"),
+		cliflags.String(&cmd.DockerPath, names.DockerPath, "",
+			"Path to the docker/podman executable (defaults to 'docker')"),
+		cliflags.StringSlice(&cmd.RemoteEnv, names.RemoteEnv, nil,
+			"Environment variables to set in the container (KEY=VALUE format)"),
+		cliflags.Bool(&cmd.SkipPostCreate, names.SkipPostCreate, false,
+			"Skip running postCreateCommand"),
+	)
+	cliflags.RegisterDevContainerModifierFlags(execCmd.Flags(), cliflags.DevContainerModifierFlags{
+		UserEnvProbe:        &cmd.DefaultUserEnvProbe,
+		IDLabels:            &cmd.IDLabels,
+		ContainerDataFolder: &cmd.ContainerDataFolder,
+	})
 
 	return execCmd
 }
@@ -299,7 +262,8 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 }
 
 var errFolderNameConflict = fmt.Errorf(
-	"specify either a workspace name or --workspace-folder/--container-id, not both",
+	"specify either a workspace name or %s/%s, not both",
+	names.Flag(names.WorkspaceFolder), names.Flag(names.ContainerID),
 )
 
 // resolveExecTarget decides what string is handed to workspace.Get.

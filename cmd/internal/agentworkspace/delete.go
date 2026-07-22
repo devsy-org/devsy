@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -41,16 +43,24 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	deleteCmd.Flags().
-		BoolVar(&cmd.Container, "container", true, "If enabled, cleans up the Devsy container")
-	deleteCmd.Flags().
-		BoolVar(&cmd.Daemon, "daemon", false, "If enabled, cleans up the Devsy daemon")
-
-	deleteCmd.Flags().
-		BoolVar(&cmd.RemoveVolumes, "remove-volumes", false, "Remove named volumes associated with the workspace")
-
-	deleteCmd.Flags().StringVar(&cmd.WorkspaceInfo, "workspace-info", "", "The workspace info")
-	_ = deleteCmd.MarkFlagRequired("workspace-info")
+	cliflags.Add(
+		deleteCmd,
+		cliflags.Bool(
+			&cmd.Container,
+			names.Container,
+			true,
+			"If enabled, cleans up the Devsy container",
+		),
+		cliflags.Bool(&cmd.Daemon, names.Daemon, false, "If enabled, cleans up the Devsy daemon"),
+		cliflags.Bool(
+			&cmd.RemoveVolumes,
+			names.RemoveVolumes,
+			false,
+			"Remove named volumes associated with the workspace",
+		),
+		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
+	)
+	_ = deleteCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return deleteCmd
 }
 

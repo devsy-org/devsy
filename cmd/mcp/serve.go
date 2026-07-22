@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -32,12 +34,27 @@ func NewServeCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	cobraCmd.Flags().DurationVar(&cmd.ExecTimeoutDefault, "exec-timeout-default", 5*time.Minute,
-		"Default timeout for workspace_exec calls")
-	cobraCmd.Flags().DurationVar(&cmd.ExecTimeoutMax, "exec-timeout-max", 30*time.Minute,
-		"Maximum timeout for workspace_exec calls (caller values are clamped)")
-	cobraCmd.Flags().IntVar(&cmd.ExecOutputCap, "exec-output-cap", 100*1024,
-		"Per-stream byte cap for workspace_exec output; excess is replaced with a truncation marker")
+	cliflags.Add(
+		cobraCmd,
+		cliflags.Duration(
+			&cmd.ExecTimeoutDefault,
+			names.ExecTimeoutDefault,
+			5*time.Minute,
+			"Default timeout for workspace_exec calls",
+		),
+		cliflags.Duration(
+			&cmd.ExecTimeoutMax,
+			names.ExecTimeoutMax,
+			30*time.Minute,
+			"Maximum timeout for workspace_exec calls (caller values are clamped)",
+		),
+		cliflags.Int(
+			&cmd.ExecOutputCap,
+			names.ExecOutputCap,
+			100*1024,
+			"Per-stream byte cap for workspace_exec output; excess is replaced with a truncation marker",
+		),
+	)
 	return cobraCmd
 }
 

@@ -12,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -40,8 +42,15 @@ func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	logoutCmd.Flags().
-		BoolVar(&cmd.IgnoreNotFound, "ignore-not-found", false, "Treat \"pro instance not found\" as a successful logout")
+	cliflags.Add(
+		logoutCmd,
+		cliflags.Bool(
+			&cmd.IgnoreNotFound,
+			names.IgnoreNotFound,
+			false,
+			"Treat \"pro instance not found\" as a successful logout",
+		),
+	)
 	return logoutCmd
 }
 

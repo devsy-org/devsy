@@ -12,6 +12,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -26,13 +28,13 @@ type StatusCmd struct {
 }
 
 // NewStatusCmd creates a new command.
-func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewStatusCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	statusCmd := &cobra.Command{
 		Use:   "status [flags] [workspace-path|workspace-name]",
-		Short: "Shows the status of a workspace",
+		Short: "Show workspace status",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.execute(cobraCmd.Context(), args)
 		},
@@ -48,10 +50,12 @@ func NewStatusCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	statusCmd.Flags().
-		BoolVar(&cmd.ContainerStatus, "container-status", true, "If enabled shows the workspace container status as well")
-	statusCmd.Flags().
-		StringVar(&cmd.Timeout, "timeout", "30s", "The timeout to wait until the status can be retrieved")
+	cliflags.Add(statusCmd,
+		cliflags.Bool(&cmd.ContainerStatus, names.ContainerStatus, true,
+			"If enabled shows the workspace container status as well"),
+		cliflags.String(&cmd.Timeout, names.Timeout, "30s",
+			"The timeout to wait until the status can be retrieved"),
+	)
 	return statusCmd
 }
 

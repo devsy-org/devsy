@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
@@ -469,7 +470,7 @@ func startFleet(ctx context.Context, params IDEParams) (string, error) {
 	sshCmd, err := tunnel.CreateSSHCommand(
 		ctx,
 		params.Client,
-		[]string{"--command", "cat " + fleet.FleetURLFileName},
+		[]string{names.Flag(names.Command), "cat " + fleet.FleetURLFileName},
 	)
 	if err != nil {
 		return "", err

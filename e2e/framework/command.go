@@ -9,24 +9,28 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 )
 
+var (
+	flagResultFormat = names.Flag(names.ResultFormat)
+	flagIDE          = names.Flag(names.IDE)
+	flagDebug        = names.Flag(names.Debug)
+	flagCommand      = names.Flag(names.Command)
+)
+
 const (
-	flagResultFormat = "--result-format"
-	flagIDE          = "--ide"
-	flagDebug        = "--debug"
-	flagCommand      = "--command"
-	formatJSON       = "json"
-	cmdList          = "list"
-	cmdGet           = "get"
-	cmdDelete        = "delete"
-	cmdSSH           = "ssh"
-	cmdProvider      = "provider"
-	cmdWorkspace     = "workspace"
-	ideNone          = "none"
-	cmdUse           = "use"
+	formatJSON   = "json"
+	cmdList      = "list"
+	cmdGet       = "get"
+	cmdDelete    = "delete"
+	cmdSSH       = "ssh"
+	cmdProvider  = "provider"
+	cmdWorkspace = "workspace"
+	ideNone      = "none"
+	cmdUse       = "use"
 )
 
 func (f *Framework) FindWorkspace(ctx context.Context, id string) (*provider2.Workspace, error) {
@@ -154,7 +158,14 @@ func (f *Framework) DevsyUp(ctx context.Context, additionalArgs ...string) error
 }
 
 func (f *Framework) DevsyUpRecreate(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--recreate", flagDebug, flagIDE, ideNone}
+	upArgs := []string{
+		cmdWorkspace,
+		"up",
+		names.Flag(names.Recreate),
+		flagDebug,
+		flagIDE,
+		ideNone,
+	}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -167,7 +178,14 @@ func (f *Framework) DevsyUpRecreate(ctx context.Context, additionalArgs ...strin
 }
 
 func (f *Framework) DevsyUpReset(ctx context.Context, additionalArgs ...string) error {
-	upArgs := []string{cmdWorkspace, "up", "--reset", flagDebug, flagIDE, ideNone}
+	upArgs := []string{
+		cmdWorkspace,
+		"up",
+		names.Flag(names.Reset),
+		flagDebug,
+		flagIDE,
+		ideNone,
+	}
 	upArgs = append(upArgs, additionalArgs...)
 
 	_, _, err := execWithDockerRetry(ctx, func(ctx context.Context) (string, string, error) {
@@ -407,7 +425,12 @@ func (f *Framework) DevsyWorkspaceDelete(
 	workspace string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{cmdWorkspace, cmdDelete, workspace, "--ignore-not-found"}
+	baseArgs := []string{
+		cmdWorkspace,
+		cmdDelete,
+		workspace,
+		names.Flag(names.IgnoreNotFound),
+	}
 	baseArgs = append(baseArgs, extraArgs...)
 
 	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
@@ -456,8 +479,8 @@ func (f *Framework) DevsySSHGpgTestKey(ctx context.Context, workspace string) er
 	stdout, _, err := f.ExecCommandCapture(ctx, []string{
 		cmdWorkspace,
 		cmdSSH,
-		"--agent-forwarding",
-		"--gpg-agent-forwarding",
+		names.Flag(names.AgentForwarding),
+		names.Flag(names.SSHGPGForwarding),
 		flagCommand,
 		"gpg -k --with-colons 2>/dev/null |grep sec |  base64 -w0", workspace,
 	})
@@ -480,7 +503,7 @@ func (f *Framework) DevsyPortTest(ctx context.Context, port string, workspace st
 	_, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, string, error) {
 		return f.ExecCommandCapture(
 			ctx,
-			[]string{cmdWorkspace, cmdSSH, "--forward-ports", port, workspace},
+			[]string{cmdWorkspace, cmdSSH, names.Flag(names.ForwardPorts), port, workspace},
 		)
 	})
 	return err

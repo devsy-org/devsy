@@ -4,6 +4,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -61,14 +63,15 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			)
 		},
 	}
-	initCmd.Flags().
-		BoolVar(&cmd.Reset, "reset", false, "Discard previously stored option answers and re-prompt from scratch")
-	initCmd.Flags().
-		BoolVar(&cmd.SingleMachine, "single-machine", false, "Use a single machine for all workspaces")
-	initCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-	initCmd.Flags().
-		BoolVar(&cmd.SkipInit, "skip-init", false, "Skip provider init (testing only)")
-	_ = initCmd.Flags().MarkHidden("skip-init")
+	cliflags.Add(initCmd,
+		cliflags.Bool(&cmd.Reset, names.Reset, false,
+			"Discard previously stored option answers and re-prompt from scratch"),
+		cliflags.Bool(&cmd.SingleMachine, names.SingleMachine, false,
+			"Use a single machine for all workspaces"),
+		cliflags.StringArray(&cmd.Options, names.Option, nil,
+			"Provider option in the form KEY=VALUE").Shorthand("o"),
+		cliflags.Bool(&cmd.SkipInit, names.SkipInit, false,
+			"Skip provider init (testing only)").Hidden(),
+	)
 	return initCmd
 }

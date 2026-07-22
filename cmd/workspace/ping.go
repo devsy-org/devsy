@@ -17,13 +17,13 @@ type PingCmd struct {
 	*flags.GlobalFlags
 }
 
-func NewPingCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewPingCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &PingCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	troubleshootCmd := &cobra.Command{
 		Use:   "ping [workspace-path|workspace-name]",
-		Short: "Pings the Devsy Pro workspace",
+		Short: "Ping a Devsy Pro workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

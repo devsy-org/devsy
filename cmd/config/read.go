@@ -11,6 +11,8 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/docker"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -37,55 +39,25 @@ func NewReadCmd(f *flags.GlobalFlags) *cobra.Command {
 		RunE:  cmd.Run,
 	}
 
-	readConfigCmd.Flags().
-		StringVar(
-			&cmd.WorkspaceFolder,
-			"workspace-folder",
-			"",
-			"Path to the workspace folder",
-		)
-	readConfigCmd.Flags().
-		StringVar(
-			&cmd.ContainerID,
-			"container-id",
-			"",
-			"Read configuration from a running container with the given ID",
-		)
-	readConfigCmd.Flags().
-		StringVar(
-			&cmd.DockerPath,
-			"docker-path",
-			"",
-			"Path to the docker/podman executable (defaults to 'docker')",
-		)
-	readConfigCmd.Flags().
-		StringVar(
-			&cmd.Config,
-			"config",
-			"",
-			"Path to a specific devcontainer.json",
-		)
-	readConfigCmd.Flags().
-		StringArrayVar(
+	cliflags.Add(readConfigCmd,
+		cliflags.String(&cmd.WorkspaceFolder, names.WorkspaceFolder, "",
+			"Path to the workspace folder"),
+		cliflags.String(&cmd.ContainerID, names.ContainerID, "",
+			"Read configuration from a running container with the given ID"),
+		cliflags.String(&cmd.DockerPath, names.DockerPath, "",
+			"Path to the docker/podman executable (defaults to 'docker')"),
+		cliflags.String(&cmd.Config, names.Config, "", "Path to a specific devcontainer.json"),
+		cliflags.StringArray(
 			&cmd.IDLabels,
-			"id-label",
+			names.IDLabel,
 			nil,
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
-		)
-	readConfigCmd.Flags().
-		BoolVar(
-			&cmd.IncludeFeaturesConfiguration,
-			"include-features-configuration",
-			false,
-			"Include features in the output",
-		)
-	readConfigCmd.Flags().
-		BoolVar(
-			&cmd.IncludeMergedConfiguration,
-			"include-merged-configuration",
-			false,
-			"Include the merged configuration in the output",
-		)
+		),
+		cliflags.Bool(&cmd.IncludeFeaturesConfiguration, names.IncludeFeaturesConfiguration, false,
+			"Include features in the output"),
+		cliflags.Bool(&cmd.IncludeMergedConfiguration, names.IncludeMergedConfiguration, false,
+			"Include the merged configuration in the output"),
+	)
 
 	return readConfigCmd
 }
@@ -152,7 +124,10 @@ func (cmd *ReadCmd) resolve(ctx context.Context) (
 ) {
 	if cmd.ContainerID == "" && cmd.WorkspaceFolder == "" && len(cmd.IDLabels) == 0 {
 		return nil, "", fmt.Errorf(
-			"either --workspace-folder, --container-id, or --id-label must be provided",
+			"either %s, %s, or %s must be provided",
+			names.Flag(names.WorkspaceFolder),
+			names.Flag(names.ContainerID),
+			names.Flag(names.IDLabel),
 		)
 	}
 	if cmd.ContainerID != "" {
