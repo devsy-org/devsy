@@ -50,9 +50,8 @@ var Options = ide.Options{
 	},
 	VersionOption: {
 		Name: VersionOption,
-		Description: "The VS Code version for the serve-web CLI " +
-			"(a release version like 1.96.4, or 'latest')",
-		Default: "1.96.4",
+		Description: "The VS Code version for the serve-web CLI (e.g., 1.129.1 or 'latest')",
+		Default: "1.129.1",
 	},
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,
