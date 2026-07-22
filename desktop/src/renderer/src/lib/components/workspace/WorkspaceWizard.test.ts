@@ -463,12 +463,6 @@ describe("WorkspaceWizard", () => {
       'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
     await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
-    const devcontainerInput = document.querySelector(
-      'input[placeholder*="devcontainer.json"]',
-    ) as HTMLInputElement
-    await fireEvent.input(devcontainerInput, {
-      target: { value: ".devcontainer/devcontainer.json" },
-    })
     const prebuildInput = document.querySelector(
       'input[placeholder*="ghcr.io/org/prebuilds"]',
     ) as HTMLInputElement
@@ -488,11 +482,13 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(launchBtn)
     await flushAsync()
 
+    // Devcontainer source defaults to auto-detect (flag omitted); the value
+    // mapping for each mode is covered by workspace-source.test.ts.
     expect(workspaceUp).toHaveBeenCalledWith(
       expect.objectContaining({
         source: "github.com/org/repo@subpath:pkg/api",
         workspaceFolder: "/workspaces/app",
-        devcontainerPath: ".devcontainer/devcontainer.json",
+        devcontainer: undefined,
         prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
@@ -547,7 +543,7 @@ describe("WorkspaceWizard", () => {
       expect.objectContaining({
         source: "ubuntu:22.04",
         workspaceFolder: "/workspaces/app",
-        devcontainerPath: undefined,
+        devcontainer: undefined,
         prebuildRepository: undefined,
       }),
     )

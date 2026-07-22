@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { buildWorkspaceSource } from "./workspace-source.js"
+import {
+  buildWorkspaceSource,
+  buildDevcontainerArg,
+} from "./workspace-source.js"
 import type {
   GitSourceForm,
   LocalSourceForm,
@@ -13,7 +16,7 @@ function gitForm(overrides: Partial<GitSourceForm>): GitSourceForm {
     refType: "branch",
     refValue: "",
     subPath: "",
-    devcontainerPath: "",
+    devcontainer: { mode: "auto", value: "" },
     prebuildRepository: "",
     ...overrides,
   }
@@ -23,7 +26,7 @@ function localForm(overrides: Partial<LocalSourceForm>): LocalSourceForm {
   return {
     sourceType: "local",
     localPath: "",
-    devcontainerPath: "",
+    devcontainer: { mode: "auto", value: "" },
     prebuildRepository: "",
     ...overrides,
   }
@@ -41,7 +44,7 @@ describe("buildWorkspaceSource", () => {
   it("git: bare repo url, no suffixes", () => {
     const out = buildWorkspaceSource(gitForm({ repoUrl: "github.com/org/repo" }))
     expect(out.source).toBe("github.com/org/repo")
-    expect(out.devcontainerPath).toBeUndefined()
+    expect(out.devcontainer).toBeUndefined()
     expect(out.prebuildRepository).toBeUndefined()
   })
 
@@ -108,9 +111,13 @@ describe("buildWorkspaceSource", () => {
 
   it("git: whitespace-only optional fields become undefined", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", devcontainerPath: "   ", prebuildRepository: "  " }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        devcontainer: { mode: "path", value: "   " },
+        prebuildRepository: "  ",
+      }),
     )
-    expect(out.devcontainerPath).toBeUndefined()
+    expect(out.devcontainer).toBeUndefined()
     expect(out.prebuildRepository).toBeUndefined()
   })
 
@@ -128,15 +135,15 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).toBe("github.com/org/repo@main")
   })
 
-  it("git: forwards devcontainerPath and prebuildRepository", () => {
+  it("git: forwards devcontainer path and prebuildRepository", () => {
     const out = buildWorkspaceSource(
       gitForm({
         repoUrl: "github.com/org/repo",
-        devcontainerPath: ".devcontainer/devcontainer.json",
+        devcontainer: { mode: "path", value: ".devcontainer/devcontainer.json" },
         prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
-    expect(out.devcontainerPath).toBe(".devcontainer/devcontainer.json")
+    expect(out.devcontainer).toBe(".devcontainer/devcontainer.json")
     expect(out.prebuildRepository).toBe("ghcr.io/org/prebuilds")
   })
 
@@ -155,15 +162,15 @@ describe("buildWorkspaceSource", () => {
     expect(out.source).not.toContain("@subpath:")
   })
 
-  it("local: forwards devcontainerPath and prebuildRepository", () => {
+  it("local: forwards devcontainer path and prebuildRepository", () => {
     const out = buildWorkspaceSource(
       localForm({
         localPath: "/home/me/proj",
-        devcontainerPath: ".devcontainer/devcontainer.json",
+        devcontainer: { mode: "path", value: ".devcontainer/devcontainer.json" },
         prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
-    expect(out.devcontainerPath).toBe(".devcontainer/devcontainer.json")
+    expect(out.devcontainer).toBe(".devcontainer/devcontainer.json")
     expect(out.prebuildRepository).toBe("ghcr.io/org/prebuilds")
   })
 
@@ -172,7 +179,7 @@ describe("buildWorkspaceSource", () => {
       imageForm({ imageRef: "mcr.microsoft.com/devcontainers/python:3.12" }),
     )
     expect(out.source).toBe("mcr.microsoft.com/devcontainers/python:3.12")
-    expect(out.devcontainerPath).toBeUndefined()
+    expect(out.devcontainer).toBeUndefined()
     expect(out.prebuildRepository).toBeUndefined()
   })
 
@@ -181,5 +188,44 @@ describe("buildWorkspaceSource", () => {
       imageForm({ imageRef: "  mcr.microsoft.com/devcontainers/go:1  " }),
     )
     expect(out.source).toBe("mcr.microsoft.com/devcontainers/go:1")
+  })
+})
+
+describe("buildDevcontainerArg", () => {
+  it("auto omits the flag", () => {
+    expect(buildDevcontainerArg({ mode: "auto", value: "" })).toBeUndefined()
+    expect(buildDevcontainerArg({ mode: "auto", value: "ignored" })).toBeUndefined()
+  })
+
+  it("none maps to the none token", () => {
+    expect(buildDevcontainerArg({ mode: "none", value: "" })).toBe("none")
+  })
+
+  it("path passes the raw path", () => {
+    expect(
+      buildDevcontainerArg({ mode: "path", value: ".devcontainer/devcontainer.json" }),
+    ).toBe(".devcontainer/devcontainer.json")
+  })
+
+  it("image prefixes with image:", () => {
+    expect(buildDevcontainerArg({ mode: "image", value: "python:3" })).toBe(
+      "image:python:3",
+    )
+  })
+
+  it("id prefixes with id:", () => {
+    expect(buildDevcontainerArg({ mode: "id", value: "backend" })).toBe("id:backend")
+  })
+
+  it("trims the value", () => {
+    expect(buildDevcontainerArg({ mode: "image", value: "  python  " })).toBe(
+      "image:python",
+    )
+  })
+
+  it("value-requiring modes omit the flag when the value is blank", () => {
+    expect(buildDevcontainerArg({ mode: "path", value: "  " })).toBeUndefined()
+    expect(buildDevcontainerArg({ mode: "image", value: "" })).toBeUndefined()
+    expect(buildDevcontainerArg({ mode: "id", value: "   " })).toBeUndefined()
   })
 })

@@ -1,20 +1,35 @@
 export type WorkspaceSourceType = "git" | "local" | "image"
 export type GitRefType = "branch" | "commit" | "pr"
 
+// DevcontainerMode selects how the workspace resolves its devcontainer config,
+// mapping 1:1 to the CLI's --devcontainer flag forms:
+//   auto  -> flag omitted (project discovery)
+//   path  -> --devcontainer <path>
+//   image -> --devcontainer image:<ref>
+//   id    -> --devcontainer id:<name>
+//   none  -> --devcontainer none
+export type DevcontainerMode = "auto" | "path" | "image" | "id" | "none"
+
+export interface DevcontainerConfig {
+  mode: DevcontainerMode
+  // value backs the path/image/id modes; ignored for auto and none.
+  value: string
+}
+
 export interface GitSourceForm {
   sourceType: "git"
   repoUrl: string
   refType: GitRefType
   refValue: string
   subPath: string
-  devcontainerPath: string
+  devcontainer: DevcontainerConfig
   prebuildRepository: string
 }
 
 export interface LocalSourceForm {
   sourceType: "local"
   localPath: string
-  devcontainerPath: string
+  devcontainer: DevcontainerConfig
   prebuildRepository: string
 }
 
@@ -30,8 +45,32 @@ export type WorkspaceSourceForm =
 
 export interface WorkspaceSourceResult {
   source: string
-  devcontainerPath?: string
+  // devcontainer is the value for the --devcontainer flag, or undefined when
+  // the flag should be omitted (auto-detect).
+  devcontainer?: string
   prebuildRepository?: string
+}
+
+// buildDevcontainerArg renders a DevcontainerConfig into the --devcontainer
+// flag value, or undefined when the flag should be omitted. Modes that require
+// a value (path/image/id) fall back to omitting the flag when the value is
+// blank, so an empty input never produces an invalid "image:" / "id:" token.
+export function buildDevcontainerArg(
+  config: DevcontainerConfig,
+): string | undefined {
+  const value = config.value.trim()
+  switch (config.mode) {
+    case "none":
+      return "none"
+    case "path":
+      return value || undefined
+    case "image":
+      return value ? `image:${value}` : undefined
+    case "id":
+      return value ? `id:${value}` : undefined
+    case "auto":
+      return undefined
+  }
 }
 
 // hostFromUrl extracts the hostname from SSH (git@host:path) and URL
@@ -91,7 +130,7 @@ export function buildWorkspaceSource(
   if (form.sourceType === "local") {
     return {
       source: form.localPath.trim(),
-      devcontainerPath: optional(form.devcontainerPath),
+      devcontainer: buildDevcontainerArg(form.devcontainer),
       prebuildRepository: optional(form.prebuildRepository),
     }
   }
@@ -101,7 +140,7 @@ export function buildWorkspaceSource(
 
   return {
     source,
-    devcontainerPath: optional(form.devcontainerPath),
+    devcontainer: buildDevcontainerArg(form.devcontainer),
     prebuildRepository: optional(form.prebuildRepository),
   }
 }

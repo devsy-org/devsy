@@ -98,18 +98,18 @@ describe("IPC commands", () => {
       expect(result).toBe('{"state":"Running"}')
     })
 
-    it("workspaceUp forwards devcontainerPath and prebuildRepository", async () => {
+    it("workspaceUp forwards devcontainer and prebuildRepository", async () => {
       mockInvoke.mockResolvedValue("cmd-id")
       await workspaceUp({
         source: "github.com/org/repo",
-        devcontainerPath: ".devcontainer/devcontainer.json",
+        devcontainer: "image:python:3",
         prebuildRepository: "ghcr.io/org/prebuilds",
       })
       expect(mockInvoke).toHaveBeenCalledWith(
         "workspace_up",
         expect.objectContaining({
           source: "github.com/org/repo",
-          devcontainerPath: ".devcontainer/devcontainer.json",
+          devcontainer: "image:python:3",
           prebuildRepository: "ghcr.io/org/prebuilds",
         }),
       )

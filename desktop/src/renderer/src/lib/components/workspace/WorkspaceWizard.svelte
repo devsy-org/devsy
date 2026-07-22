@@ -38,6 +38,7 @@ import { buildWorkspaceSource } from "$lib/utils/workspace-source.js"
 import type {
   WorkspaceSourceType,
   GitRefType,
+  DevcontainerMode,
 } from "$lib/utils/workspace-source.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import type { CommandProgress } from "$lib/types/index.js"
@@ -171,7 +172,8 @@ let imageRef = $state("")
 let refType = $state<GitRefType>("branch")
 let refValue = $state("")
 let subPath = $state("")
-let devcontainerPath = $state("")
+let devcontainerMode = $state<DevcontainerMode>("auto")
+let devcontainerValue = $state("")
 let prebuildRepository = $state("")
 let workspaceFolder = $state("")
 let advancedOpen = $state(false)
@@ -185,7 +187,7 @@ let assembled = $derived(
       ? buildWorkspaceSource({
           sourceType: "local",
           localPath,
-          devcontainerPath,
+          devcontainer: { mode: devcontainerMode, value: devcontainerValue },
           prebuildRepository,
         })
       : buildWorkspaceSource({
@@ -194,7 +196,7 @@ let assembled = $derived(
           refType,
           refValue,
           subPath,
-          devcontainerPath,
+          devcontainer: { mode: devcontainerMode, value: devcontainerValue },
           prebuildRepository,
         }),
 )
@@ -336,7 +338,8 @@ function reset() {
   refType = "branch"
   refValue = ""
   subPath = ""
-  devcontainerPath = ""
+  devcontainerMode = "auto"
+  devcontainerValue = ""
   prebuildRepository = ""
   workspaceFolder = ""
   advancedOpen = false
@@ -505,7 +508,7 @@ async function handleLaunch() {
       ide: selectedIde,
       ideLaunch: "auto",
       workspaceFolder: workspaceFolder.trim() || undefined,
-      devcontainerPath: assembled.devcontainerPath,
+      devcontainer: assembled.devcontainer,
       prebuildRepository: assembled.prebuildRepository,
       platform:
         imageIncompatible && emulationEnabled && emulationTarget
@@ -700,14 +703,48 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Dev container config</Label>
-          <Input
-            placeholder=".devcontainer/devcontainer.json"
-            value={devcontainerPath}
-            oninput={(e) => (devcontainerPath = e.currentTarget.value)}
-          />
+          <Label class="text-sm">Dev container source</Label>
+          <Select.Root type="single" bind:value={devcontainerMode}>
+            <Select.Trigger class="h-8 w-full rounded-lg">
+              {devcontainerMode === "auto"
+                ? "Auto-detect (default)"
+                : devcontainerMode === "path"
+                  ? "Config file path"
+                  : devcontainerMode === "image"
+                    ? "Container image"
+                    : devcontainerMode === "id"
+                      ? "Named profile"
+                      : "Ignore project config"}
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="auto">Auto-detect (default)</Select.Item>
+              <Select.Item value="path">Config file path</Select.Item>
+              <Select.Item value="image">Container image</Select.Item>
+              <Select.Item value="id">Named profile</Select.Item>
+              <Select.Item value="none">Ignore project config</Select.Item>
+            </Select.Content>
+          </Select.Root>
+          {#if devcontainerMode === "path" || devcontainerMode === "image" || devcontainerMode === "id"}
+            <Input
+              placeholder={devcontainerMode === "path"
+                ? ".devcontainer/devcontainer.json"
+                : devcontainerMode === "image"
+                  ? "mcr.microsoft.com/devcontainers/python:3"
+                  : "my-profile"}
+              value={devcontainerValue}
+              oninput={(e) => (devcontainerValue = e.currentTarget.value)}
+            />
+          {/if}
           <p class="text-xs text-muted-foreground">
-            Path to the devcontainer.json to build from. Leave blank to auto-detect.
+            {devcontainerMode === "auto"
+              ? "Use the devcontainer.json discovered in the project."
+              : devcontainerMode === "path"
+                ? "Build from a devcontainer.json at this path, overriding project discovery."
+                : devcontainerMode === "image"
+                  ? "Ignore the project config and run this image directly."
+                  : devcontainerMode === "id"
+                    ? "Use the named .devcontainer/<name> profile in the project."
+                    : "Ignore the project config; falls back to the language default."}
           </p>
         </div>
 
@@ -1033,10 +1070,10 @@ function selectTemplate(t: { name: string; source: string }) {
                 <span class="font-medium truncate">{subPath}</span>
               </div>
             {/if}
-            {#if assembled.devcontainerPath}
+            {#if assembled.devcontainer}
               <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Dev container config</span>
-                <span class="font-medium truncate">{assembled.devcontainerPath}</span>
+                <span class="text-muted-foreground">Dev container source</span>
+                <span class="font-medium truncate">{assembled.devcontainer}</span>
               </div>
             {/if}
             {#if assembled.prebuildRepository}
