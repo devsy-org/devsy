@@ -10,6 +10,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -55,35 +57,22 @@ test scripts from the test/ directory.`,
 		},
 	}
 
-	testCmd.Flags().StringVar(
-		&cmd.ProjectFolder, "project-folder", "",
-		"Path to feature project containing src/ and test/ directories",
+	cliflags.Add(testCmd,
+		cliflags.String(&cmd.ProjectFolder, names.ProjectFolder, "",
+			"Path to feature project containing src/ and test/ directories"),
+		cliflags.String(&cmd.Features, names.Features, "",
+			"Comma-separated list of feature IDs to test (default: all)"),
+		cliflags.String(&cmd.BaseImage, names.BaseImage, defaultBaseImage,
+			"Base Docker image for test containers"),
+		cliflags.String(&cmd.RemoteUser, names.RemoteUser, defaultRemoteUser,
+			"User to run tests as"),
+		cliflags.Bool(&cmd.SkipScenarios, names.SkipScenarios, false,
+			"Only run the global test script, skip per-feature scenario tests"),
+		cliflags.Bool(&cmd.Quiet, names.Quiet, false, "Suppress verbose build output"),
+		cliflags.Bool(&cmd.PreserveTestContainers, names.PreserveTestContainers, false,
+			"Don't remove test containers after run (for debugging)"),
 	)
-	testCmd.Flags().StringVar(
-		&cmd.Features, "features", "",
-		"Comma-separated list of feature IDs to test (default: all)",
-	)
-	testCmd.Flags().StringVar(
-		&cmd.BaseImage, "base-image", defaultBaseImage,
-		"Base Docker image for test containers",
-	)
-	testCmd.Flags().StringVar(
-		&cmd.RemoteUser, "remote-user", defaultRemoteUser,
-		"User to run tests as",
-	)
-	testCmd.Flags().BoolVar(
-		&cmd.SkipScenarios, "skip-scenarios", false,
-		"Only run the global test script, skip per-feature scenario tests",
-	)
-	testCmd.Flags().BoolVar(
-		&cmd.Quiet, "quiet", false,
-		"Suppress verbose build output",
-	)
-	testCmd.Flags().BoolVar(
-		&cmd.PreserveTestContainers, "preserve-test-containers", false,
-		"Don't remove test containers after run (for debugging)",
-	)
-	_ = testCmd.MarkFlagRequired("project-folder")
+	_ = testCmd.MarkFlagRequired(names.ProjectFolder)
 
 	return testCmd
 }

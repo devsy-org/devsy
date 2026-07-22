@@ -11,7 +11,7 @@ func TestBuildForwardArgs(t *testing.T) {
 	expected := []string{
 		"workspace",
 		"ssh",
-		"--gpg-agent-forwarding=true",
+		"--ssh-gpg-forwarding=true",
 		"--agent-forwarding=true",
 		"--start-services=true",
 		"--user", "root",

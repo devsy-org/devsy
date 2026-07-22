@@ -5,6 +5,7 @@ import (
 	"os/exec"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
@@ -45,15 +46,15 @@ func buildForwardArgs(user, context, workspace string) []string {
 	return []string{
 		"workspace",
 		"ssh",
-		"--gpg-agent-forwarding=true",
-		"--agent-forwarding=true",
-		"--start-services=true",
-		"--user",
+		names.FlagTrue(names.SSHGPGForwarding),
+		names.FlagTrue(names.AgentForwarding),
+		names.FlagTrue(names.StartServices),
+		names.Flag(names.User),
 		user,
-		"--context",
+		names.Flag(names.Context),
 		context,
 		workspace,
-		"--log-output=raw",
-		"--command", "sleep infinity",
+		names.FlagValue(names.LogOutput, "raw"),
+		names.Flag(names.Command), "sleep infinity",
 	}
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/agentcontainer"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ts"
@@ -39,7 +41,10 @@ func NewGitCredentialsCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
-	gitCredentialsCmd.Flags().IntVar(&cmd.Port, "port", 0, "If specified, will use the given port")
+	cliflags.Add(
+		gitCredentialsCmd,
+		cliflags.Int(&cmd.Port, names.Port, 0, "If specified, will use the given port"),
+	)
 	return gitCredentialsCmd
 }
 

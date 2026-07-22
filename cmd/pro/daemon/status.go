@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
@@ -54,11 +56,11 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	c.Flags().StringVar(&cmd.Host, "host", "", "The pro instance to use")
-	_ = c.MarkFlagRequired("host")
-	proflags.BindEnv(c.Flags(), "host")
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	_ = c.MarkFlagRequired(names.Host)
+	proflags.BindEnv(c.Flags(), names.Host)
 	_ = c.RegisterFlagCompletionFunc(
-		"host",
+		names.Host,
 		func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetPlatformHostSuggestions(
 				rootCmd,

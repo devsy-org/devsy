@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,15 +21,15 @@ const testFeatureIDPkg = "my-feature"
 func TestPackageCmd_FlagDefaults(t *testing.T) {
 	cmd := NewPackageCmd(nil)
 
-	targetFlag := cmd.Flags().Lookup("target")
+	targetFlag := cmd.Flags().Lookup(names.Target)
 	require.NotNil(t, targetFlag)
 	assert.Equal(t, "", targetFlag.DefValue)
 
-	outputFolderFlag := cmd.Flags().Lookup("output-folder")
+	outputFolderFlag := cmd.Flags().Lookup(names.OutputFolder)
 	require.NotNil(t, outputFolderFlag)
 	assert.Equal(t, ".", outputFolderFlag.DefValue)
 
-	forceCleanFlag := cmd.Flags().Lookup("force-clean-output-folder")
+	forceCleanFlag := cmd.Flags().Lookup(names.ForceCleanOutputFolder)
 	require.NotNil(t, forceCleanFlag)
 	assert.Equal(t, "false", forceCleanFlag.DefValue)
 }

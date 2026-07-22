@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/devsy-org/devsy/cmd/flags"
+	cmdflags "github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
@@ -20,7 +22,7 @@ import (
 
 // BuildCmd holds the cmd flags.
 type BuildCmd struct {
-	*flags.GlobalFlags
+	*cmdflags.GlobalFlags
 	provider.CLIOptions
 
 	ProviderOptions []string
@@ -30,94 +32,103 @@ type BuildCmd struct {
 }
 
 // NewBuildCmd creates a new command.
-func NewBuildCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewBuildCmd(flags *cmdflags.GlobalFlags) *cobra.Command {
 	cmd := &BuildCmd{
 		GlobalFlags: flags,
 	}
 	buildCmd := &cobra.Command{
 		Use:   "build [flags] [workspace-path|workspace-name]",
-		Short: "Builds a workspace",
+		Short: "Build a workspace image",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.execute(cobraCmd.Context(), args)
 		},
 	}
 
-	buildCmd.Flags().
-		StringVar(&cmd.DevContainerImage, "devcontainer-image", "",
-			"The container image to use, this will override the devcontainer.json value in the project")
-	buildCmd.Flags().
-		StringVar(&cmd.DevContainerPath, "devcontainer-path", "", "The path to the devcontainer.json relative to the project")
-	buildCmd.Flags().StringVar(&cmd.DevContainerPath, "config", "", "Alias for --devcontainer-path")
-	_ = buildCmd.Flags().MarkHidden("config")
-	buildCmd.Flags().
-		StringVar(&cmd.AdditionalFeatures, "additional-features", "",
-			`Additional features to apply to the dev container (JSON as per "features" section in devcontainer.json)`)
-	buildCmd.Flags().
-		StringSliceVar(&cmd.ProviderOptions, "provider-option", []string{}, "Provider option in the form KEY=VALUE")
-	buildCmd.Flags().
-		BoolVar(&cmd.SkipDelete, "skip-delete", false, "If true will not delete the workspace after building it")
-	buildCmd.Flags().
-		StringVar(&cmd.Machine, "machine", "",
-			"The machine to use for this workspace. The machine needs to exist beforehand or the "+
-				"command will fail. If the workspace already exists, this option has no effect")
-	buildCmd.Flags().StringVar(&cmd.Repository, "repository", "", "The repository to push to")
-	buildCmd.Flags().
-		StringSliceVar(&cmd.Tag, "tag", []string{},
-			"Image Tag(s) in the form of a comma separated list --tag latest,arm64 or "+
-				"multiple flags --tag latest --tag arm64")
-	buildCmd.Flags().
-		StringSliceVar(&cmd.Platforms, "platform", []string{}, "Set target platform for build")
-	buildCmd.Flags().
-		BoolVar(&cmd.SkipPush, "skip-push", false, "If true will not push the image to the repository, useful for testing")
-	buildCmd.Flags().
-		BoolVar(&cmd.PushDuringBuild, "push", false,
-			"Push image directly to registry during build, skipping load to local daemon")
-	buildCmd.Flags().
-		StringArrayVar(&cmd.CacheFrom, "cache-from", []string{},
-			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
-				"Takes priority over devcontainer.json build.cacheFrom")
-	buildCmd.Flags().
-		BoolVar(&cmd.NoCache, "no-cache", false,
-			"Disable Docker build cache")
-	buildCmd.Flags().
-		StringArrayVar(&cmd.Labels, "label", []string{},
-			"Add labels to the built image (format: key=value, can be specified multiple times)")
-	buildCmd.Flags().
-		StringVar(&cmd.Output, "output", "",
-			"Build output type (docker or oci)")
-	buildCmd.Flags().
-		StringVar(&cmd.ExperimentalLockfile, "experimental-lockfile", "",
-			"Lockfile path for reproducible builds")
-	buildCmd.Flags().
-		Var(&cmd.GitCloneStrategy, "git-clone-strategy",
-			"The git clone strategy Devsy uses to checkout git based workspaces. "+
-				"Can be full (default), blobless, treeless or shallow")
-	buildCmd.Flags().
-		BoolVar(&cmd.GitCloneRecursiveSubmodules, "git-clone-recursive-submodules", false,
-			"If true will clone git submodule repositories recursively")
-	buildCmd.Flags().
-		Var(&cmd.GitLFSMode, "git-lfs-mode",
-			"How Devsy handles Git LFS after cloning. Can be full (default, download LFS "+
-				"content), setup-only (configure LFS but leave pointer files) or skip (ignore LFS)")
-
-	buildCmd.Flags().
-		StringVar(&cmd.ImageName, "image-name", "", "Alternative name for the built image")
-	buildCmd.Flags().
-		BoolVar(&cmd.NoBuild, "no-build", false, "Fail if the image must be built (enforce pre-built images only)")
-	buildCmd.Flags().
-		BoolVar(&cmd.Pull, "pull", false, "Always attempt to pull a newer version of the base image when building")
-
-	// TESTING
-	buildCmd.Flags().BoolVar(&cmd.ForceBuild, "force-build", false, "TESTING ONLY")
-	buildCmd.Flags().
-		BoolVar(&cmd.ForceInternalBuildKit, "force-internal-buildkit", false, "TESTING ONLY")
-	_ = buildCmd.Flags().MarkHidden("force-build")
-	_ = buildCmd.Flags().MarkHidden("force-internal-buildkit")
+	cmd.registerFlags(buildCmd)
 	return buildCmd
 }
 
 func (cmd *BuildCmd) Run(ctx context.Context, client client.WorkspaceClient) error {
 	return cmd.build(ctx, client)
+}
+
+func (cmd *BuildCmd) registerFlags(buildCmd *cobra.Command) {
+	cmd.registerDevContainerFlags(buildCmd)
+	cmd.registerImageFlags(buildCmd)
+	cmd.registerTestingFlags(buildCmd)
+}
+
+func (cmd *BuildCmd) registerDevContainerFlags(buildCmd *cobra.Command) {
+	cliflags.RegisterDevContainerModifierFlags(buildCmd.Flags(), cliflags.DevContainerModifierFlags{
+		Image:    &cmd.DevContainerImage,
+		Features: &cmd.AdditionalFeatures,
+	})
+	cliflags.Add(buildCmd,
+		cliflags.String(&cmd.DevContainerPath, names.DevContainerPath, "",
+			"The path to the devcontainer.json relative to the project"),
+		cliflags.StringSlice(&cmd.ProviderOptions, names.ProviderOption, nil,
+			"Provider option in the form KEY=VALUE"),
+		cliflags.Value(&cmd.GitCloneStrategy, names.GitCloneStrategy,
+			"The git clone strategy Devsy uses to checkout git based workspaces. "+
+				"Can be full (default), blobless, treeless or shallow"),
+		cliflags.Bool(&cmd.GitCloneRecursiveSubmodules, names.GitRecurseSubmodules, false,
+			"Clone submodules recursively"),
+		cliflags.Value(&cmd.GitLFSMode, names.GitLFSMode,
+			"How Devsy handles Git LFS after cloning. Can be full (default, download LFS "+
+				"content), setup-only (configure LFS but leave pointer files) or skip (ignore LFS)"),
+	)
+}
+
+func (cmd *BuildCmd) registerImageFlags(buildCmd *cobra.Command) {
+	cliflags.Add(
+		buildCmd,
+		cliflags.Bool(&cmd.SkipDelete, names.SkipDelete, false,
+			"If true will not delete the workspace after building it"),
+		cliflags.String(&cmd.Machine, names.Machine, "",
+			"The machine to use for this workspace. The machine needs to exist beforehand or the "+
+				"command will fail. If the workspace already exists, this option has no effect"),
+		cliflags.String(&cmd.Repository, names.Repository, "", "The repository to push to"),
+		cliflags.StringSlice(&cmd.Tag, names.Tag, nil,
+			"Image Tag(s) in the form of a comma separated list --tag latest,arm64 or "+
+				"multiple flags --tag latest --tag arm64"),
+		cliflags.StringSlice(&cmd.Platforms, names.Platform, nil, "Set target platform for build"),
+		cliflags.Bool(&cmd.SkipPush, names.SkipPush, false,
+			"If true will not push the image to the repository, useful for testing"),
+		cliflags.Bool(&cmd.PushDuringBuild, names.Push, false,
+			"Push image directly to registry during build, skipping load to local daemon"),
+		cliflags.StringArray(
+			&cmd.CacheFrom,
+			names.CacheFrom,
+			nil,
+			"Cache sources for the build (e.g., myregistry.io/cache:latest or type=registry,ref=...). "+
+				"Takes priority over devcontainer.json build.cacheFrom",
+		),
+		cliflags.Bool(&cmd.NoCache, names.NoCache, false, "Disable Docker build cache"),
+		cliflags.StringArray(&cmd.Labels, names.Label, nil,
+			"Add labels to the built image (format: key=value, can be specified multiple times)"),
+		cliflags.String(&cmd.Output, names.Output, "", "Build output type (docker or oci)"),
+		cliflags.String(&cmd.ExperimentalLockfile, names.ExperimentalLockfile, "",
+			"Lockfile path for reproducible builds"),
+		cliflags.String(
+			&cmd.ImageName,
+			names.ImageName,
+			"",
+			"Alternative name for the built image",
+		),
+		cliflags.Bool(&cmd.NoBuild, names.NoBuild, false,
+			"Fail if the image must be built (enforce pre-built images only)"),
+		cliflags.Bool(&cmd.Pull, names.Pull, false,
+			"Always attempt to pull a newer version of the base image when building"),
+	)
+}
+
+func (cmd *BuildCmd) registerTestingFlags(buildCmd *cobra.Command) {
+	cliflags.Add(
+		buildCmd,
+		cliflags.Bool(&cmd.ForceBuild, names.ForceBuild, false, "TESTING ONLY").Hidden(),
+		cliflags.Bool(&cmd.ForceInternalBuildKit, names.ForceInternalBuildKit, false, "TESTING ONLY").
+			Hidden(),
+	)
 }
 
 func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
@@ -176,9 +187,7 @@ func (cmd *BuildCmd) prepareBuild(ctx context.Context) (*config.Config, error) {
 			return nil, fmt.Errorf("cannot build image: %w", err)
 		}
 	}
-	if devsyConfig.ContextOption(
-		config.ContextOptionSSHStrictHostKeyChecking,
-	) == config.BoolTrue {
+	if devsyConfig.ContextOptionBool(config.ContextOptionSSHStrictHostKeyChecking) {
 		cmd.StrictHostKeyChecking = true
 	}
 	return devsyConfig, nil
@@ -186,10 +195,12 @@ func (cmd *BuildCmd) prepareBuild(ctx context.Context) (*config.Config, error) {
 
 func (cmd *BuildCmd) validateBuildFlags() error {
 	if cmd.PushDuringBuild && cmd.SkipPush {
-		return fmt.Errorf("cannot use --push and --skip-push together")
+		return fmt.Errorf("cannot use %s and %s together",
+			names.Flag(names.Push), names.Flag(names.SkipPush))
 	}
 	if cmd.PushDuringBuild && cmd.Repository == "" {
-		return fmt.Errorf("--push requires --repository to be specified")
+		return fmt.Errorf("%s requires %s to be specified",
+			names.Flag(names.Push), names.Flag(names.Repository))
 	}
 	return nil
 }
@@ -269,15 +280,10 @@ func (cmd *BuildCmd) build(
 		return nil
 	}
 
-	containerID := ""
+	containerID := devcconfig.GetContainerID(result)
 	workdir := ""
-	if result != nil {
-		if result.ContainerDetails != nil {
-			containerID = result.ContainerDetails.ID
-		}
-		if result.SubstitutionContext != nil {
-			workdir = result.SubstitutionContext.ContainerWorkspaceFolder
-		}
+	if result != nil && result.SubstitutionContext != nil {
+		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
 	}
 	user := devcconfig.GetRemoteUser(result)
 	_ = devcconfig.WriteResultJSON(os.Stdout, devcconfig.ResultEnvelope{

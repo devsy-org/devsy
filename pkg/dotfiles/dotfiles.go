@@ -9,6 +9,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
@@ -62,7 +63,7 @@ func Setup(p SetupParams) error {
 		return err
 	}
 	if log.DebugEnabled() {
-		dotCmd.Args = append(dotCmd.Args, "--debug")
+		dotCmd.Args = append(dotCmd.Args, names.Flag(names.Debug))
 	}
 
 	log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
@@ -91,20 +92,24 @@ func buildDotCmdAgentArguments(
 		cmdAgent,
 		cmdWorkspace,
 		cmdInstallDotfs,
-		"--repository",
+		names.Flag(names.Repository),
 		dotfilesRepo,
 	}
 
 	if strictHostKey {
-		agentArguments = append(agentArguments, "--strict-host-key-checking")
+		agentArguments = append(agentArguments, names.Flag(names.StrictHostKeyChecking))
 	}
 
 	if debug {
-		agentArguments = append(agentArguments, "--debug")
+		agentArguments = append(agentArguments, names.Flag(names.Debug))
 	}
 
 	if dotfilesScript != "" {
-		agentArguments = append(agentArguments, "--install-script", dotfilesScript)
+		agentArguments = append(
+			agentArguments,
+			names.Flag(names.InstallScript),
+			dotfilesScript,
+		)
 	}
 
 	return agentArguments
@@ -123,8 +128,8 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	sshCmd := []string{
 		"workspace",
 		"ssh",
-		"--agent-forwarding=true",
-		"--start-services=true",
+		names.FlagTrue(names.AgentForwarding),
+		names.FlagTrue(names.StartServices),
 	}
 
 	envFilesKeyValuePairs, err := collectDotfilesScriptEnvKeyValuePairs(p.envFiles)
@@ -137,7 +142,7 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	allEnvKeyValuesPairs := slices.Concat(envFilesKeyValuePairs, p.envKeyValuePairs)
 	allEnvKeys := extractKeysFromEnvKeyValuePairs(allEnvKeyValuesPairs)
 	for _, envKey := range allEnvKeys {
-		sshCmd = append(sshCmd, "--send-env", envKey)
+		sshCmd = append(sshCmd, names.Flag(names.SendEnv), envKey)
 	}
 
 	remoteUser, err := devssh.GetUser(
@@ -162,13 +167,13 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	}
 
 	sshCmd = append(sshCmd,
-		"--user",
+		names.Flag(names.User),
 		remoteUser,
-		"--context",
+		names.Flag(names.Context),
 		p.client.Context(),
 		p.client.Workspace(),
-		"--log-output=raw",
-		"--command",
+		names.FlagValue(names.LogOutput, "raw"),
+		names.Flag(names.Command),
 		config.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
 	)
 	execPath, err := os.Executable()

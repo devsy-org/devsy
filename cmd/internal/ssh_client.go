@@ -6,6 +6,8 @@ import (
 	"os"
 
 	command2 "github.com/devsy-org/devsy/pkg/command"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -27,10 +29,12 @@ func NewSSHClientCmd() *cobra.Command {
 		},
 	}
 
-	sshCmd.Flags().StringVar(&cmd.KeyFile, "key-file", "", "SSH Key file to use")
-	sshCmd.Flags().StringVar(&cmd.Address, "address", "", "Address to connect to")
-	sshCmd.Flags().StringVar(&cmd.User, "user", "root", "User to connect as")
-	_ = sshCmd.MarkFlagRequired("address")
+	cliflags.Add(sshCmd,
+		cliflags.String(&cmd.KeyFile, names.KeyFile, "", "SSH Key file to use"),
+		cliflags.String(&cmd.Address, names.Address, "", "Address to connect to"),
+		cliflags.String(&cmd.User, names.User, "root", "User to connect as"),
+	)
+	_ = sshCmd.MarkFlagRequired(names.Address)
 	return sshCmd
 }
 

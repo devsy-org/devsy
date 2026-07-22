@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -111,9 +112,12 @@ type proxyCommandBuilder struct {
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
 	return &proxyCommandBuilder{
 		baseCommand: fmt.Sprintf(
-			"\"%s\" workspace ssh --stdio --context %s --user %s %s",
+			"\"%s\" workspace ssh %s %s %s %s %s %s",
 			execPath,
+			names.Flag(names.Stdio),
+			names.Flag(names.Context),
 			context,
+			names.Flag(names.User),
 			user,
 			workspace,
 		),
@@ -122,21 +126,27 @@ func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCom
 
 func (b *proxyCommandBuilder) withDevsyHome(home string) *proxyCommandBuilder {
 	if home != "" {
-		b.options = append(b.options, fmt.Sprintf("--home \"%s\"", home))
+		b.options = append(
+			b.options,
+			fmt.Sprintf("%s \"%s\"", names.Flag(names.Home), home),
+		)
 	}
 	return b
 }
 
 func (b *proxyCommandBuilder) withWorkdir(workdir string) *proxyCommandBuilder {
 	if workdir != "" {
-		b.options = append(b.options, fmt.Sprintf("--workdir \"%s\"", workdir))
+		b.options = append(
+			b.options,
+			fmt.Sprintf("%s \"%s\"", names.Flag(names.Workdir), workdir),
+		)
 	}
 	return b
 }
 
 func (b *proxyCommandBuilder) withGPGAgent(enabled bool) *proxyCommandBuilder {
 	if enabled {
-		b.options = append(b.options, "--gpg-agent-forwarding")
+		b.options = append(b.options, names.Flag(names.SSHGPGForwarding))
 	}
 	return b
 }

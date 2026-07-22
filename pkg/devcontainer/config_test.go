@@ -233,7 +233,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesInvalidJSON() {
 	_, _, err := s.runner.substitute(options, rawConfig)
 
 	s.Error(err)
-	s.Contains(err.Error(), "--additional-features")
+	s.Contains(err.Error(), "--features")
 }
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {

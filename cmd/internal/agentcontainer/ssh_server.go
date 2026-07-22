@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
@@ -31,12 +33,27 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 		RunE:  cmd.Run,
 	}
 
-	sshCmd.Flags().
-		StringVar(&cmd.Address, "address", fmt.Sprintf("127.0.0.1:%d", sshserver.DefaultUserPort), "Address to listen to")
-	sshCmd.Flags().
-		StringVar(&cmd.RemoteUser, "remote-user", "", "The remote user for this workspace")
-	sshCmd.Flags().
-		StringVar(&cmd.Workdir, "workdir", "", "Directory where commands will run on the host")
+	cliflags.Add(
+		sshCmd,
+		cliflags.String(
+			&cmd.Address,
+			names.Address,
+			fmt.Sprintf("127.0.0.1:%d", sshserver.DefaultUserPort),
+			"Address to listen to",
+		),
+		cliflags.String(
+			&cmd.RemoteUser,
+			names.RemoteUser,
+			"",
+			"The remote user for this workspace",
+		),
+		cliflags.String(
+			&cmd.Workdir,
+			names.Workdir,
+			"",
+			"Directory where commands will run on the host",
+		),
+	)
 	return sshCmd
 }
 

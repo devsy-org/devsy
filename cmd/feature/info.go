@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -55,11 +57,20 @@ to display metadata.`,
 		},
 	}
 
-	infoCmd.Flags().BoolVar(
-		&cmd.ShowTags, "show-tags", false, "List available tags from the registry",
-	)
-	infoCmd.Flags().BoolVar(
-		&cmd.ShowDependencies, "show-dependencies", false, "Show declared dependencies",
+	cliflags.Add(
+		infoCmd,
+		cliflags.Bool(
+			&cmd.ShowTags,
+			names.ShowTags,
+			false,
+			"List available tags from the registry",
+		),
+		cliflags.Bool(
+			&cmd.ShowDependencies,
+			names.ShowDependencies,
+			false,
+			"Show declared dependencies",
+		),
 	)
 
 	infoCmd.AddCommand(NewInfoManifestCmd(globalFlags))

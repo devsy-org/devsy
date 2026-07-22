@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/spf13/cobra"
 )
@@ -31,12 +33,19 @@ func NewRequestCmd() *cobra.Command {
 		},
 	}
 
-	requestCmd.Flags().StringVarP(&cmd.Data, "data", "d", "", "Request Data")
-	requestCmd.Flags().StringVarP(&cmd.Method, "request", "X", "GET", "Request Type")
-	requestCmd.Flags().StringSliceVarP(&cmd.Headers, "header", "H", []string{}, "Extra Headers")
-	requestCmd.Flags().
-		BoolVar(&cmd.FailOnErrorCode, "fail-on-error-code", true,
-			"Let this command fail if the remote is returning an error code")
+	cliflags.Add(
+		requestCmd,
+		cliflags.String(&cmd.Data, names.Data, "", "Request Data").Shorthand("d"),
+		cliflags.String(&cmd.Method, names.Request, "GET", "Request Type").Shorthand("X"),
+		cliflags.StringSlice(&cmd.Headers, names.Header, []string{}, "Extra Headers").
+			Shorthand("H"),
+		cliflags.Bool(
+			&cmd.FailOnErrorCode,
+			names.FailOnErrorCode,
+			true,
+			"Let this command fail if the remote is returning an error code",
+		),
+	)
 	return requestCmd
 }
 

@@ -9,6 +9,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
@@ -42,16 +44,28 @@ documentation for each feature based on its devcontainer-feature.json.`,
 		},
 	}
 
-	generateDocsCmd.Flags().StringVar(
-		&cmd.ProjectFolder, "project-folder", "", "Path to feature project containing src/ directory",
+	cliflags.Add(
+		generateDocsCmd,
+		cliflags.String(
+			&cmd.ProjectFolder,
+			names.ProjectFolder,
+			"",
+			"Path to feature project containing src/ directory",
+		),
+		cliflags.String(
+			&cmd.OutputFolder,
+			names.OutputFolder,
+			"",
+			"Where to write generated docs (default: project-folder)",
+		),
+		cliflags.String(
+			&cmd.Namespace,
+			names.Namespace,
+			"",
+			"Registry namespace for linking (e.g.ghcr.io/myorg/features)",
+		),
 	)
-	generateDocsCmd.Flags().StringVar(
-		&cmd.OutputFolder, "output-folder", "", "Where to write generated docs (default: project-folder)",
-	)
-	generateDocsCmd.Flags().StringVar(
-		&cmd.Namespace, "namespace", "", "Registry namespace for linking (e.g. ghcr.io/myorg/features)",
-	)
-	_ = generateDocsCmd.MarkFlagRequired("project-folder")
+	_ = generateDocsCmd.MarkFlagRequired(names.ProjectFolder)
 
 	return generateDocsCmd
 }

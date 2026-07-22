@@ -16,6 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/credentials"
 	devconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -57,16 +59,30 @@ func NewCredentialsServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(c.Context(), port)
 		},
 	}
-	credentialsServerCmd.Flags().
-		BoolVar(&cmd.ConfigureGitHelper, "configure-git-helper", false, "If true will configure git helper")
-	credentialsServerCmd.Flags().
-		BoolVar(&cmd.ConfigureDockerHelper, "configure-docker-helper", false, "If true will configure docker helper")
-	credentialsServerCmd.Flags().
-		BoolVar(&cmd.ForwardPorts, "forward-ports", false,
-			"If true will automatically try to forward open ports within the container")
-	credentialsServerCmd.Flags().StringVar(&cmd.GitUserSigningKey, "git-user-signing-key", "", "")
-	credentialsServerCmd.Flags().StringVar(&cmd.User, "user", "", "The user to use")
-	_ = credentialsServerCmd.MarkFlagRequired("user")
+	cliflags.Add(
+		credentialsServerCmd,
+		cliflags.Bool(
+			&cmd.ConfigureGitHelper,
+			names.ConfigureGitHelper,
+			false,
+			"If true will configure git helper",
+		),
+		cliflags.Bool(
+			&cmd.ConfigureDockerHelper,
+			names.ConfigureDockerHelper,
+			false,
+			"If true will configure docker helper",
+		),
+		cliflags.Bool(
+			&cmd.ForwardPorts,
+			names.ForwardPorts,
+			false,
+			"If true will automatically try to forward open ports within the container",
+		),
+		cliflags.String(&cmd.GitUserSigningKey, names.GitUserSigningKey, "", ""),
+		cliflags.String(&cmd.User, names.User, "", "The user to use"),
+	)
+	_ = credentialsServerCmd.MarkFlagRequired(names.User)
 
 	return credentialsServerCmd
 }

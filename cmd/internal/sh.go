@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/spf13/cobra"
 )
@@ -25,8 +27,12 @@ func NewShellCmd() *cobra.Command {
 		},
 	}
 
-	shellCmd.Flags().BoolVarP(&cmd.Login, "login", "l", false, "If login shell should be used")
-	shellCmd.Flags().StringVarP(&cmd.Command, "command", "c", "", "Command to execute")
+	cliflags.Add(
+		shellCmd,
+		cliflags.Bool(&cmd.Login, names.Login, false, "If login shell should be used").
+			Shorthand("l"),
+		cliflags.String(&cmd.Command, names.Command, "", "Command to execute").Shorthand("c"),
+	)
 	return shellCmd
 }
 

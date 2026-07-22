@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -91,7 +92,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				ginkgo.By("Starting Devsy again with --recreate")
-				err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
+				err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{
@@ -138,7 +139,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				ginkgo.By("Starting Devsy again with --recreate")
-				err = f.DevsyUp(ctx, tempDir, "--debug", "--recreate")
+				err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{

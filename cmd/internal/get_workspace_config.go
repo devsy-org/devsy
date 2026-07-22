@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -50,10 +52,21 @@ func NewGetWorkspaceConfigCommand(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	shellCmd.Flags().
-		DurationVar(&cmd.timeout, "timeout", 10*time.Second, "Timeout for the command, 10 seconds by default")
-	shellCmd.Flags().
-		IntVar(&cmd.maxDepth, "max-depth", 3, "Maximum depth to search for devcontainer files")
+	cliflags.Add(
+		shellCmd,
+		cliflags.Duration(
+			&cmd.timeout,
+			names.Timeout,
+			10*time.Second,
+			"Timeout for the command, 10 seconds by default",
+		),
+		cliflags.Int(
+			&cmd.maxDepth,
+			names.MaxDepth,
+			3,
+			"Maximum depth to search for devcontainer files",
+		),
+	)
 
 	return shellCmd
 }
@@ -89,9 +102,7 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 			rawSource,
 			tmpDir,
 			cmd.maxDepth,
-			devsyConfig.ContextOption(
-				config.ContextOptionSSHStrictHostKeyChecking,
-			) == config.BoolTrue,
+			devsyConfig.ContextOptionBool(config.ContextOptionSSHStrictHostKeyChecking),
 		)
 		if err != nil {
 			errChan <- err

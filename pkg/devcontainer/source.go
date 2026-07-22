@@ -3,11 +3,15 @@ package devcontainer
 import (
 	"fmt"
 	"strings"
+
+	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
 type SourceSpec struct {
 	Kind  SourceKind
 	Image string
+	ID    string
+	Path  string
 }
 
 type SourceKind string
@@ -15,9 +19,14 @@ type SourceKind string
 const (
 	SourceNone  SourceKind = "none"
 	SourceImage SourceKind = "image"
+	SourceID    SourceKind = "id"
+	SourcePath  SourceKind = "path"
 )
 
-const sourceImagePrefix = "image:"
+const (
+	sourceImagePrefix = "image:"
+	sourceIDPrefix    = "id:"
+)
 
 func ParseSourceSpec(value string) (*SourceSpec, error) {
 	value = strings.TrimSpace(value)
@@ -30,16 +39,25 @@ func ParseSourceSpec(value string) (*SourceSpec, error) {
 		image := strings.TrimSpace(strings.TrimPrefix(value, sourceImagePrefix))
 		if image == "" {
 			return nil, fmt.Errorf(
-				"--devcontainer %q: missing image reference after %q",
+				"%s %q: missing image reference after %q",
+				names.Flag(names.DevContainer),
 				value,
 				sourceImagePrefix,
 			)
 		}
 		return &SourceSpec{Kind: SourceImage, Image: image}, nil
+	case strings.HasPrefix(value, sourceIDPrefix):
+		id := strings.TrimSpace(strings.TrimPrefix(value, sourceIDPrefix))
+		if id == "" {
+			return nil, fmt.Errorf(
+				"%s %q: missing devcontainer id after %q",
+				names.Flag(names.DevContainer),
+				value,
+				sourceIDPrefix,
+			)
+		}
+		return &SourceSpec{Kind: SourceID, ID: id}, nil
 	default:
-		return nil, fmt.Errorf(
-			"--devcontainer %q: unsupported value, expected \"none\" or \"image:<ref>\"",
-			value,
-		)
+		return &SourceSpec{Kind: SourcePath, Path: value}, nil
 	}
 }

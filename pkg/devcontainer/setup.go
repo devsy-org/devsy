@@ -22,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -315,9 +316,16 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 	log.Infof("setting up container")
 	args := []string{
 		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
-		"internal", "agent", "container", "setup",
-		"--setup-info", shellescape.Quote(compressed),
-		"--container-workspace-info", shellescape.Quote(workspaceConfigCompressed),
+		"internal",
+		"agent",
+		"container",
+		"setup",
+		names.Flag(names.SetupInfo),
+		shellescape.Quote(compressed),
+		names.Flag(
+			names.ContainerWorkspaceInfo,
+		),
+		shellescape.Quote(workspaceConfigCompressed),
 	}
 
 	r.addSetupFlags(&args)
@@ -337,7 +345,7 @@ func (r *runner) addSetupFlags(args *[]string) {
 
 func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 	if shouldChownWorkspace(runtime.GOOS, isDockerDriver, r.isPodmanRuntime()) {
-		*args = append(*args, "--chown-workspace")
+		*args = append(*args, names.Flag(names.ChownWorkspace))
 	}
 }
 
@@ -357,45 +365,65 @@ func (r *runner) isPodmanRuntime() bool {
 
 func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {
 	if !isDockerDriver {
-		*args = append(*args, "--stream-mounts")
+		*args = append(*args, names.Flag(names.StreamMounts))
 	}
 	if r.workspaceConfig.Agent.InjectGitCredentials != stringFalse {
-		*args = append(*args, "--inject-git-credentials")
+		*args = append(*args, names.Flag(names.InjectGitCredentials))
 	}
 }
 
 func (r *runner) addPlatformFlags(args *[]string) {
 	platform := r.workspaceConfig.CLIOptions.Platform
 	if platform.AccessKey != "" {
-		*args = append(*args, "--access-key", shellescape.Quote(platform.AccessKey))
+		*args = append(
+			*args,
+			names.Flag(names.AccessKey),
+			shellescape.Quote(platform.AccessKey),
+		)
 	}
 	if platform.WorkspaceHost != "" {
-		*args = append(*args, "--workspace-host", shellescape.Quote(platform.WorkspaceHost))
+		*args = append(
+			*args,
+			names.Flag(names.WorkspaceHost),
+			shellescape.Quote(platform.WorkspaceHost),
+		)
 	}
 	if platform.PlatformHost != "" {
-		*args = append(*args, "--platform-host", shellescape.Quote(platform.PlatformHost))
+		*args = append(
+			*args,
+			names.Flag(names.PlatformHost),
+			shellescape.Quote(platform.PlatformHost),
+		)
 	}
 }
 
 func (r *runner) addDotfilesFlags(args *[]string) {
 	cli := r.workspaceConfig.CLIOptions
 	if cli.DotfilesRepo != "" {
-		*args = append(*args, "--dotfiles-repo", shellescape.Quote(cli.DotfilesRepo))
+		*args = append(
+			*args,
+			names.Flag(names.DotfilesRepo),
+			shellescape.Quote(cli.DotfilesRepo),
+		)
 	}
 	if cli.DotfilesScript != "" {
-		*args = append(*args, "--dotfiles-script", shellescape.Quote(cli.DotfilesScript))
+		*args = append(
+			*args,
+			names.Flag(names.DotfilesScript),
+			shellescape.Quote(cli.DotfilesScript),
+		)
 	}
 }
 
 func (r *runner) addPrebuildFlag(args *[]string) {
 	if r.workspaceConfig.CLIOptions.Prebuild {
-		*args = append(*args, "--prebuild")
+		*args = append(*args, names.Flag(names.Prebuild))
 	}
 }
 
 func (r *runner) addDebugFlag(args *[]string) {
 	if r.isDebugMode() {
-		*args = append(*args, "--debug")
+		*args = append(*args, names.Flag(names.Debug))
 	}
 }
 
@@ -451,18 +479,18 @@ func (r *runner) executeSetup(
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
 		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
-		"internal", "ssh-server", "--stdio",
+		"internal", "ssh-server", names.Flag(names.Stdio),
 	}
 
 	if ide.ReusesAuthSock(r.workspaceConfig.Workspace.IDE.Name) {
 		args = append(
 			args,
-			"--reuse-ssh-auth-sock",
+			names.Flag(names.ReuseSSHAuthSock),
 			shellescape.Quote(r.workspaceConfig.CLIOptions.SSHAuthSockID),
 		)
 	}
 	if r.isDebugMode() {
-		args = append(args, "--debug")
+		args = append(args, names.Flag(names.Debug))
 	}
 	return strings.Join(args, " ")
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,15 +19,15 @@ const (
 func TestPublishCmd_FlagDefaults(t *testing.T) {
 	cmd := NewPublishCmd(nil)
 
-	targetFlag := cmd.Flags().Lookup("target")
+	targetFlag := cmd.Flags().Lookup(names.Target)
 	require.NotNil(t, targetFlag)
 	assert.Equal(t, "", targetFlag.DefValue)
 
-	registryFlag := cmd.Flags().Lookup("registry")
+	registryFlag := cmd.Flags().Lookup(names.Registry)
 	require.NotNil(t, registryFlag)
 	assert.Equal(t, testRegistry, registryFlag.DefValue)
 
-	namespaceFlag := cmd.Flags().Lookup("namespace")
+	namespaceFlag := cmd.Flags().Lookup(names.Namespace)
 	require.NotNil(t, namespaceFlag)
 	assert.Equal(t, "", namespaceFlag.DefValue)
 }
@@ -41,7 +42,7 @@ func TestPublishCmd_AllFlagsRegistered(t *testing.T) {
 
 func TestPublishCmd_TargetRequired(t *testing.T) {
 	cmd := NewPublishCmd(nil)
-	flag := cmd.Flags().Lookup("target")
+	flag := cmd.Flags().Lookup(names.Target)
 	require.NotNil(t, flag)
 
 	annotations := flag.Annotations

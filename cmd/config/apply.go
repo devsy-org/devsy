@@ -15,6 +15,7 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/devsy-org/devsy/pkg/docker"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -54,15 +55,17 @@ func NewApplyCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	applyCmd.Flags().StringVar(&cmd.Container, flagApplyContainer, "",
-		"The container ID or name to apply configuration to (required)")
+	cliflags.Add(applyCmd,
+		cliflags.String(&cmd.Container, flagApplyContainer, "",
+			"The container ID or name to apply configuration to (required)"),
+		cliflags.String(&cmd.Config, flagApplyConfig, "",
+			"Path to devcontainer.json (defaults to auto-detection in current workspace)"),
+		cliflags.String(&cmd.WorkspaceFolder, flagApplyWorkspaceFolder, "",
+			"Workspace folder path inside the container"),
+		cliflags.String(&cmd.DockerPath, flagApplyDockerPath, "",
+			"Path to the docker/podman executable (defaults to 'docker')"),
+	)
 	_ = applyCmd.MarkFlagRequired(flagApplyContainer)
-	applyCmd.Flags().StringVar(&cmd.Config, flagApplyConfig, "",
-		"Path to devcontainer.json (defaults to auto-detection in current workspace)")
-	applyCmd.Flags().StringVar(&cmd.WorkspaceFolder, flagApplyWorkspaceFolder, "",
-		"Workspace folder path inside the container")
-	applyCmd.Flags().StringVar(&cmd.DockerPath, flagApplyDockerPath, "",
-		"Path to the docker/podman executable (defaults to 'docker')")
 
 	return applyCmd
 }

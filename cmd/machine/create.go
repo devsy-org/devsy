@@ -5,6 +5,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -28,8 +30,15 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
 	}
-	createCmd.Flags().
-		StringSliceVar(&cmd.ProviderOptions, "provider-option", []string{}, "Provider option in the form KEY=VALUE")
+	cliflags.Add(
+		createCmd,
+		cliflags.StringSlice(
+			&cmd.ProviderOptions,
+			names.ProviderOption,
+			[]string{},
+			"Provider option in the form KEY=VALUE",
+		),
+	)
 	return createCmd
 }
 

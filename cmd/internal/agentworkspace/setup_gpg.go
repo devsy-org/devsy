@@ -7,6 +7,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/credentials"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -35,12 +37,17 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	setupGPGCmd.Flags().
-		StringVar(&cmd.OwnerTrust, "ownertrust", "", "GPG Owner trust to import in armor form")
-	setupGPGCmd.Flags().
-		StringVar(&cmd.SocketPath, "socketpath", "", "path to the gpg socket forwarded")
-	setupGPGCmd.Flags().
-		StringVar(&cmd.GitKey, "gitkey", "", "gpg key to use for git commit signing")
+	cliflags.Add(
+		setupGPGCmd,
+		cliflags.String(
+			&cmd.OwnerTrust,
+			names.OwnerTrust,
+			"",
+			"GPG Owner trust to import in armor form",
+		),
+		cliflags.String(&cmd.SocketPath, names.SocketPath, "", "path to the gpg socket forwarded"),
+		cliflags.String(&cmd.GitKey, names.GitKey, "", "gpg key to use for git commit signing"),
+	)
 	return setupGPGCmd
 }
 

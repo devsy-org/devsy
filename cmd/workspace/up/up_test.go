@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,23 +49,23 @@ func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 
 func TestUpCmd_FlagRegistered(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("default-user-env-probe")
+	flag := upCmd.Flags().Lookup(names.UserEnvProbe)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestUpCmd_FlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--default-user-env-probe", probeNone})
+	err := upCmd.ParseFlags([]string{names.Flag(names.UserEnvProbe), probeNone})
 	require.NoError(t, err)
 
-	flag := upCmd.Flags().Lookup("default-user-env-probe")
+	flag := upCmd.Flags().Lookup(names.UserEnvProbe)
 	assert.Equal(t, probeNone, flag.Value.String())
 }
 
 func TestUpCmd_WorkspaceMountConsistencyFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("workspace-mount-consistency")
+	flag := upCmd.Flags().Lookup(names.WorkspaceMountConsistency)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
@@ -81,10 +82,12 @@ func TestUpCmd_WorkspaceMountConsistencyFlagParsesValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			upCmd := NewUpCmd(&flags.GlobalFlags{})
-			err := upCmd.ParseFlags([]string{"--workspace-mount-consistency", tt.value})
+			err := upCmd.ParseFlags(
+				[]string{names.Flag(names.WorkspaceMountConsistency), tt.value},
+			)
 			require.NoError(t, err)
 
-			flag := upCmd.Flags().Lookup("workspace-mount-consistency")
+			flag := upCmd.Flags().Lookup(names.WorkspaceMountConsistency)
 			assert.Equal(t, tt.value, flag.Value.String())
 		})
 	}
@@ -120,28 +123,28 @@ func TestUpCmd_ValidateWorkspaceMountConsistency(t *testing.T) {
 
 func TestUpCmd_SkipPostCreateFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("skip-post-create")
+	flag := upCmd.Flags().Lookup(names.SkipPostCreate)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
 
 func TestUpCmd_SkipPostStartFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("skip-post-start")
+	flag := upCmd.Flags().Lookup(names.SkipPostStart)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
 
 func TestUpCmd_SkipPostAttachFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("skip-post-attach")
+	flag := upCmd.Flags().Lookup(names.SkipPostAttach)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
 
 func TestUpCmd_SkipHostRequirementsFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("skip-host-requirements")
+	flag := upCmd.Flags().Lookup(names.SkipHostRequirements)
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
@@ -149,59 +152,59 @@ func TestUpCmd_SkipHostRequirementsFlag(t *testing.T) {
 func TestUpCmd_SkipFlagsParseValues(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	err := upCmd.ParseFlags([]string{
-		"--skip-post-create",
-		"--skip-post-start",
-		"--skip-post-attach",
-		"--skip-host-requirements",
+		names.Flag(names.SkipPostCreate),
+		names.Flag(names.SkipPostStart),
+		names.Flag(names.SkipPostAttach),
+		names.Flag(names.SkipHostRequirements),
 	})
 	require.NoError(t, err)
 
-	val, err := upCmd.Flags().GetBool("skip-post-create")
+	val, err := upCmd.Flags().GetBool(names.SkipPostCreate)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = upCmd.Flags().GetBool("skip-post-start")
+	val, err = upCmd.Flags().GetBool(names.SkipPostStart)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = upCmd.Flags().GetBool("skip-post-attach")
+	val, err = upCmd.Flags().GetBool(names.SkipPostAttach)
 	require.NoError(t, err)
 	assert.True(t, val)
 
-	val, err = upCmd.Flags().GetBool("skip-host-requirements")
+	val, err = upCmd.Flags().GetBool(names.SkipHostRequirements)
 	require.NoError(t, err)
 	assert.True(t, val)
 }
 
 func TestUpCmd_ContainerUserFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("container-user")
+	flag := upCmd.Flags().Lookup(names.ContainerUser)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestUpCmd_ContainerUserFlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--container-user", "devuser"})
+	err := upCmd.ParseFlags([]string{names.Flag(names.ContainerUser), "devuser"})
 	require.NoError(t, err)
 
-	flag := upCmd.Flags().Lookup("container-user")
+	flag := upCmd.Flags().Lookup(names.ContainerUser)
 	assert.Equal(t, "devuser", flag.Value.String())
 }
 
 func TestUpCmd_RemoteUserFlag(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	flag := upCmd.Flags().Lookup("remote-user")
+	flag := upCmd.Flags().Lookup(names.RemoteUser)
 	require.NotNil(t, flag)
 	assert.Equal(t, "", flag.DefValue)
 }
 
 func TestUpCmd_RemoteUserFlagParsesValue(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
-	err := upCmd.ParseFlags([]string{"--remote-user", "vscode"})
+	err := upCmd.ParseFlags([]string{names.Flag(names.RemoteUser), "vscode"})
 	require.NoError(t, err)
 
-	flag := upCmd.Flags().Lookup("remote-user")
+	flag := upCmd.Flags().Lookup(names.RemoteUser)
 	assert.Equal(t, "vscode", flag.Value.String())
 }
 

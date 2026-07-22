@@ -7,6 +7,18 @@ import (
 	"strings"
 )
 
+// GitIdentityEnvVars are the git author/committer environment variables
+// inherited from the host so commits made inside the workspace carry the
+// user's identity.
+var GitIdentityEnvVars = []string{
+	"GIT_AUTHOR_NAME",
+	"GIT_AUTHOR_EMAIL",
+	"GIT_AUTHOR_DATE",
+	"GIT_COMMITTER_NAME",
+	"GIT_COMMITTER_EMAIL",
+	"GIT_COMMITTER_DATE",
+}
+
 // Takes a list of assignments in KEY=VALUE format, a map of option to propagate, and an environment variable prefix,
 // and returns a new list with additional assignments from environment variables for any options not already assigned.
 func InheritOptionsFromEnvironment[Map ~map[string]V, V any](

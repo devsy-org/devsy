@@ -9,6 +9,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +33,15 @@ func NewFleetServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 		RunE:  cmd.Run,
 	}
 
-	fleetCmd.Flags().StringVar(&cmd.WorkspaceID, "workspaceid", "", "Fleet WorkspaceID to monitor")
+	cliflags.Add(
+		fleetCmd,
+		cliflags.String(
+			&cmd.WorkspaceID,
+			names.FleetWorkspaceID,
+			"",
+			"Fleet WorkspaceID to monitor",
+		),
+	)
 	return fleetCmd
 }
 

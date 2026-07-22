@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
@@ -30,19 +32,28 @@ func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	docsCmd.Flags().StringVar(
-		&docsFlags.ProjectFolder, "project-folder", "",
-		"Path to project folder containing template sources",
+	cliflags.Add(
+		docsCmd,
+		cliflags.String(
+			&docsFlags.ProjectFolder,
+			names.ProjectFolder,
+			"",
+			"Path to project folder containing template sources",
+		),
+		cliflags.String(
+			&docsFlags.GithubOwner,
+			names.GitHubOwner,
+			"",
+			"GitHub owner for documentation links",
+		),
+		cliflags.String(
+			&docsFlags.GithubRepo,
+			names.GitHubRepo,
+			"",
+			"GitHub repo for documentation links",
+		),
 	)
-	docsCmd.Flags().StringVar(
-		&docsFlags.GithubOwner, "github-owner", "",
-		"GitHub owner for documentation links",
-	)
-	docsCmd.Flags().StringVar(
-		&docsFlags.GithubRepo, "github-repo", "",
-		"GitHub repo for documentation links",
-	)
-	_ = docsCmd.MarkFlagRequired("project-folder")
+	_ = docsCmd.MarkFlagRequired(names.ProjectFolder)
 
 	return docsCmd
 }

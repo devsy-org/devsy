@@ -16,6 +16,8 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
@@ -43,13 +45,21 @@ func NewDaemonCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  cmd.Run,
 	}
-	daemonCmd.Flags().
-		StringVar(&cmd.Config.Timeout, "timeout", "", "The timeout to stop the container after")
-	daemonCmd.Flags().
-		StringVar(
-			&cmd.Config.ShutdownAction, "shutdown-action", "",
+	cliflags.Add(
+		daemonCmd,
+		cliflags.String(
+			&cmd.Config.Timeout,
+			names.Timeout,
+			"",
+			"The timeout to stop the container after",
+		),
+		cliflags.String(
+			&cmd.Config.ShutdownAction,
+			names.ShutdownAction,
+			"",
 			"The shutdown action (none, stopContainer, or stopCompose)",
-		)
+		),
+	)
 	return daemonCmd
 }
 
@@ -249,10 +259,10 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 
 	args := []string{cmdInternal, cmdAgent, cmdContainer, "ssh-server"}
 	if cmd.Config.Ssh.Workdir != "" {
-		args = append(args, "--workdir", cmd.Config.Ssh.Workdir)
+		args = append(args, names.Flag(names.Workdir), cmd.Config.Ssh.Workdir)
 	}
 	if cmd.Config.Ssh.User != "" {
-		args = append(args, "--remote-user", cmd.Config.Ssh.User)
+		args = append(args, names.Flag(names.RemoteUser), cmd.Config.Ssh.User)
 	}
 
 	sshCmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204

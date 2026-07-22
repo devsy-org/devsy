@@ -55,15 +55,6 @@ func mergeEnvFromFiles(baseOptions *provider2.CLIOptions) error {
 	return nil
 }
 
-var inheritedEnvironmentVariables = []string{
-	"GIT_AUTHOR_NAME",
-	"GIT_AUTHOR_EMAIL",
-	"GIT_AUTHOR_DATE",
-	"GIT_COMMITTER_NAME",
-	"GIT_COMMITTER_EMAIL",
-	"GIT_COMMITTER_DATE",
-}
-
 func (cmd *UpCmd) prepareClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -152,7 +143,7 @@ func (cmd *UpCmd) prepareSecrets() error {
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
 		cmd.WorkspaceEnv,
-		inheritedEnvironmentVariables,
+		options2.GitIdentityEnvVars,
 		"",
 	)
 

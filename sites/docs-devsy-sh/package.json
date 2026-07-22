@@ -16,7 +16,7 @@
     "docusaurus-gtm-plugin": "^0.0.2",
     "mdx-link-checker": "^0.1.1",
     "react": "^19.0.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^19.0.0"
   },
   "browserslist": {
     "production": [

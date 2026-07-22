@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -57,9 +59,11 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeProviderName(cmd),
 	}
-	versionsCmd.Flags().BoolVar(&cmd.JSON, "json", false, "Output JSON")
-	versionsCmd.Flags().BoolVar(&cmd.IncludePrerelease, "prerelease", false, "Include prereleases")
-	versionsCmd.Flags().BoolVar(&cmd.NoCache, "no-cache", false, "Bypass the version cache")
+	cliflags.Add(versionsCmd,
+		cliflags.Bool(&cmd.JSON, names.JSON, false, "Output JSON"),
+		cliflags.Bool(&cmd.IncludePrerelease, names.Prerelease, false, "Include prereleases"),
+		cliflags.Bool(&cmd.NoCache, names.NoCache, false, "Bypass the version cache"),
+	)
 	return versionsCmd
 }
 

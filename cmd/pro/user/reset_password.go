@@ -8,6 +8,8 @@ import (
 
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/random"
@@ -52,10 +54,18 @@ devsy pro user reset-password --user admin
 		},
 	}
 
-	c.Flags().StringVar(&cmd.User, "user", "admin", "The name of the user to reset the password")
-	c.Flags().StringVar(&cmd.Password, "password", "", "The new password to use")
-	c.Flags().BoolVar(&cmd.Create, "create", false, "Creates the user if it does not exist")
-	c.Flags().BoolVar(&cmd.Force, "force", false, "If user had no password will create one")
+	cliflags.Add(
+		c,
+		cliflags.String(
+			&cmd.User,
+			names.User,
+			"admin",
+			"The name of the user to reset the password",
+		),
+		cliflags.String(&cmd.Password, names.Password, "", "The new password to use"),
+		cliflags.Bool(&cmd.Create, names.Create, false, "Creates the user if it does not exist"),
+		cliflags.Bool(&cmd.Force, names.Force, false, "If user had no password will create one"),
+	)
 	return c
 }
 

@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -38,17 +40,25 @@ func NewDeferredHooksCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	deferredCmd.Flags().
-		StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
-	deferredCmd.Flags().
-		BoolVar(&cmd.Prebuild, "prebuild", false, "If true, prebuild lifecycle mode")
-	deferredCmd.Flags().
-		StringVar(&cmd.DotfilesRepo, "dotfiles-repo", "", "Dotfiles repository URL")
-	deferredCmd.Flags().
-		StringVar(&cmd.DotfilesScript, "dotfiles-script", "", "Dotfiles install script path")
-	deferredCmd.Flags().
-		StringSliceVar(&cmd.SecretsEnv, "secrets-env", []string{}, "Secrets to inject into lifecycle commands (KEY=VALUE)")
-	_ = deferredCmd.MarkFlagRequired("setup-info")
+	cliflags.Add(
+		deferredCmd,
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+		cliflags.Bool(&cmd.Prebuild, names.Prebuild, false, "If true, prebuild lifecycle mode"),
+		cliflags.String(&cmd.DotfilesRepo, names.DotfilesRepo, "", "Dotfiles repository URL"),
+		cliflags.String(
+			&cmd.DotfilesScript,
+			names.DotfilesScript,
+			"",
+			"Dotfiles install script path",
+		),
+		cliflags.StringSlice(
+			&cmd.SecretsEnv,
+			names.SecretsEnv,
+			[]string{},
+			"Secrets to inject into lifecycle commands (KEY=VALUE)",
+		),
+	)
+	_ = deferredCmd.MarkFlagRequired(names.SetupInfo)
 	return deferredCmd
 }
 

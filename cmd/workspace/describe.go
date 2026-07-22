@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -38,15 +40,17 @@ func NewDescribeCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 	describeCmd := &cobra.Command{
 		Use:   "describe [flags] [workspace-path|workspace-name]",
-		Short: "Shows the full details of a workspace",
+		Short: "Show workspace details",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.execute(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: cmd.validArgs,
 	}
 
-	describeCmd.Flags().
-		StringVar(&cmd.Timeout, "timeout", "30s", "The timeout to wait until the status can be retrieved")
+	cliflags.Add(describeCmd,
+		cliflags.String(&cmd.Timeout, names.Timeout, "30s",
+			"The timeout to wait until the status can be retrieved"),
+	)
 	return describeCmd
 }
 

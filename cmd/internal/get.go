@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/gjson"
 )
@@ -29,8 +31,12 @@ func NewGetCmd() *cobra.Command {
 		},
 	}
 
-	getCmd.Flags().StringVarP(&cmd.File, "file", "f", "", "Parse this json file instead of STDIN")
-	getCmd.Flags().BoolVar(&cmd.Fail, "fail", false, "Fail if value is not found")
+	cliflags.Add(
+		getCmd,
+		cliflags.String(&cmd.File, names.File, "", "Parse this json file instead of STDIN").
+			Shorthand("f"),
+		cliflags.Bool(&cmd.Fail, names.Fail, false, "Fail if value is not found"),
+	)
 
 	return getCmd
 }

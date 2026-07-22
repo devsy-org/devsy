@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -34,10 +36,17 @@ func NewPostAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	postAttachCmd.Flags().StringVar(&cmd.SetupInfo, "setup-info", "", "The container setup info")
-	postAttachCmd.Flags().
-		StringSliceVar(&cmd.SecretsEnv, "secrets-env", []string{}, "Secrets to inject into lifecycle commands (KEY=VALUE)")
-	_ = postAttachCmd.MarkFlagRequired("setup-info")
+	cliflags.Add(
+		postAttachCmd,
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+		cliflags.StringSlice(
+			&cmd.SecretsEnv,
+			names.SecretsEnv,
+			[]string{},
+			"Secrets to inject into lifecycle commands (KEY=VALUE)",
+		),
+	)
+	_ = postAttachCmd.MarkFlagRequired(names.SetupInfo)
 	return postAttachCmd
 }
 

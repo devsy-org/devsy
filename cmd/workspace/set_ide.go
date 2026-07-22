@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/ideparse"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -31,11 +33,9 @@ func NewSetIDECmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 
 	setIDECmd := &cobra.Command{
 		Use:   "set-ide <workspace> <ide>",
-		Short: "Assign an IDE to an existing workspace",
-		Long: `Assign an IDE to an existing workspace without starting it.
-
-The change is persisted to the workspace config and used on the next
-'devsy workspace up'. Available IDEs can be listed with 'devsy ide list'.`,
+		Short: "Set a workspace's IDE",
+		Long: `Set a workspace's IDE, persisted to its config and applied on the next
+'devsy workspace up'. List available IDEs with 'devsy ide list'.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0], args[1])
@@ -57,8 +57,11 @@ The change is persisted to the workspace config and used on the next
 		},
 	}
 
-	setIDECmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "IDE option in the form KEY=VALUE")
+	cliflags.Add(
+		setIDECmd,
+		cliflags.StringArray(&cmd.Options, names.Option, nil, "IDE option in the form KEY=VALUE").
+			Shorthand("o"),
+	)
 	return setIDECmd
 }
 

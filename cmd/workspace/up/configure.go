@@ -25,7 +25,7 @@ func (cmd *UpCmd) configureWorkspace(
 			devsyHome = envDevsyHome
 		}
 		setupGPGAgentForwarding := cmd.GPGAgentForwarding ||
-			devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue
+			devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding)
 		sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
 
 		if err := configureSSH(client, configureSSHParams{

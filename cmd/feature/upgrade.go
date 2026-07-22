@@ -8,6 +8,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	devconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -35,12 +37,17 @@ features are upgraded. Otherwise, all outdated features are upgraded.`,
 		},
 	}
 
-	upgradeCmd.Flags().
-		StringVar(&cmd.WorkspaceFolder, "workspace-folder", "", "Path to the workspace folder")
-	upgradeCmd.Flags().
-		StringVar(&cmd.Config, "config", "", "Path to a specific devcontainer.json")
-	upgradeCmd.Flags().
-		BoolVar(&cmd.DryRun, "dry-run", false, "Preview upgrades without applying them")
+	cliflags.Add(
+		upgradeCmd,
+		cliflags.String(
+			&cmd.WorkspaceFolder,
+			names.WorkspaceFolder,
+			"",
+			"Path to the workspace folder",
+		),
+		cliflags.String(&cmd.Config, names.Config, "", "Path to a specific devcontainer.json"),
+		cliflags.Bool(&cmd.DryRun, names.DryRun, false, "Preview upgrades without applying them"),
+	)
 
 	return upgradeCmd
 }

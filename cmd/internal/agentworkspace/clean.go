@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -42,10 +44,21 @@ This forces a fresh binary injection on the next workspace start.`,
 			return cmd.Run(cobraCmd.Context(), args[0])
 		},
 	}
-	cleanCmd.Flags().
-		StringVar(&cmd.DockerCommand, "docker-command", cleanDefaultDockerCmd, "Docker command to use")
-	cleanCmd.Flags().
-		StringVar(&cmd.HelperImage, "helper-image", cleanHelperImage, "Helper image for volume operations")
+	cliflags.Add(
+		cleanCmd,
+		cliflags.String(
+			&cmd.DockerCommand,
+			names.DockerCommand,
+			cleanDefaultDockerCmd,
+			"Docker command to use",
+		),
+		cliflags.String(
+			&cmd.HelperImage,
+			names.HelperImage,
+			cleanHelperImage,
+			"Helper image for volume operations",
+		),
+	)
 	return cleanCmd
 }
 

@@ -11,6 +11,8 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/devsy-org/devsy/cmd/flags"
 	devconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -45,10 +47,16 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	outdatedCmd.Flags().
-		StringVar(&cmd.WorkspaceFolder, "workspace-folder", "", "Path to the workspace folder")
-	outdatedCmd.Flags().
-		StringVar(&cmd.Config, "config", "", "Path to a specific devcontainer.json")
+	cliflags.Add(
+		outdatedCmd,
+		cliflags.String(
+			&cmd.WorkspaceFolder,
+			names.WorkspaceFolder,
+			"",
+			"Path to the workspace folder",
+		),
+		cliflags.String(&cmd.Config, names.Config, "", "Path to a specific devcontainer.json"),
+	)
 
 	return outdatedCmd
 }

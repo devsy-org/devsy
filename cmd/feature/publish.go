@@ -11,6 +11,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -46,19 +48,23 @@ OCI artifact.`,
 		},
 	}
 
-	publishCmd.Flags().StringVar(
-		&publishFlags.Target, "target", "",
-		"Path to packaged feature directory",
+	cliflags.Add(
+		publishCmd,
+		cliflags.String(
+			&publishFlags.Target,
+			names.Target,
+			"",
+			"Path to packaged feature directory",
+		),
+		cliflags.String(&publishFlags.Registry, names.Registry, "ghcr.io", "Target OCI registry"),
+		cliflags.String(
+			&publishFlags.Namespace,
+			names.Namespace,
+			"",
+			"Registry namespace (e.g., devcontainers/features)",
+		),
 	)
-	publishCmd.Flags().StringVar(
-		&publishFlags.Registry, "registry", "ghcr.io",
-		"Target OCI registry",
-	)
-	publishCmd.Flags().StringVar(
-		&publishFlags.Namespace, "namespace", "",
-		"Registry namespace (e.g., devcontainers/features)",
-	)
-	_ = publishCmd.MarkFlagRequired("target")
+	_ = publishCmd.MarkFlagRequired(names.Target)
 
 	return publishCmd
 }

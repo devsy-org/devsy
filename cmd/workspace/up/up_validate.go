@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
 const (
@@ -19,6 +21,9 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
+	if err := cmd.resolveDevContainerSource(); err != nil {
+		return err
+	}
 	if err := validatePodmanFlags(cmd); err != nil {
 		return err
 	}
@@ -41,6 +46,26 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+func (cmd *UpCmd) resolveDevContainerSource() error {
+	spec, err := devcontainer.ParseSourceSpec(cmd.DevContainerSource)
+	if err != nil {
+		return err
+	}
+	if spec == nil {
+		return nil
+	}
+	switch spec.Kind {
+	case devcontainer.SourceID:
+		cmd.DevContainerID = spec.ID
+		cmd.DevContainerSource = ""
+	case devcontainer.SourcePath:
+		cmd.DevContainerPath = spec.Path
+		cmd.DevContainerSource = ""
+	case devcontainer.SourceNone, devcontainer.SourceImage:
+	}
+	return nil
 }
 
 func (cmd *UpCmd) resolveExtraDevContainerPath() error {
@@ -77,7 +102,8 @@ func validateMounts(mounts []string) error {
 		parsed := config2.ParseMount(m)
 		if parsed.Target == "" {
 			return fmt.Errorf(
-				"invalid --mount value %q: target (dst/destination/target) is required",
+				"invalid %s value %q: target (dst/destination/target) is required",
+				names.Flag(names.Mount),
 				m,
 			)
 		}
@@ -94,18 +120,17 @@ func validateRemoteUserUID(value string) error {
 		return nil
 	default:
 		return fmt.Errorf(
-			"invalid --update-remote-user-uid-default value %q: must be \"on\" or \"off\"",
+			"invalid %s value %q: must be \"on\" or \"off\"",
+			names.Flag(names.UpdateRemoteUserUID),
 			value,
 		)
 	}
 }
 
+// validatePodmanFlags validates UID/GID mapping formats. The --userns vs
+// --uidmap/--gidmap exclusivity is enforced declaratively via
+// MarkFlagsMutuallyExclusive at registration.
 func validatePodmanFlags(cmd *UpCmd) error {
-	if cmd.Userns != "" && (len(cmd.UidMap) > 0 || len(cmd.GidMap) > 0) {
-		return fmt.Errorf(
-			"--userns cannot be combined with --uidmap or --gidmap (mutually exclusive)",
-		)
-	}
 	for _, m := range cmd.UidMap {
 		if !isValidMapping(m) {
 			return fmt.Errorf(

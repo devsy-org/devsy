@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -139,7 +140,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			gomega.Expect(stdout).To(gomega.ContainSubstring("/usr/local/bin"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
-	ginkgo.It("should skip env probe when --default-user-env-probe is none",
+	ginkgo.It("should skip env probe when --user-env-probe is none",
 		func(ctx context.Context) {
 			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/envprobe", initialDir)
 			framework.ExpectNoError(err)
@@ -147,7 +148,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			_, _, err = f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				workspaceFolderFlag, tempDir,
-				"--default-user-env-probe", "none",
+				names.Flag(names.UserEnvProbe), "none",
 				"--", echoCommand, "-n", "ok",
 			})
 			framework.ExpectNoError(err)

@@ -14,6 +14,8 @@ import (
 	devagent "github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
@@ -87,14 +89,16 @@ func NewSSHCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	sshCmd.Flags().
-		StringVar(&cmd.Command, "command", "", "The command to execute on the remote machine")
-	sshCmd.Flags().
-		BoolVar(&cmd.AgentForwarding, "agent-forwarding", false, "If true, will forward the local ssh keys")
-	sshCmd.Flags().StringVar(&cmd.TermMode, "term-mode", TermModeAuto, termModeUsage)
-	sshCmd.Flags().BoolVar(&cmd.InstallTerminfo, "install-terminfo", false, installUsage)
+	cliflags.Add(sshCmd,
+		cliflags.String(&cmd.Command, names.Command, "",
+			"The command to execute on the remote machine"),
+		cliflags.Bool(&cmd.AgentForwarding, names.AgentForwarding, false,
+			"If true, will forward the local ssh keys"),
+		cliflags.String(&cmd.TermMode, names.TermMode, TermModeAuto, termModeUsage),
+		cliflags.Bool(&cmd.InstallTerminfo, names.InstallTerminfo, false, installUsage),
+	)
 	_ = sshCmd.RegisterFlagCompletionFunc(
-		"term-mode",
+		names.TermMode,
 		func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 			return []string{
 				TermModeAuto,

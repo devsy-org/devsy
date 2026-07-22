@@ -137,6 +137,11 @@ func (c *Config) ContextOption(option string) string {
 	return ""
 }
 
+// ContextOptionBool reports whether the given context option is set to true.
+func (c *Config) ContextOptionBool(option string) bool {
+	return c.ContextOption(option) == BoolTrue
+}
+
 func (c *ContextConfig) IsSingleMachine(provider string) bool {
 	if c.Providers == nil || c.Providers[provider] == nil {
 		return false

@@ -9,6 +9,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 )
 
@@ -32,8 +34,8 @@ func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	c.Flags().StringVar(&cmd.ID, "id", "", "The workspace id")
-	_ = c.MarkFlagRequired("id")
+	cliflags.Add(c, cliflags.String(&cmd.ID, names.ID, "", "The workspace id"))
+	_ = c.MarkFlagRequired(names.ID)
 
 	return c
 }

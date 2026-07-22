@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"github.com/tailscale/hujson"
@@ -69,7 +70,7 @@ var _ = ginkgo.Describe("templates command", ginkgo.Label("templates"), func() {
 				cmdTemplates, subCmdApply,
 				flagTemplateID, testTemplateRef,
 				flagWorkspaceFolder, tempDir,
-				"--features", "ghcr.io/devcontainers/features/node:1",
+				names.Flag(names.Features), "ghcr.io/devcontainers/features/node:1",
 			})
 			framework.ExpectNoError(err)
 

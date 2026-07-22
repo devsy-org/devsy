@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,11 +13,11 @@ import (
 func TestInfoCmd_FlagDefaults(t *testing.T) {
 	cmd := NewInfoCmd(nil)
 
-	showTagsFlag := cmd.Flags().Lookup("show-tags")
+	showTagsFlag := cmd.Flags().Lookup(names.ShowTags)
 	require.NotNil(t, showTagsFlag)
 	assert.Equal(t, "false", showTagsFlag.DefValue)
 
-	showDepsFlag := cmd.Flags().Lookup("show-dependencies")
+	showDepsFlag := cmd.Flags().Lookup(names.ShowDependencies)
 	require.NotNil(t, showDepsFlag)
 	assert.Equal(t, "false", showDepsFlag.DefValue)
 }

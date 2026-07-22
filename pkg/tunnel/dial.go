@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
 const (
 	workspaceSubcommand = "workspace"
 	sshSubcommand       = "ssh"
-	sshStdioFlag        = "--stdio"
 )
 
 type WorkspaceDialer struct {
@@ -81,18 +81,18 @@ func (d *WorkspaceDialer) buildCommand() (string, []string, error) {
 		}
 	}
 
-	args := []string{workspaceSubcommand, sshSubcommand, sshStdioFlag}
+	args := []string{workspaceSubcommand, sshSubcommand, names.Flag(names.Stdio)}
 	if d.Context != "" {
-		args = append(args, "--context", d.Context)
+		args = append(args, names.Flag(names.Context), d.Context)
 	}
 	if d.User != "" {
-		args = append(args, "--user", d.User)
+		args = append(args, names.Flag(names.User), d.User)
 	}
 	if d.Workdir != "" {
-		args = append(args, "--workdir", d.Workdir)
+		args = append(args, names.Flag(names.Workdir), d.Workdir)
 	}
 	if d.GPGAgent {
-		args = append(args, "--gpg-agent-forwarding")
+		args = append(args, names.Flag(names.SSHGPGForwarding))
 	}
 	args = append(args, d.Workspace)
 

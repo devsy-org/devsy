@@ -9,6 +9,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/telemetry"
@@ -24,14 +26,14 @@ type ListCmd struct {
 }
 
 // NewListCmd creates a new destroy command.
-func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ListCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	listCmd := &cobra.Command{
 		Use:         "list",
 		Aliases:     []string{"ls"},
-		Short:       "Lists existing workspaces",
+		Short:       "List workspaces",
 		Args:        cobra.NoArgs,
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
@@ -39,7 +41,9 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().BoolVar(&cmd.SkipPro, "skip-pro", false, "Don't list pro workspaces")
+	cliflags.Add(listCmd,
+		cliflags.Bool(&cmd.SkipPro, names.SkipPro, false, "Don't list pro workspaces"),
+	)
 	return listCmd
 }
 

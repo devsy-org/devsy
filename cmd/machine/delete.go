@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -34,10 +36,12 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	deleteCmd.Flags().
-		StringVar(&cmd.GracePeriod, "grace-period", "", "The amount of time to give the command to delete the workspace")
-	deleteCmd.Flags().
-		BoolVar(&cmd.Force, "force", false, "Delete workspace even if it is not found remotely anymore")
+	cliflags.Add(deleteCmd,
+		cliflags.String(&cmd.GracePeriod, names.GracePeriod, "",
+			"The amount of time to give the command to delete the workspace"),
+		cliflags.Bool(&cmd.Force, names.Force, false,
+			"Delete workspace even if it is not found remotely anymore"),
+	)
 	return deleteCmd
 }
 

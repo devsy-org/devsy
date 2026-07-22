@@ -6,6 +6,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
 const (
@@ -29,7 +30,11 @@ func ValidateIDLabels(labels []string) error {
 	for _, label := range labels {
 		k, _, ok := strings.Cut(label, "=")
 		if !ok || k == "" {
-			return fmt.Errorf("invalid --id-label %q: must be in key=value format", label)
+			return fmt.Errorf(
+				"invalid %s %q: must be in key=value format",
+				names.Flag(names.IDLabel),
+				label,
+			)
 		}
 	}
 	return nil

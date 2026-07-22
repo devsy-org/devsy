@@ -13,6 +13,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
@@ -71,9 +72,9 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			defer func() { _ = writer.Close() }()
 
 			sshCmd, err := CreateSSHCommand(ctx, p.Client, []string{
-				"--log-output=raw",
-				fmt.Sprintf("--reuse-ssh-auth-sock=%s", p.AuthSockID),
-				"--stdio",
+				names.FlagValue(names.LogOutput, "raw"),
+				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
+				names.Flag(names.Stdio),
 			})
 			if err != nil {
 				return err
@@ -158,20 +159,20 @@ func SetupBackhaul(
 			execPath,
 			"workspace",
 			"ssh",
-			"--agent-forwarding=true",
-			fmt.Sprintf("--reuse-ssh-auth-sock=%s", authSockID),
-			"--start-services=false",
-			"--user",
+			names.FlagTrue(names.AgentForwarding),
+			names.FlagValue(names.ReuseSSHAuthSock, authSockID),
+			names.FlagFalse(names.StartServices),
+			names.Flag(names.User),
 			remoteUser,
-			"--context",
+			names.Flag(names.Context),
 			client.Context(),
 			client.Workspace(),
-			"--log-output=raw",
-			"--command",
+			names.FlagValue(names.LogOutput, "raw"),
+			names.Flag(names.Command),
 			"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
 		)
 		if log.DebugEnabled() {
-			cmd.Args = append(cmd.Args, "--debug")
+			cmd.Args = append(cmd.Args, names.Flag(names.Debug))
 		}
 		cmd.Stdout = writer
 		cmd.Stderr = writer
@@ -250,15 +251,15 @@ func buildSSHCommandArgs(clientContext, workspace string, debug bool, extraArgs 
 	args := []string{
 		"workspace",
 		"ssh",
-		"--user=root",
-		"--agent-forwarding=false",
-		"--start-services=false",
-		"--context",
+		names.FlagValue(names.User, "root"),
+		names.FlagFalse(names.AgentForwarding),
+		names.FlagFalse(names.StartServices),
+		names.Flag(names.Context),
 		clientContext,
 		workspace,
 	}
 	if debug {
-		args = append(args, "--debug")
+		args = append(args, names.Flag(names.Debug))
 	}
 	args = append(args, extraArgs...)
 	return args

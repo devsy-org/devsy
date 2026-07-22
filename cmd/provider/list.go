@@ -13,6 +13,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -44,8 +46,15 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	listCmd.Flags().
-		BoolVar(&cmd.Available, "available", false, "List providers available for installation rather than installed ones")
+	cliflags.Add(
+		listCmd,
+		cliflags.Bool(
+			&cmd.Available,
+			names.Available,
+			false,
+			"List providers available for installation rather than installed ones",
+		),
+	)
 
 	return listCmd
 }

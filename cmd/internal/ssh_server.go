@@ -11,6 +11,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
@@ -54,18 +55,18 @@ func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	f := sshCmd.Flags()
-	f.StringVar(&cmd.address, "address",
+	f.StringVar(&cmd.address, names.Address,
 		fmt.Sprintf("0.0.0.0:%d", sshserver.DefaultPort),
 		"Address to listen to")
-	f.BoolVar(&cmd.stdio, "stdio", false,
+	f.BoolVar(&cmd.stdio, names.Stdio, false,
 		"Listen on stdin/stdout instead of an address")
-	f.BoolVar(&cmd.trackActivity, "track-activity", false,
+	f.BoolVar(&cmd.trackActivity, names.TrackActivity, false,
 		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
-	f.StringVar(&cmd.reuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+	f.StringVar(&cmd.reuseSSHAuthSock, names.ReuseSSHAuthSock, "",
 		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
-	_ = f.MarkHidden("reuse-ssh-auth-sock")
-	f.StringVar(&cmd.token, "token", "", "Base64 encoded token to use")
-	f.StringVar(&cmd.workdir, "workdir", "",
+	_ = f.MarkHidden(names.ReuseSSHAuthSock)
+	f.StringVar(&cmd.token, names.Token, "", "Base64 encoded token to use")
+	f.StringVar(&cmd.workdir, names.Workdir, "",
 		"Directory where commands will run on the host")
 	return sshCmd
 }

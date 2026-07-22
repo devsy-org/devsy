@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -47,14 +49,16 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	setCmd.Flags().
-		BoolVar(&cmd.SingleMachine, "single-machine", false, "If enabled will use a single machine for all workspaces")
-	setCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-	setCmd.Flags().
-		BoolVar(&cmd.Dry, "dry", false, "Dry will not persist the options to file and instead return the new filled options")
-	setCmd.Flags().
-		BoolVar(&cmd.SkipInit, "skip-init", false, "If true will skip running the provider init command")
+	cliflags.Add(setCmd,
+		cliflags.Bool(&cmd.SingleMachine, names.SingleMachine, false,
+			"If enabled will use a single machine for all workspaces"),
+		cliflags.StringArray(&cmd.Options, names.Option, nil,
+			"Provider option in the form KEY=VALUE").Shorthand("o"),
+		cliflags.Bool(&cmd.Dry, names.Dry, false,
+			"Dry will not persist the options to file and instead return the new filled options"),
+		cliflags.Bool(&cmd.SkipInit, names.SkipInit, false,
+			"If true will skip running the provider init command"),
+	)
 	return setCmd
 }
 

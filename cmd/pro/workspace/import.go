@@ -10,6 +10,8 @@ import (
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -47,14 +49,24 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	importCmd.Flags().StringVar(&cmd.WorkspaceId, "workspace-id", "", "ID of a workspace to import")
-	importCmd.Flags().
-		StringVar(&cmd.WorkspaceUid, "workspace-uid", "", "UID of a workspace to import")
-	importCmd.Flags().
-		StringVar(&cmd.WorkspaceProject, "workspace-project", "", "Project of the workspace to import")
-	importCmd.Flags().
-		BoolVar(&cmd.Own, "own", false, "If true, will behave as if workspace was not imported")
-	_ = importCmd.MarkFlagRequired("workspace-uid")
+	cliflags.Add(
+		importCmd,
+		cliflags.String(&cmd.WorkspaceId, names.WorkspaceID, "", "ID of a workspace to import"),
+		cliflags.String(&cmd.WorkspaceUid, names.WorkspaceUID, "", "UID of a workspace to import"),
+		cliflags.String(
+			&cmd.WorkspaceProject,
+			names.WorkspaceProject,
+			"",
+			"Project of the workspace to import",
+		),
+		cliflags.Bool(
+			&cmd.Own,
+			names.Own,
+			false,
+			"If true, will behave as if workspace was not imported",
+		),
+	)
+	_ = importCmd.MarkFlagRequired(names.WorkspaceUID)
 	return importCmd
 }
 

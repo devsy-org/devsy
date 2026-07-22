@@ -24,6 +24,8 @@ import (
 	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machineid"
@@ -102,41 +104,99 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	startCmd.Flags().
-		BoolVar(&cmd.Docker, "docker", false, "If enabled will try to deploy Devsy Pro to the local docker installation.")
-	startCmd.Flags().StringVar(&cmd.DockerImage, "docker-image", "", "The docker image to install.")
-	startCmd.Flags().StringArrayVar(&cmd.DockerArgs, "docker-arg", []string{}, "Extra docker args")
-	startCmd.Flags().
-		StringVar(&cmd.Context, "context", "", "The kube context to use for installation")
-	startCmd.Flags().
-		StringVar(&cmd.Namespace, "namespace", config.ProReleaseName, "The namespace to install into")
-	startCmd.Flags().
-		StringVar(&cmd.Host, "host", "", "Provide a hostname to enable ingress and configure its hostname")
-	startCmd.Flags().
-		StringVar(&cmd.Password, "password", "",
-			"The password to use for the admin account. (If empty this will be the namespace UID)")
-	startCmd.Flags().StringVar(&cmd.Version, "version", "", "The version to install")
-	startCmd.Flags().
-		StringVar(&cmd.Values, "values", "", "Path to a file for extra helm chart values")
-	startCmd.Flags().
-		BoolVar(&cmd.ReuseValues, "reuse-values", true, "Reuse previous helm values on upgrade")
-	startCmd.Flags().
-		BoolVar(&cmd.Upgrade, "upgrade", false, "If true, will try to upgrade the release")
-	startCmd.Flags().StringVar(&cmd.Email, "email", "", "The email to use for the installation")
-	startCmd.Flags().
-		BoolVar(&cmd.Reset, "reset", false, "If true, an existing instance will be deleted before installing Devsy Pro")
-	startCmd.Flags().
-		BoolVar(&cmd.NoWait, "no-wait", false, "If true, will not wait after installing it")
-	startCmd.Flags().
-		BoolVar(&cmd.NoTunnel, "no-tunnel", false, "If true, will not create a loft.host tunnel for this installation")
-	startCmd.Flags().
-		BoolVar(&cmd.NoLogin, "no-login", false, "If true, will not login to a Devsy Pro instance on start")
-	startCmd.Flags().
-		StringVar(&cmd.ChartPath, "chart-path", "", "The local chart path to deploy Devsy Pro")
-	startCmd.Flags().
-		StringVar(&cmd.ChartRepo, "chart-repo", "https://charts.devsy.sh/", "The chart repo to deploy Devsy Pro")
+	cliflags.Add(
+		startCmd,
+		cliflags.Bool(
+			&cmd.Docker,
+			names.Docker,
+			false,
+			"If enabled will try to deploy Devsy Pro to the local docker installation.",
+		),
+		cliflags.String(&cmd.DockerImage, names.DockerImage, "", "The docker image to install."),
+		cliflags.StringArray(&cmd.DockerArgs, names.DockerArg, []string{}, "Extra docker args"),
+		cliflags.String(
+			&cmd.Context,
+			names.Context,
+			"",
+			"The kube context to use for installation",
+		),
+		cliflags.String(
+			&cmd.Namespace,
+			names.Namespace,
+			config.ProReleaseName,
+			"The namespace to install into",
+		),
+		cliflags.String(
+			&cmd.Host,
+			names.Host,
+			"",
+			"Provide a hostname to enable ingress and configure its hostname",
+		),
+		cliflags.String(
+			&cmd.Password,
+			names.Password,
+			"",
+			"The password to use for the admin account. (If empty this will be the namespace UID)",
+		),
+		cliflags.String(&cmd.Version, names.Version, "", "The version to install"),
+		cliflags.String(
+			&cmd.Values,
+			names.Values,
+			"",
+			"Path to a file for extra helm chart values",
+		),
+		cliflags.Bool(
+			&cmd.ReuseValues,
+			names.ReuseValues,
+			true,
+			"Reuse previous helm values on upgrade",
+		),
+		cliflags.Bool(
+			&cmd.Upgrade,
+			names.Upgrade,
+			false,
+			"If true, will try to upgrade the release",
+		),
+		cliflags.String(&cmd.Email, names.Email, "", "The email to use for the installation"),
+		cliflags.Bool(
+			&cmd.Reset,
+			names.Reset,
+			false,
+			"If true, an existing instance will be deleted before installing Devsy Pro",
+		),
+		cliflags.Bool(
+			&cmd.NoWait,
+			names.NoWait,
+			false,
+			"If true, will not wait after installing it",
+		),
+		cliflags.Bool(
+			&cmd.NoTunnel,
+			names.NoTunnel,
+			false,
+			"If true, will not create a loft.host tunnel for this installation",
+		),
+		cliflags.Bool(
+			&cmd.NoLogin,
+			names.NoLogin,
+			false,
+			"If true, will not login to a Devsy Pro instance on start",
+		),
+		cliflags.String(
+			&cmd.ChartPath,
+			names.ChartPath,
+			"",
+			"The local chart path to deploy Devsy Pro",
+		),
+		cliflags.String(
+			&cmd.ChartRepo,
+			names.ChartRepo,
+			"https://charts.devsy.sh/",
+			"The chart repo to deploy Devsy Pro",
+		),
+	)
 
-	proflags.BindEnv(startCmd.Flags(), "host")
+	proflags.BindEnv(startCmd.Flags(), names.Host)
 
 	return startCmd
 }

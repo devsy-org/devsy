@@ -24,13 +24,13 @@ type LogsCmd struct {
 }
 
 // NewLogsCmd creates a new destroy command.
-func NewLogsCmd(flags *flags.GlobalFlags) *cobra.Command {
+func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &LogsCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	startCmd := &cobra.Command{
 		Use:   "logs [flags] [workspace-path|workspace-name]",
-		Short: "Prints the workspace logs on the machine",
+		Short: "Print workspace logs",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

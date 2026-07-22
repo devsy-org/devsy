@@ -8,6 +8,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -95,8 +96,9 @@ func (d *LocalDockerDelivery) prepareSeedTarget(
 
 	if opts.Reset && managed {
 		log.Warnf(
-			"--reset: removing workspace volume %s and re-seeding from source; "+
+			"%s: removing workspace volume %s and re-seeding from source; "+
 				"any changes made inside the volume will be lost",
+			names.Flag(names.Reset),
 			opts.VolumeName,
 		)
 		if err := d.removeVolume(ctx, opts.VolumeName); err != nil {

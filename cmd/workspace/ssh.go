@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 	"time"
@@ -19,7 +18,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/git"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/port"
@@ -72,7 +72,7 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	sshCmd := &cobra.Command{
 		Use:   "ssh [flags] [workspace-folder|workspace-name]",
-		Short: "Starts a new ssh session to a workspace",
+		Short: "Open an SSH session to a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.execute(cobraCmd.Context(), args)
 		},
@@ -88,58 +88,66 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	sshCmd.Flags().
-		StringArrayVarP(&cmd.ForwardPorts, "forward-ports", "L", []string{},
+	cliflags.Add(
+		sshCmd,
+		cliflags.StringArray(
+			&cmd.ForwardPorts,
+			names.ForwardPorts,
+			nil,
 			"Specifies that connections to the given TCP port or Unix socket on the local (client) "+
-				"host are to be forwarded to the given host and port, or Unix socket, on the remote side.")
-	sshCmd.Flags().
-		StringArrayVarP(&cmd.ReverseForwardPorts, "reverse-forward-ports", "R", []string{},
+				"host are to be forwarded to the given host and port, or Unix socket, on the remote side.",
+		).
+			Shorthand("L"),
+		cliflags.StringArray(
+			&cmd.ReverseForwardPorts,
+			names.ReverseForwardPorts,
+			nil,
 			"Specifies that connections to the given TCP port or Unix socket on the local (client) "+
-				"host are to be reverse forwarded to the given host and port, or Unix socket, on the remote side.")
-	sshCmd.Flags().
-		StringArrayVarP(&cmd.SendEnvVars, "send-env", "", []string{},
-			"Specifies which local env variables shall be sent to the container.")
-	sshCmd.Flags().
-		StringArrayVarP(&cmd.SetEnvVars, "set-env", "", []string{}, "Specifies env variables to be set in the container.")
-	sshCmd.Flags().
-		StringVar(&cmd.ForwardPortsTimeout, "forward-ports-timeout", "",
-			"Specifies the timeout after which the command should terminate when the ports are unused.")
-	sshCmd.Flags().
-		StringVar(&cmd.Command, "command", "", "The command to execute within the workspace")
-	sshCmd.Flags().StringVar(&cmd.User, "user", "", "The user of the workspace to use")
-	sshCmd.Flags().StringVar(&cmd.WorkDir, "workdir", "", "The working directory in the container")
-	sshCmd.Flags().
-		BoolVar(&cmd.AgentForwarding, "agent-forwarding", true, "If true forward the local ssh keys to the remote machine")
-	sshCmd.Flags().
-		StringVar(&cmd.ReuseSSHAuthSock, "reuse-ssh-auth-sock", "",
+				"host are to be reverse forwarded to the given host and port, or Unix socket, on the remote side.",
+		).
+			Shorthand("R"),
+		cliflags.StringArray(&cmd.SendEnvVars, names.SendEnv, nil,
+			"Specifies which local env variables shall be sent to the container."),
+		cliflags.StringArray(&cmd.SetEnvVars, names.SetEnv, nil,
+			"Specifies env variables to be set in the container."),
+		cliflags.String(
+			&cmd.ForwardPortsTimeout,
+			names.ForwardPortsTimeout,
+			"",
+			"Specifies the timeout after which the command should terminate when the ports are unused.",
+		),
+		cliflags.String(
+			&cmd.Command,
+			names.Command,
+			"",
+			"The command to execute within the workspace",
+		),
+		cliflags.String(&cmd.User, names.User, "", "The user of the workspace to use"),
+		cliflags.String(&cmd.WorkDir, names.Workdir, "", "The working directory in the container"),
+		cliflags.Bool(&cmd.AgentForwarding, names.AgentForwarding, true,
+			"If true forward the local ssh keys to the remote machine"),
+		cliflags.String(&cmd.ReuseSSHAuthSock, names.ReuseSSHAuthSock, "",
 			"If set, the SSH_AUTH_SOCK is expected to already be available in the workspace "+
-				"(under /tmp using the key provided) and the connection reuses this instead of creating a new one")
-	_ = sshCmd.Flags().MarkHidden("reuse-ssh-auth-sock")
-	sshCmd.Flags().
-		BoolVar(&cmd.GPGAgentForwarding, "gpg-agent-forwarding", false,
-			"If true forward the local gpg-agent to the remote machine")
-	sshCmd.Flags().
-		BoolVar(&cmd.Stdio, "stdio", false, "If true will tunnel connection through stdout and stdin")
-	sshCmd.Flags().
-		BoolVar(&cmd.StartServices, "start-services", true,
-			"If false will not start any port-forwarding or git / docker credentials helper")
-	sshCmd.Flags().
-		DurationVar(&cmd.SSHKeepAliveInterval, "ssh-keepalive-interval", 55*time.Second,
-			"How often should keepalive request be made (55s)")
-	sshCmd.Flags().
-		StringVar(&cmd.GitSSHSigningKey, "git-ssh-signing-key", "",
-			"The SSH signing key to use for git commit signing inside the workspace")
-	sshCmd.Flags().StringVar(
-		&cmd.TermMode,
-		"term-mode",
-		machine.TermModeAuto,
-		"PTY TERM selection mode: auto, strict, fallback",
-	)
-	sshCmd.Flags().BoolVar(
-		&cmd.InstallTerminfo,
-		"install-terminfo",
-		false,
-		"Install local TERM terminfo on remote before PTY",
+				"(under /tmp using the key provided) and the connection reuses this instead of creating a new one").
+			Hidden(),
+		cliflags.Bool(&cmd.GPGAgentForwarding, names.SSHGPGForwarding, false,
+			"Forward the local gpg-agent to the remote machine"),
+		cliflags.Bool(
+			&cmd.Stdio,
+			names.Stdio,
+			false,
+			"If true will tunnel connection through stdout and stdin",
+		),
+		cliflags.Bool(&cmd.StartServices, names.StartServices, true,
+			"If false will not start any port-forwarding or git / docker credentials helper"),
+		cliflags.Duration(&cmd.SSHKeepAliveInterval, names.SSHKeepAliveInterval, 55*time.Second,
+			"How often should keepalive request be made (55s)"),
+		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "",
+			"The SSH signing key to use for git commit signing inside the workspace"),
+		cliflags.String(&cmd.TermMode, names.TermMode, machine.TermModeAuto,
+			"PTY TERM selection mode: auto, strict, fallback"),
+		cliflags.Bool(&cmd.InstallTerminfo, names.InstallTerminfo, false,
+			"Install local TERM terminfo on remote before PTY"),
 	)
 
 	return sshCmd
@@ -265,7 +273,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 
 	// Handle GPG agent forwarding
 	if cmd.GPGAgentForwarding ||
-		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient) {
 			log.Debugf("[GPG] exporting already running, skipping")
 		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient); err != nil {
@@ -526,7 +534,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	// check if we should do gpg agent forwarding
 	if cmd.GPGAgentForwarding ||
-		devsyConfig.ContextOption(config.ContextOptionGPGAgentForwarding) == config.BoolTrue {
+		devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
 		// Check if a forwarding is already enabled and running, in that case
 		// we skip the forwarding and keep using the original one
 		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient) {
@@ -546,17 +554,21 @@ func (cmd *SSHCmd) startTunnel(
 		config.ContainerDevsyHelperLocation,
 		"internal",
 		"ssh-server",
-		"--track-activity",
-		"--stdio",
-		"--workdir",
+		names.Flag(names.TrackActivity),
+		names.Flag(names.Stdio),
+		names.Flag(names.Workdir),
 		workdir,
 	}
 	if cmd.ReuseSSHAuthSock != "" {
 		log.Debug("Reusing SSH_AUTH_SOCK")
-		commandArgs = append(commandArgs, "--reuse-ssh-auth-sock", cmd.ReuseSSHAuthSock)
+		commandArgs = append(
+			commandArgs,
+			names.Flag(names.ReuseSSHAuthSock),
+			cmd.ReuseSSHAuthSock,
+		)
 	}
 	if cmd.Debug {
-		commandArgs = append(commandArgs, "--debug")
+		commandArgs = append(commandArgs, names.Flag(names.Debug))
 	}
 	command := shellescape.QuoteCommand(commandArgs)
 	if cmd.User != "" && cmd.User != "root" {
@@ -690,16 +702,13 @@ func (cmd *SSHCmd) setupGPGAgent(
 	log.Debugf("[GPG] detecting gpg-agent socket path on host")
 	// Detect local agent extra socket, this will be forwarded to the remote and
 	// symlinked in multiple paths
-	gpgExtraSocketBytes, err := exec.Command("gpgconf", []string{"--list-dir", "agent-extra-socket"}...).
-		Output()
+	gpgExtraSocketPath, err := gpg.DetectAgentSocketPath()
 	if err != nil {
 		return err
 	}
-
-	gpgExtraSocketPath := strings.TrimSpace(string(gpgExtraSocketBytes))
 	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
 
-	gitKey := gpgSigningKey(ctx)
+	gitKey := gpg.SigningKey(ctx)
 
 	cmd.ReverseForwardPorts = append(cmd.ReverseForwardPorts, gpgExtraSocketPath)
 
@@ -710,18 +719,18 @@ func (cmd *SSHCmd) setupGPGAgent(
 		"agent",
 		"workspace",
 		"setup-gpg",
-		"--ownertrust",
+		names.Flag(names.OwnerTrust),
 		ownerTrustArgument,
-		"--socketpath",
+		names.Flag(names.SocketPath),
 		gpgExtraSocketPath,
 	}
 
 	if log.DebugEnabled() {
-		forwardAgent = append(forwardAgent, "--debug")
+		forwardAgent = append(forwardAgent, names.Flag(names.Debug))
 	}
 
 	if gitKey != "" {
-		forwardAgent = append(forwardAgent, "--gitkey")
+		forwardAgent = append(forwardAgent, names.Flag(names.GitKey))
 		forwardAgent = append(forwardAgent, gitKey)
 	}
 
@@ -752,40 +761,6 @@ func (cmd *SSHCmd) setupGPGAgent(
 	}
 
 	return nil
-}
-
-// gpgSigningKey returns the user's GPG signing key from git config,
-// or empty string if no key is configured or the signing format is SSH
-// (SSH signing keys are handled by the separate SSH signature helper).
-func gpgSigningKey(ctx context.Context) string {
-	config := git.At("").Config()
-	formatStr, _ := config.Get(ctx, "gpg.format", git.ScopeDefault)
-	if formatStr == "ssh" {
-		log.Debugf(
-			"gpg.format is ssh, skipping GPG signing key",
-		)
-		return ""
-	}
-
-	result, err := config.Get(ctx, "user.signingKey", git.ScopeDefault)
-	if err != nil {
-		log.Debugf("no git signkey detected, skipping")
-		return ""
-	}
-
-	// GPG key IDs are hex fingerprints, not file paths. If the signing key
-	// looks like a file path and the format isn't x509 (which legitimately
-	// uses certificate file paths via gpgsm), it's an SSH key.
-	if (strings.HasPrefix(result, "/") || strings.HasPrefix(result, "~")) && formatStr != "x509" {
-		log.Debugf(
-			"signing key %s looks like a file path, skipping",
-			result,
-		)
-		return ""
-	}
-
-	log.Debugf("detected git sign key %s", result)
-	return result
 }
 
 func startSSHKeepAlive(

@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -48,11 +50,13 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	deleteCmd.Flags().
-		BoolVar(&cmd.IgnoreNotFound, "ignore-not-found", false, "Treat \"provider not found\" as a successful delete")
-	deleteCmd.Flags().
-		BoolVar(&cmd.Force, "force", false, "Force delete the provider and ignore provider is already used")
-	_ = deleteCmd.Flags().MarkHidden("force")
+	cliflags.Add(deleteCmd,
+		cliflags.Bool(&cmd.IgnoreNotFound, names.IgnoreNotFound, false,
+			"Treat \"provider not found\" as a successful delete"),
+		cliflags.Bool(&cmd.Force, names.Force, false,
+			"Force delete the provider and ignore provider is already used"),
+	)
+	_ = deleteCmd.Flags().MarkHidden(names.Force)
 	return deleteCmd
 }
 

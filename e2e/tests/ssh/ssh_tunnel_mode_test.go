@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -27,7 +28,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("should start workspace with --ssh-tunnel-mode and SSH into it",
+		ginkgo.It("should start workspace with --ssh-tunnel and SSH into it",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
 				if runtime.GOOS == osWindows {
@@ -49,7 +50,7 @@ var _ = ginkgo.Describe(
 
 				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 				defer cancel()
-				err = f.DevsyUp(devsyUpCtx, tempDir, "--ssh-tunnel-mode")
+				err = f.DevsyUp(devsyUpCtx, tempDir, names.Flag(names.SSHTunnel))
 				framework.ExpectNoError(err)
 
 				devsySSHCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
@@ -87,7 +88,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(
 					devsyUpCtx,
 					tempDir,
-					"--ssh-tunnel-mode",
+					names.Flag(names.SSHTunnel),
 					"--ssh-config",
 					sshConfigPath,
 				)
@@ -140,7 +141,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(
 					devsyUpCtx,
 					tempDir,
-					"--ssh-tunnel-mode",
+					names.Flag(names.SSHTunnel),
 					"--ssh-config",
 					sshConfigPath,
 				)
@@ -191,7 +192,7 @@ var _ = ginkgo.Describe(
 
 				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 				defer cancel()
-				err = f.DevsyUp(devsyUpCtx, tempDir, "--ssh-tunnel-mode")
+				err = f.DevsyUp(devsyUpCtx, tempDir, names.Flag(names.SSHTunnel))
 				framework.ExpectNoError(err)
 
 				for i := range 3 {

@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
@@ -44,15 +46,22 @@ install order based on dependency declarations and install ordering.`,
 		},
 	}
 
-	resolveDepsCmd.Flags().StringVar(
-		&cmd.WorkspaceFolder, "workspace-folder", "",
-		"Path to workspace containing devcontainer.json",
+	cliflags.Add(
+		resolveDepsCmd,
+		cliflags.String(
+			&cmd.WorkspaceFolder,
+			names.WorkspaceFolder,
+			"",
+			"Path to workspace containing devcontainer.json",
+		),
+		cliflags.String(
+			&cmd.Config,
+			names.Config,
+			"",
+			"Path to specific devcontainer.json (optional)",
+		),
 	)
-	resolveDepsCmd.Flags().StringVar(
-		&cmd.Config, "config", "",
-		"Path to specific devcontainer.json (optional)",
-	)
-	_ = resolveDepsCmd.MarkFlagRequired("workspace-folder")
+	_ = resolveDepsCmd.MarkFlagRequired(names.WorkspaceFolder)
 
 	return resolveDepsCmd
 }

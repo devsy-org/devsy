@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestOptInEnvFlags_NoEnvLeavesDefault(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	rootCmd, _ := BuildRoot()
-	f := rootCmd.PersistentFlags().Lookup("context")
+	f := rootCmd.PersistentFlags().Lookup(names.Context)
 	require.NotNil(t, f)
 	assert.False(t, f.Changed)
 	assert.Equal(t, "", f.Value.String())
@@ -91,7 +92,7 @@ func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
 	cmd := resolveCommand(t, rootCmd, "pro workspace list")
-	f := cmd.Flags().Lookup("host")
+	f := cmd.Flags().Lookup(names.Host)
 	require.NotNil(t, f)
 	assert.False(t, f.Changed, "empty env value must not mark flag as Changed")
 }
@@ -109,7 +110,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 	leaf := resolveCommand(t, rootCmd, "pro workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
-		seen, _ = c.Flags().GetString("host")
+		seen, _ = c.Flags().GetString(names.Host)
 		return nil
 	}
 	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList, "--host", "cli-value"})
@@ -119,7 +120,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 
 // TestOptInEnvFlags_EnvSatisfiesRequired drives cobra's full parse +
 // ValidateRequiredFlags pipeline to prove DEVSY_HOST satisfies
-// MarkFlagRequired("host") at execution time, not just in static inspection.
+// MarkFlagRequired(names.Host) at execution time, not just in static inspection.
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	t.Setenv(envProEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")
@@ -127,7 +128,7 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	leaf := resolveCommand(t, rootCmd, "pro workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
-		seen, _ = c.Flags().GetString("host")
+		seen, _ = c.Flags().GetString(names.Host)
 		return nil
 	}
 	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList})

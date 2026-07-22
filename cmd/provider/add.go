@@ -7,6 +7,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -37,7 +39,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		PreRunE: func(cobraCommand *cobra.Command, args []string) error {
 			if cmd.FromExisting != "" {
-				return cobraCommand.MarkFlagRequired("name")
+				return cobraCommand.MarkFlagRequired(names.Name)
 			}
 
 			return nil
@@ -52,18 +54,26 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	addCmd.Flags().
-		BoolVar(&cmd.SingleMachine, "single-machine", false, "If enabled will use a single machine for all workspaces")
-	addCmd.Flags().
-		StringVar(&cmd.Name, "name", "",
-			"The name for the new provider. If not specified, the name from the provider's configuration file will be used")
-	addCmd.Flags().
-		StringVar(&cmd.FromExisting, "from-existing", "",
-			"The name of an existing provider to use as a template. Needs to be used in conjunction with the --name flag")
-	addCmd.Flags().
-		BoolVar(&cmd.Use, "use", true, "If enabled will automatically activate the provider")
-	addCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
+	cliflags.Add(addCmd,
+		cliflags.Bool(&cmd.SingleMachine, names.SingleMachine, false,
+			"If enabled will use a single machine for all workspaces"),
+		cliflags.String(
+			&cmd.Name,
+			names.Name,
+			"",
+			"The name for the new provider. If not specified, the name from the provider's configuration file will be used",
+		),
+		cliflags.String(
+			&cmd.FromExisting,
+			names.FromExisting,
+			"",
+			"The name of an existing provider to use as a template. Needs to be used in conjunction with the --name flag",
+		),
+		cliflags.Bool(&cmd.Use, names.Use, true,
+			"If enabled will automatically activate the provider"),
+		cliflags.StringArray(&cmd.Options, names.Option, nil,
+			"Provider option in the form KEY=VALUE").Shorthand("o"),
+	)
 
 	return addCmd
 }

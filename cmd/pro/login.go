@@ -10,6 +10,8 @@ import (
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
@@ -54,24 +56,49 @@ func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	loginCmd.Flags().
-		StringVar(&cmd.AccessKey, "access-key", "", "If defined will use the given access key to login")
-	loginCmd.Flags().
-		BoolVar(&cmd.Login, "login", true, "If enabled will automatically try to log into Devsy Pro")
-	loginCmd.Flags().
-		BoolVar(&cmd.Use, "use", true, "If enabled will automatically activate the provider")
-	loginCmd.Flags().
-		StringVar(&cmd.Provider, "provider", "", "Optional name how the Devsy Pro provider will be named")
-	loginCmd.Flags().
-		StringVar(&cmd.Version, "version", "", "The version to use for the Devsy provider")
-	loginCmd.Flags().
-		StringArrayVarP(&cmd.Options, "option", "o", []string{}, "Provider option in the form KEY=VALUE")
-	loginCmd.Flags().
-		BoolVar(&cmd.ForceBrowser, "force-browser", false, "Force login through browser")
-
-	loginCmd.Flags().
-		StringVar(&cmd.ProviderSource, "provider-source", "", "The source of the provider")
-	_ = loginCmd.Flags().MarkHidden("provider-source")
+	cliflags.Add(
+		loginCmd,
+		cliflags.String(
+			&cmd.AccessKey,
+			names.AccessKey,
+			"",
+			"If defined will use the given access key to login",
+		),
+		cliflags.Bool(
+			&cmd.Login,
+			names.Login,
+			true,
+			"If enabled will automatically try to log into Devsy Pro",
+		),
+		cliflags.Bool(
+			&cmd.Use,
+			names.Use,
+			true,
+			"If enabled will automatically activate the provider",
+		),
+		cliflags.String(
+			&cmd.Provider,
+			names.Provider,
+			"",
+			"Optional name how the Devsy Pro provider will be named",
+		),
+		cliflags.String(
+			&cmd.Version,
+			names.Version,
+			"",
+			"The version to use for the Devsy provider",
+		),
+		cliflags.StringArray(&cmd.Options, names.Option, []string{}, "Provider option in the form KEY=VALUE").
+			Shorthand("o"),
+		cliflags.Bool(&cmd.ForceBrowser, names.ForceBrowser, false, "Force login through browser"),
+		cliflags.String(
+			&cmd.ProviderSource,
+			names.ProviderSource,
+			"",
+			"The source of the provider",
+		),
+	)
+	_ = loginCmd.Flags().MarkHidden(names.ProviderSource)
 	return loginCmd
 }
 
