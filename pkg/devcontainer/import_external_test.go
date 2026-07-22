@@ -10,20 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeFile is a small test helper.
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 }
 
-// importedProfilePath is the default profile dir devsy imports into.
 func importedProfilePath(ws string) string {
 	return filepath.Join(ws, filepath.FromSlash(importedProfileParent), importedProfileName)
 }
 
 func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
-	// External, self-contained config: devcontainer.json + sibling Dockerfile.
 	external := t.TempDir()
 	writeFile(t, filepath.Join(external, "devcontainer.json"),
 		`{"name":"ext","build":{"dockerfile":"Dockerfile"}}`)
@@ -35,13 +32,10 @@ func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
 	cfg, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
 	require.NoError(t, err)
 
-	// The whole folder is imported under .devcontainer/<binary>/ so the
-	// Dockerfile travels with the config.
 	imported := importedProfilePath(ws)
 	assert.FileExists(t, filepath.Join(imported, "devcontainer.json"))
 	assert.FileExists(t, filepath.Join(imported, "Dockerfile"))
 
-	// Origin points inside the workspace so a relative Dockerfile resolves.
 	assert.Equal(t, filepath.Join(imported, "devcontainer.json"), cfg.Origin)
 	assert.Equal(t, "Dockerfile", cfg.GetDockerfile())
 	dockerfile := filepath.Join(filepath.Dir(cfg.Origin), cfg.GetDockerfile())
@@ -49,7 +43,6 @@ func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
 }
 
 func TestImportExternalDevContainer_BareFile(t *testing.T) {
-	// A lone devcontainer.json (no sibling assets) is copied on its own.
 	external := t.TempDir()
 	writeFile(t, filepath.Join(external, "devcontainer.json"), `{"image":"alpine"}`)
 
@@ -79,7 +72,6 @@ func TestImportExternalDevContainer_CollisionGetsSuffix(t *testing.T) {
 	external := t.TempDir()
 	writeFile(t, filepath.Join(external, "devcontainer.json"), `{"image":"alpine"}`)
 
-	// The project already ships its own .devcontainer/<binary>/ (no marker).
 	ws := t.TempDir()
 	writeFile(t, filepath.Join(importedProfilePath(ws), "devcontainer.json"),
 		`{"image":"project-owned"}`)
@@ -88,7 +80,6 @@ func TestImportExternalDevContainer_CollisionGetsSuffix(t *testing.T) {
 	cfg, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
 	require.NoError(t, err)
 
-	// The import must land in a suffixed sibling, not the project's dir.
 	assert.Equal(t, "alpine", cfg.Image)
 	base := filepath.Base(filepath.Dir(cfg.Origin))
 	assert.True(t, strings.HasPrefix(base, importedProfileName+"_"),
@@ -102,7 +93,6 @@ func TestImportExternalDevContainer_ReusesOwnProfile(t *testing.T) {
 	ws := t.TempDir()
 	r := &runner{localWorkspaceFolder: ws}
 
-	// Two imports in a row must reuse the same (devsy-owned) profile dir.
 	first, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
 	require.NoError(t, err)
 	second, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
@@ -143,7 +133,6 @@ func TestCleanupImportedDevContainers(t *testing.T) {
 	writeFile(t, filepath.Join(external, "devcontainer.json"), `{"image":"alpine"}`)
 
 	ws := t.TempDir()
-	// A project-owned profile (no marker) must survive cleanup.
 	writeFile(t, filepath.Join(ws, ".devcontainer", "app", "devcontainer.json"), `{}`)
 
 	r := &runner{localWorkspaceFolder: ws}

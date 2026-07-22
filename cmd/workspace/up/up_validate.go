@@ -61,9 +61,6 @@ func (cmd *UpCmd) resolveDevContainerSource() error {
 		cmd.DevContainerID = spec.ID
 		cmd.DevContainerSource = ""
 	case devcontainer.SourcePath:
-		// An in-repo relative path is just a config path; an external absolute
-		// path is left in the source so the runner imports it (bringing its
-		// sibling assets — Dockerfile, features — into the workspace).
 		if !filepath.IsAbs(spec.Path) {
 			cmd.DevContainerPath = spec.Path
 			cmd.DevContainerSource = ""

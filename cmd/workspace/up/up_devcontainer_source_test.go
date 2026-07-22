@@ -29,7 +29,6 @@ func TestResolveDevContainerSource_Path(t *testing.T) {
 }
 
 func TestResolveDevContainerSource_ExternalPathPassThrough(t *testing.T) {
-	// An external absolute path stays in the source so the runner imports it.
 	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
 	cmd.DevContainerSource = "/abs/external/devcontainer.json"
 

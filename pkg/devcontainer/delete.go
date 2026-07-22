@@ -43,18 +43,12 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	return nil
 }
 
-// cleanupDeliveryVolume removes the devsy-managed volumes created for this
-// workspace. Best-effort: failures are logged, not returned.
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
 	if err := r.newAgentDelivery().Cleanup(ctx, r.id); err != nil {
-		log.Debugf("best-effort delivery volume cleanup: %v", err)
+		log.Debugf("delivery volume cleanup: %v", err)
 	}
 }
 
-// cleanupImportedDevContainer removes any devcontainer profile the runner
-// imported from an external --devcontainer path into a local-folder source.
-// Other sources keep their content under a devsy-managed folder that the caller
-// deletes wholesale, so there is nothing to clean there. Best-effort.
 func (r *runner) cleanupImportedDevContainer() {
 	if r.workspaceConfig == nil ||
 		r.workspaceConfig.Workspace == nil ||
@@ -62,7 +56,7 @@ func (r *runner) cleanupImportedDevContainer() {
 		return
 	}
 	if err := CleanupImportedDevContainers(r.localWorkspaceFolder); err != nil {
-		log.Debugf("best-effort imported devcontainer cleanup: %v", err)
+		log.Debugf("imported devcontainer cleanup: %v", err)
 	}
 }
 

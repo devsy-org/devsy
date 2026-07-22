@@ -178,7 +178,6 @@ func TestCleanupDeliveryVolume_DoesNotPanic(t *testing.T) {
 }
 
 func TestDelete_RemovesImportedDevContainer(t *testing.T) {
-	// A local-folder workspace with an imported profile: Delete must remove it.
 	ws := t.TempDir()
 	external := filepath.Join(t.TempDir(), "devcontainer.json")
 	writeFile(t, external, `{"image":"alpine"}`)
@@ -205,7 +204,6 @@ func TestDelete_RemovesImportedDevContainer(t *testing.T) {
 }
 
 func TestDelete_NonLocalSource_KeepsNothingToClean(t *testing.T) {
-	// No Workspace/local folder: cleanup must be a safe no-op.
 	r := newTestRunner(&mockDriver{findResult: nil})
 	if err := r.Delete(context.Background(), DeleteOptions{}); err != nil {
 		t.Fatalf("Delete failed: %v", err)
