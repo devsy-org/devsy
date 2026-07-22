@@ -625,7 +625,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.devcontainerPath)
         cliArgs.push("--devcontainer-path", args.devcontainerPath)
       if (args.prebuildRepository)
-        cliArgs.push("--prebuild-repository", args.prebuildRepository)
+        cliArgs.push("--prebuild-repo", args.prebuildRepository)
       if (args.platform) cliArgs.push("--platform", args.platform)
 
       const wsId = args.workspaceId ?? args.source
