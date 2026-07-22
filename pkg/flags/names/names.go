@@ -53,6 +53,7 @@ const (
 	RemoveVolumes             = "remove-volumes"
 	Reset                     = "reset"
 	SecretsFile               = "secrets-file"
+	SkipPro                   = "skip-pro"
 	Source                    = "source"
 	UpdateRemoteUserUID       = "update-remote-user-uid"
 	UserEnvProbe              = "user-env-probe"
@@ -61,7 +62,6 @@ const (
 	WorkspaceFolder           = "workspace-folder"
 	WorkspaceID               = "workspace-id"
 	WorkspaceMountConsistency = "workspace-mount-consistency"
-    SkipPro                   = "skip-pro"
 )
 
 // SSH.
