@@ -51,7 +51,7 @@ var Options = ide.Options{
 	VersionOption: {
 		Name:        VersionOption,
 		Description: "The version for the code-server binary (without the leading v)",
-		Default:     "4.121.0",
+		Default:     "4.129.0",
 	},
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,
