@@ -58,7 +58,7 @@ func TestValidateDesiredID_InvalidCharsCheckedBeforeLength(t *testing.T) {
 	// character rule first, matching the historical ordering.
 	err := validateDesiredID(strings.Repeat("A", maxWorkspaceIDLength+1))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "lower case letters")
+	assert.Contains(t, err.Error(), "lowercase letters")
 }
 
 func TestEnsureWorkspaceID(t *testing.T) {

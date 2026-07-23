@@ -31,8 +31,8 @@ import (
 const maxWorkspaceIDLength = 48
 
 var errProvideWorkspaceArg = errors.New(
-	"provide a workspace name, e.g. 'devsy workspace up ./my-folder', " +
-		"'devsy workspace up github.com/my-org/my-repo' or 'devsy workspace up ubuntu'")
+	"provide a workspace source: a folder, git repository or image",
+)
 
 // ErrWorkspaceNotFound maps to the Retryable exit code, which the backhaul SSH
 // command retries on.
@@ -117,7 +117,7 @@ func validateDesiredID(desiredID string) error {
 		return nil
 	}
 	if providerpkg.ProviderNameRegEx.MatchString(desiredID) {
-		return errors.New("workspace name can only include lower case letters, numbers or dashes")
+		return errors.New("workspace name may only contain lowercase letters, numbers or dashes")
 	}
 	if len(desiredID) > maxWorkspaceIDLength {
 		return fmt.Errorf("workspace name cannot exceed %d characters", maxWorkspaceIDLength)
