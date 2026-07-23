@@ -1,16 +1,15 @@
 package feature
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -546,66 +545,13 @@ func downloadFeatureFromURL(
 ) error {
 	log.Debugf("starting feature download: url=%s, destFile=%s", url, destFile)
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(filepath.Dir(destFile), 0o755)
-	if err != nil {
-		return fmt.Errorf("create feature folder: %w", err)
+	if err := devsyhttp.DownloadToFile(
+		context.Background(), url, destFile, devsyhttp.WithHeaders(httpHeaders),
+	); err != nil {
+		return err
 	}
 
-	attempt := 0
-	for range 3 {
-		if attempt > 0 {
-			delay := time.Duration(1<<uint(attempt-1)) * time.Second
-			log.Debugf("retrying download: delay=%v, attempt=%v", delay, attempt)
-			time.Sleep(delay)
-		}
-
-		log.Debugf("download feature: url=%s", url)
-		if err := tryDownload(url, destFile, httpHeaders); err != nil {
-			if attempt == 2 {
-				return err
-			}
-			log.Debugf("download attempt failed: error=%v, attempt=%v", err, attempt)
-			attempt++
-			continue
-		}
-		log.Infof("Feature download completed successfully: url=%s, destFile=%s", url, destFile)
-		return nil
-	}
-
-	return fmt.Errorf("download failed")
-}
-
-func tryDownload(url, destFile string, httpHeaders map[string]string) error {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("make request: %w", err)
-	}
-	for key, value := range httpHeaders {
-		req.Header.Set(key, value)
-	}
-
-	resp, err := devsyhttp.GetHTTPClient().Do(req)
-	if err != nil {
-		return fmt.Errorf("make request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("GET request failed, status code is %d", resp.StatusCode)
-	}
-
-	file, err := os.Create(filepath.Clean(destFile)) //nolint:gosec // path from internal resolution
-	if err != nil {
-		return fmt.Errorf("create download file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return fmt.Errorf("download feature: %w", err)
-	}
-
+	log.Infof("Feature download completed successfully: url=%s, destFile=%s", url, destFile)
 	return nil
 }
 
