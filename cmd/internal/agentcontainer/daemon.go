@@ -90,7 +90,6 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 	}
 
 	ctx, stop := signal.NotifyContext(c.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	g, ctx := errgroup.WithContext(ctx)
 	var tasksStarted bool
@@ -136,6 +135,7 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 	}
 
 	err := g.Wait()
+	stop() // Restore default signal handling before exiting.
 	if err != nil {
 		log.Errorf("daemon error: %v", err)
 		os.Exit(1)

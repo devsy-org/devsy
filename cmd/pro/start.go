@@ -872,11 +872,12 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 	args = append(args, cmd.DockerArgs...)
 
 	// set image
-	if cmd.DockerImage != "" {
+	switch {
+	case cmd.DockerImage != "":
 		args = append(args, cmd.DockerImage)
-	} else if cmd.Version != "" {
+	case cmd.Version != "":
 		args = append(args, "ghcr.io/devsy-org/devsy-pro:"+strings.TrimPrefix(cmd.Version, "v"))
-	} else {
+	default:
 		args = append(args, "ghcr.io/devsy-org/devsy-pro:latest")
 	}
 
@@ -955,14 +956,15 @@ func (cmd *StartCmd) findLoftContainer(
 	runningContainerID := ""
 	for _, containerID := range arr {
 		containerState, err := cmd.inspectContainer(ctx, containerID)
-		if err != nil {
+		switch {
+		case err != nil:
 			return "", err
-		} else if onlyRunning && strings.ToLower(containerState.State.Status) != "running" {
+		case onlyRunning && strings.ToLower(containerState.State.Status) != "running":
 			err = cmd.removeContainer(ctx, containerID)
 			if err != nil {
 				return "", err
 			}
-		} else {
+		default:
 			runningContainerID = containerID
 		}
 	}
@@ -1772,9 +1774,10 @@ func ensureAdminPassword(
 	}
 
 	admin, err := loftClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
+	switch {
+	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
-	} else if admin == nil {
+	case admin == nil:
 		admin, err = loftClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "admin",
@@ -1794,7 +1797,7 @@ func ensureAdminPassword(
 		if err != nil {
 			return false, err
 		}
-	} else if admin.Spec.PasswordRef == nil || admin.Spec.PasswordRef.SecretName == "" || admin.Spec.PasswordRef.SecretNamespace == "" {
+	case admin.Spec.PasswordRef == nil || admin.Spec.PasswordRef.SecretName == "" || admin.Spec.PasswordRef.SecretNamespace == "":
 		return false, nil
 	}
 

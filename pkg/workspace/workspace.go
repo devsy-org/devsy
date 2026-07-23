@@ -142,11 +142,12 @@ func getWorkspaceClient(
 	workspace *providerpkg.Workspace,
 	machine *providerpkg.Machine,
 ) (client.BaseWorkspaceClient, error) {
-	if provider.IsProxyProvider() {
+	switch {
+	case provider.IsProxyProvider():
 		return clientimplementation.NewProxyClient(devsyConfig, provider, workspace)
-	} else if provider.IsDaemonProvider() {
+	case provider.IsDaemonProvider():
 		return daemonclient.New(devsyConfig, provider, workspace)
-	} else {
+	default:
 		return clientimplementation.NewWorkspaceClient(
 			devsyConfig,
 			provider,
@@ -383,7 +384,8 @@ func createWorkspace(
 
 	// create a new machine
 	var machineConfig *providerpkg.Machine
-	if provider.Config.IsMachineProvider() && workspace.Machine.ID == "" {
+	switch {
+	case provider.Config.IsMachineProvider() && workspace.Machine.ID == "":
 		// create a new machine
 		if provider.State != nil && provider.State.SingleMachine {
 			workspace.Machine.ID = SingleMachineName(devsyConfig, provider.Config.Name)
@@ -459,7 +461,7 @@ func createWorkspace(
 				return nil, nil, nil, fmt.Errorf("load machine config: %w", err)
 			}
 		}
-	} else if provider.Config.IsProxyProvider() || provider.Config.IsDaemonProvider() {
+	case provider.Config.IsProxyProvider() || provider.Config.IsDaemonProvider():
 		// We'll do have to do a bit of mumbo jumbo here because the pro process can't communicate with us directly.
 		// It needs os i/o to render the form in CLI mode so we can't go with our typical setup.
 		// Instead we first save the config, tell the provider where it lives, it updates it,
@@ -486,7 +488,7 @@ func createWorkspace(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-	} else {
+	default:
 		// save workspace config
 		err = providerpkg.SaveWorkspaceConfig(workspace)
 		if err != nil {

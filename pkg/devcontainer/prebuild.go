@@ -42,11 +42,12 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 
 	// prebuild already exists
 	var prebuildImage string
-	if options.Repository != "" {
+	switch {
+	case options.Repository != "":
 		prebuildImage = options.Repository + ":" + buildInfo.PrebuildHash
-	} else if prebuildRepo != "" {
+	case prebuildRepo != "":
 		prebuildImage = prebuildRepo + ":" + buildInfo.PrebuildHash
-	} else {
+	default:
 		prebuildImage = build.GetImageName(r.localWorkspaceFolder, buildInfo.PrebuildHash)
 	}
 

@@ -148,11 +148,12 @@ func waitTaskDone(
 		}, builders.ParameterCodec).
 		Do(ctx).
 		Into(tasks)
-	if err != nil {
+	switch {
+	case err != nil:
 		return nil, fmt.Errorf("error getting up result: %w", err)
-	} else if len(tasks.Tasks) == 0 || tasks.Tasks[0].Result == nil {
+	case len(tasks.Tasks) == 0 || tasks.Tasks[0].Result == nil:
 		return nil, fmt.Errorf("up result not found")
-	} else if len(tasks.Tasks) > 1 {
+	case len(tasks.Tasks) > 1:
 		return nil, fmt.Errorf("multiple up results found")
 	}
 

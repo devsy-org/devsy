@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -40,13 +41,13 @@ func RunServicesServer(
 	workspace *provider2.Workspace,
 	options ...Option,
 ) error {
-	opts := append(options, []Option{
+	options = append(options,
 		WithForwarder(forwarder),
 		WithAllowGitCredentials(allowGitCredentials),
 		WithAllowDockerCredentials(allowDockerCredentials),
 		WithWorkspace(workspace),
-	}...)
-	tunnelServ := New(opts...)
+	)
+	tunnelServ := New(options...)
 
 	return tunnelServ.Run(ctx, reader, writer)
 }
@@ -59,12 +60,12 @@ func RunUpServer(
 	workspace *provider2.Workspace,
 	options ...Option,
 ) (*config.Result, error) {
-	opts := append(options, []Option{
+	options = append(options,
 		WithWorkspace(workspace),
 		WithAllowGitCredentials(allowGitCredentials),
 		WithAllowDockerCredentials(allowDockerCredentials),
-	}...)
-	tunnelServ := New(opts...)
+	)
+	tunnelServ := New(options...)
 
 	return tunnelServ.RunWithResult(ctx, reader, writer)
 }
@@ -77,13 +78,13 @@ func RunSetupServer(
 	mounts []*config.Mount,
 	options ...Option,
 ) (*config.Result, error) {
-	opts := append(options, []Option{
+	options = append(options,
 		WithMounts(mounts),
 		WithAllowGitCredentials(allowGitCredentials),
 		WithAllowDockerCredentials(allowDockerCredentials),
 		WithAllowKubeConfig(true),
-	}...)
-	tunnelServ := New(opts...)
+	)
+	tunnelServ := New(options...)
 	tunnelServ.allowPlatformOptions = true
 
 	return tunnelServ.RunWithResult(ctx, reader, writer)
@@ -267,9 +268,9 @@ func (t *tunnelServer) GitCredentials(
 	}
 
 	if t.platformOptions != nil && t.platformOptions.Enabled {
-		gitHttpCredentials := append(
+		gitHttpCredentials := slices.Concat(
 			t.platformOptions.UserCredentials.GitHttp,
-			t.platformOptions.ProjectCredentials.GitHttp...)
+			t.platformOptions.ProjectCredentials.GitHttp)
 		if len(gitHttpCredentials) > 0 {
 			if len(gitHttpCredentials) == 1 {
 				credentials.Username = gitHttpCredentials[0].User

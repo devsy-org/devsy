@@ -176,46 +176,45 @@ func (e *OptionEnumArray) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	switch obj := jsonObj.(type) {
-	case []any:
-		if len(obj) == 0 {
-			*e = OptionEnumArray{}
-			return nil
-		}
-		ret := make([]OptionEnum, 0, len(obj))
-		switch obj[0].(type) {
-		case string:
-			for _, v := range obj {
-				if s, ok := v.(string); ok {
-					ret = append(ret, OptionEnum{Value: s})
-				}
-			}
-		case map[string]any:
-			for _, v := range obj {
-				m, ok := v.(map[string]any)
-				if !ok {
-					return ErrUnsupportedType
-				}
-				value := ""
-				if s, ok := m["value"].(string); ok {
-					value = s
-				}
-				displayName := ""
-				if s, ok := m["displayName"].(string); ok {
-					displayName = s
-				}
-				ret = append(ret, OptionEnum{
-					Value:       value,
-					DisplayName: displayName,
-				})
-			}
-		default:
-			return ErrUnsupportedType
-		}
-
-		*e = OptionEnumArray(ret)
+	obj, ok := jsonObj.([]any)
+	if !ok {
+		return ErrUnsupportedType
+	}
+	if len(obj) == 0 {
+		*e = OptionEnumArray{}
 		return nil
 	}
+	ret := make([]OptionEnum, 0, len(obj))
+	switch obj[0].(type) {
+	case string:
+		for _, v := range obj {
+			if s, ok := v.(string); ok {
+				ret = append(ret, OptionEnum{Value: s})
+			}
+		}
+	case map[string]any:
+		for _, v := range obj {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return ErrUnsupportedType
+			}
+			value := ""
+			if s, ok := m["value"].(string); ok {
+				value = s
+			}
+			displayName := ""
+			if s, ok := m["displayName"].(string); ok {
+				displayName = s
+			}
+			ret = append(ret, OptionEnum{
+				Value:       value,
+				DisplayName: displayName,
+			})
+		}
+	default:
+		return ErrUnsupportedType
+	}
 
-	return ErrUnsupportedType
+	*e = OptionEnumArray(ret)
+	return nil
 }

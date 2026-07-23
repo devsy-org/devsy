@@ -242,11 +242,12 @@ func RefreshIDEOptions(
 ) (*provider.Workspace, error) {
 	ide = strings.ToLower(ide)
 	if ide == "" {
-		if workspace.IDE.Name != "" {
+		switch {
+		case workspace.IDE.Name != "":
 			ide = workspace.IDE.Name
-		} else if devsyConfig.Current().DefaultIDE != "" {
+		case devsyConfig.Current().DefaultIDE != "":
 			ide = devsyConfig.Current().DefaultIDE
-		} else {
+		default:
 			ide = detect()
 		}
 	}

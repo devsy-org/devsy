@@ -128,12 +128,13 @@ func ReadAgentWorkspaceInfo(
 	// check if we need to become root
 	log.Debug("checking if root privileges are required")
 	shouldExit, err := rerunAsRoot(workspaceInfo)
-	if err != nil {
+	switch {
+	case err != nil:
 		return false, nil, fmt.Errorf("rerun as root: %w", err)
-	} else if shouldExit {
+	case shouldExit:
 		log.Debug("rerunning as root, exiting current process")
 		return true, nil, nil
-	} else if workspaceInfo == nil {
+	case workspaceInfo == nil:
 		log.Debug("no workspace info available and not rerunning as root")
 		return false, nil, ErrFindAgentHomeDir
 	}

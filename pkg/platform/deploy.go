@@ -62,14 +62,15 @@ func WaitForPodReady(
 			loftPod := &pods.Items[0]
 			found := false
 			for _, containerStatus := range loftPod.Status.ContainerStatuses {
-				if containerStatus.State.Running != nil && containerStatus.Ready {
+				switch {
+				case containerStatus.State.Running != nil && containerStatus.Ready:
 					if containerStatus.Name == "manager" {
 						found = true
 					}
 
 					continue
-				} else if containerStatus.State.Terminated != nil ||
-					(containerStatus.State.Waiting != nil && CriticalStatus[containerStatus.State.Waiting.Reason]) {
+				case containerStatus.State.Terminated != nil ||
+					(containerStatus.State.Waiting != nil && CriticalStatus[containerStatus.State.Waiting.Reason]):
 					reason := ""
 					message := ""
 					if containerStatus.State.Terminated != nil {
@@ -116,21 +117,22 @@ func WaitForPodReady(
 						message,
 						reason,
 					)
-				} else if containerStatus.State.Waiting != nil && time.Now().After(now.Add(time.Second*10)) {
-					if containerStatus.State.Waiting.Message != "" {
+				case containerStatus.State.Waiting != nil && time.Now().After(now.Add(time.Second*10)):
+					switch {
+					case containerStatus.State.Waiting.Message != "":
 						log.Infof(
 							"Keep waiting, %s container is still starting up: %s (%s)",
 							pkgconfig.ProductNamePro,
 							containerStatus.State.Waiting.Message,
 							containerStatus.State.Waiting.Reason,
 						)
-					} else if containerStatus.State.Waiting.Reason != "" {
+					case containerStatus.State.Waiting.Reason != "":
 						log.Infof(
 							"Keep waiting, %s container is still starting up: %s",
 							pkgconfig.ProductNamePro,
 							containerStatus.State.Waiting.Reason,
 						)
-					} else {
+					default:
 						log.Infof(
 							"Keep waiting, %s container is still starting up",
 							pkgconfig.ProductNamePro,
