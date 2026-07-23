@@ -120,7 +120,7 @@ func TestResolveWorkspaceConfig_LocalFolderMetadata(t *testing.T) {
 	provider := &ProviderWithOptions{Config: &providerpkg.ProviderConfig{Name: testProviderName}}
 	devsyConfig := &config.Config{DefaultContext: testDefaultContext}
 
-	ws, err := resolveWorkspaceConfig(
+	ws := resolveWorkspaceConfig(
 		context.Background(),
 		provider,
 		devsyConfig,
@@ -133,7 +133,6 @@ func TestResolveWorkspaceConfig_LocalFolderMetadata(t *testing.T) {
 			sshConfigIncludePath: "/tmp/ssh_include",
 		},
 	)
-	require.NoError(t, err)
 
 	assert.Equal(t, testWorkspaceID, ws.ID)
 	assert.Equal(t, "fixed-uid", ws.UID, "explicitly provided uid should be preserved")
@@ -150,7 +149,7 @@ func TestResolveWorkspaceConfig_GeneratesUIDWhenEmpty(t *testing.T) {
 	provider := &ProviderWithOptions{Config: &providerpkg.ProviderConfig{Name: testProviderName}}
 	devsyConfig := &config.Config{DefaultContext: testDefaultContext}
 
-	ws, err := resolveWorkspaceConfig(
+	ws := resolveWorkspaceConfig(
 		context.Background(),
 		provider,
 		devsyConfig,
@@ -160,7 +159,6 @@ func TestResolveWorkspaceConfig_GeneratesUIDWhenEmpty(t *testing.T) {
 			isLocalPath: true,
 		},
 	)
-	require.NoError(t, err)
 	assert.NotEmpty(t, ws.UID, "a UID should be generated when none is provided")
 }
 

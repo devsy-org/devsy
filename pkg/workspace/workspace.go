@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -38,9 +38,8 @@ var errProvideWorkspaceArg = errors.New(
 // command retries on.
 var ErrWorkspaceNotFound = errors.New("workspace not found")
 
-// RemoteCreator defines the interface for clients that support remote workspace creation.
-// This interface is implemented by ProxyClient and DaemonClient to enable workspace
-// creation on remote platforms.
+// RemoteCreator is implemented by clients (ProxyClient, DaemonClient) that
+// create workspaces on a remote platform.
 type RemoteCreator interface {
 	Create(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error
 }
@@ -64,8 +63,8 @@ type ResolveParams struct {
 	Owner                platform.OwnerFilter
 }
 
-// Resolve takes the `devsy up|build` CLI input and either finds an existing
-// workspace or creates a new one, returning a ready-to-use client.
+// Resolve finds an existing workspace matching the params or creates a new one,
+// returning a ready-to-use client.
 func Resolve(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -110,28 +109,24 @@ func Resolve(
 	return workspaceClient, nil
 }
 
-// validateDesiredID enforces the workspace naming rules: only lower case
-// letters, numbers or dashes, and at most maxWorkspaceIDLength characters. An
-// empty id (the common case) is always valid.
+// validateDesiredID enforces the naming rules for an explicit workspace name:
+// lower case letters, numbers or dashes, and at most maxWorkspaceIDLength
+// characters. An empty name is always valid.
 func validateDesiredID(desiredID string) error {
 	if desiredID == "" {
 		return nil
 	}
 	if providerpkg.ProviderNameRegEx.MatchString(desiredID) {
-		return fmt.Errorf("workspace name can only include lower case letters, numbers or dashes")
+		return errors.New("workspace name can only include lower case letters, numbers or dashes")
 	}
 	if len(desiredID) > maxWorkspaceIDLength {
-		return fmt.Errorf(
-			"workspace name cannot be longer than %d characters",
-			maxWorkspaceIDLength,
-		)
+		return fmt.Errorf("workspace name cannot exceed %d characters", maxWorkspaceIDLength)
 	}
 	return nil
 }
 
-// applyDevContainerOverrides persists CLI-provided dev container overrides onto
-// the workspace. It also re-saves a container-source workspace so its config is
-// written before the client is built.
+// applyDevContainerOverrides applies CLI-provided dev container overrides and
+// persists the workspace when it changed or has a container source.
 func applyDevContainerOverrides(workspace *providerpkg.Workspace, params ResolveParams) error {
 	changed := false
 	if params.DevContainerImage != "" && workspace.DevContainerImage != params.DevContainerImage {
@@ -143,8 +138,6 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 		changed = true
 	}
 
-	// A container-source workspace is always re-persisted so its config exists on
-	// disk before the client is built.
 	if !changed && workspace.Source.Container == "" {
 		return nil
 	}
@@ -182,8 +175,8 @@ type GetOptions struct {
 	LocalOnly      bool
 }
 
-// Get tries to retrieve an already existing workspace. With no args the user is
-// prompted to select one interactively.
+// Get retrieves an existing workspace, prompting for a selection when no args
+// are given.
 func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, error) {
 	if len(opts.Args) == 0 {
 		provider, workspace, machine, err := selectWorkspace(
@@ -229,8 +222,8 @@ func findWorkspaceByArgs(ctx context.Context, opts GetOptions) (*providerpkg.Wor
 	return findWorkspace(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
 }
 
-// Exists checks if the given workspace already exists and returns its ID, or an
-// empty string if not found.
+// Exists returns the ID of a matching workspace, or an empty string if none
+// exists.
 func Exists(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -246,14 +239,13 @@ func Exists(
 	return workspace.ID
 }
 
-// resolveWorkspace finds an existing workspace matching the params, or creates a
-// new one. On creation failure the freshly-created workspace folder is removed.
+// resolveWorkspace finds an existing workspace matching the params or creates a
+// new one, removing the freshly-created folder if creation fails.
 func resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	params ResolveParams,
 ) (*providerpkg.ProviderConfig, *providerpkg.Workspace, *providerpkg.Machine, error) {
-	// With no args, either load the desired workspace by id or prompt for one.
 	if len(params.Args) == 0 {
 		if params.DesiredID != "" {
 			workspace, err := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
@@ -277,10 +269,9 @@ func resolveWorkspace(
 	isLocalPath, name := file.IsLocalDir(params.Args[0])
 	workspaceID := ToID(name)
 
-	// Reuse an existing workspace if the desired or derived id already exists.
 	if params.DesiredID != "" {
 		if Exists(ctx, devsyConfig, nil, params.DesiredID, params.Owner) != "" {
-			log.Debugf("workspace ID already exists: desiredID=%s", params.DesiredID)
+			log.Debugf("workspace id already exists: desiredID=%s", params.DesiredID)
 			return loadExistingWorkspace(devsyConfig, params.DesiredID, params.ChangeLastUsed)
 		}
 		workspaceID = params.DesiredID
@@ -328,7 +319,7 @@ type createWorkspaceParams struct {
 }
 
 // createWorkspace builds a new workspace config and provisions any backing
-// machine or remote (pro) instance the provider requires.
+// machine or remote instance the provider requires.
 func createWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -339,23 +330,15 @@ func createWorkspace(
 		return nil, nil, nil, err
 	}
 
-	workspace, err := resolveWorkspaceConfig(
-		ctx,
-		provider,
-		devsyConfig,
-		resolveWorkspaceConfigParams{
-			name:                 params.name,
-			workspaceID:          params.workspaceID,
-			source:               params.source,
-			isLocalPath:          params.isLocalPath,
-			sshConfigPath:        params.sshConfigPath,
-			sshConfigIncludePath: params.sshConfigIncludePath,
-			uid:                  params.uid,
-		},
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	workspace := resolveWorkspaceConfig(ctx, provider, devsyConfig, resolveWorkspaceConfigParams{
+		name:                 params.name,
+		workspaceID:          params.workspaceID,
+		source:               params.source,
+		isLocalPath:          params.isLocalPath,
+		sshConfigPath:        params.sshConfigPath,
+		sshConfigIncludePath: params.sshConfigIncludePath,
+		uid:                  params.uid,
+	})
 
 	if err := assignDesiredMachine(provider, workspace, params.desiredMachine); err != nil {
 		return nil, nil, nil, err
@@ -391,8 +374,7 @@ func loadInitializedProvider(devsyConfig *config.Config) (*ProviderWithOptions, 
 	}
 	if provider.State == nil || !provider.State.Initialized {
 		return nil, fmt.Errorf(
-			"provider %q is not initialized, make sure to run 'devsy provider init %s' "+
-				"at least once before using this provider",
+			"provider %q is not initialized, run 'devsy provider init %s' first",
 			provider.Config.Name,
 			provider.Config.Name,
 		)
@@ -400,9 +382,8 @@ func loadInitializedProvider(devsyConfig *config.Config) (*ProviderWithOptions, 
 	return provider, nil
 }
 
-// assignDesiredMachine attaches a caller-specified, pre-existing machine to the
-// workspace, validating that the provider supports machines and the machine
-// exists.
+// assignDesiredMachine attaches a caller-specified, existing machine to the
+// workspace.
 func assignDesiredMachine(
 	provider *ProviderWithOptions,
 	workspace *providerpkg.Workspace,
@@ -412,21 +393,16 @@ func assignDesiredMachine(
 		return nil
 	}
 	if !provider.Config.IsMachineProvider() {
-		return fmt.Errorf(
-			"provider %s cannot create servers and cannot be used",
-			provider.Config.Name,
-		)
+		return fmt.Errorf("provider %s cannot create servers", provider.Config.Name)
 	}
 	if !providerpkg.MachineExists(workspace.Context, desiredMachine) {
-		return fmt.Errorf("server %s doesn't exist and cannot be used", desiredMachine)
+		return fmt.Errorf("server %s doesn't exist", desiredMachine)
 	}
 
 	workspace.Machine = providerpkg.WorkspaceMachineConfig{ID: desiredMachine}
 	return nil
 }
 
-// machineProvisionParams bundles the inputs required to provision a workspace's
-// backing machine.
 type machineProvisionParams struct {
 	devsyConfig         *config.Config
 	provider            *ProviderWithOptions
@@ -434,9 +410,8 @@ type machineProvisionParams struct {
 	providerUserOptions []string
 }
 
-// provisionManagedMachine assigns a machine id to a machine-provider workspace
-// (a shared single machine or a new auto-deleted one), persists the config, and
-// either reuses an existing machine or creates a fresh one.
+// provisionManagedMachine assigns a machine id to a machine-provider workspace,
+// persists the config, and reuses an existing machine or creates a new one.
 func provisionManagedMachine(
 	ctx context.Context,
 	params machineProvisionParams,
@@ -454,7 +429,7 @@ func provisionManagedMachine(
 	}
 
 	if providerpkg.MachineExists(params.devsyConfig.DefaultContext, workspace.Machine.ID) {
-		log.Infof("Reuse existing machine %q for workspace %q", workspace.Machine.ID, workspace.ID)
+		log.Infof("reuse existing machine %q for workspace %q", workspace.Machine.ID, workspace.ID)
 		machineConfig, err := providerpkg.LoadMachineConfig(workspace.Context, workspace.Machine.ID)
 		if err != nil {
 			return nil, fmt.Errorf("load machine config: %w", err)
@@ -466,8 +441,7 @@ func provisionManagedMachine(
 }
 
 // createManagedMachine creates the machine folder and drives the machine client
-// through option refresh and creation, cleaning up the folder on any failure
-// after it has been created.
+// through option refresh and creation, removing the folder on failure.
 func createManagedMachine(
 	ctx context.Context,
 	params machineProvisionParams,
@@ -502,19 +476,16 @@ func createManagedMachine(
 	return machineConfig, nil
 }
 
-// cleanupMachineFolder best-effort removes a machine folder and returns the
-// original cause so it can be surfaced to the caller.
+// cleanupMachineFolder removes a machine folder and returns the original cause.
 func cleanupMachineFolder(machineConfig *providerpkg.Machine, cause error) error {
 	_ = clientimplementation.DeleteMachineFolder(machineConfig.Context, machineConfig.ID)
 	return cause
 }
 
-// resolveProWorkspace persists the workspace, hands provisioning to the remote
-// pro process, then reloads the config the provider wrote back.
-//
-// The pro process can't communicate with us directly: it needs os i/o to render
-// the form in CLI mode, so we save the config, tell the provider where it lives,
-// let it update the config, and read it back into workspace state here.
+// resolveProWorkspace saves the workspace, hands provisioning to the remote pro
+// process, and reloads the config it wrote back. The pro process renders its
+// form over os i/o and cannot call back into this process, so state is exchanged
+// through the workspace config file.
 func resolveProWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -577,14 +548,13 @@ type resolveWorkspaceConfigParams struct {
 	uid                  string
 }
 
-// resolveWorkspaceConfig builds a new workspace config and determines its source
-// (explicit, local folder, git repository or image).
+// resolveWorkspaceConfig builds a new workspace config, classifying its source.
 func resolveWorkspaceConfig(
 	ctx context.Context,
 	defaultProvider *ProviderWithOptions,
 	devsyConfig *config.Config,
 	params resolveWorkspaceConfigParams,
-) (*providerpkg.Workspace, error) {
+) *providerpkg.Workspace {
 	now := types.Now()
 	uid := params.uid
 	if uid == "" {
@@ -604,31 +574,26 @@ func resolveWorkspaceConfig(
 		SSHConfigIncludePath: params.sshConfigIncludePath,
 	}
 
-	source, picture := resolveWorkspaceSource(ctx, params)
-	workspace.Source = source
-	workspace.Picture = picture
+	workspace.Source, workspace.Picture = resolveWorkspaceSource(ctx, params)
 
-	return workspace, nil
+	return workspace
 }
 
-// resolveWorkspaceSource classifies the workspace source from the params,
-// probing git/image registries as needed. It returns the source and, for git
-// repositories, an associated project picture.
+// resolveWorkspaceSource classifies the workspace source, probing git and image
+// registries as needed. It returns the source and, for git repositories, a
+// project picture.
 func resolveWorkspaceSource(
 	ctx context.Context,
 	params resolveWorkspaceConfigParams,
 ) (providerpkg.WorkspaceSource, string) {
-	// explicit source wins
 	if params.source != nil {
 		return *params.source, ""
 	}
 
-	// local folder
 	if params.isLocalPath {
 		return providerpkg.WorkspaceSource{LocalFolder: params.name}, ""
 	}
 
-	// git repository (explicit .git suffix or a repository that responds)
 	info := git.NormalizeRepository(params.name)
 	if strings.HasSuffix(params.name, ".git") ||
 		git.PingRepository(info.Repository, git.GetDefaultExtraEnv(false)) {
@@ -641,13 +606,10 @@ func resolveWorkspaceSource(
 		}, getProjectImage(params.name)
 	}
 
-	// image
 	if _, err := image.GetImage(ctx, params.name); err == nil {
 		return providerpkg.WorkspaceSource{Image: params.name}, ""
 	}
 
-	// fall back to a git repository derived from the normalized info, defaulting
-	// the repository to the raw name when normalization produced none
 	return providerpkg.WorkspaceSource{
 		GitRepository:  cmp.Or(info.Repository, params.name),
 		GitPRReference: info.PR,
@@ -658,8 +620,7 @@ func resolveWorkspaceSource(
 }
 
 // ensureWorkspaceID returns the workspace id, deriving it from the first arg
-// when not explicitly provided. It returns an empty string when neither an id
-// nor args are available.
+// when not explicitly provided, or an empty string when neither is available.
 func ensureWorkspaceID(args []string, workspaceID string) string {
 	if len(args) == 0 && workspaceID == "" {
 		return ""
@@ -686,7 +647,7 @@ func findLocalWorkspace(
 
 	allWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, false)
 	if err != nil {
-		log.Debugf("failed to list workspaces: %v", err)
+		log.Debugf("list workspaces: %v", err)
 		return nil
 	}
 
@@ -699,8 +660,8 @@ func findLocalWorkspace(
 	return nil
 }
 
-// findWorkspace looks up a workspace among all known ones (local and remote). A
-// matching pro workspace is marked imported and persisted locally.
+// findWorkspace looks up a workspace among all known ones, marking a matching
+// pro workspace as imported and persisting it locally.
 func findWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -715,7 +676,7 @@ func findWorkspace(
 
 	allWorkspaces, err := List(ctx, devsyConfig, false, owner)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list workspaces: %w", err)
+		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 
 	for _, workspace := range allWorkspaces {
@@ -726,7 +687,7 @@ func findWorkspace(
 		if workspace.IsPro() {
 			workspace.Imported = true
 			if err := providerpkg.SaveWorkspaceConfig(workspace); err != nil {
-				return nil, fmt.Errorf("failed to save workspace config: %w", err)
+				return nil, fmt.Errorf("save workspace config: %w", err)
 			}
 		}
 
@@ -767,7 +728,6 @@ func selectWorkspace(
 		return nil, nil, nil, err
 	}
 
-	// A selected pro workspace is imported and saved locally before use.
 	for _, workspace := range workspaces {
 		if workspace.ID != selectedWorkspace.ID || !workspace.IsPro() {
 			continue
@@ -782,8 +742,8 @@ func selectWorkspace(
 	return loadExistingWorkspace(devsyConfig, selectedWorkspace.ID, params.changeLastUsed)
 }
 
-// listSelectableWorkspaces lists the candidate workspaces, sorted by most
-// recently used first.
+// listSelectableWorkspaces lists the candidate workspaces, most recently used
+// first.
 func listSelectableWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -802,15 +762,15 @@ func listSelectableWorkspaces(
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 
-	sort.SliceStable(workspaces, func(i, j int) bool {
-		return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
+	slices.SortStableFunc(workspaces, func(a, b *providerpkg.Workspace) int {
+		return cmp.Compare(b.LastUsedTimestamp.Unix(), a.LastUsedTimestamp.Unix())
 	})
 
 	return workspaces, nil
 }
 
-// promptWorkspaceSelection renders the interactive selection form and returns
-// the chosen workspace.
+// promptWorkspaceSelection renders the selection form and returns the chosen
+// workspace.
 func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg.Workspace, error) {
 	options := make([]huh.Option[*providerpkg.Workspace], 0, len(workspaces))
 	for _, workspace := range workspaces {
@@ -834,14 +794,14 @@ func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg
 		return nil, err
 	}
 	if selectedWorkspace == nil {
-		return nil, fmt.Errorf("no workspace selected")
+		return nil, errors.New("no workspace selected")
 	}
 
 	return selectedWorkspace, nil
 }
 
-// importSelectedProWorkspace persists the selected pro workspace locally
-// (carrying over ssh config paths) and returns its provider config.
+// importSelectedProWorkspace persists the selected pro workspace locally and
+// returns its provider config.
 func importSelectedProWorkspace(
 	devsyConfig *config.Config,
 	workspace *providerpkg.Workspace,
@@ -855,7 +815,7 @@ func importSelectedProWorkspace(
 	}
 	workspace.Imported = true
 	if err := providerpkg.SaveWorkspaceConfig(workspace); err != nil {
-		return nil, fmt.Errorf("save workspace config for workspace %q: %w", workspace.ID, err)
+		return nil, fmt.Errorf("save workspace config %q: %w", workspace.ID, err)
 	}
 
 	providerConfig, err := providerpkg.LoadProviderConfig(
@@ -863,12 +823,7 @@ func importSelectedProWorkspace(
 		workspace.Provider.Name,
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"load provider config for workspace %q with provider %q: %w",
-			workspace.ID,
-			workspace.Provider.Name,
-			err,
-		)
+		return nil, fmt.Errorf("load provider config %q: %w", workspace.Provider.Name, err)
 	}
 
 	return providerConfig, nil
@@ -922,8 +877,8 @@ type proInstanceParams struct {
 	stderr       io.Writer
 }
 
-// resolveProInstance drives remote workspace creation via a provider client
-// that implements RemoteCreator.
+// resolveProInstance drives remote workspace creation via a client implementing
+// RemoteCreator.
 func resolveProInstance(params proInstanceParams) error {
 	foundProvider, err := FindProvider(params.devsyConfig, params.providerName)
 	if err != nil {
@@ -944,10 +899,8 @@ func resolveProInstance(params proInstanceParams) error {
 		return c.Create(params.ctx, params.stdin, params.stdout, params.stderr)
 	}
 
-	// This should never happen - indicates a programming error where a proxy/daemon provider
-	// client does not implement the RemoteCreator interface.
 	return fmt.Errorf(
-		"internal error: client %T for provider %q does not implement RemoteCreator interface",
+		"client %T for provider %q does not implement RemoteCreator",
 		workspaceClient,
 		params.providerName,
 	)
