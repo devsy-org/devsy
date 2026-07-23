@@ -24,9 +24,12 @@ var DefaultDownloadBackoff = wait.Backoff{
 
 // downloadConfig holds the resolved options for a download.
 type downloadConfig struct {
-	headers map[string]string
-	backoff wait.Backoff
-	client  *http.Client
+	headers     map[string]string
+	backoff     wait.Backoff
+	client      *http.Client
+	mode        os.FileMode
+	wrap        func(r io.Reader, totalSize int64) io.Reader
+	skipIfSized bool
 }
 
 // DownloadOption customizes DownloadToFile.
@@ -47,6 +50,25 @@ func WithClient(client *http.Client) DownloadOption {
 	return func(c *downloadConfig) { c.client = client }
 }
 
+// WithMode sets the permission bits for the destination file (default 0o600),
+// for downloads that must be executable.
+func WithMode(mode os.FileMode) DownloadOption {
+	return func(c *downloadConfig) { c.mode = mode }
+}
+
+// WithProgress wraps the response body on each attempt, e.g. to report download
+// progress. wrap receives the body reader and the advertised size (-1 when
+// unknown) and returns the reader to copy from.
+func WithProgress(wrap func(r io.Reader, totalSize int64) io.Reader) DownloadOption {
+	return func(c *downloadConfig) { c.wrap = wrap }
+}
+
+// SkipIfSameSize skips the download when destPath already exists and its size
+// matches the advertised Content-Length, reusing the cached file.
+func SkipIfSameSize() DownloadOption {
+	return func(c *downloadConfig) { c.skipIfSized = true }
+}
+
 // permanentError marks a failure that will not be resolved by retrying, such as
 // a 4xx response or a malformed request.
 type permanentError struct{ err error }
@@ -62,7 +84,7 @@ func (e *permanentError) Unwrap() error { return e.err }
 // incomplete download surfaces as a clear error here rather than as a later
 // decode failure in the caller.
 func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadOption) error {
-	cfg := downloadConfig{backoff: DefaultDownloadBackoff, client: GetHTTPClient()}
+	cfg := downloadConfig{backoff: DefaultDownloadBackoff, client: GetHTTPClient(), mode: 0o600}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -118,25 +140,47 @@ func downloadOnce(ctx context.Context, cfg *downloadConfig, url, destPath string
 		return statusErr
 	}
 
-	return copyToFile(resp, destPath, url)
+	return copyToFile(resp, cfg, destPath, url)
 }
 
-func copyToFile(resp *http.Response, destPath, url string) error {
+func copyToFile(resp *http.Response, cfg *downloadConfig, destPath, url string) error {
+	if alreadyDownloaded(cfg, resp, destPath) {
+		return nil
+	}
+
 	// #nosec G301 -- match existing download destinations; contents are public artifacts.
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return &permanentError{fmt.Errorf("create download folder: %w", err)}
 	}
 
-	file, err := os.OpenFile(filepath.Clean(destPath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	file, err := os.OpenFile(filepath.Clean(destPath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, cfg.mode)
 	if err != nil {
 		return &permanentError{fmt.Errorf("create download file: %w", err)}
 	}
 	defer func() { _ = file.Close() }()
 
-	written, err := io.Copy(file, resp.Body)
+	src := io.Reader(resp.Body)
+	if cfg.wrap != nil {
+		src = cfg.wrap(resp.Body, resp.ContentLength)
+	}
+	written, err := io.Copy(file, src)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
 	}
+	return verifyContentLength(resp, written, url)
+}
+
+// alreadyDownloaded reports whether destPath already holds the full download,
+// based on a size match against the advertised Content-Length.
+func alreadyDownloaded(cfg *downloadConfig, resp *http.Response, destPath string) bool {
+	if !cfg.skipIfSized || resp.ContentLength < 0 {
+		return false
+	}
+	info, err := os.Stat(filepath.Clean(destPath))
+	return err == nil && info.Size() == resp.ContentLength
+}
+
+func verifyContentLength(resp *http.Response, written int64, url string) error {
 	if resp.ContentLength >= 0 && written != resp.ContentLength {
 		return fmt.Errorf(
 			"download %s: incomplete transfer, got %d of %d bytes",

@@ -2,10 +2,12 @@ package http
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +122,59 @@ func TestDownloadToFilePermanentStatusFailsFast(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected 4xx to fail fast without retry, got %d attempts", calls)
+	}
+}
+
+func TestDownloadToFileWithMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("binary"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "bin")
+	if err := DownloadToFile(
+		context.Background(),
+		srv.URL,
+		dest,
+		WithMode(0o755),
+		fastBackoff(),
+	); err != nil {
+		t.Fatalf("DownloadToFile: %v", err)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("expected owner-executable file, got mode %v", info.Mode().Perm())
+	}
+}
+
+func TestDownloadToFileSkipIfSameSize(t *testing.T) {
+	const body = "cached-bytes"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Same length as the pre-existing file, but different content.
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = io.WriteString(w, strings.Repeat("x", len(body)))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	if err := os.WriteFile(dest, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DownloadToFile(
+		context.Background(), srv.URL, dest, SkipIfSameSize(), fastBackoff(),
+	); err != nil {
+		t.Fatalf("DownloadToFile: %v", err)
+	}
+	got, err := os.ReadFile(dest) // #nosec G304 -- test-controlled temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("expected existing file preserved on size match, got %q", got)
 	}
 }
 

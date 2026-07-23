@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -83,30 +84,11 @@ func (o *FleetServer) Install(projectDir string) error {
 
 	// download binary
 	log.Infof("Downloading fleet")
-	resp, err := devsyhttp.GetHTTPClient().Get(url)
-	if err != nil {
+	if err := devsyhttp.DownloadToFile(
+		context.Background(), url, fleetBinary, devsyhttp.WithMode(0o755),
+	); err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf(
-			"unexpected status code while trying to download fleet from %s: %d",
-			url,
-			resp.StatusCode,
-		)
-	}
-
-	f, err := os.OpenFile(fleetBinary, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o755) // #nosec G302,G304
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	_, err = io.Copy(f, resp.Body)
-	if err != nil {
-		return fmt.Errorf("download fleet: %w", err)
-	}
-	_ = f.Close()
 
 	// chown location
 	if o.userName != "" {

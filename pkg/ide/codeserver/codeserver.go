@@ -1,8 +1,8 @@
 package codeserver
 
 import (
+	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -271,20 +271,29 @@ func (c *CodeServer) installSettings() error {
 	return nil
 }
 
-// downloadAndExtract fetches the release tarball at url and extracts it under
-// location. Cleans up a partial extraction on failure so retries start fresh.
+// downloadAndExtract downloads the release tarball at url to a temporary file
+// (with retry and completeness verification) then extracts it under location.
+// Cleans up a partial extraction on failure so retries start fresh.
 func downloadAndExtract(url, location string) error {
-	resp, err := devsyhttp.GetHTTPClient().Get(url) // #nosec G107 -- URL comes from VersionOption.
+	tmpFile, err := os.CreateTemp("", "code-server-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if err := devsyhttp.DownloadToFile(context.Background(), url, tmpPath); err != nil {
+		return err
+	}
+
+	file, err := os.Open(filepath.Clean(tmpPath))
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = file.Close() }()
 
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("download code-server: %s returned %s", url, resp.Status)
-	}
-
-	if err := extract.Extract(resp.Body, location, extract.StripLevels(1)); err != nil {
+	if err := extract.Extract(file, location, extract.StripLevels(1)); err != nil {
 		if rmErr := os.RemoveAll(location); rmErr != nil {
 			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
 		}

@@ -2,11 +2,11 @@ package rstudio
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -215,61 +215,24 @@ func getDownloadURL(version, ubuntuCodename, architecture string) string {
 }
 
 func download(targetFolder, downloadURL string) (string, error) {
-	err := os.MkdirAll(targetFolder, os.ModePerm)
-	if err != nil {
+	// #nosec G301 -- IDE install dir; matches other IDE download destinations.
+	if err := os.MkdirAll(targetFolder, 0o755); err != nil {
 		return "", err
 	}
 
 	targetPath := filepath.Join(filepath.ToSlash(targetFolder), "rstudio-server.deb")
 
-	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
-	if err != nil {
-		return "", fmt.Errorf("download deb: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if err := validateResponseStatus(resp, downloadURL); err != nil {
-		return "", err
-	}
-
-	stat, err := os.Stat(targetPath)
-	if err == nil && stat.Size() == resp.ContentLength {
-		return targetPath, nil
-	}
-
-	if err := saveResponseToFile(targetPath, resp); err != nil {
+	if err := devsyhttp.DownloadToFile(
+		context.Background(), downloadURL, targetPath,
+		devsyhttp.SkipIfSameSize(),
+		devsyhttp.WithProgress(func(r io.Reader, totalSize int64) io.Reader {
+			return &ide.ProgressReader{Reader: r, TotalSize: totalSize}
+		}),
+	); err != nil {
 		return "", err
 	}
 
 	return targetPath, nil
-}
-
-func validateResponseStatus(resp *http.Response, downloadURL string) error {
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-		return nil
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("RStudio version doesn't exist: %s", downloadURL) //nolint:all
-	}
-	return fmt.Errorf("download binary returned status code %d", resp.StatusCode)
-}
-
-func saveResponseToFile(targetPath string, resp *http.Response) error {
-	file, err := os.Create(targetPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	_, err = io.Copy(file, &ide.ProgressReader{
-		Reader:    resp.Body,
-		TotalSize: resp.ContentLength,
-	})
-	if err != nil {
-		return fmt.Errorf("download file: %w", err)
-	}
-
-	return nil
 }
 
 func installDeb(debPath string) error {

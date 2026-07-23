@@ -1,6 +1,7 @@
 package openvscode
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -118,31 +119,57 @@ func (o *OpenVSCodeServer) Install() error {
 	vscode.InstallAPKRequirements()
 
 	// download tar
-	resp, err := devsyhttp.GetHTTPClient().Get(url)
-	if err != nil {
+	if err := downloadAndExtract(url, location); err != nil {
 		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	err = extract.Extract(resp.Body, location, extract.StripLevels(1))
-	if err != nil {
-		return fmt.Errorf("extract vscode: %w", err)
 	}
 
 	// chown location
-	if o.userName != "" {
-		err = copy2.ChownR(location, o.userName)
-		if err != nil {
-			return fmt.Errorf("chown: %w", err)
-		}
+	if err := chownIfNeeded(o.userName, location); err != nil {
+		return err
 	}
 
 	// paste settings
-	err = o.installSettings()
-	if err != nil {
+	if err := o.installSettings(); err != nil {
 		return fmt.Errorf("install settings: %w", err)
 	}
 
+	return nil
+}
+
+// downloadAndExtract downloads the openvscode-server tarball to a temporary file
+// (with retry and completeness verification) then extracts it under location.
+func downloadAndExtract(url, location string) error {
+	tmpFile, err := os.CreateTemp("", "openvscode-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if err := devsyhttp.DownloadToFile(context.Background(), url, tmpPath); err != nil {
+		return err
+	}
+
+	file, err := os.Open(filepath.Clean(tmpPath))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	if err := extract.Extract(file, location, extract.StripLevels(1)); err != nil {
+		return fmt.Errorf("extract vscode: %w", err)
+	}
+	return nil
+}
+
+func chownIfNeeded(userName, location string) error {
+	if userName == "" {
+		return nil
+	}
+	if err := copy2.ChownR(location, userName); err != nil {
+		return fmt.Errorf("chown: %w", err)
+	}
 	return nil
 }
 
