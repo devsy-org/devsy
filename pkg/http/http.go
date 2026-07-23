@@ -3,7 +3,12 @@ package http
 import (
 	"crypto/tls"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
+
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 var (
@@ -14,9 +19,22 @@ var (
 func GetHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
 		customTransport := http.DefaultTransport.(*http.Transport).Clone()
-		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		if insecureTLSEnabled() {
+			// #nosec G402 -- opt-in escape hatch (DEVSY_INSECURE_TLS) for
+			// environments that must reach hosts with self-signed certificates.
+			customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+			log.Warnf("TLS certificate verification is disabled (%s)", config.EnvInsecureTLS)
+		}
 		httpClient = &http.Client{Transport: customTransport}
 	})
 
 	return httpClient
+}
+
+// insecureTLSEnabled reports whether TLS certificate verification should be
+// disabled for the shared HTTP client. Verification is on by default and is
+// only disabled when EnvInsecureTLS is set to a truthy value.
+func insecureTLSEnabled() bool {
+	enabled, _ := strconv.ParseBool(os.Getenv(config.EnvInsecureTLS))
+	return enabled
 }
