@@ -1,5 +1,5 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/go:latest",
+  "image": "mcr.microsoft.com/devcontainers/go:1.26",
   "features": {
     "ghcr.io/devcontainers-extra/features/go-task:1": {},
     "ghcr.io/devcontainers-extra/features/prek:1": {},
