@@ -62,7 +62,6 @@ type proxyExecutor struct {
 	client *proxyClient
 }
 
-// execParams defines parameters for proxy command execution.
 type execParams struct {
 	command  types.StrArray
 	extraEnv map[string]string
