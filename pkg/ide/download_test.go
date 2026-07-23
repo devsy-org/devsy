@@ -13,7 +13,6 @@ import (
 	"testing"
 )
 
-// buildTarGz returns a gzipped tar holding a single file at its root.
 func buildTarGz(t *testing.T, name, body string) []byte {
 	t.Helper()
 	var buf bytes.Buffer

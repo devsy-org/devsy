@@ -20,8 +20,7 @@ func GetHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
 		customTransport := http.DefaultTransport.(*http.Transport).Clone()
 		if insecureTLSEnabled() {
-			// #nosec G402 -- opt-in escape hatch (DEVSY_INSECURE_TLS) for
-			// environments that must reach hosts with self-signed certificates.
+			// #nosec G402 -- enabled with DEVSY_INSECURE_TLS env
 			customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 			log.Warnf("TLS certificate verification is disabled (%s)", config.EnvInsecureTLS)
 		}

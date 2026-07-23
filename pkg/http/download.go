@@ -14,15 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// DefaultDownloadBackoff retries a download three times with exponential
-// backoff, matching the OCI pull retry policy used elsewhere.
 var DefaultDownloadBackoff = wait.Backoff{
 	Duration: 1 * time.Second,
 	Factor:   2.0,
 	Steps:    3,
 }
 
-// downloadConfig holds the resolved options for a download.
 type downloadConfig struct {
 	headers     map[string]string
 	backoff     wait.Backoff
@@ -78,11 +75,7 @@ func (e *permanentError) Unwrap() error { return e.err }
 
 // DownloadToFile downloads url into destPath, retrying transient failures
 // (connection errors, 5xx responses, and truncated transfers) with backoff and
-// failing fast on permanent ones (4xx). Each attempt truncates destPath so a
-// partial download never leaks into the next attempt, and the transfer is
-// verified against Content-Length when the server advertises it — so an
-// incomplete download surfaces as a clear error here rather than as a later
-// decode failure in the caller.
+// failing fast on permanent ones (4xx).
 func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadOption) error {
 	cfg := downloadConfig{backoff: DefaultDownloadBackoff, client: GetHTTPClient(), mode: 0o600}
 	for _, opt := range opts {

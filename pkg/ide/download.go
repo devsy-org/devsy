@@ -12,12 +12,7 @@ import (
 )
 
 // DownloadAndExtract downloads the archive at url to a temporary file, then
-// extracts it into destDir. The download (with retry and transfer-completeness
-// verification) is delegated to devsyhttp.DownloadToFile, so a truncated
-// transfer surfaces as a clear download error rather than an opaque
-// decompression EOF; an extract failure therefore means a genuinely corrupt
-// archive. On extract failure the partially-populated destDir is removed so a
-// retry starts clean. Extract options (e.g. StripLevels) are passed through.
+// extracts it into destDir.
 func DownloadAndExtract(
 	ctx context.Context,
 	url, destDir string,

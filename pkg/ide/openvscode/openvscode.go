@@ -117,19 +117,16 @@ func (o *OpenVSCodeServer) Install() error {
 
 	vscode.InstallAPKRequirements()
 
-	// download tar
 	if err := ide.DownloadAndExtract(
 		context.Background(), url, location, extract.StripLevels(1),
 	); err != nil {
 		return err
 	}
 
-	// chown location
 	if err := chownIfNeeded(o.userName, location); err != nil {
 		return err
 	}
 
-	// paste settings
 	if err := o.installSettings(); err != nil {
 		return fmt.Errorf("install settings: %w", err)
 	}

@@ -215,7 +215,7 @@ func getDownloadURL(version, ubuntuCodename, architecture string) string {
 }
 
 func download(targetFolder, downloadURL string) (string, error) {
-	// #nosec G301 -- IDE install dir; matches other IDE download destinations.
+	// #nosec G301 -- IDE install dir
 	if err := os.MkdirAll(targetFolder, 0o755); err != nil {
 		return "", err
 	}
