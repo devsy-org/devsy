@@ -56,8 +56,6 @@ func loadWorkspaceResult(
 	return result
 }
 
-func ptrStr(s string) *string { return &s }
-
 func TestUpdateWorkspaceResult_BasicRename(t *testing.T) {
 	setupTestPathManager(t)
 
@@ -73,7 +71,7 @@ func TestUpdateWorkspaceResult_BasicRename(t *testing.T) {
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
 	result.MergedConfig.WorkspaceFolder = "/workspaces/my-project"
-	result.MergedConfig.WorkspaceMount = ptrStr(
+	result.MergedConfig.WorkspaceMount = new(
 		"type=bind,source=/home/user/my-project,target=/workspaces/my-project",
 	)
 
@@ -109,7 +107,7 @@ func TestUpdateWorkspaceResult_MergedConfigUpdated(t *testing.T) {
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
 	result.MergedConfig.WorkspaceFolder = "/workspaces/app"
-	result.MergedConfig.WorkspaceMount = ptrStr(
+	result.MergedConfig.WorkspaceMount = new(
 		"type=bind,source=/home/dev/app,target=/workspaces/app",
 	)
 
@@ -145,7 +143,7 @@ func TestUpdateWorkspaceResult_NonDefaultWorkspaceDir(t *testing.T) {
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
 	result.MergedConfig.WorkspaceFolder = "/home/coder/project"
-	result.MergedConfig.WorkspaceMount = ptrStr(
+	result.MergedConfig.WorkspaceMount = new(
 		"type=bind,source=/mnt/data/project,target=/home/coder/project",
 	)
 
@@ -187,7 +185,7 @@ func TestUpdateWorkspaceResult_NestedPath(t *testing.T) {
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
 	result.MergedConfig.WorkspaceFolder = "/workspaces/org/repo"
-	result.MergedConfig.WorkspaceMount = ptrStr(
+	result.MergedConfig.WorkspaceMount = new(
 		"type=bind,source=/home/user/dev/org/repo,target=/workspaces/org/repo",
 	)
 
@@ -220,7 +218,7 @@ func TestUpdateWorkspaceResult_SameNameIdempotent(t *testing.T) {
 		MergedConfig: &devcontainerconfig.MergedDevContainerConfig{},
 	}
 	result.MergedConfig.WorkspaceFolder = "/workspaces/my-ws"
-	result.MergedConfig.WorkspaceMount = ptrStr(
+	result.MergedConfig.WorkspaceMount = new(
 		"type=bind,source=/home/user/my-ws,target=/workspaces/my-ws",
 	)
 

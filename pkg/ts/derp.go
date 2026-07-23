@@ -51,8 +51,8 @@ func GetEnvOrDefault(envVar, defaultVal string) string {
 
 // RemoveProtocol removes protocol from URL.
 func RemoveProtocol(hostPath string) string {
-	if idx := strings.Index(hostPath, "://"); idx != -1 {
-		return hostPath[idx+3:]
+	if _, after, ok := strings.Cut(hostPath, "://"); ok {
+		return after
 	}
 	return hostPath
 }

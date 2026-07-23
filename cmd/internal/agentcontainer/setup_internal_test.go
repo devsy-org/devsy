@@ -13,8 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptr(s string) *string { return &s }
-
 func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 	// Simulate post-substitution state: PATH is a real value, not a
 	// ${containerEnv:PATH} literal.
@@ -22,8 +20,8 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 		MergedConfig: &config.MergedDevContainerConfig{
 			DevContainerConfigBase: config.DevContainerConfigBase{
 				RemoteEnv: map[string]*string{
-					"PATH": ptr("/usr/local/bin:/usr/bin:/bin"),
-					"HOME": ptr("/home/testuser"),
+					"PATH": new("/usr/local/bin:/usr/bin:/bin"),
+					"HOME": new("/home/testuser"),
 				},
 			},
 		},

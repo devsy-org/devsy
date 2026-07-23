@@ -77,8 +77,9 @@ func (o *InjectOptions) ApplyDefaults() {
 	o.applyPreferDownloadDefaults()
 }
 
+//go:fix inline
 func Bool(b bool) *bool {
-	return &b
+	return new(b)
 }
 
 func (o *InjectOptions) Validate() error {
@@ -141,13 +142,13 @@ func (o *InjectOptions) applyPreferDownloadDefaults() {
 	case preferDownloadEnv != "":
 		o.applyEnvPreference(preferDownloadEnv)
 	case hasCustomAgentURL:
-		o.PreferDownloadFromRemoteUrl = Bool(true)
+		o.PreferDownloadFromRemoteUrl = new(true)
 		o.SkipVersionCheck = true
 	case version.GetVersion() == version.DevVersion:
-		o.PreferDownloadFromRemoteUrl = Bool(false)
+		o.PreferDownloadFromRemoteUrl = new(false)
 		o.SkipVersionCheck = true
 	default:
-		o.PreferDownloadFromRemoteUrl = Bool(true)
+		o.PreferDownloadFromRemoteUrl = new(true)
 	}
 }
 
@@ -157,7 +158,7 @@ func (o *InjectOptions) applyEnvPreference(preferDownloadEnv string) {
 		log.Warnf("failed to parse %s, using default", config.EnvAgentPreferDownload)
 		pref = true
 	}
-	o.PreferDownloadFromRemoteUrl = Bool(pref)
+	o.PreferDownloadFromRemoteUrl = new(pref)
 	o.SkipVersionCheck = true
 }
 

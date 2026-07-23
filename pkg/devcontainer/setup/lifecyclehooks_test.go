@@ -275,8 +275,6 @@ func makeTestPhaseHooks() []phaseHook {
 	}
 }
 
-func ptr(s string) *string { return &s }
-
 func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilUnsetsKey() {
 	probedEnv := map[string]string{"KEEP": "yes", "DROP": "bye"}
 	remoteEnv := map[string]*string{"DROP": nil}
@@ -290,7 +288,7 @@ func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNilUnsetsKey() {
 
 func (s *LifecycleHookTestSuite) TestMergeRemoteEnvNonNilOverrides() {
 	probedEnv := map[string]string{"VAR": "old"}
-	remoteEnv := map[string]*string{"VAR": ptr("new")}
+	remoteEnv := map[string]*string{"VAR": new("new")}
 
 	result := mergeRemoteEnv(remoteEnv, probedEnv, "vscode")
 

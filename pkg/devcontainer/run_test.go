@@ -149,13 +149,11 @@ func searchString(s, substr string) bool {
 	return false
 }
 
-func strPtr(s string) *string { return &s }
-
 func TestGetWorkspace_CustomWorkspaceMount(t *testing.T) {
 	customMount := "type=bind,source=/host/src,target=/custom-ws"
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: strPtr(customMount),
+			WorkspaceMount: new(customMount),
 		},
 	}
 
@@ -205,7 +203,7 @@ func TestGetWorkspace_DefaultMountWithWorkspaceFolder(t *testing.T) {
 func TestGetWorkspace_EmptyWorkspaceMount(t *testing.T) {
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: strPtr(""),
+			WorkspaceMount: new(""),
 		},
 	}
 
@@ -236,7 +234,7 @@ func TestGetWorkspace_UserConsistencyPreserved(t *testing.T) {
 	customMount := "type=bind,source=/src,target=/ws,consistency=delegated"
 	conf := &config.DevContainerConfig{
 		NonComposeBase: config.NonComposeBase{
-			WorkspaceMount: strPtr(customMount),
+			WorkspaceMount: new(customMount),
 		},
 	}
 

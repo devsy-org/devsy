@@ -57,8 +57,8 @@ func InheritFromEnvironment(
 func assignedNames(assignments []string) map[string]bool {
 	names := make(map[string]bool, len(assignments))
 	for _, assignment := range assignments {
-		if idx := strings.Index(assignment, "="); idx != -1 {
-			names[assignment[:idx]] = true
+		if before, _, ok := strings.Cut(assignment, "="); ok {
+			names[before] = true
 		}
 	}
 	return names

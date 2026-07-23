@@ -407,7 +407,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		IsLocal:                     false,
 		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
 		DownloadURL:                 config.DefaultAgentDownloadURL(),
-		PreferDownloadFromRemoteUrl: Bool(false),
+		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
 	}); err != nil {
 		return err
