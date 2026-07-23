@@ -41,15 +41,15 @@ func defaultDownloadClient() *http.Client {
 	return downloadClient
 }
 
-// newStallClient wraps the shared HTTP client's transport with an inactivity
-// timeout, preserving its connection pool and TLS configuration.
+// newStallClient builds a download client: the shared base transport with a
+// User-Agent and an inactivity timeout. It deliberately omits the retry
+// decorator — DownloadToFile owns download retries (including truncation, which
+// is only detectable after streaming to disk), so layering RetryTransport here
+// would double-retry transient statuses.
 func newStallClient(timeout time.Duration) *http.Client {
-	base := GetHTTPClient()
-	return &http.Client{
-		Transport:     NewStallTransport(base.Transport, timeout),
-		CheckRedirect: base.CheckRedirect,
-		Jar:           base.Jar,
-	}
+	rt := WithUserAgent(baseRoundTripper(), UserAgent())
+	rt = NewStallTransport(rt, timeout)
+	return &http.Client{Transport: rt}
 }
 
 type downloadConfig struct {
