@@ -59,11 +59,8 @@ type ExtendedBuildParams struct {
 	DevContainerConfig *config.SubstitutedConfig
 	ForceBuild         bool
 	SecretOpts         *SecretOptions
-	// FrozenLockfile enforces that the devcontainer lockfile exists and matches
-	// the resolved features; the build fails instead of writing the lockfile.
-	FrozenLockfile bool
-	// NoLockfile disables the lockfile entirely: no pinning and no writing.
-	NoLockfile bool
+	FrozenLockfile     bool
+	NoLockfile         bool
 }
 
 func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, error) {

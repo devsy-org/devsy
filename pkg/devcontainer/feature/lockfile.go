@@ -33,10 +33,7 @@ var (
 	errLockfileMismatch = errors.New("lockfile does not match")
 )
 
-// LockfilePath returns the lockfile path for a devcontainer config origin,
-// matching the reference CLI: a hidden config file (basename starting with a
-// dot) yields a hidden lockfile, otherwise devcontainer-lock.json is used.
-// It returns "" when the origin is unknown or not a local path.
+// LockfilePath returns the lockfile path for a devcontainer config origin.
 func LockfilePath(configOrigin string) string {
 	if configOrigin == "" || strings.Contains(configOrigin, "://") {
 		return ""
@@ -77,9 +74,7 @@ func ReadLockfile(path string) (*Lockfile, error) {
 	return lf, nil
 }
 
-// WriteLockfile persists the lockfile at path, matching reference-CLI
-// semantics: it only rewrites when the normalized content changed, and when
-// frozen it never writes, instead erroring if the file is missing or stale.
+// WriteLockfile persists the lockfile at path.
 func WriteLockfile(path string, lf *Lockfile, frozen bool) error {
 	if path == "" {
 		return nil
@@ -102,8 +97,6 @@ func WriteLockfile(path string, lf *Lockfile, frozen bool) error {
 	return nil
 }
 
-// lockfileNeedsWrite reports whether the lockfile at path must be rewritten,
-// applying frozen-mode enforcement (error if missing or stale).
 func lockfileNeedsWrite(path string, newContent []byte, frozen bool) (bool, error) {
 	existing, err := os.ReadFile(filepath.Clean(path))
 	switch {
@@ -125,8 +118,6 @@ func lockfileNeedsWrite(path string, newContent []byte, frozen bool) (bool, erro
 	}
 }
 
-// marshalLockfile renders the lockfile with two-space indentation and a
-// trailing newline, matching the reference CLI output.
 func marshalLockfile(lf *Lockfile) ([]byte, error) {
 	data, err := json.MarshalIndent(lf, "", "  ")
 	if err != nil {
@@ -135,9 +126,6 @@ func marshalLockfile(lf *Lockfile) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-// normalizeLockfileJSON round-trips JSON so cosmetic differences (indentation,
-// trailing whitespace) do not trigger a rewrite. Invalid input normalizes to
-// nil, which forces a rewrite.
 func normalizeLockfileJSON(data []byte) []byte {
 	var v any
 	if err := json.Unmarshal(data, &v); err != nil {
@@ -157,8 +145,7 @@ type lockfileMode struct {
 	// frozen fails the build instead of writing when the lockfile is missing or
 	// would change.
 	frozen bool
-	// disabled turns the lockfile off entirely — no load, no pinning, no write
-	// (the --no-lockfile opt-out).
+	// disabled turns the lockfile off entirely
 	disabled bool
 }
 
@@ -191,7 +178,6 @@ func (l *lockfileState) record(featureID string, entry LockedFeature) {
 }
 
 // newLockfileState loads the lockfile for the given config to enable pinning.
-// It always returns a usable state; a missing lockfile simply yields no pins.
 func newLockfileState(cfg *config.DevContainerConfig) *lockfileState {
 	state := &lockfileState{entries: map[string]LockedFeature{}}
 	loaded, err := ReadLockfile(LockfilePath(cfg.Origin))
@@ -204,8 +190,7 @@ func newLockfileState(cfg *config.DevContainerConfig) *lockfileState {
 }
 
 // checkFrozenPrecondition fails fast in frozen mode when the config declares
-// features but no lockfile exists, avoiding wasted feature downloads before the
-// commit-time enforcement would reject the build anyway.
+// features but no lockfile exists.
 func (l *lockfileState) checkFrozenPrecondition(cfg *config.DevContainerConfig) error {
 	if l == nil || len(cfg.Features) == 0 {
 		return nil
@@ -217,10 +202,6 @@ func (l *lockfileState) checkFrozenPrecondition(cfg *config.DevContainerConfig) 
 	return errLockfileMissing
 }
 
-// commit writes the collected entries to the lockfile when write is requested.
-// It regenerates the lockfile fully from the freshly resolved entries so that
-// removed features drop out. To avoid creating spurious empty lockfiles, it
-// skips writing when there are no entries and no lockfile already exists.
 func (l *lockfileState) commit(cfg *config.DevContainerConfig, mode lockfileMode) error {
 	if l == nil || !mode.write {
 		return nil

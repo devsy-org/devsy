@@ -75,18 +75,10 @@ type buildAndExtendParams struct {
 	composeService      *composetypes.ServiceConfig
 	globalArgs          []string
 	featureSecretsFile  string
-	// pull re-pulls base images during the compose build (--pull), set from
-	// CLIOptions.Pull.
-	pull bool
-	// noCache disables the build cache during the compose build (--no-cache),
-	// set from CLIOptions.NoCache.
-	noCache bool
-	// frozenLockfile enforces that the devcontainer lockfile matches the
-	// resolved features, set from CLIOptions.FrozenLockfile.
-	frozenLockfile bool
-	// noLockfile disables the devcontainer lockfile entirely, set from
-	// CLIOptions.NoLockfile.
-	noLockfile bool
+	pull                bool
+	noCache             bool
+	frozenLockfile      bool
+	noLockfile          bool
 }
 
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and

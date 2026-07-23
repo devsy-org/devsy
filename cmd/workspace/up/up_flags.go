@@ -72,7 +72,7 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 			"Mount the workspace git root as the workspace folder"),
 		flags.Bool(&cmd.FrozenLockfile, names.FrozenLockfile, false,
 			"Fail if devcontainer-lock.json is missing or does not match the resolved features "+
-				"instead of writing it (useful for CI)"),
+				"instead of writing it"),
 		flags.Bool(&cmd.NoLockfile, names.NoLockfile, false,
 			"Disable devcontainer-lock.json generation and verification"),
 	)

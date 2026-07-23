@@ -553,18 +553,12 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
 
-			// First up: no lockfile exists yet, so it is generated with the
-			// resolved digest and integrity for the OCI feature.
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			// The config basename starts with a dot, so the lockfile is hidden.
 			lockContent, err := f.DevsySSH(ctx, wsName, "cat /workspaces/*/.devcontainer-lock.json")
 			framework.ExpectNoError(err)
 
-			// Validate the generated lockfile is structurally correct rather
-			// than merely present: it must parse, contain exactly the declared
-			// feature, and its digest fields must be internally consistent.
 			var lock feature.Lockfile
 			framework.ExpectNoError(json.Unmarshal([]byte(strings.TrimSpace(lockContent)), &lock))
 
@@ -575,13 +569,10 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			entry := lock.Features[featureKey]
 			digestRe := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 			gomega.Expect(entry.Integrity).To(gomega.MatchRegexp(digestRe.String()))
-			// For OCI features resolved is repo@<integrity>; the two must agree.
 			gomega.Expect(entry.Resolved).
 				To(gomega.Equal("ghcr.io/devcontainers/features/git@" + entry.Integrity))
 			gomega.Expect(entry.Version).To(gomega.MatchRegexp(`^\d+\.\d+\.\d+`))
 
-			// Second up with the frozen flag must succeed: the generated
-			// lockfile matches the resolved features exactly.
 			err = f.DevsyUpRecreate(ctx, tempDir, names.Flag(names.FrozenLockfile))
 			framework.ExpectNoError(err)
 		},
@@ -604,7 +595,6 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
 
-			// No lockfile is committed, so frozen mode must fail fast.
 			err = f.DevsyUp(ctx, tempDir, names.Flag(names.FrozenLockfile))
 			framework.ExpectError(err)
 		},
@@ -630,7 +620,6 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			err = f.DevsyUp(ctx, tempDir, names.Flag(names.NoLockfile))
 			framework.ExpectNoError(err)
 
-			// With --no-lockfile the lockfile must not be created, so cat fails.
 			_, err = f.DevsySSH(ctx, wsName, "cat /workspaces/*/.devcontainer-lock.json")
 			framework.ExpectError(err)
 		},
@@ -653,9 +642,6 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
 
-			// The committed lockfile pins the feature to a non-existent digest.
-			// If the lockfile is honored, resolution fails; a pass would mean the
-			// pin was silently ignored.
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectError(err)
 		},
@@ -717,9 +703,6 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			var lock feature.Lockfile
 			framework.ExpectNoError(json.Unmarshal([]byte(strings.TrimSpace(lockContent)), &lock))
 
-			// The lockfile is keyed by the tarball URL, and the integrity must be
-			// the exact sha256 of the bytes devsy downloaded — computed here with
-			// the same helper devsy uses internally, so the value cannot drift.
 			featureURL := server.URL() + "/devcontainer-feature-hello.tgz"
 			digestHex, err := hash.File(featureArchiveFilePath)
 			framework.ExpectNoError(err)

@@ -126,9 +126,7 @@ func maskSecretOptions(feature *config.FeatureConfig, options []string) []string
 }
 
 // ProcessFeatureID resolves a feature identifier to a local folder containing
-// the extracted feature, without lockfile pinning. It is retained for callers
-// that only need the folder; lockfile-aware resolution goes through
-// featureProcessor.resolveFeatureSource.
+// the extracted feature, without lockfile pinning.
 func ProcessFeatureID(
 	id string,
 	devContainerConfig *config.DevContainerConfig,
@@ -219,8 +217,7 @@ func PullFeatureToTemp(ref name.Reference, id string) (string, error) {
 	return featureExtractedFolder, nil
 }
 
-// ociResolution is the outcome of resolving an OCI feature: the extracted
-// folder, the canonical digest reference, and the manifest digest (integrity).
+// ociResolution is the outcome of resolving an OCI feature.
 type ociResolution struct {
 	folder    string
 	resolved  string
@@ -603,8 +600,7 @@ func extractTarball(downloadFile, dest string) error {
 }
 
 // processDirectTarFeature resolves an HTTP(S) tarball feature to a local folder
-// and returns its integrity digest (sha256:<hex> of the tarball). When
-// pinnedIntegrity is set the computed digest must match it.
+// and returns its integrity digest (sha256:<hex> of the tarball).
 func processDirectTarFeature(
 	id string,
 	httpHeaders map[string]string,

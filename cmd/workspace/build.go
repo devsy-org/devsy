@@ -112,7 +112,7 @@ func (cmd *BuildCmd) registerImageFlags(buildCmd *cobra.Command) {
 			"Lockfile path for reproducible builds"),
 		cliflags.Bool(&cmd.FrozenLockfile, names.FrozenLockfile, false,
 			"Fail if devcontainer-lock.json is missing or does not match the resolved features "+
-				"instead of writing it (useful for CI)"),
+				"instead of writing it"),
 		cliflags.Bool(&cmd.NoLockfile, names.NoLockfile, false,
 			"Disable devcontainer-lock.json generation and verification"),
 		cliflags.String(
