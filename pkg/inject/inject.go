@@ -319,11 +319,12 @@ func readLine(reader io.Reader) (string, error) {
 	str := ""
 	for {
 		n, err := reader.Read(buf)
-		if err != nil {
+		switch {
+		case err != nil:
 			return "", err
-		} else if n == 0 {
+		case n == 0:
 			continue
-		} else if buf[0] == '\n' {
+		case buf[0] == '\n':
 			return str, nil
 		}
 

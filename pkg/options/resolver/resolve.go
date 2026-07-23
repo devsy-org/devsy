@@ -100,13 +100,14 @@ func (r *Resolver) resolveOption(
 	}
 
 	// resolve option
-	if userValueOk {
+	switch {
+	case userValueOk:
 		resolvedOptionValues[optionName] = config.OptionValue{
 			Value:        userValue,
 			Children:     beforeValue.Children,
 			UserProvided: true,
 		}
-	} else if option.Default != "" {
+	case option.Default != "":
 		resolvedOptionValues[optionName] = config.OptionValue{
 			Children: beforeValue.Children,
 			Value: ResolveDefaultValue(
@@ -114,7 +115,7 @@ func (r *Resolver) resolveOption(
 				combine(resolvedOptionValues, r.extraValues),
 			),
 		}
-	} else if option.Command != "" {
+	case option.Command != "":
 		optionValue, err := resolveFromCommand(ctx, option, resolvedOptionValues, r.extraValues)
 		if err != nil {
 			return err
@@ -122,12 +123,12 @@ func (r *Resolver) resolveOption(
 
 		optionValue.Children = beforeValue.Children
 		resolvedOptionValues[optionName] = optionValue
-	} else if len(option.Enum) == 1 {
+	case len(option.Enum) == 1:
 		resolvedOptionValues[optionName] = config.OptionValue{
 			Children: beforeValue.Children,
 			Value:    option.Enum[0].Value,
 		}
-	} else {
+	default:
 		resolvedOptionValues[optionName] = config.OptionValue{
 			Children: beforeValue.Children,
 		}

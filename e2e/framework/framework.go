@@ -13,22 +13,22 @@ func NewDefaultFramework(path string) *Framework {
 	binName := "devsy-"
 	switch runtime.GOOS {
 	case "darwin":
-		binName = binName + "darwin-"
+		binName += "darwin-"
 	case "linux":
-		binName = binName + "linux-"
+		binName += "linux-"
 	case "windows":
-		binName = binName + "windows-"
+		binName += "windows-"
 	}
 
 	switch runtime.GOARCH {
 	case "amd64":
-		binName = binName + "amd64"
+		binName += "amd64"
 	case "arm64":
-		binName = binName + "arm64"
+		binName += "arm64"
 	}
 
 	if runtime.GOOS == "windows" {
-		binName = binName + ".exe"
+		binName += ".exe"
 	}
 
 	return &Framework{DevsyBinDir: path, DevsyBinName: binName}

@@ -159,15 +159,16 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 			}
 		}
 
-		if getWorkspaceErr != nil {
+		switch {
+		case getWorkspaceErr != nil:
 			return fmt.Errorf("couldn't get workspace: %w", getWorkspaceErr)
-		} else if instance.Status.Phase != storagev1.InstanceReady {
+		case instance.Status.Phase != storagev1.InstanceReady:
 			return fmt.Errorf(
 				"workspace is %q, run `devsy workspace up %s` to start it again",
 				instance.Status.Phase,
 				c.workspace.ID,
 			)
-		} else if instance.Status.LastWorkspaceStatus != storagev1.WorkspaceStatusRunning {
+		case instance.Status.LastWorkspaceStatus != storagev1.WorkspaceStatusRunning:
 			return fmt.Errorf(
 				"workspace is %q, run `devsy workspace up %s` to start it again",
 				instance.Status.LastWorkspaceStatus,

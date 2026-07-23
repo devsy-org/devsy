@@ -218,16 +218,17 @@ func listProWorkspacesForProvider(
 		instances []managementv1.DevsyWorkspaceInstance
 		err       error
 	)
-	if providerConfig.IsProxyProvider() {
+	switch {
+	case providerConfig.IsProxyProvider():
 		instances, err = listInstancesProxyProvider(
 			ctx,
 			devsyConfig,
 			provider,
 			providerConfig,
 		)
-	} else if providerConfig.IsDaemonProvider() {
+	case providerConfig.IsDaemonProvider():
 		instances, err = listInstancesDaemonProvider(ctx, provider, owner)
-	} else {
+	default:
 		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", provider)
 	}
 	if err != nil {

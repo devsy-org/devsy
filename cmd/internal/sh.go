@@ -37,11 +37,12 @@ func NewShellCmd() *cobra.Command {
 }
 
 func (cmd *ShellCommand) Run(ctx context.Context, args []string) error {
-	if cmd.Command == "" && len(args) == 0 {
+	switch {
+	case cmd.Command == "" && len(args) == 0:
 		return nil
-	} else if cmd.Command != "" && len(args) > 0 {
+	case cmd.Command != "" && len(args) > 0:
 		return fmt.Errorf("either use -c or provide a script file")
-	} else if len(args) > 1 {
+	case len(args) > 1:
 		return fmt.Errorf("only a single script file can be used")
 	}
 

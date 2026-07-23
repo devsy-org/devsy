@@ -331,21 +331,23 @@ type BuildOptions struct {
 }
 
 func (w WorkspaceSource) String() string {
-	if w.GitRepository != "" {
-		if w.GitPRReference != "" {
+	switch {
+	case w.GitRepository != "":
+		switch {
+		case w.GitPRReference != "":
 			return WorkspaceSourceGit + w.GitRepository + "@" + w.GitPRReference
-		} else if w.GitBranch != "" {
+		case w.GitBranch != "":
 			return WorkspaceSourceGit + w.GitRepository + "@" + w.GitBranch
-		} else if w.GitCommit != "" {
+		case w.GitCommit != "":
 			return WorkspaceSourceGit + w.GitRepository + git.CommitDelimiter + w.GitCommit
 		}
 
 		return WorkspaceSourceGit + w.GitRepository
-	} else if w.LocalFolder != "" {
+	case w.LocalFolder != "":
 		return WorkspaceSourceLocal + w.LocalFolder
-	} else if w.Image != "" {
+	case w.Image != "":
 		return WorkspaceSourceImage + w.Image
-	} else if w.Container != "" {
+	case w.Container != "":
 		return WorkspaceSourceContainer + w.Container
 	}
 
@@ -353,21 +355,23 @@ func (w WorkspaceSource) String() string {
 }
 
 func (w WorkspaceSource) Type() string {
-	if w.GitRepository != "" {
-		if w.GitPRReference != "" {
+	switch {
+	case w.GitRepository != "":
+		switch {
+		case w.GitPRReference != "":
 			return WorkspaceSourceGit + "pr"
-		} else if w.GitBranch != "" {
+		case w.GitBranch != "":
 			return WorkspaceSourceGit + "branch"
-		} else if w.GitCommit != "" {
+		case w.GitCommit != "":
 			return WorkspaceSourceGit + "commit"
 		}
 
 		return WorkspaceSourceGit
-	} else if w.LocalFolder != "" {
+	case w.LocalFolder != "":
 		return WorkspaceSourceLocal
-	} else if w.Image != "" {
+	case w.Image != "":
 		return WorkspaceSourceImage
-	} else if w.Container != "" {
+	case w.Container != "":
 		return WorkspaceSourceContainer
 	}
 

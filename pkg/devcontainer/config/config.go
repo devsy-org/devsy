@@ -96,15 +96,15 @@ type DevContainerConfigBase struct {
 	// The path of the workspace folder inside the container.
 	WorkspaceFolder string `json:"workspaceFolder,omitempty"`
 
-	// DEPRECATED: Use 'customizations/vscode/settings' instead
+	// Deprecated: Use 'customizations/vscode/settings' instead
 	// Machine specific settings that should be copied into the container. These are only copied when connecting to the container for the first time, rebuilding the container then triggers it again.
 	Settings map[string]any `json:"settings,omitempty"`
 
-	// DEPRECATED: Use 'customizations/vscode/extensions' instead
+	// Deprecated: Use 'customizations/vscode/extensions' instead
 	// An array of extensions that should be installed into the container.
 	Extensions []string `json:"extensions,omitempty"`
 
-	// DEPRECATED: Use 'customizations/vscode/devPort' instead
+	// Deprecated: Use 'customizations/vscode/devPort' instead
 	// The port VS Code can use to connect to its backend.
 	DevPort int `json:"devPort,omitempty"`
 

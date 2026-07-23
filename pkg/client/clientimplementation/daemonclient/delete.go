@@ -112,11 +112,12 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 				ManagementV1().
 				DevsyWorkspaceInstances(workspace.Namespace).
 				Get(ctx, workspace.Name, metav1.GetOptions{})
-			if kerrors.IsNotFound(err) {
+			switch {
+			case kerrors.IsNotFound(err):
 				return true, nil
-			} else if err != nil {
+			case err != nil:
 				return false, fmt.Errorf("error getting workspace: %w", err)
-			} else if workspaceInstance.DeletionTimestamp == nil {
+			case workspaceInstance.DeletionTimestamp == nil:
 				// this can occur if the workspace is already deleted and was recreated
 				return true, nil
 			}

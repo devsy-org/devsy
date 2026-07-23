@@ -82,21 +82,20 @@ func createTempDir(baseDir string) (string, error) {
 	var dir string
 	var err error
 
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
+	switch {
+	case os.Getenv("GITHUB_ACTIONS") == "true":
 		runnerTemp := os.Getenv("RUNNER_TEMP")
 		if runnerTemp != "" {
 			dir, err = os.MkdirTemp(runnerTemp, "temp-*")
 		} else {
 			dir, err = os.MkdirTemp("", "temp-*")
 		}
-	} else if os.Getenv("ACT") == "true" {
+	case os.Getenv("ACT") == "true":
 		dir, err = os.MkdirTemp("/tmp", "temp-*")
-	} else {
-		if baseDir == "" {
-			dir, err = os.MkdirTemp("", "temp-*")
-		} else {
-			dir, err = os.MkdirTemp(baseDir, "temp-*")
-		}
+	case baseDir == "":
+		dir, err = os.MkdirTemp("", "temp-*")
+	default:
+		dir, err = os.MkdirTemp(baseDir, "temp-*")
 	}
 
 	if err != nil {

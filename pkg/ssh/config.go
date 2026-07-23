@@ -433,13 +433,14 @@ func transformHostSection(path, host string, transform func(line string) string)
 	endMarker := MarkerEndPrefix + host
 	for configScanner.Scan() {
 		text := configScanner.Text()
-		if strings.HasPrefix(text, startMarker) {
+		switch {
+		case strings.HasPrefix(text, startMarker):
 			inSection = true
-		} else if strings.HasPrefix(text, endMarker) {
+		case strings.HasPrefix(text, endMarker):
 			inSection = false
-		} else if !inSection {
+		case !inSection:
 			newLines = append(newLines, text)
-		} else if inSection {
+		case inSection:
 			text = transform(text)
 			if text != "" {
 				newLines = append(newLines, text)
