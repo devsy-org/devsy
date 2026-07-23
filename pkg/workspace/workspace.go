@@ -27,7 +27,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-// maxWorkspaceIDLength bounds a user-provided workspace name.
 const maxWorkspaceIDLength = 48
 
 var errProvideWorkspaceArg = errors.New(
@@ -109,9 +108,6 @@ func Resolve(
 	return workspaceClient, nil
 }
 
-// validateDesiredID enforces the naming rules for an explicit workspace name:
-// lower case letters, numbers or dashes, and at most maxWorkspaceIDLength
-// characters. An empty name is always valid.
 func validateDesiredID(desiredID string) error {
 	if desiredID == "" {
 		return nil
@@ -125,8 +121,6 @@ func validateDesiredID(desiredID string) error {
 	return nil
 }
 
-// applyDevContainerOverrides applies CLI-provided dev container overrides and
-// persists the workspace when it changed or has a container source.
 func applyDevContainerOverrides(workspace *providerpkg.Workspace, params ResolveParams) error {
 	changed := false
 	if params.DevContainerImage != "" && workspace.DevContainerImage != params.DevContainerImage {
@@ -149,7 +143,6 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 	return nil
 }
 
-// getWorkspaceClient builds the client matching the provider kind.
 func getWorkspaceClient(
 	devsyConfig *config.Config,
 	provider *providerpkg.ProviderConfig,
@@ -365,8 +358,6 @@ func createWorkspace(
 	return provider.Config, workspace, machineConfig, nil
 }
 
-// loadInitializedProvider returns the default provider, requiring it to be
-// initialized.
 func loadInitializedProvider(devsyConfig *config.Config) (*ProviderWithOptions, error) {
 	provider, _, err := LoadProviders(devsyConfig)
 	if err != nil {
@@ -382,8 +373,6 @@ func loadInitializedProvider(devsyConfig *config.Config) (*ProviderWithOptions, 
 	return provider, nil
 }
 
-// assignDesiredMachine attaches a caller-specified, existing machine to the
-// workspace.
 func assignDesiredMachine(
 	provider *ProviderWithOptions,
 	workspace *providerpkg.Workspace,
@@ -410,8 +399,6 @@ type machineProvisionParams struct {
 	providerUserOptions []string
 }
 
-// provisionManagedMachine assigns a machine id to a machine-provider workspace,
-// persists the config, and reuses an existing machine or creates a new one.
 func provisionManagedMachine(
 	ctx context.Context,
 	params machineProvisionParams,
@@ -517,8 +504,6 @@ func resolveProWorkspace(
 	return reloaded, nil
 }
 
-// saveAndLoadExistingMachine persists the workspace and, for machine providers
-// with a pre-assigned machine, loads that machine's config.
 func saveAndLoadExistingMachine(
 	provider *ProviderWithOptions,
 	workspace *providerpkg.Workspace,
@@ -548,7 +533,6 @@ type resolveWorkspaceConfigParams struct {
 	uid                  string
 }
 
-// resolveWorkspaceConfig builds a new workspace config, classifying its source.
 func resolveWorkspaceConfig(
 	ctx context.Context,
 	defaultProvider *ProviderWithOptions,
@@ -597,26 +581,26 @@ func resolveWorkspaceSource(
 	info := git.NormalizeRepository(params.name)
 	if strings.HasSuffix(params.name, ".git") ||
 		git.PingRepository(info.Repository, git.GetDefaultExtraEnv(false)) {
-		return providerpkg.WorkspaceSource{
-			GitRepository:  info.Repository,
-			GitPRReference: info.PR,
-			GitBranch:      info.Branch,
-			GitCommit:      info.Commit,
-			GitSubPath:     info.SubPath,
-		}, getProjectImage(params.name)
+		return gitWorkspaceSource(info, info.Repository), getProjectImage(params.name)
 	}
 
 	if _, err := image.GetImage(ctx, params.name); err == nil {
 		return providerpkg.WorkspaceSource{Image: params.name}, ""
 	}
 
+	return gitWorkspaceSource(info, cmp.Or(info.Repository, params.name)), ""
+}
+
+// gitWorkspaceSource builds a git workspace source from parsed repository info,
+// using repository for the GitRepository field.
+func gitWorkspaceSource(info *git.GitInfo, repository string) providerpkg.WorkspaceSource {
 	return providerpkg.WorkspaceSource{
-		GitRepository:  cmp.Or(info.Repository, params.name),
+		GitRepository:  repository,
 		GitPRReference: info.PR,
 		GitBranch:      info.Branch,
 		GitCommit:      info.Commit,
 		GitSubPath:     info.SubPath,
-	}, ""
+	}
 }
 
 // ensureWorkspaceID returns the workspace id, deriving it from the first arg
@@ -634,7 +618,6 @@ func ensureWorkspaceID(args []string, workspaceID string) string {
 	return workspaceID
 }
 
-// findLocalWorkspace looks up a workspace among the locally-configured ones.
 func findLocalWorkspace(
 	devsyConfig *config.Config,
 	args []string,
@@ -705,7 +688,6 @@ type selectWorkspaceParams struct {
 	localOnly            bool
 }
 
-// selectWorkspace prompts the user to pick a workspace from the available ones.
 func selectWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -769,8 +751,6 @@ func listSelectableWorkspaces(
 	return workspaces, nil
 }
 
-// promptWorkspaceSelection renders the selection form and returns the chosen
-// workspace.
 func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg.Workspace, error) {
 	options := make([]huh.Option[*providerpkg.Workspace], 0, len(workspaces))
 	for _, workspace := range workspaces {
@@ -800,8 +780,6 @@ func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg
 	return selectedWorkspace, nil
 }
 
-// importSelectedProWorkspace persists the selected pro workspace locally and
-// returns its provider config.
 func importSelectedProWorkspace(
 	devsyConfig *config.Config,
 	workspace *providerpkg.Workspace,
@@ -829,8 +807,6 @@ func importSelectedProWorkspace(
 	return providerConfig, nil
 }
 
-// loadExistingWorkspace loads a workspace config, its provider and any backing
-// machine, optionally bumping the last-used timestamp.
 func loadExistingWorkspace(
 	devsyConfig *config.Config,
 	workspaceID string,
@@ -877,8 +853,6 @@ type proInstanceParams struct {
 	stderr       io.Writer
 }
 
-// resolveProInstance drives remote workspace creation via a client implementing
-// RemoteCreator.
 func resolveProInstance(params proInstanceParams) error {
 	foundProvider, err := FindProvider(params.devsyConfig, params.providerName)
 	if err != nil {

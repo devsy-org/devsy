@@ -1,11 +1,13 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/git"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -114,6 +116,37 @@ func TestResolveWorkspaceSource_LocalFolder(t *testing.T) {
 	})
 	assert.Equal(t, providerpkg.WorkspaceSource{LocalFolder: testProjectPath}, got)
 	assert.Empty(t, picture)
+}
+
+func TestGitWorkspaceSource_MapsInfoFields(t *testing.T) {
+	info := &git.GitInfo{
+		Repository: "https://github.com/foo/bar",
+		Branch:     "main",
+		Commit:     "abc123",
+		SubPath:    "sub/dir",
+	}
+
+	src := gitWorkspaceSource(info, info.Repository)
+
+	assert.Equal(t, "https://github.com/foo/bar", src.GitRepository)
+	assert.Equal(t, "main", src.GitBranch)
+	assert.Equal(t, "abc123", src.GitCommit)
+	assert.Equal(t, "sub/dir", src.GitSubPath)
+	assert.Empty(t, src.GitPRReference)
+}
+
+func TestGitWorkspaceSource_RepositoryOverride(t *testing.T) {
+	info := &git.GitInfo{PR: "pr/42"}
+
+	src := gitWorkspaceSource(info, cmp.Or(info.Repository, "raw-name"))
+
+	assert.Equal(
+		t,
+		"raw-name",
+		src.GitRepository,
+		"empty info.Repository should fall back to the raw name",
+	)
+	assert.Equal(t, "pr/42", src.GitPRReference)
 }
 
 func TestResolveWorkspaceConfig_LocalFolderMetadata(t *testing.T) {
