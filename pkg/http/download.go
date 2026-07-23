@@ -130,66 +130,71 @@ func isPermanent(err error) bool {
 	return errors.As(err, &perr)
 }
 
+// downloadAttempt carries the per-attempt state so helpers stay within the
+// project's argument limit.
+type downloadAttempt struct {
+	cfg      *downloadConfig
+	url      string
+	destPath string
+	wd       *stallWatchdog
+}
+
 func downloadOnce(ctx context.Context, cfg *downloadConfig, url, destPath string) error {
-	var wd *stallWatchdog
+	a := &downloadAttempt{cfg: cfg, url: url, destPath: destPath}
 	if cfg.stallTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
-		wd = newStallWatchdog(cfg.stallTimeout, cancel)
-		defer wd.stop()
+		a.wd = newStallWatchdog(cfg.stallTimeout, cancel)
+		defer a.wd.stop()
 	}
 
-	err := doDownload(ctx, cfg, url, destPath, wd)
+	err := a.do(ctx)
 	// A stall aborts via context cancellation; surface it as a clear, retryable
 	// error instead of a bare "context canceled".
-	if wd != nil && wd.fired() && errors.Is(err, context.Canceled) {
+	if a.wd != nil && a.wd.fired() && errors.Is(err, context.Canceled) {
 		return fmt.Errorf("download %s: stalled for %s", url, cfg.stallTimeout)
 	}
 	return err
 }
 
-func doDownload(
-	ctx context.Context, cfg *downloadConfig, url, destPath string, wd *stallWatchdog,
-) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (a *downloadAttempt) do(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.url, nil)
 	if err != nil {
-		return &permanentError{fmt.Errorf("download %s: %w", url, err)}
+		return &permanentError{fmt.Errorf("download %s: %w", a.url, err)}
 	}
-	for key, value := range cfg.headers {
+	for key, value := range a.cfg.headers {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := cfg.client.Do(req)
+	resp, err := a.cfg.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf("download %s: %w", a.url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Headers received: give the body transfer a fresh inactivity window.
-	if wd != nil {
-		wd.reset()
+	if a.wd != nil {
+		a.wd.reset()
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		statusErr := fmt.Errorf("download %s: %s", url, resp.Status)
+		statusErr := fmt.Errorf("download %s: %s", a.url, resp.Status)
 		if resp.StatusCode < http.StatusInternalServerError {
 			return &permanentError{statusErr}
 		}
 		return statusErr
 	}
 
-	return copyToFile(resp, cfg, destPath, url, wd)
+	return a.copyToFile(resp)
 }
 
-func copyToFile(
-	resp *http.Response, cfg *downloadConfig, destPath, url string, wd *stallWatchdog,
-) error {
-	if alreadyDownloaded(cfg, resp, destPath) {
+func (a *downloadAttempt) copyToFile(resp *http.Response) error {
+	if alreadyDownloaded(a.cfg, resp, a.destPath) {
 		return nil
 	}
 
-	destPath = filepath.Clean(destPath)
+	destPath := filepath.Clean(a.destPath)
 	destDir := filepath.Dir(destPath)
 	// #nosec G301 -- match existing download destinations; contents are public artifacts.
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -199,9 +204,25 @@ func copyToFile(
 	// Download to a temporary file in the destination directory and rename it
 	// into place only on success, so a failed transfer never leaves a partial
 	// file at destPath (which callers may mistake for a complete download).
+	tmpPath, err := a.streamToTempFile(resp, destDir, destPath)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("download %s: %w", a.url, err)
+	}
+	return nil
+}
+
+// streamToTempFile writes the response body to a temporary file next to
+// destPath and returns its path on success, removing it on any failure.
+func (a *downloadAttempt) streamToTempFile(
+	resp *http.Response, destDir, destPath string,
+) (string, error) {
 	tmp, err := os.CreateTemp(destDir, "."+filepath.Base(destPath)+".*.tmp")
 	if err != nil {
-		return &permanentError{fmt.Errorf("create download file: %w", err)}
+		return "", &permanentError{fmt.Errorf("create download file: %w", err)}
 	}
 	tmpPath := tmp.Name()
 	committed := false
@@ -212,32 +233,35 @@ func copyToFile(
 		}
 	}()
 
-	if err := tmp.Chmod(cfg.mode); err != nil {
-		return &permanentError{fmt.Errorf("set download file mode: %w", err)}
+	if err := tmp.Chmod(a.cfg.mode); err != nil {
+		return "", &permanentError{fmt.Errorf("set download file mode: %w", err)}
 	}
 
-	src := io.Reader(resp.Body)
-	if cfg.wrap != nil {
-		src = cfg.wrap(resp.Body, resp.ContentLength)
-	}
-	if wd != nil {
-		src = &stallResetReader{r: src, wd: wd}
-	}
-	written, err := io.Copy(tmp, src)
+	written, err := io.Copy(tmp, a.source(resp))
 	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return "", fmt.Errorf("download %s: %w", a.url, err)
 	}
-	if err := verifyContentLength(resp, written, url); err != nil {
-		return err
+	if err := verifyContentLength(resp, written, a.url); err != nil {
+		return "", err
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
-	}
-	if err := os.Rename(tmpPath, destPath); err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return "", fmt.Errorf("download %s: %w", a.url, err)
 	}
 	committed = true
-	return nil
+	return tmpPath, nil
+}
+
+// source builds the reader copied to disk, applying the optional progress
+// wrapper and stall watchdog.
+func (a *downloadAttempt) source(resp *http.Response) io.Reader {
+	src := io.Reader(resp.Body)
+	if a.cfg.wrap != nil {
+		src = a.cfg.wrap(resp.Body, resp.ContentLength)
+	}
+	if a.wd != nil {
+		src = &stallResetReader{r: src, wd: a.wd}
+	}
+	return src
 }
 
 // alreadyDownloaded reports whether destPath already holds the full download,

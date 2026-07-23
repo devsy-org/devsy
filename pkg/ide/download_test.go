@@ -87,11 +87,11 @@ func TestDownloadAndExtractPreservesExistingInstallOnFailure(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "install")
-	if err := os.MkdirAll(dest, 0o755); err != nil {
+	if err := os.MkdirAll(dest, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	existing := filepath.Join(dest, "existing")
-	if err := os.WriteFile(existing, []byte("keep-me"), 0o644); err != nil {
+	if err := os.WriteFile(existing, []byte("keep-me"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +99,7 @@ func TestDownloadAndExtractPreservesExistingInstallOnFailure(t *testing.T) {
 		t.Fatal("expected extract failure")
 	}
 
-	got, err := os.ReadFile(existing)
+	got, err := os.ReadFile(existing) // #nosec G304 -- test-controlled temp path
 	if err != nil {
 		t.Fatalf("expected pre-existing install to remain intact: %v", err)
 	}
@@ -116,11 +116,11 @@ func TestDownloadAndExtractReplacesExistingInstallOnSuccess(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "install")
-	if err := os.MkdirAll(dest, 0o755); err != nil {
+	if err := os.MkdirAll(dest, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	stale := filepath.Join(dest, "stale")
-	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(stale, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
