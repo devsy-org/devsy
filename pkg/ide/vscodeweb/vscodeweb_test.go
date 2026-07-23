@@ -1,11 +1,6 @@
 package vscodeweb
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	"strings"
@@ -13,61 +8,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
-
-// buildCodeTarGz returns a gzipped tar holding a single `code` binary at its
-// root, matching the layout of the real VS Code CLI tarball.
-func buildCodeTarGz(t *testing.T) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	content := []byte("#!/bin/sh\necho code\n")
-	if err := tw.WriteHeader(
-		&tar.Header{Name: "code", Mode: 0o755, Size: int64(len(content))},
-	); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tw.Write(content); err != nil {
-		t.Fatal(err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := gz.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-func TestDownloadAndExtractSuccess(t *testing.T) {
-	archive := buildCodeTarGz(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(archive)
-	}))
-	defer srv.Close()
-
-	location := t.TempDir()
-	if err := downloadAndExtract(srv.URL, location); err != nil {
-		t.Fatalf("downloadAndExtract: %v", err)
-	}
-	if _, err := os.Stat(binaryPath(location)); err != nil {
-		t.Fatalf("expected extracted code binary: %v", err)
-	}
-}
-
-func TestDownloadAndExtractCorruptArchiveReportsExtractError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// A complete transfer of bytes that are not a valid archive: the
-		// download succeeds, so the failure must be attributed to extraction.
-		_, _ = w.Write([]byte("not-a-tarball"))
-	}))
-	defer srv.Close()
-
-	err := downloadAndExtract(srv.URL, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "extract VS Code CLI") {
-		t.Fatalf("expected an extract-attributed error, got %v", err)
-	}
-}
 
 func TestGetReleaseURLDefaultVersion(t *testing.T) {
 	v := NewVSCodeWeb(ServerOptions{})

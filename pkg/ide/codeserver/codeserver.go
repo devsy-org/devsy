@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -121,7 +120,9 @@ func (c *CodeServer) Install() error {
 
 	vscode.InstallAPKRequirements()
 
-	if err := downloadAndExtract(c.getReleaseURL(), location); err != nil {
+	if err := ide.DownloadAndExtract(
+		context.Background(), c.getReleaseURL(), location, extract.StripLevels(1),
+	); err != nil {
 		return err
 	}
 
@@ -267,37 +268,6 @@ func (c *CodeServer) installSettings() error {
 		if err := copy2.ChownR(codeServerDataDir, c.userName); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// downloadAndExtract downloads the release tarball at url to a temporary file
-// (with retry and completeness verification) then extracts it under location.
-// Cleans up a partial extraction on failure so retries start fresh.
-func downloadAndExtract(url, location string) error {
-	tmpFile, err := os.CreateTemp("", "code-server-*.tar.gz")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := devsyhttp.DownloadToFile(context.Background(), url, tmpPath); err != nil {
-		return err
-	}
-
-	file, err := os.Open(filepath.Clean(tmpPath))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	if err := extract.Extract(file, location, extract.StripLevels(1)); err != nil {
-		if rmErr := os.RemoveAll(location); rmErr != nil {
-			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
-		}
-		return fmt.Errorf("extract code-server: %w", err)
 	}
 	return nil
 }

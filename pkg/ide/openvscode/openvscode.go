@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -119,7 +118,9 @@ func (o *OpenVSCodeServer) Install() error {
 	vscode.InstallAPKRequirements()
 
 	// download tar
-	if err := downloadAndExtract(url, location); err != nil {
+	if err := ide.DownloadAndExtract(
+		context.Background(), url, location, extract.StripLevels(1),
+	); err != nil {
 		return err
 	}
 
@@ -133,33 +134,6 @@ func (o *OpenVSCodeServer) Install() error {
 		return fmt.Errorf("install settings: %w", err)
 	}
 
-	return nil
-}
-
-// downloadAndExtract downloads the openvscode-server tarball to a temporary file
-// (with retry and completeness verification) then extracts it under location.
-func downloadAndExtract(url, location string) error {
-	tmpFile, err := os.CreateTemp("", "openvscode-*.tar.gz")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := devsyhttp.DownloadToFile(context.Background(), url, tmpPath); err != nil {
-		return err
-	}
-
-	file, err := os.Open(filepath.Clean(tmpPath))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	if err := extract.Extract(file, location, extract.StripLevels(1)); err != nil {
-		return fmt.Errorf("extract vscode: %w", err)
-	}
 	return nil
 }
 
