@@ -1798,8 +1798,8 @@ func ensureAdminPassword(
 			return false, err
 		}
 	case admin.Spec.PasswordRef == nil ||
-			admin.Spec.PasswordRef.SecretName == "" ||
-			admin.Spec.PasswordRef.SecretNamespace == "":
+		admin.Spec.PasswordRef.SecretName == "" ||
+		admin.Spec.PasswordRef.SecretNamespace == "":
 		return false, nil
 	}
 
