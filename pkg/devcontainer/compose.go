@@ -81,6 +81,9 @@ type buildAndExtendParams struct {
 	// noCache disables the build cache during the compose build (--no-cache),
 	// set from CLIOptions.NoCache.
 	noCache bool
+	// frozenLockfile enforces that the devcontainer lockfile matches the
+	// resolved features, set from CLIOptions.FrozenLockfile.
+	frozenLockfile bool
 }
 
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
@@ -757,6 +760,7 @@ func (r *runner) buildComposeOverrideArgs(
 		featureSecretsFile:  start.options.FeatureSecretsFile,
 		pull:                start.options.Pull,
 		noCache:             start.options.NoCache,
+		frozenLockfile:      start.options.FrozenLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)

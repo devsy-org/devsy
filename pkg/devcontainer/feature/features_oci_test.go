@@ -29,10 +29,12 @@ func (s *OCIFeatureTestSuite) TestProcessOCIFeature_HappyPath() {
 		}
 	}()
 
-	result, err := processOCIFeature("ghcr.io/devcontainers/features/go:1")
+	res, err := processOCIFeature("ghcr.io/devcontainers/features/go:1", "", "")
 	s.Require().NoError(err)
-	s.DirExists(result)
-	s.FileExists(filepath.Join(result, "devcontainer-feature.json"))
+	s.DirExists(res.folder)
+	s.FileExists(filepath.Join(res.folder, "devcontainer-feature.json"))
+	s.Contains(res.resolved, "@sha256:")
+	s.Contains(res.integrity, "sha256:")
 }
 
 func (s *OCIFeatureTestSuite) TestFetchCollection_GHCR() {

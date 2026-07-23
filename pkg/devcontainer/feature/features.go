@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -126,28 +125,24 @@ func maskSecretOptions(feature *config.FeatureConfig, options []string) []string
 	return masked
 }
 
+// ProcessFeatureID resolves a feature identifier to a local folder containing
+// the extracted feature, without lockfile pinning. It is retained for callers
+// that only need the folder; lockfile-aware resolution goes through
+// featureProcessor.resolveFeatureSource.
 func ProcessFeatureID(
 	id string,
 	devContainerConfig *config.DevContainerConfig,
 	forceBuild bool,
 ) (string, error) {
-	if strings.HasPrefix(id, "https://") || strings.HasPrefix(id, "http://") {
-		log.Debugf("process feature: type=%s, id=%s", "url", id)
-		return processDirectTarFeature(
-			id,
-			config.GetDevsyCustomizations(devContainerConfig).FeatureDownloadHTTPHeaders,
-			forceBuild,
-		)
-	} else if strings.HasPrefix(id, "./") || strings.HasPrefix(id, "../") {
-		log.Debugf("process feature: type=%s, id=%s", "local", id)
-		return filepath.Abs(
-			path.Join(filepath.ToSlash(filepath.Dir(devContainerConfig.Origin)), id),
-		)
+	processor := &featureProcessor{
+		devContainerConfig: devContainerConfig,
+		forceBuild:         forceBuild,
 	}
-
-	// get oci feature
-	log.Debugf("process feature: type=%s, id=%s", "oci", id)
-	return processOCIFeature(id)
+	res, err := processor.resolveFeatureSource(id)
+	if err != nil {
+		return "", err
+	}
+	return res.folder, nil
 }
 
 func checkFeatureCache(id string) (string, bool) {
@@ -208,11 +203,14 @@ func PullFeatureToTemp(ref name.Reference, id string) (string, error) {
 
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 
-	annotations, err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder)
+	annotations, digest, err := pullAndExtractOCIFeature(
+		ref, id, featureFolder, featureExtractedFolder,
+	)
 	if err != nil {
 		return "", err
 	}
 
+	storeOCIDigest(featureFolder, digest)
 	if len(annotations) > 0 {
 		logOCIAnnotations(id, annotations)
 		saveAnnotations(featureFolder, annotations)
@@ -221,31 +219,81 @@ func PullFeatureToTemp(ref name.Reference, id string) (string, error) {
 	return featureExtractedFolder, nil
 }
 
-func processOCIFeature(id string) (string, error) {
+// ociResolution is the outcome of resolving an OCI feature: the extracted
+// folder, the canonical digest reference, and the manifest digest (integrity).
+type ociResolution struct {
+	folder    string
+	resolved  string
+	integrity string
+}
+
+// processOCIFeature resolves an OCI feature to a local folder and returns its
+// resolved digest reference and manifest digest (integrity). When pinnedResolved
+// is set the feature is fetched by that pinned reference; when pinnedIntegrity is
+// set the resolved manifest digest must match it.
+func processOCIFeature(id, pinnedResolved, pinnedIntegrity string) (*ociResolution, error) {
 	log.Debugf("processing OCI feature: featureId=%s", id)
 
-	if cached, ok := checkFeatureCache(id); ok {
-		return cached, nil
+	refID := id
+	if pinnedResolved != "" {
+		refID = pinnedResolved
 	}
 
-	featureFolder, err := getFeaturesTempFolder(id)
+	ref, err := name.ParseReference(refID)
 	if err != nil {
-		return "", fmt.Errorf("resolve feature cache dir: %w", err)
+		log.Debugf("failed to parse OCI reference: error=%v, featureId=%s", err, refID)
+		return nil, err
 	}
 
+	featureFolder, err := getFeaturesTempFolder(refID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve feature cache dir: %w", err)
+	}
+
+	var res *ociResolution
+	if cached, ok := checkFeatureCache(refID); ok {
+		res, err = resolveCachedOCIFeature(cached, featureFolder, ref)
+	} else {
+		res, err = pullOCIFeature(id, refID, ref, featureFolder)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err := verifyPinnedDigest(id, res.integrity, pinnedIntegrity); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// resolveCachedOCIFeature builds the resolution for an already-cached feature.
+func resolveCachedOCIFeature(
+	folder, featureFolder string, ref name.Reference,
+) (*ociResolution, error) {
+	digest, err := resolveCachedOCIDigest(featureFolder, ref)
+	if err != nil {
+		return nil, err
+	}
+	return &ociResolution{
+		folder:    folder,
+		resolved:  ociResolvedReference(ref, digest),
+		integrity: digest,
+	}, nil
+}
+
+// pullOCIFeature pulls, extracts, and records a not-yet-cached OCI feature.
+func pullOCIFeature(
+	id, refID string, ref name.Reference, featureFolder string,
+) (*ociResolution, error) {
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
-
-	ref, err := name.ParseReference(id)
+	annotations, digest, err := pullAndExtractOCIFeature(
+		ref, refID, featureFolder, featureExtractedFolder,
+	)
 	if err != nil {
-		log.Debugf("failed to parse OCI reference: error=%v, featureId=%s", err, id)
-		return "", err
+		return nil, err
 	}
 
-	annotations, err := pullAndExtractOCIFeature(ref, id, featureFolder, featureExtractedFolder)
-	if err != nil {
-		return "", err
-	}
-
+	storeOCIDigest(featureFolder, digest)
 	if len(annotations) > 0 {
 		logOCIAnnotations(id, annotations)
 		saveAnnotations(featureFolder, annotations)
@@ -256,7 +304,72 @@ func processOCIFeature(id string) (string, error) {
 		id,
 		featureExtractedFolder,
 	)
-	return featureExtractedFolder, nil
+	return &ociResolution{
+		folder:    featureExtractedFolder,
+		resolved:  ociResolvedReference(ref, digest),
+		integrity: digest,
+	}, nil
+}
+
+const ociDigestFileName = "oci-digest"
+
+// storeOCIDigest persists the resolved manifest digest next to the cached
+// tarball so it can be recovered on a cache hit without re-fetching.
+func storeOCIDigest(featureFolder, digest string) {
+	if digest == "" {
+		return
+	}
+	path := filepath.Join(featureFolder, ociDigestFileName)
+	if err := os.WriteFile(path, []byte(digest), 0o600); err != nil {
+		log.Debugf("failed to write OCI digest sidecar: %v", err)
+	}
+}
+
+func loadOCIDigest(featureFolder string) string {
+	path := filepath.Join(featureFolder, ociDigestFileName)
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// resolveCachedOCIDigest returns the manifest digest for a cached feature,
+// using the sidecar when present and otherwise fetching the manifest.
+func resolveCachedOCIDigest(featureFolder string, ref name.Reference) (string, error) {
+	if digest := loadOCIDigest(featureFolder); digest != "" {
+		return digest, nil
+	}
+	img, err := pullOCIImage(ref)
+	if err != nil {
+		return "", err
+	}
+	digest, err := img.Digest()
+	if err != nil {
+		return "", fmt.Errorf("read manifest digest: %w", err)
+	}
+	storeOCIDigest(featureFolder, digest.String())
+	return digest.String(), nil
+}
+
+// ociResolvedReference builds the canonical digest reference (repo@digest) used
+// as the lockfile "resolved" value.
+func ociResolvedReference(ref name.Reference, digest string) string {
+	if digest == "" {
+		return ref.String()
+	}
+	return ref.Context().Name() + "@" + digest
+}
+
+// verifyPinnedDigest fails when a locked digest does not match the resolved one.
+func verifyPinnedDigest(id, actual, pinned string) error {
+	if pinned == "" || actual == pinned {
+		return nil
+	}
+	return fmt.Errorf(
+		"integrity mismatch for feature %s: lockfile has %s but resolved %s",
+		id, pinned, actual,
+	)
 }
 
 const annotationsFileName = "annotations.json"
@@ -308,15 +421,20 @@ func LoadOCIAnnotations(featureFolder string) map[string]string {
 func pullAndExtractOCIFeature(
 	ref name.Reference,
 	id, featureFolder, destDir string,
-) (map[string]string, error) {
+) (map[string]string, string, error) {
 	img, err := pullOCIImage(ref)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	manifest, err := img.Manifest()
 	if err != nil {
-		return nil, fmt.Errorf("read manifest: %w", err)
+		return nil, "", fmt.Errorf("read manifest: %w", err)
+	}
+
+	digest, err := img.Digest()
+	if err != nil {
+		return nil, "", fmt.Errorf("read manifest digest: %w", err)
 	}
 
 	destFile := filepath.Join(featureFolder, "feature.tgz")
@@ -324,12 +442,12 @@ func pullAndExtractOCIFeature(
 	err = downloadLayer(img, id, destFile)
 	if err != nil {
 		log.Debugf("failed to download feature layer: error=%v, featureId=%s", err, id)
-		return nil, fmt.Errorf("download layer from %s: %w", registry, err)
+		return nil, "", fmt.Errorf("download layer from %s: %w", registry, err)
 	}
 
 	file, err := os.Open(filepath.Clean(destFile)) //nolint:gosec // path from internal resolution
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -338,10 +456,10 @@ func pullAndExtractOCIFeature(
 	if err != nil {
 		log.Debugf("failed to extract feature: error=%v, destination=%s", err, destDir)
 		_ = os.RemoveAll(destDir)
-		return nil, err
+		return nil, "", err
 	}
 
-	return manifest.Annotations, nil
+	return manifest.Annotations, digest.String(), nil
 }
 
 func validateImageManifest(img v1.Image) (*v1.Manifest, error) {
@@ -484,16 +602,20 @@ func extractTarball(downloadFile, dest string) error {
 	return nil
 }
 
+// processDirectTarFeature resolves an HTTP(S) tarball feature to a local folder
+// and returns its integrity digest (sha256:<hex> of the tarball). When
+// pinnedIntegrity is set the computed digest must match it.
 func processDirectTarFeature(
 	id string,
 	httpHeaders map[string]string,
 	forceDownload bool,
-) (string, error) {
+	pinnedIntegrity string,
+) (folder, integrity string, err error) {
 	log.Debugf("processing direct tar feature: featureId=%s, forceDownload=%v", id, forceDownload)
 
 	downloadBase := id[strings.LastIndex(id, "/"):]
 	if !directTarballRegEx.MatchString(downloadBase) {
-		return "", fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"expected tarball name to follow 'devcontainer-feature-<feature-id>.tgz' format.  Received %q ",
 			downloadBase,
 		)
@@ -501,7 +623,7 @@ func processDirectTarFeature(
 
 	featureFolder, err := getFeaturesTempFolder(id)
 	if err != nil {
-		return "", fmt.Errorf("resolve feature cache dir: %w", err)
+		return "", "", fmt.Errorf("resolve feature cache dir: %w", err)
 	}
 
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
@@ -511,7 +633,11 @@ func processDirectTarFeature(
 	if statErr == nil && !forceDownload {
 		if verifyCacheIntegrity(featureFolder, id) {
 			log.Debugf("direct tar feature already cached: folder=%s", featureExtractedFolder)
-			return featureExtractedFolder, nil
+			cachedIntegrity := tarballIntegrity(featureFolder)
+			if err := verifyPinnedDigest(id, cachedIntegrity, pinnedIntegrity); err != nil {
+				return "", "", err
+			}
+			return featureExtractedFolder, cachedIntegrity, nil
 		}
 		_ = os.RemoveAll(featureFolder)
 	}
@@ -521,14 +647,18 @@ func processDirectTarFeature(
 	err = downloadFeatureFromURL(id, downloadFile, httpHeaders)
 	if err != nil {
 		log.Debugf("failed to download feature tarball: error=%v, url=%s", err, id)
-		return "", err
+		return "", "", err
 	}
 
 	storeIntegrityHash(featureFolder, downloadFile, id)
+	downloadIntegrity := tarballIntegrity(featureFolder)
+	if err := verifyPinnedDigest(id, downloadIntegrity, pinnedIntegrity); err != nil {
+		return "", "", err
+	}
 
 	if err := extractTarball(downloadFile, featureExtractedFolder); err != nil {
 		log.Debugf("failed to extract tarball: error=%v, featureId=%s", err, id)
-		return "", err
+		return "", "", err
 	}
 
 	log.Infof(
@@ -536,7 +666,17 @@ func processDirectTarFeature(
 		id,
 		featureExtractedFolder,
 	)
-	return featureExtractedFolder, nil
+	return featureExtractedFolder, downloadIntegrity, nil
+}
+
+// tarballIntegrity returns the sha256:<hex> digest of a cached feature tarball,
+// or "" when it cannot be computed.
+func tarballIntegrity(featureFolder string) string {
+	h, err := hash.File(filepath.Join(featureFolder, "feature.tgz"))
+	if err != nil || h == "" {
+		return ""
+	}
+	return "sha256:" + h
 }
 
 func downloadFeatureFromURL(

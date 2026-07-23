@@ -70,6 +70,9 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 			"Default for updateRemoteUserUID when unset in the config (on, off)"),
 		flags.Bool(cmd.MountWorkspaceGitRoot, names.MountWorkspaceGitRoot, true,
 			"Mount the workspace git root as the workspace folder"),
+		flags.Bool(&cmd.FrozenLockfile, names.FrozenLockfile, false,
+			"Fail if devcontainer-lock.json is missing or does not match the resolved features "+
+				"instead of writing it (useful for CI)"),
 	)
 	flags.RegisterDevContainerModifierFlags(upCmd.Flags(), flags.DevContainerModifierFlags{
 		Image:               &cmd.DevContainerImage,

@@ -163,6 +163,7 @@ const (
 	Label                 = "label"
 	Output                = "output"
 	ExperimentalLockfile  = "experimental-lockfile"
+	FrozenLockfile        = "frozen-lockfile"
 	ImageName             = "image-name"
 	NoBuild               = "no-build"
 	ForceBuild            = "force-build"

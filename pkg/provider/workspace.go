@@ -291,6 +291,10 @@ type CLIOptions struct {
 	Labels               []string `json:"labels,omitempty"`
 	Output               string   `json:"output,omitempty"`
 	ExperimentalLockfile string   `json:"experimentalLockfile,omitempty"`
+	// FrozenLockfile enforces that the devcontainer-lock.json feature lockfile
+	// already exists and matches the resolved features; the build fails instead
+	// of creating or updating it.
+	FrozenLockfile bool `json:"frozenLockfile,omitempty"`
 	// ImageName specifies an alternative name for the built image.
 	ImageName string `json:"imageName,omitempty"`
 	// NoBuild prevents building; the command will fail if the image does not exist.

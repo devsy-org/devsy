@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
@@ -528,6 +529,67 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			out, err = f.DevsySSH(ctx, wsName, "node --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(out).To(gomega.MatchRegexp(`v\d+\.\d+\.\d+`))
+		},
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
+	)
+
+	ginkgo.It(
+		"writes a devcontainer lockfile and reuses it under --frozen-lockfile",
+		ginkgo.Label("up-features", "lockfile"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-lockfile",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			// First up: no lockfile exists yet, so it is generated with the
+			// resolved digest and integrity for the OCI feature.
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			// The config basename starts with a dot, so the lockfile is hidden.
+			lockContent, err := f.DevsySSH(ctx, wsName, "cat /workspaces/*/.devcontainer-lock.json")
+			framework.ExpectNoError(err)
+			gomega.Expect(lockContent).
+				To(gomega.ContainSubstring("ghcr.io/devcontainers/features/git:1"))
+			gomega.Expect(lockContent).To(gomega.ContainSubstring("\"resolved\""))
+			gomega.Expect(lockContent).To(gomega.ContainSubstring("@sha256:"))
+			gomega.Expect(lockContent).To(gomega.ContainSubstring("\"integrity\""))
+
+			// Second up with the frozen flag must succeed: the generated
+			// lockfile matches the resolved features exactly.
+			err = f.DevsyUpRecreate(ctx, tempDir, names.Flag(names.FrozenLockfile))
+			framework.ExpectNoError(err)
+		},
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
+	)
+
+	ginkgo.It(
+		"fails --frozen-lockfile when no lockfile exists",
+		ginkgo.Label("up-features", "lockfile"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-lockfile",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			// No lockfile is committed, so frozen mode must fail fast.
+			err = f.DevsyUp(ctx, tempDir, names.Flag(names.FrozenLockfile))
+			framework.ExpectError(err)
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
