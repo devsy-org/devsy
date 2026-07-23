@@ -66,7 +66,6 @@ func (cmd *VersionCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "getVersion",
 		Command: providerConfig.Exec.Proxy.Get.Version,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

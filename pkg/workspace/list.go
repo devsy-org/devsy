@@ -368,7 +368,6 @@ func listInstancesProxyProvider(
 
 	if err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listWorkspaces",
 		Command: providerConfig.Exec.Proxy.List.Workspaces,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

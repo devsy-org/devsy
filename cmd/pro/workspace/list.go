@@ -66,7 +66,6 @@ func (cmd *ListWorkspacesCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listWorkspaces",
 		Command: provider.Exec.Proxy.List.Workspaces,
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),

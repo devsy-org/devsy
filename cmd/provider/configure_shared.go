@@ -166,7 +166,6 @@ func initProvider(
 ) error {
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "init",
 		Command: provider.Exec.Init,
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),

@@ -72,7 +72,6 @@ func (cmd *ListTemplatesCmd) Run(
 	var buf bytes.Buffer
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listTemplates",
 		Command: provider.Exec.Proxy.List.Templates,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

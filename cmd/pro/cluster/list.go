@@ -72,7 +72,6 @@ func (cmd *ListClustersCmd) Run(
 	var buf bytes.Buffer
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listClusters",
 		Command: provider.Exec.Proxy.List.Clusters,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

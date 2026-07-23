@@ -75,7 +75,6 @@ func (cmd *UpdateWorkspaceCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "updateWorkspace",
 		Command: provider.Exec.Proxy.Update.Workspace,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

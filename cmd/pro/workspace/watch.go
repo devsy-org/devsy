@@ -94,7 +94,6 @@ func (cmd *WatchWorkspacesCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     cancelCtx,
-		Name:    "watchWorkspaces",
 		Command: providerConfig.Exec.Proxy.Watch.Workspaces,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,
