@@ -59,6 +59,8 @@ func NewReadCmd(f *flags.GlobalFlags) *cobra.Command {
 			"Include the merged configuration in the output"),
 	)
 
+	readConfigCmd.MarkFlagsOneRequired(names.WorkspaceFolder, names.ContainerID, names.IDLabel)
+
 	return readConfigCmd
 }
 
@@ -122,14 +124,6 @@ func (cmd *ReadCmd) resolve(ctx context.Context) (
 	string,
 	error,
 ) {
-	if cmd.ContainerID == "" && cmd.WorkspaceFolder == "" && len(cmd.IDLabels) == 0 {
-		return nil, "", fmt.Errorf(
-			"either %s, %s, or %s must be provided",
-			names.Flag(names.WorkspaceFolder),
-			names.Flag(names.ContainerID),
-			names.Flag(names.IDLabel),
-		)
-	}
 	if cmd.ContainerID != "" {
 		return cmd.resolveConfigFromContainer(ctx)
 	}

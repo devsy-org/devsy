@@ -56,7 +56,8 @@ func TestNewRunUserCommandsCmd_RequiresWorkspaceFolderOrContainerID(t *testing.T
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "either --workspace-folder or --container-id must be provided")
+	assert.Contains(t, err.Error(),
+		"at least one of the flags in the group [workspace-folder container-id] is required")
 }
 
 func TestNewRunUserCommandsCmd_ContainerIDWithoutConfigFails(t *testing.T) {
@@ -296,11 +297,6 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 			},
 			false,
 			"",
-		},
-		{
-			"neither provided",
-			&RunUserCommandsCmd{GlobalFlags: &flags.GlobalFlags{}},
-			true, "either --workspace-folder or --container-id",
 		},
 		{
 			"container-id without config or workspace",

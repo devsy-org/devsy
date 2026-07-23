@@ -120,6 +120,7 @@ func (cmd *BuildCmd) registerImageFlags(buildCmd *cobra.Command) {
 		cliflags.Bool(&cmd.Pull, names.Pull, false,
 			"Always attempt to pull a newer version of the base image when building"),
 	)
+	buildCmd.MarkFlagsMutuallyExclusive(names.Push, names.SkipPush)
 }
 
 func (cmd *BuildCmd) registerTestingFlags(buildCmd *cobra.Command) {
@@ -194,10 +195,6 @@ func (cmd *BuildCmd) prepareBuild(ctx context.Context) (*config.Config, error) {
 }
 
 func (cmd *BuildCmd) validateBuildFlags() error {
-	if cmd.PushDuringBuild && cmd.SkipPush {
-		return fmt.Errorf("cannot use %s and %s together",
-			names.Flag(names.Push), names.Flag(names.SkipPush))
-	}
 	if cmd.PushDuringBuild && cmd.Repository == "" {
 		return fmt.Errorf("%s requires %s to be specified",
 			names.Flag(names.Push), names.Flag(names.Repository))
