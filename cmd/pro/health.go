@@ -77,7 +77,6 @@ func (cmd *HealthCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "health",
 		Command: provider.Exec.Proxy.Health,
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),

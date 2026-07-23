@@ -75,7 +75,6 @@ func (cmd *CreateWorkspaceCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "createWorkspace",
 		Command: provider.Exec.Proxy.Create.Workspace,
 		Context: devsyConfig.DefaultContext,
 		Options: opts,

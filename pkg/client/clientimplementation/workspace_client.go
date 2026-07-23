@@ -28,8 +28,6 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const commandName = "command"
-
 func NewWorkspaceClient(
 	devsyConfig *config.Config,
 	prov *provider.ProviderConfig,
@@ -615,7 +613,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 
 	if err := s.runProviderCommand(ctx, command, io.MultiWriter(stdout, buf), buf); err != nil {
 		return client.StatusNotFound, fmt.Errorf(
-			"retrieve container status: %s%w",
+			"retrieve container status: %s: %w",
 			buf.String(),
 			err,
 		)
@@ -624,7 +622,7 @@ func (s *workspaceClient) getContainerStatus(ctx context.Context) (client.Status
 	parsed, err := client.ParseStatus(stdout.String())
 	if err != nil {
 		return client.StatusNotFound, fmt.Errorf(
-			"parse container status: %s%w",
+			"parse container status: %s: %w",
 			buf.String(),
 			err,
 		)
@@ -660,7 +658,6 @@ func (s *workspaceClient) runProviderCommand(
 ) error {
 	return RunCommandWithBinaries(CommandOptions{
 		Ctx:       ctx,
-		Name:      commandName,
 		Command:   s.config.Exec.Command,
 		Context:   s.workspace.Context,
 		Workspace: s.workspace,
@@ -728,7 +725,6 @@ func stripProviderOptions(info *provider.AgentWorkspaceInfo) {
 
 type CommandOptions struct {
 	Ctx       context.Context
-	Name      string
 	Command   types.StrArray
 	Context   string
 	Workspace *provider.Workspace

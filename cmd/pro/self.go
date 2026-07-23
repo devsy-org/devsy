@@ -62,7 +62,6 @@ func (cmd *SelfCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "getSelf",
 		Command: provider.Exec.Proxy.Get.Self,
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),

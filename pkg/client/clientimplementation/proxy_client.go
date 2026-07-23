@@ -64,7 +64,6 @@ type proxyExecutor struct {
 
 // execParams defines parameters for proxy command execution.
 type execParams struct {
-	name     string
 	command  types.StrArray
 	extraEnv map[string]string
 	stdin    io.Reader
@@ -76,7 +75,6 @@ type execParams struct {
 func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 	return RunCommandWithBinaries(CommandOptions{
 		Ctx:       ctx,
-		Name:      params.name,
 		Command:   params.command,
 		Context:   e.client.workspace.Context,
 		Workspace: e.client.workspace,
@@ -249,7 +247,6 @@ func (s *proxyClient) Create(
 	stderr io.Writer,
 ) error {
 	err := s.executor.execute(ctx, execParams{
-		name:    "createWorkspace",
 		command: s.config.Exec.Proxy.Create.Workspace,
 		stdin:   stdin,
 		stdout:  stdout,
@@ -263,7 +260,6 @@ func (s *proxyClient) Create(
 
 func (s *proxyClient) Ssh(ctx context.Context, opt client.SshOptions) error {
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		name:     "ssh",
 		command:  s.config.Exec.Proxy.Ssh,
 		extraEnv: EncodeOptions(opt, config.EnvFlagsSSH),
 		stdin:    opt.Stdin,
@@ -276,7 +272,6 @@ func (s *proxyClient) Stop(ctx context.Context, opt client.StopOptions) error {
 	defer s.m.Unlock()
 
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		name:    "stop",
 		command: s.config.Exec.Proxy.Stop,
 		stdout:  io.Discard,
 	})
@@ -294,7 +289,6 @@ func (s *proxyClient) Up(ctx context.Context, opt client.UpOptions) error {
 	}
 
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		name:     "up",
 		command:  s.config.Exec.Proxy.Up,
 		extraEnv: opts,
 		stdin:    opt.Stdin,
@@ -350,7 +344,6 @@ func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) erro
 	}
 
 	err := s.executor.executeWithJSONLog(ctx, execParams{
-		name:     "delete",
 		command:  s.config.Exec.Proxy.Delete,
 		extraEnv: EncodeOptions(opt, config.EnvFlagsDelete),
 		stdout:   io.Discard,
@@ -381,7 +374,6 @@ func (s *proxyClient) Status(
 	buf := &bytes.Buffer{}
 	err := RunCommandWithBinaries(CommandOptions{
 		Ctx:       ctx,
-		Name:      "status",
 		Command:   s.config.Exec.Proxy.Status,
 		Context:   s.workspace.Context,
 		Workspace: s.workspace,
@@ -422,7 +414,6 @@ func (s *proxyClient) updateInstance(ctx context.Context) error {
 	}
 
 	return s.executor.execute(ctx, execParams{
-		name:    "updateWorkspace",
 		command: s.config.Exec.Proxy.Update.Workspace,
 		stdin:   os.Stdin,
 		stdout:  os.Stdout,

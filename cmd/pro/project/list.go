@@ -65,7 +65,6 @@ func (cmd *ListProjectsCmd) Run(
 
 	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
-		Name:    "listProjects",
 		Command: provider.Exec.Proxy.List.Projects,
 		Context: devsyConfig.DefaultContext,
 		Options: devsyConfig.ProviderOptions(provider.Name),

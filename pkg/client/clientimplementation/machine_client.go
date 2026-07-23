@@ -78,7 +78,6 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 
 	err := RunCommandWithBinaries(CommandOptions{
 		Ctx:      ctx,
-		Name:     cfg.name,
 		Command:  cfg.command,
 		Context:  e.client.machine.Context,
 		Machine:  e.client.machine,
