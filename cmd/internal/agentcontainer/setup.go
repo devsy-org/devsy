@@ -121,8 +121,8 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	)
 	_ = setupContainerCmd.MarkFlagRequired(names.SetupInfo)
 
-	flags.BindEnv(setupContainerCmd.Flags(), names.AccessKey)
-	flags.BindEnv(setupContainerCmd.Flags(), names.PlatformHost)
+	cliflags.BindEnv(setupContainerCmd.Flags(), names.AccessKey)
+	cliflags.BindEnv(setupContainerCmd.Flags(), names.PlatformHost)
 
 	return setupContainerCmd
 }
