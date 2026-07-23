@@ -73,6 +73,9 @@ func (t *RetryTransport) retryable(resp *http.Response, err error) bool {
 
 func (t *RetryTransport) backoff(attempt int) time.Duration {
 	delay := t.cfg.BaseDelay << (attempt - 1)
+	if delay <= 0 { // shift overflow
+		return t.cfg.MaxDelay
+	}
 	return minDuration(delay, t.cfg.MaxDelay)
 }
 

@@ -153,6 +153,15 @@ func TestRetryTransportHonorsRetryAfterAndContext(t *testing.T) {
 	}
 }
 
+func TestRetryTransportBackoffOverflowClampsToMax(t *testing.T) {
+	rt := &RetryTransport{
+		cfg: RetryConfig{MaxAttempts: 100, BaseDelay: time.Second, MaxDelay: 30 * time.Second},
+	}
+	if got := rt.backoff(64); got != rt.cfg.MaxDelay {
+		t.Fatalf("expected overflowed backoff to clamp to MaxDelay, got %v", got)
+	}
+}
+
 func TestNewRetryTransportDisabledReturnsBase(t *testing.T) {
 	base := http.DefaultTransport
 	if got := NewRetryTransport(base, RetryConfig{MaxAttempts: 1}); got != base {

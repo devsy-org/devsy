@@ -100,7 +100,10 @@ func swapIntoPlace(stagingDir, destDir string) error {
 		_ = os.RemoveAll(stagingDir)
 		if hasBackup {
 			if restoreErr := os.Rename(backupDir, destDir); restoreErr != nil {
-				log.Warnf("restore install dir: path=%s err=%v", destDir, restoreErr)
+				return fmt.Errorf(
+					"install to %s failed (%w); restore failed (%v); prior install at %s",
+					destDir, err, restoreErr, backupDir,
+				)
 			}
 		}
 		return fmt.Errorf("install to %s: %w", destDir, err)
