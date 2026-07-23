@@ -80,6 +80,54 @@ func TestDownloadToFileTruncatedRetriesThenReportsClearError(t *testing.T) {
 	}
 }
 
+func TestDownloadToFileLeavesNoPartialFileOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("short"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	if err := DownloadToFile(context.Background(), srv.URL, dest, fastBackoff()); err == nil {
+		t.Fatal("expected error for repeated truncated transfers")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("expected no partial file at destination, stat err = %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no leftover temp files, found %d entries", len(entries))
+	}
+}
+
+func TestDownloadToFilePreservesExistingFileOnFailure(t *testing.T) {
+	const existing = "previous-good-content"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("short"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	if err := os.WriteFile(dest, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DownloadToFile(context.Background(), srv.URL, dest, fastBackoff()); err == nil {
+		t.Fatal("expected error for repeated truncated transfers")
+	}
+	got, err := os.ReadFile(dest) // #nosec G304 -- test-controlled temp path
+	if err != nil {
+		t.Fatalf("expected existing file preserved, got %v", err)
+	}
+	if string(got) != existing {
+		t.Fatalf("existing file was clobbered, got %q", got)
+	}
+}
+
 func TestDownloadToFileRecoversAfterTransientFailure(t *testing.T) {
 	const body = "recovered-payload"
 	var calls int

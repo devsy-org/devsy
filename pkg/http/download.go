@@ -141,26 +141,52 @@ func copyToFile(resp *http.Response, cfg *downloadConfig, destPath, url string) 
 		return nil
 	}
 
+	destPath = filepath.Clean(destPath)
+	destDir := filepath.Dir(destPath)
 	// #nosec G301 -- match existing download destinations; contents are public artifacts.
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return &permanentError{fmt.Errorf("create download folder: %w", err)}
 	}
 
-	file, err := os.OpenFile(filepath.Clean(destPath), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, cfg.mode)
+	// Download to a temporary file in the destination directory and rename it
+	// into place only on success, so a failed transfer never leaves a partial
+	// file at destPath (which callers may mistake for a complete download).
+	tmp, err := os.CreateTemp(destDir, "."+filepath.Base(destPath)+".*.tmp")
 	if err != nil {
 		return &permanentError{fmt.Errorf("create download file: %w", err)}
 	}
-	defer func() { _ = file.Close() }()
+	tmpPath := tmp.Name()
+	committed := false
+	defer func() {
+		_ = tmp.Close()
+		if !committed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(cfg.mode); err != nil {
+		return &permanentError{fmt.Errorf("set download file mode: %w", err)}
+	}
 
 	src := io.Reader(resp.Body)
 	if cfg.wrap != nil {
 		src = cfg.wrap(resp.Body, resp.ContentLength)
 	}
-	written, err := io.Copy(file, src)
+	written, err := io.Copy(tmp, src)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
 	}
-	return verifyContentLength(resp, written, url)
+	if err := verifyContentLength(resp, written, url); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("download %s: %w", url, err)
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return fmt.Errorf("download %s: %w", url, err)
+	}
+	committed = true
+	return nil
 }
 
 // alreadyDownloaded reports whether destPath already holds the full download,

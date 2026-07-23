@@ -36,11 +36,60 @@ func DownloadAndExtract(
 	}
 	defer func() { _ = file.Close() }()
 
-	if err := extract.Extract(file, destDir, opts...); err != nil {
-		if rmErr := os.RemoveAll(destDir); rmErr != nil {
-			log.Warnf("cleanup partial install: path=%s err=%v", destDir, rmErr)
+	// Extract into a sibling staging directory and only swap it into destDir on
+	// success, so a failed extraction never destroys a pre-existing install.
+	if err := os.MkdirAll(filepath.Dir(destDir), 0o755); err != nil {
+		return fmt.Errorf("create install parent: %w", err)
+	}
+	stagingDir, err := os.MkdirTemp(filepath.Dir(destDir), "."+filepath.Base(destDir)+".staging.*")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	swapped := false
+	defer func() {
+		if !swapped {
+			if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
+				log.Warnf("cleanup staging dir: path=%s err=%v", stagingDir, rmErr)
+			}
 		}
+	}()
+
+	if err := extract.Extract(file, stagingDir, opts...); err != nil {
 		return fmt.Errorf("extract %s: %w", url, err)
+	}
+
+	return swapIntoPlace(stagingDir, destDir, &swapped)
+}
+
+// swapIntoPlace replaces destDir with stagingDir, preserving the previous
+// contents until the swap succeeds so a rename failure cannot leave destDir
+// missing.
+func swapIntoPlace(stagingDir, destDir string, swapped *bool) error {
+	backupDir := stagingDir + ".old"
+	hasBackup := false
+	if _, err := os.Stat(destDir); err == nil {
+		if err := os.Rename(destDir, backupDir); err != nil {
+			return fmt.Errorf("stage existing install: %w", err)
+		}
+		hasBackup = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect install dir: %w", err)
+	}
+
+	if err := os.Rename(stagingDir, destDir); err != nil {
+		if hasBackup {
+			if restoreErr := os.Rename(backupDir, destDir); restoreErr != nil {
+				log.Warnf("restore install dir: path=%s err=%v", destDir, restoreErr)
+			}
+		}
+		return fmt.Errorf("install to %s: %w", destDir, err)
+	}
+	*swapped = true
+
+	if hasBackup {
+		if rmErr := os.RemoveAll(backupDir); rmErr != nil {
+			log.Warnf("cleanup old install: path=%s err=%v", backupDir, rmErr)
+		}
 	}
 	return nil
 }

@@ -79,3 +79,58 @@ func TestDownloadAndExtractCleansUpOnExtractFailure(t *testing.T) {
 		t.Fatalf("expected dest removed after extract failure, stat err = %v", err)
 	}
 }
+
+func TestDownloadAndExtractPreservesExistingInstallOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not-a-tarball"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "install")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(dest, "existing")
+	if err := os.WriteFile(existing, []byte("keep-me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DownloadAndExtract(context.Background(), srv.URL, dest); err == nil {
+		t.Fatal("expected extract failure")
+	}
+
+	got, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatalf("expected pre-existing install to remain intact: %v", err)
+	}
+	if string(got) != "keep-me" {
+		t.Fatalf("pre-existing content changed, got %q", got)
+	}
+}
+
+func TestDownloadAndExtractReplacesExistingInstallOnSuccess(t *testing.T) {
+	archive := buildTarGz(t, "code", "#!/bin/sh\necho code\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "install")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dest, "stale")
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DownloadAndExtract(context.Background(), srv.URL, dest); err != nil {
+		t.Fatalf("DownloadAndExtract: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "code")); err != nil {
+		t.Fatalf("expected extracted file: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("expected stale file replaced, stat err = %v", err)
+	}
+}
