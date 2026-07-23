@@ -1,13 +1,11 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/go:latest",
+  "image": "mcr.microsoft.com/devcontainers/go:1.26",
   "features": {
     "ghcr.io/devcontainers-extra/features/go-task:1": {},
     "ghcr.io/devcontainers-extra/features/prek:1": {},
     "ghcr.io/devcontainers/features/node:2": {
       "version": "22"
     },
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.12"
-    }
+    "ghcr.io/devcontainers-extra/features/uv:1": {}
   }
 }
