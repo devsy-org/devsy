@@ -59,6 +59,14 @@ func TestBuildCmd_NoBuildFlagParsesValue(t *testing.T) {
 	assert.True(t, val)
 }
 
+func TestBuildCmd_PushAndSkipPushMutuallyExclusive(t *testing.T) {
+	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	buildCmd.SetArgs([]string{"--" + names.Push, "--" + names.SkipPush})
+	err := buildCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "none of the others can be")
+}
+
 func TestBuildCmd_NoCacheDefaultFalse(t *testing.T) {
 	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
 	err := buildCmd.ParseFlags([]string{})
