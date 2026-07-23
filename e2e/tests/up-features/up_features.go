@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
@@ -631,6 +632,76 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			// pin was silently ignored.
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectError(err)
+		},
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
+	)
+
+	ginkgo.It(
+		"records the exact tarball digest in the lockfile",
+		ginkgo.Label("up-features", "lockfile"),
+		func(ctx context.Context) {
+			server := ghttp.NewServer()
+			ginkgo.DeferCleanup(server.Close)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-http-headers",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			featureArchiveFilePath := path.Join(tempDir, "devcontainer-feature-hello.tgz")
+			featureFiles := []string{
+				path.Join(tempDir, "devcontainer-feature.json"),
+				path.Join(tempDir, "install.sh"),
+			}
+			framework.ExpectNoError(createTarGzArchive(featureArchiveFilePath, featureFiles))
+
+			devContainerFile := filepath.Clean(path.Join(tempDir, ".devcontainer.json"))
+			devContainerFileBuf, err := os.ReadFile(devContainerFile)
+			framework.ExpectNoError(err)
+			output := strings.ReplaceAll(string(devContainerFileBuf), "#{server_url}", server.URL())
+			// #nosec G306 -- test file, permissive mode is acceptable.
+			err = os.WriteFile(path.Join(tempDir, ".devcontainer.json"), []byte(output), 0o644)
+			framework.ExpectNoError(err)
+
+			respHeader := http.Header{}
+			respHeader.Set(
+				"Content-Disposition",
+				"attachment; filename=devcontainer-feature-hello.tgz",
+			)
+			featureArchiveFileBuf, err := os.ReadFile(filepath.Clean(featureArchiveFilePath))
+			framework.ExpectNoError(err)
+			server.AppendHandlers(ghttp.CombineHandlers(
+				ghttp.VerifyRequest("GET", "/devcontainer-feature-hello.tgz"),
+				ghttp.RespondWith(http.StatusOK, featureArchiveFileBuf, respHeader),
+			))
+
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			_ = f.DevsyProviderDelete(ctx, "docker")
+			framework.ExpectNoError(f.DevsyProviderAdd(ctx, "docker"))
+			framework.ExpectNoError(f.DevsyProviderUse(ctx, "docker"))
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+			framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+			lockContent, err := f.DevsySSH(ctx, wsName, "cat /workspaces/*/.devcontainer-lock.json")
+			framework.ExpectNoError(err)
+
+			var lock feature.Lockfile
+			framework.ExpectNoError(json.Unmarshal([]byte(strings.TrimSpace(lockContent)), &lock))
+
+			// The lockfile is keyed by the tarball URL, and the integrity must be
+			// the exact sha256 of the bytes devsy downloaded — computed here with
+			// the same helper devsy uses internally, so the value cannot drift.
+			featureURL := server.URL() + "/devcontainer-feature-hello.tgz"
+			digestHex, err := hash.File(featureArchiveFilePath)
+			framework.ExpectNoError(err)
+
+			gomega.Expect(lock.Features).To(gomega.HaveKey(featureURL))
+			entry := lock.Features[featureURL]
+			gomega.Expect(entry.Resolved).To(gomega.Equal(featureURL))
+			gomega.Expect(entry.Integrity).To(gomega.Equal("sha256:" + digestHex))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
