@@ -137,6 +137,8 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 		),
 	)
 
+	runCmd.MarkFlagsOneRequired(names.WorkspaceFolder, names.ContainerID)
+
 	return runCmd
 }
 
@@ -180,13 +182,6 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 }
 
 func (cmd *RunUserCommandsCmd) validate() error {
-	if cmd.WorkspaceFolder == "" && cmd.ContainerID == "" {
-		return fmt.Errorf(
-			"either %s or %s must be provided",
-			names.Flag(names.WorkspaceFolder),
-			names.Flag(names.ContainerID),
-		)
-	}
 	if cmd.ContainerID != "" && cmd.WorkspaceFolder == "" && cmd.Config == "" {
 		return fmt.Errorf(
 			"--config is required when --container-id is used without --workspace-folder",
