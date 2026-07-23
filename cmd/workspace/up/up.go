@@ -148,6 +148,7 @@ func NewUpCmd(f *flags.GlobalFlags) *cobra.Command {
 		RunE:  cmd.execute,
 	}
 	cmd.registerFlags(upCmd)
+	upCmd.MarkFlagsMutuallyExclusive(names.NoLockfile, names.FrozenLockfile)
 	return upCmd
 }
 

@@ -612,6 +612,32 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	)
 
 	ginkgo.It(
+		"does not write a lockfile with --no-lockfile",
+		ginkgo.Label("up-features", "lockfile"),
+		func(ctx context.Context) {
+			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir(
+				"tests/up-features/testdata/docker-features-lockfile",
+			)
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			wsName := filepath.Base(tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
+
+			err = f.DevsyUp(ctx, tempDir, names.Flag(names.NoLockfile))
+			framework.ExpectNoError(err)
+
+			// With --no-lockfile the lockfile must not be created, so cat fails.
+			_, err = f.DevsySSH(ctx, wsName, "cat /workspaces/*/.devcontainer-lock.json")
+			framework.ExpectError(err)
+		},
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
+	)
+
+	ginkgo.It(
 		"honors a committed lockfile and rejects a bogus pinned digest",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {

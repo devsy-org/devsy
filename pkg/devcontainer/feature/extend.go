@@ -62,6 +62,8 @@ type ExtendedBuildParams struct {
 	// FrozenLockfile enforces that the devcontainer lockfile exists and matches
 	// the resolved features; the build fails instead of writing the lockfile.
 	FrozenLockfile bool
+	// NoLockfile disables the lockfile entirely: no pinning and no writing.
+	NoLockfile bool
 }
 
 func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, error) {
@@ -72,7 +74,8 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	forceBuild := params.ForceBuild
 	secretOpts := params.SecretOpts
 	features, err := fetchFeatures(
-		devContainerConfig.Config, forceBuild, secretOpts, true, params.FrozenLockfile,
+		devContainerConfig.Config, forceBuild, secretOpts,
+		lockfileMode{write: true, frozen: params.FrozenLockfile, disabled: params.NoLockfile},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
@@ -293,7 +296,7 @@ func usersFromMetadata(meta *config.ImageMetadataConfig) (string, string) {
 func ResolveFeatureOrder(
 	devContainerConfig *config.DevContainerConfig,
 ) ([]*config.FeatureSet, error) {
-	return fetchFeatures(devContainerConfig, false, nil, false, false)
+	return fetchFeatures(devContainerConfig, false, nil, lockfileMode{})
 }
 
 func applyUserFallback(user, composeServiceUser, imageUser string) string {
@@ -310,10 +313,12 @@ func fetchFeatures(
 	devContainerConfig *config.DevContainerConfig,
 	forceBuild bool,
 	secretOpts *SecretOptions,
-	lockWrite bool,
-	lockFrozen bool,
+	lockMode lockfileMode,
 ) ([]*config.FeatureSet, error) {
-	lock := newLockfileState(devContainerConfig)
+	var lock *lockfileState
+	if !lockMode.disabled {
+		lock = newLockfileState(devContainerConfig)
+	}
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
 		forceBuild:         forceBuild,
@@ -321,7 +326,7 @@ func fetchFeatures(
 		lock:               lock,
 	}
 
-	if lockWrite && lockFrozen {
+	if lockMode.write && lockMode.frozen {
 		if err := lock.checkFrozenPrecondition(devContainerConfig); err != nil {
 			return nil, err
 		}
@@ -347,7 +352,7 @@ func fetchFeatures(
 		return nil, fmt.Errorf("failed to get sorted feature sets: %w", err)
 	}
 
-	if err := lock.commit(devContainerConfig, lockWrite, lockFrozen); err != nil {
+	if err := lock.commit(devContainerConfig, lockMode); err != nil {
 		return nil, err
 	}
 

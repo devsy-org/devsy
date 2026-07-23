@@ -84,6 +84,9 @@ type buildAndExtendParams struct {
 	// frozenLockfile enforces that the devcontainer lockfile matches the
 	// resolved features, set from CLIOptions.FrozenLockfile.
 	frozenLockfile bool
+	// noLockfile disables the devcontainer lockfile entirely, set from
+	// CLIOptions.NoLockfile.
+	noLockfile bool
 }
 
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
@@ -761,6 +764,7 @@ func (r *runner) buildComposeOverrideArgs(
 		pull:                start.options.Pull,
 		noCache:             start.options.NoCache,
 		frozenLockfile:      start.options.FrozenLockfile,
+		noLockfile:          start.options.NoLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)

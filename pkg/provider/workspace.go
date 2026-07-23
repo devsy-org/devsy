@@ -295,6 +295,9 @@ type CLIOptions struct {
 	// already exists and matches the resolved features; the build fails instead
 	// of creating or updating it.
 	FrozenLockfile bool `json:"frozenLockfile,omitempty"`
+	// NoLockfile disables devcontainer-lock.json generation and verification
+	// entirely. Mutually exclusive with FrozenLockfile.
+	NoLockfile bool `json:"noLockfile,omitempty"`
 	// ImageName specifies an alternative name for the built image.
 	ImageName string `json:"imageName,omitempty"`
 	// NoBuild prevents building; the command will fail if the image does not exist.

@@ -73,6 +73,8 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 		flags.Bool(&cmd.FrozenLockfile, names.FrozenLockfile, false,
 			"Fail if devcontainer-lock.json is missing or does not match the resolved features "+
 				"instead of writing it (useful for CI)"),
+		flags.Bool(&cmd.NoLockfile, names.NoLockfile, false,
+			"Disable devcontainer-lock.json generation and verification"),
 	)
 	flags.RegisterDevContainerModifierFlags(upCmd.Flags(), flags.DevContainerModifierFlags{
 		Image:               &cmd.DevContainerImage,

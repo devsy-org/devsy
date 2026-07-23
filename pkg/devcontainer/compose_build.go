@@ -231,6 +231,7 @@ func (r *runner) prepareExtendedComposeBuild(
 			Prompter:    &feature.TerminalSecretPrompter{},
 		},
 		FrozenLockfile: params.frozenLockfile,
+		NoLockfile:     params.noLockfile,
 	})
 	if err != nil {
 		return preparedComposeBuild{}, err

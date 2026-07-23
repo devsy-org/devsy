@@ -150,6 +150,18 @@ func normalizeLockfileJSON(data []byte) []byte {
 	return out
 }
 
+// lockfileMode controls how the feature lockfile participates in a fetch.
+type lockfileMode struct {
+	// write creates or updates the lockfile after resolution.
+	write bool
+	// frozen fails the build instead of writing when the lockfile is missing or
+	// would change.
+	frozen bool
+	// disabled turns the lockfile off entirely — no load, no pinning, no write
+	// (the --no-lockfile opt-out).
+	disabled bool
+}
+
 // lockfileState carries the lockfile loaded for pinning and collects the
 // entries resolved during a fetch so they can be written afterwards.
 type lockfileState struct {
@@ -209,8 +221,8 @@ func (l *lockfileState) checkFrozenPrecondition(cfg *config.DevContainerConfig) 
 // It regenerates the lockfile fully from the freshly resolved entries so that
 // removed features drop out. To avoid creating spurious empty lockfiles, it
 // skips writing when there are no entries and no lockfile already exists.
-func (l *lockfileState) commit(cfg *config.DevContainerConfig, write, frozen bool) error {
-	if l == nil || !write {
+func (l *lockfileState) commit(cfg *config.DevContainerConfig, mode lockfileMode) error {
+	if l == nil || !mode.write {
 		return nil
 	}
 
@@ -223,7 +235,7 @@ func (l *lockfileState) commit(cfg *config.DevContainerConfig, write, frozen boo
 		return nil
 	}
 
-	return WriteLockfile(path, &Lockfile{Features: l.entries}, frozen)
+	return WriteLockfile(path, &Lockfile{Features: l.entries}, mode.frozen)
 }
 
 func fileExists(path string) bool {

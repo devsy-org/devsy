@@ -164,6 +164,7 @@ const (
 	Output                = "output"
 	ExperimentalLockfile  = "experimental-lockfile"
 	FrozenLockfile        = "frozen-lockfile"
+	NoLockfile            = "no-lockfile"
 	ImageName             = "image-name"
 	NoBuild               = "no-build"
 	ForceBuild            = "force-build"

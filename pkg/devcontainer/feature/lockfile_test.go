@@ -244,7 +244,7 @@ func TestLockfileState_CommitSkipsEmptyWhenNoFile(t *testing.T) {
 	cfg.Origin = filepath.Join(dir, "devcontainer.json")
 
 	state := &lockfileState{entries: map[string]LockedFeature{}}
-	if err := state.commit(cfg, true, false); err != nil {
+	if err := state.commit(cfg, lockfileMode{write: true}); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 	if _, err := os.Stat(LockfilePath(cfg.Origin)); err == nil {
@@ -260,7 +260,7 @@ func TestLockfileState_CommitWritesEntries(t *testing.T) {
 	state := &lockfileState{entries: map[string]LockedFeature{
 		lockTestFeatureA: {Version: lockTestVersion, Integrity: lockTestShaA},
 	}}
-	if err := state.commit(cfg, true, false); err != nil {
+	if err := state.commit(cfg, lockfileMode{write: true}); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 
@@ -281,11 +281,26 @@ func TestLockfileState_CommitReadOnlySkipsWrite(t *testing.T) {
 	state := &lockfileState{entries: map[string]LockedFeature{
 		lockTestFeatureA: {Integrity: lockTestShaA},
 	}}
-	if err := state.commit(cfg, false, false); err != nil {
+	if err := state.commit(cfg, lockfileMode{}); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 	if _, err := os.Stat(LockfilePath(cfg.Origin)); err == nil {
 		t.Error("read-only commit must not write the lockfile")
+	}
+}
+
+func TestLockfileState_CommitDisabledIsNoOp(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.DevContainerConfig{}
+	cfg.Origin = filepath.Join(dir, "devcontainer.json")
+
+	// --no-lockfile yields a nil state; commit must never write.
+	var state *lockfileState
+	if err := state.commit(cfg, lockfileMode{write: true, disabled: true}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if _, err := os.Stat(LockfilePath(cfg.Origin)); err == nil {
+		t.Error("disabled lockfile must not write a file")
 	}
 }
 

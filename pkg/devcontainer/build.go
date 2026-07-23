@@ -79,6 +79,7 @@ func (r *runner) extendImage(
 		ForceBuild:         options.ForceBuild,
 		SecretOpts:         featureSecretOpts(options),
 		FrozenLockfile:     options.FrozenLockfile,
+		NoLockfile:         options.NoLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
@@ -186,6 +187,7 @@ func (r *runner) buildAndExtendImage(
 		ForceBuild:         options.ForceBuild,
 		SecretOpts:         featureSecretOpts(options),
 		FrozenLockfile:     options.FrozenLockfile,
+		NoLockfile:         options.NoLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get extended build info: %w", err)
@@ -557,6 +559,7 @@ func (r *runner) buildDevImageCompose(
 		pull:                options.Pull,
 		noCache:             options.NoCache,
 		frozenLockfile:      options.FrozenLockfile,
+		noLockfile:          options.NoLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)
