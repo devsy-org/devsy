@@ -1,13 +1,125 @@
 package vscodeweb
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
+
+// buildCodeTarGz returns a gzipped tar holding a single `code` binary at its
+// root, matching the layout of the real VS Code CLI tarball.
+func buildCodeTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	content := []byte("#!/bin/sh\necho code\n")
+	if err := tw.WriteHeader(
+		&tar.Header{Name: "code", Mode: 0o755, Size: int64(len(content))},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestDownloadAndExtractSuccess(t *testing.T) {
+	archive := buildCodeTarGz(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	defer srv.Close()
+
+	location := t.TempDir()
+	if err := downloadAndExtract(srv.URL, location); err != nil {
+		t.Fatalf("downloadAndExtract: %v", err)
+	}
+	if _, err := os.Stat(binaryPath(location)); err != nil {
+		t.Fatalf("expected extracted code binary: %v", err)
+	}
+}
+
+func TestDownloadToFileTruncatedTransferReportsDownloadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Declare more bytes than are written, then return so the connection
+		// closes early — the client sees a truncated body.
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("short"))
+	}))
+	defer srv.Close()
+
+	err := downloadToFile(srv.URL, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected error for truncated download")
+	}
+	if !strings.Contains(err.Error(), "download VS Code CLI") {
+		t.Fatalf("expected a download-attributed error, got %q", err)
+	}
+	if strings.Contains(err.Error(), "extract") {
+		t.Fatalf("truncation must not be reported as an extract failure: %q", err)
+	}
+}
+
+func TestDownloadToFileErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	err := downloadToFile(srv.URL, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("expected a 404-attributed error, got %v", err)
+	}
+}
+
+func TestDownloadAndExtractWithRetryRecoversFromTransientFailure(t *testing.T) {
+	orig := vscodeCLIBackoff
+	vscodeCLIBackoff = wait.Backoff{Duration: time.Millisecond, Factor: 1.0, Steps: 3}
+	defer func() { vscodeCLIBackoff = orig }()
+
+	archive := buildCodeTarGz(t)
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Content-Length", "1000")
+			_, _ = w.Write([]byte("short"))
+			return
+		}
+		_, _ = w.Write(archive)
+	}))
+	defer srv.Close()
+
+	location := t.TempDir()
+	if err := downloadAndExtractWithRetry(srv.URL, location); err != nil {
+		t.Fatalf("expected retry to recover, got %v", err)
+	}
+	if calls < 2 {
+		t.Fatalf("expected at least 2 attempts, got %d", calls)
+	}
+	if _, err := os.Stat(filepath.Join(location, "code")); err != nil {
+		t.Fatalf("expected extracted binary after retry: %v", err)
+	}
+}
 
 func TestGetReleaseURLDefaultVersion(t *testing.T) {
 	v := NewVSCodeWeb(ServerOptions{})

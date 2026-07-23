@@ -2,12 +2,14 @@ package vscodeweb
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // Release URL format for the standalone VS Code CLI. The CLI tarball contains a
@@ -126,7 +129,7 @@ func (v *VSCodeWeb) Install() error {
 	if !v.isInstalled(location, releaseURL) {
 		vscode.InstallAPKRequirements()
 
-		if err := downloadAndExtract(releaseURL, location); err != nil {
+		if err := downloadAndExtractWithRetry(releaseURL, location); err != nil {
 			return err
 		}
 
@@ -296,14 +299,75 @@ func (v *VSCodeWeb) installSettings() error {
 	return nil
 }
 
-// downloadAndExtract fetches the CLI tarball at url and extracts it under
-// location. The VS Code CLI tarball holds a single `code` binary at its root,
-// so no strip levels are applied. Cleans up a partial extraction on failure so
-// retries start fresh.
+var vscodeCLIBackoff = wait.Backoff{
+	Duration: 1 * time.Second,
+	Factor:   2.0,
+	Steps:    3,
+}
+
+// downloadAndExtractWithRetry retries the CLI download and extraction, backing
+// off between attempts. Failures here are dominated by transient transfer
+// truncation (the CLI is served from a CDN), so a single hiccup should not fail
+// the whole up. downloadAndExtract cleans up a partial install on failure, so
+// each attempt starts fresh.
+func downloadAndExtractWithRetry(url, location string) error {
+	var lastErr error
+	err := wait.ExponentialBackoff(vscodeCLIBackoff, func() (bool, error) {
+		lastErr = downloadAndExtract(url, location)
+		if lastErr == nil {
+			return true, nil
+		}
+		log.Warnf("VS Code CLI install failed, retrying: %v", lastErr)
+		return false, nil
+	})
+	if wait.Interrupted(err) {
+		return lastErr
+	}
+	return err
+}
+
+// downloadAndExtract downloads the CLI tarball at url to a temporary file,
+// verifies the transfer completed, then extracts it under location. Downloading
+// to a file first (rather than streaming the response body into the extractor)
+// lets a truncated transfer surface as a clear, retryable error instead of an
+// opaque decompression EOF. The VS Code CLI tarball holds a single `code`
+// binary at its root, so no strip levels are applied. Cleans up a partial
+// extraction on failure so retries start fresh.
 func downloadAndExtract(url, location string) error {
+	tmpFile, err := os.CreateTemp("", "vscode-cli-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temp file for VS Code CLI: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err := downloadToFile(url, tmpFile); err != nil {
+		return err
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind VS Code CLI download: %w", err)
+	}
+
+	if err := extract.Extract(tmpFile, location); err != nil {
+		if rmErr := os.RemoveAll(location); rmErr != nil {
+			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
+		}
+		return fmt.Errorf("extract VS Code CLI (archive may be corrupt): %w", err)
+	}
+	return nil
+}
+
+// downloadToFile downloads url into dst, rejecting error statuses and short
+// transfers so an incomplete download is reported clearly rather than as a
+// later decompression failure.
+func downloadToFile(url string, dst io.Writer) error {
 	resp, err := devsyhttp.GetHTTPClient().Get(url) // #nosec G107 -- URL comes from VersionOption.
 	if err != nil {
-		return err
+		return fmt.Errorf("download VS Code CLI: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -311,11 +375,15 @@ func downloadAndExtract(url, location string) error {
 		return fmt.Errorf("download VS Code CLI: %s returned %s", url, resp.Status)
 	}
 
-	if err := extract.Extract(resp.Body, location); err != nil {
-		if rmErr := os.RemoveAll(location); rmErr != nil {
-			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
-		}
-		return fmt.Errorf("extract VS Code CLI: %w", err)
+	written, err := io.Copy(dst, resp.Body)
+	if err != nil {
+		return fmt.Errorf("download VS Code CLI: %w", err)
+	}
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		return fmt.Errorf(
+			"download VS Code CLI: incomplete transfer, got %d of %d bytes",
+			written, resp.ContentLength,
+		)
 	}
 	return nil
 }
