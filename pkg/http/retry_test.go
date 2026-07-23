@@ -97,6 +97,25 @@ func TestRetryTransportDoesNotRetryNonIdempotent(t *testing.T) {
 	}
 }
 
+func TestRetryTransportDoesNotRetryRequestWithBody(t *testing.T) {
+	stub := &stubRoundTripper{fn: func(int) (*http.Response, error) {
+		return stubResp(http.StatusServiceUnavailable, nil), nil
+	}}
+	rt := NewRetryTransport(stub, fastRetry())
+
+	req, err := http.NewRequest(http.MethodGet, "http://example.test", strings.NewReader("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.GetBody = nil
+	if _, err := rt.RoundTrip(req); err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("expected no retry for a request with a body, got %d attempts", stub.calls)
+	}
+}
+
 func TestRetryTransportDoesNotRetryCancelledContext(t *testing.T) {
 	stub := &stubRoundTripper{fn: func(int) (*http.Response, error) {
 		return nil, context.Canceled

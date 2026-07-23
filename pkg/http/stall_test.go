@@ -70,6 +70,31 @@ func TestStallTransportAllowsProgressingBody(t *testing.T) {
 	}
 }
 
+func TestStallTransportFollowsRedirect(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("final-content"))
+	}))
+	defer origin.Close()
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, origin.URL, http.StatusFound)
+	}))
+	defer redir.Close()
+
+	client := &http.Client{Transport: NewStallTransport(http.DefaultTransport, 5*time.Second)}
+	resp, err := client.Get(redir.URL)
+	if err != nil {
+		t.Fatalf("Get through redirect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "final-content" {
+		t.Fatalf("got %q", body)
+	}
+}
+
 func TestStallTransportHeaderStall(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {

@@ -39,7 +39,7 @@ func NewRetryTransport(base http.RoundTripper, cfg RetryConfig) http.RoundTrippe
 }
 
 func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !idempotentMethod(req.Method) {
+	if !retriableRequest(req) {
 		return t.base.RoundTrip(req)
 	}
 
@@ -76,8 +76,13 @@ func (t *RetryTransport) backoff(attempt int) time.Duration {
 	return minDuration(delay, t.cfg.MaxDelay)
 }
 
-func idempotentMethod(method string) bool {
-	return method == "" || method == http.MethodGet || method == http.MethodHead
+// retriableRequest allows retry only for idempotent, bodyless requests; a
+// consumed request body cannot be safely replayed.
+func retriableRequest(req *http.Request) bool {
+	if req.Body != nil && req.Body != http.NoBody {
+		return false
+	}
+	return req.Method == "" || req.Method == http.MethodGet || req.Method == http.MethodHead
 }
 
 // ParseRetryAfter reads a Retry-After header in delta-seconds or HTTP-date form.
