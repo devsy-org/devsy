@@ -89,8 +89,8 @@ func (e *permanentError) Error() string { return e.err.Error() }
 func (e *permanentError) Unwrap() error { return e.err }
 
 // DownloadToFile downloads url into destPath, retrying transient failures
-// (connection errors, 5xx responses, and truncated transfers) with backoff and
-// failing fast on permanent ones (4xx).
+// (connection errors, 5xx responses, 429 Too Many Requests, and truncated
+// transfers) with backoff and failing fast on permanent ones (other 4xx).
 func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadOption) error {
 	cfg := downloadConfig{
 		backoff:      DefaultDownloadBackoff,
@@ -180,13 +180,20 @@ func (a *downloadAttempt) do(ctx context.Context) error {
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		statusErr := fmt.Errorf("download %s: %s", a.url, resp.Status)
-		if resp.StatusCode < http.StatusInternalServerError {
-			return &permanentError{statusErr}
+		if retryableStatus(resp.StatusCode) {
+			return statusErr
 		}
-		return statusErr
+		return &permanentError{statusErr}
 	}
 
 	return a.copyToFile(resp)
+}
+
+// retryableStatus reports whether an HTTP error status should be retried. 5xx
+// responses are transient, and 429 Too Many Requests is an explicit
+// retry-later signal; all other 4xx statuses are treated as permanent.
+func retryableStatus(code int) bool {
+	return code >= http.StatusInternalServerError || code == http.StatusTooManyRequests
 }
 
 func (a *downloadAttempt) copyToFile(resp *http.Response) error {

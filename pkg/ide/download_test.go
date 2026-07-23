@@ -49,6 +49,13 @@ func TestDownloadAndExtractSuccess(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "code")); err != nil {
 		t.Fatalf("expected extracted file: %v", err)
 	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("expected install dir mode 0755, got %v", info.Mode().Perm())
+	}
 }
 
 func TestDownloadAndExtractCorruptArchiveReportsExtractError(t *testing.T) {

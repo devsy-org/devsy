@@ -208,6 +208,24 @@ func TestDownloadToFilePermanentStatusFailsFast(t *testing.T) {
 	}
 }
 
+func TestDownloadToFileTooManyRequestsRetries(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	err := DownloadToFile(context.Background(), srv.URL, dest, fastBackoff())
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("expected a 429 error, got %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("expected 429 to be retried, got %d attempts", calls)
+	}
+}
+
 func TestDownloadToFileWithMode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("binary"))

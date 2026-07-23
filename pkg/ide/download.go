@@ -73,12 +73,24 @@ func extractToStaging(
 	}
 
 	if err := extract.Extract(file, stagingDir, opts...); err != nil {
-		if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
-			log.Warnf("cleanup staging dir: path=%s err=%v", stagingDir, rmErr)
-		}
+		cleanupStaging(stagingDir)
 		return "", fmt.Errorf("extract %s: %w", url, err)
 	}
+
+	// MkdirTemp created stagingDir as 0700; restore the broader install-dir
+	// mode that extract.Extract previously produced for destDir.
+	// #nosec G302 -- IDE install dir
+	if err := os.Chmod(stagingDir, 0o755); err != nil {
+		cleanupStaging(stagingDir)
+		return "", fmt.Errorf("set install dir mode: %w", err)
+	}
 	return stagingDir, nil
+}
+
+func cleanupStaging(stagingDir string) {
+	if rmErr := os.RemoveAll(stagingDir); rmErr != nil {
+		log.Warnf("cleanup staging dir: path=%s err=%v", stagingDir, rmErr)
+	}
 }
 
 // swapIntoPlace replaces destDir with stagingDir, preserving the previous
