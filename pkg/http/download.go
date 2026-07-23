@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -20,13 +21,21 @@ var DefaultDownloadBackoff = wait.Backoff{
 	Steps:    3,
 }
 
+// DefaultStallTimeout bounds how long a download attempt may make no progress
+// (no response headers or no bytes read) before it is aborted and retried. It
+// guards against unresponsive endpoints without penalizing large downloads
+// that are still transferring data, since the shared HTTP client has no
+// overall Client.Timeout.
+const DefaultStallTimeout = 60 * time.Second
+
 type downloadConfig struct {
-	headers     map[string]string
-	backoff     wait.Backoff
-	client      *http.Client
-	mode        os.FileMode
-	wrap        func(r io.Reader, totalSize int64) io.Reader
-	skipIfSized bool
+	headers      map[string]string
+	backoff      wait.Backoff
+	client       *http.Client
+	mode         os.FileMode
+	wrap         func(r io.Reader, totalSize int64) io.Reader
+	skipIfSized  bool
+	stallTimeout time.Duration
 }
 
 // DownloadOption customizes DownloadToFile.
@@ -66,6 +75,12 @@ func SkipIfSameSize() DownloadOption {
 	return func(c *downloadConfig) { c.skipIfSized = true }
 }
 
+// WithStallTimeout overrides how long an attempt may make no progress before it
+// is aborted. A non-positive value disables the stall guard entirely.
+func WithStallTimeout(d time.Duration) DownloadOption {
+	return func(c *downloadConfig) { c.stallTimeout = d }
+}
+
 // permanentError marks a failure that will not be resolved by retrying, such as
 // a 4xx response or a malformed request.
 type permanentError struct{ err error }
@@ -77,7 +92,12 @@ func (e *permanentError) Unwrap() error { return e.err }
 // (connection errors, 5xx responses, and truncated transfers) with backoff and
 // failing fast on permanent ones (4xx).
 func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadOption) error {
-	cfg := downloadConfig{backoff: DefaultDownloadBackoff, client: GetHTTPClient(), mode: 0o600}
+	cfg := downloadConfig{
+		backoff:      DefaultDownloadBackoff,
+		client:       GetHTTPClient(),
+		mode:         0o600,
+		stallTimeout: DefaultStallTimeout,
+	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -111,6 +131,27 @@ func isPermanent(err error) bool {
 }
 
 func downloadOnce(ctx context.Context, cfg *downloadConfig, url, destPath string) error {
+	var wd *stallWatchdog
+	if cfg.stallTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		wd = newStallWatchdog(cfg.stallTimeout, cancel)
+		defer wd.stop()
+	}
+
+	err := doDownload(ctx, cfg, url, destPath, wd)
+	// A stall aborts via context cancellation; surface it as a clear, retryable
+	// error instead of a bare "context canceled".
+	if wd != nil && wd.fired() && errors.Is(err, context.Canceled) {
+		return fmt.Errorf("download %s: stalled for %s", url, cfg.stallTimeout)
+	}
+	return err
+}
+
+func doDownload(
+	ctx context.Context, cfg *downloadConfig, url, destPath string, wd *stallWatchdog,
+) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return &permanentError{fmt.Errorf("download %s: %w", url, err)}
@@ -125,6 +166,11 @@ func downloadOnce(ctx context.Context, cfg *downloadConfig, url, destPath string
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Headers received: give the body transfer a fresh inactivity window.
+	if wd != nil {
+		wd.reset()
+	}
+
 	if resp.StatusCode >= http.StatusBadRequest {
 		statusErr := fmt.Errorf("download %s: %s", url, resp.Status)
 		if resp.StatusCode < http.StatusInternalServerError {
@@ -133,10 +179,12 @@ func downloadOnce(ctx context.Context, cfg *downloadConfig, url, destPath string
 		return statusErr
 	}
 
-	return copyToFile(resp, cfg, destPath, url)
+	return copyToFile(resp, cfg, destPath, url, wd)
 }
 
-func copyToFile(resp *http.Response, cfg *downloadConfig, destPath, url string) error {
+func copyToFile(
+	resp *http.Response, cfg *downloadConfig, destPath, url string, wd *stallWatchdog,
+) error {
 	if alreadyDownloaded(cfg, resp, destPath) {
 		return nil
 	}
@@ -171,6 +219,9 @@ func copyToFile(resp *http.Response, cfg *downloadConfig, destPath, url string) 
 	src := io.Reader(resp.Body)
 	if cfg.wrap != nil {
 		src = cfg.wrap(resp.Body, resp.ContentLength)
+	}
+	if wd != nil {
+		src = &stallResetReader{r: src, wd: wd}
 	}
 	written, err := io.Copy(tmp, src)
 	if err != nil {
@@ -207,4 +258,61 @@ func verifyContentLength(resp *http.Response, written int64, url string) error {
 		)
 	}
 	return nil
+}
+
+// stallWatchdog aborts a download attempt (by cancelling its context) when no
+// progress is made within timeout. Each observed unit of progress reschedules
+// the deadline.
+type stallWatchdog struct {
+	timeout   time.Duration
+	timer     *time.Timer
+	mu        sync.Mutex
+	triggered bool
+}
+
+func newStallWatchdog(timeout time.Duration, cancel context.CancelFunc) *stallWatchdog {
+	w := &stallWatchdog{timeout: timeout}
+	w.timer = time.AfterFunc(timeout, func() {
+		w.mu.Lock()
+		w.triggered = true
+		w.mu.Unlock()
+		cancel()
+	})
+	return w
+}
+
+func (w *stallWatchdog) reset() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.triggered {
+		return
+	}
+	w.timer.Reset(w.timeout)
+}
+
+func (w *stallWatchdog) stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.timer.Stop()
+}
+
+func (w *stallWatchdog) fired() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.triggered
+}
+
+// stallResetReader reschedules the watchdog deadline on each successful read so
+// a steadily-progressing transfer is never aborted.
+type stallResetReader struct {
+	r  io.Reader
+	wd *stallWatchdog
+}
+
+func (s *stallResetReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.wd.reset()
+	}
+	return n, err
 }

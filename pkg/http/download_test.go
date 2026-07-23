@@ -128,6 +128,41 @@ func TestDownloadToFilePreservesExistingFileOnFailure(t *testing.T) {
 	}
 }
 
+func TestDownloadToFileStallTimeoutAborts(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("expected flusher")
+			return
+		}
+		_, _ = w.Write([]byte("partial"))
+		flusher.Flush()
+		// Send headers and a little data, then hang: the stall watchdog must
+		// abort the attempt rather than block forever.
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	err := DownloadToFile(
+		context.Background(), srv.URL, dest,
+		WithStallTimeout(50*time.Millisecond), fastBackoff(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("expected a stalled error, got %v", err)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no partial file after stall, stat err = %v", statErr)
+	}
+}
+
 func TestDownloadToFileRecoversAfterTransientFailure(t *testing.T) {
 	const body = "recovered-payload"
 	var calls int
