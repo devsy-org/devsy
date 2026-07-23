@@ -11,10 +11,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// DownloadAndExtract downloads the archive at url to a temporary file, then
-// extracts it into destDir. The archive is unpacked into a sibling staging
-// directory and swapped into place only on success, so a failed download or
-// extraction never destroys a pre-existing install.
+// DownloadAndExtract downloads the archive at url and extracts it into destDir.
+// It stages into a sibling dir and swaps on success, so a failure leaves any
+// pre-existing install intact.
 func DownloadAndExtract(
 	ctx context.Context,
 	url, destDir string,
@@ -33,8 +32,6 @@ func DownloadAndExtract(
 	return swapIntoPlace(stagingDir, destDir)
 }
 
-// downloadToTemp downloads url into a temporary file and returns its path. The
-// temporary file is removed on failure.
 func downloadToTemp(ctx context.Context, url string) (string, error) {
 	tmpFile, err := os.CreateTemp("", "devsy-ide-*.tar.gz")
 	if err != nil {
@@ -50,9 +47,6 @@ func downloadToTemp(ctx context.Context, url string) (string, error) {
 	return tmpPath, nil
 }
 
-// extractToStaging unpacks the archive at tmpPath into a sibling staging
-// directory of destDir and returns its path. The staging directory is removed
-// if extraction fails.
 func extractToStaging(
 	url, tmpPath, destDir string,
 	opts ...extract.Option,
@@ -77,8 +71,7 @@ func extractToStaging(
 		return "", fmt.Errorf("extract %s: %w", url, err)
 	}
 
-	// MkdirTemp created stagingDir as 0700; restore the broader install-dir
-	// mode that extract.Extract previously produced for destDir.
+	// MkdirTemp yields 0700; restore the 0755 install-dir mode.
 	// #nosec G302 -- IDE install dir
 	if err := os.Chmod(stagingDir, 0o755); err != nil {
 		cleanupStaging(stagingDir)
@@ -93,9 +86,8 @@ func cleanupStaging(stagingDir string) {
 	}
 }
 
-// swapIntoPlace replaces destDir with stagingDir, preserving the previous
-// contents until the swap succeeds so a rename failure cannot leave destDir
-// missing.
+// swapIntoPlace replaces destDir with stagingDir, keeping the old contents
+// until the swap succeeds.
 func swapIntoPlace(stagingDir, destDir string) error {
 	backupDir := stagingDir + ".old"
 	hasBackup, err := stashExisting(destDir, backupDir)
@@ -122,8 +114,8 @@ func swapIntoPlace(stagingDir, destDir string) error {
 	return nil
 }
 
-// stashExisting moves an existing destDir aside to backupDir so it can be
-// restored if the subsequent swap fails. It reports whether a backup was made.
+// stashExisting moves an existing destDir aside so it can be restored if the
+// swap fails; it reports whether a backup was made.
 func stashExisting(destDir, backupDir string) (bool, error) {
 	_, err := os.Stat(destDir)
 	if os.IsNotExist(err) {

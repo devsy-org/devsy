@@ -21,12 +21,6 @@ var DefaultDownloadBackoff = wait.Backoff{
 	Steps:    3,
 }
 
-// DefaultStallTimeout bounds how long a download may make no progress (no
-// response headers or no bytes read) before it is aborted and retried. It
-// guards against unresponsive endpoints without penalizing large downloads
-// that are still transferring data, since the shared HTTP client has no
-// overall Client.Timeout. Enforcement lives in the download client's
-// StallTransport rather than the download loop.
 const DefaultStallTimeout = 60 * time.Second
 
 var (
@@ -34,18 +28,13 @@ var (
 	downloadClient     *http.Client
 )
 
-// defaultDownloadClient returns a shared client whose transport aborts stalled
-// transfers after DefaultStallTimeout.
 func defaultDownloadClient() *http.Client {
 	downloadClientOnce.Do(func() { downloadClient = newStallClient(DefaultStallTimeout) })
 	return downloadClient
 }
 
-// newStallClient builds a download client: the shared base transport with a
-// User-Agent and an inactivity timeout. It deliberately omits the retry
-// decorator — DownloadToFile owns download retries (including truncation, which
-// is only detectable after streaming to disk), so layering RetryTransport here
-// would double-retry transient statuses.
+// newStallClient builds a download client with a stall timeout but no retry:
+// DownloadToFile owns download retries (including truncation).
 func newStallClient(timeout time.Duration) *http.Client {
 	rt := WithUserAgent(baseRoundTripper(), UserAgent())
 	rt = NewStallTransport(rt, timeout)
@@ -98,24 +87,19 @@ func SkipIfSameSize() DownloadOption {
 	return func(c *downloadConfig) { c.skipIfSized = true }
 }
 
-// WithStallTimeout overrides how long the download may make no progress before
-// it is aborted, by swapping in a client with that inactivity timeout. A
-// non-positive value disables the stall guard. Has no effect when combined with
-// a later WithClient.
+// WithStallTimeout swaps in a client with the given inactivity timeout.
 func WithStallTimeout(d time.Duration) DownloadOption {
 	return func(c *downloadConfig) { c.client = newStallClient(d) }
 }
 
-// permanentError marks a failure that will not be resolved by retrying, such as
-// a 4xx response or a malformed request.
+// permanentError marks a failure that retrying will not resolve.
 type permanentError struct{ err error }
 
 func (e *permanentError) Error() string { return e.err.Error() }
 func (e *permanentError) Unwrap() error { return e.err }
 
 // DownloadToFile downloads url into destPath, retrying transient failures
-// (connection errors, 5xx responses, 429 Too Many Requests, and truncated
-// transfers) with backoff and failing fast on permanent ones (other 4xx).
+// (connection errors, 5xx, 429, truncated transfers) and failing fast on 4xx.
 func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadOption) error {
 	cfg := downloadConfig{
 		backoff: DefaultDownloadBackoff,
@@ -154,8 +138,6 @@ func isPermanent(err error) bool {
 	return errors.As(err, &perr)
 }
 
-// downloadAttempt carries the per-attempt state so helpers stay within the
-// project's argument limit.
 type downloadAttempt struct {
 	cfg      *downloadConfig
 	url      string
@@ -193,9 +175,6 @@ func (a *downloadAttempt) do(ctx context.Context) error {
 	return a.copyToFile(resp)
 }
 
-// retryableStatus reports whether an HTTP error status should be retried. 5xx
-// responses are transient, and 429 Too Many Requests is an explicit
-// retry-later signal; all other 4xx statuses are treated as permanent.
 func retryableStatus(code int) bool {
 	return code >= http.StatusInternalServerError || code == http.StatusTooManyRequests
 }
@@ -212,9 +191,8 @@ func (a *downloadAttempt) copyToFile(resp *http.Response) error {
 		return &permanentError{fmt.Errorf("create download folder: %w", err)}
 	}
 
-	// Download to a temporary file in the destination directory and rename it
-	// into place only on success, so a failed transfer never leaves a partial
-	// file at destPath (which callers may mistake for a complete download).
+	// Write to a temp file and rename on success so a failed transfer never
+	// leaves a partial file at destPath.
 	tmpPath, err := a.streamToTempFile(resp, destDir, destPath)
 	if err != nil {
 		return err
@@ -226,8 +204,6 @@ func (a *downloadAttempt) copyToFile(resp *http.Response) error {
 	return nil
 }
 
-// streamToTempFile writes the response body to a temporary file next to
-// destPath and returns its path on success, removing it on any failure.
 func (a *downloadAttempt) streamToTempFile(
 	resp *http.Response, destDir, destPath string,
 ) (string, error) {
@@ -262,8 +238,6 @@ func (a *downloadAttempt) streamToTempFile(
 	return tmpPath, nil
 }
 
-// source builds the reader copied to disk, applying the optional progress
-// wrapper. The inactivity guard lives in the client's StallTransport.
 func (a *downloadAttempt) source(resp *http.Response) io.Reader {
 	if a.cfg.wrap != nil {
 		return a.cfg.wrap(resp.Body, resp.ContentLength)
@@ -271,8 +245,6 @@ func (a *downloadAttempt) source(resp *http.Response) io.Reader {
 	return resp.Body
 }
 
-// alreadyDownloaded reports whether destPath already holds the full download,
-// based on a size match against the advertised Content-Length.
 func alreadyDownloaded(cfg *downloadConfig, resp *http.Response, destPath string) bool {
 	if !cfg.skipIfSized || resp.ContentLength < 0 {
 		return false

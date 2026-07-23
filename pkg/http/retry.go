@@ -11,31 +11,23 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// RetryConfig configures RetryTransport.
 type RetryConfig struct {
-	MaxAttempts int           // total attempts including the first (values <= 1 disable retry)
-	BaseDelay   time.Duration // first backoff delay; doubles each attempt
-	MaxDelay    time.Duration // cap for both backoff and honored Retry-After
+	MaxAttempts int // <=1 disables retry
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
 }
 
-// DefaultRetry is the retry policy applied to the shared general-purpose client.
 var DefaultRetry = RetryConfig{MaxAttempts: 3, BaseDelay: time.Second, MaxDelay: 30 * time.Second}
 
-// maxDrainOnRetry bounds how much of a discarded response body is read to keep
-// the connection reusable before the next attempt.
 const maxDrainOnRetry = 4 << 10
 
-// RetryTransport retries idempotent requests (GET, HEAD) on connection errors
-// and retryable statuses (5xx, 429) with exponential backoff, honoring the
-// server's Retry-After hint. Non-idempotent methods and caller-cancelled
-// requests are never retried, so it is safe on the shared client.
+// RetryTransport retries idempotent requests on connection errors, 5xx and 429,
+// honoring Retry-After. Non-idempotent and cancelled requests pass through.
 type RetryTransport struct {
 	base http.RoundTripper
 	cfg  RetryConfig
 }
 
-// NewRetryTransport wraps base with cfg. A policy of at most one attempt returns
-// base unchanged.
 func NewRetryTransport(base http.RoundTripper, cfg RetryConfig) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
@@ -71,8 +63,6 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 }
 
-// retryable reports whether a failed attempt should be retried. Caller
-// cancellation and deadline expiry are never retried.
 func (t *RetryTransport) retryable(resp *http.Response, err error) bool {
 	if err != nil {
 		return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
@@ -90,8 +80,7 @@ func idempotentMethod(method string) bool {
 	return method == "" || method == http.MethodGet || method == http.MethodHead
 }
 
-// ParseRetryAfter returns the delay requested by a Retry-After header, in either
-// delta-seconds or HTTP-date form. Negative or malformed values report false.
+// ParseRetryAfter reads a Retry-After header in delta-seconds or HTTP-date form.
 func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 	v := resp.Header.Get("Retry-After")
 	if v == "" {
