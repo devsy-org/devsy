@@ -14,7 +14,7 @@ The Devsy team maintains providers for popular services such as:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-These providers can be installed with the Devsy CLI in the following form:
+Install these providers with the Devsy CLI:
 ```
 devsy provider add docker
 ```
@@ -25,7 +25,7 @@ You can get a list of available 1st party providers by using the command:
 devsy provider list --available
 ```
 
-## Via Devsy Desktop Application
+## Devsy Desktop
 
 Open the Providers view and click **Add**. The provider wizard has four steps:
 
@@ -40,7 +40,7 @@ The ProviderSheet (click any provider in the list) exposes edit settings, switch
 The Desktop Application calls `devsy provider add PROVIDER` under the hood.
 :::
 
-### Adding a custom provider
+### Custom Providers
 
 In the Select step, type one of the following into the **Provider Source** field below the preset grid:
 
@@ -48,7 +48,7 @@ In the Select step, type one of the following into the **Provider Source** field
 - A URL to a `provider.yaml`
 - A file path to a `provider.yaml`
 
-## Via Devsy CLI
+## Devsy CLI
 Install any provider from the list with:
 
 ```sh
@@ -100,17 +100,16 @@ devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/down
 
 ## Set Provider Options
 
-Each provider has a set of options, those options can be different for each of
-them, as they are defined by the provider's developers.
+Each provider defines its own options, so they differ from provider to provider.
 
-### Managing options from Devsy Desktop Application
+### Desktop Options
 
 To manage options from the app, head over the `Providers` section, and click
 `Edit` on the provider you want to configure.
 
-### Managing options from Devsy CLI
+### CLI Options
 
-Options for providers can be set during the `configure` or `add` phase:
+Set options during the `add` or `configure` phase:
 
 ```sh
 devsy provider add <provider-name> -o KEY=value
@@ -123,8 +122,7 @@ devsy provider init <provider-name> -o KEY=value
 ```
 
 
-Else, to can manage options afterwards from CLI, you can list the table of provider's options by using:
-
+To manage options later, list the current values with:
 
 ```sh
 devsy provider get <provider-name>
@@ -156,43 +154,19 @@ INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true     
                           |          | host.                          |                         |
 ```
 
-You can see this table as an overview, you can change each option using:
+This table is an overview. Change any option with:
 
 ```sh
 devsy provider set <provider-name> --option <KEY>=<VALUE>
 ```
 
-So for example, to change the default disk size from 40gb to 120gb, you could use:
+For example, to change the disk size from 40GB to 120GB:
 
 ```sh
 devsy provider set aws --option AWS_DISK_SIZE=120
 ```
 
-And check again the options for the provider using `devsy provider get aws`:
-
-```
-          NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
-----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
-                          |          | Devsy agent to.               |                         |
-AWS_ACCESS_KEY_ID         | false    | The aws access key id          |                         |
-AWS_AMI                   | false    | The disk image to use.         |                         |
-AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 120
-AWS_INSTANCE_TYPE         | false    | The machine type to use.       | c5.xlarge               | c5.xlarge
-AWS_REGION                | true     | The aws cloud region to create |                         | us-west-2
-                          |          | the VM in, e.g. us-west-1      |                         |
-AWS_SECRET_ACCESS_KEY     | false    | The aws secret access key      |                         |
-AWS_VPC_ID                | false    | The vpc id to use.             |                         |
-INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
-                          |          | stop the VM after the          |                         |
-                          |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-```
+Run `devsy provider get aws` again to confirm — the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
 
 ## Single Machine Provider
 
@@ -210,9 +184,7 @@ devsy provider init <provider-name> --single-machine
 
 ## Default Provider
 
-When adding a provider to Devsy, you can specify it to be the **default provider**,
-this implies that when you create a Workspace, this provider will be used if no
-other is specified.
+When you add a provider, you can mark it as the **default provider**. Devsy then uses it for any workspace you create without specifying another.
 
 In **the desktop app**, you can set a provider to be default in the option management interface for the provider
 (see section above)
@@ -238,7 +210,7 @@ The community maintains providers for additional services.
 - [Vultr (navaneeth-dev/devsy-provider-vultr)](https://github.com/navaneeth-dev/devsy-provider-vultr)
 - [STACKIT (stackitcloud/devsy-provider-stackit)](https://github.com/stackitcloud/devsy-provider-stackit)
 
-These providers can be installed with the Devsy CLI in the following form:
+Install these providers with the Devsy CLI:
 ```
 devsy provider add <user/repository>
 ```

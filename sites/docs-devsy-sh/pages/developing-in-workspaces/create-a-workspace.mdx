@@ -13,7 +13,7 @@ Once created, the workspace is reachable through the SSH host `WORKSPACE_NAME.de
 A workspace is defined by a `devcontainer.json`. If none exists, Devsy detects the project's language and picks a matching template.
 :::
 
-### Via Devsy Desktop Application
+### Devsy Desktop
 
 Open the Workspaces view and click **Create** to launch the wizard. It walks through five steps:
 
@@ -41,7 +41,7 @@ This can be useful if you are having trouble with a workspace trying to mount to
 For example: setting `--home=/mnt/c/Users/MyUser/` will result in a workspace path of something like `/mnt/c/Users/MyUser/.devsy/contexts/default/workspaces/...`
 :::
 
-### Via Devsy CLI
+### Devsy CLI
 
 [Install the Devsy CLI](../getting-started/install.mdx#install-devsy-cli) and add a provider to host the workspace (such as local docker):
 ```
@@ -152,7 +152,7 @@ Recreating a workspace re-applies changes from the `devcontainer.json` or its `D
 
 Only changes inside the project path or mounted volumes survive a recreate. **Everything else in the container is lost.**
 
-### Via Devsy CLI
+### Devsy CLI
 
 Rebuild an existing workspace:
 ```
@@ -165,7 +165,7 @@ Reset rebuilds the workspace from a clean slate — it pulls the latest Git chan
 
 **A reset preserves nothing.**
 
-### Via Devsy CLI
+### Devsy CLI
 
 Reset an existing workspace:
 ```
