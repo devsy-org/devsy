@@ -14,7 +14,7 @@ The Devsy team maintains providers for popular services such as:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-These providers can be installed with the Devsy CLI in the following form:
+Install these providers with the Devsy CLI:
 ```
 devsy provider add docker
 ```
@@ -100,8 +100,7 @@ devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/down
 
 ## Set Provider Options
 
-Each provider has a set of options, those options can be different for each of
-them, as they are defined by the provider's developers.
+Each provider defines its own options, so they differ from provider to provider.
 
 ### Desktop Options
 
@@ -110,7 +109,7 @@ To manage options from the app, head over the `Providers` section, and click
 
 ### CLI Options
 
-Options for providers can be set during the `configure` or `add` phase:
+Set options during the `add` or `configure` phase:
 
 ```sh
 devsy provider add <provider-name> -o KEY=value
@@ -185,9 +184,7 @@ devsy provider init <provider-name> --single-machine
 
 ## Default Provider
 
-When adding a provider to Devsy, you can specify it to be the **default provider**,
-this implies that when you create a Workspace, this provider will be used if no
-other is specified.
+When you add a provider, you can mark it as the **default provider**. Devsy then uses it for any workspace you create without specifying another.
 
 In **the desktop app**, you can set a provider to be default in the option management interface for the provider
 (see section above)
@@ -213,7 +210,7 @@ The community maintains providers for additional services.
 - [Vultr (navaneeth-dev/devsy-provider-vultr)](https://github.com/navaneeth-dev/devsy-provider-vultr)
 - [STACKIT (stackitcloud/devsy-provider-stackit)](https://github.com/stackitcloud/devsy-provider-stackit)
 
-These providers can be installed with the Devsy CLI in the following form:
+Install these providers with the Devsy CLI:
 ```
 devsy provider add <user/repository>
 ```
