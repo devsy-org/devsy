@@ -7,11 +7,17 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 
-Choose either [Devsy Desktop](#install-devsy) or the [Devsy CLI](#install-devsy-cli).
+Devsy comes in two forms that share the same workflow:
 
-## Install Devsy
+- **Devsy Desktop** — a guided app for creating and managing workspaces. Start here if you want a UI.
+- **Devsy CLI** — the same workflow from a terminal, for automation and scripting.
 
-Download Devsy Desktop:
+Install either one below, then head to the [Quick Start](../quickstart/quickstart.mdx).
+
+## Install Devsy Desktop
+
+Download the build for your platform:
+
 - [macOS Silicon/ARM](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_arm64.dmg)
 - [macOS Intel/AMD](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_mac_x64.dmg)
 - [Windows](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_win_x64.exe)
@@ -20,42 +26,25 @@ Download Devsy Desktop:
 - [Linux RPM (Fedora/RHEL/openSUSE)](https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_x86_64.rpm)
 - [Linux Flatpak](https://github.com/devsy-org/devsy/releases/latest/download/Devsy.flatpak)
 
-:::info Previous Releases
-For earlier versions, visit the [GitHub releases page](https://github.com/devsy-org/devsy/releases)
-:::
+For earlier versions, see the [GitHub releases page](https://github.com/devsy-org/devsy/releases).
 
-:::info Linux Packages
-The AppImage is tested on:
+:::info Linux dependencies
+The DEB and RPM packages declare their runtime dependencies; the AppImage and Flatpak bundle theirs. Most modern desktop distros run the AppImage as-is (tested on Debian 12+, Ubuntu 22.04+, Fedora 36+, openSUSE Leap 15.3+, Tumbleweed, and Arch).
 
-- Debian 12 and newer
-- Ubuntu 22.04 and newer
-- Fedora 36 and newer
-- openSUSE Leap 15.3 and newer
-- openSUSE Tumbleweed
-- Arch Linux
-
-Most modern desktop distros include the required libraries. If the AppImage fails to launch, install FUSE and the standard GTK/Electron runtime libs:
+If the AppImage fails to launch, install FUSE and the GTK/Electron runtime libraries:
 
 - Debian/Ubuntu: `sudo apt-get install libfuse2 libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0`
 - Fedora: `sudo dnf install fuse-libs gtk3 libnotify nss libXScrnSaver libXtst xdg-utils at-spi2-core`
 - openSUSE: `sudo zypper in libfuse2 gtk3 libnotify4 mozilla-nss libXss1 libXtst6 xdg-utils`
 :::
 
-:::info Windows Packages
-Make sure you have the following dependencies installed for the Desktop App to work:
-
-- [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH)
-
-WebView 2 ships with recent versions of Windows. Install it only if you hit issues.
-:::
-
-:::info Linux Packaging
-Devsy publishes `.deb`, `.rpm`, `.AppImage`, and Flatpak builds. The DEB and RPM packages declare their runtime dependencies; the AppImage and Flatpak bundle theirs.
+:::info Windows dependency
+Devsy Desktop needs [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH). It ships with recent versions of Windows — install it only if the app fails to open.
 :::
 
 ## Install Devsy CLI
 
-The Devsy CLI manages Devsy from a terminal. Choose an installation method below, or install it later from the Desktop App.
+Run the command for your platform. You can also install the CLI later from Devsy Desktop.
 
 <Tabs values={[
           {label: 'MacOS Silicon/ARM', value: 'macarm64'},
@@ -103,3 +92,13 @@ curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/de
 
 </TabItem>
 </Tabs>
+
+Confirm the CLI is on your `PATH`:
+
+```bash
+devsy --version
+```
+
+## Next step
+
+Create your first workspace in the [Quick Start](../quickstart/quickstart.mdx).
