@@ -49,6 +49,11 @@ type Workspace struct {
 	// DevContainerPath is the relative path where the devcontainer.json is located.
 	DevContainerPath string `json:"devContainerPath,omitempty"`
 
+	// DevContainerSource is the devcontainer source override (e.g. "image:<ref>"
+	// or "none") that ignores the project's devcontainer.json. It is persisted so
+	// restarts reuse the same override instead of falling back to discovery.
+	DevContainerSource string `json:"devContainerSource,omitempty"`
+
 	// DevContainerConfig holds the config for the devcontainer.json.
 	DevContainerConfig *devcontainerconfig.DevContainerConfig `json:"devContainerConfig,omitempty"`
 

@@ -144,6 +144,7 @@ func (cmd *UpCmd) buildWorkspaceOptions(workspace *provider2.Workspace) provider
 	baseOptions.ID = workspace.ID
 	baseOptions.DevContainerPath = workspace.DevContainerPath
 	baseOptions.DevContainerImage = workspace.DevContainerImage
+	baseOptions.DevContainerSource = workspace.DevContainerSource
 	baseOptions.IDE = workspace.IDE.Name
 	baseOptions.IDEOptions = nil
 	baseOptions.Source = workspace.Source.String()

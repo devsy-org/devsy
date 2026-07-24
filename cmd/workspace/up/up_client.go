@@ -108,6 +108,7 @@ func (cmd *UpCmd) resolveParams(
 		ReconfigureProvider: cmd.Reconfigure,
 		DevContainerImage:   cmd.DevContainerImage,
 		DevContainerPath:    cmd.DevContainerPath,
+		DevContainerSource:  cmd.DevContainerSource,
 		SSHConfigPath:       cmd.SSHConfigPath,
 		SSHConfigIncludePath: devsyConfig.ContextOption(
 			config.ContextOptionSSHConfigIncludePath,

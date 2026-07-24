@@ -223,3 +223,19 @@ func TestApplyDevContainerOverrides_SetsImageAndPath(t *testing.T) {
 	assert.Equal(t, testDevContainerImage, loaded.DevContainerImage)
 	assert.Equal(t, testDevContainerPath, loaded.DevContainerPath)
 }
+
+func TestApplyDevContainerOverrides_PersistsSource(t *testing.T) {
+	setupTestPathManager(t)
+
+	ws := &providerpkg.Workspace{ID: "ws-source", Context: testDefaultContext}
+	const source = "image:ghcr.io/example/image:latest"
+	err := applyDevContainerOverrides(ws, ResolveParams{DevContainerSource: source})
+	require.NoError(t, err)
+
+	assert.Equal(t, source, ws.DevContainerSource)
+
+	// The source override must survive a restart, so it has to be persisted.
+	loaded, err := providerpkg.LoadWorkspaceConfig(testDefaultContext, ws.ID)
+	require.NoError(t, err)
+	assert.Equal(t, source, loaded.DevContainerSource)
+}
