@@ -1,9 +1,9 @@
 package jetbrains
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -244,47 +244,14 @@ func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
 		o.options.ID,
 	)
 
-	resp, err := fetchArchive(downloadURL)
-	if err != nil {
+	if err := devsyhttp.DownloadToFile(
+		context.Background(), downloadURL, targetPath,
+		devsyhttp.SkipIfSameSize(),
+		devsyhttp.WithProgress(func(r io.Reader, totalSize int64) io.Reader {
+			return &ide.ProgressReader{Reader: r, TotalSize: totalSize}
+		}),
+	); err != nil {
 		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	return saveArchive(targetPath, resp)
-}
-
-func fetchArchive(downloadURL string) (*http.Response, error) {
-	resp, err := devsyhttp.GetHTTPClient().Get(downloadURL)
-	if err != nil {
-		return nil, fmt.Errorf("download binary: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("download binary returned status code %d: %w", resp.StatusCode, err)
-	}
-
-	return resp, nil
-}
-
-func saveArchive(targetPath string, resp *http.Response) (string, error) {
-	stat, err := os.Stat(targetPath)
-	if err == nil && stat.Size() == resp.ContentLength {
-		return targetPath, nil
-	}
-
-	file, err := os.Create(targetPath)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = file.Close() }()
-
-	_, err = io.Copy(file, &ide.ProgressReader{
-		Reader:    resp.Body,
-		TotalSize: resp.ContentLength,
-	})
-	if err != nil {
-		return "", fmt.Errorf("download file: %w", err)
 	}
 
 	return targetPath, nil

@@ -1,6 +1,7 @@
 package openvscode
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -117,32 +117,30 @@ func (o *OpenVSCodeServer) Install() error {
 
 	vscode.InstallAPKRequirements()
 
-	// download tar
-	resp, err := devsyhttp.GetHTTPClient().Get(url)
-	if err != nil {
+	if err := ide.DownloadAndExtract(
+		context.Background(), url, location, extract.StripLevels(1),
+	); err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	err = extract.Extract(resp.Body, location, extract.StripLevels(1))
-	if err != nil {
-		return fmt.Errorf("extract vscode: %w", err)
+	if err := chownIfNeeded(o.userName, location); err != nil {
+		return err
 	}
 
-	// chown location
-	if o.userName != "" {
-		err = copy2.ChownR(location, o.userName)
-		if err != nil {
-			return fmt.Errorf("chown: %w", err)
-		}
-	}
-
-	// paste settings
-	err = o.installSettings()
-	if err != nil {
+	if err := o.installSettings(); err != nil {
 		return fmt.Errorf("install settings: %w", err)
 	}
 
+	return nil
+}
+
+func chownIfNeeded(userName, location string) error {
+	if userName == "" {
+		return nil
+	}
+	if err := copy2.ChownR(location, userName); err != nil {
+		return fmt.Errorf("chown: %w", err)
+	}
 	return nil
 }
 

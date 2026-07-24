@@ -25,6 +25,10 @@ const (
 	// EnvDebug enables debug logging.
 	EnvDebug = "DEVSY_DEBUG"
 
+	// EnvInsecureTLS, when truthy, disables TLS certificate verification for the
+	// shared HTTP client. Enabled by default.
+	EnvInsecureTLS = "DEVSY_INSECURE_TLS"
+
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 

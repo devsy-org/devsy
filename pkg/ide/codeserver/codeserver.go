@@ -1,8 +1,8 @@
 package codeserver
 
 import (
+	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -121,7 +120,9 @@ func (c *CodeServer) Install() error {
 
 	vscode.InstallAPKRequirements()
 
-	if err := downloadAndExtract(c.getReleaseURL(), location); err != nil {
+	if err := ide.DownloadAndExtract(
+		context.Background(), c.getReleaseURL(), location, extract.StripLevels(1),
+	); err != nil {
 		return err
 	}
 
@@ -267,28 +268,6 @@ func (c *CodeServer) installSettings() error {
 		if err := copy2.ChownR(codeServerDataDir, c.userName); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// downloadAndExtract fetches the release tarball at url and extracts it under
-// location. Cleans up a partial extraction on failure so retries start fresh.
-func downloadAndExtract(url, location string) error {
-	resp, err := devsyhttp.GetHTTPClient().Get(url) // #nosec G107 -- URL comes from VersionOption.
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("download code-server: %s returned %s", url, resp.Status)
-	}
-
-	if err := extract.Extract(resp.Body, location, extract.StripLevels(1)); err != nil {
-		if rmErr := os.RemoveAll(location); rmErr != nil {
-			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
-		}
-		return fmt.Errorf("extract code-server: %w", err)
 	}
 	return nil
 }

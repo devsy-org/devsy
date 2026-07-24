@@ -1,8 +1,8 @@
 package vscodeweb
 
 import (
+	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
-	"github.com/devsy-org/devsy/pkg/extract"
-	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -126,7 +124,7 @@ func (v *VSCodeWeb) Install() error {
 	if !v.isInstalled(location, releaseURL) {
 		vscode.InstallAPKRequirements()
 
-		if err := downloadAndExtract(releaseURL, location); err != nil {
+		if err := ide.DownloadAndExtract(context.Background(), releaseURL, location); err != nil {
 			return err
 		}
 
@@ -292,30 +290,6 @@ func (v *VSCodeWeb) installSettings() error {
 		if err := copy2.ChownR(location, v.userName); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// downloadAndExtract fetches the CLI tarball at url and extracts it under
-// location. The VS Code CLI tarball holds a single `code` binary at its root,
-// so no strip levels are applied. Cleans up a partial extraction on failure so
-// retries start fresh.
-func downloadAndExtract(url, location string) error {
-	resp, err := devsyhttp.GetHTTPClient().Get(url) // #nosec G107 -- URL comes from VersionOption.
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("download VS Code CLI: %s returned %s", url, resp.Status)
-	}
-
-	if err := extract.Extract(resp.Body, location); err != nil {
-		if rmErr := os.RemoveAll(location); rmErr != nil {
-			log.Warnf("cleanup partial install: path=%s err=%v", location, rmErr)
-		}
-		return fmt.Errorf("extract VS Code CLI: %w", err)
 	}
 	return nil
 }
