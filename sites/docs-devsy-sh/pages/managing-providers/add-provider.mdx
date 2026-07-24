@@ -123,8 +123,7 @@ devsy provider init <provider-name> -o KEY=value
 ```
 
 
-Else, to can manage options afterwards from CLI, you can list the table of provider's options by using:
-
+To manage options later, list the current values with:
 
 ```sh
 devsy provider get <provider-name>
@@ -156,43 +155,19 @@ INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true     
                           |          | host.                          |                         |
 ```
 
-You can see this table as an overview, you can change each option using:
+This table is an overview. Change any option with:
 
 ```sh
 devsy provider set <provider-name> --option <KEY>=<VALUE>
 ```
 
-So for example, to change the default disk size from 40gb to 120gb, you could use:
+For example, to change the disk size from 40GB to 120GB:
 
 ```sh
 devsy provider set aws --option AWS_DISK_SIZE=120
 ```
 
-And check again the options for the provider using `devsy provider get aws`:
-
-```
-          NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
-----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
-                          |          | Devsy agent to.               |                         |
-AWS_ACCESS_KEY_ID         | false    | The aws access key id          |                         |
-AWS_AMI                   | false    | The disk image to use.         |                         |
-AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 120
-AWS_INSTANCE_TYPE         | false    | The machine type to use.       | c5.xlarge               | c5.xlarge
-AWS_REGION                | true     | The aws cloud region to create |                         | us-west-2
-                          |          | the VM in, e.g. us-west-1      |                         |
-AWS_SECRET_ACCESS_KEY     | false    | The aws secret access key      |                         |
-AWS_VPC_ID                | false    | The vpc id to use.             |                         |
-INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
-                          |          | stop the VM after the          |                         |
-                          |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-```
+Run `devsy provider get aws` again to confirm — the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
 
 ## Single Machine Provider
 

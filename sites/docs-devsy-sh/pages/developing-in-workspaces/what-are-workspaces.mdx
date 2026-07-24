@@ -3,7 +3,7 @@ title: What are Workspaces?
 sidebar_label: What are Workspaces?
 ---
 
-A workspace in Devsy is a containerized development environment that holds a project's source code along with the dependencies needed to work on it, such as a compiler and debugger. The underlying environment where the container runs is created and managed through a Devsy provider. This gives every engineer a consistent development experience no matter where the container actually runs — a remote machine in a public cloud, localhost, or a Kubernetes cluster.
+A workspace in Devsy is a containerized development environment that holds a project's source code along with the dependencies needed to work on it, such as a compiler and debugger. The underlying environment where the container runs is created and managed through a Devsy provider. This gives every engineer a consistent development experience wherever the container runs — a remote machine in a public cloud, localhost, or a Kubernetes cluster.
 
 To configure the development container, Devsy reuses the [devcontainer.json](https://containers.dev/) specification, which is also used by other popular tools such as [VS Code dev containers](https://code.visualstudio.com/docs/devcontainers/containers) and [GitHub Codespaces](https://github.com/features/codespaces). This means any project that already uses this configuration can spin up a workspace in Devsy with no extra setup. If no configuration is found, Devsy detects the project's programming language and provides an appropriate template.
 

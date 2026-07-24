@@ -3,38 +3,23 @@ title: What are Providers?
 sidebar_label: What are Providers?
 ---
 
-Providers are simple CLI programs that let Devsy create, manage and run the workspaces requested by the user.
-In the simplest form, a provider defines a command to create, delete and connect to a virtual machine in a cloud.
+A provider is the CLI program Devsy uses to create, manage, and run workspaces on a given backend. This model is what lets Devsy target any infrastructure — local, cloud, Kubernetes, or remote SSH — without changing how you work.
 
-Devsy relies on the provider model in order to allow flexibility and adaptability for any backend of choice.
-Providers in Devsy are defined through a `provider.yaml` that defines the necessary options, configuration, binaries and commands needed to handle workspace creation.
+Each provider is defined by a `provider.yaml` that declares the options, configuration, binaries, and commands Devsy needs to create workspaces on that backend.
 
-See the [Add a provider](./add-provider.mdx) section to learn more about how to add a provider to Devsy.
-See [How to develop a provider](../developing-providers/quickstart.mdx) to learn more about how to create your own provider for Devsy.
+To get started, see [Add a provider](./add-provider.mdx). To build your own, see [How to develop a provider](../developing-providers/quickstart.mdx).
 
-## Type of providers
+## Types of providers
 
-There are two types of providers:
-
-* Machine providers
-* Non-machine providers
+Devsy supports two kinds of providers:
 
 ### Machine providers
 
-Machine providers are those who will create and manage a VM for the workspace
-selected.
-An example of a Machine provider is the AWS Provider, which uses EC2 instances to
-run the environment.
-These type of providers will also manage the lifecycle of the VM, starting/stopping
-and deleting it when needed.
+Machine providers create and manage a VM for the workspace, then run the container on it. They also handle the VM lifecycle — starting, stopping, and deleting it as needed. The AWS provider is one example, using EC2 instances to run the environment.
 
-### Non-Machine providers
+### Non-machine providers
 
-Non-machine providers are those who will work directly with containers, instead
-of using VMs.
-An example of this can be the SSH, Kubernetes, Docker and Podman providers.
-Those providers will **not** create any VMs, but instead directly run the workspace
-container on the target.
+Non-machine providers run the workspace container directly on the target, with no VM to manage. Docker, Podman, Kubernetes, and SSH are examples.
 
 ## Managing providers
 
