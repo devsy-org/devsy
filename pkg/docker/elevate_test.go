@@ -7,7 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const dockerCmd = string(RuntimeDocker)
+const (
+	dockerCmd  = string(RuntimeDocker)
+	dockerHost = "DOCKER_HOST=tcp://host:2375"
+)
 
 func TestElevatorFromName(t *testing.T) {
 	tests := []struct {
@@ -47,14 +50,19 @@ func TestElevatorWrap(t *testing.T) {
 	e, err := ElevatorFromName(elevationPkexec)
 	require.NoError(t, err)
 
-	name, args := e.wrap(dockerCmd, []string{"ps", "-q"})
+	name, args := e.wrap(dockerCmd, nil, []string{"ps", "-q"})
 	assert.Equal(t, elevationPkexec, name)
 	assert.Equal(t, []string{dockerCmd, "ps", "-q"}, args)
 
 	// No docker args.
-	name, args = e.wrap("/usr/bin/docker", nil)
+	name, args = e.wrap("/usr/bin/docker", nil, nil)
 	assert.Equal(t, elevationPkexec, name)
 	assert.Equal(t, []string{"/usr/bin/docker"}, args)
+
+	// Environment is forwarded through env(1).
+	name, args = e.wrap(dockerCmd, []string{dockerHost}, []string{"ps"})
+	assert.Equal(t, elevationPkexec, name)
+	assert.Equal(t, []string{"env", dockerHost, dockerCmd, "ps"}, args)
 }
 
 func TestEnsureElevatedNoOpWithoutElevator(t *testing.T) {
@@ -78,4 +86,21 @@ func TestBuildCmdWithElevator(t *testing.T) {
 	r := &DockerHelper{DockerCommand: dockerCmd, Elevator: e}
 	cmd := r.buildCmd(t.Context(), "ps", "-q")
 	assert.Equal(t, []string{elevationSudo, dockerCmd, "ps", "-q"}, cmd.Args)
+}
+
+func TestBuildCmdWithElevatorForwardsEnv(t *testing.T) {
+	e, err := ElevatorFromName(elevationSudo)
+	require.NoError(t, err)
+	e.once.Do(func() {})
+
+	r := &DockerHelper{
+		DockerCommand: dockerCmd,
+		Environment:   []string{dockerHost},
+		Elevator:      e,
+	}
+	cmd := r.buildCmd(t.Context(), "ps")
+	assert.Equal(t,
+		[]string{elevationSudo, "env", dockerHost, dockerCmd, "ps"},
+		cmd.Args,
+	)
 }

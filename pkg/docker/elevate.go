@@ -54,9 +54,16 @@ func ElevatorFromName(name string) (*Elevator, error) {
 	}
 }
 
-func (e *Elevator) wrap(dockerCommand string, args []string) (string, []string) {
-	full := make([]string, 0, len(e.prefix)+len(args))
+// wrap builds the elevated invocation of dockerCommand. env (KEY=VAL entries,
+// e.g. DOCKER_HOST) is forwarded through env(1) because sudo/pkexec/doas reset
+// the child environment and would otherwise drop provider configuration.
+func (e *Elevator) wrap(dockerCommand string, env, args []string) (string, []string) {
+	full := make([]string, 0, len(e.prefix)+len(env)+len(args)+1)
 	full = append(full, e.prefix[1:]...)
+	if len(env) > 0 {
+		full = append(full, "env")
+		full = append(full, env...)
+	}
 	full = append(full, dockerCommand)
 	full = append(full, args...)
 	return e.prefix[0], full
@@ -70,7 +77,7 @@ func (e *Elevator) ensureAuthenticated(dockerCommand string, env []string) error
 		ctx, cancel := context.WithTimeout(context.Background(), elevationAuthTimeout)
 		defer cancel()
 
-		name, args := e.wrap(dockerCommand, []string{"--version"})
+		name, args := e.wrap(dockerCommand, env, []string{"--version"})
 		//nolint:gosec // command and args come from trusted provider config
 		cmd := exec.CommandContext(ctx, name, args...)
 		if env != nil {
