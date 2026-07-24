@@ -10,11 +10,11 @@ Depending on the provider used, this either means to stop a container (see [dock
 or shutdown the underlying VM where the container is running.
 Devsy will automatically determine what specific action to take when a workspace is stopped.
 
-### Via Devsy Desktop Application
+### Devsy Desktop
 
 In the 'Workspaces' view, open the actions menu for a running workspace and choose 'Stop'. Once stopped, the menu will show a 'Start' option to resume the workspace.
 
-### Via Devsy CLI
+### Devsy CLI
 
 Run the following command to stop a workspace:
 ```
@@ -26,7 +26,7 @@ Afterwards, you can start the workspace via:
 devsy workspace up my-workspace
 ```
 
-## Automatic stopping via a Provider
+## Automatic stop
 
 Some providers allow automatic stop of a workspace, usually to save costs when a workspace is not used.
 For example, the Google Cloud provider will shutdown the virtual machine where the workspace is running after it's unused for 10 minutes, by default.

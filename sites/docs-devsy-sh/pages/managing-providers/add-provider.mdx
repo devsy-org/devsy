@@ -25,7 +25,7 @@ You can get a list of available 1st party providers by using the command:
 devsy provider list --available
 ```
 
-## Via Devsy Desktop Application
+## Devsy Desktop
 
 Open the Providers view and click **Add**. The provider wizard has four steps:
 
@@ -40,7 +40,7 @@ The ProviderSheet (click any provider in the list) exposes edit settings, switch
 The Desktop Application calls `devsy provider add PROVIDER` under the hood.
 :::
 
-### Adding a custom provider
+### Custom Providers
 
 In the Select step, type one of the following into the **Provider Source** field below the preset grid:
 
@@ -48,7 +48,7 @@ In the Select step, type one of the following into the **Provider Source** field
 - A URL to a `provider.yaml`
 - A file path to a `provider.yaml`
 
-## Via Devsy CLI
+## Devsy CLI
 Install any provider from the list with:
 
 ```sh
@@ -103,12 +103,12 @@ devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/down
 Each provider has a set of options, those options can be different for each of
 them, as they are defined by the provider's developers.
 
-### Managing options from Devsy Desktop Application
+### Options in Desktop
 
 To manage options from the app, head over the `Providers` section, and click
 `Edit` on the provider you want to configure.
 
-### Managing options from Devsy CLI
+### Options in the CLI
 
 Options for providers can be set during the `configure` or `add` phase:
 
