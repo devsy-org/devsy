@@ -44,7 +44,7 @@ func GetFeatureInstallWrapperScript(
 	warningHeader := ""
 	if feature.Deprecated {
 		warningHeader += `(!) WARNING: Using the deprecated Feature ` +
-			`"${escapeQuotesForShell(feature.id)}". This Feature will no longer receive any further updates/support.\n`
+			`"` + id + `". This Feature will no longer receive any further updates/support.\n`
 	}
 
 	echoWarning := ""
@@ -55,7 +55,7 @@ func GetFeatureInstallWrapperScript(
 	errorMessage := `ERROR: Feature "` + name + `" (` + id + `) failed to install!`
 	troubleshootingMessage := ""
 	if documentation != "" {
-		troubleshootingMessage = ` Look at the documentation at ${documentation} for help troubleshooting this error.`
+		troubleshootingMessage = ` Look at the documentation at ` + documentation + ` for help troubleshooting this error.`
 	}
 
 	return `#!/bin/sh
