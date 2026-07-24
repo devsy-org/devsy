@@ -531,6 +531,7 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 		_ = r.EnsureElevated() // defensive; normally already done in NewDockerDriver
 		name, cmdArgs = r.Elevator.wrap(r.DockerCommand, args)
 	}
+	//nolint:gosec // command and args come from trusted provider config
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 	if r.Environment != nil {
 		cmd.Env = append(os.Environ(), r.Environment...)

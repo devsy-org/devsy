@@ -17,6 +17,13 @@ import (
 // unlike the short per-command probe timeouts.
 const elevationAuthTimeout = 2 * time.Minute
 
+// Supported privilege-elevation helpers.
+const (
+	elevationPkexec = "pkexec"
+	elevationSudo   = "sudo"
+	elevationDoas   = "doas"
+)
+
 // Elevator runs docker commands through a privilege-elevation helper (pkexec,
 // sudo, doas). It authenticates once, up front, so an operation's many commands
 // share a single prompt via the warmed OS credential cache.
@@ -33,14 +40,17 @@ func ElevatorFromName(name string) (*Elevator, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "none":
 		return nil, nil
-	case "pkexec":
-		return &Elevator{prefix: []string{"pkexec"}}, nil
-	case "sudo":
-		return &Elevator{prefix: []string{"sudo"}}, nil
-	case "doas":
-		return &Elevator{prefix: []string{"doas"}}, nil
+	case elevationPkexec:
+		return &Elevator{prefix: []string{elevationPkexec}}, nil
+	case elevationSudo:
+		return &Elevator{prefix: []string{elevationSudo}}, nil
+	case elevationDoas:
+		return &Elevator{prefix: []string{elevationDoas}}, nil
 	default:
-		return nil, fmt.Errorf("unknown privilege elevation %q (want pkexec, sudo, doas, or none)", name)
+		return nil, fmt.Errorf(
+			"unknown privilege elevation %q (want pkexec, sudo, doas, or none)",
+			name,
+		)
 	}
 }
 
@@ -61,6 +71,7 @@ func (e *Elevator) ensureAuthenticated(dockerCommand string, env []string) error
 		defer cancel()
 
 		name, args := e.wrap(dockerCommand, []string{"--version"})
+		//nolint:gosec // command and args come from trusted provider config
 		cmd := exec.CommandContext(ctx, name, args...)
 		if env != nil {
 			cmd.Env = append(os.Environ(), env...)

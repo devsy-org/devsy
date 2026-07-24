@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const dockerCmd = string(RuntimeDocker)
+
 func TestElevatorFromName(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -17,9 +19,9 @@ func TestElevatorFromName(t *testing.T) {
 		{name: "", wantNil: true},
 		{name: "none", wantNil: true},
 		{name: "  None  ", wantNil: true},
-		{name: "pkexec", wantPrefix: []string{"pkexec"}},
-		{name: "SUDO", wantPrefix: []string{"sudo"}},
-		{name: "doas", wantPrefix: []string{"doas"}},
+		{name: elevationPkexec, wantPrefix: []string{elevationPkexec}},
+		{name: "SUDO", wantPrefix: []string{elevationSudo}},
+		{name: elevationDoas, wantPrefix: []string{elevationDoas}},
 		{name: "gksu", wantErr: true},
 	}
 
@@ -42,38 +44,38 @@ func TestElevatorFromName(t *testing.T) {
 }
 
 func TestElevatorWrap(t *testing.T) {
-	e, err := ElevatorFromName("pkexec")
+	e, err := ElevatorFromName(elevationPkexec)
 	require.NoError(t, err)
 
-	name, args := e.wrap("docker", []string{"ps", "-q"})
-	assert.Equal(t, "pkexec", name)
-	assert.Equal(t, []string{"docker", "ps", "-q"}, args)
+	name, args := e.wrap(dockerCmd, []string{"ps", "-q"})
+	assert.Equal(t, elevationPkexec, name)
+	assert.Equal(t, []string{dockerCmd, "ps", "-q"}, args)
 
 	// No docker args.
 	name, args = e.wrap("/usr/bin/docker", nil)
-	assert.Equal(t, "pkexec", name)
+	assert.Equal(t, elevationPkexec, name)
 	assert.Equal(t, []string{"/usr/bin/docker"}, args)
 }
 
 func TestEnsureElevatedNoOpWithoutElevator(t *testing.T) {
-	r := &DockerHelper{DockerCommand: "docker"}
+	r := &DockerHelper{DockerCommand: dockerCmd}
 	assert.NoError(t, r.EnsureElevated())
 }
 
 func TestBuildCmdWithoutElevator(t *testing.T) {
-	r := &DockerHelper{DockerCommand: "docker"}
+	r := &DockerHelper{DockerCommand: dockerCmd}
 	cmd := r.buildCmd(t.Context(), "ps", "-q")
-	assert.Equal(t, []string{"docker", "ps", "-q"}, cmd.Args)
+	assert.Equal(t, []string{dockerCmd, "ps", "-q"}, cmd.Args)
 }
 
 func TestBuildCmdWithElevator(t *testing.T) {
-	e, err := ElevatorFromName("sudo")
+	e, err := ElevatorFromName(elevationSudo)
 	require.NoError(t, err)
 	// Mark authentication as already done so buildCmd does not attempt an
 	// interactive prompt during the test.
 	e.once.Do(func() {})
 
-	r := &DockerHelper{DockerCommand: "docker", Elevator: e}
+	r := &DockerHelper{DockerCommand: dockerCmd, Elevator: e}
 	cmd := r.buildCmd(t.Context(), "ps", "-q")
-	assert.Equal(t, []string{"sudo", "docker", "ps", "-q"}, cmd.Args)
+	assert.Equal(t, []string{elevationSudo, dockerCmd, "ps", "-q"}, cmd.Args)
 }
