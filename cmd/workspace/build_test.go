@@ -16,6 +16,24 @@ func TestBuildCmd_NoCacheFlag(t *testing.T) {
 	assert.Equal(t, "false", flag.DefValue)
 }
 
+func TestBuildCmd_NoLockfileFlag(t *testing.T) {
+	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	flag := buildCmd.Flags().Lookup(names.NoLockfile)
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+func TestBuildCmd_NoLockfileAndFrozenLockfileMutuallyExclusive(t *testing.T) {
+	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
+	require.NoError(t, buildCmd.Flags().Parse(
+		[]string{names.Flag(names.NoLockfile), names.Flag(names.FrozenLockfile)},
+	))
+	err := buildCmd.ValidateFlagGroups()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), names.NoLockfile)
+	assert.Contains(t, err.Error(), names.FrozenLockfile)
+}
+
 func TestBuildCmd_NoCacheFlagParsesValue(t *testing.T) {
 	buildCmd := NewBuildCmd(&flags.GlobalFlags{})
 	err := buildCmd.ParseFlags([]string{"--no-cache"})

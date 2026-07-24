@@ -75,12 +75,10 @@ type buildAndExtendParams struct {
 	composeService      *composetypes.ServiceConfig
 	globalArgs          []string
 	featureSecretsFile  string
-	// pull re-pulls base images during the compose build (--pull), set from
-	// CLIOptions.Pull.
-	pull bool
-	// noCache disables the build cache during the compose build (--no-cache),
-	// set from CLIOptions.NoCache.
-	noCache bool
+	pull                bool
+	noCache             bool
+	frozenLockfile      bool
+	noLockfile          bool
 }
 
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
@@ -757,6 +755,8 @@ func (r *runner) buildComposeOverrideArgs(
 		featureSecretsFile:  start.options.FeatureSecretsFile,
 		pull:                start.options.Pull,
 		noCache:             start.options.NoCache,
+		frozenLockfile:      start.options.FrozenLockfile,
+		noLockfile:          start.options.NoLockfile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build and extend docker-compose: %w", err)

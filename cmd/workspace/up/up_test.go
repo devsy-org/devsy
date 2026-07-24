@@ -16,6 +16,17 @@ const (
 	testBindMountAB = "type=bind,source=/a,target=/b"
 )
 
+func TestUpCmd_NoLockfileAndFrozenLockfileMutuallyExclusive(t *testing.T) {
+	upCmd := NewUpCmd(&flags.GlobalFlags{})
+	require.NoError(t, upCmd.Flags().Parse(
+		[]string{names.Flag(names.NoLockfile), names.Flag(names.FrozenLockfile)},
+	))
+	err := upCmd.ValidateFlagGroups()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), names.NoLockfile)
+	assert.Contains(t, err.Error(), names.FrozenLockfile)
+}
+
 func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 	tests := []struct {
 		name    string

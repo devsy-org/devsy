@@ -237,7 +237,7 @@ jobs:
 
           - label: provider
             runner: ubuntu-latest
-            free-disk-space: false
+            free-disk-space: true
             install-kind: true
             requires-secret: false
 

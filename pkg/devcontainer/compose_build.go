@@ -230,6 +230,8 @@ func (r *runner) prepareExtendedComposeBuild(
 			SecretsFile: params.featureSecretsFile,
 			Prompter:    &feature.TerminalSecretPrompter{},
 		},
+		FrozenLockfile: params.frozenLockfile,
+		NoLockfile:     params.noLockfile,
 	})
 	if err != nil {
 		return preparedComposeBuild{}, err

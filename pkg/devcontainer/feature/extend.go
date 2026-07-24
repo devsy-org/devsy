@@ -3,6 +3,7 @@ package feature
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -58,6 +59,8 @@ type ExtendedBuildParams struct {
 	DevContainerConfig *config.SubstitutedConfig
 	ForceBuild         bool
 	SecretOpts         *SecretOptions
+	FrozenLockfile     bool
+	NoLockfile         bool
 }
 
 func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, error) {
@@ -67,7 +70,10 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	devContainerConfig := params.DevContainerConfig
 	forceBuild := params.ForceBuild
 	secretOpts := params.SecretOpts
-	features, err := fetchFeatures(devContainerConfig.Config, forceBuild, secretOpts)
+	features, err := fetchFeatures(
+		devContainerConfig.Config, forceBuild, secretOpts,
+		lockfileMode{write: true, frozen: params.FrozenLockfile, disabled: params.NoLockfile},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
 	}
@@ -287,7 +293,7 @@ func usersFromMetadata(meta *config.ImageMetadataConfig) (string, string) {
 func ResolveFeatureOrder(
 	devContainerConfig *config.DevContainerConfig,
 ) ([]*config.FeatureSet, error) {
-	return fetchFeatures(devContainerConfig, false, nil)
+	return fetchFeatures(devContainerConfig, false, nil, lockfileMode{})
 }
 
 func applyUserFallback(user, composeServiceUser, imageUser string) string {
@@ -304,11 +310,23 @@ func fetchFeatures(
 	devContainerConfig *config.DevContainerConfig,
 	forceBuild bool,
 	secretOpts *SecretOptions,
+	lockMode lockfileMode,
 ) ([]*config.FeatureSet, error) {
+	var lock *lockfileState
+	if !lockMode.disabled {
+		lock = newLockfileState(devContainerConfig)
+	}
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
 		forceBuild:         forceBuild,
 		secretOpts:         secretOpts,
+		lock:               lock,
+	}
+
+	if lockMode.write && lockMode.frozen {
+		if err := lock.checkFrozenPrecondition(devContainerConfig); err != nil {
+			return nil, err
+		}
 	}
 
 	userFeatures, err := getUserFeatures(processor, devContainerConfig)
@@ -329,6 +347,10 @@ func fetchFeatures(
 	featureSets, err = getSortedFeatureSets(devContainerConfig, featureSets)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sorted feature sets: %w", err)
+	}
+
+	if err := lock.commit(devContainerConfig, lockMode); err != nil {
+		return nil, err
 	}
 
 	return featureSets, nil
@@ -354,16 +376,94 @@ type featureProcessor struct {
 	devContainerConfig *config.DevContainerConfig
 	forceBuild         bool
 	secretOpts         *SecretOptions
+	lock               *lockfileState
+}
+
+// featureKind identifies how a feature is sourced, which determines whether it
+// participates in the lockfile (only OCI and direct-tarball features do).
+type featureKind int
+
+const (
+	featureKindLocal featureKind = iota
+	featureKindOCI
+	featureKindTarball
+)
+
+// featureResolution is the outcome of resolving a feature identifier to a local
+// folder, plus the lockfile metadata (resolved reference and integrity digest).
+type featureResolution struct {
+	folder    string
+	kind      featureKind
+	resolved  string
+	integrity string
+}
+
+// resolveFeatureSource resolves a feature identifier to a local folder, pinning
+// OCI and direct-tarball features to the loaded lockfile when present.
+func (p *featureProcessor) resolveFeatureSource(id string) (*featureResolution, error) {
+	switch {
+	case strings.HasPrefix(id, "https://") || strings.HasPrefix(id, "http://"):
+		return p.resolveTarballFeature(id)
+	case strings.HasPrefix(id, "./") || strings.HasPrefix(id, "../"):
+		return p.resolveLocalFeature(id)
+	default:
+		return p.resolveOCIFeature(id)
+	}
+}
+
+func (p *featureProcessor) resolveTarballFeature(id string) (*featureResolution, error) {
+	log.Debugf("process feature: type=%s, id=%s", "url", id)
+	_, pinnedIntegrity, _ := p.lock.pin(id)
+	headers := config.GetDevsyCustomizations(p.devContainerConfig).FeatureDownloadHTTPHeaders
+	folder, integrity, err := processDirectTarFeature(
+		id, headers, p.forceBuild, pinnedIntegrity,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &featureResolution{
+		folder:    folder,
+		kind:      featureKindTarball,
+		resolved:  id,
+		integrity: integrity,
+	}, nil
+}
+
+func (p *featureProcessor) resolveLocalFeature(id string) (*featureResolution, error) {
+	log.Debugf("process feature: type=%s, id=%s", "local", id)
+	folder, err := filepath.Abs(
+		path.Join(filepath.ToSlash(filepath.Dir(p.devContainerConfig.Origin)), id),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &featureResolution{folder: folder, kind: featureKindLocal}, nil
+}
+
+func (p *featureProcessor) resolveOCIFeature(id string) (*featureResolution, error) {
+	log.Debugf("process feature: type=%s, id=%s", "oci", id)
+	pinnedResolved, pinnedIntegrity, _ := p.lock.pin(id)
+	res, err := processOCIFeature(id, pinnedResolved, pinnedIntegrity)
+	if err != nil {
+		return nil, err
+	}
+	return &featureResolution{
+		folder:    res.folder,
+		kind:      featureKindOCI,
+		resolved:  res.resolved,
+		integrity: res.integrity,
+	}, nil
 }
 
 func (p *featureProcessor) processFeature(
 	featureID string,
 	featureOptions any,
 ) (*config.FeatureSet, error) {
-	featureFolder, err := ProcessFeatureID(featureID, p.devContainerConfig, p.forceBuild)
+	res, err := p.resolveFeatureSource(featureID)
 	if err != nil {
 		return nil, fmt.Errorf("process feature ID %s: %w", featureID, err)
 	}
+	featureFolder := res.folder
 
 	log.Debugf("parse dev container feature in %s", featureFolder)
 	featureConfig, err := config.ParseDevContainerFeature(featureFolder)
@@ -389,6 +489,8 @@ func (p *featureProcessor) processFeature(
 		return nil, err
 	}
 
+	p.recordLockEntry(featureID, res, featureConfig)
+
 	return &config.FeatureSet{
 		ConfigID: normalizeFeatureID(featureID),
 		Version:  extractVersionFromFeatureID(featureID),
@@ -396,6 +498,28 @@ func (p *featureProcessor) processFeature(
 		Config:   featureConfig,
 		Options:  resolvedOptions,
 	}, nil
+}
+
+// recordLockEntry adds a lockfile entry for OCI and direct-tarball features,
+// keyed by the feature identifier as written in the config (or a dependency's
+// identifier). Local features are not lockable and are skipped.
+func (p *featureProcessor) recordLockEntry(
+	featureID string,
+	res *featureResolution,
+	cfg *config.FeatureConfig,
+) {
+	if res.kind != featureKindOCI && res.kind != featureKindTarball {
+		return
+	}
+	entry := LockedFeature{
+		Version:   cfg.Version,
+		Resolved:  res.resolved,
+		Integrity: res.integrity,
+	}
+	if len(cfg.DependsOn) > 0 {
+		entry.DependsOn = map[string]any(cfg.DependsOn)
+	}
+	p.lock.record(featureID, entry)
 }
 
 func resolveSecretsForFeature(

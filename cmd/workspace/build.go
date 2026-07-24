@@ -45,6 +45,7 @@ func NewBuildCmd(flags *cmdflags.GlobalFlags) *cobra.Command {
 	}
 
 	cmd.registerFlags(buildCmd)
+	buildCmd.MarkFlagsMutuallyExclusive(names.NoLockfile, names.FrozenLockfile)
 	return buildCmd
 }
 
@@ -109,6 +110,11 @@ func (cmd *BuildCmd) registerImageFlags(buildCmd *cobra.Command) {
 		cliflags.String(&cmd.Output, names.Output, "", "Build output type (docker or oci)"),
 		cliflags.String(&cmd.ExperimentalLockfile, names.ExperimentalLockfile, "",
 			"Lockfile path for reproducible builds"),
+		cliflags.Bool(&cmd.FrozenLockfile, names.FrozenLockfile, false,
+			"Fail if devcontainer-lock.json is missing or does not match the resolved features "+
+				"instead of writing it"),
+		cliflags.Bool(&cmd.NoLockfile, names.NoLockfile, false,
+			"Disable devcontainer-lock.json generation and verification"),
 		cliflags.String(
 			&cmd.ImageName,
 			names.ImageName,
