@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -155,6 +157,22 @@ func TestImportExternalDevContainer_AddsGitExclude(t *testing.T) {
 	exclude, err := os.ReadFile(filepath.Join(ws, ".git", "info", "exclude"))
 	require.NoError(t, err)
 	assert.Contains(t, string(exclude), importedProfileParent+"/"+importedProfileName)
+}
+
+func TestSaveSynthesizedConfig_AddsGitExclude(t *testing.T) {
+	ws := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".git", "info"), 0o750))
+	r := &runner{localWorkspaceFolder: ws}
+
+	_, err := r.saveSynthesizedConfig(&config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine"},
+	})
+	require.NoError(t, err)
+
+	// #nosec G304 -- test path
+	exclude, err := os.ReadFile(filepath.Join(ws, ".git", "info", "exclude"))
+	require.NoError(t, err)
+	assert.Contains(t, string(exclude), "/.devcontainer."+pkgconfig.BinaryName+".json")
 }
 
 func TestImportExternalDevContainer_NonGitRepoSkipsExclude(t *testing.T) {

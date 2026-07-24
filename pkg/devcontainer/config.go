@@ -339,12 +339,13 @@ func CleanupImportedDevContainers(workspaceFolder string) error {
 func (r *runner) saveSynthesizedConfig(
 	c *config.DevContainerConfig,
 ) (*config.DevContainerConfig, error) {
-	c.Origin = path.Join(
-		filepath.ToSlash(r.localWorkspaceFolder),
-		".devcontainer."+pkgconfig.BinaryName+".json",
-	)
+	name := ".devcontainer." + pkgconfig.BinaryName + ".json"
+	c.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), name)
 	if err := config.SaveDevContainerJSON(c); err != nil {
 		return nil, fmt.Errorf("write synthesized devcontainer.json: %w", err)
+	}
+	if err := r.excludeFromGit(name); err != nil {
+		log.Debugf("could not add synthesized devcontainer to git exclude: %v", err)
 	}
 	return c, nil
 }
@@ -361,9 +362,13 @@ func (r *runner) getDefaultConfig(
 		defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
 	}
 
-	defaultConfig.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), ".devcontainer.json")
+	const name = ".devcontainer.json"
+	defaultConfig.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), name)
 	if err := config.SaveDevContainerJSON(defaultConfig); err != nil {
 		return nil, fmt.Errorf("write default devcontainer.json: %w", err)
+	}
+	if err := r.excludeFromGit(name); err != nil {
+		log.Debugf("could not add default devcontainer to git exclude: %v", err)
 	}
 	return defaultConfig, nil
 }
