@@ -282,6 +282,7 @@ func resolveAgentDockerConfig(
 	options map[string]string,
 ) {
 	agentConfig.Docker.Path = resolver.ResolveDefaultValue(agentConfig.Docker.Path, options)
+	agentConfig.Docker.Elevation = resolver.ResolveDefaultValue(agentConfig.Docker.Elevation, options)
 	agentConfig.Docker.Builder = resolver.ResolveDefaultValue(agentConfig.Docker.Builder, options)
 	agentConfig.Docker.Install = types.StrBool(
 		resolver.ResolveDefaultValue(string(agentConfig.Docker.Install), options),

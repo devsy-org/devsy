@@ -8,6 +8,7 @@ optionGroups:
   - options:
       - PODMAN_PATH
       - PODMAN_HOST
+      - PODMAN_ELEVATION
       - INACTIVITY_TIMEOUT
     name: "Advanced Options"
 options:
@@ -16,6 +17,9 @@ options:
   PODMAN_PATH:
     description: The path where to find the podman binary.
     default: podman
+  PODMAN_ELEVATION:
+    description: "Optionally run podman commands through a privilege-elevation helper for a rootful podman socket the current user cannot access. One of: pkexec, sudo, doas, or none. Leave as none for rootless podman: elevating would target the separate rootful podman instead. Note: pkexec targets local desktop sessions with a running polkit agent; use sudo or doas on headless/SSH hosts."
+    default: none
   PODMAN_HOST:
     global: true
     description: The podman host to use.
@@ -24,6 +28,7 @@ agent:
   local: true
   docker:
     path: ${PODMAN_PATH}
+    elevation: ${PODMAN_ELEVATION}
     install: false
     runtime: podman
     env:
