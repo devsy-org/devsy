@@ -36,7 +36,7 @@
     "@playwright/test": "1.61.1",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tailwindcss/vite": "4.3.3",
-    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/jest-dom": "7.0.0",
     "@testing-library/svelte": "5.4.2",
     "@types/dompurify": "3.2.0",
     "@xterm/addon-fit": "0.11.0",
