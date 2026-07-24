@@ -132,7 +132,8 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 		workspace.DevContainerPath = params.DevContainerPath
 		changed = true
 	}
-	if params.DevContainerSource != "" && workspace.DevContainerSource != params.DevContainerSource {
+	if params.DevContainerSource != "" &&
+		workspace.DevContainerSource != params.DevContainerSource {
 		workspace.DevContainerSource = params.DevContainerSource
 		changed = true
 	}
