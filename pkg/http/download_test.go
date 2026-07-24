@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -160,6 +161,25 @@ func TestDownloadToFileStallTimeoutAborts(t *testing.T) {
 	}
 	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no partial file after stall, stat err = %v", statErr)
+	}
+}
+
+func TestDownloadToFileReportsContextCancellation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	// Backoff longer than the context deadline, so cancellation happens during
+	// the wait after a transient (non-context) failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	slow := WithBackoff(wait.Backoff{Duration: 100 * time.Millisecond, Factor: 1, Steps: 3})
+
+	dest := filepath.Join(t.TempDir(), "out.bin")
+	err := DownloadToFile(ctx, srv.URL, dest, slow)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context deadline error, got %v", err)
 	}
 }
 

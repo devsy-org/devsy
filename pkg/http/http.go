@@ -6,14 +6,11 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
 )
-
-const DefaultResponseHeaderTimeout = 60 * time.Second
 
 var (
 	baseTransportOnce sync.Once
@@ -27,7 +24,6 @@ var (
 func baseRoundTripper() *http.Transport {
 	baseTransportOnce.Do(func() {
 		t := http.DefaultTransport.(*http.Transport).Clone()
-		t.ResponseHeaderTimeout = DefaultResponseHeaderTimeout
 		if insecureTLSEnabled() {
 			// #nosec G402 -- enabled with DEVSY_INSECURE_TLS env
 			t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
@@ -38,11 +34,13 @@ func baseRoundTripper() *http.Transport {
 	return baseTransportInst
 }
 
-// GetHTTPClient returns the shared client: base transport, user-agent, and
-// retry of idempotent requests. Not for streaming responses that withhold headers.
+// GetHTTPClient returns the shared client: base transport, stall guard,
+// user-agent, and retry of idempotent requests. The stall guard bounds idle
+// header/body waits, so it must not be used for intentionally-idle streams.
 func GetHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
-		rt := WithUserAgent(baseRoundTripper(), UserAgent())
+		rt := NewStallTransport(baseRoundTripper(), DefaultStallTimeout)
+		rt = WithUserAgent(rt, UserAgent())
 		rt = NewRetryTransport(rt, DefaultRetry)
 		httpClientInst = &http.Client{Transport: rt}
 	})

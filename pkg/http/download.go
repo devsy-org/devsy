@@ -128,6 +128,9 @@ func DownloadToFile(ctx context.Context, url, destPath string, opts ...DownloadO
 		},
 	)
 	if wait.Interrupted(err) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return lastErr
 	}
 	return err
