@@ -132,6 +132,37 @@ func TestRepoCheckoutPRNonRefErrorNoFallback(t *testing.T) {
 	assert.Equal(t, 1, len(fake.calls))
 }
 
+func TestRepoCheckoutPRTracksSourceBranch(t *testing.T) {
+	// for-each-ref resolves the source branch by commit; a single match is
+	// adopted as the local branch's upstream.
+	fake := &fakeRunner{stdout: []byte("origin/feature-x\n")}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []string{subFetch, originRemote, testMRRefSpec}, fake.calls[0].Args)
+	assert.DeepEqual(t, []string{subSwitch, testMRLocal}, fake.calls[1].Args)
+	assert.DeepEqual(t, []string{
+		"for-each-ref", "--points-at", testMRLocal,
+		"--format=%(refname:short)", "refs/remotes/origin",
+	}, fake.calls[2].Args)
+	assert.DeepEqual(t, []string{
+		"branch", "--set-upstream-to=origin/feature-x", testMRLocal,
+	}, fake.calls[3].Args)
+}
+
+func TestRepoCheckoutPRAmbiguousSourceBranchLeftUntracked(t *testing.T) {
+	// More than one origin branch points at the head (e.g. the default branch
+	// too): the match is ambiguous, so no upstream is configured.
+	fake := &fakeRunner{stdout: []byte("origin/HEAD\norigin/main\norigin/feature-x\n")}
+	repo := At("/tmp/repo", WithRunner(fake))
+
+	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
+	assert.NilError(t, err)
+	assert.Equal(t, 3, len(fake.calls)) // fetch, switch, for-each-ref — no set-upstream
+	assert.Equal(t, "for-each-ref", fake.calls[2].Args[0])
+}
+
 func TestRepoLsRemote(t *testing.T) {
 	fake := &fakeRunner{}
 	repo := At("", WithRunner(fake))
