@@ -4,6 +4,7 @@ import { Star } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
+import { Switch } from "$lib/components/ui/switch/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
@@ -23,6 +24,7 @@ import {
   providerList,
   providerOptions,
   providerSetOptions,
+  providerSetSingleMachine,
   providerRename,
   providerSetVersion,
 } from "$lib/ipc/commands.js"
@@ -152,6 +154,23 @@ async function handleSetDefault() {
     toasts.success(`Set ${provider.name} as default provider`)
   } catch (err) {
     toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
+  }
+}
+
+let togglingSingleMachine = $state(false)
+
+async function handleToggleSingleMachine(enabled: boolean) {
+  togglingSingleMachine = true
+  try {
+    await providerSetSingleMachine(provider.name, enabled)
+    providers.set(await providerList())
+    toasts.success(
+      enabled ? "Reuse machine enabled" : "Reuse machine disabled",
+    )
+  } catch (err) {
+    toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
+  } finally {
+    togglingSingleMachine = false
   }
 }
 
@@ -374,6 +393,20 @@ async function handleSaveOptions() {
         <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
       </ButtonGroup.Root>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
+    </div>
+
+    <div class="flex items-center justify-between gap-4 px-6">
+      <div class="space-y-0.5">
+        <Label>Reuse machine</Label>
+        <p class="text-sm text-muted-foreground">
+          Run all workspaces on a single shared machine instead of one per workspace.
+        </p>
+      </div>
+      <Switch
+        checked={provider.state?.singleMachine ?? false}
+        onCheckedChange={handleToggleSingleMachine}
+        disabled={togglingSingleMachine}
+      />
     </div>
 
     {#if $providerVersions.updates[provider.name]?.updateAvailable === true}

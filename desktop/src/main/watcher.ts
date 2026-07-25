@@ -29,7 +29,7 @@ export interface ProviderEntry {
     options?: Record<string, unknown>
     optionGroups?: unknown[]
   }
-  state?: { initialized?: boolean }
+  state?: { initialized?: boolean; singleMachine?: boolean }
   default?: boolean
 }
 
@@ -45,7 +45,7 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     isDefault: entry.default ?? false,
     state: {
       initialized: entry.state?.initialized ?? false,
-      singleMachine: false,
+      singleMachine: entry.state?.singleMachine ?? false,
     },
   }))
 }

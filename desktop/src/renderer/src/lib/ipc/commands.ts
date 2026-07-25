@@ -92,8 +92,16 @@ export async function providerList(): Promise<Provider[]> {
 export async function providerAdd(
   name: string,
   source?: string,
+  singleMachine?: boolean,
 ): Promise<void> {
-  return invoke("provider_add", { name, source })
+  return invoke("provider_add", { name, source, singleMachine })
+}
+
+export async function providerSetSingleMachine(
+  name: string,
+  enabled: boolean,
+): Promise<void> {
+  return invoke("provider_set_single_machine", { name, enabled })
 }
 
 export async function providerDelete(name: string): Promise<void> {
