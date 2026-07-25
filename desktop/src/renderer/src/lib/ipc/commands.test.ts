@@ -196,6 +196,25 @@ describe("IPC commands", () => {
       await machineStatus("m-1")
       expect(mockInvoke).toHaveBeenCalledWith("machine_status", { id: "m-1" })
     })
+
+    it("machineStatus extracts state from JSON payload", async () => {
+      mockInvoke.mockResolvedValue(
+        '{"id":"ws-ubuntu-c8595c","context":"default","provider":"lima-podman","state":"Running"}',
+      )
+      expect(await machineStatus("m-1")).toBe("Running")
+    })
+
+    it("machineStatus returns plain string status as-is", async () => {
+      mockInvoke.mockResolvedValue("Running")
+      expect(await machineStatus("m-1")).toBe("Running")
+    })
+
+    it("machineStatus returns empty string when JSON payload omits state", async () => {
+      mockInvoke.mockResolvedValue(
+        '{"id":"ws-ubuntu-c8595c","context":"default","provider":"lima-podman"}',
+      )
+      expect(await machineStatus("m-1")).toBe("")
+    })
   })
 
   describe("context commands", () => {
