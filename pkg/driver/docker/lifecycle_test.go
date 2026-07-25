@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,6 +55,50 @@ func newExitedContainer() *config.ContainerDetails {
 		ID:    "c1",
 		State: config.ContainerDetailsState{Status: "exited"},
 	}
+}
+
+// fakeEnsureImageDocker emulates `docker inspect` failing with the given
+// stderr and records whether `docker pull` was invoked by touching marker.
+func fakeEnsureImageDocker(t *testing.T, inspectStderr, marker string) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+  inspect)
+    echo '` + inspectStderr + `' >&2
+    exit 1
+    ;;
+  pull)
+    echo pulled > "` + marker + `"
+    ;;
+esac
+`
+	path := filepath.Join(dir, "docker-fake")
+	//nolint:gosec // test helper script needs exec bit
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	return path
+}
+
+func TestEnsureImage_NotFoundPulls(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "pulled")
+	bin := fakeEnsureImageDocker(t, "Error response from daemon: No such image: x", marker)
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: "x:latest"})
+
+	require.NoError(t, err)
+	assert.FileExists(t, marker, "a not-found image should trigger a pull")
+}
+
+func TestEnsureImage_RealErrorDoesNotPull(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "pulled")
+	bin := fakeEnsureImageDocker(t, "Cannot connect to the Docker daemon", marker)
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: "x:latest"})
+
+	require.Error(t, err)
+	assert.NoFileExists(t, marker, "a genuine daemon failure must not trigger a pull")
 }
 
 func TestEnsureContainerRunning_AlreadyRunning(t *testing.T) {

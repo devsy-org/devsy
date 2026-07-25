@@ -367,8 +367,13 @@ func (r *runner) findPrebuildImage(
 		options.PrebuildRepositories,
 		devsyCustomizations.PrebuildRepository...)
 
+	if len(options.PrebuildRepositories) == 0 {
+		log.Debug("no prebuild repositories configured; skipping remote prebuild lookup")
+		return nil, nil
+	}
+
 	log.Debugf(
-		"Try to find prebuild image %s in repositories %s",
+		"looking for prebuild image %s in repositories %s",
 		params.prebuildHash,
 		strings.Join(options.PrebuildRepositories, ","),
 	)
