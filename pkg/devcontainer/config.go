@@ -36,8 +36,12 @@ const (
 // each supported source in order and falling back to an auto-detected default
 // when none applies.
 func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainerConfig, error) {
-	if options.DevContainerSource != "" {
-		return r.rawConfigFromSource(options)
+	source := options.DevContainerSource
+	if source == "" {
+		source = r.workspaceConfig.Workspace.DevContainerSource
+	}
+	if source != "" {
+		return r.rawConfigFromSource(source, options)
 	}
 	if conf := r.rawConfigFromWorkspace(); conf != nil {
 		return conf, nil
@@ -169,9 +173,10 @@ func workspaceMountFolderWarning(conf *config.DevContainerConfig) string {
 }
 
 func (r *runner) rawConfigFromSource(
+	source string,
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	spec, err := ParseSourceSpec(options.DevContainerSource)
+	spec, err := ParseSourceSpec(source)
 	if err != nil {
 		return nil, err
 	}

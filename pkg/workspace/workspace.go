@@ -54,6 +54,7 @@ type ResolveParams struct {
 	ReconfigureProvider  bool
 	DevContainerImage    string
 	DevContainerPath     string
+	DevContainerSource   string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
 	Source               *providerpkg.WorkspaceSource
@@ -129,6 +130,11 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 	}
 	if params.DevContainerPath != "" && workspace.DevContainerPath != params.DevContainerPath {
 		workspace.DevContainerPath = params.DevContainerPath
+		changed = true
+	}
+	if params.DevContainerSource != "" &&
+		workspace.DevContainerSource != params.DevContainerSource {
+		workspace.DevContainerSource = params.DevContainerSource
 		changed = true
 	}
 

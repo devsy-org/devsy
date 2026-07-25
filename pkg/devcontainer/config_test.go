@@ -467,6 +467,41 @@ func TestGetRawConfig_SourceImageBypassesDiscovery(t *testing.T) {
 	}
 }
 
+func TestGetRawConfig_PersistedSourceImageBypassesDiscovery(t *testing.T) {
+	folder := t.TempDir()
+	seedAmbiguousProfiles(t, folder)
+	r := newRunnerAt(folder)
+	// Simulate a restart: the CLI option is absent, but the override was
+	// persisted on the workspace during the first up.
+	const image = "python"
+	r.workspaceConfig.Workspace.DevContainerSource = "image:" + image
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != image {
+		t.Errorf("Image = %q, want %q", conf.Image, image)
+	}
+	if len(conf.Features) != 0 {
+		t.Errorf("Features = %v, want none (project features must be ignored)", conf.Features)
+	}
+}
+
+func TestGetRawConfig_CLISourceOverridesPersisted(t *testing.T) {
+	folder := t.TempDir()
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerSource = "image:persisted"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{DevContainerSource: "image:cli"})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "cli" {
+		t.Errorf("Image = %q, want %q (CLI option must win over persisted)", conf.Image, "cli")
+	}
+}
+
 func TestGetRawConfig_SourceNoneWithImageBypassesDiscovery(t *testing.T) {
 	folder := t.TempDir()
 	seedAmbiguousProfiles(t, folder)
