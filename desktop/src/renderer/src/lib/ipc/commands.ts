@@ -211,7 +211,13 @@ export async function machineStop(id: string): Promise<void> {
 }
 
 export async function machineStatus(id: string): Promise<string> {
-  return invoke<string>("machine_status", { id })
+  const raw = await invoke<string>("machine_status", { id })
+  try {
+    const parsed = JSON.parse(raw) as { state?: string }
+    return parsed.state ?? ""
+  } catch {
+    return raw.trim()
+  }
 }
 
 // Context commands

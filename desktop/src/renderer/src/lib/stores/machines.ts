@@ -55,25 +55,13 @@ export function destroyMachines() {
 function fetchStatuses(list: Machine[]) {
   for (const m of list) {
     machineStatus(m.id)
-      .then((raw) => {
-        try {
-          const parsed = JSON.parse(raw) as { state?: string }
-          if (parsed.state) {
-            machines.update((current) =>
-              current.map((item) =>
-                item.id === m.id ? { ...item, status: parsed.state } : item,
-              ),
-            )
-          }
-        } catch {
-          const status = raw.trim()
-          if (status) {
-            machines.update((current) =>
-              current.map((item) =>
-                item.id === m.id ? { ...item, status } : item,
-              ),
-            )
-          }
+      .then((status) => {
+        if (status) {
+          machines.update((current) =>
+            current.map((item) =>
+              item.id === m.id ? { ...item, status } : item,
+            ),
+          )
         }
       })
       .catch(() => {})
