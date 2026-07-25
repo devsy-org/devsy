@@ -65,6 +65,13 @@ func BootstrapCLI(cmd *cobra.Command) CLICollector {
 		return &noopCollector{}
 	}
 
+	isUI := os.Getenv(config.EnvUI) == config.BoolTrue
+	isProRunner := os.Getenv(config.EnvProRunner) == config.BoolTrue
+	if !isUI && !isProRunner && isCIEnvironment() {
+		log.Debug("telemetry: disabled in CI environment")
+		return &noopCollector{}
+	}
+
 	collector, err := newCLICollector(cmd)
 	if err != nil {
 		log.Infof("telemetry: %s", err.Error())
@@ -191,6 +198,11 @@ func (d *cliCollector) recordEvent(
 	eventPayload[analytics.KeyType] = eventType
 	eventPayload[analytics.KeyMachineID] = machineID
 	eventPayload[analytics.KeyTimestamp] = timestamp
+
+	if wsUID := os.Getenv(config.EnvWorkspaceUID); wsUID != "" {
+		eventPayload["in_container"] = true
+		eventPayload["workspace_id"] = hashScopedID(machineID, wsUID)
+	}
 
 	userPayload := map[string]any{}
 	maps.Copy(userPayload, userProperties)

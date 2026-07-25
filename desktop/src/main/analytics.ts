@@ -55,6 +55,8 @@ export function initAnalytics(): void {
     host: POSTHOG_HOST,
     flushAt: 20,
     flushInterval: 30_000,
+    disableGeoip: false,
+    isServer: false,
   })
 }
 

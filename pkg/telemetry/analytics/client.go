@@ -26,7 +26,8 @@ func NewClient() Client {
 	}
 
 	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
-		Endpoint: posthogEndpoint,
+		Endpoint:     posthogEndpoint,
+		DisableGeoIP: new(false),
 	})
 	if err != nil {
 		log.Debugf("failed to initialize analytics client: %v", err)
