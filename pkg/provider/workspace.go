@@ -207,6 +207,14 @@ type AgentWorkspaceInfo struct {
 	RegistryCache string `json:"registryCache,omitempty"`
 }
 
+// GitToken is a resolved access token for cloning a private HTTP repository.
+// It is scoped to a host so it is never offered to other hosts git contacts.
+type GitToken struct {
+	Host     string `json:"host,omitempty"`
+	Username string `json:"username,omitempty"`
+	Token    string `json:"token,omitempty"`
+}
+
 type CLIOptions struct {
 	// Platform are the platform options
 	Platform devsy.PlatformOptions `json:"platformOptions"`
@@ -224,6 +232,14 @@ type CLIOptions struct {
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
 	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
+	SecretsMount                []string          `json:"secretsMount,omitempty"`
+	BuildSecrets                []string          `json:"buildSecrets,omitempty"`
+	GitToken                    *GitToken         `json:"gitToken,omitempty"`
+	Secrets                     []string          `json:"secrets,omitempty"`
+	EnvVars                     []string          `json:"envVars,omitempty"`
+	BuildSecretNames            []string          `json:"buildSecretNames,omitempty"`
+	GitTokenSecret              string            `json:"gitTokenSecret,omitempty"`
+	GitTokenUsername            string            `json:"gitTokenUsername,omitempty"`
 	FeatureSecretsFile          string            `json:"featureSecretsFile,omitempty"`
 	InitEnv                     []string          `json:"initEnv,omitempty"`
 	Recreate                    bool              `json:"recreate,omitempty"`

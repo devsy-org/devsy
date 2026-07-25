@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "cat /run/secrets/mounted_secret > /tmp/mounted-secret-check.out"
+}

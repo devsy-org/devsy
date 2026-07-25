@@ -14,14 +14,35 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"google.golang.org/grpc"
 )
 
 const DefaultPort = "12049"
 
+type CredentialsClient interface {
+	GitCredentials(
+		ctx context.Context, in *tunnel.Message, opts ...grpc.CallOption,
+	) (*tunnel.Message, error)
+	DockerCredentials(
+		ctx context.Context, in *tunnel.Message, opts ...grpc.CallOption,
+	) (*tunnel.Message, error)
+	GitSSHSignature(
+		ctx context.Context, in *tunnel.Message, opts ...grpc.CallOption,
+	) (*tunnel.Message, error)
+	GPGPublicKeys(
+		ctx context.Context, in *tunnel.Message, opts ...grpc.CallOption,
+	) (*tunnel.Message, error)
+	DevsyConfig(
+		ctx context.Context, in *tunnel.Message, opts ...grpc.CallOption,
+	) (*tunnel.Message, error)
+}
+
+var _ CredentialsClient = (tunnel.TunnelClient)(nil)
+
 func RunCredentialsServer(
 	ctx context.Context,
 	port int,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	var handler http.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		log.Debugf("incoming client connection: path=%s", request.URL.Path)
@@ -95,7 +116,7 @@ func handleDockerCredentialsRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	request *http.Request,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -119,7 +140,7 @@ func handleGitCredentialsRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	request *http.Request,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -144,7 +165,7 @@ func handleGitSSHSignatureRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	request *http.Request,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -180,7 +201,7 @@ func handleDevsyPlatformCredentialsRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
 	request *http.Request,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	out, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -204,7 +225,7 @@ func handleDevsyPlatformCredentialsRequest(
 func handleGPGPublicKeysRequest(
 	ctx context.Context,
 	writer http.ResponseWriter,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) error {
 	response, err := client.GPGPublicKeys(ctx, &tunnel.Message{})
 	if err != nil {

@@ -1,6 +1,7 @@
 import type {
   AuditEntry,
   Context,
+  EnvVar,
   LoadCatalogResult,
   LogEntry,
   Machine,
@@ -9,10 +10,25 @@ import type {
   ProviderOption,
   ProviderVersion,
   ProviderVersionCheckResult,
+  Secret,
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
 import { invoke } from "./bridge.js"
+
+type CommandEnvelope =
+  | { ok: true }
+  | { ok: false; message: string; cliError?: import("$shared/cli-error.js").CLIError }
+
+/** Unwrap a structured command envelope, rethrowing failures as an Error with .cliError attached. */
+function unwrapEnvelope(result: CommandEnvelope): void {
+  if (result.ok) return
+  const err = new Error(result.message) as Error & {
+    cliError?: import("$shared/cli-error.js").CLIError
+  }
+  if (result.cliError) err.cliError = result.cliError
+  throw err
+}
 
 // Workspace commands
 export async function workspaceList(): Promise<Workspace[]> {
@@ -113,16 +129,7 @@ export async function providerUse(name: string): Promise<void> {
 }
 
 export async function providerInit(name: string): Promise<void> {
-  const result = await invoke<
-    | { ok: true }
-    | { ok: false; message: string; cliError?: import("$shared/cli-error.js").CLIError }
-  >("provider_init", { name })
-  if (result.ok) return
-  const err = new Error(result.message) as Error & {
-    cliError?: import("$shared/cli-error.js").CLIError
-  }
-  if (result.cliError) err.cliError = result.cliError
-  throw err
+  unwrapEnvelope(await invoke<CommandEnvelope>("provider_init", { name }))
 }
 
 export async function providerInitStreaming(name: string): Promise<string> {
@@ -259,6 +266,30 @@ export async function contextCreate(name: string): Promise<void> {
 
 export async function contextDelete(name: string): Promise<void> {
   return invoke("context_delete", { name })
+}
+
+export async function secretList(): Promise<Secret[]> {
+  return invoke<Secret[]>("secret_list")
+}
+
+export async function secretSet(name: string, value: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("secret_set", { name, value }))
+}
+
+export async function secretDelete(name: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("secret_delete", { name }))
+}
+
+export async function envList(): Promise<EnvVar[]> {
+  return invoke<EnvVar[]>("env_list")
+}
+
+export async function envSet(name: string, value: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_set", { name, value }))
+}
+
+export async function envDelete(name: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name }))
 }
 
 // Audit commands

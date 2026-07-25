@@ -121,6 +121,19 @@ export interface Context {
   options?: Record<string, OptionValue>
 }
 
+export interface Secret {
+  name: string
+  context: string
+  created?: string
+  lastUsed?: string
+  orphaned?: boolean
+}
+
+export interface EnvVar {
+  name: string
+  value: string
+}
+
 export interface CommandProgress {
   commandId: string
   lines?: string[]

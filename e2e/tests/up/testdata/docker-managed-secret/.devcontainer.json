@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "echo -n $MANAGED_SECRET > /tmp/managed-secret-check.out"
+}

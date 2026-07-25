@@ -137,3 +137,49 @@ func TestBuildDockerBuildxArgs_PullAndNoCache(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildxSecretArgs(t *testing.T) {
+	env, args, err := buildxSecretArgs([]string{"NPM_TOKEN=abc123", "CONN=user=admin"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"DEVSY_BUILD_SECRET_NPM_TOKEN=abc123",
+		"DEVSY_BUILD_SECRET_CONN=user=admin",
+	}, env)
+	assert.Equal(t, []string{
+		"--secret", "id=NPM_TOKEN,env=DEVSY_BUILD_SECRET_NPM_TOKEN",
+		"--secret", "id=CONN,env=DEVSY_BUILD_SECRET_CONN",
+	}, args)
+}
+
+func TestBuildxSecretArgs_Empty(t *testing.T) {
+	env, args, err := buildxSecretArgs(nil)
+	require.NoError(t, err)
+	assert.Empty(t, env)
+	assert.Empty(t, args)
+}
+
+func TestBuildxSecretArgs_Invalid(t *testing.T) {
+	_, _, err := buildxSecretArgs([]string{"NOEQUALS"})
+	require.Error(t, err)
+}
+
+func TestTailBuffer(t *testing.T) {
+	// Write always reports full consumption so it never short-writes a MultiWriter.
+	b := &tailBuffer{limit: 4}
+	n, err := b.Write([]byte("ab"))
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, "ab", b.String())
+
+	// Straddling the limit keeps only the last `limit` bytes.
+	_, _ = b.Write([]byte("cde"))
+	assert.Equal(t, 4, b.Len())
+	assert.Equal(t, "bcde", b.String())
+
+	// A single oversized write keeps its tail (buildx emits the real error last).
+	b2 := &tailBuffer{limit: 4}
+	n, err = b2.Write([]byte("0123456789"))
+	require.NoError(t, err)
+	assert.Equal(t, 10, n)
+	assert.Equal(t, "6789", b2.String())
+}

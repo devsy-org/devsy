@@ -348,10 +348,12 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
 
-						secretsFile := filepath.Join(secretsDir, "secrets.env")
+						secretsFile := filepath.Join(secretsDir, "secrets.json")
 						err = os.WriteFile(
 							secretsFile,
-							[]byte("MY_SECRET=test-value-12345\nANOTHER_SECRET=second-secret-42\n"),
+							[]byte(
+								`{"MY_SECRET":"test-value-12345","ANOTHER_SECRET":"second-secret-42"}`,
+							),
 							0o600,
 						)
 						framework.ExpectNoError(err)
@@ -997,10 +999,12 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
 
-						secretsFile := filepath.Join(secretsDir, "secrets.env")
+						secretsFile := filepath.Join(secretsDir, "secrets.json")
 						err = os.WriteFile(
 							secretsFile,
-							[]byte("MY_SECRET=test-value-12345\nANOTHER_SECRET=second-secret-42\n"),
+							[]byte(
+								`{"MY_SECRET":"test-value-12345","ANOTHER_SECRET":"second-secret-42"}`,
+							),
 							0o600,
 						)
 						framework.ExpectNoError(err)

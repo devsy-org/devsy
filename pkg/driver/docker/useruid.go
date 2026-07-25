@@ -12,6 +12,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -191,7 +192,7 @@ func (d *dockerDriver) dockerCp(ctx context.Context, src, dst string, writer io.
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
 	)
-	return d.Docker.Run(ctx, args, nil, writer, writer)
+	return d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
 }
 
 type lineProcessor func(line string, fields []string) (modifiedLine string, shouldWrite bool, err error)
@@ -328,7 +329,11 @@ func (d *dockerDriver) applyPermissions(ctx context.Context, params *applyPermis
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
 	)
-	if err := d.Docker.Run(ctx, args, nil, params.writer, params.writer); err != nil {
+	if err := d.Docker.Run(
+		ctx,
+		args,
+		docker.Streams{Stdout: params.writer, Stderr: params.writer},
+	); err != nil {
 		return err
 	}
 
@@ -355,7 +360,7 @@ func (d *dockerDriver) applyPermissions(ctx context.Context, params *applyPermis
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
 	)
-	return d.Docker.Run(ctx, args, nil, params.writer, params.writer)
+	return d.Docker.Run(ctx, args, docker.Streams{Stdout: params.writer, Stderr: params.writer})
 }
 
 type tempFiles struct {

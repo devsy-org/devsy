@@ -23,6 +23,14 @@ func escapeComposeLabelValue(value string) string {
 }
 
 func (r *runner) extendedDockerComposeUp(params *composeUpParams) (string, error) {
+	secretsMount, err := r.secretsMount()
+	if err != nil {
+		return "", err
+	}
+	if secretsMount != nil {
+		params.mergedConfig.Mounts = append(params.mergedConfig.Mounts, secretsMount)
+	}
+
 	dockerComposeUpProject := r.generateDockerComposeUpProject(params)
 	dockerComposeData, err := yaml.Marshal(dockerComposeUpProject)
 	if err != nil {

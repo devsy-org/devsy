@@ -1,7 +1,28 @@
 // @vitest-environment node
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
+import { EventEmitter } from "node:events"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
+
+function fakeChild() {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter
+    stderr: EventEmitter
+    stdin: EventEmitter & { end: (input: string) => void; written: string }
+  }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  const stdin = new EventEmitter() as EventEmitter & {
+    end: (input: string) => void
+    written: string
+  }
+  stdin.written = ""
+  stdin.end = (input: string) => {
+    stdin.written = input
+  }
+  child.stdin = stdin
+  return child
+}
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>()
@@ -122,6 +143,44 @@ describe("CliRunner", () => {
 
       const result = await cli.runRaw(["--version"])
       expect(result).toBe("v0.6.0-dev\n")
+    })
+  })
+
+  describe("runRawStdin", () => {
+    it("writes the value to the child's stdin and resolves with stdout", async () => {
+      const child = fakeChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(child)
+
+      const promise = cli.runRawStdin(["secret", "set", "FOO", "--stdin"], "bar")
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled())
+
+      // Regression guard: execFile's async { input } is a no-op, so the value must
+      // reach stdin via spawn or the CLI blocks forever and the desktop hangs.
+      expect(child.stdin.written).toBe("bar")
+
+      child.stdout.emit("data", "ok\n")
+      child.emit("close", 0)
+
+      await expect(promise).resolves.toBe("ok\n")
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "/usr/local/bin/devsy",
+        ["secret", "set", "FOO", "--stdin", "--log-output", "json"],
+        expect.objectContaining({ env: expect.any(Object) }),
+      )
+    })
+
+    it("rejects with stderr on non-zero exit", async () => {
+      const child = fakeChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(child)
+
+      const promise = cli.runRawStdin(["secret", "set", "BAD", "--stdin"], "x")
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled())
+      child.stderr.emit("data", "boom")
+      child.emit("close", 1)
+
+      await expect(promise).rejects.toThrow(/boom|exit code 1/)
     })
   })
 

@@ -77,7 +77,11 @@ func ExecLifecycleHook(params *LifecycleExecParams, name string, hook types.Life
 			WorkspaceFolder: params.Workdir,
 			Command:         command,
 		})
-		if err := params.Helper.Run(params.Ctx, args, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		if err := params.Helper.Run(params.Ctx, args, docker.Streams{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}); err != nil {
 			return fmt.Errorf("command %q failed: %w", key, err)
 		}
 	}

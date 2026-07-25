@@ -653,6 +653,10 @@ func (r *runner) getDockerlessRunOptions(
 		Source: "dockerless-" + r.id,
 		Target: "/workspaces/.dockerless",
 	})
+	mounts, err = r.withSecretsMount(mounts)
+	if err != nil {
+		return nil, err
+	}
 
 	// build run options
 	return &driver.RunOptions{
@@ -717,21 +721,14 @@ func (r *runner) getRunOptions(
 		user = mergedConfig.ContainerUser
 	}
 
-	// Resolve any ${containerEnv:VAR} references in containerEnv values using
-	// the image's inspected environment. ${containerWorkspaceFolder} and
-	// ${containerWorkspaceFolderBasename} are already substituted upstream in
-	// runner.substitute, since the host fully knows those values.
-	var imageEnv []string
-	if buildInfo.ImageDetails != nil {
-		imageEnv = buildInfo.ImageDetails.Config.Env
+	if err := resolveContainerEnv(mergedConfig, buildInfo); err != nil {
+		return nil, err
 	}
-	resolvedContainerEnv, err := config.ResolveContainerEnvFromImage(
-		mergedConfig.ContainerEnv, imageEnv,
-	)
+
+	mounts, err := r.withSecretsMount(mergedConfig.Mounts)
 	if err != nil {
-		return nil, fmt.Errorf("resolve containerEnv from image: %w", err)
+		return nil, err
 	}
-	mergedConfig.ContainerEnv = resolvedContainerEnv
 
 	return &driver.RunOptions{
 		UID:            r.workspaceUID(),
@@ -746,11 +743,64 @@ func (r *runner) getRunOptions(
 		Init:           mergedConfig.Init,
 		WorkspaceMount: workspaceMountPtr,
 		SecurityOpt:    mergedConfig.SecurityOpt,
-		Mounts:         mergedConfig.Mounts,
+		Mounts:         mounts,
 		Userns:         substitutionContext.Userns,
 		UidMap:         substitutionContext.UidMap,
 		GidMap:         substitutionContext.GidMap,
 		Platform:       r.workspaceConfig.CLIOptions.RunPlatform,
+	}, nil
+}
+
+// resolveContainerEnv resolves ${containerEnv:VAR} references in containerEnv
+// against the image's inspected environment. ${containerWorkspaceFolder} and
+// ${containerWorkspaceFolderBasename} are already substituted upstream.
+func resolveContainerEnv(
+	mergedConfig *config.MergedDevContainerConfig,
+	buildInfo *config.BuildInfo,
+) error {
+	var imageEnv []string
+	if buildInfo.ImageDetails != nil {
+		imageEnv = buildInfo.ImageDetails.Config.Env
+	}
+	resolved, err := config.ResolveContainerEnvFromImage(mergedConfig.ContainerEnv, imageEnv)
+	if err != nil {
+		return fmt.Errorf("resolve containerEnv from image: %w", err)
+	}
+	mergedConfig.ContainerEnv = resolved
+
+	return nil
+}
+
+func (r *runner) withSecretsMount(mounts []*config.Mount) ([]*config.Mount, error) {
+	mount, err := r.secretsMount()
+	if err != nil {
+		return nil, err
+	}
+	if mount == nil {
+		return mounts, nil
+	}
+
+	return append(mounts, mount), nil
+}
+
+// Values must never touch a persistent layer, so an unsupported driver is an
+// error rather than a silent skip.
+func (r *runner) secretsMount() (*config.Mount, error) {
+	if r.workspaceConfig == nil || len(r.workspaceConfig.CLIOptions.SecretsMount) == 0 {
+		return nil, nil
+	}
+
+	if !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
+		return nil, fmt.Errorf(
+			"the current provider does not support mounting secrets as files (--secret type=mount); " +
+				"use type=env instead",
+		)
+	}
+
+	return &config.Mount{
+		Type:   driver.MountTypeTmpfs,
+		Target: config.SecretsMountDir,
+		Other:  []string{"tmpfs-mode=0755"},
 	}, nil
 }
 

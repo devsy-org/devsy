@@ -1,10 +1,20 @@
 <script lang="ts">
-import { LayoutDashboard, Box, Plug, Server, KeyRound } from "@lucide/svelte"
+import {
+  LayoutDashboard,
+  Box,
+  Plug,
+  Server,
+  KeyRound,
+  Lock,
+  Braces,
+} from "@lucide/svelte"
 import { goto } from "$lib/router.js"
 import { paletteOpen } from "$lib/stores/command-palette.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { providers } from "$lib/stores/providers.js"
 import { machines } from "$lib/stores/machines.js"
+import { secrets } from "$lib/stores/secrets.js"
+import { envVars } from "$lib/stores/env.js"
 import type { PaletteItem } from "$lib/stores/command-palette.js"
 import * as Command from "$lib/components/ui/command/index.js"
 
@@ -14,6 +24,8 @@ const CATEGORY_ICONS: Record<string, typeof LayoutDashboard> = {
   Workspaces: Box,
   Providers: Plug,
   Machines: Server,
+  Secrets: Lock,
+  "Env Vars": Braces,
   "SSH Keys": KeyRound,
 }
 
@@ -70,6 +82,20 @@ let allItems = $derived.by(() => {
       href: "/contexts",
     },
     {
+      id: "nav-secrets",
+      label: "Secrets",
+      description: "Manage secrets",
+      category: "Navigation",
+      href: "/secrets",
+    },
+    {
+      id: "nav-env",
+      label: "Env Vars",
+      description: "Manage environment variables",
+      category: "Navigation",
+      href: "/env",
+    },
+    {
       id: "nav-terminals",
       label: "Terminals",
       description: "Terminal sessions",
@@ -119,6 +145,26 @@ let allItems = $derived.by(() => {
       description: m.provider?.name ?? "",
       category: "Machines",
       href: `/machines/${m.id}`,
+    })
+  }
+
+  for (const s of $secrets) {
+    items.push({
+      id: `secret-${s.name}`,
+      label: s.name,
+      description: "Secret",
+      category: "Secrets",
+      href: "/secrets",
+    })
+  }
+
+  for (const e of $envVars) {
+    items.push({
+      id: `env-${e.name}`,
+      label: e.name,
+      description: "Environment variable",
+      category: "Env Vars",
+      href: "/env",
     })
   }
 

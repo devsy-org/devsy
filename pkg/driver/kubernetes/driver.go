@@ -58,6 +58,15 @@ func (k *KubernetesDriver) CanReprovision() bool {
 	return true
 }
 
+func (k *KubernetesDriver) SupportsMountType(mountType string) bool {
+	switch mountType {
+	case driver.MountTypeBind, driver.MountTypeVolume, driver.MountTypeTmpfs:
+		return true
+	default:
+		return false
+	}
+}
+
 func (k *KubernetesDriver) getDevContainerPvc(
 	ctx context.Context,
 	id string,

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -18,8 +19,13 @@ import (
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/types"
 )
+
+// hookRedactor masks injected secret values in lifecycle-hook logs. It is set
+// once per process by mergeSecretsEnv, the single point where secrets enter.
+var hookRedactor = secrets.NewRedactor(nil)
 
 // LifecyclePhase identifies a devcontainer lifecycle command.
 type LifecyclePhase string
@@ -133,9 +139,11 @@ type lifecycleEnv struct {
 	remoteEnv       map[string]string
 }
 
-// mergeSecretsEnv merges KEY=VALUE pairs from the --secrets-file flag into the
-// lifecycle env map. Existing keys are NOT overridden (config takes precedence).
-func mergeSecretsEnv(env map[string]string, secretsEnv []string) {
+// mergeSecretsEnv injects secretsEnv into the hook env (config keys win) and
+// builds the log redactor. secretsMount values are added to the redactor only:
+// mount secrets are files, never injected into the env, but must still be masked.
+func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) {
+	hookRedactor = secrets.NewRedactor(slices.Concat(secretsEnv, secretsMount))
 	for _, entry := range secretsEnv {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -145,6 +153,31 @@ func mergeSecretsEnv(env map[string]string, secretsEnv []string) {
 			env[key] = value
 		}
 	}
+}
+
+// MountSecretsForRedaction reads SecretsMountDir into "name=value" entries so a
+// re-exec'd hook process (which lacks the mount values in its env) can still
+// mask them in logs. Best-effort: unreadable entries are skipped.
+func MountSecretsForRedaction() []string {
+	dirEntries, err := os.ReadDir(config.SecretsMountDir)
+	if err != nil {
+		return nil
+	}
+	var entries []string
+	for _, e := range dirEntries {
+		if e.IsDir() {
+			continue
+		}
+		value, err := os.ReadFile(
+			filepath.Join(config.SecretsMountDir, e.Name()),
+		) // #nosec G304 -- fixed secrets dir.
+		if err != nil {
+			continue
+		}
+		entries = append(entries, e.Name()+"="+string(value))
+	}
+
+	return entries
 }
 
 func resolveLifecycleEnv(
@@ -244,10 +277,11 @@ func RunPreAttachHooks(
 	prebuild bool,
 	dotfiles DotfilesConfig,
 	secretsEnv []string,
+	secretsMount []string,
 	skip SkipPhases,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
-	mergeSecretsEnv(env.remoteEnv, secretsEnv)
+	mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
 	all := preAttachPhaseParams(setupInfo, env, prebuild)
 
 	// Insert the dotfiles phase between postCreate and postStart.
@@ -421,6 +455,7 @@ func RunPostAttachHooks(
 	ctx context.Context,
 	setupInfo *config.Result,
 	secretsEnv []string,
+	secretsMount []string,
 	skipPostAttach ...bool,
 ) error {
 	if len(skipPostAttach) > 0 && skipPostAttach[0] {
@@ -428,7 +463,7 @@ func RunPostAttachHooks(
 		return nil
 	}
 	env := resolveLifecycleEnv(ctx, setupInfo)
-	mergeSecretsEnv(env.remoteEnv, secretsEnv)
+	mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
 
 	return runHook(hookRunParams{
 		commands: setupInfo.MergedConfig.PostAttachCommands,
@@ -519,7 +554,10 @@ func runSingleHookCommand(
 	remoteEnvArr []string,
 	key string, c []string,
 ) error {
-	log.Infof("running %s lifecycle hook: %s %s", p.name, key, strings.Join(c, " "))
+	log.Infof(
+		"running %s lifecycle hook: %s %s",
+		p.name, key, hookRedactor.Redact(strings.Join(c, " ")),
+	)
 	currentUser, err := user.Current()
 	if err != nil {
 		return err
@@ -578,20 +616,26 @@ func executeAndLog(cmd *exec.Cmd, phaseName string, key string, c []string) erro
 		log.Debugf(
 			"failed running %s lifecycle script: command=%v, error=%v",
 			key,
-			cmd.Args,
+			hookRedactor.Redact(strings.Join(cmd.Args, " ")),
 			err,
 		)
-		return fmt.Errorf("%s: command %q failed: %w", phaseName, strings.Join(c, " "), err)
+		return fmt.Errorf(
+			"%s: command %q failed: %w",
+			phaseName, hookRedactor.Redact(strings.Join(c, " ")), err,
+		)
 	}
 
-	log.Infof("ran command: command=%s, args=%s", key, strings.Join(c, " "))
+	log.Infof(
+		"ran command: command=%s, args=%s",
+		key, hookRedactor.Redact(strings.Join(c, " ")),
+	)
 	return nil
 }
 
 func logPipeOutput(pipe io.ReadCloser, isStdout bool) {
 	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := hookRedactor.Redact(scanner.Text())
 		if isStdout {
 			log.Info(line)
 		} else {

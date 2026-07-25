@@ -80,16 +80,12 @@ func (btc *baseTestContext) resetTaggedImage(
 	_ = btc.dockerHelper.Run(
 		ctx,
 		[]string{"image", "rm", "-f", targetImage},
-		nil,
-		io.Discard,
-		io.Discard,
+		docker.Streams{Stdout: io.Discard, Stderr: io.Discard},
 	)
 	return btc.dockerHelper.Run(
 		ctx,
 		[]string{"tag", sourceImage, targetImage},
-		nil,
-		io.Discard,
-		io.Discard,
+		docker.Streams{Stdout: io.Discard, Stderr: io.Discard},
 	)
 }
 

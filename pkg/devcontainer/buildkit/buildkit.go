@@ -49,6 +49,14 @@ func Build(
 		),
 	)
 
+	secretsAttachable, err := buildSecretsAttachable(options.BuildSecrets)
+	if err != nil {
+		return err
+	}
+	if secretsAttachable != nil {
+		attachable = append(attachable, secretsAttachable)
+	}
+
 	// create solve options
 	solveOptions := buildkit.SolveOpt{
 		Frontend: "dockerfile.v0",

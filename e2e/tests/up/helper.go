@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -14,6 +15,43 @@ import (
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/onsi/ginkgo/v2"
 )
+
+const secretCmd = "secret"
+
+// useFileSecretsBackend forces the file backend so tests do not depend on an OS
+// keyring (unavailable in CI); env is restored on cleanup.
+func useFileSecretsBackend() {
+	for k, v := range map[string]string{
+		"DEVSY_SECRETS_BACKEND":    "file",
+		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
+	} {
+		prev, had := os.LookupEnv(k)
+		framework.ExpectNoError(os.Setenv(k, v))
+		ginkgo.DeferCleanup(func() {
+			if had {
+				_ = os.Setenv(k, prev)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		})
+	}
+}
+
+func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value string) {
+	_, err := dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "set", name, "--value", value})
+	framework.ExpectNoError(err)
+	ginkgo.DeferCleanup(func() {
+		_, _ = dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "delete", name})
+	})
+}
+
+func (dtc *dockerTestContext) storeEnv(ctx context.Context, name, value string) {
+	_, err := dtc.f.ExecCommandOutput(ctx, []string{"env", "set", name, "--value", value})
+	framework.ExpectNoError(err)
+	ginkgo.DeferCleanup(func() {
+		_, _ = dtc.f.ExecCommandOutput(ctx, []string{"env", "delete", name})
+	})
+}
 
 // logLine represents a single JSON log line from devsy output.
 // Only the fields we need for test assertions are included.

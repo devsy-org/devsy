@@ -63,6 +63,10 @@ const (
 	// EnvWorkspaceDaemonConfig holds the workspace daemon configuration.
 	EnvWorkspaceDaemonConfig = "DEVSY_WORKSPACE_DAEMON_CONFIG"
 
+	// EnvSecretsEnv passes base64-encoded KEY=VALUE secrets (newline-joined) to
+	// agent subprocesses via the environment (not argv, to keep them out of ps).
+	EnvSecretsEnv = "DEVSY_SECRETS_ENV" // #nosec G101 -- env var name, not a credential.
+
 	// EnvWorkspaceCredentialsPort is the workspace credentials server port.
 	EnvWorkspaceCredentialsPort = "DEVSY_WORKSPACE_CREDENTIALS_PORT" // #nosec G101
 

@@ -2,13 +2,43 @@ package setup
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
+
+// TestSecretMountPath_RejectsEscapes ensures only a plain filename is accepted:
+// path separators, "." / ".." and traversal are rejected so a crafted target
+// cannot escape SecretsMountDir or write through a symlinked intermediate dir.
+func TestSecretMountPath_RejectsEscapes(t *testing.T) {
+	valid := []string{"tls.key", "a.b.c", "TOKEN"}
+	for _, target := range valid {
+		path, err := secretMountPath(target)
+		if err != nil {
+			t.Errorf("secretMountPath(%q) unexpected error: %v", target, err)
+			continue
+		}
+		if path != filepath.Join(config.SecretsMountDir, target) {
+			t.Errorf("secretMountPath(%q) = %q, want %q", target, path,
+				filepath.Join(config.SecretsMountDir, target))
+		}
+	}
+
+	rejected := []string{
+		"../evil", "../../etc/cron.d/x", "sub/../../../evil",
+		"sub/tls.key", "/etc/passwd", ".", "..", "",
+	}
+	for _, target := range rejected {
+		if path, err := secretMountPath(target); err == nil {
+			t.Errorf("secretMountPath(%q) = %q, want rejection", target, path)
+		}
+	}
+}
 
 // fakeTunnelClient is a minimal stub of tunnel.TunnelClient. Only KubeConfig
 // is exercised here; the other methods return zero values and are unused by

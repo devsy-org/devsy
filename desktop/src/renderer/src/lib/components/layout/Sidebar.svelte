@@ -1,9 +1,11 @@
 <script lang="ts">
 import {
   Box,
+  Braces,
   Layers,
   LayoutDashboard,
   KeyRound,
+  Lock,
   Plug,
   Search,
   Server,
@@ -17,6 +19,8 @@ import { workspaces } from "$lib/stores/workspaces.js"
 import { providers } from "$lib/stores/providers.js"
 import { machines } from "$lib/stores/machines.js"
 import { contexts } from "$lib/stores/contexts.js"
+import { secrets } from "$lib/stores/secrets.js"
+import { envVars } from "$lib/stores/env.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import type { Component } from "svelte"
 
@@ -29,9 +33,11 @@ const SHORTCUT_BY_HREF: Record<string, string> = {
   "/providers": "3",
   "/machines": "4",
   "/contexts": "5",
-  "/terminals": "6",
-  "/ssh-keys": "7",
-  "/settings": "8",
+  "/secrets": "6",
+  "/env": "7",
+  "/terminals": "8",
+  "/ssh-keys": "9",
+  "/settings": "0",
 }
 
 const isMac =
@@ -81,6 +87,20 @@ let mainNav: NavItem[] = $derived([
     icon: Layers,
     badge: $contexts.length,
     shortcut: SHORTCUT_BY_HREF["/contexts"],
+  },
+  {
+    href: "/secrets",
+    label: "Secrets",
+    icon: Lock,
+    badge: $secrets.length,
+    shortcut: SHORTCUT_BY_HREF["/secrets"],
+  },
+  {
+    href: "/env",
+    label: "Env Vars",
+    icon: Braces,
+    badge: $envVars.length,
+    shortcut: SHORTCUT_BY_HREF["/env"],
   },
   {
     href: "/terminals",
@@ -156,7 +176,7 @@ function isActive(href: string): boolean {
             <a href="#/settings" {...props}>
               <Settings />
               <span>Settings</span>
-              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}8</kbd>
+              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{SHORTCUT_BY_HREF["/settings"]}</kbd>
             </a>
           {/snippet}
         </Sidebar.MenuButton>

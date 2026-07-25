@@ -60,9 +60,7 @@ var _ = ginkgo.Describe(
 					"sleep",
 					"infinity",
 				},
-				nil,
-				nil,
-				nil,
+				docker.Streams{},
 			)
 			framework.ExpectNoError(err)
 
@@ -678,10 +676,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
 
-			secretsFile := filepath.Join(secretsDir, "secrets.env")
+			secretsFile := filepath.Join(secretsDir, "secrets.json")
 			err = os.WriteFile(
 				secretsFile,
-				[]byte("MY_SECRET=test-value-12345\nANOTHER_SECRET=second-secret-42\n"),
+				[]byte(`{"MY_SECRET":"test-value-12345","ANOTHER_SECRET":"second-secret-42"}`),
 				0o600,
 			)
 			framework.ExpectNoError(err)
@@ -697,6 +695,81 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("second-secret-42"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It(
+			"managed secret injects into lifecycle commands via --secret",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				dtc.storeSecret(ctx, "MANAGED_SECRET", "managed-value-99")
+
+				err = dtc.f.DevsyUp(ctx, tempDir, "--secret", "MANAGED_SECRET")
+				framework.ExpectNoError(err)
+
+				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/managed-secret-check.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("managed-value-99"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"managed secret mounts as a file under /run/secrets via --secret type=mount",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-mount",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				dtc.storeSecret(ctx, "MOUNTED_SECRET", "mounted-value-77")
+
+				err = dtc.f.DevsyUp(
+					ctx, tempDir,
+					"--secret", "MOUNTED_SECRET,type=mount,target=mounted_secret",
+				)
+				framework.ExpectNoError(err)
+
+				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/mounted-secret-check.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("mounted-value-77"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"managed env var injects into the workspace via --env",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				dtc.storeEnv(ctx, "MANAGED_ENV", "env-value-55")
+
+				err = dtc.f.DevsyUp(ctx, tempDir, "--env", "MANAGED_ENV")
+				framework.ExpectNoError(err)
+
+				out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $MANAGED_ENV'")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("env-value-55"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
 
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(

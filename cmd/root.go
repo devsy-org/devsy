@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
+	envcmd "github.com/devsy-org/devsy/cmd/env"
 	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/ide"
@@ -21,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/mcp"
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
+	secretscmd "github.com/devsy-org/devsy/cmd/secrets"
 	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
@@ -317,6 +319,12 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	contextCmd := context.NewContextCmd(globalFlags)
 	contextCmd.GroupID = groupConfig
 	rootCmd.AddCommand(contextCmd)
+	secretsCmd := secretscmd.NewSecretsCmd(globalFlags)
+	secretsCmd.GroupID = groupConfig
+	rootCmd.AddCommand(secretsCmd)
+	envCmd := envcmd.NewEnvCmd(globalFlags)
+	envCmd.GroupID = groupConfig
+	rootCmd.AddCommand(envCmd)
 	if proEnabled() {
 		proCmd := pro.NewProCmd(globalFlags)
 		proCmd.GroupID = groupPlatform

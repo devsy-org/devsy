@@ -18,8 +18,14 @@ tasks:
     cmd: golangci-lint run ./...
 
   cli:lint:ci:
-    desc: lint as CI does (diff-filtered against origin/main); use --new-from-rev=HEAD~1 to scope to last push or omit for full lint
-    cmd: golangci-lint run --new-from-rev="$(git merge-base HEAD origin/main)" ./...
+    desc: lint exactly as CI does (golangci-lint-action only-new-issues -> new-from-patch vs the merge-base with origin/main)
+    cmds:
+      - git fetch --quiet origin main
+      - |
+        patch="$(mktemp)"
+        trap 'rm -f "$patch"' EXIT
+        git diff "$(git merge-base HEAD origin/main)" > "$patch"
+        golangci-lint run --new-from-patch="$patch" --new=false ./...
 
   cli:lint:fix:
     desc: fix lint issues using golangci-lint

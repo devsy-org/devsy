@@ -285,7 +285,11 @@ func (cmd *ApplyCmd) copyAndExecFeatures(
 	containerFeaturesPath := "/tmp/build-features"
 
 	cpArgs := []string{"cp", featureStageDir + "/.", cmd.Container + ":" + containerFeaturesPath}
-	if err := helper.Run(ctx, cpArgs, nil, os.Stdout, os.Stderr); err != nil {
+	if err := helper.Run(
+		ctx,
+		cpArgs,
+		docker.Streams{Stdout: os.Stdout, Stderr: os.Stderr},
+	); err != nil {
 		return fmt.Errorf("copy features to container: %w", err)
 	}
 
@@ -300,7 +304,11 @@ func (cmd *ApplyCmd) copyAndExecFeatures(
 			Container: cmd.Container,
 			Command:   []string{installCmd},
 		})
-		if err := helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		if err := helper.Run(ctx, execArgs, docker.Streams{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}); err != nil {
 			return fmt.Errorf("install feature %s: %w", fs.ConfigID, err)
 		}
 	}

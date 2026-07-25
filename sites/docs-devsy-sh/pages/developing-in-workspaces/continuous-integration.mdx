@@ -66,8 +66,13 @@ devsy ci --keep -- ./run-integration-tests.sh
 | `--workspace-env KEY=VALUE` | Env variables available at build and lifecycle time (not just at run time). Repeatable. |
 | `--workspace-env-file` | File(s) of `KEY=VALUE` build/lifecycle env variables. |
 | `--init-env KEY=VALUE` | Env variables injected during workspace initialization. Repeatable. |
-| `--secrets-file` | Dotenv-style file of secrets injected into lifecycle commands. |
+| `--secrets-file` | JSON file (`{"KEY":"value"}`) of secrets injected into lifecycle commands. |
 | `--feature-secrets-file` | JSON file of secret values for features. |
+| `--secret` | Stored Devsy secret to inject, as `NAME[,type=env\|mount][,target=X]`. Repeatable. |
+| `--env` | Stored Devsy env var to inject, as `NAME[=TARGET]`. Repeatable. |
+| `--build-secret` | Stored Devsy secret exposed to the build via BuildKit. Repeatable. |
+| `--git-token` | Stored Devsy secret with an access token for cloning a private HTTP repository. |
+| `--git-token-username` | Username for `--git-token` (default inferred from the repo host). |
 
 ### Pre-building and pushing images
 
