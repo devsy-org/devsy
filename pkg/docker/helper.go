@@ -305,7 +305,7 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 	args = append(args, imageID)
 	out, err := r.buildCmd(ctx, args...).Output()
 	if err != nil {
-		return "", fmt.Errorf("inspect container: %w", command.WrapCommandError(out, err))
+		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
 	}
 
 	repoTag := string(out)
@@ -394,7 +394,7 @@ func (r *DockerHelper) Inspect(
 	args = append(args, ids...)
 	out, err := r.buildCmd(ctx, args...).Output()
 	if err != nil {
-		return fmt.Errorf("inspect container: %w", command.WrapCommandError(out, err))
+		return fmt.Errorf("inspect %s: %w", inspectType, command.WrapCommandError(out, err))
 	}
 
 	err = json.Unmarshal(out, obj)

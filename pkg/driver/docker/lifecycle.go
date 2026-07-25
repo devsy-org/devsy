@@ -253,19 +253,23 @@ func (d *dockerDriver) EnsureImage(
 ) error {
 	log.Infof("inspecting image: image=%s", options.Image)
 	_, err := d.Docker.InspectImage(ctx, options.Image, false)
-	if err != nil {
-		log.Infof("image not found, pulling image: image=%s", options.Image)
-		writer := log.Writer(log.LevelDebug)
-		defer func() { _ = writer.Close() }()
-
-		return d.Docker.Pull(ctx, docker.PullOptions{
-			Image:    options.Image,
-			Platform: options.Platform,
-			Stdout:   writer,
-			Stderr:   writer,
-		})
+	if err == nil {
+		return nil
 	}
-	return nil
+	if !errors.Is(err, docker.ErrImageNotFound) {
+		return fmt.Errorf("inspect image %s: %w", options.Image, err)
+	}
+
+	log.Infof("image not found, pulling image: image=%s", options.Image)
+	writer := log.Writer(log.LevelDebug)
+	defer func() { _ = writer.Close() }()
+
+	return d.Docker.Pull(ctx, docker.PullOptions{
+		Image:    options.Image,
+		Platform: options.Platform,
+		Stdout:   writer,
+		Stderr:   writer,
+	})
 }
 
 func (d *dockerDriver) startContainer(
