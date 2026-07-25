@@ -50,6 +50,7 @@ func (d *dockerDriver) buildRunArgs(
 		b.addPrivileged,
 		b.addPodmanArgs,
 		b.addCapabilities,
+		b.addSELinux,
 		b.addMounts,
 		b.addIDEMount,
 		b.addLabels,
@@ -106,6 +107,11 @@ func (b *runArgsBuilder) addPodmanArgs() error {
 
 func (b *runArgsBuilder) addCapabilities() error {
 	b.args = b.driver.addCapabilityArgs(b.args, b.params.Options)
+	return nil
+}
+
+func (b *runArgsBuilder) addSELinux() error {
+	b.args = b.driver.addSELinuxArgs(b.args, b.params.Options)
 	return nil
 }
 
