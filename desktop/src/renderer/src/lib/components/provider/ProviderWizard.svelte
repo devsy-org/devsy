@@ -5,6 +5,7 @@ import { Check, Circle, AlertCircle, Loader2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
+import { Switch } from "$lib/components/ui/switch/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
@@ -70,6 +71,7 @@ let error = $state("")
 // Step 1 state
 let source = $state("")
 let customName = $state("")
+let singleMachine = $state(false)
 let adding = $state(false)
 
 // Step 2 state
@@ -129,6 +131,7 @@ function reset() {
   error = ""
   source = ""
   customName = ""
+  singleMachine = false
   adding = false
   providerName = ""
   options = {}
@@ -197,7 +200,7 @@ async function handleSelect() {
   error = ""
   adding = true
   try {
-    await providerAdd(name, name !== src ? src : undefined)
+    await providerAdd(name, name !== src ? src : undefined, singleMachine)
     providerName = name
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -409,6 +412,19 @@ function handleDone() {
                 placeholder="Defaults to source name"
                 value={customName}
                 oninput={(e) => { customName = e.currentTarget.value; error = "" }}
+                disabled={adding}
+              />
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <div class="space-y-0.5">
+                <Label>Reuse machine</Label>
+                <p class="text-sm text-muted-foreground">
+                  Run all workspaces on a single shared machine instead of one per workspace.
+                </p>
+              </div>
+              <Switch
+                checked={singleMachine}
+                onCheckedChange={(v) => { singleMachine = v }}
                 disabled={adding}
               />
             </div>

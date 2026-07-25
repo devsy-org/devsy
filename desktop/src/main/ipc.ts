@@ -279,12 +279,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "provider_add",
-    async (_event, args: { name: string; source?: string }) => {
+    async (
+      _event,
+      args: { name: string; source?: string; singleMachine?: boolean },
+    ) => {
       trackEvent("provider_add")
       const src = args.source ?? args.name
       const cliArgs = ["provider", "add", src, "--use=false"]
       if (args.source) {
         cliArgs.push("--name", args.name)
+      }
+      if (args.singleMachine) {
+        cliArgs.push("--single-machine")
       }
       await cli.runRaw(cliArgs)
     },
@@ -366,6 +372,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         cliArgs.push("-o", opt)
       }
       await cli.runRaw(cliArgs)
+    },
+  )
+
+  ipcMain.handle(
+    "provider_set_single_machine",
+    async (_event, args: { name: string; enabled: boolean }) => {
+      await cli.runRaw([
+        "provider",
+        "set",
+        args.name,
+        "--skip-init",
+        `--single-machine=${args.enabled}`,
+      ])
     },
   )
 
