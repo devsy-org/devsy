@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -249,7 +250,14 @@ func (r *imageResolver) tryResolve(
 
 	imageDetails, err := r.driver.Docker.InspectImage(ctx, req.imageName, false)
 	if err != nil {
-		log.Debugf("error trying to find local image %s: %v", req.imageName, err)
+		if errors.Is(err, docker.ErrImageNotFound) {
+			log.Debugf("no local image %s; building from source", req.imageName)
+		} else {
+			log.Warnf(
+				"could not inspect local image %s, building from source: %v",
+				req.imageName, err,
+			)
+		}
 		return nil, false
 	}
 

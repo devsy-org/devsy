@@ -39,7 +39,34 @@ const (
 var (
 	ErrContainerTerminal = errors.New("container in terminal state")
 	ErrContainerExited   = errors.New("container exited after start")
+	ErrImageNotFound     = errors.New("image not found")
 )
+
+var imageNotFoundMarkers = []string{
+	"no such image",
+	"no such object",
+	"image not known",
+	"manifest unknown",
+	"name unknown",
+	"repository name not known to registry",
+}
+
+func isImageNotFoundError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	for _, marker := range imageNotFoundMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyImageError(imageName string, err error) error {
+	if isImageNotFoundError(err) {
+		return fmt.Errorf("%s: %w", imageName, ErrImageNotFound)
+	}
+	return err
+}
 
 func (db DockerBuilder) String() string {
 	return [...]string{"", "buildx", "buildkit"}[db]
@@ -298,32 +325,42 @@ func (r *DockerHelper) InspectImage(
 ) (*config.ImageDetails, error) {
 	imageDetails := []*config.ImageDetails{}
 	err := r.Inspect(ctx, []string{imageName}, "image", &imageDetails)
-	if err != nil {
-		// try remote?
-		if !tryRemote {
-			return nil, err
+	if err == nil {
+		if len(imageDetails) == 0 {
+			return nil, fmt.Errorf("%s: %w", imageName, ErrImageNotFound)
 		}
-
-		imageConfig, _, err := image.GetImageConfig(ctx, imageName)
-		if err != nil {
-			return nil, fmt.Errorf("get image config remotely: %w", err)
-		}
-
-		return &config.ImageDetails{
-			ID: imageName,
-			Config: config.ImageDetailsConfig{
-				User:       imageConfig.Config.User,
-				Env:        imageConfig.Config.Env,
-				Labels:     imageConfig.Config.Labels,
-				Entrypoint: imageConfig.Config.Entrypoint,
-				Cmd:        imageConfig.Config.Cmd,
-			},
-		}, nil
-	} else if len(imageDetails) == 0 {
-		return nil, fmt.Errorf("cannot find image details for %s", imageName)
+		return imageDetails[0], nil
 	}
 
-	return imageDetails[0], nil
+	if !tryRemote {
+		return nil, classifyImageError(imageName, err)
+	}
+
+	return inspectImageRemote(ctx, imageName)
+}
+
+func inspectImageRemote(
+	ctx context.Context,
+	imageName string,
+) (*config.ImageDetails, error) {
+	imageConfig, _, err := image.GetImageConfig(ctx, imageName)
+	if err != nil {
+		if isImageNotFoundError(err) {
+			return nil, fmt.Errorf("%s: %w", imageName, ErrImageNotFound)
+		}
+		return nil, fmt.Errorf("get image config remotely: %w", err)
+	}
+
+	return &config.ImageDetails{
+		ID: imageName,
+		Config: config.ImageDetailsConfig{
+			User:       imageConfig.Config.User,
+			Env:        imageConfig.Config.Env,
+			Labels:     imageConfig.Config.Labels,
+			Entrypoint: imageConfig.Config.Entrypoint,
+			Cmd:        imageConfig.Config.Cmd,
+		},
+	}, nil
 }
 
 func (r *DockerHelper) InspectContainers(

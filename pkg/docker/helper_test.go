@@ -197,6 +197,76 @@ esac
 	assert.True(t, errors.Is(err, ErrContainerTerminal), "expected terminal sentinel, got %v", err)
 }
 
+func TestIsImageNotFoundError(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{"docker no such image", "Error response from daemon: No such image: foo:bar", true},
+		{"podman no such object", "Error: no such object: foo", true},
+		{"nerdctl image not known", "image not known", true},
+		{"remote manifest unknown", "MANIFEST_UNKNOWN: manifest unknown", true},
+		{"registry name unknown", "NAME_UNKNOWN: name unknown", true},
+		{"registry repository not known", "repository name not known to registry", true},
+		{"daemon unreachable", "Cannot connect to the Docker daemon at the socket", false},
+		{"permission denied", "permission denied while trying to connect", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isImageNotFoundError(errors.New(tt.msg)))
+		})
+	}
+}
+
+func TestInspectImage_NotFoundReturnsSentinel(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+echo 'Error response from daemon: No such image: foo:bar' >&2
+exit 1
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	details, err := h.InspectImage(context.Background(), "foo:bar", false)
+
+	require.Error(t, err)
+	assert.Nil(t, details)
+	assert.True(t, errors.Is(err, ErrImageNotFound), "expected ErrImageNotFound, got %v", err)
+}
+
+func TestInspectImage_RealErrorNotMistakenForMiss(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock' >&2
+exit 1
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	details, err := h.InspectImage(context.Background(), "foo:bar", false)
+
+	require.Error(t, err)
+	assert.Nil(t, details)
+	assert.False(
+		t,
+		errors.Is(err, ErrImageNotFound),
+		"daemon failure must not be reported as a miss",
+	)
+}
+
+func TestInspectImage_EmptyResultReturnsSentinel(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+echo '[]'
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	details, err := h.InspectImage(context.Background(), "foo:bar", false)
+
+	require.Error(t, err)
+	assert.Nil(t, details)
+	assert.True(t, errors.Is(err, ErrImageNotFound), "empty inspect result should be a miss")
+}
+
 func TestGPUSupportEnabled_CommandFailure(t *testing.T) {
 	tmp := t.TempDir()
 	bin := writeScript(t, tmp, "bad-runtime", `#!/bin/sh
