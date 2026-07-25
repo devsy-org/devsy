@@ -8,6 +8,7 @@ optionGroups:
   - options:
       - DOCKER_PATH
       - DOCKER_HOST
+      - DOCKER_ELEVATION
       - INACTIVITY_TIMEOUT
       - DOCKER_BUILDER
     name: "Advanced Options"
@@ -17,6 +18,9 @@ options:
   DOCKER_PATH:
     description: The path where to find the docker binary.
     default: docker
+  DOCKER_ELEVATION:
+    description: "Optionally run docker commands through a privilege-elevation helper for rootful daemons whose socket the current user cannot access. One of: pkexec, sudo, doas, or none. Note: pkexec targets local desktop sessions with a running polkit agent; use sudo or doas on headless/SSH hosts."
+    default: none
   DOCKER_HOST:
     global: true
     description: The docker host to use.
@@ -28,6 +32,7 @@ agent:
   local: true
   docker:
     path: ${DOCKER_PATH}
+    elevation: ${DOCKER_ELEVATION}
     builder: ${DOCKER_BUILDER}
     install: false
     env:

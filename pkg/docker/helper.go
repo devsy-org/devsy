@@ -95,6 +95,9 @@ type DockerHelper struct {
 	Environment []string
 	Builder     DockerBuilder
 	Runtime     ContainerRuntime
+	// Elevator, when set, runs docker commands through a privilege-elevation
+	// helper (pkexec/sudo/doas). Nil disables elevation.
+	Elevator *Elevator
 }
 
 func (r *DockerHelper) GPUSupportEnabled() (bool, error) {
@@ -560,7 +563,13 @@ func failedBootSentinel(status string, graceElapsed bool) error {
 }
 
 func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, r.DockerCommand, args...)
+	name, cmdArgs := r.DockerCommand, args
+	if r.Elevator != nil {
+		_ = r.EnsureElevated() // defensive; normally already done in NewDockerDriver
+		name, cmdArgs = r.Elevator.wrap(r.DockerCommand, r.Environment, args)
+	}
+	//nolint:gosec // command and args come from trusted provider config
+	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 	if r.Environment != nil {
 		cmd.Env = append(os.Environ(), r.Environment...)
 	}

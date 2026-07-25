@@ -202,6 +202,11 @@ type ProviderDockerDriverConfig struct {
 	// Runtime identifies the container runtime explicitly (docker, podman, nerdctl).
 	// When empty, the runtime is auto-detected from the binary at Path.
 	Runtime string `json:"runtime,omitempty"`
+
+	// Elevation optionally runs docker commands through a privilege-elevation
+	// helper for rootful daemons whose socket is not accessible to the current
+	// user. One of "" / "none" (disabled), "pkexec", "sudo", or "doas".
+	Elevation string `json:"elevation,omitempty"`
 }
 
 type ProviderKubernetesDriverConfig struct {

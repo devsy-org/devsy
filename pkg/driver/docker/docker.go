@@ -59,15 +59,29 @@ func NewDockerDriver(
 		rt = docker.DetectRuntime(dockerCommand)
 	}
 
+	elevator, err := docker.ElevatorFromName(workspaceInfo.Agent.Docker.Elevation)
+	if err != nil {
+		return nil, fmt.Errorf("invalid elevation config: %w", err)
+	}
+
 	log.Debugf("using docker command: command=%s, runtime=%s", dockerCommand, rt.Name())
+	dockerHelper := &docker.DockerHelper{
+		DockerCommand: dockerCommand,
+		Environment:   makeEnvironment(workspaceInfo.Agent.Docker.Env),
+		ContainerID:   workspaceInfo.Workspace.Source.Container,
+		Builder:       builder,
+		Runtime:       rt,
+		Elevator:      elevator,
+	}
+
+	// Authenticate before any command runs, keeping the prompt out of the short
+	// per-command probe timeouts that would otherwise kill it.
+	if err := dockerHelper.EnsureElevated(); err != nil {
+		return nil, err
+	}
+
 	return &dockerDriver{
-		Docker: &docker.DockerHelper{
-			DockerCommand: dockerCommand,
-			Environment:   makeEnvironment(workspaceInfo.Agent.Docker.Env),
-			ContainerID:   workspaceInfo.Workspace.Source.Container,
-			Builder:       builder,
-			Runtime:       rt,
-		},
+		Docker:                     dockerHelper,
 		IDLabels:                   workspaceInfo.CLIOptions.IDLabels,
 		UpdateRemoteUserUIDDefault: workspaceInfo.CLIOptions.UpdateRemoteUserUIDDefault,
 	}, nil
