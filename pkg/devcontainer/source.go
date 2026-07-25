@@ -2,9 +2,11 @@ package devcontainer
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 type SourceSpec struct {
@@ -60,4 +62,28 @@ func ParseSourceSpec(value string) (*SourceSpec, error) {
 	default:
 		return &SourceSpec{Kind: SourcePath, Path: value}, nil
 	}
+}
+
+func ResolveSourceSpec(opts *provider.CLIOptions) error {
+	spec, err := ParseSourceSpec(opts.DevContainerSource)
+	if err != nil {
+		return err
+	}
+	if spec == nil {
+		return nil
+	}
+	switch spec.Kind {
+	case SourceID:
+		opts.DevContainerID = spec.ID
+		opts.DevContainerSource = ""
+	case SourcePath:
+		// An in-repo relative path is a config path; an external absolute
+		// path is left in the source so the runner imports it.
+		if !filepath.IsAbs(spec.Path) {
+			opts.DevContainerPath = spec.Path
+			opts.DevContainerSource = ""
+		}
+	case SourceNone, SourceImage:
+	}
+	return nil
 }

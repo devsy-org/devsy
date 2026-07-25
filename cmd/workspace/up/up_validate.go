@@ -21,7 +21,7 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
-	if err := cmd.resolveDevContainerSource(); err != nil {
+	if err := devcontainer.ResolveSourceSpec(&cmd.CLIOptions); err != nil {
 		return err
 	}
 	if err := validatePodmanFlags(cmd); err != nil {
@@ -46,28 +46,6 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
-}
-
-func (cmd *UpCmd) resolveDevContainerSource() error {
-	spec, err := devcontainer.ParseSourceSpec(cmd.DevContainerSource)
-	if err != nil {
-		return err
-	}
-	if spec == nil {
-		return nil
-	}
-	switch spec.Kind {
-	case devcontainer.SourceID:
-		cmd.DevContainerID = spec.ID
-		cmd.DevContainerSource = ""
-	case devcontainer.SourcePath:
-		if !filepath.IsAbs(spec.Path) {
-			cmd.DevContainerPath = spec.Path
-			cmd.DevContainerSource = ""
-		}
-	case devcontainer.SourceNone, devcontainer.SourceImage:
-	}
-	return nil
 }
 
 func (cmd *UpCmd) resolveExtraDevContainerPath() error {

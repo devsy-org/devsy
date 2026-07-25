@@ -265,6 +265,12 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: ci
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: features
             runner: ubuntu-latest
             free-disk-space: false
