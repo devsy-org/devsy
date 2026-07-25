@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
@@ -15,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/telemetry/distinctid"
 )
 
 var dockerlessImage = "ghcr.io/devsy-org/dockerless:0.2.0"
@@ -768,6 +770,12 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
 		r.workspaceConfig.Workspace.UID != "" {
 		env[pkgconfig.EnvWorkspaceUID] = r.workspaceConfig.Workspace.UID
+	}
+
+	if os.Getenv(pkgconfig.EnvDisableTelemetry) == pkgconfig.BoolTrue {
+		env[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
+	} else {
+		env[pkgconfig.EnvTelemetryDistinctID] = distinctid.Get()
 	}
 
 	return env
