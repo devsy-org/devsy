@@ -135,7 +135,7 @@ func startTestSSHServer(t *testing.T) (client *ssh.Client, kill func()) {
 
 	cConn, err := ssh.Dial("tcp", ln.Addr().String(), &ssh.ClientConfig{
 		User:            "test",
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()),
 		Timeout:         2 * time.Second,
 	})
 	if err != nil {
@@ -160,12 +160,9 @@ func TestPortForwarding_ReleasesListenerOnTransportDeath(t *testing.T) {
 	}
 	addr := lis.Addr().String()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	done := make(chan error, 1)
 	go func() {
-		done <- portForwarding(ctx, client, lis, addr, "tcp", "127.0.0.1:9", 0, forward)
+		done <- portForwarding(t.Context(), client, lis, addr, "tcp", "127.0.0.1:9", 0, forward)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
