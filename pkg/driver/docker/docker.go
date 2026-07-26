@@ -35,7 +35,7 @@ func makeEnvironment(env map[string]string) []string {
 
 func NewDockerDriver(
 	workspaceInfo *provider.AgentWorkspaceInfo,
-) (driver.DockerDriver, error) {
+) (driver.ImageDriver, error) {
 	dockerCommand := "docker"
 	if workspaceInfo.Agent.Docker.Path != "" {
 		dockerCommand = workspaceInfo.Agent.Docker.Path
@@ -93,6 +93,14 @@ type dockerDriver struct {
 	IDLabels                   []string
 	UpdateRemoteUserUIDDefault string
 }
+
+// The docker driver supports the full image, compose, and docker-helper
+// capabilities.
+var (
+	_ driver.ImageDriver          = (*dockerDriver)(nil)
+	_ driver.ComposeDriver        = (*dockerDriver)(nil)
+	_ driver.DockerHelperProvider = (*dockerDriver)(nil)
+)
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
 	return runtime.GOARCH, nil

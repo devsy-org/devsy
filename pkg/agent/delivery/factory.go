@@ -25,40 +25,26 @@ type FactoryOptions struct {
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
-	driverType := opts.WorkspaceConfig.Agent.Driver
-
-	switch {
+	switch driverType := opts.WorkspaceConfig.Agent.Driver; {
 	case driverType == provider.CustomDriver:
-		log.Debugf("using legacy shell delivery for custom driver")
-		log.Warnf(
-			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
-		)
-		return &LegacyShellDelivery{
-			ExecFunc:    opts.ExecFunc,
-			DownloadURL: "",
-		}
+		return legacyShellDelivery(opts, "custom driver")
 
 	case driverType == provider.KubernetesDriver:
 		if opts.PodExec == nil {
-			log.Debugf("kubernetes pod exec unavailable, using legacy shell delivery")
-			log.Warnf(
-				"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
-			)
-			return &LegacyShellDelivery{
-				ExecFunc:    opts.ExecFunc,
-				DownloadURL: "",
-			}
+			return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
 		}
 		log.Debugf("using kubernetes-native delivery (exec stream)")
 		return &KubernetesDelivery{Exec: opts.PodExec}
 
+	case driverType == provider.AppleDriver:
+		// Shell delivery launches the agent in one exec, which keeps the VM
+		// alive; it is the supported mechanism here, not a deprecated fallback.
+		log.Debugf("using shell-based delivery for apple driver")
+		return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
+
 	case opts.IsRemoteDocker:
 		log.Debugf("using remote docker delivery (docker cp)")
-		return &RemoteDockerDelivery{
-			DockerCommand: opts.DockerCommand,
-			Environment:   opts.DockerEnv,
-			ContainerID:   opts.ContainerID,
-		}
+		return remoteDockerDelivery(opts)
 
 	case driverType == "" || driverType == provider.DockerDriver:
 		if isDockerLocal(opts.DockerCommand) {
@@ -70,21 +56,29 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 			}
 		}
 		log.Debugf("using remote docker delivery for non-local docker daemon")
-		return &RemoteDockerDelivery{
-			DockerCommand: opts.DockerCommand,
-			Environment:   opts.DockerEnv,
-			ContainerID:   opts.ContainerID,
-		}
+		return remoteDockerDelivery(opts)
 
 	default:
-		log.Debugf("using legacy shell delivery for driver: %s", driverType)
-		log.Warnf(
-			"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
-		)
-		return &LegacyShellDelivery{
-			ExecFunc:    opts.ExecFunc,
-			DownloadURL: "",
-		}
+		return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType))
+	}
+}
+
+func remoteDockerDelivery(opts FactoryOptions) AgentDelivery {
+	return &RemoteDockerDelivery{
+		DockerCommand: opts.DockerCommand,
+		Environment:   opts.DockerEnv,
+		ContainerID:   opts.ContainerID,
+	}
+}
+
+func legacyShellDelivery(opts FactoryOptions, reason string) AgentDelivery {
+	log.Debugf("using legacy shell delivery for %s", reason)
+	log.Warnf(
+		"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
+	)
+	return &LegacyShellDelivery{
+		ExecFunc:    opts.ExecFunc,
+		DownloadURL: "",
 	}
 }
 

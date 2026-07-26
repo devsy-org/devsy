@@ -77,7 +77,7 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 		}()
 	}
 
-	runner, err := CreateRunner(workspaceInfo)
+	runner, err := CreateRunner(cancelCtx, workspaceInfo)
 	if err != nil {
 		return err
 	}

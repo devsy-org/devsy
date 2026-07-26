@@ -250,7 +250,8 @@ func (r *runner) reprovisionIfNeeded(
 		return containerDetails, nil
 	}
 
-	if err := r.driver.RunDevContainer(ctx, r.id, nil); err != nil {
+	// ReprovisioningDriver embeds RunOptionsDriver, so d can re-run the container.
+	if err := d.RunDevContainer(ctx, r.id, nil); err != nil {
 		return nil, fmt.Errorf("runner driver run dev container: %w", err)
 	}
 	return r.findRunningContainerOrFail(ctx, "reprovision")
@@ -308,11 +309,11 @@ func (r *runner) resolveNewContainer(
 }
 
 func (r *runner) lingerWarning(ctx context.Context) string {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	helperProvider, ok := r.driver.(driver.DockerHelperProvider)
 	if !ok {
 		return ""
 	}
-	helper, err := dockerDriver.DockerHelper()
+	helper, err := helperProvider.DockerHelper()
 	if err != nil {
 		return ""
 	}
@@ -382,7 +383,7 @@ func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
 // deleteForRecreate removes the existing container before recreating it.
 // Docker containers are fully deleted; other drivers stop the container.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
-	if _, ok := r.driver.(driver.DockerDriver); ok {
+	if _, ok := r.driver.(driver.ImageDriver); ok {
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete devcontainer: %w", err)
 		}
@@ -546,10 +547,9 @@ func (r *runner) runContainer(
 
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 
-	// check if docker
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
-	if ok {
-		return dockerDriver.RunDockerDevContainer(ctx, &driver.RunDockerDevContainerParams{
+	// Image drivers (Docker, Apple) build and run a local OCI image.
+	if imageDriver, ok := r.driver.(driver.ImageDriver); ok {
+		return imageDriver.RunImageDevContainer(ctx, &driver.RunImageDevContainerParams{
 			WorkspaceID:          r.id,
 			Options:              runOptions,
 			ParsedConfig:         withResolvedUser(p.parsedConfig.Config, mergedConfig),
@@ -560,8 +560,12 @@ func (r *runner) runContainer(
 		})
 	}
 
-	// build run options for regular driver
-	return r.driver.RunDevContainer(ctx, r.id, runOptions)
+	// Other drivers (Kubernetes, custom) run the devcontainer from RunOptions.
+	if runDriver, ok := r.driver.(driver.RunOptionsDriver); ok {
+		return runDriver.RunDevContainer(ctx, r.id, runOptions)
+	}
+
+	return fmt.Errorf("driver does not support running a devcontainer")
 }
 
 // withResolvedUser returns a copy of parsedConfig carrying the effective user

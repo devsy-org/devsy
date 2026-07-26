@@ -1,0 +1,31 @@
+name: apple
+version: v1.0.0
+icon: https://dl.devsy.sh/assets/apple.svg
+home: https://github.com/devsy-org/devsy
+description: |-
+  Devsy on Apple container (macOS 26+, Apple silicon)
+optionGroups:
+  - options:
+      - CONTAINER_PATH
+      - ROSETTA
+      - INACTIVITY_TIMEOUT
+    name: "Advanced Options"
+options:
+  INACTIVITY_TIMEOUT:
+    description: "If defined, will automatically delete the container after the inactivity period. Examples: 10m, 1h"
+  CONTAINER_PATH:
+    description: The path where to find the `container` binary.
+    default: container
+  ROSETTA:
+    description: "Enable Rosetta for x86_64 emulation inside the Linux guest."
+    default: "false"
+agent:
+  containerInactivityTimeout: ${INACTIVITY_TIMEOUT}
+  local: true
+  driver: apple
+  apple:
+    path: ${CONTAINER_PATH}
+    rosetta: ${ROSETTA}
+exec:
+  command: |-
+    "${DEVSY}" internal sh -c "${COMMAND}"

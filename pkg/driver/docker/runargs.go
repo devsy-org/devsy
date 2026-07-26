@@ -22,12 +22,12 @@ import (
 type runArgsBuilder struct {
 	args   []string
 	driver *dockerDriver
-	params *driver.RunDockerDevContainerParams
+	params *driver.RunImageDevContainerParams
 	helper *docker.DockerHelper
 }
 
 func (d *dockerDriver) buildRunArgs(
-	params *driver.RunDockerDevContainerParams,
+	params *driver.RunImageDevContainerParams,
 	helper *docker.DockerHelper,
 ) ([]string, error) {
 	b := &runArgsBuilder{

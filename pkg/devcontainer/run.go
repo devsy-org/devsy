@@ -83,10 +83,11 @@ type runner struct {
 }
 
 func NewRunner(
+	ctx context.Context,
 	agentPath, agentDownloadURL string,
 	workspaceConfig *provider.AgentWorkspaceInfo,
 ) (Runner, error) {
-	drv, err := drivercreate.NewDriver(workspaceConfig)
+	drv, err := drivercreate.NewDriver(ctx, workspaceConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.ImageDriver)
 	if !ok {
 		return "", fmt.Errorf("building only supported with docker driver")
 	}

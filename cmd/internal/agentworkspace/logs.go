@@ -56,6 +56,7 @@ func (cmd *LogsCmd) Run(ctx context.Context) error {
 	}
 
 	runner, err := devcontainer.NewRunner(
+		ctx,
 		config.ContainerDevsyHelperLocation,
 		config.DefaultAgentDownloadURL(),
 		workspaceInfo,

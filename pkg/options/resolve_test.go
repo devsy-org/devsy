@@ -709,3 +709,25 @@ func optionsToSubCommand(optionDefinitions config.OptionDefinitions) string {
 	})
 	return fmt.Sprintf("echo %q | base64 --decode", base64.StdEncoding.EncodeToString(out))
 }
+
+// TestResolveAgentAppleConfig locks in the fix for ${CONTAINER_PATH}-style
+// option substitution into the apple driver config, which previously reached
+// exec unresolved because no per-driver resolver existed for apple.
+func TestResolveAgentAppleConfig(t *testing.T) {
+	agentConfig := &provider.ProviderAgentConfig{}
+	agentConfig.Apple.Path = "${CONTAINER_PATH}"
+	agentConfig.Apple.Rosetta = types.StrBool("${ROSETTA}")
+	agentConfig.Apple.Env = map[string]string{"KEY": "${VAL}"}
+
+	options := map[string]string{
+		"CONTAINER_PATH": "/opt/homebrew/bin/container",
+		"ROSETTA":        "true",
+		"VAL":            "resolved",
+	}
+
+	resolveAgentAppleConfig(agentConfig, options)
+
+	assert.Equal(t, "/opt/homebrew/bin/container", agentConfig.Apple.Path)
+	assert.Equal(t, types.StrBool("true"), agentConfig.Apple.Rosetta)
+	assert.Equal(t, "resolved", agentConfig.Apple.Env["KEY"])
+}

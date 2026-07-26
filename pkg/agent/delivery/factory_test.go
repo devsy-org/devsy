@@ -156,3 +156,15 @@ func (m *mockDelivery) DeliverPostStart(_ context.Context, _ PostStartOptions) e
 }
 
 func (m *mockDelivery) Cleanup(_ context.Context, _ string) error { return nil }
+
+func TestNewAgentDelivery_AppleUsesShellDelivery(t *testing.T) {
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{Driver: provider.AppleDriver},
+		},
+	}
+	d := NewAgentDelivery(opts)
+	if _, ok := d.(*LegacyShellDelivery); !ok {
+		t.Fatalf("apple driver must use shell delivery, got %T", d)
+	}
+}

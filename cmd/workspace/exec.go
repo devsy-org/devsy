@@ -152,7 +152,10 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
+	runtime, err := workspace2.NewContainerRuntime(workspaceConfig, cmd.DockerPath)
+	if err != nil {
+		return err
+	}
 
 	containerDetails, err := runtime.FindRunning(
 		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
@@ -180,7 +183,8 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		dockerCmd: runtime.DockerCommand(),
+		dockerCmd: runtime.Command(),
+		dockerEnv: runtime.Environment(),
 		target:    target,
 		workdir:   workdir,
 		envMap:    envMap,
@@ -240,7 +244,8 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	emitJSON := mode == output.ModeJSON
 
 	err = cmd.execInContainer(ctx, execOpts{
-		dockerCmd: runtime.DockerCommand(),
+		dockerCmd: runtime.Command(),
+		dockerEnv: runtime.Environment(),
 		target:    target,
 		workdir:   workdir,
 		envMap:    envMap,
@@ -304,6 +309,7 @@ func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 
 type execOpts struct {
 	dockerCmd string
+	dockerEnv []string
 	target    workspace2.ContainerTarget
 	workdir   string
 	envMap    map[string]string
@@ -329,7 +335,7 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	redacted := strings.Join(redactExecArgs(execArgs), " ")
 	log.Debugf("Executing in container: %s %s", opts.dockerCmd, redacted)
 
-	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd}
+	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd, Environment: opts.dockerEnv}
 	return helper.Run(ctx, execArgs, docker.Streams{
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,

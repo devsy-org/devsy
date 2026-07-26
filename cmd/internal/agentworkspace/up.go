@@ -197,7 +197,7 @@ func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (*config2.Result, error) {
-	runner, err := CreateRunner(workspaceInfo)
+	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -209,9 +209,11 @@ func (cmd *UpCmd) devsyUp(
 }
 
 func CreateRunner(
+	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (devcontainer.Runner, error) {
 	return devcontainer.NewRunner(
+		ctx,
 		config.ContainerDevsyHelperLocation,
 		config.DefaultAgentDownloadURL(),
 		workspaceInfo,

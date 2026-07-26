@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
-type RunDockerDevContainerParams struct {
+type RunImageDevContainerParams struct {
 	WorkspaceID          string
 	Options              *RunOptions
 	ParsedConfig         *config.DevContainerConfig
@@ -32,7 +32,10 @@ type BuildRequest struct {
 	Options              provider.BuildOptions
 }
 
-type DockerDriver interface {
+// ImageDriver is a capability interface for drivers that build and run a local
+// OCI image directly (e.g. Docker/Podman and Apple's `container`). It is named
+// for the behavior, not a concrete runtime, since multiple runtimes implement it.
+type ImageDriver interface {
 	Driver
 
 	// InspectImage inspects the given image name
@@ -41,8 +44,8 @@ type DockerDriver interface {
 	// GetImageTag returns latest tag for input image id
 	GetImageTag(ctx context.Context, imageName string) (string, error)
 
-	// RunDockerDevContainer runs a docker devcontainer
-	RunDockerDevContainer(ctx context.Context, params *RunDockerDevContainerParams) error
+	// RunImageDevContainer runs an image-based devcontainer
+	RunImageDevContainer(ctx context.Context, params *RunImageDevContainerParams) error
 
 	// BuildDevContainer builds a devcontainer
 	BuildDevContainer(ctx context.Context, req BuildRequest) (*config.BuildInfo, error)
@@ -60,10 +63,25 @@ type DockerDriver interface {
 		parsedConfig *config.DevContainerConfig,
 		writer io.Writer,
 	) error
+}
+
+// ComposeDriver is a capability interface implemented by drivers that can run
+// docker-compose based devcontainers. Not every container runtime has a compose
+// engine (e.g. Apple's `container`), so callers detect support via a type
+// assertion rather than forcing every driver to stub the method.
+type ComposeDriver interface {
+	Driver
 
 	// ComposeHelper returns the compose helper
 	ComposeHelper() (*compose.ComposeHelper, error)
+}
 
-	// DockerHellper returns the docker helper
+// DockerHelperProvider is a capability interface implemented by drivers backed
+// by a Docker-compatible CLI that can expose the low-level *docker.DockerHelper.
+// Runtimes without one (e.g. the Apple driver) simply do not implement it.
+type DockerHelperProvider interface {
+	Driver
+
+	// DockerHelper returns the docker helper
 	DockerHelper() (*docker.DockerHelper, error)
 }

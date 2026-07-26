@@ -359,7 +359,10 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	runtime := workspace2.NewDockerRuntime(workspaceConfig, cmd.DockerPath)
+	runtime, err := workspace2.NewContainerRuntime(workspaceConfig, cmd.DockerPath)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	containerDetails, err := runtime.FindRunning(
 		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
@@ -393,8 +396,11 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	envArgs = append(envArgs, cmd.buildCLIRemoteEnvArgs()...)
 
 	params := &workspace.LifecycleExecParams{
-		Ctx:         ctx,
-		Helper:      &docker.DockerHelper{DockerCommand: runtime.DockerCommand()},
+		Ctx: ctx,
+		Helper: &docker.DockerHelper{
+			DockerCommand: runtime.Command(),
+			Environment:   runtime.Environment(),
+		},
 		ContainerID: containerDetails.ID,
 		EnvArgs:     envArgs,
 		Workdir:     workspace2.ResolveExecWorkdir(result, client.Workspace()),

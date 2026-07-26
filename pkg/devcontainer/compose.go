@@ -95,14 +95,14 @@ type composeUpParams struct {
 }
 
 func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	composeDriver, ok := r.driver.(driver.ComposeDriver)
 	if !ok {
 		return nil, fmt.Errorf(
 			"docker compose is not supported by this provider, choose a different one",
 		)
 	}
 
-	return dockerDriver.ComposeHelper()
+	return composeDriver.ComposeHelper()
 }
 
 func (r *runner) stopDockerCompose(ctx context.Context, projectName string) error {
@@ -374,7 +374,7 @@ func (r *runner) updateContainerUserUID(
 	ctx context.Context,
 	parsedConfig *config.DevContainerConfig,
 ) error {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.ImageDriver)
 	if !ok {
 		return nil
 	}

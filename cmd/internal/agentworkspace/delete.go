@@ -104,7 +104,7 @@ func removeContainer(
 	removeVolumes bool,
 ) error {
 	log.Debugf("removing Devsy container from server: workspaceId=%s", workspaceInfo.Workspace.ID)
-	runner, err := CreateRunner(workspaceInfo)
+	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return err
 	}

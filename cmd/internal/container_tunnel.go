@@ -69,7 +69,7 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	// create runner
-	runner, err := agentworkspace.CreateRunner(workspaceInfo)
+	runner, err := agentworkspace.CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return err
 	}
