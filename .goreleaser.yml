@@ -90,6 +90,13 @@ builds:
           env:
             - DEVSY_PRO_NS={{ .Env.DEVSY_PRO_NS | default "default" }}
 
+upx:
+  - enabled: true
+    ids: [devsy-linux, devsy-pro-dev]
+    goos: [linux]
+    compress: best
+    lzma: true
+
 archives:
   - formats: [tar.gz]
     format_overrides:
