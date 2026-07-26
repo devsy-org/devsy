@@ -61,18 +61,10 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	if provider.Source.Internal {
 		return nil
 	}
-	providerSource, err := workspace.ResolveProviderSource(
-		devsyConfig,
-		provider.Name,
-	)
+	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
-		return fmt.Errorf("resolve provider source %s: %w", provider.Name, err)
+		return err
 	}
-	splitted := strings.Split(providerSource, "@")
-	if len(splitted) == 0 {
-		return fmt.Errorf("no provider source found %s", providerSource)
-	}
-	providerSource = splitted[0] + "@" + newVersion
 
 	_, err = workspace.UpdateProvider(ctx, devsyConfig, provider.Name, providerSource)
 	if err != nil {
@@ -96,4 +88,23 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	return nil
+}
+
+func resolveNewProviderSource(
+	devsyConfig *config.Config,
+	providerName, newVersion string,
+) (string, error) {
+	providerSource, err := workspace.ResolveProviderSource(
+		devsyConfig,
+		providerName,
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolve provider source %s: %w", providerName, err)
+	}
+	splitted := strings.Split(providerSource, "@")
+	if len(splitted) == 0 {
+		return "", fmt.Errorf("no provider source found %s", providerSource)
+	}
+
+	return splitted[0] + "@" + newVersion, nil
 }

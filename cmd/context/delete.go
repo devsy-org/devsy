@@ -65,12 +65,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 	}
 
 	delete(devsyConfig.Contexts, context)
-	if devsyConfig.DefaultContext == context {
-		devsyConfig.DefaultContext = "default"
-	}
-	if devsyConfig.OriginalContext == context {
-		devsyConfig.OriginalContext = "default"
-	}
+	resetContextReferences(devsyConfig, context)
 
 	err = config.SaveConfig(devsyConfig)
 	if err != nil {
@@ -78,6 +73,15 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 	}
 
 	return nil
+}
+
+func resetContextReferences(devsyConfig *config.Config, context string) {
+	if devsyConfig.DefaultContext == context {
+		devsyConfig.DefaultContext = "default"
+	}
+	if devsyConfig.OriginalContext == context {
+		devsyConfig.OriginalContext = "default"
+	}
 }
 
 // deleteContextSecrets aborts (rather than orphaning stored values) if the store

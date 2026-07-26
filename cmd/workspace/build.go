@@ -287,16 +287,18 @@ func (cmd *BuildCmd) build(
 		return nil
 	}
 
-	containerID := devcconfig.GetContainerID(result)
+	writeBuildResultJSON(result)
+	return nil
+}
+
+func writeBuildResultJSON(result *devcconfig.Result) {
 	workdir := ""
 	if result != nil && result.SubstitutionContext != nil {
 		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
 	}
-	user := devcconfig.GetRemoteUser(result)
 	_ = devcconfig.WriteResultJSON(os.Stdout, devcconfig.ResultEnvelope{
-		ContainerID:           containerID,
-		RemoteUser:            user,
+		ContainerID:           devcconfig.GetContainerID(result),
+		RemoteUser:            devcconfig.GetRemoteUser(result),
 		RemoteWorkspaceFolder: workdir,
 	})
-	return nil
 }

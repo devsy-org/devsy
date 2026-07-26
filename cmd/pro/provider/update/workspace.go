@@ -53,60 +53,89 @@ func (cmd *WorkspaceCmd) Run(
 	}
 
 	// GUI
-	instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv)
-	if instanceEnv != "" {
-		newInstance := &managementv1.DevsyWorkspaceInstance{}
-		err := json.Unmarshal([]byte(instanceEnv), newInstance)
-		if err != nil {
-			return fmt.Errorf("unmarshal workspace instance %s: %w", instanceEnv, err)
-		}
-		newInstance.TypeMeta = metav1.TypeMeta{} // ignore
-
-		projectName := project.ProjectFromNamespace(newInstance.GetNamespace())
-		opts := platform.FindInstanceOptions{Name: newInstance.GetName(), ProjectName: projectName}
-		oldInstance, err := platform.FindInstance(ctx, baseClient, opts)
-		if err != nil {
-			return err
-		}
-		if oldInstance == nil {
-			return fmt.Errorf(
-				"workspace instance %q not found in project %q",
-				newInstance.GetName(),
-				projectName,
-			)
-		}
-
-		updatedInstance, err := updateInstance(ctx, baseClient, oldInstance, newInstance)
-		if err != nil {
-			return err
-		}
-
-		out, err := json.Marshal(updatedInstance)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(out))
-
-		return nil
+	if instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv); instanceEnv != "" {
+		return updateFromInstanceEnv(ctx, baseClient, instanceEnv)
 	}
 
 	// CLI
-	if !terminal.IsTerminalIn {
-		return fmt.Errorf("unable to update instance through CLI if stdin is not a terminal")
+	return updateFromEnv(ctx, baseClient)
+}
+
+func updateFromInstanceEnv(
+	ctx context.Context,
+	baseClient client.Client,
+	instanceEnv string,
+) error {
+	newInstance := &managementv1.DevsyWorkspaceInstance{}
+	err := json.Unmarshal([]byte(instanceEnv), newInstance)
+	if err != nil {
+		return fmt.Errorf("unmarshal workspace instance %s: %w", instanceEnv, err)
 	}
-	workspaceID := os.Getenv(platform.WorkspaceIDEnv)
-	workspaceUID := os.Getenv(platform.WorkspaceUIDEnv)
-	project := os.Getenv(platform.ProjectEnv)
-	if workspaceUID == "" || workspaceID == "" || project == "" {
+	newInstance.TypeMeta = metav1.TypeMeta{} // ignore
+
+	projectName := project.ProjectFromNamespace(newInstance.GetNamespace())
+	opts := platform.FindInstanceOptions{Name: newInstance.GetName(), ProjectName: projectName}
+	oldInstance, err := platform.FindInstance(ctx, baseClient, opts)
+	if err != nil {
+		return err
+	}
+	if oldInstance == nil {
 		return fmt.Errorf(
-			"workspaceID, workspaceUID or project not found: %s, %s, %s",
-			workspaceID,
-			workspaceUID,
-			project,
+			"workspace instance %q not found in project %q",
+			newInstance.GetName(),
+			projectName,
 		)
 	}
 
-	opts := platform.FindInstanceOptions{UID: workspaceUID, ProjectName: project}
+	updatedInstance, err := updateInstance(ctx, baseClient, oldInstance, newInstance)
+	if err != nil {
+		return err
+	}
+
+	out, err := json.Marshal(updatedInstance)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out)) //nolint:forbidigo // CLI stdout output
+
+	return nil
+}
+
+type updateEnv struct {
+	workspaceID  string
+	workspaceUID string
+	projectName  string
+}
+
+func readUpdateEnv() (updateEnv, error) {
+	env := updateEnv{
+		workspaceID:  os.Getenv(platform.WorkspaceIDEnv),
+		workspaceUID: os.Getenv(platform.WorkspaceUIDEnv),
+		projectName:  os.Getenv(platform.ProjectEnv),
+	}
+	if env.workspaceUID == "" || env.workspaceID == "" || env.projectName == "" {
+		return env, fmt.Errorf(
+			"workspaceID, workspaceUID or project not found: %s, %s, %s",
+			env.workspaceID,
+			env.workspaceUID,
+			env.projectName,
+		)
+	}
+
+	return env, nil
+}
+
+func updateFromEnv(ctx context.Context, baseClient client.Client) error {
+	if !terminal.IsTerminalIn {
+		return fmt.Errorf("unable to update instance through CLI if stdin is not a terminal")
+	}
+
+	env, err := readUpdateEnv()
+	if err != nil {
+		return err
+	}
+
+	opts := platform.FindInstanceOptions{UID: env.workspaceUID, ProjectName: env.projectName}
 	oldInstance, err := platform.FindInstance(ctx, baseClient, opts)
 	if err != nil {
 		return err
@@ -114,8 +143,8 @@ func (cmd *WorkspaceCmd) Run(
 	if oldInstance == nil {
 		return fmt.Errorf(
 			"workspace instance with UID %q not found in project %q",
-			workspaceUID,
-			project,
+			env.workspaceUID,
+			env.projectName,
 		)
 	}
 

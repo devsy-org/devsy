@@ -64,41 +64,50 @@ func (cmd *OptionsCmd) Run(ctx context.Context, ide string) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		for optionName, entry := range ideOptions {
-			value := values[optionName].Value
-			tableEntries = append(tableEntries, []string{
-				optionName,
-				entry.Description,
-				entry.Default,
-				value,
-			})
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
-
-		table.Print([]string{
-			"Name",
-			"Description",
-			"Default",
-			"Value",
-		}, tableEntries)
+		printIDEOptionsPlain(ideOptions, values)
 	case output.ModeJSON:
-		options := map[string]optionWithValue{}
-		for optionName, entry := range ideOptions {
-			options[optionName] = optionWithValue{
-				Option: entry,
-				Value:  values[optionName].Value,
-			}
-		}
-
-		out, err := json.MarshalIndent(options, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintln(os.Stdout, string(out))
+		return printIDEOptionsJSON(ideOptions, values)
 	}
 
+	return nil
+}
+
+func printIDEOptionsPlain(ideOptions ide.Options, values map[string]config.OptionValue) {
+	tableEntries := [][]string{}
+	for optionName, entry := range ideOptions {
+		value := values[optionName].Value
+		tableEntries = append(tableEntries, []string{
+			optionName,
+			entry.Description,
+			entry.Default,
+			value,
+		})
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	table.Print([]string{
+		"Name",
+		"Description",
+		"Default",
+		"Value",
+	}, tableEntries)
+}
+
+func printIDEOptionsJSON(ideOptions ide.Options, values map[string]config.OptionValue) error {
+	options := map[string]optionWithValue{}
+	for optionName, entry := range ideOptions {
+		options[optionName] = optionWithValue{
+			Option: entry,
+			Value:  values[optionName].Value,
+		}
+	}
+
+	out, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 	return nil
 }

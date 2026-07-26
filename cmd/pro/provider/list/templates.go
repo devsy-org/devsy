@@ -208,24 +208,12 @@ func GetLatestMatchedVersion(
 		}
 
 		// does the version match our restrictions?
-		if (splittedVersion[0] == "x" || splittedVersion[0] == "X" || strconv.FormatUint(parsedVersion.Major, 10) == splittedVersion[0]) &&
-			(splittedVersion[1] == "x" || splittedVersion[1] == "X" || strconv.FormatUint(parsedVersion.Minor, 10) == splittedVersion[1]) &&
-			(splittedVersion[2] == "x" || splittedVersion[2] == "X" || strconv.FormatUint(parsedVersion.Patch, 10) == splittedVersion[2]) {
-			if latestMatchedVersionObj == nil || latestMatchedVersionObj.Version.LT(parsedVersion) {
-				latestMatchedVersionObj = &matchedVersion{
-					Object:  version,
-					Version: parsedVersion,
-				}
-			}
+		if versionMatchesPattern(parsedVersion, splittedVersion) {
+			latestMatchedVersionObj = maxVersion(latestMatchedVersionObj, version, parsedVersion)
 		}
 
 		// latest available version
-		if latestVersionObj == nil || latestVersionObj.Version.LT(parsedVersion) {
-			latestVersionObj = &matchedVersion{
-				Object:  version,
-				Version: parsedVersion,
-			}
-		}
+		latestVersionObj = maxVersion(latestVersionObj, version, parsedVersion)
 	}
 
 	if latestVersionObj != nil {
@@ -236,6 +224,31 @@ func GetLatestMatchedVersion(
 	}
 
 	return latestVersion, latestMatchedVersion, nil
+}
+
+func versionMatchesPattern(version semver.Version, pattern []string) bool {
+	return versionSegmentMatches(pattern[0], version.Major) &&
+		versionSegmentMatches(pattern[1], version.Minor) &&
+		versionSegmentMatches(pattern[2], version.Patch)
+}
+
+func versionSegmentMatches(segment string, value uint64) bool {
+	return segment == "x" || segment == "X" || strconv.FormatUint(value, 10) == segment
+}
+
+func maxVersion(
+	best *matchedVersion,
+	candidate storagev1.VersionAccessor,
+	parsed semver.Version,
+) *matchedVersion {
+	if best == nil || best.Version.LT(parsed) {
+		return &matchedVersion{
+			Object:  candidate,
+			Version: parsed,
+		}
+	}
+
+	return best
 }
 
 var replaceRegEx = regexp.MustCompile("[^a-zA-Z0-9]+")

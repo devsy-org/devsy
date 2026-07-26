@@ -7,6 +7,7 @@ import (
 	"time"
 
 	clusterv1 "github.com/devsy-org/agentapi/pkg/apis/devsy/cluster/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -14,10 +15,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -73,7 +75,18 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if workspaceInstance == nil {
+		return fmt.Errorf("workspace %q not found in project %q", targetWorkspace, cmd.Project)
+	}
 
+	return cmd.wakeup(ctx, baseClient, workspaceInstance)
+}
+
+func (cmd *WakeupCmd) wakeup(
+	ctx context.Context,
+	baseClient client.Client,
+	workspaceInstance *managementv1.DevsyWorkspaceInstance,
+) error {
 	if workspaceInstance.Status.Phase != storagev1.InstanceSleeping {
 		log.Infof("Workspace %s is not sleeping", workspaceInstance.Name)
 		return nil
@@ -84,6 +97,31 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	if err := cmd.patchWakeup(ctx, managementClient, workspaceInstance); err != nil {
+		return err
+	}
+
+	// wait for sleeping
+	log.Info("Wait until workspace wakes up")
+	err = waitForWorkspacePhase(ctx, waitForWorkspacePhaseParams{
+		managementClient: managementClient,
+		projectName:      cmd.Project,
+		name:             workspaceInstance.Name,
+		phase:            storagev1.InstanceReady,
+	})
+	if err != nil {
+		return fmt.Errorf("error waiting for workspace to wake up: %w", err)
+	}
+
+	log.Infof("woke up workspace: workspaceName=%s", workspaceInstance.Name)
+	return nil
+}
+
+func (cmd *WakeupCmd) patchWakeup(
+	ctx context.Context,
+	managementClient kube.Interface,
+	workspaceInstance *managementv1.DevsyWorkspaceInstance,
+) error {
 	// create a deep copy of the workspace instance
 	oldWorkspaceInstance := workspaceInstance.DeepCopy()
 	oldWorkspaceInstance.Status = workspaceInstance.Status
@@ -111,33 +149,6 @@ func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
 		ManagementV1().
 		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
-	if err != nil {
-		return err
-	}
 
-	// wait for sleeping
-	log.Info("Wait until workspace wakes up")
-	err = wait.PollUntilContextTimeout(
-		ctx,
-		time.Second,
-		platform.Timeout(),
-		false,
-		func(ctx context.Context) (done bool, err error) {
-			workspaceInstance, err := managementClient.Loft().
-				ManagementV1().
-				DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
-				Get(ctx, workspaceInstance.Name, metav1.GetOptions{})
-			if err != nil {
-				return false, err
-			}
-
-			return workspaceInstance.Status.Phase == storagev1.InstanceReady, nil
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("error waiting for workspace to wake up: %w", err)
-	}
-
-	log.Infof("woke up workspace: workspaceName=%s", workspaceInstance.Name)
-	return nil
+	return err
 }

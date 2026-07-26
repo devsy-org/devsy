@@ -81,42 +81,77 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	done, err := cmd.resolveWorkspaceID(devsyConfig)
+	if err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+
+	ref, err := cmd.findWorkspaceInstance(ctx, devsyConfig, devsyProHost)
+	if err != nil {
+		return err
+	}
+
+	return cmd.importInstance(ctx, devsyConfig, ref)
+}
+
+// resolveWorkspaceID sets the target workspace ID and reports whether the
+// workspace has already been imported (done == true).
+func (cmd *ImportCmd) resolveWorkspaceID(devsyConfig *config.Config) (bool, error) {
 	// set uid as id
 	if cmd.WorkspaceId == "" {
 		cmd.WorkspaceId = cmd.WorkspaceUid
 	}
 
 	// check if workspace already exists
-	if provider2.WorkspaceExists(devsyConfig.DefaultContext, cmd.WorkspaceId) {
-		workspaceConfig, err := provider2.LoadWorkspaceConfig(
-			devsyConfig.DefaultContext,
-			cmd.WorkspaceId,
-		)
-		if err != nil {
-			return fmt.Errorf("load workspace: %w", err)
-		} else if workspaceConfig.UID == cmd.WorkspaceUid {
-			log.Infof("Workspace %s already imported", cmd.WorkspaceId)
-			return nil
-		}
-
-		newWorkspaceId := cmd.WorkspaceId + "-" + random.String(5)
-		if provider2.WorkspaceExists(devsyConfig.DefaultContext, newWorkspaceId) {
-			return fmt.Errorf("workspace %s already exists", cmd.WorkspaceId)
-		}
-
-		log.Infof(
-			"workspace ID conflict, will import workspace with new ID: "+
-				"existingWorkspaceId=%s, existingWorkspaceUid=%s, newWorkspaceId=%s",
-			cmd.WorkspaceId,
-			workspaceConfig.UID,
-			newWorkspaceId,
-		)
-		cmd.WorkspaceId = newWorkspaceId
+	if !provider2.WorkspaceExists(devsyConfig.DefaultContext, cmd.WorkspaceId) {
+		return false, nil
 	}
 
+	workspaceConfig, err := provider2.LoadWorkspaceConfig(
+		devsyConfig.DefaultContext,
+		cmd.WorkspaceId,
+	)
+	if err != nil {
+		return false, fmt.Errorf("load workspace: %w", err)
+	} else if workspaceConfig.UID == cmd.WorkspaceUid {
+		log.Infof("Workspace %s already imported", cmd.WorkspaceId)
+		return true, nil
+	}
+
+	newWorkspaceId := cmd.WorkspaceId + "-" + random.String(5)
+	if provider2.WorkspaceExists(devsyConfig.DefaultContext, newWorkspaceId) {
+		return false, fmt.Errorf("workspace %s already exists", newWorkspaceId)
+	}
+
+	log.Infof(
+		"workspace ID conflict, will import workspace with new ID: "+
+			"existingWorkspaceId=%s, existingWorkspaceUid=%s, newWorkspaceId=%s",
+		cmd.WorkspaceId,
+		workspaceConfig.UID,
+		newWorkspaceId,
+	)
+	cmd.WorkspaceId = newWorkspaceId
+
+	return false, nil
+}
+
+type workspaceInstanceRef struct {
+	provider   *provider2.ProviderConfig
+	baseClient client.Client
+	instance   *managementv1.DevsyWorkspaceInstance
+}
+
+func (cmd *ImportCmd) findWorkspaceInstance(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	devsyProHost string,
+) (workspaceInstanceRef, error) {
 	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost)
 	if err != nil {
-		return fmt.Errorf("resolve provider: %w", err)
+		return workspaceInstanceRef{}, fmt.Errorf("resolve provider: %w", err)
 	}
 
 	baseClient, err := platform.InitClientFromProvider(
@@ -125,25 +160,40 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		provider.Name,
 	)
 	if err != nil {
-		return fmt.Errorf("base client: %w", err)
+		return workspaceInstanceRef{}, fmt.Errorf("base client: %w", err)
 	}
 	opts := platform.FindInstanceOptions{UID: cmd.WorkspaceUid, ProjectName: cmd.WorkspaceProject}
 	instance, err := platform.FindInstance(ctx, baseClient, opts)
 	if err != nil {
-		return fmt.Errorf("find workspace instance: %w", err)
+		return workspaceInstanceRef{}, fmt.Errorf("find workspace instance: %w", err)
 	}
 	if instance == nil {
-		return fmt.Errorf("workspace instance with UID %s not found", cmd.WorkspaceUid)
+		return workspaceInstanceRef{}, fmt.Errorf(
+			"workspace instance with UID %s not found",
+			cmd.WorkspaceUid,
+		)
 	}
 
+	return workspaceInstanceRef{
+		provider:   provider,
+		baseClient: baseClient,
+		instance:   instance,
+	}, nil
+}
+
+func (cmd *ImportCmd) importInstance(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	ref workspaceInstanceRef,
+) error {
 	// old pro provider
-	if !provider.HasHealthCheck() {
-		instanceOpts, err := resolveInstanceOptions(ctx, instance, baseClient)
+	if !ref.provider.HasHealthCheck() {
+		instanceOpts, err := resolveInstanceOptions(ctx, ref.instance, ref.baseClient)
 		if err != nil {
 			return fmt.Errorf("resolve instance options: %w", err)
 		}
 
-		err = cmd.writeWorkspaceDefinition(devsyConfig, provider, instanceOpts, instance)
+		err = cmd.writeWorkspaceDefinition(devsyConfig, ref.provider, instanceOpts, ref.instance)
 		if err != nil {
 			return fmt.Errorf("prepare workspace to import definition: %w", err)
 		}
@@ -152,7 +202,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// new pro provider
-	err = cmd.writeNewWorkspaceDefinition(devsyConfig, instance, provider.Name)
+	err := cmd.writeNewWorkspaceDefinition(devsyConfig, ref.instance, ref.provider.Name)
 	if err != nil {
 		return fmt.Errorf("prepare workspace to import definition: %w", err)
 	}
@@ -255,35 +305,60 @@ func resolveInstanceOptions(
 	if instance.Spec.Parameters == "" {
 		return opts, nil
 	}
-	managementClient, err := baseClient.Management()
+
+	err := resolveTemplateParameters(ctx, resolveTemplateParametersParams{
+		instance:    instance,
+		baseClient:  baseClient,
+		projectName: projectName,
+		opts:        opts,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get management client: %w", err)
+		return nil, err
+	}
+
+	return opts, nil
+}
+
+type resolveTemplateParametersParams struct {
+	instance    *managementv1.DevsyWorkspaceInstance
+	baseClient  client.Client
+	projectName string
+	opts        map[string]string
+}
+
+func resolveTemplateParameters(
+	ctx context.Context,
+	params resolveTemplateParametersParams,
+) error {
+	managementClient, err := params.baseClient.Management()
+	if err != nil {
+		return fmt.Errorf("get management client: %w", err)
 	}
 	template, err := list.FindTemplate(
 		ctx,
 		managementClient,
-		projectName,
-		instance.Spec.TemplateRef.Name,
+		params.projectName,
+		params.instance.Spec.TemplateRef.Name,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("find template: %w", err)
+		return fmt.Errorf("find template: %w", err)
 	}
 	templateParameters := template.Spec.Parameters
 	if len(template.Spec.Versions) > 0 {
 		templateParameters, err = list.GetTemplateParameters(
 			template,
-			instance.Spec.TemplateRef.Version,
+			params.instance.Spec.TemplateRef.Version,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("get template parameters: %w", err)
+			return fmt.Errorf("get template parameters: %w", err)
 		}
 	}
-	err = fillParameterOptions(opts, templateParameters, instance.Spec.Parameters)
+	err = fillParameterOptions(params.opts, templateParameters, params.instance.Spec.Parameters)
 	if err != nil {
-		return nil, fmt.Errorf("fill parameter options: %w", err)
+		return fmt.Errorf("fill parameter options: %w", err)
 	}
 
-	return opts, nil
+	return nil
 }
 
 func fillParameterOptions(
@@ -299,26 +374,12 @@ func fillParameterOptions(
 
 	for _, parameter := range parameterDefinitions {
 		val := parameters.GetDeepValue(parametersMap, parameter.Variable)
-		var strVal string
-		if val != nil {
-			switch t := val.(type) {
-			case string:
-				strVal = t
-			case int:
-				strVal = strconv.Itoa(t)
-			case bool:
-				strVal = strconv.FormatBool(t)
-			default:
-				return fmt.Errorf(
-					"unrecognized type for parameter %s (%s) in file: %v",
-					parameter.Label,
-					parameter.Variable,
-					t,
-				)
-			}
+		strVal, err := parameterValueString(val, parameter)
+		if err != nil {
+			return err
 		}
 
-		_, err := parameters.VerifyValue(strVal, parameter)
+		_, err = parameters.VerifyValue(strVal, parameter)
 		if err != nil {
 			return err
 		}
@@ -328,4 +389,26 @@ func fillParameterOptions(
 	}
 
 	return nil
+}
+
+func parameterValueString(val any, parameter storagev1.AppParameter) (string, error) {
+	switch t := val.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return t, nil
+	case int:
+		return strconv.Itoa(t), nil
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64), nil
+	case bool:
+		return strconv.FormatBool(t), nil
+	default:
+		return "", fmt.Errorf(
+			"unrecognized type for parameter %s (%s) in file: %v",
+			parameter.Label,
+			parameter.Variable,
+			t,
+		)
+	}
 }

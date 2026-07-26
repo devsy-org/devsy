@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -131,17 +132,7 @@ func (cmd *StopCmd) stopSingleMachine(
 		return false, fmt.Errorf("list workspaces: %w", err)
 	}
 
-	// loop workspaces
-	foundOther := false
-	for _, workspace := range workspaces {
-		if workspace.ID == client.Workspace() || workspace.Machine.ID != singleMachineName {
-			continue
-		}
-
-		foundOther = true
-		break
-	}
-	if foundOther {
+	if otherWorkspaceUsesMachine(workspaces, client.Workspace(), singleMachineName) {
 		return false, nil
 	}
 
@@ -162,4 +153,17 @@ func (cmd *StopCmd) stopSingleMachine(
 
 	log.Infof("stopped workspace: workspace=%s", client.Workspace())
 	return true, nil
+}
+
+func otherWorkspaceUsesMachine(
+	workspaces []*provider.Workspace,
+	currentWorkspaceID, machineName string,
+) bool {
+	for _, ws := range workspaces {
+		if ws.ID == currentWorkspaceID || ws.Machine.ID != machineName {
+			continue
+		}
+		return true
+	}
+	return false
 }

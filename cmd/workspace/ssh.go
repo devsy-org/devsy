@@ -159,17 +159,7 @@ func (cmd *SSHCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
-	// add ssh keys to agent
-	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue &&
-		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) == config.BoolTrue {
-		log.Debug(
-			"adding ssh keys to agent, disable via 'devsy context set -o SSH_ADD_PRIVATE_KEYS=false'",
-		)
-		err := devssh.AddPrivateKeysToAgent(ctx)
-		if err != nil {
-			log.Debugf("Error adding private keys to ssh-agent: %v", err)
-		}
-	}
+	cmd.addPrivateKeysToAgentIfEnabled(ctx, devsyConfig)
 
 	// get user
 	if cmd.User == "" {
@@ -203,6 +193,19 @@ func (cmd *SSHCmd) Run(
 	}
 
 	return nil
+}
+
+func (cmd *SSHCmd) addPrivateKeysToAgentIfEnabled(ctx context.Context, devsyConfig *config.Config) {
+	if devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) != config.BoolTrue ||
+		devsyConfig.ContextOption(config.ContextOptionSSHAddPrivateKeys) != config.BoolTrue {
+		return
+	}
+	log.Debug(
+		"adding ssh keys to agent, disable via 'devsy context set -o SSH_ADD_PRIVATE_KEYS=false'",
+	)
+	if err := devssh.AddPrivateKeysToAgent(ctx); err != nil {
+		log.Debugf("Error adding private keys to ssh-agent: %v", err)
+	}
 }
 
 func (cmd *SSHCmd) execute(ctx context.Context, args []string) error {
@@ -242,43 +245,16 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 	defer func() { _ = toolSSHClient.Close() }()
 	defer func() { _ = sshClient.Close() }()
 
-	// Forward ports if specified
-	if len(cmd.ForwardPorts) > 0 {
-		return cmd.forwardPorts(ctx, toolSSHClient)
+	// Forward or reverse-forward ports if specified
+	if handled, err := cmd.forwardPortsIfRequested(ctx, toolSSHClient); handled {
+		return err
 	}
 
-	// Reverse forward ports if specified
-	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
-		return cmd.reverseForwardPorts(ctx, toolSSHClient)
-	}
-
-	if cmd.StartServices {
-		go func() {
-			err = clientimplementation.StartServicesDaemon(
-				ctx,
-				clientimplementation.StartServicesDaemonOptions{
-					DevsyConfig:  devsyConfig,
-					Client:       client,
-					SSHClient:    toolSSHClient,
-					User:         cmd.User,
-					ForwardPorts: false,
-					ExtraPorts:   nil,
-				},
-			)
-			if err != nil {
-				log.Errorf("Error starting services: %v", err)
-			}
-		}()
-	}
+	cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
 
 	// Handle GPG agent forwarding
-	if cmd.GPGAgentForwarding ||
-		devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
-		if gpg.IsGpgTunnelRunning(ctx, cmd.User, toolSSHClient) {
-			log.Debugf("[GPG] exporting already running, skipping")
-		} else if err := cmd.setupGPGAgent(ctx, toolSSHClient); err != nil {
-			return err
-		}
+	if err := cmd.maybeSetupGPGAgent(ctx, devsyConfig, toolSSHClient); err != nil {
+		return err
 	}
 
 	// Handle ssh stdio mode
@@ -304,6 +280,64 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			Stderr: os.Stderr,
 		},
 	)
+}
+
+// forwardPortsIfRequested handles -L/-R forwarding when requested. The returned
+// bool reports whether forwarding took over (the caller should return err).
+func (cmd *SSHCmd) forwardPortsIfRequested(
+	ctx context.Context,
+	sshClient *ssh.Client,
+) (bool, error) {
+	if len(cmd.ForwardPorts) > 0 {
+		return true, cmd.forwardPorts(ctx, sshClient)
+	}
+	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
+		return true, cmd.reverseForwardPorts(ctx, sshClient)
+	}
+	return false, nil
+}
+
+func (cmd *SSHCmd) startServicesDaemon(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.DaemonClient,
+	sshClient *ssh.Client,
+) {
+	if !cmd.StartServices {
+		return
+	}
+	go func() {
+		err := clientimplementation.StartServicesDaemon(
+			ctx,
+			clientimplementation.StartServicesDaemonOptions{
+				DevsyConfig:  devsyConfig,
+				Client:       client,
+				SSHClient:    sshClient,
+				User:         cmd.User,
+				ForwardPorts: false,
+				ExtraPorts:   nil,
+			},
+		)
+		if err != nil {
+			log.Errorf("Error starting services: %v", err)
+		}
+	}()
+}
+
+func (cmd *SSHCmd) maybeSetupGPGAgent(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	sshClient *ssh.Client,
+) error {
+	if !cmd.GPGAgentForwarding &&
+		!devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
+		return nil
+	}
+	if gpg.IsGpgTunnelRunning(ctx, cmd.User, sshClient) {
+		log.Debugf("[GPG] exporting already running, skipping")
+		return nil
+	}
+	return cmd.setupGPGAgent(ctx, sshClient)
 }
 
 func (cmd *SSHCmd) startProxyTunnel(
@@ -497,83 +531,25 @@ func (cmd *SSHCmd) startTunnel(
 	workspaceClient client2.BaseWorkspaceClient,
 ) error {
 	// check if we should forward ports
-	if len(cmd.ForwardPorts) > 0 {
-		return cmd.forwardPorts(ctx, containerClient)
+	if handled, err := cmd.forwardPortsIfRequested(ctx, containerClient); handled {
+		return err
 	}
 
-	// check if we should reverse forward ports
-	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
-		return cmd.reverseForwardPorts(ctx, containerClient)
-	}
+	cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
 
-	if cmd.StartServices {
-		configureDockerCredentials := devsyConfig.ContextOption(
-			config.ContextOptionSSHInjectDockerCredentials,
-		) == config.BoolTrue
-		configureGitCredentials := devsyConfig.ContextOption(
-			config.ContextOptionSSHInjectGitCredentials,
-		) == config.BoolTrue
-		configureGitSSHSignatureHelper := devsyConfig.ContextOption(
-			config.ContextOptionGitSSHSignatureForwarding,
-		) == config.BoolTrue
-
-		go cmd.startServices(
-			ctx,
-			devsyConfig,
-			containerClient,
-			workspaceClient.WorkspaceConfig(),
-			configureDockerCredentials,
-			configureGitCredentials,
-			configureGitSSHSignatureHelper,
-			cmd.GitSSHSigningKey,
-		)
-	}
 	// start ssh
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// check if we should do gpg agent forwarding
-	if cmd.GPGAgentForwarding ||
-		devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
-		// Check if a forwarding is already enabled and running, in that case
-		// we skip the forwarding and keep using the original one
-		if gpg.IsGpgTunnelRunning(ctx, cmd.User, containerClient) {
-			log.Debugf("[GPG] exporting already running, skipping")
-		} else {
-			err := cmd.setupGPGAgent(ctx, containerClient)
-			if err != nil {
-				return err
-			}
-		}
+	if err := cmd.maybeSetupGPGAgent(ctx, devsyConfig, containerClient); err != nil {
+		return err
 	}
 
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
 	log.Debugf("Run outer container tunnel")
-	commandArgs := []string{
-		config.ContainerDevsyHelperLocation,
-		"internal",
-		"ssh-server",
-		names.Flag(names.TrackActivity),
-		names.Flag(names.Stdio),
-		names.Flag(names.Workdir),
-		workdir,
-	}
-	if cmd.ReuseSSHAuthSock != "" {
-		log.Debug("Reusing SSH_AUTH_SOCK")
-		commandArgs = append(
-			commandArgs,
-			names.Flag(names.ReuseSSHAuthSock),
-			cmd.ReuseSSHAuthSock,
-		)
-	}
-	if cmd.Debug {
-		commandArgs = append(commandArgs, names.Flag(names.Debug))
-	}
-	command := shellescape.QuoteCommand(commandArgs)
-	if cmd.User != "" && cmd.User != "root" {
-		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
-	}
+	command := cmd.buildSSHServerCommand(workdir)
 
 	envVars, err := cmd.retrieveEnVars()
 	if err != nil {
@@ -616,6 +592,65 @@ func (cmd *SSHCmd) startTunnel(
 		},
 		Stderr: writer,
 	})
+}
+
+func (cmd *SSHCmd) startTunnelServices(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	containerClient *ssh.Client,
+	workspaceClient client2.BaseWorkspaceClient,
+) {
+	if !cmd.StartServices {
+		return
+	}
+	configureDockerCredentials := devsyConfig.ContextOption(
+		config.ContextOptionSSHInjectDockerCredentials,
+	) == config.BoolTrue
+	configureGitCredentials := devsyConfig.ContextOption(
+		config.ContextOptionSSHInjectGitCredentials,
+	) == config.BoolTrue
+	configureGitSSHSignatureHelper := devsyConfig.ContextOption(
+		config.ContextOptionGitSSHSignatureForwarding,
+	) == config.BoolTrue
+
+	go cmd.startServices(
+		ctx,
+		devsyConfig,
+		containerClient,
+		workspaceClient.WorkspaceConfig(),
+		configureDockerCredentials,
+		configureGitCredentials,
+		configureGitSSHSignatureHelper,
+		cmd.GitSSHSigningKey,
+	)
+}
+
+func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {
+	commandArgs := []string{
+		config.ContainerDevsyHelperLocation,
+		"internal",
+		"ssh-server",
+		names.Flag(names.TrackActivity),
+		names.Flag(names.Stdio),
+		names.Flag(names.Workdir),
+		workdir,
+	}
+	if cmd.ReuseSSHAuthSock != "" {
+		log.Debug("Reusing SSH_AUTH_SOCK")
+		commandArgs = append(
+			commandArgs,
+			names.Flag(names.ReuseSSHAuthSock),
+			cmd.ReuseSSHAuthSock,
+		)
+	}
+	if cmd.Debug {
+		commandArgs = append(commandArgs, names.Flag(names.Debug))
+	}
+	command := shellescape.QuoteCommand(commandArgs)
+	if cmd.User != "" && cmd.User != "root" {
+		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
+	}
+	return command
 }
 
 func resolveWorkdir(

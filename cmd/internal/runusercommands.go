@@ -312,21 +312,28 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 		return nil, fmt.Errorf("merge configuration: %w", err)
 	}
 
-	if cmd.OverrideConfig != "" {
-		if err := devcconfig.MergeExtraRemoteEnv(
-			ctx,
-			mergedConfig,
-			cmd.OverrideConfig,
-		); err != nil {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-			return nil, fmt.Errorf("apply override config: %w", err)
-		}
+	if err := cmd.applyOverrideConfig(ctx, mergedConfig); err != nil {
+		return nil, err
 	}
 
 	return &devcconfig.Result{
 		MergedConfig:     mergedConfig,
 		ContainerDetails: containerDetails,
 	}, nil
+}
+
+func (cmd *RunUserCommandsCmd) applyOverrideConfig(
+	ctx context.Context,
+	mergedConfig *devcconfig.MergedDevContainerConfig,
+) error {
+	if cmd.OverrideConfig == "" {
+		return nil
+	}
+	if err := devcconfig.MergeExtraRemoteEnv(ctx, mergedConfig, cmd.OverrideConfig); err != nil {
+		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+		return fmt.Errorf("apply override config: %w", err)
+	}
+	return nil
 }
 
 func (cmd *RunUserCommandsCmd) buildCLIRemoteEnvArgs() []string {
@@ -381,15 +388,8 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		return nil, nil, fmt.Errorf("no workspace result found; lifecycle commands unavailable")
 	}
 
-	if cmd.OverrideConfig != "" {
-		if err := devcconfig.MergeExtraRemoteEnv(
-			ctx,
-			result.MergedConfig,
-			cmd.OverrideConfig,
-		); err != nil {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-			return nil, nil, fmt.Errorf("apply override config: %w", err)
-		}
+	if err := cmd.applyOverrideConfig(ctx, result.MergedConfig); err != nil {
+		return nil, nil, err
 	}
 
 	envArgs := workspace.BuildLifecycleEnvArgs(result)
@@ -426,32 +426,54 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	}
 
 	waitForBoundary := resolveWaitForBoundary(result)
+	boundaryName := hooks[waitForBoundary].name
 
 	for i, hook := range hooks {
-		if cmd.Prebuild && i >= 2 {
-			log.Infof(
-				"stopping lifecycle execution (%s: after %s)",
-				names.Flag(names.Prebuild),
-				updateContentCommand,
-			)
-			return nil
-		}
-		if cmd.SkipNonBlockingCommands && i > waitForBoundary {
-			log.Infof(
-				"stopping lifecycle execution (--skip-non-blocking-commands: after %s)",
-				hooks[waitForBoundary].name,
-			)
+		if cmd.shouldStopLifecycle(i, waitForBoundary, boundaryName) {
 			return nil
 		}
 		if hook.skip {
 			log.Infof("skipping %s (--skip flag set)", hook.name)
 			continue
 		}
-		for _, h := range hook.cmds {
-			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
-				_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
-			}
+		if err := execLifecycleHooks(params, hook.name, hook.cmds); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cmd *RunUserCommandsCmd) shouldStopLifecycle(
+	i, waitForBoundary int,
+	boundaryName string,
+) bool {
+	if cmd.Prebuild && i >= 2 {
+		log.Infof(
+			"stopping lifecycle execution (%s: after %s)",
+			names.Flag(names.Prebuild),
+			updateContentCommand,
+		)
+		return true
+	}
+	if cmd.SkipNonBlockingCommands && i > waitForBoundary {
+		log.Infof(
+			"stopping lifecycle execution (--skip-non-blocking-commands: after %s)",
+			boundaryName,
+		)
+		return true
+	}
+	return false
+}
+
+func execLifecycleHooks(
+	params *workspace.LifecycleExecParams,
+	name string,
+	cmds []types.LifecycleHook,
+) error {
+	for _, h := range cmds {
+		if err := workspace.ExecLifecycleHook(params, name, h); err != nil {
+			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
+			return fmt.Errorf("lifecycle hooks: %s: %w", name, err)
 		}
 	}
 	return nil
