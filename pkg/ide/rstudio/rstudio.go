@@ -319,11 +319,7 @@ func setupPreferences(workspaceFolder, userName string) error {
 		return fmt.Errorf("get home dir")
 	}
 	prefsDir := filepath.Join(homeDir, ".config", "rstudio")
-	err = os.MkdirAll(prefsDir, os.ModePerm)
-	if err != nil {
-		return err
-	}
-	err = copypkg.ChownR(prefsDir, userName)
+	err = copypkg.MkdirAllChown(prefsDir, os.ModePerm, userName)
 	if err != nil {
 		return err
 	}
