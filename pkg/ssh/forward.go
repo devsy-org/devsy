@@ -18,11 +18,6 @@ import (
 // should check for this error with errors.Is.
 var ErrIdleTimeout = errors.New("port forward idle timeout")
 
-// ErrTransportClosed is returned when the forwarder shuts down because its
-// underlying SSH transport was closed (e.g. a network drop that tripped the
-// server keep-alive). Callers may treat it as a signal to reconnect. It exists
-// so the local listener is released promptly instead of leaking the bound port
-// until ctx cancellation.
 var ErrTransportClosed = errors.New("ssh transport closed")
 
 type ForwardingFunction func(
@@ -121,10 +116,6 @@ func portForwarding(
 		}
 	}()
 
-	// Release the listener when the SSH transport dies so a reconnect can
-	// rebind the same local port instead of failing with
-	// "bind: address already in use". Without this the accept loop blocks
-	// indefinitely on a dead client and the bound port leaks (issue #759).
 	if client != nil {
 		transportClosed := make(chan struct{})
 		go func() {
@@ -152,9 +143,6 @@ func portForwarding(
 		// waiting for a new connection
 		connection, err := listener.Accept()
 		if err != nil {
-			// Surface the typed cause when the accept failure came from our
-			// own shutdown (idle timeout or transport death) so callers can
-			// distinguish a clean exit / reconnect signal from a real error.
 			switch cause := context.Cause(fwdCtx); {
 			case errors.Is(cause, ErrIdleTimeout):
 				return ErrIdleTimeout
