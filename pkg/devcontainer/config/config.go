@@ -426,6 +426,10 @@ const (
 	ShutdownActionStopCompose   = "stopCompose"
 )
 
+// SecretsMountDir is the in-container tmpfs directory where file-delivered
+// secrets are written, matching the Docker/Podman convention.
+const SecretsMountDir = "/run/secrets"
+
 const (
 	AutoForwardIgnore = "ignore"
 	AutoForwardNotify = "notify"

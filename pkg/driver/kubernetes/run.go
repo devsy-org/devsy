@@ -149,11 +149,26 @@ func (k *KubernetesDriver) runContainer(
 
 	// loop over volume mounts
 	volumeMounts := []corev1.VolumeMount{getVolumeMount(0, mount)}
+	var tmpfsVolumes []corev1.Volume
 	for idx, mount := range options.Mounts {
-		volumeMount := getVolumeMount(idx+1, mount)
-		if mount.Type == "bind" || mount.Type == "volume" {
-			volumeMounts = append(volumeMounts, volumeMount)
-		} else {
+		switch mount.Type {
+		case driver.MountTypeBind, driver.MountTypeVolume:
+			volumeMounts = append(volumeMounts, getVolumeMount(idx+1, mount))
+		case driver.MountTypeTmpfs:
+			name := fmt.Sprintf("%s-tmpfs-%d", DevContainerName, idx+1)
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      name,
+				MountPath: mount.Target,
+			})
+			tmpfsVolumes = append(tmpfsVolumes, corev1.Volume{
+				Name: name,
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{
+						Medium: corev1.StorageMediumMemory,
+					},
+				},
+			})
+		default:
 			log.Warnf(
 				"Unsupported mount type %q in mount %q, will skip",
 				mount.Type,
@@ -260,7 +275,7 @@ func (k *KubernetesDriver) runContainer(
 		k.options.StrictSecurity,
 		daemonConfigSecretName,
 	)
-	pod.Spec.Volumes = getVolumes(pod, id, daemonConfigSecretName)
+	pod.Spec.Volumes = append(getVolumes(pod, id, daemonConfigSecretName), tmpfsVolumes...)
 	// avoids a problem where attaching volumes with large repositories would cause an extremely long pod startup time
 	// because changing the ownership of all files takes longer than the kubelet expects it to
 	if pod.Spec.SecurityContext == nil {

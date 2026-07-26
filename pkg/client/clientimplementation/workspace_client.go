@@ -1099,7 +1099,8 @@ func runTunnelServer(
 		opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.WorkspaceConfig(),
-		opts.TunnelOptions...,
+		append(opts.TunnelOptions,
+			tunnelserver.WithGitToken(opts.CLIOptions.GitToken))...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel server: %w", err)

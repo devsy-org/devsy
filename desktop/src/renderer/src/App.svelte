@@ -13,6 +13,8 @@ import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
 import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
+import { initSecrets } from "$lib/stores/secrets.js"
+import { initEnv } from "$lib/stores/env.js"
 import {
   initSettings,
   syncAutoUpdateFromMain,
@@ -42,6 +44,8 @@ import ProviderAddPage from "./pages/ProviderAddPage.svelte"
 import MachinesPage from "./pages/MachinesPage.svelte"
 import MachineDetailPage from "./pages/MachineDetailPage.svelte"
 import ContextsPage from "./pages/ContextsPage.svelte"
+import SecretsPage from "./pages/SecretsPage.svelte"
+import EnvPage from "./pages/EnvPage.svelte"
 import SettingsPage from "./pages/SettingsPage.svelte"
 import SshKeysPage from "./pages/SshKeysPage.svelte"
 import TerminalsPage from "./pages/TerminalsPage.svelte"
@@ -58,6 +62,8 @@ const routes = {
   "/machines": MachinesPage,
   "/machines/:id": MachineDetailPage,
   "/contexts": ContextsPage,
+  "/secrets": SecretsPage,
+  "/env": EnvPage,
   "/settings": SettingsPage,
   "/ssh-keys": SshKeysPage,
   "/terminals": TerminalsPage,
@@ -75,9 +81,11 @@ const NAV_KEYS: Record<string, string> = {
   3: "/providers",
   4: "/machines",
   5: "/contexts",
-  6: "/terminals",
-  7: "/ssh-keys",
-  8: "/settings",
+  6: "/secrets",
+  7: "/env",
+  8: "/terminals",
+  9: "/ssh-keys",
+  0: "/settings",
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -122,6 +130,8 @@ function screenName(path: string): string {
     "/machines": "machines",
     "/machines/:id": "machine_detail",
     "/contexts": "contexts",
+    "/secrets": "secrets",
+    "/env": "env",
     "/settings": "settings",
     "/ssh-keys": "ssh_keys",
     "/terminals": "terminals",
@@ -134,6 +144,8 @@ onMount(async () => {
   initProviders()
   initMachines()
   initContexts()
+  initSecrets()
+  initEnv()
   destroySettings = initSettings()
 
   stopSessionTracking = initSessionTracking()

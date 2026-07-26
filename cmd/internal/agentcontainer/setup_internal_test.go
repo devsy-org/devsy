@@ -54,3 +54,19 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 	require.NotNil(t, gotHome)
 	assert.Equal(t, "/home/testuser", *gotHome)
 }
+
+func TestSecretsEnvRoundTripPreservesMultilineValues(t *testing.T) {
+	// PEM keys and certs carry newlines; the DEVSY_SECRETS_ENV round-trip must
+	// preserve them exactly rather than truncating at the first newline.
+	entries := []string{
+		"TLS_KEY=-----BEGIN KEY-----\nline1\nline2\n-----END KEY-----",
+		"SIMPLE=value",
+		"WITH_EQUALS=a=b=c",
+	}
+
+	encoded := encodeSecretsEnv(entries)
+	t.Setenv("DEVSY_SECRETS_ENV", encoded)
+
+	got := secretsEnvFromEnvironment()
+	assert.Equal(t, entries, got)
+}

@@ -132,6 +132,7 @@ type setupContext struct {
 	workspaceInfo *provider2.ContainerWorkspaceInfo
 	setupInfo     *config.Result
 	tunnelClient  tunnel.TunnelClient
+	secretsEnv    []string
 }
 
 // Run runs the command logic.
@@ -212,11 +213,40 @@ func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
 	return cloneErr
 }
 
+// fetchSecrets pulls secrets over the tunnel.
+func fetchSecrets(
+	ctx context.Context,
+	client tunnel.TunnelClient,
+) (env, mount []string, err error) {
+	resp, err := client.Secrets(ctx, &tunnel.Empty{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch secrets: %w", err)
+	}
+
+	for _, secret := range resp.GetSecrets() {
+		entry := secret.GetName() + "=" + secret.GetValue()
+		if secret.GetMount() {
+			mount = append(mount, entry)
+		} else {
+			env = append(env, entry)
+		}
+	}
+
+	return env, mount, nil
+}
+
 func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
+	secretsEnv, secretsMount, err := fetchSecrets(sctx.ctx, sctx.tunnelClient)
+	if err != nil {
+		return cmd.reportSetupFailure(sctx, err)
+	}
+	sctx.secretsEnv = secretsEnv
+
 	cfg := &setup.ContainerSetupConfig{
 		SetupInfo:         sctx.setupInfo,
 		ExtraWorkspaceEnv: sctx.workspaceInfo.CLIOptions.WorkspaceEnv,
-		SecretsEnv:        sctx.workspaceInfo.CLIOptions.SecretsEnv,
+		SecretsEnv:        secretsEnv,
+		SecretsMount:      secretsMount,
 		ChownProjects:     cmd.ChownWorkspace,
 		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
 		TunnelClient:      sctx.tunnelClient,
@@ -285,7 +315,7 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	if !deferred.Empty() {
 		err = cmd.startDeferredHooks(
 			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
-			sctx.workspaceInfo.CLIOptions.SecretsEnv,
+			sctx.secretsEnv,
 		)
 		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
@@ -345,14 +375,13 @@ func buildDeferredHooksCmd(
 	if dotfilesScript != "" {
 		args = append(args, names.Flag(names.DotfilesScript), dotfilesScript)
 	}
-	if len(secretsEnv) > 0 {
-		args = append(args, names.Flag(names.SecretsEnv), strings.Join(secretsEnv, ","))
-	}
-
-	return &exec.Cmd{
+	cmd := &exec.Cmd{
 		Path: binaryPath,
 		Args: append([]string{binaryPath}, args...),
-	}, nil
+	}
+	cmd.Env = secretsEnvOverride(secretsEnv)
+
+	return cmd, nil
 }
 
 func (cmd *SetupContainerCmd) initializeTunnelClient(
@@ -532,18 +561,13 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 			cmdInternal, cmdAgent, cmdContainer, "post-attach",
 			names.Flag(names.SetupInfo), cmd.SetupInfo,
 		}
-		if len(sctx.workspaceInfo.CLIOptions.SecretsEnv) > 0 {
-			args = append(
-				args,
-				names.Flag(names.SecretsEnv),
-				strings.Join(sctx.workspaceInfo.CLIOptions.SecretsEnv, ","),
-			)
-		}
-
-		return &exec.Cmd{
+		execCmd := &exec.Cmd{
 			Path: binaryPath,
 			Args: append([]string{binaryPath}, args...),
-		}, nil
+		}
+		execCmd.Env = secretsEnvOverride(sctx.secretsEnv)
+
+		return execCmd, nil
 	})
 }
 

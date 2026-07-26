@@ -398,9 +398,7 @@ var _ = ginkgo.Describe(
 					_ = tc.dockerHelper.Run(
 						cleanupCtx,
 						[]string{"image", "rm", "-f", sharedImage},
-						nil,
-						io.Discard,
-						io.Discard,
+						docker.Streams{Stdout: io.Discard, Stderr: io.Discard},
 					)
 				})
 
@@ -435,9 +433,7 @@ var _ = ginkgo.Describe(
 						"-lc",
 						commandPresenceCheck("gh"),
 					},
-					nil,
-					&hostGhOut,
-					io.Discard,
+					docker.Streams{Stdout: &hostGhOut, Stderr: io.Discard},
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(hostGhOut.String())).

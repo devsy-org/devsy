@@ -17,6 +17,7 @@ service Tunnel {
   rpc DevsyConfig(Message) returns (Message) {}
   rpc GPGPublicKeys(Message) returns (Message) {}
   rpc KubeConfig(Message) returns (Message) {}
+  rpc Secrets(Empty) returns (SecretsResponse) {}
 
   rpc ForwardPort(ForwardPortRequest) returns (ForwardPortResponse) {}
   rpc StopForwardPort(StopForwardPortRequest) returns (StopForwardPortResponse) {}
@@ -47,6 +48,16 @@ message ForwardPortResponse {
 
 message Message {
   string message = 1;
+}
+
+message Secret {
+  string name = 1;
+  string value = 2;
+  bool mount = 3;
+}
+
+message SecretsResponse {
+  repeated Secret secrets = 1;
 }
 
 message Chunk {

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/log"
 	portpkg "github.com/devsy-org/devsy/pkg/port"
@@ -16,7 +15,7 @@ import (
 
 func StartCredentialsServer(
 	ctx context.Context,
-	client tunnel.TunnelClient,
+	client CredentialsClient,
 ) (int, error) {
 	port, err := portpkg.FindAvailablePort(random.InRange(13000, 17000))
 	if err != nil {

@@ -114,6 +114,8 @@ type tunnelServer struct {
 	workspace              *provider2.Workspace
 
 	platformOptions *devsy.PlatformOptions
+	secrets         []*tunnel.Secret
+	gitToken        *provider2.GitToken
 }
 
 func (t *tunnelServer) RunWithResult(
@@ -228,6 +230,13 @@ func (t *tunnelServer) DockerCredentials(
 	return &tunnel.Message{Message: string(out)}, nil
 }
 
+func (t *tunnelServer) Secrets(
+	_ context.Context,
+	_ *tunnel.Empty,
+) (*tunnel.SecretsResponse, error) {
+	return &tunnel.SecretsResponse{Secrets: t.secrets}, nil
+}
+
 func (t *tunnelServer) GitUser(ctx context.Context, empty *tunnel.Empty) (*tunnel.Message, error) {
 	workingDir := ""
 	if t.workspace != nil {
@@ -265,6 +274,20 @@ func (t *tunnelServer) GitCredentials(
 	err := json.Unmarshal([]byte(message.Message), credentials)
 	if err != nil {
 		return nil, fmt.Errorf("decode git credentials request: %w", err)
+	}
+
+	// A configured git token is returned only for its own host, so it is never
+	// offered to other hosts git contacts (submodules, redirects).
+	if t.gitToken != nil && t.gitToken.Token != "" &&
+		strings.EqualFold(credentials.Host, t.gitToken.Host) {
+		credentials.Username = t.gitToken.Username
+		credentials.Password = t.gitToken.Token
+		// #nosec G117 -- git credential response legitimately carries the token.
+		out, err := json.Marshal(credentials)
+		if err != nil {
+			return nil, err
+		}
+		return &tunnel.Message{Message: string(out)}, nil
 	}
 
 	if t.platformOptions != nil && t.platformOptions.Enabled {

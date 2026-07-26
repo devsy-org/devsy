@@ -3,7 +3,10 @@ package up
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"sort"
+	"strings"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -68,7 +71,7 @@ func (cmd *UpCmd) prepareClient(
 		log.Debug("Using error output stream")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
-	if err := cmd.prepareSecrets(); err != nil {
+	if err := cmd.prepareSecrets(devsyConfig); err != nil {
 		return nil, err
 	}
 	source, err := cmd.parseWorkspaceSource()
@@ -120,7 +123,7 @@ func (cmd *UpCmd) resolveParams(
 	}
 }
 
-func (cmd *UpCmd) prepareSecrets() error {
+func (cmd *UpCmd) prepareSecrets(devsyConfig *config.Config) error {
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return err
 	}
@@ -135,6 +138,10 @@ func (cmd *UpCmd) prepareSecrets() error {
 		}
 	}
 
+	if err := cmd.resolveStoredSecrets(devsyConfig); err != nil {
+		return err
+	}
+
 	if cmd.FeatureSecretsFile == "" {
 		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
 	}
@@ -147,6 +154,280 @@ func (cmd *UpCmd) prepareSecrets() error {
 		options2.GitIdentityEnvVars,
 		"",
 	)
+
+	return nil
+}
+
+func (cmd *UpCmd) resolveStoredSecrets(devsyConfig *config.Config) error {
+	requests, err := collectSecretRequests(cmd.Secrets, devsyConfig)
+	if err != nil {
+		return err
+	}
+	if !cmd.hasStoredValues(requests) {
+		return nil
+	}
+
+	store, err := secrets.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	r := secretResolver{store: store, context: devsyConfig.DefaultContext}
+
+	if err := cmd.applyLifecycleSecrets(requests, r.get); err != nil {
+		return err
+	}
+	if err := cmd.applyEnvVars(r.get, r.sensitive); err != nil {
+		return err
+	}
+	if err := cmd.applyBuildSecrets(r.get); err != nil {
+		return err
+	}
+	return cmd.applyGitToken(r.get)
+}
+
+type secretResolver struct {
+	store   secrets.Store
+	context string
+}
+
+func (r secretResolver) get(name string) (string, error) {
+	value, err := r.store.Get(r.context, name)
+	if err != nil {
+		return "", fmt.Errorf("resolve secret %q in context %q: %w", name, r.context, err)
+	}
+	return value, nil
+}
+
+func (r secretResolver) sensitive(name string) (bool, error) {
+	meta, err := r.store.Meta(r.context, name)
+	if err != nil {
+		return false, fmt.Errorf("resolve secret %q in context %q: %w", name, r.context, err)
+	}
+	return meta.Sensitive(), nil
+}
+
+func (cmd *UpCmd) hasStoredValues(requests []secretRequest) bool {
+	return len(requests) > 0 || len(cmd.EnvVars) > 0 ||
+		len(cmd.BuildSecretNames) > 0 || cmd.GitTokenSecret != ""
+}
+
+func (cmd *UpCmd) applyLifecycleSecrets(
+	requests []secretRequest,
+	get func(string) (string, error),
+) error {
+	for _, req := range requests {
+		value, err := get(req.name)
+		if err != nil {
+			return err
+		}
+		if req.mount {
+			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+value)
+		} else {
+			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+value)
+		}
+	}
+	return nil
+}
+
+// applyEnvVars resolves --env entries into WorkspaceEnv. A sensitive secret must
+// never be routed here: WorkspaceEnv rides in the setup argv (ps-visible).
+func (cmd *UpCmd) applyEnvVars(
+	get func(string) (string, error),
+	isSensitive func(string) (bool, error),
+) error {
+	for _, entry := range cmd.EnvVars {
+		name, target, ok := strings.Cut(entry, "=")
+		if !ok {
+			target = name
+		} else if target == "" {
+			return fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
+		}
+		sensitive, err := isSensitive(name)
+		if err != nil {
+			return err
+		}
+		if sensitive {
+			return fmt.Errorf(
+				"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
+				name,
+				name,
+			)
+		}
+		value, err := get(name)
+		if err != nil {
+			return err
+		}
+		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, target+"="+value)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) applyBuildSecrets(get func(string) (string, error)) error {
+	for _, name := range cmd.BuildSecretNames {
+		value, err := get(name)
+		if err != nil {
+			return err
+		}
+		cmd.BuildSecrets = append(cmd.BuildSecrets, name+"="+value)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) applyGitToken(get func(string) (string, error)) error {
+	if cmd.GitTokenSecret == "" {
+		return nil
+	}
+	token, err := get(cmd.GitTokenSecret)
+	if err != nil {
+		return err
+	}
+	gitToken, err := cmd.buildGitToken(token)
+	if err != nil {
+		return err
+	}
+	cmd.GitToken = gitToken
+	return nil
+}
+
+// buildGitToken host-scopes the token; it fails on an unresolvable host so the
+// token is never left unscoped.
+func (cmd *UpCmd) buildGitToken(token string) (*provider2.GitToken, error) {
+	host := gitHostFromSource(cmd.Source)
+	if host == "" {
+		return nil, fmt.Errorf(
+			"cannot use --git-token: workspace source %q has no HTTP(S) host to scope the token to",
+			cmd.Source,
+		)
+	}
+	username := cmd.GitTokenUsername
+	if username == "" {
+		username = gitTokenUsernameForHost(host)
+	}
+
+	return &provider2.GitToken{Host: host, Username: username, Token: token}, nil
+}
+
+// gitHostFromSource returns the host of an HTTP(S) git source, or "". A git
+// token is only usable over HTTP(S), so non-HTTP(S) schemes (e.g. ssh) yield "".
+func gitHostFromSource(source string) string {
+	s := strings.TrimPrefix(source, "git:")
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	return u.Host
+}
+
+func gitTokenUsernameForHost(host string) string {
+	if strings.Contains(host, "gitlab") {
+		return "oauth2"
+	}
+	return "x-access-token"
+}
+
+type secretRequest struct {
+	name   string
+	target string
+	mount  bool
+}
+
+// collectSecretRequests merges context bindings with secret flags; flags override bindings.
+func collectSecretRequests(flags []string, devsyConfig *config.Config) ([]secretRequest, error) {
+	byName := map[string]secretRequest{}
+
+	if ctxConfig := devsyConfig.Contexts[devsyConfig.DefaultContext]; ctxConfig != nil {
+		for _, name := range ctxConfig.Secrets {
+			byName[name] = secretRequest{name: name, target: name}
+		}
+	}
+
+	for _, entry := range flags {
+		req, err := parseSecretFlag(entry)
+		if err != nil {
+			return nil, err
+		}
+		byName[req.name] = req
+	}
+
+	requests := make([]secretRequest, 0, len(byName))
+	for _, req := range byName {
+		requests = append(requests, req)
+	}
+	sort.Slice(requests, func(i, j int) bool { return requests[i].name < requests[j].name })
+
+	if err := checkDuplicateMountTargets(requests); err != nil {
+		return nil, err
+	}
+
+	return requests, nil
+}
+
+func checkDuplicateMountTargets(requests []secretRequest) error {
+	targets := map[string]string{}
+	for _, req := range requests {
+		if !req.mount {
+			continue
+		}
+		if other, dup := targets[req.target]; dup {
+			return fmt.Errorf(
+				"secrets %q and %q both mount to target %q; give one a distinct target=",
+				other, req.name, req.target,
+			)
+		}
+		targets[req.target] = req.name
+	}
+	return nil
+}
+
+func parseSecretFlag(entry string) (secretRequest, error) {
+	parts := strings.Split(entry, ",")
+	req := secretRequest{name: parts[0]}
+	if req.name == "" {
+		return secretRequest{}, fmt.Errorf("invalid secret %q: missing name", entry)
+	}
+
+	for _, opt := range parts[1:] {
+		key, value, ok := strings.Cut(opt, "=")
+		if !ok {
+			return secretRequest{}, fmt.Errorf(
+				"invalid secret option %q, expected key=value",
+				opt,
+			)
+		}
+		if err := req.applyOption(key, value); err != nil {
+			return secretRequest{}, err
+		}
+	}
+
+	if req.target == "" {
+		req.target = req.name
+	}
+
+	return req, nil
+}
+
+func (req *secretRequest) applyOption(key, value string) error {
+	switch key {
+	case "type":
+		switch value {
+		case "env":
+			req.mount = false
+		case "mount":
+			req.mount = true
+		default:
+			return fmt.Errorf("invalid secret type %q, expected env or mount", value)
+		}
+	case "target":
+		if value == "" {
+			return fmt.Errorf("secret option target must not be empty")
+		}
+		req.target = value
+	default:
+		return fmt.Errorf("invalid secret option %q, expected type or target", key)
+	}
 
 	return nil
 }

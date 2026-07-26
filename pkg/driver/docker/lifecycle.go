@@ -35,7 +35,11 @@ func (d *dockerDriver) CommandDevContainer(
 		args = append(args, "-i")
 	}
 	args = append(args, "-u", params.User, container.ID, "sh", "-c", params.Command)
-	return d.Docker.Run(ctx, args, params.Stdin, params.Stdout, params.Stderr)
+	return d.Docker.Run(ctx, args, docker.Streams{
+		Stdin:  params.Stdin,
+		Stdout: params.Stdout,
+		Stderr: params.Stderr,
+	})
 }
 
 // ensureContainerRunning checks that the given container is running, and if
@@ -112,7 +116,7 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
 	)
-	err := d.Docker.Run(ctx, args, nil, writer, writer)
+	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
 	if err != nil {
 		return fmt.Errorf("push image: %w", err)
 	}
@@ -138,7 +142,7 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
 	)
-	err := d.Docker.Run(ctx, args, nil, writer, writer)
+	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
 	if err != nil {
 		return fmt.Errorf("tag image: %w", err)
 	}
@@ -288,7 +292,7 @@ func (d *dockerDriver) startContainer(
 	logHostEnvOnce(ctx, d.Docker)
 	logBindSources(args)
 
-	err := d.Docker.RunWithDir(ctx, dir, args, nil, writer, writer)
+	err := d.Docker.RunWithDir(ctx, dir, args, docker.Streams{Stdout: writer, Stderr: writer})
 	if err != nil {
 		log.Errorf(
 			"docker container failed to start: error=%v, command=%s, args=%s, cwd=%s",

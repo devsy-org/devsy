@@ -93,9 +93,7 @@ func dockerInfoField(ctx context.Context, helper *docker.DockerHelper, tmpl stri
 	if err := helper.Run(
 		tctx,
 		[]string{"info", "--format", tmpl},
-		nil,
-		&out,
-		io.Discard,
+		docker.Streams{Stdout: &out, Stderr: io.Discard},
 	); err != nil {
 		return ""
 	}

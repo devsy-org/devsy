@@ -287,9 +287,20 @@ func (r *runner) compressResult(result *config.Result) (string, error) {
 }
 
 func (r *runner) compressWorkspaceConfig() (string, error) {
+	cliOptions := r.workspaceConfig.CLIOptions
+	cliOptions.SecretsEnv = nil
+	cliOptions.SecretsMount = nil
+	cliOptions.BuildSecrets = nil
+	cliOptions.GitToken = nil
+	cliOptions.Secrets = nil
+	cliOptions.EnvVars = nil
+	cliOptions.BuildSecretNames = nil
+	cliOptions.GitTokenSecret = ""
+	cliOptions.GitTokenUsername = ""
+
 	workspaceConfig := &provider2.ContainerWorkspaceInfo{
 		IDE:              r.workspaceConfig.Workspace.IDE,
-		CLIOptions:       r.workspaceConfig.CLIOptions,
+		CLIOptions:       cliOptions,
 		Dockerless:       r.workspaceConfig.Agent.Dockerless,
 		ContainerTimeout: r.workspaceConfig.Agent.ContainerTimeout,
 		Source:           r.workspaceConfig.Workspace.Source,
@@ -445,6 +456,11 @@ func (r *runner) executeSetup(
 			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			config.GetMounts(result),
 			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
+			tunnelserver.WithSecrets(
+				r.workspaceConfig.CLIOptions.SecretsEnv,
+				r.workspaceConfig.CLIOptions.SecretsMount,
+			),
+			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
 		)
 	}
 

@@ -289,7 +289,7 @@ func (r *DockerRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) 
 		stderr = io.Discard
 	}
 
-	err := r.helper.Run(ctx, execArgs, nil, stdout, stderr)
+	err := r.helper.Run(ctx, execArgs, docker.Streams{Stdout: stdout, Stderr: stderr})
 	if err == nil {
 		return 0, nil
 	}
@@ -331,7 +331,7 @@ func (r *DockerRuntime) runProbeCommand(
 ) ([]byte, byte, error) {
 	args := buildProbeArgs(target, shellFlag, "cat /proc/self/environ")
 	var stdout bytes.Buffer
-	err := r.helper.Run(ctx, args, nil, &stdout, io.Discard)
+	err := r.helper.Run(ctx, args, docker.Streams{Stdout: &stdout, Stderr: io.Discard})
 	if err == nil {
 		return stdout.Bytes(), 0, nil
 	}
@@ -339,7 +339,7 @@ func (r *DockerRuntime) runProbeCommand(
 	log.Debugf("Env probe with /proc/self/environ failed: %v, trying printenv", err)
 	args = buildProbeArgs(target, shellFlag, "printenv")
 	stdout.Reset()
-	err = r.helper.Run(ctx, args, nil, &stdout, io.Discard)
+	err = r.helper.Run(ctx, args, docker.Streams{Stdout: &stdout, Stderr: io.Discard})
 	if err != nil {
 		return nil, 0, fmt.Errorf("probe user env: %w", err)
 	}

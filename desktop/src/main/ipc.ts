@@ -29,6 +29,19 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 
 const execFileAsync = promisify(execFile)
 
+interface SecretEntry {
+  name: string
+  context: string
+  created?: string
+  lastUsed?: string
+  orphaned?: boolean
+}
+
+interface EnvEntry {
+  name: string
+  value: string
+}
+
 function dockerArch(nodeArch: string): string {
   if (nodeArch === "x64") return "amd64"
   if (nodeArch === "arm") return "arm"
@@ -555,6 +568,70 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("context_delete", async (_event, args: { name: string }) => {
     await cli.runRaw(["context", "delete", args.name])
+  })
+
+  ipcMain.handle("secret_list", async () =>
+    cli.run<SecretEntry[]>(["secret", "list"]),
+  )
+
+  // Returns an envelope rather than throwing so a structured cliError survives
+  // the IPC boundary (see provider_init above).
+  ipcMain.handle(
+    "secret_set",
+    async (_event, args: { name: string; value: string }) => {
+      trackEvent("secret_set")
+      try {
+        await cli.runRawStdin(["secret", "set", args.name, "--stdin"], args.value)
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle("secret_delete", async (_event, args: { name: string }) => {
+    trackEvent("secret_delete")
+    try {
+      await cli.runRaw(["secret", "delete", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
+  })
+
+  ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
+
+  // Returns an envelope rather than throwing so a structured cliError survives
+  // the IPC boundary (see provider_init above).
+  ipcMain.handle(
+    "env_set",
+    async (_event, args: { name: string; value: string }) => {
+      trackEvent("env_set")
+      try {
+        await cli.runRaw(["env", "set", args.name, "--value", args.value])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle("env_delete", async (_event, args: { name: string }) => {
+    trackEvent("env_delete")
+    try {
+      await cli.runRaw(["env", "delete", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
   })
 
   // ── System ──

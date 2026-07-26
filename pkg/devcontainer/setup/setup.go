@@ -39,6 +39,7 @@ type ContainerSetupConfig struct {
 	SetupInfo         *config.Result
 	ExtraWorkspaceEnv []string
 	SecretsEnv        []string
+	SecretsMount      []string
 	ChownProjects     bool
 	Prebuild          bool
 	PlatformOptions   *devsy.PlatformOptions
@@ -70,6 +71,10 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
+	if err := writeSecretFiles(cfg); err != nil {
+		return DeferredHooks{}, err
+	}
+
 	setupOptionalFeatures(ctx, cfg)
 
 	log.Debugf("running pre-attach lifecycle hooks")
@@ -79,6 +84,7 @@ func SetupContainerPreAttach(
 		cfg.Prebuild,
 		cfg.Dotfiles,
 		cfg.SecretsEnv,
+		cfg.SecretsMount,
 		SkipPhases{
 			PostCreate: cfg.SkipPostCreate,
 			PostStart:  cfg.SkipPostStart,
@@ -101,6 +107,7 @@ func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) er
 		ctx,
 		cfg.SetupInfo,
 		cfg.SecretsEnv,
+		cfg.SecretsMount,
 		cfg.SkipPostAttach,
 	); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
@@ -122,6 +129,78 @@ func validateContainerSetupConfig(cfg *ContainerSetupConfig) error {
 	}
 
 	return nil
+}
+
+func writeSecretFiles(cfg *ContainerSetupConfig) error {
+	if len(cfg.SecretsMount) == 0 {
+		return nil
+	}
+
+	// #nosec G301 -- dir must be traversable by the non-root remote user; per-file 0600 enforces secrecy.
+	if err := os.MkdirAll(config.SecretsMountDir, 0o755); err != nil {
+		return fmt.Errorf("create secrets mount dir: %w", err)
+	}
+
+	user := config.GetRemoteUser(cfg.SetupInfo)
+	for _, entry := range cfg.SecretsMount {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			continue
+		}
+		if err := writeSecretFile(name, value, user); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeSecretFile(name, value, user string) error {
+	path, err := secretMountPath(name)
+	if err != nil {
+		return err
+	}
+
+	// Remove any pre-planted symlink (unlinks the link, not its target), then
+	// O_EXCL-create so the write cannot be redirected outside SecretsMountDir.
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("prepare secret file %s: %w", name, err)
+	}
+	f, err := os.OpenFile(
+		path,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0o600,
+	) // #nosec G304 -- path validated to a plain filename under SecretsMountDir.
+	if err != nil {
+		return fmt.Errorf("write secret file %s: %w", name, err)
+	}
+	if _, err := f.WriteString(value); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write secret file %s: %w", name, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write secret file %s: %w", name, err)
+	}
+	if err := copy2.Chown(path, user); err != nil {
+		return fmt.Errorf("chown secret file %s: %w", name, err)
+	}
+
+	return nil
+}
+
+// secretMountPath resolves target to a flat file under SecretsMountDir. Only a
+// single path element is allowed, blocking both traversal and symlinked dirs.
+func secretMountPath(target string) (string, error) {
+	if target != filepath.Base(target) || target == "." || target == ".." ||
+		strings.ContainsRune(target, '/') || strings.ContainsRune(target, filepath.Separator) {
+		return "", fmt.Errorf(
+			"invalid secret mount target %q: must be a plain filename under %s",
+			target,
+			config.SecretsMountDir,
+		)
+	}
+
+	return filepath.Join(config.SecretsMountDir, target), nil
 }
 
 func writeResultFile(cfg *ContainerSetupConfig) {

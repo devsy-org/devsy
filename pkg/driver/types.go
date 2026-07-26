@@ -46,6 +46,31 @@ type ReprovisioningDriver interface {
 	CanReprovision() bool
 }
 
+const (
+	MountTypeBind   = "bind"
+	MountTypeVolume = "volume"
+	MountTypeTmpfs  = "tmpfs"
+)
+
+// MountCapableDriver is implemented by drivers that can report which mount
+// types they support. Drivers that do not implement it are assumed to support
+// the bind/volume/tmpfs types the docker driver has always handled.
+type MountCapableDriver interface {
+	Driver
+
+	SupportsMountType(mountType string) bool
+}
+
+// DriverSupportsMountType reports whether the driver can honor mountType,
+// defaulting to true for drivers that do not advertise the capability.
+func DriverSupportsMountType(d Driver, mountType string) bool {
+	if mc, ok := d.(MountCapableDriver); ok {
+		return mc.SupportsMountType(mountType)
+	}
+
+	return true
+}
+
 // CommandParams holds the parameters for running a command inside a devcontainer.
 type CommandParams struct {
 	WorkspaceID string

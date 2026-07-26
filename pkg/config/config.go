@@ -43,6 +43,9 @@ type ContextConfig struct {
 	// Providers holds the provider configuration
 	Providers map[string]*ProviderConfig `json:"providers,omitempty"`
 
+	// Secrets are names of stored secrets bound to this context, injected on `up`. Names only, no values.
+	Secrets []string `json:"secrets,omitempty"`
+
 	// OriginalProvider is the original default provider
 	OriginalProvider string `json:"-"`
 }

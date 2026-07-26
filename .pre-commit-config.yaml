@@ -59,3 +59,12 @@ repos:
       - id: golangci-lint
         args: ["--timeout=10m"]
       - id: golangci-lint-fmt
+  - repo: local
+    hooks:
+      - id: golangci-lint-ci-parity
+        name: golangci-lint (CI parity, new-from-patch)
+        entry: task cli:lint:ci
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]

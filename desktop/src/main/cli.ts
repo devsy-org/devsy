@@ -188,6 +188,53 @@ export class CliRunner {
     }
   }
 
+  /** Writes `input` via stdin so secret values never appear in argv (e.g. `ps`). */
+  async runRawStdin(args: string[], input: string): Promise<string> {
+    await this.acquire()
+    try {
+      return await this.spawnWithStdin(
+        [...this.prefixArgs, ...args, "--log-output", "json"],
+        input,
+      )
+    } catch (error: unknown) {
+      throw this.wrapError(error)
+    } finally {
+      this.release()
+    }
+  }
+
+  // Uses spawn, not execFile: async execFile ignores { input } (Sync-only), which
+  // would leave the child blocked reading stdin forever.
+  private spawnWithStdin(args: string[], input: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.execPath, args, { env: this.env })
+      this.activeChildren.add(child)
+      let stdout = ""
+      let stderr = ""
+      child.stdout.on("data", (d) => (stdout += d))
+      child.stderr.on("data", (d) => (stderr += d))
+      child.on("error", (err) => {
+        this.activeChildren.delete(child)
+        reject(err)
+      })
+      child.on("close", (code) => {
+        this.activeChildren.delete(child)
+        if (code === 0) {
+          resolve(stdout)
+          return
+        }
+        const err = new Error(
+          `command failed with exit code ${code}`,
+        ) as Error & { stderr: string; code: number | null }
+        err.stderr = stderr
+        err.code = code
+        reject(err)
+      })
+      child.stdin.on("error", reject)
+      child.stdin.end(input)
+    })
+  }
+
   private activeChildren = new Set<ChildProcess>()
   /**
    * Tracks streaming children by workspace so callers can cancel everything

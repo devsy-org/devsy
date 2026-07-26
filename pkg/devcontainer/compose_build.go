@@ -115,6 +115,12 @@ func (r *runner) buildAndExtendDockerCompose(
 	ctx context.Context,
 	params *buildAndExtendParams,
 ) (composeExtendResult, error) {
+	if r.workspaceConfig != nil && len(r.workspaceConfig.CLIOptions.BuildSecrets) > 0 {
+		return composeExtendResult{}, fmt.Errorf(
+			"build secrets require the BuildKit builder and are not supported for docker compose builds",
+		)
+	}
+
 	prepared, err := r.prepareExtendedComposeBuild(ctx, params)
 	if err != nil {
 		return composeExtendResult{}, err

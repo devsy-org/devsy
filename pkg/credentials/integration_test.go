@@ -17,7 +17,7 @@ import (
 )
 
 func TestIntegration_SigningFailure_SurfacesServerError(t *testing.T) {
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			return nil, fmt.Errorf(
 				"failed to sign commit: exit status 1, stderr: Permission denied (publickey)",
@@ -55,7 +55,7 @@ func TestIntegration_SigningSuccess_WritesSigFile(t *testing.T) {
 		"-----BEGIN SSH SIGNATURE-----\ntest-signature\n-----END SSH SIGNATURE-----\n",
 	)
 
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			response := gitsshsigning.GitSSHSignatureResponse{Signature: expectedSig}
 			jsonBytes, err := json.Marshal(response)
@@ -94,7 +94,7 @@ func TestIntegration_SigningSuccess_WritesSigFile(t *testing.T) {
 
 func TestIntegration_SignatureRequest_IncludesPublicKeyContent(t *testing.T) {
 	var receivedMessage string
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			receivedMessage = msg.Message
 			sig := gitsshsigning.GitSSHSignatureResponse{

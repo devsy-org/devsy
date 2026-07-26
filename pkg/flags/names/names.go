@@ -12,6 +12,7 @@ func FlagFalse(name string) string { return FlagValue(name, "false") }
 
 // Workspace.
 const (
+	BuildSecret               = "build-secret"
 	CacheFrom                 = "cache-from"
 	ContainerDataFolder       = "container-data-folder"
 	ContainerStatus           = "container-status"
@@ -23,6 +24,7 @@ const (
 	DevContainerOverlay       = "devcontainer-overlay"
 	DevContainerPath          = "devcontainer-path"
 	DisableDaemon             = "disable-daemon"
+	Env                       = "env"
 	FallbackImage             = "fallback-image"
 	Features                  = "features"
 	FeatureSecretsFile        = "feature-secrets-file"
@@ -52,6 +54,7 @@ const (
 	RemoteUser                = "remote-user"
 	RemoveVolumes             = "remove-volumes"
 	Reset                     = "reset"
+	Secret                    = "secret"
 	SecretsFile               = "secrets-file"
 	SkipPro                   = "skip-pro"
 	Source                    = "source"
@@ -101,6 +104,8 @@ const (
 	GitRecurseSubmodules = "git-recurse-submodules"
 	GitLFSMode           = "git-lfs-mode"
 	GitSSHSigningKey     = "git-ssh-signing-key"
+	GitToken             = "git-token"
+	GitTokenUsername     = "git-token-username"
 )
 
 // Lifecycle.
@@ -175,6 +180,13 @@ const (
 const (
 	DaemonInterval  = "daemon-interval"
 	ForceDockerless = "force-dockerless"
+)
+
+// Secret / env values.
+const (
+	Value    = "value"
+	FromFile = "from-file"
+	Stdin    = "stdin"
 )
 
 // Miscellaneous.

@@ -223,29 +223,48 @@ func (r *DockerHelper) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *DockerHelper) Run(
-	ctx context.Context,
-	args []string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	return r.RunWithDir(ctx, "", args, stdin, stdout, stderr)
+type Streams struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+func (r *DockerHelper) Run(ctx context.Context, args []string, streams Streams) error {
+	return r.RunWithDir(ctx, "", args, streams)
 }
 
 func (r *DockerHelper) RunWithDir(
 	ctx context.Context,
 	dir string,
 	args []string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	streams Streams,
 ) error {
 	cmd := r.buildCmd(ctx, args...)
 	cmd.Dir = dir
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stdin = streams.Stdin
+	cmd.Stdout = streams.Stdout
+	cmd.Stderr = streams.Stderr
+	return cmd.Run()
+}
+
+// RunWithEnv runs a command with extra environment variables for this
+// invocation only (used for env-backed buildx secrets).
+func (r *DockerHelper) RunWithEnv(
+	ctx context.Context,
+	extraEnv []string,
+	args []string,
+	streams Streams,
+) error {
+	cmd := r.buildCmd(ctx, args...)
+	if len(extraEnv) > 0 {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, extraEnv...)
+	}
+	cmd.Stdin = streams.Stdin
+	cmd.Stdout = streams.Stdout
+	cmd.Stderr = streams.Stderr
 	return cmd.Run()
 }
 

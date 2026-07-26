@@ -100,11 +100,11 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	}
 
 	// Both functions should return nil with empty config (no commands to run)
-	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil, SkipPhases{})
+	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil, nil, SkipPhases{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
-	err = RunPostAttachHooks(ctx, result, nil)
+	err = RunPostAttachHooks(ctx, result, nil, nil)
 	assert.NoError(s.T(), err)
 }
 
@@ -252,7 +252,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 	}
 
 	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
-	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil, SkipPhases{})
+	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil, nil, SkipPhases{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 }
@@ -644,7 +644,7 @@ func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnv() {
 	env := map[string]string{"EXISTING": "keep"}
 
-	mergeSecretsEnv(env, []string{"SECRET_KEY=secret_val", "OTHER=data"})
+	mergeSecretsEnv(env, []string{"SECRET_KEY=secret_val", "OTHER=data"}, nil)
 
 	assert.Equal(s.T(), "keep", env["EXISTING"])
 	assert.Equal(s.T(), "secret_val", env["SECRET_KEY"])
@@ -654,7 +654,7 @@ func (s *LifecycleHookTestSuite) TestMergeSecretsEnv() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnvDoesNotOverride() {
 	env := map[string]string{"MY_VAR": "original"}
 
-	mergeSecretsEnv(env, []string{"MY_VAR=overridden"})
+	mergeSecretsEnv(env, []string{"MY_VAR=overridden"}, nil)
 
 	assert.Equal(s.T(), "original", env["MY_VAR"])
 }
@@ -662,7 +662,7 @@ func (s *LifecycleHookTestSuite) TestMergeSecretsEnvDoesNotOverride() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnvNil() {
 	env := map[string]string{"KEY": "val"}
 
-	mergeSecretsEnv(env, nil)
+	mergeSecretsEnv(env, nil, nil)
 
 	assert.Equal(s.T(), "val", env["KEY"])
 	assert.Len(s.T(), env, 1)
@@ -671,9 +671,19 @@ func (s *LifecycleHookTestSuite) TestMergeSecretsEnvNil() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnvValueWithEquals() {
 	env := map[string]string{}
 
-	mergeSecretsEnv(env, []string{"CONN=host=db port=5432"})
+	mergeSecretsEnv(env, []string{"CONN=host=db port=5432"}, nil)
 
 	assert.Equal(s.T(), "host=db port=5432", env["CONN"])
+}
+
+// Mount-secret values must be masked in hook logs but never injected into env.
+func (s *LifecycleHookTestSuite) TestMergeSecretsEnvRedactsMountWithoutInjecting() {
+	env := map[string]string{}
+
+	mergeSecretsEnv(env, nil, []string{"tls.key=mount_secret_val"})
+
+	assert.NotContains(s.T(), env, "tls.key", "mount secrets must not enter hook env")
+	assert.Equal(s.T(), "***", hookRedactor.Redact("mount_secret_val"))
 }
 
 func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
@@ -708,7 +718,7 @@ func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
 
 	// Run postAttachCommand multiple times — it must execute every time.
 	for i := 1; i <= 3; i++ {
-		err := RunPostAttachHooks(context.Background(), result, nil)
+		err := RunPostAttachHooks(context.Background(), result, nil, nil)
 		assert.NoError(t, err)
 
 		content, readErr := os.ReadFile(counterFile) //nolint:gosec // test file from TempDir

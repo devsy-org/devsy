@@ -99,7 +99,7 @@ func RunHeadless(
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
-	if err := cmd.prepareSecrets(); err != nil {
+	if err := cmd.prepareSecrets(opts.DevsyConfig); err != nil {
 		return nil, err
 	}
 	cmd.prepareWorkspace(client)

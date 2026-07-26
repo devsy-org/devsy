@@ -330,7 +330,11 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	log.Debugf("Executing in container: %s %s", opts.dockerCmd, redacted)
 
 	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd}
-	return helper.Run(ctx, execArgs, os.Stdin, os.Stdout, os.Stderr)
+	return helper.Run(ctx, execArgs, docker.Streams{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	})
 }
 
 func redactExecArgs(args []string) []string {

@@ -20,7 +20,7 @@ type errReader struct{ err error }
 func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
 
 func TestHandleGitSSHSignature_GRPCError_ReturnsJSON500(t *testing.T) {
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			return nil, fmt.Errorf("Permission denied")
 		},
@@ -47,7 +47,7 @@ func TestHandleGitSSHSignature_GRPCError_ReturnsJSON500(t *testing.T) {
 }
 
 func TestHandleGitSSHSignature_BodyReadError_ReturnsJSON500(t *testing.T) {
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			t.Fatal("gRPC should not be called when body read fails")
 			return nil, nil
@@ -76,7 +76,7 @@ func TestHandleGitSSHSignature_BodyReadError_ReturnsJSON500(t *testing.T) {
 
 func TestHandleGitSSHSignature_GRPCSuccess_ReturnsJSON200(t *testing.T) {
 	expectedMessage := `{"signature":"abc123"}`
-	mock := &mockTunnelClient{
+	mock := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(ctx context.Context, msg *tunnel.Message) (*tunnel.Message, error) {
 			return &tunnel.Message{Message: expectedMessage}, nil
 		},

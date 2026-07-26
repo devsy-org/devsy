@@ -14,7 +14,30 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const ciCommand = "ci"
+const (
+	ciCommand    = "ci"
+	secretCmd    = "secret"
+	ciSecretName = "MY_SECRET"
+)
+
+// useFileSecretsBackend forces the file backend so tests do not depend on an OS
+// keyring (unavailable in CI); env is restored on cleanup.
+func useFileSecretsBackend() {
+	for k, v := range map[string]string{
+		"DEVSY_SECRETS_BACKEND":    "file",
+		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
+	} {
+		prev, had := os.LookupEnv(k)
+		framework.ExpectNoError(os.Setenv(k, v))
+		ginkgo.DeferCleanup(func() {
+			if had {
+				_ = os.Setenv(k, prev)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		})
+	}
+}
 
 func expectWorkspaceGone(ctx context.Context, f *framework.Framework, name string) {
 	list, err := f.DevsyListParsed(ctx)
@@ -123,8 +146,8 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 		func(ctx context.Context) {
 			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
 
-			secretsFile := filepath.Join(tempDir, "ci.secrets")
-			err := os.WriteFile(secretsFile, []byte("MY_SECRET=s3cr3t\n"), 0o600)
+			secretsFile := filepath.Join(tempDir, "ci.secrets.json")
+			err := os.WriteFile(secretsFile, []byte(`{"MY_SECRET":"s3cr3t"}`), 0o600)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -134,6 +157,28 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.ContainSubstring("s3cr3t"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("should inject a managed secret via --secret into lifecycle commands",
+		func(ctx context.Context) {
+			useFileSecretsBackend()
+			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
+
+			_, err := f.ExecCommandOutput(ctx,
+				[]string{secretCmd, "set", ciSecretName, "--value", "managed-ci-42"})
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(func() {
+				_, _ = f.ExecCommandOutput(context.Background(),
+					[]string{secretCmd, "delete", ciSecretName})
+			})
+
+			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+				ciCommand, tempDir,
+				"--secret", ciSecretName,
+				"--", "cat", "/tmp/ci-secret.txt",
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.ContainSubstring("managed-ci-42"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should accept --cache-from and complete the run",

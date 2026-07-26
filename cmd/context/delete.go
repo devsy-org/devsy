@@ -6,6 +6,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -59,6 +60,10 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 		return fmt.Errorf("cannot delete 'default' context")
 	}
 
+	if err := deleteContextSecrets(devsyConfig, context); err != nil {
+		return err
+	}
+
 	delete(devsyConfig.Contexts, context)
 	if devsyConfig.DefaultContext == context {
 		devsyConfig.DefaultContext = "default"
@@ -72,5 +77,25 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
+	return nil
+}
+
+// deleteContextSecrets aborts (rather than orphaning stored values) if the store
+// is unavailable or a delete fails, so the deletion can be retried intact.
+func deleteContextSecrets(devsyConfig *config.Config, contextName string) error {
+	ctxConfig := devsyConfig.Contexts[contextName]
+	if ctxConfig == nil || len(ctxConfig.Secrets) == 0 {
+		return nil
+	}
+
+	store, err := secrets.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return fmt.Errorf("open secrets store for context %q: %w", contextName, err)
+	}
+	for _, name := range ctxConfig.Secrets {
+		if err := store.Delete(contextName, name); err != nil {
+			return fmt.Errorf("delete secret %q for context %q: %w", name, contextName, err)
+		}
+	}
 	return nil
 }

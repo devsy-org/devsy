@@ -24,6 +24,7 @@ const (
 	ContextOptionRegistryCache              = "REGISTRY_CACHE"
 	ContextOptionSSHStrictHostKeyChecking   = "SSH_STRICT_HOST_KEY_CHECKING"
 	ContextOptionSSHTunnelMode              = "SSH_TUNNEL_MODE"
+	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
 )
 
 var ContextOptions = []ContextOption{
@@ -116,6 +117,13 @@ var ContextOptions = []ContextOption{
 		Description: "Use a local TCP tunnel instead of ProxyCommand for SSH connections",
 		Default:     "false",
 		Enum:        []string{"true", "false"},
+	},
+	{
+		Name: ContextOptionSecretsBackend,
+		Description: "Where secret values are stored: 'keyring' (OS keyring), " +
+			"'file' (age-encrypted file), or 'auto' (keyring when available, else file)",
+		Default: "auto",
+		Enum:    []string{"auto", "keyring", "file"},
 	},
 }
 

@@ -261,6 +261,14 @@ func prepareSolveOptions(
 		return client.SolveOpt{}, err
 	}
 
+	secretsAttachable, err := buildSecretsAttachable(opts.Options.BuildSecrets)
+	if err != nil {
+		return client.SolveOpt{}, err
+	}
+	if secretsAttachable != nil {
+		authSession = append(authSession, secretsAttachable)
+	}
+
 	buildOpts, err := build.NewOptions(build.NewOptionsParams{
 		DockerfilePath:    opts.DockerfilePath,
 		DockerfileContent: opts.DockerfileContent,

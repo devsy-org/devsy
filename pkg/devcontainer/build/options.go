@@ -43,6 +43,11 @@ type BuildOptions struct {
 	// Target specifies the target build stage in a multi-stage Dockerfile.
 	Target string
 
+	// BuildSecrets are "NAME=VALUE" entries exposed as BuildKit secrets
+	// (RUN --mount=type=secret,id=NAME). BuildKit does not persist them to
+	// layers, but a Dockerfile can still copy or print a mounted secret.
+	BuildSecrets []string
+
 	// Load controls whether to load the built image into the local Docker daemon.
 	// When true, uses BuildKit's "moby" exporter which creates a tar and imports it.
 	Load bool
@@ -106,6 +111,8 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 		params.ParsedConfig,
 		params.ExtendedBuildInfo,
 	)
+
+	buildOptions.BuildSecrets = params.Options.BuildSecrets
 
 	// get cli options
 	buildOptions.CliOpts = params.ParsedConfig.Config.GetOptions()

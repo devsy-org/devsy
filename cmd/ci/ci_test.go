@@ -104,6 +104,7 @@ func TestNewCICmd_Flags(t *testing.T) {
 		"run-cmd", "remote-env", "keep", "devcontainer", "no-cache", "platform",
 		"cache-from", "workspace-env", "workspace-env-file", "init-env",
 		"secrets-file", "feature-secrets-file", "features",
+		"secret", "env", "build-secret", "git-token", "git-token-username",
 	} {
 		assert.NotNil(t, ciCmd.Flags().Lookup(name), "expected flag %q to be registered", name)
 	}

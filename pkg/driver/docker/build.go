@@ -76,10 +76,20 @@ func (s *dockerBuildxStrategy) build(
 	options *build.BuildOptions,
 ) error {
 	args := buildDockerBuildxArgs(options, platform)
+	secretEnv, secretArgs, err := buildxSecretArgs(options.BuildSecrets)
+	if err != nil {
+		return err
+	}
+	args = append(args, secretArgs...)
 	log.Debugf("running docker buildx build with args: %s", strings.Join(args, " "))
-	stderrBuf := &bytes.Buffer{}
+	stderrBuf := &tailBuffer{limit: maxStderrDiagnostics}
 	multiWriter := io.MultiWriter(writer, stderrBuf)
-	if err := s.driver.Docker.Run(ctx, args, nil, writer, multiWriter); err != nil {
+	if err := s.driver.Docker.RunWithEnv(
+		ctx,
+		secretEnv,
+		args,
+		docker.Streams{Stdout: writer, Stderr: multiWriter},
+	); err != nil {
 		if stderrBuf.Len() > 0 {
 			return fmt.Errorf(
 				"failed to build image: %w: %s",
@@ -95,6 +105,31 @@ func (s *dockerBuildxStrategy) build(
 func (s *dockerBuildxStrategy) name() string {
 	return "docker buildx build"
 }
+
+const maxStderrDiagnostics = 64 * 1024
+
+// tailBuffer retains at most the last limit bytes written, so a runaway build
+// log cannot grow the error message without bound while still keeping buildx's
+// final diagnostic (emitted last). The full stream still reaches the writer.
+type tailBuffer struct {
+	buf   []byte
+	limit int
+}
+
+func (c *tailBuffer) Write(p []byte) (int, error) {
+	if len(p) >= c.limit {
+		c.buf = append(c.buf[:0], p[len(p)-c.limit:]...)
+		return len(p), nil
+	}
+	if len(c.buf)+len(p) > c.limit {
+		c.buf = c.buf[len(c.buf)+len(p)-c.limit:]
+	}
+	c.buf = append(c.buf, p...)
+	return len(p), nil
+}
+
+func (c *tailBuffer) Len() int       { return len(c.buf) }
+func (c *tailBuffer) String() string { return string(c.buf) }
 
 func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []string {
 	args := []string{"buildx", "build", "-f", options.Dockerfile}
@@ -113,6 +148,21 @@ func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []strin
 	args = append(args, options.CliOpts...)
 	args = append(args, options.Context)
 	return args
+}
+
+// buildxSecretArgs passes secrets via env references so values stay out of the argv.
+func buildxSecretArgs(buildSecrets []string) (env, args []string, err error) {
+	for i, entry := range buildSecrets {
+		name, value, err := buildkit.SplitBuildSecret(i, entry)
+		if err != nil {
+			return nil, nil, err
+		}
+		envVar := "DEVSY_BUILD_SECRET_" + name
+		env = append(env, envVar+"="+value)
+		args = append(args, "--secret", "id="+name+",env="+envVar)
+	}
+
+	return env, args, nil
 }
 
 func appendBuildFlags(args []string, load, push bool) []string {
@@ -305,7 +355,11 @@ func (o *buildOrchestrator) selectStrategy(options provider.BuildOptions) buildS
 
 func (o *buildOrchestrator) buildxExists(ctx context.Context) bool {
 	buf := &bytes.Buffer{}
-	err := o.driver.Docker.Run(ctx, []string{"buildx", "version"}, nil, buf, buf)
+	err := o.driver.Docker.Run(
+		ctx,
+		[]string{"buildx", "version"},
+		docker.Streams{Stdout: buf, Stderr: buf},
+	)
 	return err == nil
 }
 
@@ -326,8 +380,22 @@ func (d *dockerDriver) prepareBuildOptions(
 		return nil, err
 	}
 
-	log.Debugf("prepared build options: %+v", buildOptions)
+	log.Debugf("prepared build options: %+v", redactBuildSecrets(buildOptions))
 	return buildOptions, nil
+}
+
+func redactBuildSecrets(buildOptions *build.BuildOptions) build.BuildOptions {
+	redacted := *buildOptions
+	if len(buildOptions.BuildSecrets) == 0 {
+		return redacted
+	}
+	names := make([]string, len(buildOptions.BuildSecrets))
+	for i, entry := range buildOptions.BuildSecrets {
+		name, _, _ := strings.Cut(entry, "=")
+		names[i] = name + "=<redacted>"
+	}
+	redacted.BuildSecrets = names
+	return redacted
 }
 
 func (d *dockerDriver) executeBuild(
