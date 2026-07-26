@@ -236,43 +236,41 @@ func (s *WorkspaceServer) startListeners(
 	// add all listeners to the list
 	s.listeners = append(s.listeners, sshListener, wsListener, runnerProxyListener)
 
-	// Setup HTTP handler for git credentials
+	// Setup HTTP handler for git and docker credentials on the runner proxy.
 	go func() {
 		mux := http.NewServeMux()
 		transport := &http.Transport{DialContext: s.tsServer.Dial}
 		mux.HandleFunc("/git-credentials", func(w http.ResponseWriter, r *http.Request) {
 			s.gitCredentialsHandler(w, r, lc, transport, projectName, workspaceName)
 		})
-		if err := http.Serve(runnerProxyListener, mux); err != nil && err != http.ErrServerClosed {
-			log.Errorf("HTTP runner proxy server error: %v", err)
-		}
-	}()
-
-	// Setup HTTP handler for docker credentials.
-	go func() {
-		mux := http.NewServeMux()
-		transport := &http.Transport{DialContext: s.tsServer.Dial}
 		mux.HandleFunc("/docker-credentials", func(w http.ResponseWriter, r *http.Request) {
 			s.dockerCredentialsHandler(w, r, lc, transport, projectName, workspaceName)
 		})
-		if err := http.Serve(runnerProxyListener, mux); err != nil && err != http.ErrServerClosed {
-			log.Errorf("HTTP runner proxy server error: %v", err)
-		}
+		serveMux(runnerProxyListener, mux, "HTTP runner proxy server error: %v")
 	}()
 
 	// Setup HTTP handler for port forwarding.
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/portforward", s.httpPortForwardHandler)
-		if err := http.Serve(wsListener, mux); err != nil && err != http.ErrServerClosed {
-			log.Errorf("HTTP server error on TS port %s: %v", TSPortForwardPort, err)
-		}
+		serveMux(
+			wsListener,
+			mux,
+			fmt.Sprintf("HTTP server error on TS port %s: %%v", TSPortForwardPort),
+		)
 	}()
 
 	// Start handling SSH connections.
 	go s.handleSSHConnections(ctx, sshListener)
 
 	return nil
+}
+
+func serveMux(listener net.Listener, mux *http.ServeMux, errFormat string) {
+	// #nosec G114 -- internal unix-socket/TSNet listener, not exposed to untrusted networks
+	if err := http.Serve(listener, mux); err != nil && err != http.ErrServerClosed {
+		log.Errorf(errFormat, err)
+	}
 }
 
 // createListener creates a raw listener and wraps it with connection tracking.

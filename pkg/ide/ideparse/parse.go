@@ -240,17 +240,7 @@ func RefreshIDEOptions(
 	ide string,
 	options []string,
 ) (*provider.Workspace, error) {
-	ide = strings.ToLower(ide)
-	if ide == "" {
-		switch {
-		case workspace.IDE.Name != "":
-			ide = workspace.IDE.Name
-		case devsyConfig.Current().DefaultIDE != "":
-			ide = devsyConfig.Current().DefaultIDE
-		default:
-			ide = detect()
-		}
-	}
+	ide = resolveIDEName(devsyConfig, workspace, strings.ToLower(ide))
 
 	// get ide options
 	ideOptions, err := GetIDEOptions(ide)
@@ -258,32 +248,16 @@ func RefreshIDEOptions(
 		return nil, err
 	}
 
-	// get global options and set them as non user
-	// provided.
-	retValues := devsyConfig.IDEOptions(ide)
-	for k, v := range retValues {
-		retValues[k] = config.OptionValue{
-			Value: v.Value,
-		}
-	}
-
-	// get existing options
-	if ide == workspace.IDE.Name {
-		for k, v := range workspace.IDE.Options {
-			if !v.UserProvided {
-				continue
-			}
-
-			retValues[k] = v
-		}
-	}
-
-	// get user options
-	values, err := ParseOptions(options, ideOptions)
+	retValues, err := buildIDEValues(buildIDEValuesParams{
+		devsyConfig: devsyConfig,
+		workspace:   workspace,
+		ide:         ide,
+		options:     options,
+		ideOptions:  ideOptions,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("parse options: %w", err)
+		return nil, err
 	}
-	maps.Copy(retValues, values)
 
 	// check if we need to modify workspace
 	if workspace.IDE.Name != ide || !reflect.DeepEqual(workspace.IDE.Options, retValues) {
@@ -296,6 +270,58 @@ func RefreshIDEOptions(
 	}
 
 	return workspace, nil
+}
+
+func resolveIDEName(devsyConfig *config.Config, workspace *provider.Workspace, ide string) string {
+	if ide != "" {
+		return ide
+	}
+	switch {
+	case workspace.IDE.Name != "":
+		return workspace.IDE.Name
+	case devsyConfig.Current().DefaultIDE != "":
+		return devsyConfig.Current().DefaultIDE
+	default:
+		return detect()
+	}
+}
+
+type buildIDEValuesParams struct {
+	devsyConfig *config.Config
+	workspace   *provider.Workspace
+	ide         string
+	options     []string
+	ideOptions  ide.Options
+}
+
+func buildIDEValues(p buildIDEValuesParams) (map[string]config.OptionValue, error) {
+	// get global options and set them as non user provided.
+	retValues := p.devsyConfig.IDEOptions(p.ide)
+	for k, v := range retValues {
+		retValues[k] = config.OptionValue{
+			Value: v.Value,
+		}
+	}
+
+	// get existing options
+	if p.ide == p.workspace.IDE.Name {
+		for k, v := range p.workspace.IDE.Options {
+			if !v.UserProvided {
+				continue
+			}
+
+			retValues[k] = v
+		}
+	}
+
+	// get user options
+	values, err := ParseOptions(p.options, p.ideOptions)
+	if err != nil {
+		return nil, fmt.Errorf("parse options: %w", err)
+	}
+	maps.Copy(retValues, values)
+
+	return retValues, nil
 }
 
 func GetIDEOptions(ide string) (ide.Options, error) {
@@ -346,36 +372,8 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 			)
 		}
 
-		if ideOption.ValidationPattern != "" {
-			matcher, err := regexp.Compile(ideOption.ValidationPattern)
-			if err != nil {
-				return nil, err
-			}
-
-			if !matcher.MatchString(value) {
-				if ideOption.ValidationMessage != "" {
-					return nil, fmt.Errorf("%s", ideOption.ValidationMessage)
-				}
-
-				return nil, fmt.Errorf(
-					"invalid value %q for option %q, has to match the following regEx: %s",
-					value,
-					key,
-					ideOption.ValidationPattern,
-				)
-			}
-		}
-
-		if len(ideOption.Enum) > 0 {
-			found := slices.Contains(ideOption.Enum, value)
-			if !found {
-				return nil, fmt.Errorf(
-					"invalid value %q for option %q, has to match one of the following values: %v",
-					value,
-					key,
-					ideOption.Enum,
-				)
-			}
+		if err := validateOptionValue(ideOption, key, value); err != nil {
+			return nil, err
 		}
 
 		retMap[key] = config.OptionValue{
@@ -385,6 +383,41 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 	}
 
 	return retMap, nil
+}
+
+func validateOptionValue(ideOption ide.Option, key, value string) error {
+	if ideOption.ValidationPattern != "" {
+		matcher, err := regexp.Compile(ideOption.ValidationPattern)
+		if err != nil {
+			return err
+		}
+
+		if !matcher.MatchString(value) {
+			if ideOption.ValidationMessage != "" {
+				return fmt.Errorf("%s", ideOption.ValidationMessage)
+			}
+
+			return fmt.Errorf(
+				"invalid value %q for option %q, has to match the following regEx: %s",
+				value,
+				key,
+				ideOption.ValidationPattern,
+			)
+		}
+	}
+
+	if len(ideOption.Enum) > 0 {
+		if !slices.Contains(ideOption.Enum, value) {
+			return fmt.Errorf(
+				"invalid value %q for option %q, has to match one of the following values: %v",
+				value,
+				key,
+				ideOption.Enum,
+			)
+		}
+	}
+
+	return nil
 }
 
 func detect() string {

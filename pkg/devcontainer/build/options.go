@@ -134,6 +134,20 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 	}
 
 	// other options
+	appendImages(buildOptions, params, prebuildHash)
+	buildOptions.Context = config.GetContextPath(params.ParsedConfig.Config)
+
+	// add build arg
+	if buildOptions.BuildArgs == nil {
+		buildOptions.BuildArgs = map[string]string{}
+	}
+
+	applyCacheArgs(buildOptions, params)
+
+	return buildOptions, nil
+}
+
+func appendImages(buildOptions *BuildOptions, params NewOptionsParams, prebuildHash string) {
 	if params.ImageName != "" {
 		buildOptions.Images = append(buildOptions.Images, params.ImageName)
 	}
@@ -146,13 +160,9 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 	for _, prebuildRepository := range params.Options.PrebuildRepositories {
 		buildOptions.Images = append(buildOptions.Images, prebuildRepository+":"+prebuildHash)
 	}
-	buildOptions.Context = config.GetContextPath(params.ParsedConfig.Config)
+}
 
-	// add build arg
-	if buildOptions.BuildArgs == nil {
-		buildOptions.BuildArgs = map[string]string{}
-	}
-
+func applyCacheArgs(buildOptions *BuildOptions, params NewOptionsParams) {
 	// define cache args
 	if params.Options.RegistryCache != "" {
 		buildOptions.CacheFrom = []string{
@@ -176,8 +186,6 @@ func NewOptions(params NewOptionsParams) (*BuildOptions, error) {
 	if len(buildOptions.CacheFrom) == 0 {
 		buildOptions.BuildArgs["BUILDKIT_INLINE_CACHE"] = "1"
 	}
-
-	return buildOptions, nil
 }
 
 func GetBuildArgsAndTarget(

@@ -21,22 +21,14 @@ type CreateCommand func() (*exec.Cmd, error)
 // command already has Stdout/Stderr configured. The PID is recorded in
 // TMPDIR/commandName.pid. These files are not cleaned up on exit.
 func StartBackgroundOnce(commandName string, createCommand CreateCommand) error {
-	lockFile, err := config.DefaultPathManager().ProcessLockFile(commandName)
+	paths, err := resolveProcessPaths(commandName)
 	if err != nil {
-		return fmt.Errorf("process lock file: %w", err)
-	}
-	pidFile, err := config.DefaultPathManager().ProcessPIDFile(commandName)
-	if err != nil {
-		return fmt.Errorf("process pid file: %w", err)
-	}
-	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(commandName)
-	if err != nil {
-		return fmt.Errorf("process streams file: %w", err)
+		return err
 	}
 
 	// Create a file-based lock to prevent multiple invocations of this function
 	// before the process is created.
-	fileLock := flock.New(lockFile)
+	fileLock := flock.New(paths.lockFile)
 	locked, err := fileLock.TryLock()
 	if err != nil {
 		return fmt.Errorf("acquire lock: %w", err)
@@ -45,11 +37,16 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 	}
 	defer func() {
 		if unlockErr := fileLock.Unlock(); unlockErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to release lock %s: %v\n", lockFile, unlockErr)
+			fmt.Fprintf(
+				os.Stderr,
+				"warning: failed to release lock %s: %v\n",
+				paths.lockFile,
+				unlockErr,
+			)
 		}
 	}()
 
-	running, err := isProcessRunning(pidFile)
+	running, err := isProcessRunning(paths.pidFile)
 	if err != nil {
 		return err
 	}
@@ -62,7 +59,29 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 		return err
 	}
 
-	return startCommand(cmd, pidFile, streamsFile)
+	return startCommand(cmd, paths.pidFile, paths.streamsFile)
+}
+
+type processPaths struct {
+	lockFile    string
+	pidFile     string
+	streamsFile string
+}
+
+func resolveProcessPaths(commandName string) (processPaths, error) {
+	lockFile, err := config.DefaultPathManager().ProcessLockFile(commandName)
+	if err != nil {
+		return processPaths{}, fmt.Errorf("process lock file: %w", err)
+	}
+	pidFile, err := config.DefaultPathManager().ProcessPIDFile(commandName)
+	if err != nil {
+		return processPaths{}, fmt.Errorf("process pid file: %w", err)
+	}
+	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(commandName)
+	if err != nil {
+		return processPaths{}, fmt.Errorf("process streams file: %w", err)
+	}
+	return processPaths{lockFile: lockFile, pidFile: pidFile, streamsFile: streamsFile}, nil
 }
 
 // StartBackground starts a background process unconditionally, without any

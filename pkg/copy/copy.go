@@ -77,50 +77,50 @@ func Directory(scrDir, dest string) error {
 		return err
 	}
 	for _, entry := range entries {
-		sourcePath := filepath.Join(scrDir, entry.Name())
-		destPath := filepath.Join(dest, entry.Name())
-
-		fileInfo, err := os.Stat(sourcePath)
-		if err != nil {
+		if err := copyEntry(scrDir, dest, entry); err != nil {
 			return err
-		}
-
-		switch fileInfo.Mode() & os.ModeType {
-		case os.ModeDir:
-			if err := CreateIfNotExists(destPath, 0o755); err != nil {
-				return err
-			}
-			if err := Directory(sourcePath, destPath); err != nil {
-				return err
-			}
-		case os.ModeSymlink:
-			if err := Symlink(sourcePath, destPath); err != nil {
-				return err
-			}
-		default:
-			if err := File(sourcePath, destPath, 0o644); err != nil {
-				return err
-			}
-		}
-
-		err = Lchown(fileInfo, sourcePath, destPath)
-		if err != nil {
-			return err
-		}
-
-		fInfo, err := entry.Info()
-		if err != nil {
-			return err
-		}
-
-		isSymlink := fInfo.Mode()&os.ModeSymlink != 0
-		if !isSymlink {
-			if err := os.Chmod(destPath, fInfo.Mode()); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
+}
+
+func copyEntry(scrDir, dest string, entry fs.DirEntry) error {
+	sourcePath := filepath.Join(scrDir, entry.Name())
+	destPath := filepath.Join(dest, entry.Name())
+
+	fileInfo, err := entry.Info()
+	if err != nil {
+		return err
+	}
+
+	if err := copyByType(fileInfo, sourcePath, destPath); err != nil {
+		return err
+	}
+
+	if err := Lchown(fileInfo, sourcePath, destPath); err != nil {
+		return err
+	}
+
+	if fileInfo.Mode()&os.ModeSymlink == 0 {
+		if err := os.Chmod(destPath, fileInfo.Mode()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyByType(fileInfo os.FileInfo, sourcePath, destPath string) error {
+	switch fileInfo.Mode() & os.ModeType {
+	case os.ModeDir:
+		if err := CreateIfNotExists(destPath, 0o755); err != nil {
+			return err
+		}
+		return Directory(sourcePath, destPath)
+	case os.ModeSymlink:
+		return Symlink(sourcePath, destPath)
+	default:
+		return File(sourcePath, destPath, 0o644)
+	}
 }
 
 func File(srcFile, dstFile string, perm os.FileMode) error {

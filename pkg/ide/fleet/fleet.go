@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -27,6 +28,8 @@ const (
 	DownloadAmd64Option = "DOWNLOAD_AMD64"
 	DownloadArm64Option = "DOWNLOAD_ARM64"
 )
+
+var fleetVersionRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 var Options = ide.Options{
 	VersionOption: {
@@ -109,36 +112,13 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 
 	err := command.StartBackgroundOnce("fleet", func() (*exec.Cmd, error) {
 		log.Infof("Starting fleet in background")
-		// Determine version of fleet to use
-		var runCommand string
 		version := Options.GetValue(o.values, VersionOption)
-		if version == "latest" {
-			runCommand = fmt.Sprintf(
-				"%s launch workspace -- --projectDir %q --cache-path %q --auth=accept-everyone --publish --enableSmartMode",
-				binaryPath,
-				projectDir,
-				location,
-			)
-		} else {
-			runCommand = fmt.Sprintf(
-				"%s launch workspace --workspace-version %s -- --projectDir %q --cache-path %q "+
-					"--auth=accept-everyone --publish --enableSmartMode",
-				binaryPath,
-				version,
-				projectDir,
-				location,
-			)
+		runCommand, err := fleetRunCommand(binaryPath, projectDir, location, version)
+		if err != nil {
+			return nil, err
 		}
-
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-c", runCommand)
-		}
-		cmd := exec.Command(args[0], args[1:]...)
+		cmd := o.commandForShell(runCommand)
 		cmd.Dir = location
-		var err error
 		readCloser, err = cmd.StdoutPipe()
 		if err != nil {
 			return nil, err
@@ -156,27 +136,74 @@ func (o *FleetServer) Start(binaryPath, location, projectDir string) error {
 
 	// wait for the jet brains url and then exit
 	log.Infof("waiting for fleet to start")
+	return o.waitForFleetURL(readCloser, stderrBuffer, location)
+}
+
+func fleetRunCommand(binaryPath, projectDir, location, version string) (string, error) {
+	if version == "latest" {
+		return fmt.Sprintf(
+			"%s launch workspace -- --projectDir %q --cache-path %q --auth=accept-everyone --publish --enableSmartMode",
+			binaryPath,
+			projectDir,
+			location,
+		), nil
+	}
+	if !fleetVersionRegex.MatchString(version) {
+		return "", fmt.Errorf(
+			"invalid fleet version %q: must match %s",
+			version,
+			fleetVersionRegex.String(),
+		)
+	}
+	return fmt.Sprintf(
+		"%s launch workspace --workspace-version %q -- --projectDir %q --cache-path %q "+
+			"--auth=accept-everyone --publish --enableSmartMode",
+		binaryPath,
+		version,
+		projectDir,
+		location,
+	), nil
+}
+
+func (o *FleetServer) commandForShell(runCommand string) *exec.Cmd {
+	var args []string
+	if o.userName != "" {
+		args = []string{"su", o.userName, "-c", runCommand}
+	} else {
+		args = []string{"sh", "-c", runCommand}
+	}
+	// #nosec G204 -- runCommand is assembled from a fixed template with validated/quoted
+	// arguments (version is regex-validated, paths are %q-quoted), so it cannot be exploited.
+	return exec.Command(args[0], args[1:]...)
+}
+
+func (o *FleetServer) waitForFleetURL(
+	readCloser io.ReadCloser,
+	stderrBuffer *bytes.Buffer,
+	location string,
+) error {
 	s := scanner.NewScanner(readCloser)
 	stdoutBuffer := &bytes.Buffer{}
 	for s.Scan() {
 		text := s.Text()
-		if strings.Contains(text, "https://fleet.jetbrains.com/") {
-			index := strings.Index(text, "https://fleet.jetbrains.com/")
-			fleetURLFile := filepath.Join(location, FleetURLFileName)
-			err = os.WriteFile(
-				fleetURLFile,
-				[]byte(strings.TrimSpace(text[index:])),
-				0o600,
-			) // #nosec G703
-			if err != nil {
-				return err
-			}
-
-			log.Infof("fleet started")
-			return o.startMonitor()
-		} else {
+		if !strings.Contains(text, "https://fleet.jetbrains.com/") {
 			_, _ = stdoutBuffer.Write([]byte(text + "\n"))
+			continue
 		}
+
+		index := strings.Index(text, "https://fleet.jetbrains.com/")
+		fleetURLFile := filepath.Join(location, FleetURLFileName)
+		err := os.WriteFile(
+			fleetURLFile,
+			[]byte(strings.TrimSpace(text[index:])),
+			0o600,
+		) // #nosec G703
+		if err != nil {
+			return err
+		}
+
+		log.Infof("fleet started")
+		return o.startMonitor()
 	}
 
 	return fmt.Errorf(
@@ -195,14 +222,7 @@ func (o *FleetServer) startMonitor() error {
 	return command.StartBackgroundOnce("fleet-monitor", func() (*exec.Cmd, error) {
 		log.Infof("starting fleet monitor in background")
 		runCommand := fmt.Sprintf("%s internal fleet-server --workspaceid %s", self, "test")
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-c", runCommand)
-		}
-		cmd := exec.Command(args[0], args[1:]...)
-		return cmd, nil
+		return o.commandForShell(runCommand), nil
 	})
 }
 

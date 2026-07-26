@@ -273,77 +273,102 @@ func WaitForInstance(
 
 	var updatedInstance *managementv1.DevsyWorkspaceInstance
 	// we need to wait until instance is scheduled
-	err = wait.PollUntilContextTimeout(
-		ctx,
-		time.Second,
-		30*time.Second,
-		true,
-		func(ctx context.Context) (done bool, err error) {
-			updatedInstance, err = managementClient.Loft().ManagementV1().
-				DevsyWorkspaceInstances(instance.GetNamespace()).
-				Get(ctx, instance.GetName(), metav1.GetOptions{})
-			if err != nil {
-				return false, err
-			}
-			name := updatedInstance.GetName()
-			status := updatedInstance.Status
-
-			if !isReady(updatedInstance) {
-				log.Debugf(
-					"Workspace %s is in phase %s, waiting until its ready",
-					name,
-					status.Phase,
-				)
-				return false, nil
-			}
-
-			if !isTemplateSynced(updatedInstance) {
-				log.Debugf("Workspace template is not ready yet")
-				for _, cond := range updatedInstance.Status.Conditions {
-					if cond.Status != corev1.ConditionTrue {
-						log.Debugf(
-							"%s is %s (%s): %s",
-							cond.Type,
-							cond.Status,
-							cond.Reason,
-							cond.Message,
-						)
-					}
-				}
-				return false, nil
-			}
-
-			log.Debugf("Workspace %s is ready", name)
-			return true, nil
-		},
-	)
-	if err != nil {
-		// let's build a proper error message here
-		var msg strings.Builder
-		msg.WriteString("Timed out waiting for workspace to get ready \n\n ")
-		// basic status
-		fmt.Fprintf(&msg, "ready: %t\n", isReady(updatedInstance))
-		fmt.Fprintf(&msg, "template synced: %t\n", isTemplateSynced(updatedInstance))
-		msg.WriteString("\n")
-
-		// CRD conditions
-		msg.WriteString("Conditions:\n")
-		for _, cond := range updatedInstance.Status.Conditions {
-			fmt.Fprintf(&msg, "%s is %s (%s): %s\n",
-				cond.Type,
-				cond.Status,
-				cond.Reason,
-				cond.Message)
+	poll := func(ctx context.Context) (bool, error) {
+		fetched, ready, pollErr := getInstanceIfReady(ctx, managementClient, instance)
+		if pollErr != nil {
+			return false, pollErr
 		}
-		msg.WriteString("\n")
+		updatedInstance = fetched
+		return ready, nil
+	}
 
-		// error message, usually context timeout
-		fmt.Fprintf(&msg, "Error: %s", err.Error())
-
-		return nil, errors.New(msg.String())
+	err = wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, true, poll)
+	if err != nil {
+		return nil, waitForInstanceTimeoutError(updatedInstance, err)
 	}
 
 	return updatedInstance, nil
+}
+
+func getInstanceIfReady(
+	ctx context.Context,
+	managementClient kube.Interface,
+	instance *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceInstance, bool, error) {
+	updatedInstance, err := managementClient.Loft().ManagementV1().
+		DevsyWorkspaceInstances(instance.GetNamespace()).
+		Get(ctx, instance.GetName(), metav1.GetOptions{})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return updatedInstance, instanceReady(updatedInstance), nil
+}
+
+func instanceReady(updatedInstance *managementv1.DevsyWorkspaceInstance) bool {
+	name := updatedInstance.GetName()
+	status := updatedInstance.Status
+
+	if !isReady(updatedInstance) {
+		log.Debugf(
+			"Workspace %s is in phase %s, waiting until its ready",
+			name,
+			status.Phase,
+		)
+		return false
+	}
+
+	if !isTemplateSynced(updatedInstance) {
+		log.Debugf("Workspace template is not ready yet")
+		for _, cond := range updatedInstance.Status.Conditions {
+			if cond.Status != corev1.ConditionTrue {
+				log.Debugf(
+					"%s is %s (%s): %s",
+					cond.Type,
+					cond.Status,
+					cond.Reason,
+					cond.Message,
+				)
+			}
+		}
+		return false
+	}
+
+	log.Debugf("Workspace %s is ready", name)
+	return true
+}
+
+func waitForInstanceTimeoutError(
+	updatedInstance *managementv1.DevsyWorkspaceInstance,
+	err error,
+) error {
+	if updatedInstance == nil {
+		return fmt.Errorf("timed out waiting for workspace to get ready: %w", err)
+	}
+
+	// let's build a proper error message here
+	var msg strings.Builder
+	msg.WriteString("Timed out waiting for workspace to get ready \n\n ")
+	// basic status
+	fmt.Fprintf(&msg, "ready: %t\n", isReady(updatedInstance))
+	fmt.Fprintf(&msg, "template synced: %t\n", isTemplateSynced(updatedInstance))
+	msg.WriteString("\n")
+
+	// CRD conditions
+	msg.WriteString("Conditions:\n")
+	for _, cond := range updatedInstance.Status.Conditions {
+		fmt.Fprintf(&msg, "%s is %s (%s): %s\n",
+			cond.Type,
+			cond.Status,
+			cond.Reason,
+			cond.Message)
+	}
+	msg.WriteString("\n")
+
+	// error message, usually context timeout
+	fmt.Fprintf(&msg, "Error: %s", err.Error())
+
+	return errors.New(msg.String())
 }
 
 func isReady(workspace *managementv1.DevsyWorkspaceInstance) bool {

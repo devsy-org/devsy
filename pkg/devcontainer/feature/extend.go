@@ -312,21 +312,15 @@ func fetchFeatures(
 	secretOpts *SecretOptions,
 	lockMode lockfileMode,
 ) ([]*config.FeatureSet, error) {
-	var lock *lockfileState
-	if !lockMode.disabled {
-		lock = newLockfileState(devContainerConfig)
+	lock, err := prepareLock(devContainerConfig, lockMode)
+	if err != nil {
+		return nil, err
 	}
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
 		forceBuild:         forceBuild,
 		secretOpts:         secretOpts,
 		lock:               lock,
-	}
-
-	if lockMode.write && lockMode.frozen {
-		if err := lock.checkFrozenPrecondition(devContainerConfig); err != nil {
-			return nil, err
-		}
 	}
 
 	userFeatures, err := getUserFeatures(processor, devContainerConfig)
@@ -354,6 +348,24 @@ func fetchFeatures(
 	}
 
 	return featureSets, nil
+}
+
+func prepareLock(
+	devContainerConfig *config.DevContainerConfig,
+	lockMode lockfileMode,
+) (*lockfileState, error) {
+	var lock *lockfileState
+	if !lockMode.disabled {
+		lock = newLockfileState(devContainerConfig)
+	}
+
+	if lockMode.write && lockMode.frozen {
+		if err := lock.checkFrozenPrecondition(devContainerConfig); err != nil {
+			return nil, err
+		}
+	}
+
+	return lock, nil
 }
 
 func getUserFeatures(

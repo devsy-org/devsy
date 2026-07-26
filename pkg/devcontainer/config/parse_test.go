@@ -166,14 +166,8 @@ func TestFindDevContainerConfigs(t *testing.T) {
 	}
 }
 
-func TestListDevContainerIDs(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	configs := map[string]string{
-		".devcontainer/python/devcontainer.json": `{"name":"Python"}`,
-		".devcontainer/node/devcontainer.json":   `{"name":"Node"}`,
-	}
-
+func writeNamedConfigs(t *testing.T, tmpDir string, configs map[string]string) {
+	t.Helper()
 	for cfg, content := range configs {
 		fullPath := filepath.Join(tmpDir, cfg)
 		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
@@ -185,6 +179,17 @@ func TestListDevContainerIDs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestListDevContainerIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	configs := map[string]string{
+		".devcontainer/python/devcontainer.json": `{"name":"Python"}`,
+		".devcontainer/node/devcontainer.json":   `{"name":"Node"}`,
+	}
+
+	writeNamedConfigs(t, tmpDir, configs)
 
 	ids, err := ListDevContainerIDs(tmpDir)
 	if err != nil {

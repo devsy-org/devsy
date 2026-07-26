@@ -603,19 +603,8 @@ func setupPlatformGitCredentials(
 	}
 
 	// setup platform git user
-	if platformOptions.UserCredentials.GitUser != "" &&
-		platformOptions.UserCredentials.GitEmail != "" {
-		gitUser, err := gitcredentials.GetUser(ctx, userName, "")
-		if err == nil && gitUser.Name == "" && gitUser.Email == "" {
-			log.Info("Setup workspace git user and email")
-			err := gitcredentials.SetUser(ctx, userName, &gitcredentials.GitUser{
-				Name:  platformOptions.UserCredentials.GitUser,
-				Email: platformOptions.UserCredentials.GitEmail,
-			})
-			if err != nil {
-				return fmt.Errorf("set git user: %w", err)
-			}
-		}
+	if err := setupPlatformGitUser(ctx, userName, platformOptions); err != nil {
+		return err
 	}
 
 	// setup platform git http credentials
@@ -628,6 +617,31 @@ func setupPlatformGitCredentials(
 	err = setupPlatformGitSSHKeys(userName, platformOptions)
 	if err != nil {
 		log.Errorf("Error setting up platform git ssh keys: %v", err)
+	}
+
+	return nil
+}
+
+func setupPlatformGitUser(
+	ctx context.Context,
+	userName string,
+	platformOptions *devsy.PlatformOptions,
+) error {
+	if platformOptions.UserCredentials.GitUser == "" ||
+		platformOptions.UserCredentials.GitEmail == "" {
+		return nil
+	}
+
+	gitUser, err := gitcredentials.GetUser(ctx, userName, "")
+	if err == nil && gitUser.Name == "" && gitUser.Email == "" {
+		log.Info("Setup workspace git user and email")
+		err := gitcredentials.SetUser(ctx, userName, &gitcredentials.GitUser{
+			Name:  platformOptions.UserCredentials.GitUser,
+			Email: platformOptions.UserCredentials.GitEmail,
+		})
+		if err != nil {
+			return fmt.Errorf("set git user: %w", err)
+		}
 	}
 
 	return nil
@@ -678,6 +692,20 @@ func setupPlatformGitSSHKeys(
 	_ = copy2.Chown(sshFolder, userName)
 
 	// delete previous keys
+	if err := removeStalePlatformSSHKeys(
+		sshFolder,
+		len(platformOptions.UserCredentials.GitSsh),
+	); err != nil {
+		return err
+	}
+
+	// write new keys
+	writePlatformSSHKeys(sshFolder, userName, platformOptions.UserCredentials.GitSsh)
+
+	return nil
+}
+
+func removeStalePlatformSSHKeys(sshFolder string, keyCount int) error {
 	files, err := os.ReadDir(sshFolder)
 	if err != nil {
 		return err
@@ -692,7 +720,7 @@ func setupPlatformGitSSHKeys(
 		if err != nil {
 			continue
 		}
-		if index >= len(platformOptions.UserCredentials.GitSsh) {
+		if index < keyCount {
 			continue
 		}
 
@@ -701,29 +729,40 @@ func setupPlatformGitSSHKeys(
 			log.Warnf("Error removing previous platform git ssh key: %v", err)
 		}
 	}
+	return nil
+}
 
-	// write new keys
-	for i, key := range platformOptions.UserCredentials.GitSsh {
+func writePlatformSSHKeys(
+	sshFolder, userName string,
+	keys []devsy.PlatformGitSshCredentials,
+) {
+	for i, key := range keys {
 		fileName := filepath.Join(sshFolder, fmt.Sprintf("platform_git_ssh_%d", i))
-
-		// base64 decode before writing to file
-		decoded, err := base64.StdEncoding.DecodeString(key.Key)
-		if err != nil {
-			log.Warnf("Error decoding platform git ssh key: %v", err)
-			continue
-		}
-		err = os.WriteFile(fileName, decoded, 0o600)
-		if err != nil {
+		if err := writePlatformSSHKey(fileName, key.Key, userName); err != nil {
 			log.Warnf("Error writing platform git ssh key: %v", err)
-			continue
-		}
-
-		err = copy2.Chown(fileName, userName)
-		// do not exit on error, we can have non-fatal errors
-		if err != nil {
-			log.Warnf("Error chowning platform git ssh keys: %v", err)
+			// remove any stale key file so we don't leave old credentials behind
+			if removeErr := os.Remove(
+				fileName,
+			); removeErr != nil &&
+				!errors.Is(removeErr, os.ErrNotExist) {
+				log.Warnf("Error removing stale platform git ssh key: %v", removeErr)
+			}
 		}
 	}
+}
 
+func writePlatformSSHKey(fileName, encodedKey, userName string) error {
+	decoded, err := base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(fileName, decoded, 0o600); err != nil {
+		return err
+	}
+
+	// do not exit on error, we can have non-fatal errors
+	if err := copy2.Chown(fileName, userName); err != nil {
+		log.Warnf("Error chowning platform git ssh keys: %v", err)
+	}
 	return nil
 }

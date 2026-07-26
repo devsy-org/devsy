@@ -42,86 +42,132 @@ func addDependency(
 	optionName string,
 ) error {
 	option, exists := g.GetNode(optionName)
-	if !exists {
+	if !exists || option == nil {
 		return nil
 	}
 
-	for _, childName := range optionValues[optionName].Children {
+	if err := addChildDependencies(
+		g,
+		option,
+		optionName,
+		optionValues[optionName].Children,
+	); err != nil {
+		return err
+	}
+
+	if err := addVariableDependencies(variableDependenciesParams{
+		g:          g,
+		option:     option,
+		optionName: optionName,
+		deps:       findVariables(option.Default),
+		kind:       "default",
+	}); err != nil {
+		return err
+	}
+
+	return addVariableDependencies(variableDependenciesParams{
+		g:          g,
+		option:     option,
+		optionName: optionName,
+		deps:       findVariables(option.Command),
+		kind:       "command",
+	})
+}
+
+func addChildDependencies(
+	g *graph.Graph[*types.Option],
+	option *types.Option,
+	optionName string,
+	children []string,
+) error {
+	for _, childName := range children {
 		if !g.HasNode(childName) || childName == optionName {
 			continue
 		}
 
-		childOption, childExists := g.GetNode(childName)
-		if childExists && childOption != nil {
-			if !option.Global && childOption.Global {
-				return fmt.Errorf(
-					"cannot use a global option as a dependency of a non-global option. Option %q used in children of option %q",
-					childName,
-					optionName,
-				)
-			}
-			if option.Local && !childOption.Local {
-				return fmt.Errorf(
-					"cannot use a non-local option as a dependency of a local option. Option %q used in children of option %q",
-					childName,
-					optionName,
-				)
-			}
+		if err := validateChildDependency(g, option, optionName, childName); err != nil {
+			return err
 		}
 
 		_ = g.AddEdge(optionName, childName)
 	}
 
-	for _, dep := range findVariables(option.Default) {
-		if !g.HasNode(dep) || dep == optionName {
-			continue
-		}
+	return nil
+}
 
-		depOption, depExists := g.GetNode(dep)
-		if depExists && depOption != nil {
-			if option.Global && !depOption.Global {
-				return fmt.Errorf(
-					"cannot use a non-global option as a dependency of a global option. Option %q used in default of option %q",
-					dep,
-					optionName,
-				)
-			}
-			if !option.Local && depOption.Local {
-				return fmt.Errorf(
-					"cannot use a local option as a dependency of a non-local option. Option %q used in default of option %q",
-					dep,
-					optionName,
-				)
-			}
-		}
-
-		_ = g.AddEdge(dep, optionName)
+func validateChildDependency(
+	g *graph.Graph[*types.Option],
+	option *types.Option,
+	optionName, childName string,
+) error {
+	childOption, childExists := g.GetNode(childName)
+	if !childExists || childOption == nil {
+		return nil
 	}
 
-	for _, dep := range findVariables(option.Command) {
-		if !g.HasNode(dep) || dep == optionName {
+	if !option.Global && childOption.Global {
+		return fmt.Errorf(
+			"cannot use a global option as a dependency of a non-global option. Option %q used in children of option %q",
+			childName,
+			optionName,
+		)
+	}
+	if option.Local && !childOption.Local {
+		return fmt.Errorf(
+			"cannot use a non-local option as a dependency of a local option. Option %q used in children of option %q",
+			childName,
+			optionName,
+		)
+	}
+
+	return nil
+}
+
+type variableDependenciesParams struct {
+	g          *graph.Graph[*types.Option]
+	option     *types.Option
+	optionName string
+	deps       []string
+	kind       string
+}
+
+func addVariableDependencies(p variableDependenciesParams) error {
+	for _, dep := range p.deps {
+		if !p.g.HasNode(dep) || dep == p.optionName {
 			continue
 		}
 
-		depOption, depExists := g.GetNode(dep)
-		if depExists && depOption != nil {
-			if option.Global && !depOption.Global {
-				return fmt.Errorf(
-					"cannot use a non-global option as a dependency of a global option. Option %q used in command of option %q",
-					dep,
-					optionName,
-				)
-			}
-			if !option.Local && depOption.Local {
-				return fmt.Errorf(
-					"cannot use a local option as a dependency of a non-local option. Option %q used in command of option %q",
-					dep,
-					optionName,
-				)
-			}
+		if err := validateVariableDependency(p, dep); err != nil {
+			return err
 		}
 
-		_ = g.AddEdge(dep, optionName)
+		_ = p.g.AddEdge(dep, p.optionName)
+	}
+
+	return nil
+}
+
+func validateVariableDependency(p variableDependenciesParams, dep string) error {
+	depOption, depExists := p.g.GetNode(dep)
+	if !depExists || depOption == nil {
+		return nil
+	}
+
+	if p.option.Global && !depOption.Global {
+		return fmt.Errorf(
+			"cannot use a non-global option as a dependency of a global option. Option %q used in %s of option %q",
+			dep,
+			p.kind,
+			p.optionName,
+		)
+	}
+	if !p.option.Local && depOption.Local {
+		return fmt.Errorf(
+			"cannot use a local option as a dependency of a non-local option. Option %q used in %s of option %q",
+			dep,
+			p.kind,
+			p.optionName,
+		)
 	}
 
 	return nil

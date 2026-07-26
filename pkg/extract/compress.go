@@ -190,8 +190,12 @@ func (a *Archiver) tarFile(target string, targetStat os.FileInfo) error {
 		return nil
 	}
 
-	// Case regular file
-	f, err := os.Open(filepath)
+	return a.writeRegularFileBody(target, filepath, targetStat)
+}
+
+func (a *Archiver) writeRegularFileBody(target, filePath string, targetStat os.FileInfo) error {
+	// #nosec G304 -- path is derived from the archive being created, not external input
+	f, err := os.Open(filePath)
 	if err != nil {
 		// We ignore open file and just treat it as okay
 		return nil

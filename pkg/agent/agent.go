@@ -107,23 +107,7 @@ func ReadAgentWorkspaceInfo(
 		return false, nil, err
 	}
 
-	if errors.Is(err, ErrFindAgentHomeDir) {
-		log.Debugf(
-			"agent home folder not found: agentFolder=%s, context=%s, workspaceId=%s",
-			agentFolder,
-			context,
-			id,
-		)
-	}
-
-	if errors.Is(err, os.ErrPermission) {
-		log.Debugf(
-			"permission denied reading workspace info: agentFolder=%s, context=%s, workspaceId=%s",
-			agentFolder,
-			context,
-			id,
-		)
-	}
+	logWorkspaceInfoReadError(err, agentFolder, context, id)
 
 	// check if we need to become root
 	log.Debug("checking if root privileges are required")
@@ -145,6 +129,26 @@ func ReadAgentWorkspaceInfo(
 		workspaceInfo.Agent.Driver,
 	)
 	return false, workspaceInfo, nil
+}
+
+func logWorkspaceInfoReadError(err error, agentFolder, context, id string) {
+	if errors.Is(err, ErrFindAgentHomeDir) {
+		log.Debugf(
+			"agent home folder not found: agentFolder=%s, context=%s, workspaceId=%s",
+			agentFolder,
+			context,
+			id,
+		)
+	}
+
+	if errors.Is(err, os.ErrPermission) {
+		log.Debugf(
+			"permission denied reading workspace info: agentFolder=%s, context=%s, workspaceId=%s",
+			agentFolder,
+			context,
+			id,
+		)
+	}
 }
 
 func WorkspaceInfo(
@@ -203,14 +207,26 @@ func decodeWorkspaceInfoAndWrite(
 
 	resolveContentFolder(workspaceInfo, workspaceDir)
 
-	if writeInfo {
-		if err := writeWorkspaceInfo(workspaceConfig, workspaceInfo); err != nil {
-			return false, nil, fmt.Errorf("write workspace info: %w", err)
-		}
+	if err := persistWorkspaceInfo(writeInfo, workspaceConfig, workspaceInfo); err != nil {
+		return false, nil, err
 	}
 
 	workspaceInfo.Origin = workspaceDir
 	return false, workspaceInfo, nil
+}
+
+func persistWorkspaceInfo(
+	writeInfo bool,
+	workspaceConfig string,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+) error {
+	if !writeInfo {
+		return nil
+	}
+	if err := writeWorkspaceInfo(workspaceConfig, workspaceInfo); err != nil {
+		return fmt.Errorf("write workspace info: %w", err)
+	}
+	return nil
 }
 
 // handleStaleWorkspace deletes a workspace whose persisted UID no longer
@@ -325,10 +341,14 @@ func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo
 	return nil
 }
 
+func rootNotRequired(workspaceInfo *provider2.AgentWorkspaceInfo) bool {
+	return runtime.GOOS != "linux" || os.Getuid() == 0 ||
+		(workspaceInfo != nil && workspaceInfo.Agent.Local == config.BoolTrue)
+}
+
 func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	// check if root is required
-	if runtime.GOOS != "linux" || os.Getuid() == 0 ||
-		(workspaceInfo != nil && workspaceInfo.Agent.Local == config.BoolTrue) {
+	if rootNotRequired(workspaceInfo) {
 		return false, nil
 	}
 
@@ -426,6 +446,17 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
 }
 
+func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {
+	if len(envs) == 0 {
+		return
+	}
+	newEnvs := os.Environ()
+	for k, v := range envs {
+		newEnvs = append(newEnvs, k+"="+v)
+	}
+	cmd.Env = newEnvs
+}
+
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
 	docker := "docker"
 	if dockerOverride != "" {
@@ -442,13 +473,7 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 	}
 
 	cmd := exec.Command(docker, "ps")
-	if len(envs) > 0 {
-		newEnvs := os.Environ()
-		for k, v := range envs {
-			newEnvs = append(newEnvs, k+"="+v)
-		}
-		cmd.Env = newEnvs
-	}
+	applyDockerEnv(cmd, envs)
 
 	_, err := cmd.CombinedOutput()
 	if err != nil {

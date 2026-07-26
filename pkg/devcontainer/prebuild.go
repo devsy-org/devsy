@@ -33,23 +33,7 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 		return "", fmt.Errorf("build image: %w", err)
 	}
 
-	// have a fallback value for PrebuildHash
-	// in some cases it may be empty, and this would lead to
-	// invalid reference format during image pushing.
-	if buildInfo.PrebuildHash == "" {
-		buildInfo.PrebuildHash = "latest"
-	}
-
-	// prebuild already exists
-	var prebuildImage string
-	switch {
-	case options.Repository != "":
-		prebuildImage = options.Repository + ":" + buildInfo.PrebuildHash
-	case prebuildRepo != "":
-		prebuildImage = prebuildRepo + ":" + buildInfo.PrebuildHash
-	default:
-		prebuildImage = build.GetImageName(r.localWorkspaceFolder, buildInfo.PrebuildHash)
-	}
+	prebuildImage := r.determinePrebuildImage(options, prebuildRepo, buildInfo)
 
 	if buildInfo.ImageName == prebuildImage {
 		return buildInfo.ImageName, nil
@@ -68,56 +52,119 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 		return prebuildImage, nil
 	}
 
-	if isDockerComposeConfig(substitutedConfig.Config) {
-		if err := dockerDriver.TagDevContainer(
+	if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
+		dockerDriver:      dockerDriver,
+		substitutedConfig: substitutedConfig,
+		buildInfo:         buildInfo,
+		prebuildImage:     prebuildImage,
+		options:           options,
+		prebuildRepo:      prebuildRepo,
+	}); err != nil {
+		return "", err
+	}
+
+	return prebuildImage, nil
+}
+
+// determinePrebuildImage computes the prebuild image reference, defaulting an
+// empty PrebuildHash to "latest" to avoid an invalid reference format on push.
+func (r *runner) determinePrebuildImage(
+	options provider.BuildOptions,
+	prebuildRepo string,
+	buildInfo *config.BuildInfo,
+) string {
+	if buildInfo.PrebuildHash == "" {
+		buildInfo.PrebuildHash = "latest"
+	}
+
+	switch {
+	case options.Repository != "":
+		return options.Repository + ":" + buildInfo.PrebuildHash
+	case prebuildRepo != "":
+		return prebuildRepo + ":" + buildInfo.PrebuildHash
+	default:
+		return build.GetImageName(r.localWorkspaceFolder, buildInfo.PrebuildHash)
+	}
+}
+
+type pushPrebuildImageParams struct {
+	dockerDriver      driver.ImageDriver
+	substitutedConfig *config.SubstitutedConfig
+	buildInfo         *config.BuildInfo
+	prebuildImage     string
+	options           provider.BuildOptions
+	prebuildRepo      string
+}
+
+func (r *runner) pushPrebuildImage(ctx context.Context, params pushPrebuildImageParams) error {
+	if isDockerComposeConfig(params.substitutedConfig.Config) {
+		if err := params.dockerDriver.TagDevContainer(
 			ctx,
-			buildInfo.ImageName,
-			prebuildImage,
+			params.buildInfo.ImageName,
+			params.prebuildImage,
 		); err != nil {
-			return "", fmt.Errorf("tag image: %w", err)
+			return fmt.Errorf("tag image: %w", err)
 		}
 	}
 
 	// if no repository is specified, skip push (mirrors devcontainer CLI behavior)
-	if options.Repository == "" && prebuildRepo == "" {
-		return prebuildImage, nil
+	if params.options.Repository == "" && params.prebuildRepo == "" {
+		return nil
 	}
 
 	// check if we can push image
-	if err := image.CheckPushPermissions(ctx, prebuildImage); err != nil {
-		return "", fmt.Errorf(
+	if err := image.CheckPushPermissions(ctx, params.prebuildImage); err != nil {
+		return fmt.Errorf(
 			"cannot push to repository %s. Make sure you are logged into the registry "+
 				"and credentials are available. (Error: %w)",
-			prebuildImage,
+			params.prebuildImage,
 			err,
 		)
 	}
 
+	return tagAndPushImages(ctx, params.dockerDriver, params.prebuildImage, params.buildInfo.Tags)
+}
+
+func tagAndPushImages(
+	ctx context.Context,
+	dockerDriver driver.ImageDriver,
+	prebuildImage string,
+	tags []string,
+) error {
 	// Setup all image tags (prebuild and any user defined tags)
 	imageRefs := []string{prebuildImage}
 
-	imageRepoName := strings.Split(prebuildImage, ":")
-	if buildInfo.Tags != nil {
-		for _, tag := range buildInfo.Tags {
-			imageRefs = append(imageRefs, imageRepoName[0]+":"+tag)
-		}
+	imageRepoName := stripImageTag(prebuildImage)
+	for _, tag := range tags {
+		imageRefs = append(imageRefs, imageRepoName+":"+tag)
 	}
 
 	// tag the image
 	for _, imageRef := range imageRefs {
 		if err := dockerDriver.TagDevContainer(ctx, prebuildImage, imageRef); err != nil {
-			return "", fmt.Errorf("tag image: %w", err)
+			return fmt.Errorf("tag image: %w", err)
 		}
 	}
 
 	// push the image to the registry
 	for _, imageRef := range imageRefs {
 		if err := dockerDriver.PushDevContainer(ctx, imageRef); err != nil {
-			return "", fmt.Errorf("push image: %w", err)
+			return fmt.Errorf("push image: %w", err)
 		}
 	}
 
-	return prebuildImage, nil
+	return nil
+}
+
+// stripImageTag returns the image reference without its trailing tag suffix,
+// preserving any registry port (host:port) and repository path. A tag
+// separator only counts when it appears after the last path separator.
+func stripImageTag(image string) string {
+	lastSlash := strings.LastIndex(image, "/")
+	if colon := strings.LastIndex(image, ":"); colon > lastSlash {
+		return image[:colon]
+	}
+	return image
 }
 
 func getPrebuildRepository(substitutedConfig *config.SubstitutedConfig) string {

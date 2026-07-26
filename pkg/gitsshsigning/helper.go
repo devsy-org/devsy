@@ -152,80 +152,92 @@ func removeGitConfigHelper(gitConfigPath, userName string) error {
 	return nil
 }
 
+type sectionKind int
+
+const (
+	sectionNone sectionKind = iota
+	sectionGpgSSH
+	sectionGpg
+	sectionUser
+)
+
+const (
+	sectionHeaderGpgSSH = `[gpg "ssh"]`
+	sectionHeaderGpg    = "[gpg]"
+	sectionHeaderUser   = "[user]"
+)
+
+type gitConfigFilter struct {
+	current sectionKind
+	buf     []string
+	out     []string
+}
+
 func removeSignatureHelper(content string) string {
-	type sectionKind int
-	const (
-		sectionNone sectionKind = iota
-		sectionGpgSSH
-		sectionGpg
-		sectionUser
-	)
-
-	current := sectionNone
-	var buf []string
-	var out []string
-
-	flush := func() {
-		switch current {
-		case sectionGpgSSH:
-			out = append(out, filterSection(buf, func(trimmed string) bool {
-				return strings.HasPrefix(trimmed, "program = "+pkgconfig.SSHSignatureHelperName)
-			})...)
-		case sectionGpg:
-			out = append(out, filterSection(buf, func(trimmed string) bool {
-				return strings.HasPrefix(trimmed, "format = ssh")
-			})...)
-		case sectionUser:
-			// Only strip [user] sections that contain nothing but signingkey
-			// entries — these are the ones appended by GitConfigTemplate.
-			// Sections with other entries (name, email, etc.) are user-owned
-			// and must be preserved intact to avoid data loss.
-			if isDevsyOnlyUserSection(buf) {
-				// Drop the entire section — it was appended by devsy.
-			} else {
-				out = append(out, buf...)
-			}
-		}
-		buf = nil
-	}
-
+	f := &gitConfigFilter{current: sectionNone}
 	for line := range strings.Lines(content) {
-		line = strings.TrimRight(line, "\n")
-		trimmed := strings.TrimSpace(line)
+		f.process(strings.TrimRight(line, "\r\n"))
+	}
+	f.flush()
 
-		if isSectionHeader(trimmed) {
-			if current != sectionNone {
-				flush()
-			}
-			switch trimmed {
-			case `[gpg "ssh"]`:
-				current = sectionGpgSSH
-			case "[gpg]":
-				current = sectionGpg
-			case "[user]":
-				current = sectionUser
-			default:
-				current = sectionNone
-			}
-			if current != sectionNone {
-				buf = append(buf, line)
-				continue
-			}
+	return strings.Join(f.out, "\n")
+}
+
+func (f *gitConfigFilter) process(line string) {
+	trimmed := strings.TrimSpace(line)
+
+	if isSectionHeader(trimmed) {
+		if f.current != sectionNone {
+			f.flush()
 		}
-
-		if current != sectionNone {
-			buf = append(buf, line)
-			continue
+		f.current = sectionFor(trimmed)
+		if f.current != sectionNone {
+			f.buf = append(f.buf, line)
+			return
 		}
-
-		out = append(out, line)
 	}
 
-	if current != sectionNone {
-		flush()
+	if f.current != sectionNone {
+		f.buf = append(f.buf, line)
+		return
 	}
 
-	return strings.Join(out, "\n")
+	f.out = append(f.out, line)
+}
+
+func (f *gitConfigFilter) flush() {
+	switch f.current {
+	case sectionGpgSSH:
+		f.out = append(f.out, filterSection(f.buf, func(trimmed string) bool {
+			return strings.HasPrefix(trimmed, "program = "+pkgconfig.SSHSignatureHelperName)
+		})...)
+	case sectionGpg:
+		f.out = append(f.out, filterSection(f.buf, func(trimmed string) bool {
+			return strings.HasPrefix(trimmed, "format = ssh")
+		})...)
+	case sectionUser:
+		// Only strip [user] sections that contain nothing but signingkey
+		// entries — these are the ones appended by GitConfigTemplate.
+		// Sections with other entries (name, email, etc.) are user-owned
+		// and must be preserved intact to avoid data loss.
+		if !isDevsyOnlyUserSection(f.buf) {
+			f.out = append(f.out, f.buf...)
+		}
+	}
+	f.buf = nil
+}
+
+func sectionFor(trimmed string) sectionKind {
+	switch trimmed {
+	case sectionHeaderGpgSSH:
+		return sectionGpgSSH
+	case sectionHeaderGpg:
+		return sectionGpg
+	case sectionHeaderUser:
+		return sectionUser
+	default:
+		return sectionNone
+	}
 }
 
 func isSectionHeader(trimmed string) bool {

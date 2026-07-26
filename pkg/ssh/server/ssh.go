@@ -191,18 +191,7 @@ func NewServer(
 				log.Debugf("attempt to bind %s:%d - %s", host, port, "granted")
 				return true
 			},
-			ReverseUnixForwardingCallback: func(ctx ssh.Context, socketPath string) bool {
-				log.Debugf("attempt to bind socket %s", socketPath)
-
-				_, err := os.Stat(socketPath)
-				if err == nil {
-					log.Debugf("%s already exists, removing", socketPath)
-
-					_ = os.Remove(socketPath)
-				}
-
-				return true
-			},
+			ReverseUnixForwardingCallback: reverseUnixForwardingCallback,
 			ChannelHandlers: map[string]ssh.ChannelHandler{
 				"direct-tcpip":                   ssh.DirectTCPIPHandler,
 				"direct-streamlocal@openssh.com": ssh.DirectStreamLocalHandler,
@@ -223,16 +212,7 @@ func NewServer(
 	}
 
 	if len(keys) > 0 {
-		server.sshServer.PublicKeyHandler = func(ctx ssh.Context, key ssh.PublicKey) bool {
-			for _, k := range keys {
-				if ssh.KeysEqual(k, key) {
-					return true
-				}
-			}
-
-			log.Debugf("Declined public key")
-			return false
-		}
+		server.sshServer.PublicKeyHandler = makePublicKeyHandler(keys)
 	}
 
 	if len(hostKey) > 0 {
@@ -246,6 +226,32 @@ func NewServer(
 	server.sshServer.ConnCallback = server.connCallback
 	server.sshServer.ConnectionClosingCallback = cleanupAgentOnConnClosing
 	return server, nil
+}
+
+func reverseUnixForwardingCallback(_ ssh.Context, socketPath string) bool {
+	log.Debugf("attempt to bind socket %s", socketPath)
+
+	_, err := os.Stat(socketPath)
+	if err == nil {
+		log.Debugf("%s already exists, removing", socketPath)
+
+		_ = os.Remove(socketPath)
+	}
+
+	return true
+}
+
+func makePublicKeyHandler(keys []ssh.PublicKey) func(ctx ssh.Context, key ssh.PublicKey) bool {
+	return func(_ ssh.Context, key ssh.PublicKey) bool {
+		for _, k := range keys {
+			if ssh.KeysEqual(k, key) {
+				return true
+			}
+		}
+
+		log.Debugf("Declined public key")
+		return false
+	}
 }
 
 // cleanupAgentOnConnClosing tears down the per-connection agent state when
@@ -306,47 +312,32 @@ func (intent *connAgentIntent) ensureState() (*connAgentState, error) {
 	return state, err
 }
 
+func (s *server) Serve(listener net.Listener) error {
+	return s.sshServer.Serve(listener)
+}
+
+func (s *server) ListenAndServe() error {
+	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
+	return s.sshServer.ListenAndServe()
+}
+
+func (s *server) Shutdown(ctx context.Context) error {
+	return s.sshServer.Shutdown(ctx)
+}
+
 func (s *server) handler(sess ssh.Session) {
 	var err error
 	ptyReq, winCh, isPty := sess.Pty()
 	cmd := s.getCommand(sess, isPty)
 
 	if ssh.AgentRequested(sess) {
-		if s.reuseSock != "" {
-			// openvscode backhaul / explicit shared-socket mode: keep the
-			// existing per-session listener behavior.
-			l, tmpDir, err := setupAgentListener(s.reuseSock)
-			if err != nil {
-				exitWithError(sess, err)
-				return
-			}
-			defer func() { _ = l.Close() }()
-			defer func() { _ = os.RemoveAll(tmpDir) }()
-
-			go ssh.ForwardAgentConnections(l, sess)
-
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String()))
-		} else if intent, ok := sess.Context().Value(ctxKeyConnAgent).(*connAgentIntent); ok && intent != nil {
-			// Common interactive case: lazily allocate the connection-scoped
-			// listener on first request, then reuse it for every subsequent
-			// session on the same connection. ForwardAgentConnections needs an
-			// ssh.Session to open the auth-agent channel, so it is bound to
-			// the first session that requests agent forwarding.
-			state, sErr := intent.ensureState()
-			if sErr != nil || state == nil {
-				log.Errorf("ssh agent forwarding setup failed (connID=%s): %v", intent.connID, sErr)
-				_, _ = fmt.Fprintf(
-					sess.Stderr(),
-					"warning: ssh agent forwarding unavailable: %v\n",
-					sErr,
-				)
-				exitWithError(sess, sErr)
-				return
-			}
-			state.startForwarding(sess)
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))
-		} else {
-			log.Debugf("agent requested but no connection-scoped agent intent available")
+		cleanup, exit, aErr := s.configureAgent(sess, cmd)
+		if cleanup != nil {
+			defer cleanup()
+		}
+		if exit {
+			exitWithError(sess, aErr)
+			return
 		}
 	}
 
@@ -390,7 +381,9 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 			args = append(args, "-c", sess.RawCommand())
 		}
 
-		cmd = exec.Command("su", args...)
+		cmd = exec.Command(
+			"su",
+			args...) // #nosec G204 -- args built from session request in the ssh server
 	} else {
 		args := []string{}
 		args = append(args, s.shell[1:]...)
@@ -399,10 +392,14 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 		}
 
 		if len(sess.RawCommand()) == 0 {
-			cmd = exec.Command(s.shell[0], args...)
+			cmd = exec.Command(
+				s.shell[0],
+				args...) // #nosec G204 -- shell configured by the ssh server, not user input
 		} else {
 			args = append(args, "-c", sess.RawCommand())
-			cmd = exec.Command(s.shell[0], args...)
+			cmd = exec.Command(
+				s.shell[0],
+				args...) // #nosec G204 -- shell configured by the ssh server, not user input
 		}
 	}
 
@@ -412,17 +409,48 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 	return cmd
 }
 
-func (s *server) Serve(listener net.Listener) error {
-	return s.sshServer.Serve(listener)
-}
+func (s *server) configureAgent(sess ssh.Session, cmd *exec.Cmd) (func(), bool, error) {
+	if s.reuseSock != "" {
+		// openvscode backhaul / explicit shared-socket mode: keep the
+		// existing per-session listener behavior.
+		l, tmpDir, err := setupAgentListener(s.reuseSock)
+		if err != nil {
+			return nil, true, err
+		}
 
-func (s *server) ListenAndServe() error {
-	log.Debugf("Start ssh server on %s", s.sshServer.Addr)
-	return s.sshServer.ListenAndServe()
-}
+		go ssh.ForwardAgentConnections(l, sess)
 
-func (s *server) Shutdown(ctx context.Context) error {
-	return s.sshServer.Shutdown(ctx)
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String()))
+		return func() {
+			_ = l.Close()
+			_ = os.RemoveAll(tmpDir)
+		}, false, nil
+	}
+
+	intent, _ := sess.Context().Value(ctxKeyConnAgent).(*connAgentIntent)
+	if intent == nil {
+		log.Debugf("agent requested but no connection-scoped agent intent available")
+		return nil, false, nil
+	}
+
+	// Common interactive case: lazily allocate the connection-scoped
+	// listener on first request, then reuse it for every subsequent
+	// session on the same connection. ForwardAgentConnections needs an
+	// ssh.Session to open the auth-agent channel, so it is bound to
+	// the first session that requests agent forwarding.
+	state, sErr := intent.ensureState()
+	if sErr != nil || state == nil {
+		log.Errorf("ssh agent forwarding setup failed (connID=%s): %v", intent.connID, sErr)
+		_, _ = fmt.Fprintf(
+			sess.Stderr(),
+			"warning: ssh agent forwarding unavailable: %v\n",
+			sErr,
+		)
+		return nil, true, sErr
+	}
+	state.startForwarding(sess)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", state.sockPath()))
+	return nil, false, nil
 }
 
 // connCallback is invoked once per inbound SSH connection. Outside the

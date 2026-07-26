@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -30,35 +32,18 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 	)
 	if err != nil {
 		return err
-	} else if workspace == nil {
+	}
+	if workspace == nil {
 		// delete the workspace folder
-		err = clientimplementation.DeleteWorkspaceFolder(
-			clientimplementation.DeleteWorkspaceFolderParams{
-				Context:              c.workspace.Context,
-				WorkspaceID:          c.workspace.ID,
-				SSHConfigPath:        c.workspace.SSHConfigPath,
-				SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
-			},
-		)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return c.deleteWorkspaceFolder()
 	}
 
 	managementClient, err := baseClient.Management()
 	if err != nil {
 		return err
 	}
-	var gracePeriod *time.Duration
-	if opt.GracePeriod != "" {
-		duration, err := time.ParseDuration(opt.GracePeriod)
-		if err == nil {
-			gracePeriod = &duration
-		}
-	}
 
+	gracePeriod := parseGracePeriod(opt.GracePeriod)
 	// kill the command after the grace period
 	if gracePeriod != nil {
 		var cancel context.CancelFunc
@@ -66,13 +51,56 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 		defer cancel()
 	}
 
-	// delete the workspace
-	err = managementClient.Loft().
+	if err := c.deleteInstance(ctx, managementClient, workspace, opt.Force); err != nil {
+		return err
+	}
+
+	// delete the workspace folder
+	if err := c.deleteWorkspaceFolder(); err != nil {
+		return err
+	}
+
+	// wait until the workspace is deleted
+	log.Debugf("Waiting for workspace to get deleted")
+	return c.waitForWorkspaceDeleted(ctx, managementClient, workspace, gracePeriod)
+}
+
+func parseGracePeriod(raw string) *time.Duration {
+	if raw == "" {
+		return nil
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil || duration <= 0 {
+		log.Warnf("Ignoring invalid grace period %q: %v", raw, err)
+		return nil
+	}
+
+	return &duration
+}
+
+func (c *client) deleteWorkspaceFolder() error {
+	return clientimplementation.DeleteWorkspaceFolder(
+		clientimplementation.DeleteWorkspaceFolderParams{
+			Context:              c.workspace.Context,
+			WorkspaceID:          c.workspace.ID,
+			SSHConfigPath:        c.workspace.SSHConfigPath,
+			SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
+		},
+	)
+}
+
+func (c *client) deleteInstance(
+	ctx context.Context,
+	managementClient kube.Interface,
+	workspace *managementv1.DevsyWorkspaceInstance,
+	force bool,
+) error {
+	err := managementClient.Loft().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Delete(ctx, workspace.Name, metav1.DeleteOptions{})
 	if err != nil {
-		if !opt.Force {
+		if !force {
 			return fmt.Errorf("delete workspace: %w", err)
 		}
 
@@ -81,28 +109,22 @@ func (c *client) Delete(ctx context.Context, opt clientpkg.DeleteOptions) error 
 		}
 	}
 
-	// delete the workspace folder
-	err = clientimplementation.DeleteWorkspaceFolder(
-		clientimplementation.DeleteWorkspaceFolderParams{
-			Context:              c.workspace.Context,
-			WorkspaceID:          c.workspace.ID,
-			SSHConfigPath:        c.workspace.SSHConfigPath,
-			SSHConfigIncludePath: c.workspace.SSHConfigIncludePath,
-		},
-	)
-	if err != nil {
-		return err
-	}
+	return nil
+}
 
+func (c *client) waitForWorkspaceDeleted(
+	ctx context.Context,
+	managementClient kube.Interface,
+	workspace *managementv1.DevsyWorkspaceInstance,
+	gracePeriod *time.Duration,
+) error {
 	// calculate wait timeout
 	waitTimeout := time.Minute
 	if gracePeriod != nil {
 		waitTimeout = *gracePeriod
 	}
 
-	// wait until the workspace is deleted
-	log.Debugf("Waiting for workspace to get deleted")
-	err = wait.PollUntilContextTimeout(
+	err := wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
 		waitTimeout,

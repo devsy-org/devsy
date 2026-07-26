@@ -119,12 +119,8 @@ func (c *Config) IDEOptions(ide string) map[string]OptionValue {
 }
 
 func (c *Config) ContextOption(option string) string {
-	if c.Contexts != nil {
-		if _, ok := c.Contexts[c.DefaultContext]; ok && c.Current().Options != nil {
-			if _, ok := c.Current().Options[option]; ok && c.Current().Options[option].Value != "" {
-				return c.Current().Options[option].Value
-			}
-		}
+	if v, ok := c.contextOptionValue(option); ok {
+		return v
 	}
 
 	for _, contextOption := range ContextOptions {
@@ -143,6 +139,19 @@ func (c *Config) ContextOption(option string) string {
 // ContextOptionBool reports whether the given context option is set to true.
 func (c *Config) ContextOptionBool(option string) bool {
 	return c.ContextOption(option) == BoolTrue
+}
+
+func (c *Config) contextOptionValue(option string) (string, bool) {
+	if c.Contexts == nil {
+		return "", false
+	}
+	if _, ok := c.Contexts[c.DefaultContext]; !ok || c.Current().Options == nil {
+		return "", false
+	}
+	if v, ok := c.Current().Options[option]; ok && v.Value != "" {
+		return v.Value, true
+	}
+	return "", false
 }
 
 func (c *ContextConfig) IsSingleMachine(provider string) bool {
@@ -219,23 +228,7 @@ func LoadConfig(contextOverride string, providerOverride string) (*Config, error
 			return nil, fmt.Errorf("read config: %w", err)
 		}
 
-		context := contextOverride
-		if context == "" {
-			context = DefaultContext
-		}
-
-		return &Config{
-			DefaultContext: context,
-			Contexts: map[string]*ContextConfig{
-				context: {
-					DefaultProvider: providerOverride,
-					Providers:       map[string]*ProviderConfig{},
-					IDEs:            map[string]*IDEConfig{},
-					Options:         map[string]OptionValue{},
-				},
-			},
-			Origin: configOrigin,
-		}, nil
+		return newMissingConfig(configOrigin, contextOverride, providerOverride), nil
 	}
 
 	config := &Config{}
@@ -243,6 +236,34 @@ func LoadConfig(contextOverride string, providerOverride string) (*Config, error
 	if err != nil {
 		return nil, err
 	}
+
+	normalizeConfig(config, contextOverride, providerOverride)
+	config.Origin = configOrigin
+
+	return config, nil
+}
+
+func newMissingConfig(configOrigin, contextOverride, providerOverride string) *Config {
+	context := contextOverride
+	if context == "" {
+		context = DefaultContext
+	}
+
+	return &Config{
+		DefaultContext: context,
+		Contexts: map[string]*ContextConfig{
+			context: {
+				DefaultProvider: providerOverride,
+				Providers:       map[string]*ProviderConfig{},
+				IDEs:            map[string]*IDEConfig{},
+				Options:         map[string]OptionValue{},
+			},
+		},
+		Origin: configOrigin,
+	}
+}
+
+func normalizeConfig(config *Config, contextOverride, providerOverride string) {
 	if contextOverride != "" {
 		config.OriginalContext = config.DefaultContext
 		config.DefaultContext = contextOverride
@@ -255,23 +276,25 @@ func LoadConfig(contextOverride string, providerOverride string) (*Config, error
 	if config.Contexts[config.DefaultContext] == nil {
 		config.Contexts[config.DefaultContext] = &ContextConfig{}
 	}
-	if config.Contexts[config.DefaultContext].Options == nil {
-		config.Contexts[config.DefaultContext].Options = map[string]OptionValue{}
-	}
-	if config.Contexts[config.DefaultContext].Providers == nil {
-		config.Contexts[config.DefaultContext].Providers = map[string]*ProviderConfig{}
-	}
-	if config.Contexts[config.DefaultContext].IDEs == nil {
-		config.Contexts[config.DefaultContext].IDEs = map[string]*IDEConfig{}
-	}
+
+	ctx := config.Contexts[config.DefaultContext]
+	ensureContextMaps(ctx)
 	if providerOverride != "" {
-		config.Contexts[config.DefaultContext].OriginalProvider = config.Contexts[config.DefaultContext].DefaultProvider
-		config.Contexts[config.DefaultContext].DefaultProvider = providerOverride
+		ctx.OriginalProvider = ctx.DefaultProvider
+		ctx.DefaultProvider = providerOverride
 	}
+}
 
-	config.Origin = configOrigin
-
-	return config, nil
+func ensureContextMaps(ctx *ContextConfig) {
+	if ctx.Options == nil {
+		ctx.Options = map[string]OptionValue{}
+	}
+	if ctx.Providers == nil {
+		ctx.Providers = map[string]*ProviderConfig{}
+	}
+	if ctx.IDEs == nil {
+		ctx.IDEs = map[string]*IDEConfig{}
+	}
 }
 
 func SaveConfig(config *Config) error {

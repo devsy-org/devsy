@@ -46,13 +46,47 @@ func RunEmulatedShell(
 		return err
 	}
 
-	// create options
+	// Create shell runner
+	r, err := interp.New(buildRunnerOptions(runnerParams{
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
+		env:    env,
+		dir:    dir,
+	})...)
+	if err != nil {
+		return fmt.Errorf("create shell runner: %w", err)
+	}
+
+	// Run command
+	err = r.Run(ctx, parsed)
+	if err != nil {
+		var exitStatus interp.ExitStatus
+		if errors.As(err, &exitStatus) && exitStatus == 0 {
+			return nil
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+type runnerParams struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+	env    []string
+	dir    string
+}
+
+func buildRunnerOptions(p runnerParams) []interp.RunnerOption {
 	defaultOpenHandler := interp.DefaultOpenHandler()
 	defaultExecHandler := interp.DefaultExecHandler(2 * time.Second)
-	options := []interp.RunnerOption{
-		interp.StdIO(stdin, stdout, stderr),
-		interp.Env(expand.ListEnviron(env...)),
-		interp.Dir(dir),
+	return []interp.RunnerOption{
+		interp.StdIO(p.stdin, p.stdout, p.stderr),
+		interp.Env(expand.ListEnviron(p.env...)),
+		interp.Dir(p.dir),
 		interp.ExecHandlers(func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 			return func(ctx context.Context, args []string) error {
 				return defaultExecHandler(ctx, args)
@@ -79,25 +113,6 @@ func RunEmulatedShell(
 			},
 		),
 	}
-
-	// Create shell runner
-	r, err := interp.New(options...)
-	if err != nil {
-		return fmt.Errorf("create shell runner: %w", err)
-	}
-
-	// Run command
-	err = r.Run(ctx, parsed)
-	if err != nil {
-		var exitStatus interp.ExitStatus
-		if errors.As(err, &exitStatus) && exitStatus == 0 {
-			return nil
-		}
-
-		return err
-	}
-
-	return nil
 }
 
 var _ io.ReadWriteCloser = devNull{}

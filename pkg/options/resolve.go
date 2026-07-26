@@ -68,17 +68,24 @@ func ResolveAndSaveOptionsMachine(
 
 	// save machine config
 	if machine != nil {
-		machine.Provider.Options = resolvedOptions
-
-		if !reflect.DeepEqual(beforeConfigOptions, machine.Provider.Options) {
-			err = provider.SaveMachineConfig(machine)
-			if err != nil {
-				return machine, err
-			}
+		if err := saveMachineIfChanged(machine, beforeConfigOptions, resolvedOptions); err != nil {
+			return machine, err
 		}
 	}
 
 	return machine, nil
+}
+
+func saveMachineIfChanged(
+	machine *provider.Machine,
+	beforeConfigOptions, resolvedOptions map[string]config.OptionValue,
+) error {
+	machine.Provider.Options = resolvedOptions
+	if reflect.DeepEqual(beforeConfigOptions, machine.Provider.Options) {
+		return nil
+	}
+
+	return provider.SaveMachineConfig(machine)
 }
 
 func ResolveAndSaveOptionsWorkspace(
@@ -407,35 +414,58 @@ func filterResolvedOptions(
 	userOptions map[string]string,
 ) {
 	for k := range resolvedOptions {
-		// check if user supplied
-		if userOptions != nil {
-			_, ok := userOptions[k]
-			if ok {
-				continue
-			}
+		if shouldRemoveResolvedOption(removeResolvedOptionParams{
+			k:                   k,
+			beforeConfigOptions: beforeConfigOptions,
+			providerValues:      providerValues,
+			providerOptions:     providerOptions,
+			userOptions:         userOptions,
+		}) {
+			delete(resolvedOptions, k)
 		}
-
-		// check if it was there before
-		if beforeConfigOptions != nil {
-			_, ok := beforeConfigOptions[k]
-			if ok {
-				continue
-			}
-		}
-
-		// check if not available in the provider values
-		if providerValues != nil {
-			_, ok := providerValues[k]
-			if !ok {
-				continue
-			}
-		}
-
-		// check if not global
-		if providerOptions == nil || providerOptions[k] == nil || !providerOptions[k].Global {
-			continue
-		}
-
-		delete(resolvedOptions, k)
 	}
+}
+
+type removeResolvedOptionParams struct {
+	k                   string
+	beforeConfigOptions map[string]config.OptionValue
+	providerValues      map[string]config.OptionValue
+	providerOptions     map[string]*types.Option
+	userOptions         map[string]string
+}
+
+func shouldRemoveResolvedOption(p removeResolvedOptionParams) bool {
+	if keptByUserOrBefore(p.k, p.userOptions, p.beforeConfigOptions) {
+		return false
+	}
+
+	if _, ok := p.providerValues[p.k]; !ok {
+		return false
+	}
+
+	return isGlobalOption(p.providerOptions, p.k)
+}
+
+func keptByUserOrBefore(
+	k string,
+	userOptions map[string]string,
+	beforeConfigOptions map[string]config.OptionValue,
+) bool {
+	if userOptions != nil {
+		if _, ok := userOptions[k]; ok {
+			return true
+		}
+	}
+
+	if beforeConfigOptions != nil {
+		if _, ok := beforeConfigOptions[k]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isGlobalOption(providerOptions map[string]*types.Option, k string) bool {
+	return providerOptions != nil && providerOptions[k] != nil && providerOptions[k].Global
 }

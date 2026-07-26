@@ -533,9 +533,38 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	}
 
 	execResult := LoadExecResult(workspaceConfig, containerDetails)
-	workdir := opts.Workdir
+	target, workdir, envMap := buildExecTargetEnv(ctx, buildExecTargetEnvParams{
+		runtime:       runtime,
+		opts:          opts,
+		execResult:    execResult,
+		containerID:   containerDetails.ID,
+		workspaceName: client.Workspace(),
+	})
+
+	return resolvedExecTarget{
+		runtime: runtime,
+		target:  target,
+		workdir: workdir,
+		envMap:  envMap,
+	}, nil
+}
+
+type buildExecTargetEnvParams struct {
+	runtime       ContainerRuntime
+	opts          ExecOneShotOptions
+	execResult    *devcconfig.Result
+	containerID   string
+	workspaceName string
+}
+
+func buildExecTargetEnv(
+	ctx context.Context,
+	params buildExecTargetEnvParams,
+) (ContainerTarget, string, map[string]string) {
+	execResult := params.execResult
+	workdir := params.opts.Workdir
 	if workdir == "" {
-		workdir = ResolveExecWorkdir(execResult, client.Workspace())
+		workdir = ResolveExecWorkdir(execResult, params.workspaceName)
 	}
 
 	user := ""
@@ -544,7 +573,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	}
 
 	target := ContainerTarget{
-		ContainerID: containerDetails.ID,
+		ContainerID: params.containerID,
 		User:        user,
 	}
 
@@ -552,16 +581,10 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	if execResult != nil && execResult.MergedConfig != nil {
 		userEnvProbe = execResult.MergedConfig.UserEnvProbe
 	}
-	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
-	envSlice := envMapToSlice(opts.Env)
-	envMap := BuildExecEnv(execResult, envSlice, probedEnv)
+	probedEnv := params.runtime.ProbeEnv(ctx, target, userEnvProbe)
+	envMap := BuildExecEnv(execResult, envMapToSlice(params.opts.Env), probedEnv)
 
-	return resolvedExecTarget{
-		runtime: runtime,
-		target:  target,
-		workdir: workdir,
-		envMap:  envMap,
-	}, nil
+	return target, workdir, envMap
 }
 
 func envMapToSlice(m map[string]string) []string {

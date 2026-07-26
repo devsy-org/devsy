@@ -39,179 +39,272 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 				return true, nil
 			}
 
-			// check pod for problems
-			if pod.DeletionTimestamp != nil {
-				throttledLogger.Infof("Waiting, since pod %q is terminating", id)
-				return false, nil
-			}
-
-			// Let's print all conditions that are false to help people troubleshoot infra issues
-			var condMsg strings.Builder
-			if time.Since(started) > 45*time.Second { // start printing conditions after a delay
-				for _, cond := range pod.Status.Conditions {
-					if cond.Status == corev1.ConditionFalse {
-						fmt.Fprintf(&condMsg, "Condition %q is %s\n", cond.Type, cond.Status)
-						if cond.Reason != "" {
-							fmt.Fprintf(&condMsg, "%s Reason: %s\n", cond.Type, cond.Reason)
-						}
-						if cond.Message != "" {
-							fmt.Fprintf(&condMsg, "%s Message: %s\n", cond.Type, cond.Message)
-						}
-					}
-				}
-			}
-
-			// check pod status
-			if len(pod.Status.ContainerStatuses) < len(pod.Spec.Containers) {
-				msg := fmt.Sprintf("Waiting, since pod %q is starting", id)
-				if condMsg.String() != "" {
-					msg += fmt.Sprintf("\n%s", strings.TrimSpace(condMsg.String()))
-				}
-				throttledLogger.Infof("%s", msg)
-				return false, nil
-			}
-
-			// check init container status
-			for _, c := range pod.Status.InitContainerStatuses {
-				containerStatus := &c
-				if IsWaiting(containerStatus) {
-					if IsCritical(containerStatus) {
-						return false, fmt.Errorf(
-							"pod %q init container %q is waiting to start: %s (%s)",
-							id,
-							c.Name,
-							c.State.Waiting.Message,
-							c.State.Waiting.Reason,
-						)
-					}
-					if c.State.Waiting.Message == "" {
-						throttledLogger.Infof(
-							"Waiting, since pod %q init container %q is waiting to start: %s",
-							id,
-							c.Name,
-							c.State.Waiting.Reason,
-						)
-					} else {
-						throttledLogger.Infof(
-							"Waiting, since pod %q init container %q is waiting to start: %s (%s)",
-							id,
-							c.Name,
-							c.State.Waiting.Message,
-							c.State.Waiting.Reason,
-						)
-					}
-
-					return false, nil
-				}
-
-				if IsTerminated(containerStatus) && !Succeeded(containerStatus) {
-					return false, fmt.Errorf(
-						"pod %q init container %q is terminated: %s (%s)",
-						id,
-						c.Name,
-						c.State.Terminated.Message,
-						c.State.Terminated.Reason,
-					)
-				}
-
-				container, err := getContainer(pod.Spec.InitContainers, c.Name)
-				if err != nil {
-					throttledLogger.Infof("Could not find container %q", c.Name)
-					return false, err
-				}
-
-				restartable := restartableInitContainer(container.RestartPolicy)
-				if restartable {
-					if !IsStarted(containerStatus) || !IsReady(containerStatus) {
-						throttledLogger.Infof(
-							"Waiting, since pod %q init container %q is not ready yet",
-							id,
-							c.Name,
-						)
-						return false, nil
-					}
-				} else {
-					if IsRunning(containerStatus) {
-						throttledLogger.Infof(
-							"Waiting, since pod %q init container %q is running",
-							id,
-							c.Name,
-						)
-						return false, nil
-					}
-				}
-			}
-
-			// check container status
-			for _, c := range pod.Status.ContainerStatuses {
-				containerStatus := &c
-				// delete succeeded pods
-				if IsTerminated(containerStatus) && Succeeded(containerStatus) {
-					// delete pod that is succeeded
-					log.Debugf("Delete Pod %q because it is succeeded", id)
-					err = k.waitPodDeleted(ctx, id)
-					if err != nil {
-						return false, err
-					}
-
-					return false, nil
-				}
-
-				if IsWaiting(containerStatus) {
-					if IsCritical(containerStatus) {
-						return false, fmt.Errorf(
-							"pod %q container %q is waiting to start: %s (%s)",
-							id,
-							c.Name,
-							c.State.Waiting.Message,
-							c.State.Waiting.Reason,
-						)
-					}
-					if c.State.Waiting.Message == "" {
-						throttledLogger.Infof(
-							"Waiting, since pod %q container %q is waiting to start: %s",
-							id,
-							c.Name,
-							c.State.Waiting.Reason,
-						)
-					} else {
-						throttledLogger.Infof(
-							"Waiting, since pod %q container %q is waiting to start: %s (%s)",
-							id,
-							c.Name,
-							c.State.Waiting.Message,
-							c.State.Waiting.Reason,
-						)
-					}
-
-					return false, nil
-				}
-
-				if IsTerminated(containerStatus) {
-					return false, fmt.Errorf(
-						"pod %q container %q is terminated: %s (%s)",
-						id,
-						c.Name,
-						c.State.Terminated.Message,
-						c.State.Terminated.Reason,
-					)
-				}
-
-				if !IsReady(containerStatus) {
-					throttledLogger.Infof(
-						"Waiting, since pod %q container %q is not ready yet",
-						id,
-						c.Name,
-					)
-					return false, nil
-				}
-			}
-
-			return true, nil
+			return k.evaluatePodStatus(ctx, pod, &podStatusParams{
+				id:              id,
+				started:         started,
+				throttledLogger: throttledLogger,
+			})
 		},
 	)
 
 	return pod, err
+}
+
+type podStatusParams struct {
+	id              string
+	started         time.Time
+	throttledLogger *throttledlogger.ThrottledLogger
+}
+
+func (k *KubernetesDriver) evaluatePodStatus(
+	ctx context.Context,
+	pod *corev1.Pod,
+	params *podStatusParams,
+) (bool, error) {
+	// check pod for problems
+	if pod.DeletionTimestamp != nil {
+		params.throttledLogger.Infof("Waiting, since pod %q is terminating", params.id)
+		return false, nil
+	}
+
+	// Let's print all conditions that are false to help people troubleshoot infra issues
+	condMsg := podConditionMessage(pod, params.started)
+
+	// check pod status
+	if len(pod.Status.ContainerStatuses) < len(pod.Spec.Containers) {
+		msg := fmt.Sprintf("Waiting, since pod %q is starting", params.id)
+		if condMsg != "" {
+			msg += fmt.Sprintf("\n%s", strings.TrimSpace(condMsg))
+		}
+		params.throttledLogger.Infof("%s", msg)
+		return false, nil
+	}
+
+	ready, err := checkInitContainerStatuses(pod, params.id, params.throttledLogger)
+	if err != nil || !ready {
+		return false, err
+	}
+
+	return k.checkContainerStatuses(ctx, pod, params.id, params.throttledLogger)
+}
+
+func podConditionMessage(pod *corev1.Pod, started time.Time) string {
+	if time.Since(started) <= 45*time.Second { // start printing conditions after a delay
+		return ""
+	}
+
+	var condMsg strings.Builder
+	for _, cond := range pod.Status.Conditions {
+		if cond.Status != corev1.ConditionFalse {
+			continue
+		}
+		fmt.Fprintf(&condMsg, "Condition %q is %s\n", cond.Type, cond.Status)
+		if cond.Reason != "" {
+			fmt.Fprintf(&condMsg, "%s Reason: %s\n", cond.Type, cond.Reason)
+		}
+		if cond.Message != "" {
+			fmt.Fprintf(&condMsg, "%s Message: %s\n", cond.Type, cond.Message)
+		}
+	}
+
+	return condMsg.String()
+}
+
+func checkInitContainerStatuses(
+	pod *corev1.Pod,
+	id string,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	for _, c := range pod.Status.InitContainerStatuses {
+		proceed, err := checkInitContainerStatus(pod, id, &c, throttledLogger)
+		if err != nil || !proceed {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func checkInitContainerStatus(
+	pod *corev1.Pod,
+	id string,
+	c *corev1.ContainerStatus,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	if IsWaiting(c) {
+		return handleInitContainerWaiting(id, c, throttledLogger)
+	}
+
+	if IsTerminated(c) && !Succeeded(c) {
+		return false, fmt.Errorf(
+			"pod %q init container %q is terminated: %s (%s)",
+			id,
+			c.Name,
+			c.State.Terminated.Message,
+			c.State.Terminated.Reason,
+		)
+	}
+
+	container, err := getContainer(pod.Spec.InitContainers, c.Name)
+	if err != nil {
+		throttledLogger.Infof("Could not find container %q", c.Name)
+		return false, err
+	}
+
+	return initContainerReady(container, c, id, throttledLogger), nil
+}
+
+func handleInitContainerWaiting(
+	id string,
+	c *corev1.ContainerStatus,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	if IsCritical(c) {
+		return false, fmt.Errorf(
+			"pod %q init container %q is waiting to start: %s (%s)",
+			id,
+			c.Name,
+			c.State.Waiting.Message,
+			c.State.Waiting.Reason,
+		)
+	}
+
+	logWaiting(throttledLogger, "init container", id, c)
+	return false, nil
+}
+
+func initContainerReady(
+	container *corev1.Container,
+	c *corev1.ContainerStatus,
+	id string,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) bool {
+	if restartableInitContainer(container.RestartPolicy) {
+		if !IsStarted(c) || !IsReady(c) {
+			throttledLogger.Infof(
+				"Waiting, since pod %q init container %q is not ready yet",
+				id,
+				c.Name,
+			)
+			return false
+		}
+		return true
+	}
+
+	if IsRunning(c) {
+		throttledLogger.Infof(
+			"Waiting, since pod %q init container %q is running",
+			id,
+			c.Name,
+		)
+		return false
+	}
+
+	return true
+}
+
+func (k *KubernetesDriver) checkContainerStatuses(
+	ctx context.Context,
+	pod *corev1.Pod,
+	id string,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	for _, c := range pod.Status.ContainerStatuses {
+		proceed, err := k.checkContainerStatus(ctx, id, &c, throttledLogger)
+		if err != nil || !proceed {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func (k *KubernetesDriver) checkContainerStatus(
+	ctx context.Context,
+	id string,
+	c *corev1.ContainerStatus,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	// delete succeeded pods
+	if IsTerminated(c) && Succeeded(c) {
+		// delete pod that is succeeded
+		log.Debugf("Delete Pod %q because it is succeeded", id)
+		if err := k.waitPodDeleted(ctx, id); err != nil {
+			return false, err
+		}
+
+		return false, nil
+	}
+
+	if IsWaiting(c) {
+		return handleContainerWaiting(id, c, throttledLogger)
+	}
+
+	if IsTerminated(c) {
+		return false, fmt.Errorf(
+			"pod %q container %q is terminated: %s (%s)",
+			id,
+			c.Name,
+			c.State.Terminated.Message,
+			c.State.Terminated.Reason,
+		)
+	}
+
+	if !IsReady(c) {
+		throttledLogger.Infof(
+			"Waiting, since pod %q container %q is not ready yet",
+			id,
+			c.Name,
+		)
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func handleContainerWaiting(
+	id string,
+	c *corev1.ContainerStatus,
+	throttledLogger *throttledlogger.ThrottledLogger,
+) (bool, error) {
+	if IsCritical(c) {
+		return false, fmt.Errorf(
+			"pod %q container %q is waiting to start: %s (%s)",
+			id,
+			c.Name,
+			c.State.Waiting.Message,
+			c.State.Waiting.Reason,
+		)
+	}
+
+	logWaiting(throttledLogger, "container", id, c)
+	return false, nil
+}
+
+func logWaiting(
+	throttledLogger *throttledlogger.ThrottledLogger,
+	kind, id string,
+	c *corev1.ContainerStatus,
+) {
+	if c.State.Waiting.Message == "" {
+		throttledLogger.Infof(
+			"Waiting, since pod %q %s %q is waiting to start: %s",
+			id,
+			kind,
+			c.Name,
+			c.State.Waiting.Reason,
+		)
+		return
+	}
+
+	throttledLogger.Infof(
+		"Waiting, since pod %q %s %q is waiting to start: %s (%s)",
+		id,
+		kind,
+		c.Name,
+		c.State.Waiting.Message,
+		c.State.Waiting.Reason,
+	)
 }
 
 func (k *KubernetesDriver) getPod(ctx context.Context, id string) (*corev1.Pod, error) {

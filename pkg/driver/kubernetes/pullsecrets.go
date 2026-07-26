@@ -27,26 +27,17 @@ func (k *KubernetesDriver) EnsurePullSecret(
 	if err != nil {
 		return false, fmt.Errorf("retrieve credentials for %s: %w", host, err)
 	}
-	if dockerCredentials == nil || dockerCredentials.Username == "" ||
-		dockerCredentials.Secret == "" {
+	if !hasUsableCredentials(dockerCredentials) {
 		log.Debugf("no credentials configured for registry %s; pulling anonymously", host)
 		return false, nil
 	}
 
-	if k.secretExists(ctx, pullSecretName) {
-		if !k.shouldRecreateSecret(ctx, dockerCredentials, pullSecretName, host) {
-			log.Debugf("Pull secret %q already exists and is up to date", pullSecretName)
-			return true, nil
-		}
-
-		log.Debugf(
-			"Pull secret %q already exists, but is outdated. Recreating",
-			pullSecretName,
-		)
-		err := k.DeleteSecret(ctx, pullSecretName)
-		if err != nil {
-			return false, err
-		}
+	needCreate, err := k.prepareSecretRecreation(ctx, dockerCredentials, pullSecretName, host)
+	if err != nil {
+		return false, err
+	}
+	if !needCreate {
+		return true, nil
 	}
 
 	err = k.createPullSecret(ctx, pullSecretName, dockerCredentials)
@@ -55,6 +46,37 @@ func (k *KubernetesDriver) EnsurePullSecret(
 	}
 
 	log.Infof("Pull secret %q created", pullSecretName)
+	return true, nil
+}
+
+func hasUsableCredentials(creds *dockercredentials.Credentials) bool {
+	return creds != nil && creds.Username != "" && creds.Secret != ""
+}
+
+// prepareSecretRecreation deletes an existing pull secret if it is outdated and
+// reports whether the secret still needs to be created.
+func (k *KubernetesDriver) prepareSecretRecreation(
+	ctx context.Context,
+	dockerCredentials *dockercredentials.Credentials,
+	pullSecretName, host string,
+) (bool, error) {
+	if !k.secretExists(ctx, pullSecretName) {
+		return true, nil
+	}
+
+	if !k.shouldRecreateSecret(ctx, dockerCredentials, pullSecretName, host) {
+		log.Debugf("Pull secret %q already exists and is up to date", pullSecretName)
+		return false, nil
+	}
+
+	log.Debugf(
+		"Pull secret %q already exists, but is outdated. Recreating",
+		pullSecretName,
+	)
+	if err := k.DeleteSecret(ctx, pullSecretName); err != nil {
+		return false, err
+	}
+
 	return true, nil
 }
 

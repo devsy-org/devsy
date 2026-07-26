@@ -51,27 +51,15 @@ type InjectOptions struct {
 // Deprecated: Inject is part of the legacy shell injection path. Platform-native AgentDelivery
 // implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 func Inject(opts InjectOptions) (bool, error) {
-	if opts.Ctx == nil {
-		return false, fmt.Errorf("context is required")
-	}
-	if opts.Exec == nil {
-		return false, fmt.Errorf("exec function is required")
-	}
-	if opts.ScriptParams == nil {
-		return false, fmt.Errorf("script params is required")
+	if err := validateInjectOptions(opts); err != nil {
+		return false, err
 	}
 
 	start := time.Now()
 	log.Infof("injection: start")
 	defer func() { log.Infof("injection: complete elapsed=%s", time.Since(start)) }()
 
-	if opts.ScriptParams.PreferAgentDownload {
-		url := ""
-		if opts.ScriptParams.DownloadURLs != nil {
-			url = opts.ScriptParams.DownloadURLs.Base
-		}
-		log.Debugf("prefer downloading agent from URL: url=%s", url)
-	}
+	logPreferAgentDownload(opts.ScriptParams)
 
 	scriptRawCode, err := GenerateScript(Script, opts.ScriptParams)
 	if err != nil {
@@ -109,18 +97,14 @@ func Inject(opts InjectOptions) (bool, error) {
 
 	// start execution of inject.sh
 	execErrChan := make(chan error, 1)
-	go func() {
-		defer func() { _ = stdoutWriter.Close() }()
-		defer log.Debug("done exec")
-
-		err := opts.Exec(cancelCtx, scriptRawCode, stdinReader, stdoutWriter, delayedStderr)
-		if err != nil && !errors.Is(err, context.Canceled) &&
-			!strings.Contains(err.Error(), "signal: ") {
-			execErrChan <- command.WrapCommandError(delayedStderr.Buffer(), err)
-		} else {
-			execErrChan <- nil
-		}
-	}()
+	go runInjectScript(cancelCtx, runInjectScriptParams{
+		opts:          opts,
+		script:        scriptRawCode,
+		stdin:         stdinReader,
+		stdout:        stdoutWriter,
+		delayedStderr: delayedStderr,
+		execErrChan:   execErrChan,
+	})
 
 	// inject file
 	injectChan := make(chan injectResult, 1)
@@ -143,15 +127,80 @@ func Inject(opts InjectOptions) (bool, error) {
 		}
 	}()
 
+	return awaitInjectResult(awaitInjectResultParams{
+		opts:          opts,
+		start:         start,
+		execErrChan:   execErrChan,
+		injectChan:    injectChan,
+		delayedStderr: delayedStderr,
+	})
+}
+
+func validateInjectOptions(opts InjectOptions) error {
+	if opts.Ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	if opts.Exec == nil {
+		return fmt.Errorf("exec function is required")
+	}
+	if opts.ScriptParams == nil {
+		return fmt.Errorf("script params is required")
+	}
+	return nil
+}
+
+func logPreferAgentDownload(params *Params) {
+	if !params.PreferAgentDownload {
+		return
+	}
+	url := ""
+	if params.DownloadURLs != nil {
+		url = params.DownloadURLs.Base
+	}
+	log.Debugf("prefer downloading agent from URL: url=%s", url)
+}
+
+type runInjectScriptParams struct {
+	opts          InjectOptions
+	script        string
+	stdin         io.Reader
+	stdout        io.WriteCloser
+	delayedStderr *delayedWriter
+	execErrChan   chan<- error
+}
+
+func runInjectScript(ctx context.Context, p runInjectScriptParams) {
+	defer func() { _ = p.stdout.Close() }()
+	defer log.Debug("done exec")
+
+	err := p.opts.Exec(ctx, p.script, p.stdin, p.stdout, p.delayedStderr)
+	if err != nil && !errors.Is(err, context.Canceled) &&
+		!strings.Contains(err.Error(), "signal: ") {
+		p.execErrChan <- command.WrapCommandError(p.delayedStderr.Buffer(), err)
+	} else {
+		p.execErrChan <- nil
+	}
+}
+
+type awaitInjectResultParams struct {
+	opts          InjectOptions
+	start         time.Time
+	execErrChan   chan error
+	injectChan    chan injectResult
+	delayedStderr *delayedWriter
+}
+
+func awaitInjectResult(p awaitInjectResultParams) (bool, error) {
 	// wait here
 	var result injectResult
+	var err error
 	select {
-	case err = <-execErrChan:
-		result = <-injectChan
-	case result = <-injectChan:
+	case err = <-p.execErrChan:
+		result = <-p.injectChan
+	case result = <-p.injectChan:
 		// we don't wait for the command termination here and will just retry on error
 	}
-	log.Debugf("injection: payload delivered elapsed=%s", time.Since(start))
+	log.Debugf("injection: payload delivered elapsed=%s", time.Since(p.start))
 
 	if result.err != nil {
 		return result.wasExecuted, result.err
@@ -165,18 +214,18 @@ func Inject(opts InjectOptions) (bool, error) {
 		return result.wasExecuted, err
 	}
 
-	if result.wasExecuted || opts.ScriptParams.Command == "" {
+	if result.wasExecuted || p.opts.ScriptParams.Command == "" {
 		return result.wasExecuted, nil
 	}
 
 	log.Debugf("Rerun command as binary was injected")
-	delayedStderr.Start()
-	return true, opts.Exec(
-		opts.Ctx,
-		opts.ScriptParams.Command,
-		opts.Stdin,
-		opts.Stdout,
-		delayedStderr,
+	p.delayedStderr.Start()
+	return true, p.opts.Exec(
+		p.opts.Ctx,
+		p.opts.ScriptParams.Command,
+		p.opts.Stdin,
+		p.opts.Stdout,
+		p.delayedStderr,
 	)
 }
 
@@ -224,22 +273,55 @@ func inject(
 		log.Debugf("inject binary")
 		defer log.Debugf("done injecting binary")
 
-		fileReader, err := getFileReader(localFile, lineStr)
-		if err != nil {
+		if err := injectBinaryPayload(localFile, lineStr, stdin, stdout); err != nil {
 			return false, err
 		}
-		defer func() { _ = fileReader.Close() }()
-		err = injectBinary(fileReader, stdin, stdout)
-		if err != nil {
-			return false, err
-		}
-		_ = stdout.Close()
 		// start exec with command
 		return false, nil
-	} else if lineStr != "done" {
+	}
+	if lineStr != "done" {
 		return false, fmt.Errorf("unexpected message during inject %s", lineStr)
 	}
 
+	return pipeStreams(pipeStreamsParams{
+		stdin:         stdin,
+		stdinOut:      stdinOut,
+		stdoutOut:     stdoutOut,
+		stdout:        stdout,
+		delayedStderr: delayedStderr,
+	})
+}
+
+func injectBinaryPayload(
+	localFile LocalFile,
+	lineStr string,
+	stdin io.WriteCloser,
+	stdout io.ReadCloser,
+) error {
+	fileReader, err := getFileReader(localFile, lineStr)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = fileReader.Close() }()
+
+	if err := injectBinary(fileReader, stdin, stdout); err != nil {
+		return err
+	}
+	_ = stdout.Close()
+	return nil
+}
+
+type pipeStreamsParams struct {
+	stdin         io.WriteCloser
+	stdinOut      io.Reader
+	stdoutOut     io.Writer
+	stdout        io.ReadCloser
+	delayedStderr *delayedWriter
+}
+
+func pipeStreams(p pipeStreamsParams) (bool, error) {
+	stdoutOut := p.stdoutOut
+	stdinOut := p.stdinOut
 	if stdoutOut == nil {
 		stdoutOut = io.Discard
 	}
@@ -248,10 +330,10 @@ func inject(
 	}
 
 	// now pipe reader into stdout
-	delayedStderr.Start()
+	p.delayedStderr.Start()
 	return true, pipe(
-		stdin, stdinOut,
-		stdoutOut, stdout,
+		p.stdin, stdinOut,
+		stdoutOut, p.stdout,
 	)
 }
 

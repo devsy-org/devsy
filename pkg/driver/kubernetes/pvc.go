@@ -55,33 +55,13 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 	if k.options.StorageClass != "" {
 		storageClassName = &k.options.StorageClass
 	}
-	accessMode := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-	if k.options.PvcAccessMode != "" {
-		switch k.options.PvcAccessMode {
-		case "RWO":
-			accessMode = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-		case "ROX":
-			accessMode = []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
-		case "RWX":
-			accessMode = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
-		case "RWOP":
-			accessMode = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod}
-		default:
-			accessMode = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-		}
-	}
+	accessMode := resolveAccessMode(k.options.PvcAccessMode)
 
 	labels := map[string]string{}
 	maps.Copy(labels, ExtraDevsyLabels)
 	maps.Copy(labels, pkgconfig.K8sVolumeLabels(options.UID, pkgconfig.VolumeRoleWorkspace))
 
-	annotations := map[string]string{}
-	annotations[DevsyInfoAnnotation] = containerInfo
-	extraAnnotations, err := parseLabels(k.options.PvcAnnotations)
-	if err != nil {
-		log.Errorf("Failed to parse annotations from PVC_ANNOTATIONS option: %v", err)
-	}
-	maps.Copy(annotations, extraAnnotations)
+	annotations := k.buildPvcAnnotations(containerInfo)
 
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -103,6 +83,31 @@ func (k *KubernetesDriver) buildPersistentVolumeClaim(
 			StorageClassName: storageClassName,
 		},
 	}, nil
+}
+
+func resolveAccessMode(mode string) []corev1.PersistentVolumeAccessMode {
+	switch mode {
+	case "ROX":
+		return []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
+	case "RWX":
+		return []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
+	case "RWOP":
+		return []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod}
+	default:
+		return []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+	}
+}
+
+func (k *KubernetesDriver) buildPvcAnnotations(containerInfo string) map[string]string {
+	annotations := map[string]string{}
+	annotations[DevsyInfoAnnotation] = containerInfo
+	extraAnnotations, err := parseLabels(k.options.PvcAnnotations)
+	if err != nil {
+		log.Errorf("Failed to parse annotations from PVC_ANNOTATIONS option: %v", err)
+	}
+	maps.Copy(annotations, extraAnnotations)
+
+	return annotations
 }
 
 func (k *KubernetesDriver) getDevContainerInformation(

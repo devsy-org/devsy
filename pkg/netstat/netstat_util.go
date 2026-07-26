@@ -121,42 +121,54 @@ func parseSocktab(r io.Reader, accept AcceptFn) ([]SockTabEntry, error) {
 	br.Scan()
 
 	for br.Scan() {
-		var e SockTabEntry
-		line := br.Text()
-		// Skip comments
-		if i := strings.Index(line, "#"); i >= 0 {
-			line = line[:i]
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 12 {
-			return nil, fmt.Errorf("netstat: not enough fields: %v, %v", len(fields), fields)
-		}
-		addr, err := parseAddr(fields[1])
+		e, err := parseSockTabLine(br.Text())
 		if err != nil {
 			return nil, err
 		}
-		e.LocalAddr = addr
-		addr, err = parseAddr(fields[2])
-		if err != nil {
-			return nil, err
-		}
-		e.RemoteAddr = addr
-		u, err := strconv.ParseUint(fields[3], 16, 8)
-		if err != nil {
-			return nil, err
-		}
-		e.State = SkState(u)
-		u, err = strconv.ParseUint(fields[7], 10, 32)
-		if err != nil {
-			return nil, err
-		}
-		e.UID = uint32(u)
-		e.ino = fields[9]
 		if accept(&e) {
 			tab = append(tab, e)
 		}
 	}
 	return tab, br.Err()
+}
+
+func parseSockTabLine(line string) (SockTabEntry, error) {
+	var e SockTabEntry
+	// Skip comments
+	if i := strings.Index(line, "#"); i >= 0 {
+		line = line[:i]
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 12 {
+		return e, fmt.Errorf("netstat: not enough fields: %v, %v", len(fields), fields)
+	}
+
+	localAddr, err := parseAddr(fields[1])
+	if err != nil {
+		return e, err
+	}
+	e.LocalAddr = localAddr
+
+	remoteAddr, err := parseAddr(fields[2])
+	if err != nil {
+		return e, err
+	}
+	e.RemoteAddr = remoteAddr
+
+	state, err := strconv.ParseUint(fields[3], 16, 8)
+	if err != nil {
+		return e, err
+	}
+	e.State = SkState(state)
+
+	uid, err := strconv.ParseUint(fields[7], 10, 32)
+	if err != nil {
+		return e, err
+	}
+	e.UID = uint32(uid)
+	e.ino = fields[9]
+
+	return e, nil
 }
 
 type procFd struct {
@@ -199,29 +211,46 @@ func (p *procFd) iterFdDir() {
 			continue
 		}
 
-		for i := range p.sktab {
-			sk := &p.sktab[i]
-			ss := sockPrefix + sk.ino + "]"
-			if ss != lname {
-				continue
-			}
-			if p.p == nil {
-				stat, err := os.Open(path.Join(p.base, "stat"))
-				if err != nil {
-					return
-				}
-				n, err := stat.Read(buf[:])
-				_ = stat.Close()
-				if err != nil {
-					return
-				}
-				z := bytes.SplitN(buf[:n], []byte(" "), 3)
-				name := getProcName(z[1])
-				p.p = &Process{p.pid, name}
-			}
-			sk.Process = p.p
+		if err := p.assignSocketProcess(lname, buf[:]); err != nil {
+			return
 		}
 	}
+}
+
+func (p *procFd) assignSocketProcess(lname string, buf []byte) error {
+	for i := range p.sktab {
+		sk := &p.sktab[i]
+		if sockPrefix+sk.ino+"]" != lname {
+			continue
+		}
+		if err := p.ensureProcess(buf); err != nil {
+			return err
+		}
+		sk.Process = p.p
+	}
+	return nil
+}
+
+func (p *procFd) ensureProcess(buf []byte) error {
+	if p.p != nil {
+		return nil
+	}
+
+	stat, err := os.Open(path.Join(p.base, "stat"))
+	if err != nil {
+		return err
+	}
+	n, err := stat.Read(buf)
+	_ = stat.Close()
+	if err != nil {
+		return err
+	}
+	z := bytes.SplitN(buf[:n], []byte(" "), 3)
+	if len(z) < 2 {
+		return fmt.Errorf("unexpected /proc/%d/stat format", p.pid)
+	}
+	p.p = &Process{p.pid, getProcName(z[1])}
+	return nil
 }
 
 func extractProcInfo(sktab []SockTabEntry) {

@@ -276,12 +276,7 @@ func (r *runner) resolveNewContainer(
 
 	r.injectDaemonEntrypoint(p, mergedConfig)
 
-	runOptions, err := r.buildRunOptionsForDelivery(mergedConfig, p.substitutionContext, buildInfo)
-	if err == nil {
-		if preStartErr := r.deliverPreStart(ctx, runOptions); preStartErr != nil {
-			log.Debugf("pre-start delivery skipped or failed, will use post-start: %v", preStartErr)
-		}
-	}
+	r.attemptPreStartDelivery(ctx, mergedConfig, p, buildInfo)
 
 	if seedErr := r.seedWorkspaceVolume(ctx, p); seedErr != nil {
 		return nil, fmt.Errorf("seed workspace volume: %w", seedErr)
@@ -306,6 +301,23 @@ func (r *runner) resolveNewContainer(
 		mergedConfig: mergedConfig,
 		hostWarnings: hostWarnings,
 	}, nil
+}
+
+// attemptPreStartDelivery builds run options and attempts pre-start agent
+// delivery. Failures are non-fatal: the caller falls back to post-start.
+func (r *runner) attemptPreStartDelivery(
+	ctx context.Context,
+	mergedConfig *config.MergedDevContainerConfig,
+	p *resolveParams,
+	buildInfo *config.BuildInfo,
+) {
+	runOptions, err := r.buildRunOptionsForDelivery(mergedConfig, p.substitutionContext, buildInfo)
+	if err != nil {
+		return
+	}
+	if preStartErr := r.deliverPreStart(ctx, runOptions); preStartErr != nil {
+		log.Debugf("pre-start delivery skipped or failed, will use post-start: %v", preStartErr)
+	}
 }
 
 func (r *runner) lingerWarning(ctx context.Context) string {
@@ -817,14 +829,7 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 
 	env[DevsyExtraEnvVar] = stringTrue
 	env[RemoteContainersExtraEnvVar] = stringTrue
-	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
-		r.workspaceConfig.Workspace.ID != "" {
-		env[pkgconfig.EnvWorkspaceID] = r.workspaceConfig.Workspace.ID
-	}
-	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
-		r.workspaceConfig.Workspace.UID != "" {
-		env[pkgconfig.EnvWorkspaceUID] = r.workspaceConfig.Workspace.UID
-	}
+	r.addWorkspaceEnvVars(env)
 
 	if os.Getenv(pkgconfig.EnvDisableTelemetry) == pkgconfig.BoolTrue {
 		env[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
@@ -833,6 +838,18 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 	}
 
 	return env
+}
+
+func (r *runner) addWorkspaceEnvVars(env map[string]string) {
+	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
+		return
+	}
+	if r.workspaceConfig.Workspace.ID != "" {
+		env[pkgconfig.EnvWorkspaceID] = r.workspaceConfig.Workspace.ID
+	}
+	if r.workspaceConfig.Workspace.UID != "" {
+		env[pkgconfig.EnvWorkspaceUID] = r.workspaceConfig.Workspace.UID
+	}
 }
 
 func GetStartScript(mergedConfig *config.MergedDevContainerConfig) string {

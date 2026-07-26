@@ -67,40 +67,50 @@ func CombineOptions(
 
 func ToOptionsWorkspace(workspace *Workspace) map[string]string {
 	retVars := map[string]string{}
-	if workspace != nil {
-		if workspace.ID != "" {
-			retVars[config.EnvProviderWorkspaceID] = workspace.ID
-		}
-		if workspace.UID != "" {
-			retVars[config.EnvProviderWorkspaceUID] = workspace.UID
-		}
-		workspaceFolder, _ := GetWorkspaceDir(workspace.Context, workspace.ID)
-		retVars[config.EnvProviderWorkspaceFolder] = filepath.ToSlash(workspaceFolder)
-		if workspace.Context != "" {
-			retVars[config.EnvProviderWorkspaceContext] = workspace.Context
-			retVars[config.EnvProviderMachineContext] = workspace.Context
-		}
-		if workspace.Origin != "" {
-			retVars[config.EnvProviderWorkspaceOrigin] = filepath.ToSlash(workspace.Origin)
-		}
-		if workspace.Picture != "" {
-			retVars[config.EnvProviderWorkspacePicture] = workspace.Picture
-		}
-		retVars[config.EnvProviderWorkspaceSource] = workspace.Source.String()
-		if workspace.Provider.Name != "" {
-			retVars[config.EnvProviderWorkspaceProvider] = workspace.Provider.Name
-		}
-		if workspace.Machine.ID != "" {
-			retVars[config.EnvProviderMachineID] = workspace.Machine.ID
-			machineDir, _ := GetMachineDir(workspace.Context, workspace.Machine.ID)
-			retVars[config.EnvProviderMachineFolder] = filepath.ToSlash(machineDir)
-		}
-		if workspace.Pro != nil && workspace.Pro.Project != "" {
-			retVars[config.EnvLoftProject] = workspace.Pro.Project
-		}
-		maps.Copy(retVars, GetBaseEnvironment(workspace.Context, workspace.Provider.Name))
+	if workspace == nil {
+		return retVars
 	}
+
+	addWorkspaceIdentityEnv(retVars, workspace)
+	addWorkspaceMachineEnv(retVars, workspace)
+	if workspace.Pro != nil && workspace.Pro.Project != "" {
+		retVars[config.EnvLoftProject] = workspace.Pro.Project
+	}
+	maps.Copy(retVars, GetBaseEnvironment(workspace.Context, workspace.Provider.Name))
 	return retVars
+}
+
+func addWorkspaceIdentityEnv(retVars map[string]string, workspace *Workspace) {
+	if workspace.ID != "" {
+		retVars[config.EnvProviderWorkspaceID] = workspace.ID
+	}
+	if workspace.UID != "" {
+		retVars[config.EnvProviderWorkspaceUID] = workspace.UID
+	}
+	workspaceFolder, _ := GetWorkspaceDir(workspace.Context, workspace.ID)
+	retVars[config.EnvProviderWorkspaceFolder] = filepath.ToSlash(workspaceFolder)
+	if workspace.Context != "" {
+		retVars[config.EnvProviderWorkspaceContext] = workspace.Context
+		retVars[config.EnvProviderMachineContext] = workspace.Context
+	}
+	if workspace.Origin != "" {
+		retVars[config.EnvProviderWorkspaceOrigin] = filepath.ToSlash(workspace.Origin)
+	}
+	if workspace.Picture != "" {
+		retVars[config.EnvProviderWorkspacePicture] = workspace.Picture
+	}
+	retVars[config.EnvProviderWorkspaceSource] = workspace.Source.String()
+}
+
+func addWorkspaceMachineEnv(retVars map[string]string, workspace *Workspace) {
+	if workspace.Provider.Name != "" {
+		retVars[config.EnvProviderWorkspaceProvider] = workspace.Provider.Name
+	}
+	if workspace.Machine.ID != "" {
+		retVars[config.EnvProviderMachineID] = workspace.Machine.ID
+		machineDir, _ := GetMachineDir(workspace.Context, workspace.Machine.ID)
+		retVars[config.EnvProviderMachineFolder] = filepath.ToSlash(machineDir)
+	}
 }
 
 func ToOptionsMachine(machine *Machine) map[string]string {

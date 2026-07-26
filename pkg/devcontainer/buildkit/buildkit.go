@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/docker/cli/cli/config/configfile"
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -23,41 +24,37 @@ func Build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
+	solveOptions, err := buildkitSolveOpt(platform, options)
+	if err != nil {
+		return err
+	}
+
+	pw, err := NewPrinter(ctx, writer)
+	if err != nil {
+		return err
+	}
+
+	// build
+	_, err = client.Solve(ctx, nil, solveOptions, pw.Status())
+	return err
+}
+
+func buildkitSolveOpt(platform string, options *build.BuildOptions) (buildkit.SolveOpt, error) {
 	dockerConfig, err := docker.LoadDockerConfig()
 	if err != nil {
-		return err
+		return buildkit.SolveOpt{}, err
 	}
 
-	// cache from
-	cacheFrom, err := ParseCacheEntry(options.CacheFrom)
+	cacheFrom, cacheTo, err := setupCache(options)
 	if err != nil {
-		return err
+		return buildkit.SolveOpt{}, err
 	}
-	cacheTo, err := ParseCacheEntry(options.CacheTo)
+
+	attachable, err := buildkitAttachables(dockerConfig, options)
 	if err != nil {
-		return err
+		return buildkit.SolveOpt{}, err
 	}
 
-	// is context stream?
-	attachable := []session.Attachable{}
-	attachable = append(
-		attachable,
-		authprovider.NewDockerAuthProvider(
-			authprovider.DockerAuthProviderConfig{
-				AuthConfigProvider: authprovider.LoadAuthConfig(dockerConfig),
-			},
-		),
-	)
-
-	secretsAttachable, err := buildSecretsAttachable(options.BuildSecrets)
-	if err != nil {
-		return err
-	}
-	if secretsAttachable != nil {
-		attachable = append(attachable, secretsAttachable)
-	}
-
-	// create solve options
 	solveOptions := buildkit.SolveOpt{
 		Frontend: "dockerfile.v0",
 		FrontendAttrs: map[string]string{
@@ -67,6 +64,7 @@ func Build(
 		Session:      attachable,
 		CacheImports: cacheFrom,
 		CacheExports: cacheTo,
+		LocalMounts:  map[string]fsutil.FS{},
 	}
 
 	// set options target
@@ -79,8 +77,46 @@ func Build(
 		solveOptions.FrontendAttrs["platform"] = platform
 	}
 
-	// add context and dockerfile to local mounts
-	solveOptions.LocalMounts = map[string]fsutil.FS{}
+	if err := buildkitLocalMounts(&solveOptions, options); err != nil {
+		return buildkit.SolveOpt{}, err
+	}
+	if err := buildkitMultiContexts(&solveOptions, options); err != nil {
+		return buildkit.SolveOpt{}, err
+	}
+
+	buildkitExports(&solveOptions, options)
+	buildkitFrontendExtras(&solveOptions, options)
+
+	// add additional build cli options
+	// TODO: convert options.CliOpts into a solveOptions.FrontendAttr
+
+	return solveOptions, nil
+}
+
+func buildkitAttachables(
+	dockerConfig *configfile.ConfigFile,
+	options *build.BuildOptions,
+) ([]session.Attachable, error) {
+	attachable := []session.Attachable{
+		authprovider.NewDockerAuthProvider(
+			authprovider.DockerAuthProviderConfig{
+				AuthConfigProvider: authprovider.LoadAuthConfig(dockerConfig),
+			},
+		),
+	}
+
+	secretsAttachable, err := buildSecretsAttachable(options.BuildSecrets)
+	if err != nil {
+		return nil, err
+	}
+	if secretsAttachable != nil {
+		attachable = append(attachable, secretsAttachable)
+	}
+
+	return attachable, nil
+}
+
+func buildkitLocalMounts(solveOptions *buildkit.SolveOpt, options *build.BuildOptions) error {
 	contextFS, err := fsutil.NewFS(options.Context)
 	if err != nil {
 		return fmt.Errorf("failed to create build context fs: %w", err)
@@ -91,8 +127,10 @@ func Build(
 		return fmt.Errorf("failed to create dockerfile fs: %w", err)
 	}
 	solveOptions.LocalMounts["dockerfile"] = dockerfileFS
+	return nil
+}
 
-	// multi contexts
+func buildkitMultiContexts(solveOptions *buildkit.SolveOpt, options *build.BuildOptions) error {
 	for k, v := range options.Contexts {
 		st, err := os.Stat(v)
 		if err != nil {
@@ -112,7 +150,10 @@ func Build(
 		solveOptions.LocalMounts[localName] = contextMountFS
 		solveOptions.FrontendAttrs["context:"+k] = "local:" + localName
 	}
+	return nil
+}
 
+func buildkitExports(solveOptions *buildkit.SolveOpt, options *build.BuildOptions) {
 	// load?
 	if options.Load {
 		solveOptions.Exports = append(solveOptions.Exports, buildkit.ExportEntry{
@@ -131,7 +172,9 @@ func Build(
 			},
 		})
 	}
+}
 
+func buildkitFrontendExtras(solveOptions *buildkit.SolveOpt, options *build.BuildOptions) {
 	// add labels
 	for k, v := range options.Labels {
 		solveOptions.FrontendAttrs["label:"+k] = v
@@ -141,20 +184,4 @@ func Build(
 	for key, value := range options.BuildArgs {
 		solveOptions.FrontendAttrs["build-arg:"+key] = value
 	}
-
-	// add additional build cli options
-	// TODO: convert options.CliOpts into a solveOptions.FrontendAttr
-
-	pw, err := NewPrinter(ctx, writer)
-	if err != nil {
-		return err
-	}
-
-	// build
-	_, err = client.Solve(ctx, nil, solveOptions, pw.Status())
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

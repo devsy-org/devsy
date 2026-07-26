@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -44,42 +45,12 @@ func RunCredentialsServer(
 	port int,
 	client CredentialsClient,
 ) error {
-	var handler http.Handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		log.Debugf("incoming client connection: path=%s", request.URL.Path)
-		switch request.URL.Path {
-		case "/git-credentials":
-			err := handleGitCredentialsRequest(ctx, writer, request, client)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		case "/docker-credentials":
-			err := handleDockerCredentialsRequest(ctx, writer, request, client)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		case "/git-ssh-signature":
-			err := handleGitSSHSignatureRequest(ctx, writer, request, client)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		case "/devsy-platform-credentials":
-			err := handleDevsyPlatformCredentialsRequest(ctx, writer, request, client)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-			}
-		case "/gpg-public-keys":
-			err := handleGPGPublicKeysRequest(ctx, writer, client)
-			if err != nil {
-				http.Error(writer, err.Error(), http.StatusInternalServerError)
-			}
-		}
-	})
-
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
-	srv := &http.Server{Addr: addr, Handler: handler}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           newCredentialsHandler(ctx, client),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	errChan := make(chan error, 1)
 	go func() {
@@ -100,6 +71,36 @@ func RunCredentialsServer(
 		_ = srv.Close()
 		return nil
 	}
+}
+
+type credentialsHandlerFunc func(
+	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
+) error
+
+func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
+	routes := map[string]credentialsHandlerFunc{
+		"/git-credentials":            handleGitCredentialsRequest,
+		"/docker-credentials":         handleDockerCredentialsRequest,
+		"/git-ssh-signature":          handleGitSSHSignatureRequest,
+		"/devsy-platform-credentials": handleDevsyPlatformCredentialsRequest,
+		"/gpg-public-keys": func(
+			ctx context.Context, writer http.ResponseWriter, _ *http.Request, client CredentialsClient,
+		) error {
+			return handleGPGPublicKeysRequest(ctx, writer, client)
+		},
+	}
+
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		log.Debugf("incoming client connection: path=%s", request.URL.Path)
+		handler, ok := routes[request.URL.Path]
+		if !ok {
+			http.NotFound(writer, request)
+			return
+		}
+		if err := handler(ctx, writer, request, client); err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+		}
+	})
 }
 
 func GetPort() (int, error) {

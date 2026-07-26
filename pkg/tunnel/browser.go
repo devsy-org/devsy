@@ -153,32 +153,6 @@ func SetupBackhaul(
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	buildCmd := func() *exec.Cmd {
-		//nolint:gosec // execPath is the current binary, arguments are controlled
-		cmd := exec.CommandContext(ctx,
-			execPath,
-			"workspace",
-			"ssh",
-			names.FlagTrue(names.AgentForwarding),
-			names.FlagValue(names.ReuseSSHAuthSock, authSockID),
-			names.FlagFalse(names.StartServices),
-			names.Flag(names.User),
-			remoteUser,
-			names.Flag(names.Context),
-			client.Context(),
-			client.Workspace(),
-			names.FlagValue(names.LogOutput, "raw"),
-			names.Flag(names.Command),
-			"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
-		)
-		if log.DebugEnabled() {
-			cmd.Args = append(cmd.Args, names.Flag(names.Debug))
-		}
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		return cmd
-	}
-
 	// 5 steps × 200ms ≈ 1s covers the workspace.json atomic-rename window
 	// observed during a concurrent `agent workspace up` rewrite.
 	backoff := wait.Backoff{
@@ -189,7 +163,13 @@ func SetupBackhaul(
 
 	var lastErr error
 	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
-		cmd := buildCmd()
+		cmd := buildBackhaulCmd(ctx, backhaulCmdParams{
+			execPath:   execPath,
+			remoteUser: remoteUser,
+			client:     client,
+			authSockID: authSockID,
+			writer:     writer,
+		})
 		lastErr = cmd.Run()
 		if lastErr == nil {
 			return true, nil
@@ -203,6 +183,44 @@ func SetupBackhaul(
 		log.Infof("Done setting up backhaul")
 		return nil
 	}
+	return interpretBackhaulResult(err, lastErr)
+}
+
+type backhaulCmdParams struct {
+	execPath   string
+	remoteUser string
+	client     client2.BaseWorkspaceClient
+	authSockID string
+	writer     io.Writer
+}
+
+func buildBackhaulCmd(ctx context.Context, p backhaulCmdParams) *exec.Cmd {
+	//nolint:gosec // execPath is the current binary, arguments are controlled
+	cmd := exec.CommandContext(ctx,
+		p.execPath,
+		"workspace",
+		"ssh",
+		names.FlagTrue(names.AgentForwarding),
+		names.FlagValue(names.ReuseSSHAuthSock, p.authSockID),
+		names.FlagFalse(names.StartServices),
+		names.Flag(names.User),
+		p.remoteUser,
+		names.Flag(names.Context),
+		p.client.Context(),
+		p.client.Workspace(),
+		names.FlagValue(names.LogOutput, "raw"),
+		names.Flag(names.Command),
+		"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
+	)
+	if log.DebugEnabled() {
+		cmd.Args = append(cmd.Args, names.Flag(names.Debug))
+	}
+	cmd.Stdout = p.writer
+	cmd.Stderr = p.writer
+	return cmd
+}
+
+func interpretBackhaulResult(err, lastErr error) error {
 	if wait.Interrupted(err) {
 		// Either retries exhausted or ctx cancelled; surface the underlying
 		// subprocess error if one is available, else the wait error.

@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const parameterTypeBoolean = "boolean"
+
 func CreateInstance(
 	ctx context.Context,
 	baseClient client.Client,
@@ -135,20 +137,10 @@ func UpdateInstance(
 	if err != nil {
 		return nil, err
 	}
-	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
-	templateOptions := []TemplateOption{}
-	for _, template := range projectTemplates.DevsyWorkspaceTemplates {
-		t := &template
-		templateOptions = append(templateOptions, huh.Option[*managementv1.DevsyWorkspaceTemplate]{
-			Key:   platform.DisplayName(template.GetName(), template.Spec.DisplayName),
-			Value: t,
-		})
-
-		if instance.Spec.TemplateRef != nil &&
-			instance.Spec.TemplateRef.Name == template.GetName() {
-			selectedTemplate = t
-		}
-	}
+	templateOptions, selectedTemplate := templateOptionsForInstance(
+		projectTemplates.DevsyWorkspaceTemplates,
+		instance,
+	)
 	if selectedTemplate == nil {
 		return nil, fmt.Errorf("template not found: %#v", instance.Spec.TemplateRef)
 	}
@@ -177,81 +169,177 @@ func UpdateInstance(
 		return nil, err
 	}
 
-	parameters := selectedTemplate.Spec.Parameters
-	if len(selectedTemplate.GetVersions()) > 0 {
-		parameters, err = list.GetTemplateParameters(selectedTemplate, selectedTemplateVersion)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	renderedParameters := ""
-	if len(parameters) > 0 {
-		tRef := instance.Spec.TemplateRef
-		var existingParameters map[string]any
-		if tRef != nil && tRef.Name == selectedTemplate.GetName() &&
-			tRef.Version == selectedTemplateVersion {
-			existingParameters = map[string]any{}
-			err = yaml.Unmarshal([]byte(instance.Spec.Parameters), &existingParameters)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		fieldParameters := []*FieldParameter{}
-		// reuse existing parameters as starting point
-		for _, p := range parameters {
-			var value any = p.DefaultValue
-			if existingParameters != nil {
-				value = getDeepValue(existingParameters, p.Variable)
-			}
-			fieldParameter := FieldParameter{AppParameter: p}
-
-			if p.Type == "boolean" && value != nil {
-				v, err := strconv.ParseBool(value.(string))
-				if err == nil {
-					fieldParameter.BoolValue = v
-				}
-			} else {
-				if value != nil {
-					fieldParameter.StringValue = value.(string)
-				} else {
-					fieldParameter.StringValue = p.DefaultValue
-				}
-			}
-			fieldParameters = append(fieldParameters, &fieldParameter)
-		}
-
-		err = huh.NewForm(
-			huh.NewGroup(parameterFields(fieldParameters)...),
-		).RunWithContext(formCtx)
-		if err != nil {
-			return nil, err
-		}
-
-		renderedParameters, err = renderParameters(fieldParameters)
-		if err != nil {
-			return nil, err
-		}
+	renderedParameters, err := renderedParametersForUpdate(
+		formCtx,
+		instance,
+		selectedTemplate,
+		selectedTemplateVersion,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	newInstance := instance.DeepCopy()
+	applyInstanceChanges(applyInstanceChangesParams{
+		instance:                instance,
+		newInstance:             newInstance,
+		selectedTemplate:        selectedTemplate,
+		selectedTemplateVersion: selectedTemplateVersion,
+		renderedParameters:      renderedParameters,
+	})
+
+	return newInstance, nil
+}
+
+func templateOptionsForInstance(
+	templates []managementv1.DevsyWorkspaceTemplate,
+	instance *managementv1.DevsyWorkspaceInstance,
+) ([]TemplateOption, *managementv1.DevsyWorkspaceTemplate) {
+	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
+	templateOptions := []TemplateOption{}
+	for _, template := range templates {
+		t := &template
+		templateOptions = append(templateOptions, huh.Option[*managementv1.DevsyWorkspaceTemplate]{
+			Key:   platform.DisplayName(template.GetName(), template.Spec.DisplayName),
+			Value: t,
+		})
+
+		if instance.Spec.TemplateRef != nil &&
+			instance.Spec.TemplateRef.Name == template.GetName() {
+			selectedTemplate = t
+		}
+	}
+
+	return templateOptions, selectedTemplate
+}
+
+func renderedParametersForUpdate(
+	formCtx context.Context,
+	instance *managementv1.DevsyWorkspaceInstance,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion string,
+) (string, error) {
+	parameters := selectedTemplate.Spec.Parameters
+	if len(selectedTemplate.GetVersions()) > 0 {
+		var err error
+		parameters, err = list.GetTemplateParameters(selectedTemplate, selectedTemplateVersion)
+		if err != nil {
+			return "", err
+		}
+	}
+	if len(parameters) == 0 {
+		return "", nil
+	}
+
+	fieldParameters, err := buildFieldParameters(
+		parameters,
+		instance,
+		selectedTemplate,
+		selectedTemplateVersion,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	err = huh.NewForm(
+		huh.NewGroup(parameterFields(fieldParameters)...),
+	).RunWithContext(formCtx)
+	if err != nil {
+		return "", err
+	}
+
+	return renderParameters(fieldParameters)
+}
+
+func buildFieldParameters(
+	parameters []storagev1.AppParameter,
+	instance *managementv1.DevsyWorkspaceInstance,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion string,
+) ([]*FieldParameter, error) {
+	tRef := instance.Spec.TemplateRef
+	var existingParameters map[string]any
+	if tRef != nil && tRef.Name == selectedTemplate.GetName() &&
+		tRef.Version == selectedTemplateVersion {
+		existingParameters = map[string]any{}
+		if err := yaml.Unmarshal(
+			[]byte(instance.Spec.Parameters),
+			&existingParameters,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	fieldParameters := []*FieldParameter{}
+	// reuse existing parameters as starting point
+	for _, p := range parameters {
+		var value any = p.DefaultValue
+		if existingParameters != nil {
+			value = getDeepValue(existingParameters, p.Variable)
+		}
+		fieldParameter := FieldParameter{AppParameter: p}
+		assignFieldValue(&fieldParameter, value)
+		fieldParameters = append(fieldParameters, &fieldParameter)
+	}
+
+	return fieldParameters, nil
+}
+
+func assignFieldValue(fieldParameter *FieldParameter, value any) {
+	if fieldParameter.Type == parameterTypeBoolean {
+		assignBoolFieldValue(fieldParameter, value)
+		return
+	}
+
+	if s, ok := value.(string); ok {
+		fieldParameter.StringValue = s
+	} else if value != nil {
+		fieldParameter.StringValue = fmt.Sprintf("%v", value)
+	} else {
+		fieldParameter.StringValue = fieldParameter.DefaultValue
+	}
+}
+
+func assignBoolFieldValue(fieldParameter *FieldParameter, value any) {
+	switch v := value.(type) {
+	case bool:
+		fieldParameter.BoolValue = v
+	case string:
+		if b, err := strconv.ParseBool(v); err == nil {
+			fieldParameter.BoolValue = b
+		}
+	default:
+		if b, err := strconv.ParseBool(fieldParameter.DefaultValue); err == nil {
+			fieldParameter.BoolValue = b
+		}
+	}
+}
+
+type applyInstanceChangesParams struct {
+	instance                *managementv1.DevsyWorkspaceInstance
+	newInstance             *managementv1.DevsyWorkspaceInstance
+	selectedTemplate        *managementv1.DevsyWorkspaceTemplate
+	selectedTemplateVersion string
+	renderedParameters      string
+}
+
+func applyInstanceChanges(params applyInstanceChangesParams) {
+	instance := params.instance
+	newInstance := params.newInstance
 	// template
 	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Name != selectedTemplate.GetName() {
-		newInstance.Spec.TemplateRef.Name = selectedTemplate.GetName()
+		instance.Spec.TemplateRef.Name != params.selectedTemplate.GetName() {
+		newInstance.Spec.TemplateRef.Name = params.selectedTemplate.GetName()
 	}
 	// version
 	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Version != selectedTemplateVersion {
-		newInstance.Spec.TemplateRef.Version = selectedTemplateVersion
+		instance.Spec.TemplateRef.Version != params.selectedTemplateVersion {
+		newInstance.Spec.TemplateRef.Version = params.selectedTemplateVersion
 	}
 	// parameters
-	if instance.Spec.Parameters != renderedParameters {
-		newInstance.Spec.Parameters = renderedParameters
+	if instance.Spec.Parameters != params.renderedParameters {
+		newInstance.Spec.Parameters = params.renderedParameters
 	}
-
-	return newInstance, nil
 }
 
 type (
@@ -380,7 +468,7 @@ func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	retParams := []*FieldParameter{}
 	for _, p := range parameters {
 		fieldParameter := FieldParameter{AppParameter: p}
-		if p.Type == "boolean" {
+		if p.Type == parameterTypeBoolean {
 			v, err := strconv.ParseBool(p.DefaultValue)
 			if err == nil {
 				fieldParameter.BoolValue = v
@@ -410,55 +498,58 @@ func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
 				Title(title).
 				Description(param.Description).
 				Value(&param.StringValue)
-		case "password":
-			fallthrough
-		case "number":
-			fallthrough
-		case "string":
-			// display a select field if param has options
-			if len(param.Options) > 0 {
-				opts := []huh.Option[string]{}
-				for _, o := range param.Options {
-					huhOption := huh.Option[string]{
-						Key:   o,
-						Value: o,
-					}
-					if o == param.DefaultValue {
-						huhOption = huhOption.Selected(true)
-					}
-					opts = append(opts, huhOption)
-				}
-				field = huh.NewSelect[string]().
-					Title(title).
-					Options(opts...).
-					Value(&param.StringValue)
-			} else {
-				input := huh.NewInput().Title(title).
-					Description(param.Description).
-					Value(&param.StringValue)
-
-				if param.Type == "password" {
-					input.EchoMode(huh.EchoModePassword)
-				}
-				if param.Type == "number" {
-					input.Validate(func(s string) error {
-						_, err := strconv.ParseFloat(s, 64)
-						return err
-					})
-				}
-				field = input
-			}
-		case "boolean":
+		case "password", "number", "string":
+			field = stringParameterField(param, title)
+		case parameterTypeBoolean:
 			field = huh.NewConfirm().
 				Title(title).
 				Description(param.Description).
 				Value(&param.BoolValue)
+		default:
+			field = stringParameterField(param, title)
 		}
 
 		fields = append(fields, field)
 	}
 
 	return fields
+}
+
+func stringParameterField(param *FieldParameter, title string) huh.Field {
+	// display a select field if param has options
+	if len(param.Options) > 0 {
+		opts := []huh.Option[string]{}
+		for _, o := range param.Options {
+			huhOption := huh.Option[string]{
+				Key:   o,
+				Value: o,
+			}
+			if o == param.DefaultValue {
+				huhOption = huhOption.Selected(true)
+			}
+			opts = append(opts, huhOption)
+		}
+		return huh.NewSelect[string]().
+			Title(title).
+			Options(opts...).
+			Value(&param.StringValue)
+	}
+
+	input := huh.NewInput().Title(title).
+		Description(param.Description).
+		Value(&param.StringValue)
+
+	if param.Type == "password" {
+		input.EchoMode(huh.EchoModePassword)
+	}
+	if param.Type == "number" {
+		input.Validate(func(s string) error {
+			_, err := strconv.ParseFloat(s, 64)
+			return err
+		})
+	}
+
+	return input
 }
 
 func renderParameters(fieldParameters []*FieldParameter) (string, error) {
@@ -487,29 +578,37 @@ func getDeepValue(parameters any, path string) any {
 	pathSegments := strings.Split(path, ".")
 	switch t := parameters.(type) {
 	case map[string]any:
-		val, ok := t[pathSegments[0]]
-		if !ok {
-			return nil
-		} else if len(pathSegments) == 1 {
-			return val
-		}
-
-		return getDeepValue(val, strings.Join(pathSegments[1:], "."))
+		return getDeepValueFromMap(t, pathSegments)
 	case []any:
-		index, err := strconv.Atoi(pathSegments[0])
-		if err != nil {
-			return nil
-		} else if index < 0 || index >= len(t) {
-			return nil
-		}
-
-		val := t[index]
-		if len(pathSegments) == 1 {
-			return val
-		}
-
-		return getDeepValue(val, strings.Join(pathSegments[1:], "."))
+		return getDeepValueFromSlice(t, pathSegments)
 	}
 
 	return nil
+}
+
+func getDeepValueFromMap(t map[string]any, pathSegments []string) any {
+	val, ok := t[pathSegments[0]]
+	if !ok {
+		return nil
+	} else if len(pathSegments) == 1 {
+		return val
+	}
+
+	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
+}
+
+func getDeepValueFromSlice(t []any, pathSegments []string) any {
+	index, err := strconv.Atoi(pathSegments[0])
+	if err != nil {
+		return nil
+	} else if index < 0 || index >= len(t) {
+		return nil
+	}
+
+	val := t[index]
+	if len(pathSegments) == 1 {
+		return val
+	}
+
+	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
 }

@@ -87,10 +87,8 @@ func GetRemoteUser(result *Result) string {
 		return result.MergedConfig.RemoteUser
 	}
 
-	if result.ContainerDetails != nil && result.ContainerDetails.Config.Labels != nil {
-		if userLabel := result.ContainerDetails.Config.Labels[UserLabel]; userLabel != "" {
-			return userLabel
-		}
+	if userLabel := userFromContainerLabel(result); userLabel != "" {
+		return userLabel
 	}
 
 	if result.MergedConfig != nil && result.MergedConfig.ContainerUser != "" {
@@ -98,6 +96,13 @@ func GetRemoteUser(result *Result) string {
 	}
 
 	return "root"
+}
+
+func userFromContainerLabel(result *Result) string {
+	if result.ContainerDetails == nil || result.ContainerDetails.Config.Labels == nil {
+		return ""
+	}
+	return result.ContainerDetails.Config.Labels[UserLabel]
 }
 
 func GetDevsyCustomizations(parsedConfig *DevContainerConfig) *DevsyCustomizations {
