@@ -371,6 +371,78 @@ jobs:
           files: |
             ./Devsy.flatpak
 
+  publish-homebrew:
+    name: Publish Homebrew Formula
+    needs: [build-desktop]
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: download darwin CLI artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-darwin
+          path: ${{ runner.temp }}/devsy-bin/
+
+      - name: download linux CLI artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-linux
+          path: ${{ runner.temp }}/devsy-bin/
+
+      - name: flatten CLI artifacts
+        run: go run ./hack/release_artifacts inventory --dir "${{ runner.temp }}/devsy-bin" --flatten
+
+      - name: generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: homebrew-tap
+
+      - name: generate and push formula
+        env:
+          TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAP_REPO: ${{ github.repository_owner }}/homebrew-tap
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          BIN_DIR: ${{ runner.temp }}/devsy-bin
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::error::GitHub App token was not generated"
+            exit 1
+          fi
+
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          go run ./hack/homebrew_formula \
+            --bin-dir "$BIN_DIR" \
+            --repo "$REPO" \
+            --tag "$TAG" \
+            --out tap/Formula/devsy.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Formula unchanged; nothing to publish"
+            exit 0
+          fi
+          git add Formula/devsy.rb
+          git commit -m "devsy ${TAG}"
+          git push
+
   prerelease:
     name: Publish Prerelease
     needs: [build-desktop, build-flatpak, deploy-update-metadata]
