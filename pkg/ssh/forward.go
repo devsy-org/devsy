@@ -119,7 +119,9 @@ func portForwarding(
 	if client != nil {
 		transportClosed := make(chan struct{})
 		go func() {
-			_ = client.Wait()
+			if werr := client.Wait(); werr != nil {
+				log.Debugf("ssh transport closed on %s: %v", srcAddr, werr)
+			}
 			close(transportClosed)
 		}()
 		go func() {

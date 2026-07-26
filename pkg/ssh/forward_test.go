@@ -112,6 +112,7 @@ func startTestSSHServer(t *testing.T) (client *ssh.Client, kill func()) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	t.Cleanup(func() { _ = ln.Close() })
 
 	serverConnCh := make(chan net.Conn, 1)
 	go func() {
