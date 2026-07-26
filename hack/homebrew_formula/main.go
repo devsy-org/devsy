@@ -107,14 +107,21 @@ func render(binDir, repo, tag string) (string, error) {
 }
 
 func main() {
-	binDir := flag.String("bin-dir", "", "directory containing the devsy-<os>-<arch> release binaries")
+	binDir := flag.String(
+		"bin-dir",
+		"",
+		"directory containing the devsy-<os>-<arch> release binaries",
+	)
 	repo := flag.String("repo", "", "owner/repo the release assets are published under")
 	tag := flag.String("tag", "", "release tag (e.g. v1.2.3)")
 	out := flag.String("out", "", "path to write the generated formula")
 	flag.Parse()
 
 	if *binDir == "" || *repo == "" || *tag == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: homebrew_formula --bin-dir DIR --repo OWNER/REPO --tag TAG --out FILE")
+		fmt.Fprintln(
+			os.Stderr,
+			"usage: homebrew_formula --bin-dir DIR --repo OWNER/REPO --tag TAG --out FILE",
+		)
 		os.Exit(2)
 	}
 
@@ -123,7 +130,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(*out, []byte(formula), 0o644); err != nil { // #nosec G306 -- formula is public.
+	// #nosec G306 -- formula is public.
+	if err := os.WriteFile(*out, []byte(formula), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -11,7 +11,8 @@ func writeBinaries(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, p := range platforms {
-		if err := os.WriteFile(filepath.Join(dir, p.Binary), []byte("content-"+p.Binary), 0o644); err != nil {
+		path := filepath.Join(dir, p.Binary)
+		if err := os.WriteFile(path, []byte("content-"+p.Binary), 0o644); err != nil {
 			t.Fatalf("write %s: %v", p.Binary, err)
 		}
 	}
