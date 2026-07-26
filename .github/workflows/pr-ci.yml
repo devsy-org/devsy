@@ -118,6 +118,24 @@ jobs:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
+      - name: build e2e test binary
+        if: matrix.runner == 'ubuntu-22.04' || matrix.runner == 'windows-latest'
+        shell: bash
+        working-directory: ./e2e
+        run: |
+          OUT="e2e.test"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            OUT="e2e.test.exe"
+          fi
+          go test -c -o "$OUT" ./
+
+      - name: upload e2e test binary
+        if: matrix.runner == 'ubuntu-22.04' || matrix.runner == 'windows-latest'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          path: ./e2e/e2e.test*
+
   licenses:
     name: Third-party licenses
     needs: [changes, precommit, lint]
@@ -167,6 +185,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: get operating system lowercase
         id: os
@@ -182,6 +201,12 @@ jobs:
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
+      - name: download e2e test binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          path: ./e2e/
+
       - name: setup executable
         shell: bash
         working-directory: ./e2e
@@ -191,6 +216,7 @@ jobs:
           mkdir -p ./bin/
           find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
           find ./bin -name "devsy-*" -exec chmod +x {} \;
+          chmod +x ./e2e.test
           ls -R ./bin/
 
       - name: run test
@@ -201,7 +227,7 @@ jobs:
           GH_ACCESS_TOKEN: ${{ github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
         run: |
-          go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+          ./e2e.test -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
     name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
@@ -432,6 +458,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: install gnupg2
         if: runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -464,6 +491,13 @@ jobs:
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
+      - name: download e2e test binary
+        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          path: ./e2e/
+
       # e2e expects executable to have name defined in e2e/framework/framework.go
       - name: setup executable
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
@@ -479,6 +513,9 @@ jobs:
           mkdir -p ./bin/
           find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
           find ./bin -name "devsy-*" -exec chmod +x {} \;
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            chmod +x ./e2e.test
+          fi
           ls -R ./bin/
 
       - name: generate uuid
@@ -607,17 +644,15 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
               PATH="${PATH}" \
-              GOROOT="${GOROOT}" \
-              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+              ./e2e.test -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           else
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
-              GOROOT="${GOROOT}" \
               DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
-              go test -v -ginkgo.v -timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+              ./e2e.test.exe -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
       - name: verify docker is installed
