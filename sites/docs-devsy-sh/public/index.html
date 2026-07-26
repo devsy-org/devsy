@@ -1174,7 +1174,7 @@
                   <circle cx="11" cy="11" r="8" />
                 </svg>
               </div>
-              <h3>Dev Environment Audit</h3>
+              <h3>Dev environment audit</h3>
               <p>
                 A focused review of how your team onboards and runs
                 environments. You get a scored assessment, a ranked list of your
@@ -1261,18 +1261,18 @@
             <div class="form-row">
               <div class="field">
                 <label for="name">Name</label>
-                <input id="name" type="text" name="name" required />
+                <input id="name" type="text" name="name" autocomplete="name" required />
               </div>
               <div class="field">
                 <label for="email">Work email</label>
-                <input id="email" type="email" name="email" required />
+                <input id="email" type="email" name="email" autocomplete="email" required />
               </div>
             </div>
             <div class="field">
               <label for="company"
                 >Company <span class="optional">(optional)</span></label
               >
-              <input id="company" type="text" name="company" />
+              <input id="company" type="text" name="company" autocomplete="organization" />
             </div>
             <div class="field">
               <label for="message">How can we help?</label>
@@ -1374,6 +1374,13 @@
               menu.classList.remove("open");
               toggle.setAttribute("aria-expanded", "false");
             });
+          });
+          var desktop = window.matchMedia("(min-width: 992px)");
+          desktop.addEventListener("change", function (e) {
+            if (e.matches) {
+              menu.classList.remove("open");
+              toggle.setAttribute("aria-expanded", "false");
+            }
           });
         }
       })();
