@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/platform/annotations"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
@@ -25,66 +26,73 @@ func NewInstanceKubeConfig(
 	ctx context.Context,
 	platformOptions *devsy.PlatformOptions,
 ) ([]byte, error) {
-	if platformOptions == nil {
+	if platformOptions == nil || platformOptions.Kubernetes == nil {
 		return nil, nil
-	}
-	kube := platformOptions.Kubernetes
-	if kube == nil {
-		return nil, nil
-	}
-	accessKey := platformOptions.UserAccessKey
-	if accessKey == "" {
-		return nil, fmt.Errorf("user access key missing")
-	}
-	host := platformOptions.PlatformHost
-	if host == "" {
-		return nil, fmt.Errorf("platform host is missing")
-	}
-	if kube.SpaceName == "" && kube.VirtualClusterName == "" {
-		// nothing to do here
-		return nil, nil
-	}
-	if kube.SpaceName != "" && kube.VirtualClusterName != "" {
-		return nil, fmt.Errorf("cannot use virtual cluster and space instance together")
-	}
-	if kube.Namespace == "" {
-		return nil, fmt.Errorf("namespace missing")
 	}
 
+	skip, err := validateKubeConfigOptions(platformOptions)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
+		return nil, nil
+	}
+
+	k8sOpts := platformOptions.Kubernetes
 	baseClient := client.NewClientFromConfig(&client.Config{
-		AccessKey: accessKey,
-		Host:      "https://" + host,
+		AccessKey: platformOptions.UserAccessKey,
+		Host:      "https://" + platformOptions.PlatformHost,
 		Insecure:  true,
 	})
-	err := baseClient.RefreshSelf(ctx)
-	if err != nil {
+	if err := baseClient.RefreshSelf(ctx); err != nil {
 		return nil, fmt.Errorf("refresh self: %w", err)
 	}
 
-	var kubeConfig *clientcmdapi.Config
-	if kube.SpaceName != "" {
-		kubeConfig, err = kubeConfigForSpaceInstance(
-			ctx,
-			baseClient,
-			kube.SpaceName,
-			kube.Namespace,
-		)
-		if err != nil {
-			return nil, err
-		}
-	} else if kube.VirtualClusterName != "" {
-		kubeConfig, err = kubeConfigForVirtualClusterInstance(
-			ctx,
-			baseClient,
-			kube.VirtualClusterName,
-			kube.Namespace,
-		)
-		if err != nil {
-			return nil, err
-		}
+	kubeConfig, err := kubeConfigForTarget(ctx, baseClient, k8sOpts)
+	if err != nil {
+		return nil, err
 	}
 
 	return clientcmd.Write(*kubeConfig)
+}
+
+func validateKubeConfigOptions(platformOptions *devsy.PlatformOptions) (bool, error) {
+	if platformOptions.UserAccessKey == "" {
+		return false, fmt.Errorf("user access key missing")
+	}
+	if platformOptions.PlatformHost == "" {
+		return false, fmt.Errorf("platform host is missing")
+	}
+	k8sOpts := platformOptions.Kubernetes
+	if k8sOpts.SpaceName == "" && k8sOpts.VirtualClusterName == "" {
+		// nothing to do here
+		return true, nil
+	}
+	if k8sOpts.SpaceName != "" && k8sOpts.VirtualClusterName != "" {
+		return false, fmt.Errorf("cannot use virtual cluster and space instance together")
+	}
+	if k8sOpts.Namespace == "" {
+		return false, fmt.Errorf("namespace missing")
+	}
+
+	return false, nil
+}
+
+func kubeConfigForTarget(
+	ctx context.Context,
+	baseClient client.Client,
+	k8sOpts *devsy.Kubernetes,
+) (*clientcmdapi.Config, error) {
+	if k8sOpts.SpaceName != "" {
+		return kubeConfigForSpaceInstance(ctx, baseClient, k8sOpts.SpaceName, k8sOpts.Namespace)
+	}
+
+	return kubeConfigForVirtualClusterInstance(
+		ctx,
+		baseClient,
+		k8sOpts.VirtualClusterName,
+		k8sOpts.Namespace,
+	)
 }
 
 func kubeConfigForSpaceInstance(
@@ -220,31 +228,20 @@ func kubeConfigForVirtualClusterInstance(
 			VirtualCluster: virtualClusterInstance.Name,
 		}},
 	}
-	ttl := int64(configTTL.Seconds())
+	req := vClusterKubeConfigRequest{
+		ctx:              ctx,
+		managementClient: managementClient,
+		namespace:        namespace,
+		projectName:      projectName,
+		scope:            scope,
+		ttl:              int64(configTTL.Seconds()),
+		instance:         virtualClusterInstance,
+	}
 
 	// direct virtual cluster ingress access?
 	virtualCluster := virtualClusterInstance.Status.VirtualCluster
 	if virtualCluster != nil && virtualCluster.AccessPoint.Ingress.Enabled {
-		certTTL := int32(ttl)
-		config := &managementv1.VirtualClusterInstanceKubeConfig{
-			Spec: managementv1.VirtualClusterInstanceKubeConfigSpec{
-				CertificateTTL: &certTTL,
-			},
-		}
-		directVirtualClusterKubeConfig, err := managementClient.Loft().
-			ManagementV1().
-			VirtualClusterInstances(namespace).
-			GetKubeConfig(ctx, virtualClusterInstance.Name, config, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
-		}
-
-		kubeConfig, err := clientcmd.Load([]byte(directVirtualClusterKubeConfig.Status.KubeConfig))
-		if err != nil {
-			return nil, err
-		}
-
-		return kubeConfig, nil
+		return directIngressKubeConfig(req)
 	}
 
 	// find cluster by clusterRef
@@ -260,34 +257,7 @@ func kubeConfigForVirtualClusterInstance(
 
 	// direct cluster access?
 	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
-		tok := &managementv1.DirectClusterEndpointToken{
-			Spec: managementv1.DirectClusterEndpointTokenSpec{
-				Scope: scope,
-				TTL:   ttl,
-			},
-		}
-		directClusterEndpointToken, err := managementClient.Loft().
-			ManagementV1().
-			DirectClusterEndpointTokens().
-			Create(ctx, tok, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
-		}
-
-		directClusterEndpoint := hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
-		host := fmt.Sprintf(
-			"https://%s/kubernetes/project/%s/virtualcluster/%s",
-			directClusterEndpoint,
-			projectName,
-			virtualClusterInstance.Name,
-		)
-
-		return newKubeConfig(
-			host,
-			directClusterEndpointToken.Status.Token,
-			virtualClusterInstance.Spec.ClusterRef.Namespace,
-			true,
-		), nil
+		return directClusterEndpointKubeConfig(req, hostCluster)
 	}
 
 	// access through management cluster + access key
@@ -296,7 +266,7 @@ func kubeConfigForVirtualClusterInstance(
 			AccessKeySpec: storagev1.AccessKeySpec{
 				User:  baseClient.Self().Status.User.Name,
 				Scope: scope,
-				TTL:   ttl,
+				TTL:   req.ttl,
 				DisplayName: fmt.Sprintf(
 					"Kube Config for Virtual Cluster %s/%s",
 					virtualClusterInstance.Namespace,
@@ -327,6 +297,73 @@ func kubeConfigForVirtualClusterInstance(
 		host,
 		ownedAccessKey.Spec.Key,
 		virtualClusterInstance.Spec.ClusterRef.Namespace,
+		true,
+	), nil
+}
+
+type vClusterKubeConfigRequest struct {
+	ctx              context.Context
+	managementClient kube.Interface
+	namespace        string
+	projectName      string
+	scope            *storagev1.AccessKeyScope
+	ttl              int64
+	instance         *managementv1.VirtualClusterInstance
+}
+
+func directIngressKubeConfig(req vClusterKubeConfigRequest) (*clientcmdapi.Config, error) {
+	certTTL := int32(req.ttl) // #nosec G115 -- ttl from fixed 90-day constant, no overflow
+	config := &managementv1.VirtualClusterInstanceKubeConfig{
+		Spec: managementv1.VirtualClusterInstanceKubeConfigSpec{
+			CertificateTTL: &certTTL,
+		},
+	}
+	directVirtualClusterKubeConfig, err := req.managementClient.Loft().
+		ManagementV1().
+		VirtualClusterInstances(req.namespace).
+		GetKubeConfig(req.ctx, req.instance.Name, config, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get virtual cluster kube config: %w", err)
+	}
+
+	kubeConfig, err := clientcmd.Load([]byte(directVirtualClusterKubeConfig.Status.KubeConfig))
+	if err != nil {
+		return nil, err
+	}
+
+	return kubeConfig, nil
+}
+
+func directClusterEndpointKubeConfig(
+	req vClusterKubeConfigRequest,
+	hostCluster managementv1.Cluster,
+) (*clientcmdapi.Config, error) {
+	tok := &managementv1.DirectClusterEndpointToken{
+		Spec: managementv1.DirectClusterEndpointTokenSpec{
+			Scope: req.scope,
+			TTL:   req.ttl,
+		},
+	}
+	directClusterEndpointToken, err := req.managementClient.Loft().
+		ManagementV1().
+		DirectClusterEndpointTokens().
+		Create(req.ctx, tok, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
+	}
+
+	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
+	host := fmt.Sprintf(
+		"https://%s/kubernetes/project/%s/virtualcluster/%s",
+		directClusterEndpoint,
+		req.projectName,
+		req.instance.Name,
+	)
+
+	return newKubeConfig(
+		host,
+		directClusterEndpointToken.Status.Token,
+		req.instance.Spec.ClusterRef.Namespace,
 		true,
 	), nil
 }

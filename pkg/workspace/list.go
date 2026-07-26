@@ -36,65 +36,75 @@ func List(
 
 	proWorkspaces := []*providerpkg.Workspace{}
 	if !skipPro {
-		// list remote workspaces
-		proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner)
+		proWorkspaces, localWorkspaces, err = reconcileProWorkspaces(
+			ctx, devsyConfig, localWorkspaces, owner,
+		)
 		if err != nil {
 			return nil, err
 		}
-
-		// extract pure workspace list first
-		for _, result := range proWorkspaceResults {
-			proWorkspaces = append(proWorkspaces, result.workspaces...)
-		}
-
-		// Check if every local file based workspace has a remote counterpart
-		// If not, delete it
-		// However, we need to differentiate between workspaces that are legitimately not available anymore
-		// and the ones where we were temporarily not able to reach the host
-		cleanedLocalWorkspaces := []*providerpkg.Workspace{}
-		for _, localWorkspace := range localWorkspaces {
-			if localWorkspace.IsPro() {
-				if shouldDeleteLocalWorkspace(ctx, localWorkspace, proWorkspaceResults) {
-					err = clientimplementation.DeleteWorkspaceFolder(
-						clientimplementation.DeleteWorkspaceFolderParams{
-							Context:              devsyConfig.DefaultContext,
-							WorkspaceID:          localWorkspace.ID,
-							SSHConfigPath:        localWorkspace.SSHConfigPath,
-							SSHConfigIncludePath: localWorkspace.SSHConfigIncludePath,
-						},
-					)
-					if err != nil {
-						log.Debugf(
-							"failed to delete local workspace %s: %v",
-							localWorkspace.ID,
-							err,
-						)
-					}
-					continue
-				}
-			}
-
-			cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspace)
-		}
-		localWorkspaces = cleanedLocalWorkspaces
 	}
 
-	// Set indexed by UID for deduplication
-	workspaces := map[string]*providerpkg.Workspace{}
+	return mergeWorkspaces(localWorkspaces, proWorkspaces), nil
+}
 
-	// set local workspaces
+func reconcileProWorkspaces(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	localWorkspaces []*providerpkg.Workspace,
+	owner platform.OwnerFilter,
+) ([]*providerpkg.Workspace, []*providerpkg.Workspace, error) {
+	proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	proWorkspaces := []*providerpkg.Workspace{}
+	for _, result := range proWorkspaceResults {
+		proWorkspaces = append(proWorkspaces, result.workspaces...)
+	}
+
+	// Check if every local file based workspace has a remote counterpart.
+	// If not, delete it, while differentiating between workspaces that are
+	// legitimately gone and those where the host was temporarily unreachable.
+	cleanedLocalWorkspaces := []*providerpkg.Workspace{}
+	for _, localWorkspace := range localWorkspaces {
+		if localWorkspace.IsPro() &&
+			shouldDeleteLocalWorkspace(ctx, localWorkspace, proWorkspaceResults) {
+			deleteLocalWorkspace(devsyConfig, localWorkspace)
+			continue
+		}
+		cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspace)
+	}
+
+	return proWorkspaces, cleanedLocalWorkspaces, nil
+}
+
+func deleteLocalWorkspace(devsyConfig *config.Config, localWorkspace *providerpkg.Workspace) {
+	err := clientimplementation.DeleteWorkspaceFolder(
+		clientimplementation.DeleteWorkspaceFolderParams{
+			Context:              devsyConfig.DefaultContext,
+			WorkspaceID:          localWorkspace.ID,
+			SSHConfigPath:        localWorkspace.SSHConfigPath,
+			SSHConfigIncludePath: localWorkspace.SSHConfigIncludePath,
+		},
+	)
+	if err != nil {
+		log.Debugf("failed to delete local workspace %s: %v", localWorkspace.ID, err)
+	}
+}
+
+func mergeWorkspaces(
+	localWorkspaces, proWorkspaces []*providerpkg.Workspace,
+) []*providerpkg.Workspace {
+	workspaces := map[string]*providerpkg.Workspace{}
 	for _, workspace := range localWorkspaces {
 		workspaces[workspace.UID] = workspace
 	}
 
-	// merge pro into local with pro taking precedence if UID matches
 	for _, proWorkspace := range proWorkspaces {
-		localWorkspace, ok := workspaces[proWorkspace.UID]
-		if ok {
-			// we want to use the local workspace IDE configuration
+		if localWorkspace, ok := workspaces[proWorkspace.UID]; ok {
 			proWorkspace.IDE = localWorkspace.IDE
 		}
-
 		workspaces[proWorkspace.UID] = proWorkspace
 	}
 
@@ -103,7 +113,7 @@ func List(
 		retWorkspaces = append(retWorkspaces, v)
 	}
 
-	return retWorkspaces, nil
+	return retWorkspaces
 }
 
 func ListLocalWorkspaces(
@@ -122,28 +132,41 @@ func ListLocalWorkspaces(
 
 	retWorkspaces := []*providerpkg.Workspace{}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
+		if workspaceConfig := loadLocalWorkspaceEntry(
+			contextName,
+			entry.Name(),
+			skipPro,
+		); workspaceConfig != nil {
+			retWorkspaces = append(retWorkspaces, workspaceConfig)
 		}
-
-		workspaceConfig, err := providerpkg.LoadWorkspaceConfig(contextName, entry.Name())
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Debugf("skipping workspace without config: workspace=%s", entry.Name())
-			} else {
-				log.Warnf("could not load workspace: workspace=%s, error=%v", entry.Name(), err)
-			}
-			continue
-		}
-
-		if skipPro && workspaceConfig.IsPro() {
-			continue
-		}
-
-		retWorkspaces = append(retWorkspaces, workspaceConfig)
 	}
 
 	return retWorkspaces, nil
+}
+
+func loadLocalWorkspaceEntry(
+	contextName, name string,
+	skipPro bool,
+) *providerpkg.Workspace {
+	if strings.HasPrefix(name, ".") {
+		return nil
+	}
+
+	workspaceConfig, err := providerpkg.LoadWorkspaceConfig(contextName, name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf("skipping workspace without config: workspace=%s", name)
+		} else {
+			log.Warnf("could not load workspace: workspace=%s, error=%v", name, err)
+		}
+		return nil
+	}
+
+	if skipPro && workspaceConfig.IsPro() {
+		return nil
+	}
+
+	return workspaceConfig
 }
 
 func CountLocalWorkspaces(contextName string) (int, error) {
@@ -214,23 +237,12 @@ func listProWorkspacesForProvider(
 	providerConfig *providerpkg.ProviderConfig,
 	owner platform.OwnerFilter,
 ) ([]*providerpkg.Workspace, error) {
-	var (
-		instances []managementv1.DevsyWorkspaceInstance
-		err       error
-	)
-	switch {
-	case providerConfig.IsProxyProvider():
-		instances, err = listInstancesProxyProvider(
-			ctx,
-			devsyConfig,
-			provider,
-			providerConfig,
-		)
-	case providerConfig.IsDaemonProvider():
-		instances, err = listInstancesDaemonProvider(ctx, provider, owner)
-	default:
-		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", provider)
-	}
+	instances, err := listProInstances(ctx, listProInstancesParams{
+		devsyConfig:    devsyConfig,
+		provider:       provider,
+		providerConfig: providerConfig,
+		owner:          owner,
+	})
 	if err != nil {
 		if log.DebugEnabled() {
 			log.Warnf("Failed to list pro workspaces for provider %s: %v", provider, err)
@@ -240,89 +252,128 @@ func listProWorkspacesForProvider(
 
 	retWorkspaces := []*providerpkg.Workspace{}
 	for _, instance := range instances {
-		if instance.GetLabels() == nil {
-			log.Debugf("no labels for pro workspace %q found, skipping", instance.GetName())
-			continue
+		if workspace := proWorkspaceFromInstance(
+			instance,
+			provider,
+			devsyConfig.DefaultContext,
+		); workspace != nil {
+			retWorkspaces = append(retWorkspaces, workspace)
 		}
-
-		// id
-		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
-		if id == "" {
-			log.Debugf("no ID label for pro workspace %q found, skipping", instance.GetName())
-			continue
-		}
-
-		// uid
-		uid := instance.GetLabels()[storagev1.DevsyWorkspaceUIDLabel]
-		if uid == "" {
-			log.Debugf("no UID label for pro workspace %q found, skipping", instance.GetName())
-			continue
-		}
-
-		// project
-		projectName := instance.GetLabels()[config.K8sProjectLabel]
-
-		// source
-		source := providerpkg.WorkspaceSource{}
-		if instance.Annotations != nil &&
-			instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
-			// source to workspace config source
-			rawSource := instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation]
-			s := providerpkg.ParseWorkspaceSource(rawSource)
-			if s == nil {
-				log.Warnf("unable to parse workspace source: source=%s", rawSource)
-			} else {
-				source = *s
-			}
-		}
-
-		// last used timestamp
-		var lastUsedTimestamp types.Time
-		sleepModeConfig := instance.Status.SleepModeConfig
-		if sleepModeConfig != nil {
-			lastUsedTimestamp = types.Unix(sleepModeConfig.Status.LastActivity, 0)
-		} else {
-			var ts int64
-			if instance.Annotations != nil {
-				if val, ok := instance.Annotations["sleepmode.devsy.sh/last-activity"]; ok {
-					var err error
-					if ts, err = strconv.ParseInt(val, 10, 64); err != nil {
-						log.Warn(
-							"received invalid sleepmode.devsy.sh/last-activity from ",
-							instance.GetName(),
-						)
-					}
-				}
-			}
-			lastUsedTimestamp = types.Unix(ts, 0)
-		}
-
-		// creation timestamp
-		creationTimestamp := types.Time{}
-		if !instance.CreationTimestamp.IsZero() {
-			creationTimestamp = types.NewTime(instance.CreationTimestamp.Time)
-		}
-
-		workspace := providerpkg.Workspace{
-			ID:      id,
-			UID:     uid,
-			Context: devsyConfig.DefaultContext,
-			Source:  source,
-			Provider: providerpkg.WorkspaceProviderConfig{
-				Name: provider,
-			},
-			LastUsedTimestamp: lastUsedTimestamp,
-			CreationTimestamp: creationTimestamp,
-			Pro: &providerpkg.ProMetadata{
-				InstanceName: instance.GetName(),
-				Project:      projectName,
-				DisplayName:  instance.Spec.DisplayName,
-			},
-		}
-		retWorkspaces = append(retWorkspaces, &workspace)
 	}
 
 	return retWorkspaces, nil
+}
+
+type listProInstancesParams struct {
+	devsyConfig    *config.Config
+	provider       string
+	providerConfig *providerpkg.ProviderConfig
+	owner          platform.OwnerFilter
+}
+
+func listProInstances(
+	ctx context.Context,
+	params listProInstancesParams,
+) ([]managementv1.DevsyWorkspaceInstance, error) {
+	switch {
+	case params.providerConfig.IsProxyProvider():
+		return listInstancesProxyProvider(
+			ctx,
+			params.devsyConfig,
+			params.provider,
+			params.providerConfig,
+		)
+	case params.providerConfig.IsDaemonProvider():
+		return listInstancesDaemonProvider(ctx, params.provider, params.owner)
+	default:
+		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", params.provider)
+	}
+}
+
+func proWorkspaceFromInstance(
+	instance managementv1.DevsyWorkspaceInstance,
+	provider string,
+	defaultContext string,
+) *providerpkg.Workspace {
+	if instance.GetLabels() == nil {
+		log.Debugf("no labels for pro workspace %q found, skipping", instance.GetName())
+		return nil
+	}
+
+	id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
+	if id == "" {
+		log.Debugf("no ID label for pro workspace %q found, skipping", instance.GetName())
+		return nil
+	}
+
+	uid := instance.GetLabels()[storagev1.DevsyWorkspaceUIDLabel]
+	if uid == "" {
+		log.Debugf("no UID label for pro workspace %q found, skipping", instance.GetName())
+		return nil
+	}
+
+	return &providerpkg.Workspace{
+		ID:      id,
+		UID:     uid,
+		Context: defaultContext,
+		Source:  proWorkspaceSource(instance),
+		Provider: providerpkg.WorkspaceProviderConfig{
+			Name: provider,
+		},
+		LastUsedTimestamp: proWorkspaceLastUsed(instance),
+		CreationTimestamp: proWorkspaceCreationTimestamp(instance),
+		Pro: &providerpkg.ProMetadata{
+			InstanceName: instance.GetName(),
+			Project:      instance.GetLabels()[config.K8sProjectLabel],
+			DisplayName:  instance.Spec.DisplayName,
+		},
+	}
+}
+
+func proWorkspaceSource(
+	instance managementv1.DevsyWorkspaceInstance,
+) providerpkg.WorkspaceSource {
+	source := providerpkg.WorkspaceSource{}
+	if instance.Annotations == nil ||
+		instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation] == "" {
+		return source
+	}
+
+	rawSource := instance.Annotations[storagev1.DevsyWorkspaceSourceAnnotation]
+	s := providerpkg.ParseWorkspaceSource(rawSource)
+	if s == nil {
+		log.Warnf("unable to parse workspace source: source=%s", rawSource)
+		return source
+	}
+	return *s
+}
+
+func proWorkspaceLastUsed(instance managementv1.DevsyWorkspaceInstance) types.Time {
+	if sleepModeConfig := instance.Status.SleepModeConfig; sleepModeConfig != nil {
+		return types.Unix(sleepModeConfig.Status.LastActivity, 0)
+	}
+
+	var ts int64
+	if instance.Annotations != nil {
+		if val, ok := instance.Annotations["sleepmode.devsy.sh/last-activity"]; ok {
+			if parsed, err := strconv.ParseInt(val, 10, 64); err != nil {
+				log.Warn(
+					"received invalid sleepmode.devsy.sh/last-activity from ",
+					instance.GetName(),
+				)
+			} else {
+				ts = parsed
+			}
+		}
+	}
+	return types.Unix(ts, 0)
+}
+
+func proWorkspaceCreationTimestamp(instance managementv1.DevsyWorkspaceInstance) types.Time {
+	if instance.CreationTimestamp.IsZero() {
+		return types.Time{}
+	}
+	return types.NewTime(instance.CreationTimestamp.Time)
 }
 
 func shouldDeleteLocalWorkspace(

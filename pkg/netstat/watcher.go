@@ -94,55 +94,78 @@ func (w *Watcher) runOnce() error {
 		return err
 	}
 
-	// stop ports that are not there anymore
-	for port := range w.forwardedPorts {
-		if !newPorts[port] {
-			log.Debugf("Stop port %s", port)
-			err = w.forwarder.StopForward(port)
-			if err != nil {
-				return fmt.Errorf("error stop forwarding port %s: %w", port, err)
-			}
-		}
+	if err := w.stopRemovedPorts(newPorts); err != nil {
+		return err
 	}
 
-	// start ports that were not there before
-	for port := range newPorts {
-		if !w.forwardedPorts[port] {
-			if w.portFilter != nil && !w.portFilter(port) {
-				log.Debugf("Skipping port %s (filtered)", port)
-				continue
-			}
-
-			attr := w.resolveAttr(port)
-			if attr.OnAutoForward == AutoForwardIgnore {
-				log.Debugf("Skipping port %s (onAutoForward=ignore)", port)
-				continue
-			}
-
-			switch attr.OnAutoForward {
-			case AutoForwardSilent, "":
-				if attr.Label != "" {
-					log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
-				} else {
-					log.Debugf("Found open port %s ready to forward", port)
-				}
-			default:
-				if attr.Label != "" {
-					log.Infof("Found open port %s (%s) ready to forward", port, attr.Label)
-				} else {
-					log.Infof("Found open port %s ready to forward", port)
-				}
-			}
-
-			err = w.forwarder.Forward(port, attr)
-			if err != nil {
-				return fmt.Errorf("error forwarding port %s: %w", port, err)
-			}
-		}
+	if err := w.startNewPorts(newPorts); err != nil {
+		return err
 	}
 
 	w.forwardedPorts = newPorts
 	return nil
+}
+
+func (w *Watcher) stopRemovedPorts(newPorts map[string]bool) error {
+	for port := range w.forwardedPorts {
+		if newPorts[port] {
+			continue
+		}
+		log.Debugf("Stop port %s", port)
+		if err := w.forwarder.StopForward(port); err != nil {
+			return fmt.Errorf("error stop forwarding port %s: %w", port, err)
+		}
+	}
+	return nil
+}
+
+func (w *Watcher) startNewPorts(newPorts map[string]bool) error {
+	for port := range newPorts {
+		if w.forwardedPorts[port] {
+			continue
+		}
+		if err := w.startPort(port); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Watcher) startPort(port string) error {
+	if w.portFilter != nil && !w.portFilter(port) {
+		log.Debugf("Skipping port %s (filtered)", port)
+		return nil
+	}
+
+	attr := w.resolveAttr(port)
+	if attr.OnAutoForward == AutoForwardIgnore {
+		log.Debugf("Skipping port %s (onAutoForward=ignore)", port)
+		return nil
+	}
+
+	logDiscoveredPort(port, attr)
+
+	if err := w.forwarder.Forward(port, attr); err != nil {
+		return fmt.Errorf("error forwarding port %s: %w", port, err)
+	}
+	return nil
+}
+
+func logDiscoveredPort(port string, attr PortForwardAttribute) {
+	switch attr.OnAutoForward {
+	case AutoForwardSilent, "":
+		if attr.Label != "" {
+			log.Debugf("Found open port %s (%s) ready to forward", port, attr.Label)
+		} else {
+			log.Debugf("Found open port %s ready to forward", port)
+		}
+	default:
+		if attr.Label != "" {
+			log.Infof("Found open port %s (%s) ready to forward", port, attr.Label)
+		} else {
+			log.Infof("Found open port %s ready to forward", port)
+		}
+	}
 }
 
 func (w *Watcher) resolveAttr(port string) PortForwardAttribute {

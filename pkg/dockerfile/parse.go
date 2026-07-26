@@ -259,29 +259,7 @@ func EnsureFinalStageName(dockerfileContent, defaultLastStageName string) (strin
 		return "", "", err
 	}
 
-	var lastChild *parser.Node
-	stages := make(map[string]string) // stage name -> base image
-
-	for _, child := range result.AST.Children {
-		if strings.ToLower(child.Value) == command.From {
-			lastChild = child
-			if child.Next != nil {
-				image := child.Next.Value
-				// Check if this FROM has an AS clause
-				if child.Next.Next != nil && child.Next.Next.Next != nil &&
-					strings.EqualFold(child.Next.Next.Value, "as") {
-					stageName := child.Next.Next.Next.Value
-					// If image is a stage reference, resolve it
-					if baseImage, exists := stages[image]; exists {
-						stages[stageName] = baseImage
-					} else {
-						stages[stageName] = image
-					}
-				}
-			}
-		}
-	}
-
+	lastChild := lastFromNode(result.AST.Children)
 	if lastChild == nil {
 		return "", "", fmt.Errorf("no FROM statement in dockerfile")
 	}
@@ -289,8 +267,7 @@ func EnsureFinalStageName(dockerfileContent, defaultLastStageName string) (strin
 		return "", "", fmt.Errorf("cannot parse FROM statement in dockerfile")
 	}
 
-	if lastChild.Next.Next != nil && lastChild.Next.Next.Next != nil &&
-		strings.EqualFold(lastChild.Next.Next.Value, "as") {
+	if hasStageAlias(lastChild) {
 		return lastChild.Next.Next.Next.Value, "", nil
 	}
 
@@ -299,6 +276,21 @@ func EnsureFinalStageName(dockerfileContent, defaultLastStageName string) (strin
 		Next:  &parser.Node{Value: defaultLastStageName},
 	}
 	return defaultLastStageName, ReplaceInDockerfile(dockerfileContent, lastChild), nil
+}
+
+func lastFromNode(children []*parser.Node) *parser.Node {
+	var lastChild *parser.Node
+	for _, child := range children {
+		if strings.ToLower(child.Value) == command.From {
+			lastChild = child
+		}
+	}
+	return lastChild
+}
+
+func hasStageAlias(node *parser.Node) bool {
+	return node.Next.Next != nil && node.Next.Next.Next != nil &&
+		strings.EqualFold(node.Next.Next.Value, "as")
 }
 
 func ReplaceInDockerfile(dockerfileContent string, node *parser.Node) string {
@@ -368,63 +360,86 @@ func Parse(dockerfileContent string) (*Dockerfile, error) {
 		StagesByTarget: make(map[string]*Stage),
 	}
 
-	directiveParser := parser.DirectiveParser{}
-	if directives, _ := directiveParser.ParseAll([]byte(dockerfileContent)); len(directives) > 0 {
-		d.Directives = directives
-		for _, directive := range directives {
-			if strings.EqualFold(directive.Name, "syntax") {
-				d.Syntax = directive.Value
-				break
-			}
-		}
-	}
+	d.parseDirectives(dockerfileContent)
 
 	// Parse instructions with single loop
 	isPreamble := true
 	for _, instruction := range result.AST.Children {
-		cmd := strings.ToLower(instruction.Value)
-
-		if isPreamble && cmd == command.From {
-			isPreamble = false
-			d.Stages = append(d.Stages, parseStage(instruction))
-			continue
-		}
-
-		if isPreamble {
-			d.Preamble.Instructions = append(d.Preamble.Instructions, instruction)
-			switch cmd {
-			case command.Env:
-				d.Preamble.Envs = append(d.Preamble.Envs, parseEnv(instruction)...)
-			case command.Arg:
-				d.Preamble.Args = append(d.Preamble.Args, parseArg(instruction))
-			}
-			continue
-		}
-
-		if cmd == command.From {
-			d.Stages = append(d.Stages, parseStage(instruction))
-			continue
-		}
-
-		lastStage := d.Stages[len(d.Stages)-1]
-		lastStage.Instructions = append(lastStage.Instructions, instruction)
-		switch cmd {
-		case command.Env:
-			lastStage.Envs = append(lastStage.Envs, parseEnv(instruction)...)
-		case command.Arg:
-			lastStage.Args = append(lastStage.Args, parseArg(instruction))
-		case command.User:
-			lastStage.Users = append(lastStage.Users, parseUser(instruction))
-		}
+		isPreamble = d.appendInstruction(instruction, isPreamble)
 	}
 
+	d.indexStagesByTarget()
+
+	return d, nil
+}
+
+func (d *Dockerfile) parseDirectives(dockerfileContent string) {
+	directiveParser := parser.DirectiveParser{}
+	directives, _ := directiveParser.ParseAll([]byte(dockerfileContent))
+	if len(directives) == 0 {
+		return
+	}
+
+	d.Directives = directives
+	for _, directive := range directives {
+		if strings.EqualFold(directive.Name, "syntax") {
+			d.Syntax = directive.Value
+			break
+		}
+	}
+}
+
+func (d *Dockerfile) appendInstruction(instruction *parser.Node, isPreamble bool) bool {
+	cmd := strings.ToLower(instruction.Value)
+
+	if isPreamble && cmd == command.From {
+		d.Stages = append(d.Stages, parseStage(instruction))
+		return false
+	}
+
+	if isPreamble {
+		d.appendPreambleInstruction(instruction, cmd)
+		return true
+	}
+
+	if cmd == command.From {
+		d.Stages = append(d.Stages, parseStage(instruction))
+		return false
+	}
+
+	d.appendStageInstruction(instruction, cmd)
+	return false
+}
+
+func (d *Dockerfile) appendPreambleInstruction(instruction *parser.Node, cmd string) {
+	d.Preamble.Instructions = append(d.Preamble.Instructions, instruction)
+	switch cmd {
+	case command.Env:
+		d.Preamble.Envs = append(d.Preamble.Envs, parseEnv(instruction)...)
+	case command.Arg:
+		d.Preamble.Args = append(d.Preamble.Args, parseArg(instruction))
+	}
+}
+
+func (d *Dockerfile) appendStageInstruction(instruction *parser.Node, cmd string) {
+	lastStage := d.Stages[len(d.Stages)-1]
+	lastStage.Instructions = append(lastStage.Instructions, instruction)
+	switch cmd {
+	case command.Env:
+		lastStage.Envs = append(lastStage.Envs, parseEnv(instruction)...)
+	case command.Arg:
+		lastStage.Args = append(lastStage.Args, parseArg(instruction))
+	case command.User:
+		lastStage.Users = append(lastStage.Users, parseUser(instruction))
+	}
+}
+
+func (d *Dockerfile) indexStagesByTarget() {
 	for _, stage := range d.Stages {
 		if stage.Target != "" {
 			d.StagesByTarget[stage.Target] = stage
 		}
 	}
-
-	return d, nil
 }
 
 func parseUser(instruction *parser.Node) instructions.KeyValuePair {

@@ -18,30 +18,12 @@ func ParseCacheEntry(in []string) ([]client.CacheOptionsEntry, error) {
 			return nil, err
 		}
 		if isRefOnlyFormat(fields) {
-			for _, field := range fields {
-				imports = append(imports, client.CacheOptionsEntry{
-					Type:  "registry",
-					Attrs: map[string]string{"ref": field},
-				})
-			}
+			imports = append(imports, refOnlyEntries(fields)...)
 			continue
 		}
-		im := client.CacheOptionsEntry{
-			Attrs: map[string]string{},
-		}
-		for _, field := range fields {
-			parts := strings.SplitN(field, "=", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid value %s", field)
-			}
-			key := strings.ToLower(parts[0])
-			value := parts[1]
-			switch key {
-			case "type":
-				im.Type = value
-			default:
-				im.Attrs[key] = value
-			}
+		im, err := parseCacheFields(fields)
+		if err != nil {
+			return nil, err
 		}
 		if im.Type == "" {
 			return nil, fmt.Errorf("type required from: %q", in)
@@ -52,6 +34,38 @@ func ParseCacheEntry(in []string) ([]client.CacheOptionsEntry, error) {
 		imports = append(imports, im)
 	}
 	return imports, nil
+}
+
+func refOnlyEntries(fields []string) []client.CacheOptionsEntry {
+	entries := make([]client.CacheOptionsEntry, 0, len(fields))
+	for _, field := range fields {
+		entries = append(entries, client.CacheOptionsEntry{
+			Type:  "registry",
+			Attrs: map[string]string{"ref": field},
+		})
+	}
+	return entries
+}
+
+func parseCacheFields(fields []string) (client.CacheOptionsEntry, error) {
+	im := client.CacheOptionsEntry{
+		Attrs: map[string]string{},
+	}
+	for _, field := range fields {
+		parts := strings.SplitN(field, "=", 2)
+		if len(parts) != 2 {
+			return client.CacheOptionsEntry{}, fmt.Errorf("invalid value %s", field)
+		}
+		key := strings.ToLower(parts[0])
+		value := parts[1]
+		switch key {
+		case "type":
+			im.Type = value
+		default:
+			im.Attrs[key] = value
+		}
+	}
+	return im, nil
 }
 
 func isRefOnlyFormat(in []string) bool {

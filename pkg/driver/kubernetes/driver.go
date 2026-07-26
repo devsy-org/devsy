@@ -127,49 +127,15 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 		return err
 	}
 
-	// delete pvc
-	log.Infof("Delete persistent volume claim %q", workspaceId)
-	err = k.client.Client().
-		CoreV1().
-		PersistentVolumeClaims(k.namespace).
-		Delete(ctx, workspaceId, metav1.DeleteOptions{
-			GracePeriodSeconds: &[]int64{5}[0],
-		})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return fmt.Errorf("delete pvc: %w", err)
+	if err := k.deletePersistentVolumeClaim(ctx, workspaceId); err != nil {
+		return err
 	}
 
-	// delete role binding & service account
-	if k.options.ClusterRole != "" {
-		log.Infof("Delete role binding %q", workspaceId)
-		err = k.client.Client().
-			RbacV1().
-			RoleBindings(k.namespace).
-			Delete(ctx, workspaceId, metav1.DeleteOptions{})
-		if err != nil && !kerrors.IsNotFound(err) {
-			return fmt.Errorf("delete role binding: %w", err)
-		}
+	if err := k.deleteRoleBinding(ctx, workspaceId); err != nil {
+		return err
 	}
 
-	// delete daemon config secret
-	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
-		log.Infof("Delete daemon config secret %q", workspaceId)
-		err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId))
-		if err != nil {
-			return err
-		}
-	}
-
-	// delete pull secret
-	if k.options.KubernetesPullSecretsEnabled != "" {
-		log.Infof("Delete pull secret %q", workspaceId)
-		err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId))
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return k.deleteWorkspaceSecrets(ctx, workspaceId)
 }
 
 func (k *KubernetesDriver) CommandDevContainer(
@@ -232,6 +198,61 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 	_, err = io.Copy(stdout, logs)
 	if err != nil {
 		return fmt.Errorf("copy logs: %w", err)
+	}
+
+	return nil
+}
+
+func (k *KubernetesDriver) deletePersistentVolumeClaim(
+	ctx context.Context,
+	workspaceId string,
+) error {
+	log.Infof("Delete persistent volume claim %q", workspaceId)
+	err := k.client.Client().
+		CoreV1().
+		PersistentVolumeClaims(k.namespace).
+		Delete(ctx, workspaceId, metav1.DeleteOptions{
+			GracePeriodSeconds: &[]int64{5}[0],
+		})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return fmt.Errorf("delete pvc: %w", err)
+	}
+
+	return nil
+}
+
+func (k *KubernetesDriver) deleteRoleBinding(ctx context.Context, workspaceId string) error {
+	if k.options.ClusterRole == "" {
+		return nil
+	}
+
+	log.Infof("Delete role binding %q", workspaceId)
+	err := k.client.Client().
+		RbacV1().
+		RoleBindings(k.namespace).
+		Delete(ctx, workspaceId, metav1.DeleteOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return fmt.Errorf("delete role binding: %w", err)
+	}
+
+	return nil
+}
+
+func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspaceId string) error {
+	// delete daemon config secret
+	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
+		log.Infof("Delete daemon config secret %q", workspaceId)
+		if err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId)); err != nil {
+			return err
+		}
+	}
+
+	// delete pull secret
+	if k.options.KubernetesPullSecretsEnabled != "" {
+		log.Infof("Delete pull secret %q", workspaceId)
+		if err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId)); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -69,120 +69,224 @@ func (r *Resolver) resolveOption(
 		return err
 	}
 
-	// find out options we need to resolve
-	if !userValueOk {
-		// check if value is already filled
-		if beforeValueOk {
-			if beforeValue.UserProvided || option.Cache == "" {
-				return nil
-			} else if option.Cache != "" {
-				duration, err := time.ParseDuration(option.Cache)
-				if err != nil {
-					return fmt.Errorf("parse cache duration of option %s: %w", optionName, err)
-				}
+	skip, err := r.shouldSkipResolve(skipResolveParams{
+		optionName:    optionName,
+		option:        option,
+		userValueOk:   userValueOk,
+		beforeValue:   beforeValue,
+		beforeValueOk: beforeValueOk,
+	})
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
 
-				// has value expired?
-				if beforeValue.Filled != nil && beforeValue.Filled.Add(duration).After(time.Now()) {
-					return nil
-				}
-			}
+	if err := r.computeOptionValue(ctx, computeOptionValueParams{
+		optionName:           optionName,
+		option:               option,
+		userValue:            userValue,
+		userValueOk:          userValueOk,
+		beforeValue:          beforeValue,
+		resolvedOptionValues: resolvedOptionValues,
+	}); err != nil {
+		return err
+	}
+
+	if err := r.resolveRequired(optionName, option, userValueOk, resolvedOptionValues); err != nil {
+		return err
+	}
+
+	r.invalidateChangedChildren(optionName, beforeValue, resolvedOptionValues)
+
+	return nil
+}
+
+type skipResolveParams struct {
+	optionName    string
+	option        *types.Option
+	userValueOk   bool
+	beforeValue   config.OptionValue
+	beforeValueOk bool
+}
+
+func (r *Resolver) shouldSkipResolve(p skipResolveParams) (bool, error) {
+	if p.userValueOk {
+		return false, nil
+	}
+
+	if p.beforeValueOk {
+		skip, err := beforeValueStillValid(p.optionName, p.option, p.beforeValue)
+		if err != nil {
+			return false, err
 		}
-
-		// make sure required is always resolved
-		if !option.Required {
-			// skip if global
-			if !r.resolveGlobal && option.Global {
-				return nil
-			} else if !r.resolveLocal && option.Local {
-				return nil
-			}
+		if skip {
+			return true, nil
 		}
 	}
 
-	// resolve option
+	return r.skipForScope(p.option), nil
+}
+
+func beforeValueStillValid(
+	optionName string,
+	option *types.Option,
+	beforeValue config.OptionValue,
+) (bool, error) {
+	if beforeValue.UserProvided || option.Cache == "" {
+		return true, nil
+	}
+
+	duration, err := time.ParseDuration(option.Cache)
+	if err != nil {
+		return false, fmt.Errorf("parse cache duration of option %s: %w", optionName, err)
+	}
+
+	// has value expired?
+	if beforeValue.Filled != nil && beforeValue.Filled.Add(duration).After(time.Now()) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (r *Resolver) skipForScope(option *types.Option) bool {
+	// make sure required is always resolved
+	if option.Required {
+		return false
+	}
+	if !r.resolveGlobal && option.Global {
+		return true
+	}
+	if !r.resolveLocal && option.Local {
+		return true
+	}
+
+	return false
+}
+
+type computeOptionValueParams struct {
+	optionName           string
+	option               *types.Option
+	userValue            string
+	userValueOk          bool
+	beforeValue          config.OptionValue
+	resolvedOptionValues map[string]config.OptionValue
+}
+
+func (r *Resolver) computeOptionValue(ctx context.Context, p computeOptionValueParams) error {
 	switch {
-	case userValueOk:
-		resolvedOptionValues[optionName] = config.OptionValue{
-			Value:        userValue,
-			Children:     beforeValue.Children,
+	case p.userValueOk:
+		p.resolvedOptionValues[p.optionName] = config.OptionValue{
+			Value:        p.userValue,
+			Children:     p.beforeValue.Children,
 			UserProvided: true,
 		}
-	case option.Default != "":
-		resolvedOptionValues[optionName] = config.OptionValue{
-			Children: beforeValue.Children,
+	case p.option.Default != "":
+		p.resolvedOptionValues[p.optionName] = config.OptionValue{
+			Children: p.beforeValue.Children,
 			Value: ResolveDefaultValue(
-				option.Default,
-				combine(resolvedOptionValues, r.extraValues),
+				p.option.Default,
+				combine(p.resolvedOptionValues, r.extraValues),
 			),
 		}
-	case option.Command != "":
-		optionValue, err := resolveFromCommand(ctx, option, resolvedOptionValues, r.extraValues)
+	case p.option.Command != "":
+		optionValue, err := resolveFromCommand(ctx, p.option, p.resolvedOptionValues, r.extraValues)
 		if err != nil {
 			return err
 		}
 
-		optionValue.Children = beforeValue.Children
-		resolvedOptionValues[optionName] = optionValue
-	case len(option.Enum) == 1:
-		resolvedOptionValues[optionName] = config.OptionValue{
-			Children: beforeValue.Children,
-			Value:    option.Enum[0].Value,
+		optionValue.Children = p.beforeValue.Children
+		p.resolvedOptionValues[p.optionName] = optionValue
+	case len(p.option.Enum) == 1:
+		p.resolvedOptionValues[p.optionName] = config.OptionValue{
+			Children: p.beforeValue.Children,
+			Value:    p.option.Enum[0].Value,
 		}
 	default:
-		resolvedOptionValues[optionName] = config.OptionValue{
-			Children: beforeValue.Children,
-		}
-	}
-
-	// is required?
-	if !userValueOk && option.Required && resolvedOptionValues[optionName].Value == "" &&
-		!resolvedOptionValues[optionName].UserProvided {
-		if r.skipRequired {
-			delete(resolvedOptionValues, optionName)
-			return r.graph.RemoveChildren(optionName)
-		}
-
-		// check if we can ask a question
-		if !terminal.IsTerminalIn {
-			return fmt.Errorf("option %s is required, but no value provided", optionName)
-		}
-
-		questionOpts := []string{}
-		for _, enumOpt := range option.Enum {
-			questionOpts = append(questionOpts, enumOpt.Value)
-		}
-
-		// check if there is only one option
-		log.Info(option.Description)
-		answer, err := log.QuestionDefault(&survey.QuestionOptions{
-			Question:               fmt.Sprintf("Enter a value for %s", optionName),
-			Options:                questionOpts,
-			ValidationRegexPattern: option.ValidationPattern,
-			ValidationMessage:      option.ValidationMessage,
-			IsPassword:             option.Password,
-		})
-		if err != nil {
-			return err
-		}
-
-		resolvedOptionValues[optionName] = config.OptionValue{
-			Value:        answer,
-			UserProvided: true,
-		}
-	}
-
-	// check if value has changed
-	if beforeValue.Value != resolvedOptionValues[optionName].Value {
-		children := r.graph.GetChildren(optionName)
-		for _, childID := range children {
-			optionValue, ok := resolvedOptionValues[childID]
-			if ok && !optionValue.UserProvided {
-				delete(resolvedOptionValues, childID)
-			}
+		p.resolvedOptionValues[p.optionName] = config.OptionValue{
+			Children: p.beforeValue.Children,
 		}
 	}
 
 	return nil
+}
+
+func (r *Resolver) resolveRequired(
+	optionName string,
+	option *types.Option,
+	userValueOk bool,
+	resolvedOptionValues map[string]config.OptionValue,
+) error {
+	if userValueOk || !option.Required {
+		return nil
+	}
+
+	current := resolvedOptionValues[optionName]
+	if current.Value != "" || current.UserProvided {
+		return nil
+	}
+
+	if r.skipRequired {
+		delete(resolvedOptionValues, optionName)
+		return r.graph.RemoveChildren(optionName)
+	}
+
+	return r.askRequired(optionName, option, resolvedOptionValues)
+}
+
+func (r *Resolver) askRequired(
+	optionName string,
+	option *types.Option,
+	resolvedOptionValues map[string]config.OptionValue,
+) error {
+	// check if we can ask a question
+	if !terminal.IsTerminalIn {
+		return fmt.Errorf("option %s is required, but no value provided", optionName)
+	}
+
+	questionOpts := []string{}
+	for _, enumOpt := range option.Enum {
+		questionOpts = append(questionOpts, enumOpt.Value)
+	}
+
+	// check if there is only one option
+	log.Info(option.Description)
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
+		Question:               fmt.Sprintf("Enter a value for %s", optionName),
+		Options:                questionOpts,
+		ValidationRegexPattern: option.ValidationPattern,
+		ValidationMessage:      option.ValidationMessage,
+		IsPassword:             option.Password,
+	})
+	if err != nil {
+		return err
+	}
+
+	resolvedOptionValues[optionName] = config.OptionValue{
+		Value:        answer,
+		UserProvided: true,
+	}
+
+	return nil
+}
+
+func (r *Resolver) invalidateChangedChildren(
+	optionName string,
+	beforeValue config.OptionValue,
+	resolvedOptionValues map[string]config.OptionValue,
+) {
+	if beforeValue.Value == resolvedOptionValues[optionName].Value {
+		return
+	}
+
+	for _, childID := range r.graph.GetChildren(optionName) {
+		optionValue, ok := resolvedOptionValues[childID]
+		if ok && !optionValue.UserProvided {
+			delete(resolvedOptionValues, childID)
+		}
+	}
 }
 
 func (r *Resolver) getValue(
@@ -243,44 +347,56 @@ func (r *Resolver) refreshSubOptions(
 		return err
 	}
 
-	for childID := range r.getChangedOptions(r.dynamicOptionsForNode(resolvedOptionValues[optionName].Children), newDynamicOptions, resolvedOptionValues) {
-		delete(resolvedOptionValues, childID)
-		_ = r.graph.RemoveNode(childID)
-	}
+	r.pruneChangedChildren(optionName, newDynamicOptions, resolvedOptionValues)
+	r.dropInvalidUserValues(newDynamicOptions)
+	setChildren(optionName, newDynamicOptions, resolvedOptionValues)
 
-	// remove invalid existing user values
-	for newOptionName, newOption := range newDynamicOptions {
-		userValue, ok := r.userOptions[newOptionName]
-		if !ok {
-			continue
-		}
-
-		err := validateUserValue(newOptionName, userValue, newOption)
-		if err != nil {
-			delete(r.userOptions, newOptionName)
-		}
-	}
-
-	// set children on value
-	val := resolvedOptionValues[optionName]
-	val.Children = []string{}
-	for k := range newDynamicOptions {
-		val.Children = append(val.Children, k)
-	}
-	resolvedOptionValues[optionName] = val
-
-	// add options to graph
-	err = addOptionsToGraph(r.graph, newDynamicOptions, resolvedOptionValues)
-	if err != nil {
+	if err := addOptionsToGraph(r.graph, newDynamicOptions, resolvedOptionValues); err != nil {
 		return fmt.Errorf("add sub options: %w", err)
 	}
 
-	err = resolveDynamicOptions(ctx, newDynamicOptions, r, resolvedOptionValues)
-	if err != nil {
+	if err := resolveDynamicOptions(ctx, newDynamicOptions, r, resolvedOptionValues); err != nil {
 		return fmt.Errorf("resolve dynamic sub options: %w", err)
 	}
 
 	return nil
+}
+
+func (r *Resolver) pruneChangedChildren(
+	optionName string,
+	newOptions config.OptionDefinitions,
+	values map[string]config.OptionValue,
+) {
+	for childID := range r.getChangedOptions(r.dynamicOptionsForNode(values[optionName].Children), newOptions, values) {
+		delete(values, childID)
+		_ = r.graph.RemoveNode(childID)
+	}
+}
+
+func (r *Resolver) dropInvalidUserValues(newOptions config.OptionDefinitions) {
+	for name, option := range newOptions {
+		userValue, ok := r.userOptions[name]
+		if !ok {
+			continue
+		}
+
+		if err := validateUserValue(name, userValue, option); err != nil {
+			delete(r.userOptions, name)
+		}
+	}
+}
+
+func setChildren(
+	optionName string,
+	newOptions config.OptionDefinitions,
+	values map[string]config.OptionValue,
+) {
+	val := values[optionName]
+	val.Children = []string{}
+	for k := range newOptions {
+		val.Children = append(val.Children, k)
+	}
+	values[optionName] = val
 }
 
 type queue struct {
@@ -348,13 +464,17 @@ func resolveDynamicOptions(
 
 		processed[opt] = true
 
-		for optionName := range subOptions {
-			if !processed[optionName] {
-				q.enqueue(optionName)
-			}
-		}
+		enqueueUnprocessed(q, subOptions, processed)
 	}
 	return nil
+}
+
+func enqueueUnprocessed(q *queue, subOptions config.OptionDefinitions, processed map[string]bool) {
+	for optionName := range subOptions {
+		if !processed[optionName] {
+			q.enqueue(optionName)
+		}
+	}
 }
 
 func (r *Resolver) retrieveSubOptions(
@@ -377,31 +497,11 @@ func (r *Resolver) retrieveSubOptions(
 		return nil, err
 	}
 
-	for childID := range r.getChangedOptions(r.dynamicOptionsForNode(options[optionName].Children), suboptions, options) {
-		delete(options, childID)
-		_ = r.graph.RemoveNode(childID)
-	}
+	r.pruneChangedChildren(optionName, suboptions, options)
+	r.dropInvalidUserValues(suboptions)
+	setChildren(optionName, suboptions, options)
 
-	for name, option := range suboptions {
-		userValue, ok := r.userOptions[name]
-		if !ok {
-			continue
-		}
-		err := validateUserValue(name, userValue, option)
-		if err != nil {
-			delete(r.userOptions, name)
-		}
-	}
-
-	val := options[optionName]
-	val.Children = []string{}
-	for k := range suboptions {
-		val.Children = append(val.Children, k)
-	}
-	options[optionName] = val
-
-	err = addOptionsToGraph(r.graph, suboptions, options)
-	if err != nil {
+	if err := addOptionsToGraph(r.graph, suboptions, options); err != nil {
 		return nil, fmt.Errorf("add sub options: %w", err)
 	}
 
@@ -415,45 +515,48 @@ func (r *Resolver) getChangedOptions(
 ) config.OptionDefinitions {
 	changedOptions := config.OptionDefinitions{}
 	for oldK, oldV := range oldOptions {
-		_, ok := newOptions[oldK]
-		if !ok {
+		if _, ok := newOptions[oldK]; !ok {
 			changedOptions[oldK] = oldV
-			continue
 		}
 	}
 
 	for newK, newV := range newOptions {
-		oldV, ok := oldOptions[newK]
-		if !ok {
+		if optionChanged(oldOptions, newK, newV, resolvedOptionValues) {
 			changedOptions[newK] = newV
-			continue
-		}
-
-		oldValue, oldValueOk := resolvedOptionValues[newK]
-		if !oldValueOk {
-			changedOptions[newK] = newV
-			continue
-		}
-
-		enumValues := []string{}
-		for _, o := range newV.Enum {
-			enumValues = append(enumValues, o.Value)
-		}
-
-		// check if value still valid
-		if len(newV.Enum) > 0 && !contains(enumValues, oldValue.Value) {
-			changedOptions[newK] = newV
-			continue
-		}
-
-		// check if default has changed
-		if !oldValue.UserProvided && oldV.Default != newV.Default {
-			changedOptions[newK] = newV
-			continue
 		}
 	}
 
 	return changedOptions
+}
+
+func optionChanged(
+	oldOptions config.OptionDefinitions,
+	newK string,
+	newV *types.Option,
+	resolvedOptionValues map[string]config.OptionValue,
+) bool {
+	oldV, ok := oldOptions[newK]
+	if !ok {
+		return true
+	}
+
+	oldValue, oldValueOk := resolvedOptionValues[newK]
+	if !oldValueOk {
+		return true
+	}
+
+	enumValues := []string{}
+	for _, o := range newV.Enum {
+		enumValues = append(enumValues, o.Value)
+	}
+
+	// check if value still valid
+	if len(newV.Enum) > 0 && !contains(enumValues, oldValue.Value) {
+		return true
+	}
+
+	// check if default has changed
+	return !oldValue.UserProvided && oldV.Default != newV.Default
 }
 
 func (r *Resolver) dynamicOptionsForNode(children []string) config.OptionDefinitions {

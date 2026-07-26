@@ -30,11 +30,7 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 		return legacyShellDelivery(opts, "custom driver")
 
 	case driverType == provider.KubernetesDriver:
-		if opts.PodExec == nil {
-			return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
-		}
-		log.Debugf("using kubernetes-native delivery (exec stream)")
-		return &KubernetesDelivery{Exec: opts.PodExec}
+		return kubernetesDelivery(opts)
 
 	case driverType == provider.AppleDriver:
 		// Shell delivery launches the agent in one exec, which keeps the VM
@@ -47,20 +43,32 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 		return remoteDockerDelivery(opts)
 
 	case driverType == "" || driverType == provider.DockerDriver:
-		if isDockerLocal(opts.DockerCommand) {
-			log.Debugf("using local docker delivery (named volume)")
-			return &LocalDockerDelivery{
-				DockerCommand: opts.DockerCommand,
-				Environment:   opts.DockerEnv,
-				HelperImage:   opts.HelperImage,
-			}
-		}
-		log.Debugf("using remote docker delivery for non-local docker daemon")
-		return remoteDockerDelivery(opts)
+		return dockerDelivery(opts)
 
 	default:
 		return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType))
 	}
+}
+
+func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
+	if opts.PodExec == nil {
+		return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
+	}
+	log.Debugf("using kubernetes-native delivery (exec stream)")
+	return &KubernetesDelivery{Exec: opts.PodExec}
+}
+
+func dockerDelivery(opts FactoryOptions) AgentDelivery {
+	if isDockerLocal(opts.DockerCommand) {
+		log.Debugf("using local docker delivery (named volume)")
+		return &LocalDockerDelivery{
+			DockerCommand: opts.DockerCommand,
+			Environment:   opts.DockerEnv,
+			HelperImage:   opts.HelperImage,
+		}
+	}
+	log.Debugf("using remote docker delivery for non-local docker daemon")
+	return remoteDockerDelivery(opts)
 }
 
 func remoteDockerDelivery(opts FactoryOptions) AgentDelivery {

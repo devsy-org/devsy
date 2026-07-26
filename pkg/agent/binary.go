@@ -338,12 +338,17 @@ func (s *HTTPDownloadSource) streamAndCache(
 		return
 	}
 
-	if err := os.Rename(tmpPath, cachePath); err == nil {
-		success = true
-		if s.Version != "" && s.Cache != nil {
-			s.Cache.WriteVersion(arch, s.Version)
-		}
+	success = s.finalizeCache(arch, tmpPath, cachePath)
+}
+
+func (s *HTTPDownloadSource) finalizeCache(arch, tmpPath, cachePath string) bool {
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		return false
 	}
+	if s.Version != "" && s.Cache != nil {
+		s.Cache.WriteVersion(arch, s.Version)
+	}
+	return true
 }
 
 func (s *HTTPDownloadSource) createTempFile(

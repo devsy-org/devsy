@@ -148,6 +148,13 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	}
 	log.Infof("installed backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 
+	return o.installPlugins(setupInfo, targetLocation, baseFolder)
+}
+
+func (o *GenericJetBrainsServer) installPlugins(
+	setupInfo *config.Result,
+	targetLocation, baseFolder string,
+) error {
 	jetBrainsConfiguration := config.GetJetBrainsConfiguration(setupInfo.MergedConfig)
 	plugins := jetBrainsConfiguration.Plugins
 
@@ -175,7 +182,7 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	// we are running as root,
 	// so for the plugins to be installed for the correct user,
 	// user the installPluginsCommand runs as needs to be adjusted:
-	err = command.ForUser(installPluginsCommand, o.userName)
+	err := command.ForUser(installPluginsCommand, o.userName)
 	if err != nil {
 		return err
 	}

@@ -624,17 +624,15 @@ func processDirectTarFeature(
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 
 	// Check cache — verify integrity if present.
-	_, statErr := os.Stat(featureExtractedFolder)
-	if statErr == nil && !forceDownload {
-		if verifyCacheIntegrity(featureFolder, id) {
-			log.Debugf("direct tar feature already cached: folder=%s", featureExtractedFolder)
-			cachedIntegrity := tarballIntegrity(featureFolder)
-			if err := verifyPinnedDigest(id, cachedIntegrity, pinnedIntegrity); err != nil {
-				return "", "", err
-			}
-			return featureExtractedFolder, cachedIntegrity, nil
-		}
-		_ = os.RemoveAll(featureFolder)
+	cached, err := checkDirectTarCache(checkDirectTarCacheParams{
+		featureFolder:   featureFolder,
+		extractedFolder: featureExtractedFolder,
+		id:              id,
+		forceDownload:   forceDownload,
+		pinnedIntegrity: pinnedIntegrity,
+	})
+	if err != nil || cached.hit {
+		return cached.folder, cached.integrity, err
 	}
 
 	// Download feature tarball.
@@ -662,6 +660,43 @@ func processDirectTarFeature(
 		featureExtractedFolder,
 	)
 	return featureExtractedFolder, downloadIntegrity, nil
+}
+
+type checkDirectTarCacheParams struct {
+	featureFolder   string
+	extractedFolder string
+	id              string
+	forceDownload   bool
+	pinnedIntegrity string
+}
+
+type directTarCacheResult struct {
+	folder    string
+	integrity string
+	hit       bool
+}
+
+func checkDirectTarCache(params checkDirectTarCacheParams) (directTarCacheResult, error) {
+	_, statErr := os.Stat(params.extractedFolder)
+	if statErr != nil || params.forceDownload {
+		return directTarCacheResult{}, nil
+	}
+
+	if !verifyCacheIntegrity(params.featureFolder, params.id) {
+		_ = os.RemoveAll(params.featureFolder)
+		return directTarCacheResult{}, nil
+	}
+
+	log.Debugf("direct tar feature already cached: folder=%s", params.extractedFolder)
+	cachedIntegrity := tarballIntegrity(params.featureFolder)
+	if err := verifyPinnedDigest(params.id, cachedIntegrity, params.pinnedIntegrity); err != nil {
+		return directTarCacheResult{}, err
+	}
+	return directTarCacheResult{
+		folder:    params.extractedFolder,
+		integrity: cachedIntegrity,
+		hit:       true,
+	}, nil
 }
 
 // tarballIntegrity returns the sha256:<hex> digest of a cached feature tarball,

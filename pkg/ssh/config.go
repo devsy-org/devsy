@@ -426,6 +426,24 @@ func transformHostSection(path, host string, transform func(line string) string)
 		defer func() { _ = f.Close() }()
 	}
 
+	newLines, scanErr := scanHostSection(reader, host, transform)
+	if scanErr != nil {
+		return "", fmt.Errorf("parse ssh config: %w", scanErr)
+	}
+
+	// remove residual empty line at start file
+	if len(newLines) > 0 && newLines[0] == "" {
+		newLines = newLines[1:]
+	}
+
+	return strings.Join(newLines, "\n"), nil
+}
+
+func scanHostSection(
+	reader io.Reader,
+	host string,
+	transform func(line string) string,
+) ([]string, error) {
 	configScanner := scanner.NewScanner(reader)
 	newLines := []string{}
 	inSection := false
@@ -447,14 +465,6 @@ func transformHostSection(path, host string, transform func(line string) string)
 			}
 		}
 	}
-	if configScanner.Err() != nil {
-		return "", fmt.Errorf("parse ssh config: %w", err)
-	}
 
-	// remove residual empty line at start file
-	if len(newLines) > 0 && newLines[0] == "" {
-		newLines = newLines[1:]
-	}
-
-	return strings.Join(newLines, "\n"), nil
+	return newLines, configScanner.Err()
 }

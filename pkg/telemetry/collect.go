@@ -136,29 +136,17 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 
 	timezone, _ := time.Now().Zone()
-	eventProperties := map[string]any{
-		"command":        cmd,
-		"version":        version.GetVersion(),
-		"desktop":        isUI,
-		"is_ci":          isCI,
-		"is_interactive": isInteractive,
-	}
-	if d.client != nil {
-		eventProperties["provider"] = d.client.Provider()
-
-		if d.client.WorkspaceConfig() != nil {
-			eventProperties["source_type"] = d.client.WorkspaceConfig().Source.Type()
-			eventProperties["ide"] = d.client.WorkspaceConfig().IDE.Name
-		}
-	}
+	eventProperties := d.buildEventProperties(eventPropertiesParams{
+		cmd:           cmd,
+		isUI:          isUI,
+		isCI:          isCI,
+		isInteractive: isInteractive,
+		err:           err,
+	})
 	userProperties := map[string]any{
 		"os_name":  runtime.GOOS,
 		"os_arch":  runtime.GOARCH,
 		"timezone": timezone,
-	}
-	// Raw err.Error() strings can leak paths, hostnames, tokens.
-	if err != nil {
-		eventProperties["error_code"] = string(clierr.Classify(err).Code)
 	}
 
 	eventType := config.BinaryName + "_cli"
@@ -167,6 +155,14 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 
 	d.recordEvent(eventType, eventProperties, userProperties)
+}
+
+type eventPropertiesParams struct {
+	cmd           string
+	isUI          bool
+	isCI          bool
+	isInteractive bool
+	err           error
 }
 
 func (d *cliCollector) RecordWorkspaceGauge(count int) {
@@ -184,6 +180,29 @@ func (d *cliCollector) RecordWorkspaceGauge(count int) {
 			"timezone": timezone,
 		},
 	)
+}
+
+func (d *cliCollector) buildEventProperties(p eventPropertiesParams) map[string]any {
+	eventProperties := map[string]any{
+		"command":        p.cmd,
+		"version":        version.GetVersion(),
+		"desktop":        p.isUI,
+		"is_ci":          p.isCI,
+		"is_interactive": p.isInteractive,
+	}
+	if d.client != nil {
+		eventProperties["provider"] = d.client.Provider()
+
+		if workspaceConfig := d.client.WorkspaceConfig(); workspaceConfig != nil {
+			eventProperties["source_type"] = workspaceConfig.Source.Type()
+			eventProperties["ide"] = workspaceConfig.IDE.Name
+		}
+	}
+	// Raw err.Error() strings can leak paths, hostnames, tokens.
+	if p.err != nil {
+		eventProperties["error_code"] = string(clierr.Classify(p.err).Code)
+	}
+	return eventProperties
 }
 
 func (d *cliCollector) recordEvent(

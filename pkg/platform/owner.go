@@ -13,23 +13,29 @@ func IsOwner(self *managementv1.Self, userOrTeam *storagev1.UserOrTeam) bool {
 		return false
 	}
 
-	if self.Status.User != nil {
-		// is user owner?
-		if self.Status.User.Name == userOrTeam.User {
-			return true
-		}
-
-		// is user in owning team?
-		for _, team := range self.Status.User.Teams {
-			if team.Name == userOrTeam.Team {
-				return true
-			}
-		}
+	if userIsOwner(self.Status.User, userOrTeam) {
+		return true
 	}
 
 	// is user owning team?
-	if self.Status.Team != nil && self.Status.Team.Name == userOrTeam.Team {
+	return self.Status.Team != nil && self.Status.Team.Name == userOrTeam.Team
+}
+
+func userIsOwner(user *managementv1.UserInfo, userOrTeam *storagev1.UserOrTeam) bool {
+	if user == nil {
+		return false
+	}
+
+	// is user owner?
+	if user.Name == userOrTeam.User {
 		return true
+	}
+
+	// is user in owning team?
+	for _, team := range user.Teams {
+		if team.Name == userOrTeam.Team {
+			return true
+		}
 	}
 
 	return false

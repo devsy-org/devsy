@@ -52,12 +52,7 @@ func MergeConfiguration(
 		imageMetadataEntries = []*ImageMetadata{userMetadata}
 	}
 
-	customizations := map[string][]any{}
-	for _, imageMetadata := range imageMetadataEntries {
-		for k, v := range imageMetadata.Customizations {
-			customizations[k] = append(customizations[k], v)
-		}
-	}
+	customizations := collectCustomizations(imageMetadataEntries)
 
 	copiedConfig := CloneDevContainerConfig(config)
 
@@ -165,17 +160,31 @@ func MergeConfiguration(
 	mergedConfig.HostRequirements = mergeHostRequirements(reversed)
 
 	if mergedConfig.ShutdownAction == "" {
-		switch {
-		case copiedConfig.ShutdownAction != "":
-			mergedConfig.ShutdownAction = copiedConfig.ShutdownAction
-		case len(copiedConfig.DockerComposeFile) > 0:
-			mergedConfig.ShutdownAction = ShutdownActionStopCompose
-		default:
-			mergedConfig.ShutdownAction = ShutdownActionStopContainer
-		}
+		mergedConfig.ShutdownAction = defaultShutdownAction(copiedConfig)
 	}
 
 	return mergedConfig, nil
+}
+
+func collectCustomizations(entries []*ImageMetadata) map[string][]any {
+	customizations := map[string][]any{}
+	for _, imageMetadata := range entries {
+		for k, v := range imageMetadata.Customizations {
+			customizations[k] = append(customizations[k], v)
+		}
+	}
+	return customizations
+}
+
+func defaultShutdownAction(copiedConfig *DevContainerConfig) string {
+	switch {
+	case copiedConfig.ShutdownAction != "":
+		return copiedConfig.ShutdownAction
+	case len(copiedConfig.DockerComposeFile) > 0:
+		return ShutdownActionStopCompose
+	default:
+		return ShutdownActionStopContainer
+	}
 }
 
 func mergeOtherPortsAttributes(entries []*ImageMetadata) *PortAttribute {

@@ -85,6 +85,33 @@ func (o *RStudioServer) Install() error {
 	}
 	log.Info("Installing RStudio")
 
+	if err := o.installSteps(debPath); err != nil {
+		return err
+	}
+	log.Info("installed RStudio")
+
+	return o.Start()
+}
+
+func (o *RStudioServer) Start() error {
+	return command.StartBackgroundOnce("rstudio", func() (*exec.Cmd, error) {
+		log.Info("Starting RStudio")
+		runCommand := "rstudio-server start"
+		args := []string{}
+		if o.userName != "" {
+			args = append(args, "su", o.userName, "-w", "SSH_AUTH_SOCK", "-l", "-c", runCommand)
+		} else {
+			args = append(args, "sh", "-l", "-c", runCommand)
+		}
+		cmd := exec.Command(
+			args[0],
+			args[1:]...) // #nosec G204 -- args internally constructed, not user-tainted
+		cmd.Dir = o.workspaceFolder
+		return cmd, nil
+	})
+}
+
+func (o *RStudioServer) installSteps(debPath string) error {
 	err := ensureGdebi()
 	if err != nil {
 		return err
@@ -110,29 +137,7 @@ func (o *RStudioServer) Install() error {
 		return err
 	}
 
-	err = setupPreferences(o.workspaceFolder, o.userName)
-	if err != nil {
-		return err
-	}
-	log.Info("installed RStudio")
-
-	return o.Start()
-}
-
-func (o *RStudioServer) Start() error {
-	return command.StartBackgroundOnce("rstudio", func() (*exec.Cmd, error) {
-		log.Info("Starting RStudio")
-		runCommand := "rstudio-server start"
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-w", "SSH_AUTH_SOCK", "-l", "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-l", "-c", runCommand)
-		}
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = o.workspaceFolder
-		return cmd, nil
-	})
+	return setupPreferences(o.workspaceFolder, o.userName)
 }
 
 func ensureGdebi() error {

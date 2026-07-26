@@ -276,63 +276,13 @@ func (t *tunnelServer) GitCredentials(
 		return nil, fmt.Errorf("decode git credentials request: %w", err)
 	}
 
-	// A configured git token is returned only for its own host, so it is never
-	// offered to other hosts git contacts (submodules, redirects).
-	if t.gitToken != nil && t.gitToken.Token != "" &&
-		strings.EqualFold(credentials.Host, t.gitToken.Host) {
-		credentials.Username = t.gitToken.Username
-		credentials.Password = t.gitToken.Token
-		// #nosec G117 -- git credential response legitimately carries the token.
-		out, err := json.Marshal(credentials)
-		if err != nil {
-			return nil, err
-		}
-		return &tunnel.Message{Message: string(out)}, nil
+	if msg, ok, err := t.gitTokenCredentials(credentials); ok || err != nil {
+		return msg, err
 	}
 
-	if t.platformOptions != nil && t.platformOptions.Enabled {
-		gitHttpCredentials := slices.Concat(
-			t.platformOptions.UserCredentials.GitHttp,
-			t.platformOptions.ProjectCredentials.GitHttp)
-		if len(gitHttpCredentials) > 0 {
-			if len(gitHttpCredentials) == 1 {
-				credentials.Username = gitHttpCredentials[0].User
-				credentials.Password = gitHttpCredentials[0].Password
-				credentials.Path = gitHttpCredentials[0].Path
-			} else {
-				for _, credential := range gitHttpCredentials {
-					if credential.Host == credentials.Host {
-						credentials.Username = credential.User
-						credentials.Password = credential.Password
-						credentials.Path = credential.Path
-						break
-					}
-				}
-			}
-		}
-	} else {
-		if t.workspace != nil && t.workspace.Source.GitRepository != "" {
-			path, err := gitcredentials.GetHTTPPath(ctx, gitcredentials.GetHttpPathParameters{
-				Host:        credentials.Host,
-				Protocol:    credentials.Protocol,
-				CurrentPath: credentials.Path,
-				Repository:  t.workspace.Source.GitRepository,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("get http path: %w", err)
-			}
-			// Set the credentials `path` field to the path component of the Git repository URL.
-			// This allows downstream credential helpers to figure out which passwords needs to be fetched
-			credentials.Path = path
-		} else {
-			log.Warn("workspace is not available for git credentials")
-		}
-
-		response, err := gitcredentials.GetCredentials(ctx, credentials)
-		if err != nil {
-			return nil, fmt.Errorf("get git response: %w", err)
-		}
-		credentials = response
+	credentials, err = t.populateGitCredentials(ctx, credentials)
+	if err != nil {
+		return nil, err
 	}
 
 	out, err := json.Marshal(credentials)
@@ -341,6 +291,32 @@ func (t *tunnelServer) GitCredentials(
 	}
 
 	return &tunnel.Message{Message: string(out)}, nil
+}
+
+func applyPlatformGitCredentials(
+	credentials *gitcredentials.GitCredentials,
+	platformOptions *devsy.PlatformOptions,
+) {
+	gitHttpCredentials := slices.Concat(
+		platformOptions.UserCredentials.GitHttp,
+		platformOptions.ProjectCredentials.GitHttp)
+	if len(gitHttpCredentials) == 0 {
+		return
+	}
+	if len(gitHttpCredentials) == 1 {
+		credentials.Username = gitHttpCredentials[0].User
+		credentials.Password = gitHttpCredentials[0].Password
+		credentials.Path = gitHttpCredentials[0].Path
+		return
+	}
+	for _, credential := range gitHttpCredentials {
+		if credential.Host == credentials.Host {
+			credentials.Username = credential.User
+			credentials.Password = credential.Password
+			credentials.Path = credential.Path
+			break
+		}
+	}
 }
 
 func (t *tunnelServer) GitSSHSignature(
@@ -493,7 +469,7 @@ func (t *tunnelServer) StreamMount(
 	message *tunnel.StreamMountRequest,
 	stream tunnel.Tunnel_StreamMountServer,
 ) error {
-	if t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions {
+	if t.platformStreamBlocked() {
 		return fmt.Errorf(
 			"streaming mounts from local computer to platform workspace is not supported. " +
 				"Specify a Git repository to clone instead",
@@ -511,19 +487,7 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	// Get .devsyignore files to exclude
-	excludes := []string{}
-	if t.workspace != nil {
-		f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
-		if err == nil {
-			excludes, err = ignorefile.ReadAll(f)
-			if err != nil {
-				log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
-			}
-		}
-	}
-
-	excludes = append(excludes, config.BuildArtifactExcludes()...)
+	excludes := append(t.workspaceIgnoreExcludes(), config.BuildArtifactExcludes()...)
 
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)
@@ -533,4 +497,84 @@ func (t *tunnelServer) StreamMount(
 
 	// make sure buffer is flushed
 	return buf.Flush()
+}
+
+func (t *tunnelServer) gitTokenCredentials(
+	credentials *gitcredentials.GitCredentials,
+) (*tunnel.Message, bool, error) {
+	// A configured git token is returned only for its own host, so it is never
+	// offered to other hosts git contacts (submodules, redirects).
+	if t.gitToken == nil || t.gitToken.Token == "" ||
+		!strings.EqualFold(credentials.Host, t.gitToken.Host) {
+		return nil, false, nil
+	}
+
+	credentials.Username = t.gitToken.Username
+	credentials.Password = t.gitToken.Token
+	// #nosec G117 -- git credential response legitimately carries the token.
+	out, err := json.Marshal(credentials)
+	if err != nil {
+		return nil, false, err
+	}
+	return &tunnel.Message{Message: string(out)}, true, nil
+}
+
+func (t *tunnelServer) populateGitCredentials(
+	ctx context.Context,
+	credentials *gitcredentials.GitCredentials,
+) (*gitcredentials.GitCredentials, error) {
+	if t.platformOptions != nil && t.platformOptions.Enabled {
+		applyPlatformGitCredentials(credentials, t.platformOptions)
+		return credentials, nil
+	}
+	return t.resolveHostGitCredentials(ctx, credentials)
+}
+
+func (t *tunnelServer) resolveHostGitCredentials(
+	ctx context.Context,
+	credentials *gitcredentials.GitCredentials,
+) (*gitcredentials.GitCredentials, error) {
+	if t.workspace != nil && t.workspace.Source.GitRepository != "" {
+		path, err := gitcredentials.GetHTTPPath(ctx, gitcredentials.GetHttpPathParameters{
+			Host:        credentials.Host,
+			Protocol:    credentials.Protocol,
+			CurrentPath: credentials.Path,
+			Repository:  t.workspace.Source.GitRepository,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("get http path: %w", err)
+		}
+		// Set the credentials `path` field to the path component of the Git repository URL.
+		// This allows downstream credential helpers to figure out which passwords needs to be fetched
+		credentials.Path = path
+	} else {
+		log.Warn("workspace is not available for git credentials")
+	}
+
+	response, err := gitcredentials.GetCredentials(ctx, credentials)
+	if err != nil {
+		return nil, fmt.Errorf("get git response: %w", err)
+	}
+	return response, nil
+}
+
+func (t *tunnelServer) platformStreamBlocked() bool {
+	return t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions
+}
+
+func (t *tunnelServer) workspaceIgnoreExcludes() []string {
+	excludes := []string{}
+	if t.workspace == nil {
+		return excludes
+	}
+
+	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
+	if err == nil {
+		defer func() { _ = f.Close() }()
+		excludes, err = ignorefile.ReadAll(f)
+		if err != nil {
+			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
+		}
+	}
+	return excludes
 }

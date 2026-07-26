@@ -73,10 +73,6 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 		return buildInfo, nil
 	}
 
-	if err := remote.CheckPushPermission(ref, keychain, http.DefaultTransport); err != nil {
-		return nil, fmt.Errorf("pushing %s is not allowed: %w", ref, err)
-	}
-
 	solveOpts, err := prepareSolveOptions(ref, keychain, imageName, opts)
 	if err != nil {
 		return nil, err
@@ -91,7 +87,27 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 		return nil, err
 	}
 
-	imageDetails, err := getImageDetails(ctx, ref, opts.TargetArch, keychain)
+	return buildFinalResult(ctx, buildFinalResultParams{
+		Ref:       ref,
+		Keychain:  keychain,
+		ImageName: imageName,
+		Opts:      opts,
+	})
+}
+
+type buildFinalResultParams struct {
+	Ref       name.Reference
+	Keychain  authn.Keychain
+	ImageName string
+	Opts      BuildRemoteOptions
+}
+
+func buildFinalResult(
+	ctx context.Context,
+	params buildFinalResultParams,
+) (*config.BuildInfo, error) {
+	opts := params.Opts
+	imageDetails, err := getImageDetails(ctx, params.Ref, opts.TargetArch, params.Keychain)
 	if err != nil {
 		return nil, fmt.Errorf("get image details: %w", err)
 	}
@@ -104,7 +120,7 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: imageMetadata,
-		ImageName:     imageName,
+		ImageName:     params.ImageName,
 		PrebuildHash:  opts.PrebuildHash,
 		RegistryCache: opts.Options.RegistryCache,
 		Tags:          opts.Options.Tag,
@@ -256,17 +272,13 @@ func prepareSolveOptions(
 	imageName string,
 	opts BuildRemoteOptions,
 ) (client.SolveOpt, error) {
-	authSession, err := setupRegistryAuth(ref, keychain)
-	if err != nil {
-		return client.SolveOpt{}, err
+	if err := remote.CheckPushPermission(ref, keychain, http.DefaultTransport); err != nil {
+		return client.SolveOpt{}, fmt.Errorf("pushing %s is not allowed: %w", ref, err)
 	}
 
-	secretsAttachable, err := buildSecretsAttachable(opts.Options.BuildSecrets)
+	authSession, err := buildRemoteSession(ref, keychain, opts)
 	if err != nil {
 		return client.SolveOpt{}, err
-	}
-	if secretsAttachable != nil {
-		authSession = append(authSession, secretsAttachable)
 	}
 
 	buildOpts, err := build.NewOptions(build.NewOptionsParams{
@@ -314,6 +326,27 @@ func prepareSolveOptions(
 	addFrontendAttrs(&solveOpts, buildOpts)
 
 	return solveOpts, nil
+}
+
+func buildRemoteSession(
+	ref name.Reference,
+	keychain authn.Keychain,
+	opts BuildRemoteOptions,
+) ([]session.Attachable, error) {
+	authSession, err := setupRegistryAuth(ref, keychain)
+	if err != nil {
+		return nil, err
+	}
+
+	secretsAttachable, err := buildSecretsAttachable(opts.Options.BuildSecrets)
+	if err != nil {
+		return nil, err
+	}
+	if secretsAttachable != nil {
+		authSession = append(authSession, secretsAttachable)
+	}
+
+	return authSession, nil
 }
 
 func setupCache(

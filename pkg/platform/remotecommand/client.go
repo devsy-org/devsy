@@ -61,20 +61,28 @@ func ExecuteConn(
 			continue
 		}
 
-		switch message.messageType {
-		case StdoutData:
-			if _, err := io.Copy(stdout, message.data); err != nil {
-				log.Debugf("error read stdout: %v", err)
-				return 1, err
-			}
-		case StderrData:
-			if _, err := io.Copy(stderr, message.data); err != nil {
-				log.Debugf("error read stderr: %v", err)
-				return 1, err
-			}
-		case ExitCode:
-			log.Debugf("exit code: %d", message.exitCode)
-			return int(message.exitCode), nil
+		exitCode, done, err := writeExecMessage(message, stdout, stderr)
+		if done {
+			return exitCode, err
 		}
 	}
+}
+
+func writeExecMessage(message *Message, stdout, stderr io.Writer) (int, bool, error) {
+	switch message.messageType {
+	case StdoutData:
+		if _, err := io.Copy(stdout, message.data); err != nil {
+			log.Debugf("error read stdout: %v", err)
+			return 1, true, err
+		}
+	case StderrData:
+		if _, err := io.Copy(stderr, message.data); err != nil {
+			log.Debugf("error read stderr: %v", err)
+			return 1, true, err
+		}
+	case ExitCode:
+		log.Debugf("exit code: %d", message.exitCode)
+		return int(message.exitCode), true, nil
+	}
+	return 0, false, nil
 }

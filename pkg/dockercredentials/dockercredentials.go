@@ -90,39 +90,8 @@ func configureCredentials(
 		return err
 	}
 
-	// write credentials helper
-	helperName := pkgconfig.DockerCredentialHelperName
-	if runtime.GOOS == windowsOS {
-		helperName += ".cmd"
-	}
-	credentialHelperPath := filepath.Join(targetDir, helperName)
-
-	var helperContent []byte
-	if runtime.GOOS == windowsOS {
-		escapedPath := strings.ReplaceAll(binaryPath, "%", "%%")
-		script := fmt.Sprintf(
-			"@echo off\r\n\"%s\" internal agent docker-credentials --port %d %%*\r\n",
-			escapedPath,
-			port,
-		)
-		helperContent = []byte(script)
-	} else {
-		cmd := shellescape.QuoteCommand([]string{
-			binaryPath,
-			"internal",
-			"agent",
-			"docker-credentials",
-			"--port",
-			fmt.Sprintf("%d", port),
-		})
-		helperContent = []byte(shebang + "\n" + cmd + ` "$@"` + "\n")
-	}
-
-	log.Debugf("Wrote docker credentials helper to %s", credentialHelperPath)
-	// #nosec G306 -- executable file needs 0755 permissions
-	err = os.WriteFile(credentialHelperPath, helperContent, 0o755)
-	if err != nil {
-		return fmt.Errorf("write credential helper: %w", err)
+	if err := writeCredentialHelper(targetDir, binaryPath, shebang, port); err != nil {
+		return err
 	}
 
 	dockerConfig.CredentialsStore = pkgconfig.BinaryName
@@ -137,6 +106,46 @@ func configureCredentials(
 	}
 
 	return nil
+}
+
+func writeCredentialHelper(targetDir, binaryPath, shebang string, port int) error {
+	helperName := pkgconfig.DockerCredentialHelperName
+	if runtime.GOOS == windowsOS {
+		helperName += ".cmd"
+	}
+	credentialHelperPath := filepath.Join(targetDir, helperName)
+
+	helperContent := buildHelperContent(binaryPath, shebang, port)
+
+	// #nosec G306 -- executable file needs 0755 permissions
+	if err := os.WriteFile(credentialHelperPath, helperContent, 0o755); err != nil {
+		return fmt.Errorf("write credential helper: %w", err)
+	}
+	log.Debugf("Wrote docker credentials helper to %s", credentialHelperPath)
+
+	return nil
+}
+
+func buildHelperContent(binaryPath, shebang string, port int) []byte {
+	if runtime.GOOS == windowsOS {
+		escapedPath := strings.ReplaceAll(binaryPath, "%", "%%")
+		script := fmt.Sprintf(
+			"@echo off\r\n\"%s\" internal agent docker-credentials --port %d %%*\r\n",
+			escapedPath,
+			port,
+		)
+		return []byte(script)
+	}
+
+	cmd := shellescape.QuoteCommand([]string{
+		binaryPath,
+		"internal",
+		"agent",
+		"docker-credentials",
+		"--port",
+		fmt.Sprintf("%d", port),
+	})
+	return []byte(shebang + "\n" + cmd + ` "$@"` + "\n")
 }
 
 func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
@@ -237,21 +246,9 @@ func GetAuthConfig(host string) (*Credentials, error) {
 		return nil, err
 	}
 
-	// let's try to query the containers ecosystem
-	// if the credentials the docker SDK returns are empty
-	// Unfortunately docker swallows credentials.errCredentialsNotFound
-	// so we only have the option to compare against an empty types.AuthConfig
-	empty := types.AuthConfig{}
-	if ac == empty {
-		sanitizedHost := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
-		dac, err := dockerconfig.GetCredentials(nil, sanitizedHost)
-		if err != nil {
-			return nil, err
-		}
-		ac.Username = dac.Username
-		ac.Password = dac.Password
-		ac.IdentityToken = dac.IdentityToken
-		ac.ServerAddress = host // Best approximation we have to mimic the docker type.
+	ac, err = fillFromContainerCredentials(ac, host)
+	if err != nil {
+		return nil, err
 	}
 
 	// In case of Azure registry we need to set the azure username to a default, in case it's not set.
@@ -259,17 +256,40 @@ func GetAuthConfig(host string) (*Credentials, error) {
 		ac.Username = AzureContainerRegistryUsername
 	}
 
+	return credentialsFromAuthConfig(ac, host), nil
+}
+
+// fillFromContainerCredentials queries the containers ecosystem when the docker
+// SDK returns empty credentials. Docker swallows credentials.errCredentialsNotFound,
+// so an empty types.AuthConfig is the only signal we have.
+func fillFromContainerCredentials(ac types.AuthConfig, host string) (types.AuthConfig, error) {
+	empty := types.AuthConfig{}
+	if ac != empty {
+		return ac, nil
+	}
+
+	sanitizedHost := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	dac, err := dockerconfig.GetCredentials(nil, sanitizedHost)
+	if err != nil {
+		return ac, err
+	}
+	ac.Username = dac.Username
+	ac.Password = dac.Password
+	ac.IdentityToken = dac.IdentityToken
+	ac.ServerAddress = host // Best approximation we have to mimic the docker type.
+
+	return ac, nil
+}
+
+func credentialsFromAuthConfig(ac types.AuthConfig, host string) *Credentials {
+	secret := ac.Password
 	if ac.IdentityToken != "" {
-		return &Credentials{
-			ServerURL: host,
-			Username:  ac.Username,
-			Secret:    ac.IdentityToken,
-		}, nil
+		secret = ac.IdentityToken
 	}
 
 	return &Credentials{
 		ServerURL: host,
 		Username:  ac.Username,
-		Secret:    ac.Password,
-	}, nil
+		Secret:    secret,
+	}
 }

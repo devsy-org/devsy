@@ -11,17 +11,15 @@ import (
 	"strings"
 )
 
+const homeEnvPlan9 = "home"
+
 // UserHomeDir returns the home directory for the executing user.
 //
 // This extends the logic of os.UserHomeDir() with the now archived package
 // github.com/mitchellh/go-homedir for compatibility.
 func UserHomeDir() (string, error) {
 	// Always try the HOME environment variable first
-	homeEnv := "HOME"
-	if runtime.GOOS == "plan9" {
-		homeEnv = "home"
-	}
-	if home := os.Getenv(homeEnv); home != "" {
+	if home := homeFromEnv(); home != "" {
 		return home, nil
 	}
 
@@ -30,68 +28,109 @@ func UserHomeDir() (string, error) {
 		return home, nil
 	}
 
-	var stdout bytes.Buffer
-
-	// Finally, handle cases existed in go-homedir but not in the current
-	// os.UserHomeDir() implementation
-	switch runtime.GOOS {
-	case "windows":
-		drive := os.Getenv("HOMEDRIVE")
-		path := os.Getenv("HOMEPATH")
-		if drive == "" || path == "" {
-			return "", errors.New("HOMEDRIVE, HOMEPATH, or USERPROFILE are blank")
-		}
-		return drive + path, nil
-	case "darwin":
-		cmd := exec.Command(
-			"sh",
-			"-c",
-			`dscl -q . -read /Users/"$(whoami)" NFSHomeDirectory | sed 's/^[^ ]*: //'`,
-		)
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err == nil {
-			result := strings.TrimSpace(stdout.String())
-			if result != "" {
-				return result, nil
-			}
-		}
-	default:
-		cmd := exec.Command("getent", "passwd", strconv.Itoa(os.Getuid()))
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err != nil {
-			// If the error is ErrNotFound, we ignore it. Otherwise, return it.
-			if errors.Is(err, exec.ErrNotFound) {
-				return "", err
-			}
-		} else {
-			if passwd := strings.TrimSpace(stdout.String()); passwd != "" {
-				// username:password:uid:gid:gecos:home:shell
-				passwdParts := strings.SplitN(passwd, ":", 7)
-				if len(passwdParts) > 5 {
-					return passwdParts[5], nil
-				}
-			}
-		}
+	// Handle cases that existed in go-homedir but not in the current
+	// os.UserHomeDir() implementation.
+	if home, done, err := homeFromPlatform(); done {
+		return home, err
 	}
 
 	// If all else fails, try the shell
-	if runtime.GOOS != "windows" {
-		stdout.Reset()
-		cmd := exec.Command("sh", "-c", "cd && pwd")
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err != nil {
-			return "", err
-		}
+	return homeFromShell()
+}
 
-		result := strings.TrimSpace(stdout.String())
-		if result == "" {
-			return "", errors.New("blank output when reading home directory")
-		}
+func homeFromEnv() string {
+	homeEnv := "HOME"
+	if runtime.GOOS == "plan9" {
+		homeEnv = homeEnvPlan9
+	}
+	return os.Getenv(homeEnv)
+}
 
-		return result, nil
+// homeFromPlatform resolves the home directory using platform-specific
+// mechanisms. done reports whether the resolution is authoritative; when
+// false the caller should fall back to the shell.
+func homeFromPlatform() (string, bool, error) {
+	switch runtime.GOOS {
+	case "windows":
+		home, err := homeFromWindows()
+		return home, true, err
+	case "darwin":
+		if home := homeFromDarwin(); home != "" {
+			return home, true, nil
+		}
+	default:
+		if home, done, err := homeFromGetent(); done {
+			return home, true, err
+		}
+	}
+	return "", false, nil
+}
+
+func homeFromWindows() (string, error) {
+	drive := os.Getenv("HOMEDRIVE")
+	path := os.Getenv("HOMEPATH")
+	if drive == "" || path == "" {
+		return "", errors.New("HOMEDRIVE, HOMEPATH, or USERPROFILE are blank")
+	}
+	return drive + path, nil
+}
+
+func homeFromDarwin() string {
+	var stdout bytes.Buffer
+	cmd := exec.Command(
+		"sh",
+		"-c",
+		`dscl -q . -read /Users/"$(whoami)" NFSHomeDirectory | sed 's/^[^ ]*: //'`,
+	)
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(stdout.String())
+}
+
+func homeFromGetent() (home string, done bool, err error) {
+	var stdout bytes.Buffer
+	// #nosec G204 -- shell/utility path resolved internally, arguments are not user-tainted
+	cmd := exec.Command("getent", "passwd", strconv.Itoa(os.Getuid()))
+	cmd.Stdout = &stdout
+	if runErr := cmd.Run(); runErr != nil {
+		// If the error is ErrNotFound, we return it. Otherwise, we ignore it.
+		if errors.Is(runErr, exec.ErrNotFound) {
+			return "", true, runErr
+		}
+		return "", false, nil
+	}
+	passwd := strings.TrimSpace(stdout.String())
+	if passwd == "" {
+		return "", false, nil
+	}
+	// username:password:uid:gid:gecos:home:shell
+	passwdParts := strings.SplitN(passwd, ":", 7)
+	if len(passwdParts) > 5 && passwdParts[5] != "" {
+		return passwdParts[5], true, nil
+	}
+	return "", false, nil
+}
+
+func homeFromShell() (string, error) {
+	if runtime.GOOS == "windows" {
+		return "", errors.New("can't determine the home directory")
 	}
 
-	return "", errors.New("can't determine the home directory")
+	var stdout bytes.Buffer
+	cmd := exec.Command("sh", "-c", "cd && pwd")
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+
+	result := strings.TrimSpace(stdout.String())
+	if result == "" {
+		return "", errors.New("blank output when reading home directory")
+	}
+
+	return result, nil
 }
 
 // ExpandTilde expands environment variables and a leading ~ or ~/ to the

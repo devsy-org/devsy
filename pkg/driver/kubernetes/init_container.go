@@ -15,51 +15,13 @@ func (k *KubernetesDriver) getInitContainers(
 	initialize bool,
 ) ([]corev1.Container, error) {
 	if !initialize {
-		retContainers := []corev1.Container{}
 		// don't build init container and clean up existing one if defined
-		for _, container := range pod.Spec.InitContainers {
-			if container.Name == InitContainerName {
-				continue
-			}
-			retContainers = append(retContainers, container)
-		}
-
-		return retContainers, nil
+		return filterOutInitContainer(pod.Spec.InitContainers), nil
 	}
 
-	commands := []string{}
-	// find the volume type mounts
-	volumeMounts := []corev1.VolumeMount{}
-	for idx, mount := range options.Mounts {
-		if mount.Type != "volume" {
-			continue
-		}
+	volumeMounts, commands := buildVolumeCopyCommands(options)
 
-		volumeMount := getVolumeMount(idx+1, mount)
-		copyFrom := volumeMount.MountPath
-		volumeMount.MountPath = "/" + volumeMount.SubPath
-		volumeMounts = append(volumeMounts, volumeMount)
-		commands = append(
-			commands,
-			fmt.Sprintf(
-				`cp -a %s/. %s/ || true`,
-				strings.TrimRight(copyFrom, "/"),
-				strings.TrimRight(volumeMount.MountPath, "/"),
-			),
-		)
-	}
-
-	retContainers := []corev1.Container{}
-
-	// merge with existing init container if it exists
-	var existingInitContainer *corev1.Container
-	for i, container := range pod.Spec.InitContainers {
-		if container.Name == InitContainerName {
-			existingInitContainer = &pod.Spec.InitContainers[i]
-		} else {
-			retContainers = append(retContainers, container)
-		}
-	}
+	retContainers, existingInitContainer := splitInitContainers(pod.Spec.InitContainers)
 
 	// check if there is at least one mount
 	if len(volumeMounts) == 0 {
@@ -90,20 +52,79 @@ func (k *KubernetesDriver) getInitContainers(
 		SecurityContext: securityContext,
 	}
 
-	if existingInitContainer != nil {
-		initContainer.Env = append(existingInitContainer.Env, initContainer.Env...)
-		initContainer.EnvFrom = existingInitContainer.EnvFrom
-		initContainer.Ports = existingInitContainer.Ports
-		initContainer.VolumeMounts = append(
-			existingInitContainer.VolumeMounts,
-			initContainer.VolumeMounts...)
-		initContainer.ImagePullPolicy = existingInitContainer.ImagePullPolicy
-
-		if initContainer.SecurityContext == nil && existingInitContainer.SecurityContext != nil {
-			initContainer.SecurityContext = existingInitContainer.SecurityContext
-		}
-	}
+	mergeContainer(&initContainer, existingInitContainer)
 
 	retContainers = append(retContainers, initContainer)
 	return retContainers, nil
+}
+
+func filterOutInitContainer(containers []corev1.Container) []corev1.Container {
+	retContainers := []corev1.Container{}
+	for _, container := range containers {
+		if container.Name == InitContainerName {
+			continue
+		}
+		retContainers = append(retContainers, container)
+	}
+
+	return retContainers
+}
+
+func buildVolumeCopyCommands(
+	options *driver.RunOptions,
+) ([]corev1.VolumeMount, []string) {
+	commands := []string{}
+	volumeMounts := []corev1.VolumeMount{}
+	for idx, mount := range options.Mounts {
+		if mount.Type != "volume" {
+			continue
+		}
+
+		volumeMount := getVolumeMount(idx+1, mount)
+		copyFrom := volumeMount.MountPath
+		volumeMount.MountPath = "/" + volumeMount.SubPath
+		volumeMounts = append(volumeMounts, volumeMount)
+		commands = append(
+			commands,
+			fmt.Sprintf(
+				`cp -a %s/. %s/ || true`,
+				strings.TrimRight(copyFrom, "/"),
+				strings.TrimRight(volumeMount.MountPath, "/"),
+			),
+		)
+	}
+
+	return volumeMounts, commands
+}
+
+func splitInitContainers(containers []corev1.Container) ([]corev1.Container, *corev1.Container) {
+	retContainers := []corev1.Container{}
+	var existingInitContainer *corev1.Container
+	for i, container := range containers {
+		if container.Name == InitContainerName {
+			existingInitContainer = &containers[i]
+		} else {
+			retContainers = append(retContainers, container)
+		}
+	}
+
+	return retContainers, existingInitContainer
+}
+
+func mergeContainer(dst, src *corev1.Container) {
+	if src == nil {
+		return
+	}
+
+	dst.Env = append(src.Env, dst.Env...)
+	dst.EnvFrom = src.EnvFrom
+	dst.Ports = src.Ports
+	dst.VolumeMounts = append(
+		src.VolumeMounts,
+		dst.VolumeMounts...)
+	dst.ImagePullPolicy = src.ImagePullPolicy
+
+	if dst.SecurityContext == nil && src.SecurityContext != nil {
+		dst.SecurityContext = src.SecurityContext
+	}
 }

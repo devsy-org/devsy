@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
+	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +38,8 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	)
 	if err != nil {
 		return nil, err
-	} else if instance == nil {
+	}
+	if instance == nil {
 		return nil, fmt.Errorf(
 			"workspace %s not found. Looks like it does not exist anymore and you can delete it",
 			c.workspace.ID,
@@ -44,83 +47,160 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 	}
 
 	// check if the workspace is migrated and we need to force recreate or reset
-	if instance.Annotations["devsy.sh/migrated"] == devsyconfig.BoolTrue && !opt.Recreate &&
-		!opt.Reset {
-		if os.Getenv(devsyconfig.EnvUI) == devsyconfig.BoolTrue {
-			return nil, fmt.Errorf(
-				"workspace %s is migrated and needs to be rebuild or reset. "+
-					"Click on rebuild or reset on the workspace to do this",
-				c.workspace.ID,
-			)
-		} else {
-			return nil, fmt.Errorf(
-				"workspace %s is migrated and needs to be recreated or reset. Use the recreate or reset flag to do this",
-				c.workspace.ID,
-			)
-		}
+	if err := migratedRebuildError(instance, c.workspace.ID, opt); err != nil {
+		return nil, err
 	}
 
 	// Log current workspace information. This is both useful to the user to understand the workspace configuration
 	// and to us when we receive troubleshooting logs
 	printInstanceInfo(instance)
 
-	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
-		log.Info("Template update required")
-		oldInstance := instance.DeepCopy()
-		instance.Spec.TemplateRef.SyncOnce = true
-
-		instance, err = platform.UpdateInstance(ctx, baseClient, oldInstance, instance)
-		if err != nil {
-			return nil, fmt.Errorf("update instance: %w", err)
-		}
-		log.Info("updated template")
+	instance, err = syncTemplateIfRequired(ctx, baseClient, instance)
+	if err != nil {
+		return nil, err
 	}
 
+	managementClient, taskID, err := startUpTask(ctx, baseClient, instance, opt)
+	if err != nil {
+		return nil, err
+	}
+
+	return waitTaskDone(ctx, managementClient, instance, taskID)
+}
+
+func migratedRebuildError(
+	instance *managementv1.DevsyWorkspaceInstance,
+	workspaceID string,
+	opt clientpkg.UpOptions,
+) error {
+	if instance.Annotations["devsy.sh/migrated"] != devsyconfig.BoolTrue || opt.Recreate ||
+		opt.Reset {
+		return nil
+	}
+
+	if os.Getenv(devsyconfig.EnvUI) == devsyconfig.BoolTrue {
+		return fmt.Errorf(
+			"workspace %s is migrated and needs to be rebuild or reset. "+
+				"Click on rebuild or reset on the workspace to do this",
+			workspaceID,
+		)
+	}
+
+	return fmt.Errorf(
+		"workspace %s is migrated and needs to be recreated or reset. Use the recreate or reset flag to do this",
+		workspaceID,
+	)
+}
+
+func syncTemplateIfRequired(
+	ctx context.Context,
+	baseClient platformclient.Client,
+	instance *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceInstance, error) {
+	if instance.Spec.TemplateRef == nil || !templateUpdateRequired(instance) {
+		return instance, nil
+	}
+
+	log.Info("Template update required")
+	oldInstance := instance.DeepCopy()
+	instance.Spec.TemplateRef.SyncOnce = true
+
+	updated, err := platform.UpdateInstance(ctx, baseClient, oldInstance, instance)
+	if err != nil {
+		return nil, fmt.Errorf("update instance: %w", err)
+	}
+	log.Info("updated template")
+
+	return updated, nil
+}
+
+func startUpTask(
+	ctx context.Context,
+	baseClient platformclient.Client,
+	instance *managementv1.DevsyWorkspaceInstance,
+	opt clientpkg.UpOptions,
+) (kube.Interface, string, error) {
 	// encode options
 	rawOptions, _ := json.Marshal(opt)
 	managementClient, err := baseClient.Management()
 	if err != nil {
-		return nil, fmt.Errorf("error getting management client: %w", err)
+		return nil, "", fmt.Errorf("error getting management client: %w", err)
 	}
 
 	// prompt user to attach to active task or start new one
 	log.Debug("Check active up task")
 	activeUpTask, err := findActiveUpTask(ctx, managementClient, instance)
 	if err != nil {
-		return nil, fmt.Errorf("find active up task: %w", err)
+		return nil, "", fmt.Errorf("find active up task: %w", err)
 	}
 
 	// if we have an active up task, cancel it before creating a new one
-	if activeUpTask != nil {
-		log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
-		_, err = managementClient.Loft().
-			ManagementV1().
-			DevsyWorkspaceInstances(instance.Namespace).
-			Cancel(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
-				TaskID: activeUpTask.ID,
-			}, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("cancel task: %w", err)
-		}
+	if err := cancelActiveUpTask(ctx, managementClient, instance, activeUpTask); err != nil {
+		return nil, "", err
 	}
 
-	// create up task
-	task, err := managementClient.Loft().
+	taskID, err := createUpTask(ctx, createUpTaskParams{
+		managementClient: managementClient,
+		instance:         instance,
+		opt:              opt,
+		rawOptions:       string(rawOptions),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return managementClient, taskID, nil
+}
+
+type createUpTaskParams struct {
+	managementClient kube.Interface
+	instance         *managementv1.DevsyWorkspaceInstance
+	opt              clientpkg.UpOptions
+	rawOptions       string
+}
+
+func cancelActiveUpTask(
+	ctx context.Context,
+	managementClient kube.Interface,
+	instance *managementv1.DevsyWorkspaceInstance,
+	activeUpTask *managementv1.DevsyWorkspaceInstanceTask,
+) error {
+	if activeUpTask == nil {
+		return nil
+	}
+
+	log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
+	_, err := managementClient.Loft().
 		ManagementV1().
 		DevsyWorkspaceInstances(instance.Namespace).
-		Up(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
+		Cancel(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
+			TaskID: activeUpTask.ID,
+		}, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("cancel task: %w", err)
+	}
+
+	return nil
+}
+
+func createUpTask(ctx context.Context, params createUpTaskParams) (string, error) {
+	task, err := params.managementClient.Loft().
+		ManagementV1().
+		DevsyWorkspaceInstances(params.instance.Namespace).
+		Up(ctx, params.instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
 			Spec: managementv1.DevsyWorkspaceInstanceUpSpec{
-				Debug:   opt.Debug,
-				Options: string(rawOptions),
+				Debug:   params.opt.Debug,
+				Options: params.rawOptions,
 			},
 		}, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("error creating up: %w", err)
-	} else if task.Status.TaskID == "" {
-		return nil, fmt.Errorf("no up task id returned from server")
+		return "", fmt.Errorf("error creating up: %w", err)
+	}
+	if task.Status.TaskID == "" {
+		return "", fmt.Errorf("no up task id returned from server")
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, task.Status.TaskID)
+	return task.Status.TaskID, nil
 }
 
 func waitTaskDone(
@@ -314,21 +394,9 @@ func printLogs(
 			return -1, fmt.Errorf("error parsing JSON from logs reader: %w, line: %s", err, line)
 		}
 
-		// write message to stdout or stderr
-		switch message.Type {
-		case StdoutData:
-			if _, err := stdoutStreamer.Write(message.Bytes); err != nil {
-				log.Debugf("error read stdout: %v", err)
-				return 1, err
-			}
-		case StderrData:
-			if _, err := stderrStreamer.Write(message.Bytes); err != nil {
-				log.Debugf("error read stderr: %v", err)
-				return 1, err
-			}
-		case ExitCode:
-			log.Debugf("exit code: %d", message.ExitCode)
-			return message.ExitCode, nil
+		exitCode, done, err := writeMessage(stdoutStreamer, stderrStreamer, message)
+		if done {
+			return exitCode, err
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -339,6 +407,26 @@ func printLogs(
 	}
 
 	return 0, nil
+}
+
+func writeMessage(stdout, stderr io.Writer, message *Message) (int, bool, error) {
+	switch message.Type {
+	case StdoutData:
+		if _, err := stdout.Write(message.Bytes); err != nil {
+			log.Debugf("error read stdout: %v", err)
+			return 1, true, err
+		}
+	case StderrData:
+		if _, err := stderr.Write(message.Bytes); err != nil {
+			log.Debugf("error read stderr: %v", err)
+			return 1, true, err
+		}
+	case ExitCode:
+		log.Debugf("exit code: %d", message.ExitCode)
+		return message.ExitCode, true, nil
+	}
+
+	return 0, false, nil
 }
 
 const (

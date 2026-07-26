@@ -72,11 +72,7 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 	// if windows adjust env
 	isWindows := runtime.GOOS == "windows"
 	if isWindows {
-		newEnv := map[string]string{}
-		for k, v := range substitutionCtx.Env {
-			newEnv[strings.ToLower(k)] = v
-		}
-		substitutionCtx.Env = newEnv
+		substitutionCtx.Env = lowercaseEnvKeys(substitutionCtx.Env)
 	}
 
 	if substitutionCtx.ContainerWorkspaceFolder != "" {
@@ -93,13 +89,7 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 	fullReplace := func(match, variable string, args []string) string {
 		return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
 	}
-	preFieldValues := map[string]any{}
-	for _, key := range preContainerFields {
-		if fieldVal, ok := newVal[key]; ok {
-			preFieldValues[key] = substitute0(fieldVal, restrictedReplace(fullReplace))
-			delete(newVal, key)
-		}
-	}
+	preFieldValues := extractPreContainerFields(newVal, fullReplace)
 
 	// Full substitution for remaining fields.
 	retVal := substitute0(newVal, fullReplace)
@@ -115,6 +105,28 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 	}
 
 	return nil
+}
+
+func lowercaseEnvKeys(env map[string]string) map[string]string {
+	newEnv := map[string]string{}
+	for k, v := range env {
+		newEnv[strings.ToLower(k)] = v
+	}
+	return newEnv
+}
+
+func extractPreContainerFields(
+	newVal map[string]any,
+	fullReplace ReplaceFunction,
+) map[string]any {
+	preFieldValues := map[string]any{}
+	for _, key := range preContainerFields {
+		if fieldVal, ok := newVal[key]; ok {
+			preFieldValues[key] = substitute0(fieldVal, restrictedReplace(fullReplace))
+			delete(newVal, key)
+		}
+	}
+	return preFieldValues
 }
 
 func SubstituteContainerEnv(containerEnv map[string]string, config any, out any) error {
@@ -158,37 +170,34 @@ func replaceWithContext(
 ) string {
 	switch variable {
 	case "devcontainerId":
-		if substitutionCtx.DevContainerID != "" {
-			return substitutionCtx.DevContainerID
-		}
-		return match
+		return valueOrMatch(substitutionCtx.DevContainerID, match)
 	case varLocalEnv:
 		return lookupValue(isWindows, substitutionCtx.Env, args, match)
 	case varLocalWorkspaceFolder:
-		if substitutionCtx.LocalWorkspaceFolder != "" {
-			return substitutionCtx.LocalWorkspaceFolder
-		}
-		return match
+		return valueOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
 	case "localWorkspaceFolderBasename":
-		if substitutionCtx.LocalWorkspaceFolder != "" {
-			return filepath.Base(substitutionCtx.LocalWorkspaceFolder)
-		}
-		return match
+		return baseOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
 	case "containerWorkspaceFolder":
-		if substitutionCtx.ContainerWorkspaceFolder != "" {
-			return substitutionCtx.ContainerWorkspaceFolder
-		}
-		return match
+		return valueOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
 	case "containerWorkspaceFolderBasename":
-		if substitutionCtx.ContainerWorkspaceFolder != "" {
-			return filepath.Base(substitutionCtx.ContainerWorkspaceFolder)
-		}
-		return match
-	case containerEnvField:
-		return match
+		return baseOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
 	default:
 		return match
 	}
+}
+
+func valueOrMatch(value, match string) string {
+	if value != "" {
+		return value
+	}
+	return match
+}
+
+func baseOrMatch(value, match string) string {
+	if value != "" {
+		return filepath.Base(value)
+	}
+	return match
 }
 
 // restrictedReplace wraps a ReplaceFunction to preserve container-scoped

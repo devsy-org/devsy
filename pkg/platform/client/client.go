@@ -367,27 +367,42 @@ func (c *client) LoginWithAccessKey(host, accessKey string, insecure bool, force
 
 	// delete old access key if were logged in before
 	if !force && c.config.AccessKey != "" {
-		managementClient, err := c.Management()
-		if err == nil {
-			self, err := managementClient.Loft().
-				ManagementV1().
-				Selves().
-				Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
-			if err == nil && self.Status.AccessKey != "" &&
-				self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
-				_ = managementClient.Loft().
-					ManagementV1().
-					OwnedAccessKeys().
-					Delete(context.TODO(), self.Status.AccessKey, metav1.DeleteOptions{})
-			}
-		}
+		c.deleteOldAccessKey()
 	}
 
 	c.config.Host = host
 	c.config.Insecure = insecure
 	c.config.AccessKey = accessKey
 
-	// verify the connection works
+	if err := c.verifyConnection(); err != nil {
+		return err
+	}
+
+	return c.Save()
+}
+
+func (c *client) deleteOldAccessKey() {
+	managementClient, err := c.Management()
+	if err != nil {
+		return
+	}
+
+	self, err := managementClient.Loft().
+		ManagementV1().
+		Selves().
+		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
+	if err != nil {
+		return
+	}
+	if self.Status.AccessKey != "" && self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
+		_ = managementClient.Loft().
+			ManagementV1().
+			OwnedAccessKeys().
+			Delete(context.TODO(), self.Status.AccessKey, metav1.DeleteOptions{})
+	}
+}
+
+func (c *client) verifyConnection() error {
 	managementClient, err := c.Management()
 	if err != nil {
 		return fmt.Errorf("create management client: %w", err)
@@ -398,22 +413,22 @@ func (c *client) LoginWithAccessKey(host, accessKey string, insecure bool, force
 		ManagementV1().
 		Selves().
 		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
-	if err != nil {
-		var urlError *url.Error
-		if errors.As(err, &urlError) {
-			var err x509.UnknownAuthorityError
-			if errors.As(urlError.Err, &err) {
-				return fmt.Errorf(
-					"unsafe login endpoint %q, if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
-					c.config.Host,
-				)
-			}
-		}
-
-		return fmt.Errorf("error logging in: %w", err)
+	if err == nil {
+		return nil
 	}
 
-	return c.Save()
+	var urlError *url.Error
+	if errors.As(err, &urlError) {
+		var authErr x509.UnknownAuthorityError
+		if errors.As(urlError.Err, &authErr) {
+			return fmt.Errorf(
+				"unsafe login endpoint %q, if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
+				c.config.Host,
+			)
+		}
+	}
+
+	return fmt.Errorf("error logging in: %w", err)
 }
 
 // VerifyVersion checks if the Loft version is compatible with this CLI version.

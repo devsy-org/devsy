@@ -656,50 +656,70 @@ func TestResolveOptions(t *testing.T) {
 		},
 	}
 
-	for _, testCase := range testCases {
-		fmt.Println(testCase.Name)
-		resolverOpts := []resolver.Option{
-			resolver.WithSkipRequired(testCase.SkipRequired),
-			resolver.WithResolveSubOptions(),
-		}
-		if !testCase.DontResolveLocal {
-			resolverOpts = append(resolverOpts, resolver.WithResolveLocal())
-		}
-		if testCase.ResolveGlobal {
-			resolverOpts = append(resolverOpts, resolver.WithResolveGlobal())
-		}
-		r := resolver.New(testCase.UserValues, testCase.ExtraValues, resolverOpts...)
-		options, dynamicOptions, err := r.Resolve(
-			context.Background(),
-			testCase.ResolvedDynamicDefinitions,
-			testCase.ProviderOptions,
-			testCase.ResolvedValues,
-		)
-		if !testCase.ExpectErr {
-			assert.NilError(t, err, testCase.Name)
-		} else if testCase.ExpectErr {
-			if err == nil {
-				t.Fatalf("expected error, got nil error in test case %s", testCase.Name)
-			}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			runResolveTestCase(t, tc)
+		})
+	}
+}
 
-			continue
+func runResolveTestCase(t *testing.T, tc testCase) {
+	t.Helper()
+	r := resolver.New(tc.UserValues, tc.ExtraValues, buildResolverOpts(tc)...)
+	options, dynamicOptions, err := r.Resolve(
+		context.Background(),
+		tc.ResolvedDynamicDefinitions,
+		tc.ProviderOptions,
+		tc.ResolvedValues,
+	)
+	if tc.ExpectErr {
+		if err == nil {
+			t.Fatalf("expected error, got nil error in test case %s", tc.Name)
 		}
 
-		strOptions := map[string]string{}
-		for k, v := range options {
-			strOptions[k] = v.Value
-		}
-		if len(testCase.ExpectedOptions) > 0 {
-			assert.DeepEqual(t, strOptions, testCase.ExpectedOptions)
-		} else {
-			assert.DeepEqual(t, strOptions, map[string]string{})
-		}
+		return
+	}
 
-		if len(testCase.ExpectedDynamicOptions) > 0 {
-			assert.DeepEqual(t, dynamicOptions, testCase.ExpectedDynamicOptions)
-		} else {
-			assert.DeepEqual(t, dynamicOptions, config.OptionDefinitions{})
-		}
+	assert.NilError(t, err, tc.Name)
+	assertResolvedOptions(t, tc, options, dynamicOptions)
+}
+
+func buildResolverOpts(tc testCase) []resolver.Option {
+	resolverOpts := []resolver.Option{
+		resolver.WithSkipRequired(tc.SkipRequired),
+		resolver.WithResolveSubOptions(),
+	}
+	if !tc.DontResolveLocal {
+		resolverOpts = append(resolverOpts, resolver.WithResolveLocal())
+	}
+	if tc.ResolveGlobal {
+		resolverOpts = append(resolverOpts, resolver.WithResolveGlobal())
+	}
+
+	return resolverOpts
+}
+
+func assertResolvedOptions(
+	t *testing.T,
+	tc testCase,
+	options map[string]config.OptionValue,
+	dynamicOptions config.OptionDefinitions,
+) {
+	t.Helper()
+	strOptions := map[string]string{}
+	for k, v := range options {
+		strOptions[k] = v.Value
+	}
+	if len(tc.ExpectedOptions) > 0 {
+		assert.DeepEqual(t, strOptions, tc.ExpectedOptions)
+	} else {
+		assert.DeepEqual(t, strOptions, map[string]string{})
+	}
+
+	if len(tc.ExpectedDynamicOptions) > 0 {
+		assert.DeepEqual(t, dynamicOptions, tc.ExpectedDynamicOptions)
+	} else {
+		assert.DeepEqual(t, dynamicOptions, config.OptionDefinitions{})
 	}
 }
 

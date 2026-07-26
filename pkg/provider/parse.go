@@ -48,80 +48,17 @@ func ParseProvider(reader io.Reader) (*ProviderConfig, error) {
 }
 
 func validate(config *ProviderConfig) error {
-	// validate name
-	if config.Name == "" {
-		return fmt.Errorf("name is missing in provider.yaml")
-	}
-	if ProviderNameRegEx.MatchString(config.Name) {
-		return fmt.Errorf("provider name can only include lowercase letters, numbers or dashes")
-	} else if len(config.Name) > 32 {
-		return fmt.Errorf("provider name cannot be longer than 32 characters")
+	if err := validateProviderName(config.Name); err != nil {
+		return err
 	}
 
-	// validate version
-	if config.Version != "" {
-		_, err := semver.Parse(strings.TrimPrefix(config.Version, "v"))
-		if err != nil {
-			return fmt.Errorf("parse provider version: %w", err)
-		}
+	if err := validateProviderVersion(config.Version); err != nil {
+		return err
 	}
 
-	// validate option names
 	for optionName, optionValue := range config.Options {
-		if optionNameRegEx.MatchString(optionName) {
-			return fmt.Errorf(
-				"provider option %q can only consist of upper case letters, numbers or underscores, "+
-					"e.g. MY_OPTION, MY_OTHER_OPTION",
-				optionName,
-			)
-		}
-
-		// validate option validation
-		if optionValue.ValidationPattern != "" {
-			_, err := regexp.Compile(optionValue.ValidationPattern)
-			if err != nil {
-				return fmt.Errorf(
-					"error parsing validation pattern %q for option %q: %w",
-					optionValue.ValidationPattern, optionName, err,
-				)
-			}
-		}
-
-		if optionValue.Default != "" && optionValue.Command != "" {
-			return fmt.Errorf(
-				"default and command cannot be used together in option %q",
-				optionName,
-			)
-		}
-
-		if optionValue.Global && optionValue.Cache != "" {
-			return fmt.Errorf("global and cache cannot be used together in option %q", optionName)
-		}
-
-		if optionValue.Global && optionValue.Mutable {
-			return fmt.Errorf(
-				"global and mutable cannot be used together in option %q",
-				optionName,
-			)
-		}
-
-		if optionValue.Cache != "" {
-			_, err := time.ParseDuration(optionValue.Cache)
-			if err != nil {
-				return fmt.Errorf("invalid cache value for option %q: %w", optionName, err)
-			}
-		}
-
-		if optionValue.Type != "" && !contains(allowedTypes, optionValue.Type) {
-			return fmt.Errorf(
-				"type can only be one of in option %q: %v",
-				optionName,
-				allowedTypes,
-			)
-		}
-
-		if optionValue.Cache != "" && optionValue.Command == "" {
-			return fmt.Errorf("cache can only be used with command in option %q", optionName)
+		if err := validateProviderOption(optionName, optionValue); err != nil {
+			return err
 		}
 	}
 
@@ -138,6 +75,113 @@ func validate(config *ProviderConfig) error {
 	err = validateOptionGroups(config)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func validateProviderName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name is missing in provider.yaml")
+	}
+	if ProviderNameRegEx.MatchString(name) {
+		return fmt.Errorf("provider name can only include lowercase letters, numbers or dashes")
+	} else if len(name) > 32 {
+		return fmt.Errorf("provider name cannot be longer than 32 characters")
+	}
+
+	return nil
+}
+
+func validateProviderVersion(version string) error {
+	if version == "" {
+		return nil
+	}
+
+	_, err := semver.Parse(strings.TrimPrefix(version, "v"))
+	if err != nil {
+		return fmt.Errorf("parse provider version: %w", err)
+	}
+
+	return nil
+}
+
+func validateProviderOption(optionName string, optionValue *types.Option) error {
+	if optionNameRegEx.MatchString(optionName) {
+		return fmt.Errorf(
+			"provider option %q can only consist of upper case letters, numbers or underscores, "+
+				"e.g. MY_OPTION, MY_OTHER_OPTION",
+			optionName,
+		)
+	}
+
+	if err := validateOptionPattern(optionName, optionValue); err != nil {
+		return err
+	}
+
+	if err := validateOptionExclusivity(optionName, optionValue); err != nil {
+		return err
+	}
+
+	return validateOptionCacheAndType(optionName, optionValue)
+}
+
+func validateOptionPattern(optionName string, optionValue *types.Option) error {
+	if optionValue.ValidationPattern == "" {
+		return nil
+	}
+
+	_, err := regexp.Compile(optionValue.ValidationPattern)
+	if err != nil {
+		return fmt.Errorf(
+			"error parsing validation pattern %q for option %q: %w",
+			optionValue.ValidationPattern, optionName, err,
+		)
+	}
+
+	return nil
+}
+
+func validateOptionExclusivity(optionName string, optionValue *types.Option) error {
+	if optionValue.Default != "" && optionValue.Command != "" {
+		return fmt.Errorf(
+			"default and command cannot be used together in option %q",
+			optionName,
+		)
+	}
+
+	if optionValue.Global && optionValue.Cache != "" {
+		return fmt.Errorf("global and cache cannot be used together in option %q", optionName)
+	}
+
+	if optionValue.Global && optionValue.Mutable {
+		return fmt.Errorf(
+			"global and mutable cannot be used together in option %q",
+			optionName,
+		)
+	}
+
+	return nil
+}
+
+func validateOptionCacheAndType(optionName string, optionValue *types.Option) error {
+	if optionValue.Cache != "" {
+		_, err := time.ParseDuration(optionValue.Cache)
+		if err != nil {
+			return fmt.Errorf("invalid cache value for option %q: %w", optionName, err)
+		}
+	}
+
+	if optionValue.Type != "" && !contains(allowedTypes, optionValue.Type) {
+		return fmt.Errorf(
+			"type can only be one of in option %q: %v",
+			optionName,
+			allowedTypes,
+		)
+	}
+
+	if optionValue.Cache != "" && optionValue.Command == "" {
+		return fmt.Errorf("cache can only be used with command in option %q", optionName)
 	}
 
 	return nil
@@ -330,35 +374,46 @@ func validateBinaries(prefix string, binaries map[string][]*ProviderBinary) erro
 		}
 
 		for _, binary := range binaryArr {
-			if binary.OS != "linux" && binary.OS != "darwin" && binary.OS != "windows" {
-				return fmt.Errorf(
-					"unsupported binary operating system %q, must be 'linux', 'darwin' or 'windows'",
-					binary.OS,
-				)
-			}
-			if binary.Path == "" {
-				return fmt.Errorf(
-					"%s.%s.path required binary path, cannot be empty",
-					prefix,
-					binaryName,
-				)
-			}
-			if binary.ArchivePath == "" &&
-				(strings.HasSuffix(binary.Path, ".gz") || strings.HasSuffix(binary.Path, ".tar") ||
-					strings.HasSuffix(binary.Path, ".tgz") || strings.HasSuffix(binary.Path, ".zip")) {
-				return fmt.Errorf(
-					"%s.%s.archivePath required because binary path is an archive",
-					prefix,
-					binaryName,
-				)
-			}
-			if binary.Arch == "" {
-				return fmt.Errorf("%s.%s.arch required, cannot be empty", prefix, binaryName)
+			if err := validateBinary(prefix, binaryName, binary); err != nil {
+				return err
 			}
 		}
 	}
 
 	return nil
+}
+
+func validateBinary(prefix, binaryName string, binary *ProviderBinary) error {
+	if binary.OS != "linux" && binary.OS != "darwin" && binary.OS != "windows" {
+		return fmt.Errorf(
+			"unsupported binary operating system %q, must be 'linux', 'darwin' or 'windows'",
+			binary.OS,
+		)
+	}
+	if binary.Path == "" {
+		return fmt.Errorf(
+			"%s.%s.path required binary path, cannot be empty",
+			prefix,
+			binaryName,
+		)
+	}
+	if binary.ArchivePath == "" && pathIsArchive(binary.Path) {
+		return fmt.Errorf(
+			"%s.%s.archivePath required because binary path is an archive",
+			prefix,
+			binaryName,
+		)
+	}
+	if binary.Arch == "" {
+		return fmt.Errorf("%s.%s.arch required, cannot be empty", prefix, binaryName)
+	}
+
+	return nil
+}
+
+func pathIsArchive(path string) bool {
+	return strings.HasSuffix(path, ".gz") || strings.HasSuffix(path, ".tar") ||
+		strings.HasSuffix(path, ".tgz") || strings.HasSuffix(path, ".zip")
 }
 
 func ParseOptions(options []string) (map[string]string, error) {

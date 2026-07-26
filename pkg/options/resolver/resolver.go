@@ -133,7 +133,37 @@ func (r *Resolver) Resolve(
 		return nil, nil, err
 	}
 
-	// find out new dynamic options
+	newDynamicDefinitions := r.findNewDynamicDefinitions(optionDefinitions, resolvedOptions)
+
+	removeStaleOptions(resolvedOptions, newDynamicDefinitions, optionDefinitions)
+
+	// print unused user values
+	if !r.skipRequired {
+		printUnusedUserValues(
+			r.userOptions,
+			mergeMaps(optionDefinitions, newDynamicDefinitions),
+		)
+	}
+
+	return resolvedOptions, newDynamicDefinitions, nil
+}
+
+func removeStaleOptions(
+	resolvedOptions map[string]config.OptionValue,
+	newDynamicDefinitions config.OptionDefinitions,
+	optionDefinitions map[string]*types.Option,
+) {
+	for k := range resolvedOptions {
+		if newDynamicDefinitions[k] == nil && optionDefinitions[k] == nil {
+			delete(resolvedOptions, k)
+		}
+	}
+}
+
+func (r *Resolver) findNewDynamicDefinitions(
+	optionDefinitions map[string]*types.Option,
+	resolvedOptions map[string]config.OptionValue,
+) config.OptionDefinitions {
 	newDynamicDefinitions := config.OptionDefinitions{}
 	for k, option := range r.graph.GetNodes() {
 		if k == rootID || optionDefinitions[k] != nil {
@@ -149,20 +179,5 @@ func (r *Resolver) Resolve(
 		}
 	}
 
-	// remove options that are not there anymore
-	for k := range resolvedOptions {
-		if newDynamicDefinitions[k] == nil && optionDefinitions[k] == nil {
-			delete(resolvedOptions, k)
-		}
-	}
-
-	// print unused user values
-	if !r.skipRequired {
-		printUnusedUserValues(
-			r.userOptions,
-			mergeMaps(optionDefinitions, newDynamicDefinitions),
-		)
-	}
-
-	return resolvedOptions, newDynamicDefinitions, nil
+	return newDynamicDefinitions
 }

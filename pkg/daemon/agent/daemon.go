@@ -303,24 +303,32 @@ func RemoveDaemon() error {
 	}
 
 	// stop and disable the service, propagating real errors
-	//nolint:gosec // BinaryName is a compile-time constant
-	out, err := exec.Command("systemctl", "stop", pkgconfig.BinaryName).
-		CombinedOutput()
-	if err != nil {
-		// "not loaded" means the unit doesn't exist — treat as no-op
-		if !strings.Contains(string(out), "not loaded") {
-			return fmt.Errorf("systemctl stop: %s: %w", string(out), err)
-		}
+	if err := systemctlIgnoringNotLoaded("stop"); err != nil {
+		return err
 	}
-	//nolint:gosec // BinaryName is a compile-time constant
-	out, err = exec.Command("systemctl", "disable", pkgconfig.BinaryName).
-		CombinedOutput()
-	if err != nil {
-		if !strings.Contains(string(out), "not loaded") {
-			return fmt.Errorf("systemctl disable: %s: %w", string(out), err)
-		}
+	if err := systemctlIgnoringNotLoaded("disable"); err != nil {
+		return err
 	}
 
+	return removeServiceUnit()
+}
+
+// systemctlIgnoringNotLoaded runs a systemctl action against the daemon service,
+// treating a "not loaded" result (the unit does not exist) as a no-op.
+func systemctlIgnoringNotLoaded(action string) error {
+	//nolint:gosec // BinaryName is a compile-time constant
+	out, err := exec.Command("systemctl", action, pkgconfig.BinaryName).CombinedOutput()
+	// A missing unit reports "not loaded" (stop) or "does not exist" (disable);
+	// both mean there is nothing to act on, so treat them as a no-op.
+	outStr := string(out)
+	if err != nil && !strings.Contains(outStr, "not loaded") &&
+		!strings.Contains(outStr, "does not exist") {
+		return fmt.Errorf("systemctl %s: %s: %w", action, outStr, err)
+	}
+	return nil
+}
+
+func removeServiceUnit() error {
 	if err := os.Remove(serviceFilePath()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove service file: %w", err)
 	}
@@ -356,6 +364,10 @@ func stopFallbackDaemon() error {
 		return nil
 	}
 
+	return killDaemonIfOurs(pidFile, pid)
+}
+
+func killDaemonIfOurs(pidFile, pid string) error {
 	running, err := command.IsRunning(pid)
 	if err != nil || !running {
 		// Process gone or check failed — stale PID file

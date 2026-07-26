@@ -72,48 +72,9 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 	workspaceInformer := factory.Management().V1().DevsyWorkspaceInstances()
 	instanceStore := newStore(self, config.Context, config.OwnerFilter, config.TsClient)
 	_, err = workspaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj any) {
-			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
-			if !ok {
-				return
-			}
-			instanceStore.Add(instance)
-			if started.Load() {
-				onChange(instanceStore.List())
-			}
-		},
-		UpdateFunc: func(oldObj any, newObj any) {
-			oldInstance, ok := oldObj.(*managementv1.DevsyWorkspaceInstance)
-			if !ok {
-				return
-			}
-			newInstance, ok := newObj.(*managementv1.DevsyWorkspaceInstance)
-			if !ok {
-				return
-			}
-			instanceStore.Update(oldInstance, newInstance)
-			if started.Load() {
-				onChange(instanceStore.List())
-			}
-		},
-		DeleteFunc: func(obj any) {
-			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
-			if !ok {
-				// check for DeletedFinalStateUnknown. Can happen if the informer misses the delete event
-				u, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					return
-				}
-				instance, ok = u.Obj.(*managementv1.DevsyWorkspaceInstance)
-				if !ok {
-					return
-				}
-			}
-			instanceStore.Delete(instance)
-			if started.Load() {
-				onChange(instanceStore.List())
-			}
-		},
+		AddFunc:    addInstanceHandler(instanceStore, started, onChange),
+		UpdateFunc: updateInstanceHandler(instanceStore, started, onChange),
+		DeleteFunc: deleteInstanceHandler(instanceStore, started, onChange),
 	})
 	if err != nil {
 		return err
@@ -143,6 +104,63 @@ func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange cha
 		return nil
 	case err := <-watcherPanic:
 		return err
+	}
+}
+
+func addInstanceHandler(
+	store *instanceStore, started *atomic.Bool, onChange changeFn,
+) func(any) {
+	return func(obj any) {
+		instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
+		if !ok {
+			return
+		}
+		store.Add(instance)
+		if started.Load() {
+			onChange(store.List())
+		}
+	}
+}
+
+func updateInstanceHandler(
+	store *instanceStore, started *atomic.Bool, onChange changeFn,
+) func(any, any) {
+	return func(oldObj any, newObj any) {
+		oldInstance, ok := oldObj.(*managementv1.DevsyWorkspaceInstance)
+		if !ok {
+			return
+		}
+		newInstance, ok := newObj.(*managementv1.DevsyWorkspaceInstance)
+		if !ok {
+			return
+		}
+		store.Update(oldInstance, newInstance)
+		if started.Load() {
+			onChange(store.List())
+		}
+	}
+}
+
+func deleteInstanceHandler(
+	store *instanceStore, started *atomic.Bool, onChange changeFn,
+) func(any) {
+	return func(obj any) {
+		instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
+		if !ok {
+			// check for DeletedFinalStateUnknown. Can happen if the informer misses the delete event
+			u, ok := obj.(cache.DeletedFinalStateUnknown)
+			if !ok {
+				return
+			}
+			instance, ok = u.Obj.(*managementv1.DevsyWorkspaceInstance)
+			if !ok {
+				return
+			}
+		}
+		store.Delete(instance)
+		if started.Load() {
+			onChange(store.List())
+		}
 	}
 }
 
@@ -352,58 +370,66 @@ func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 		wg.Add(1)
 		go func(peer *ipnstate.PeerStatus, key string, instance *ProWorkspaceInstance) {
 			defer wg.Done()
-
-			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-
-			log.Debugf("pinging workspace %s/%s", instance.GetNamespace(), instance.GetName())
-			pingResult, err := s.tsClient.Ping(timeoutCtx, peer.TailscaleIPs[0], tailcfg.PingDisco)
-			if err != nil {
-				log.Debugf(
-					"Failed to ping workspace %s/%s: %v",
-					instance.GetNamespace(),
-					instance.GetName(),
-					err,
-				)
-				return
-			}
-			if pingResult.Err != "" {
-				log.Debugf(
-					"Failed to ping workspace %s/%s: %v",
-					instance.GetNamespace(),
-					instance.GetName(),
-					pingResult.Err,
-				)
-				return
-			}
-
-			// Determine connection type
-			connectionType := ConnectionTypeDirect
-			derpRegion := ""
-			if pingResult.DERPRegionID != 0 {
-				connectionType = ConnectionTypeDERP
-				derpRegion = pingResult.DERPRegionCode
-			}
-
-			s.metricsMu.Lock()
-			s.metrics[key] = append(
-				s.metrics[key],
-				WorkspaceNetworkMetrics{
-					LatencyMs:      pingResult.LatencySeconds * 1000,
-					ConnectionType: connectionType,
-					DERPRegion:     derpRegion,
-					Timestamp:      time.Now().Unix(),
-				},
-			)
-			// trim down to max samples if necessary
-			if len(s.metrics[key]) > s.maxMetricSamples {
-				s.metrics[key] = s.metrics[key][1:]
-			}
-			s.metricsMu.Unlock()
+			s.pingAndRecord(ctx, peer, key, instance)
 		}(peer, key, instance)
 	}
 
 	wg.Wait()
+}
+
+func (s *instanceStore) pingAndRecord(
+	ctx context.Context,
+	peer *ipnstate.PeerStatus,
+	key string,
+	instance *ProWorkspaceInstance,
+) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	log.Debugf("pinging workspace %s/%s", instance.GetNamespace(), instance.GetName())
+	pingResult, err := s.tsClient.Ping(timeoutCtx, peer.TailscaleIPs[0], tailcfg.PingDisco)
+	if err != nil {
+		log.Debugf(
+			"Failed to ping workspace %s/%s: %v",
+			instance.GetNamespace(),
+			instance.GetName(),
+			err,
+		)
+		return
+	}
+	if pingResult.Err != "" {
+		log.Debugf(
+			"Failed to ping workspace %s/%s: %v",
+			instance.GetNamespace(),
+			instance.GetName(),
+			pingResult.Err,
+		)
+		return
+	}
+
+	// Determine connection type
+	connectionType := ConnectionTypeDirect
+	derpRegion := ""
+	if pingResult.DERPRegionID != 0 {
+		connectionType = ConnectionTypeDERP
+		derpRegion = pingResult.DERPRegionCode
+	}
+
+	s.metricsMu.Lock()
+	s.metrics[key] = append(
+		s.metrics[key],
+		WorkspaceNetworkMetrics{
+			LatencyMs:      pingResult.LatencySeconds * 1000,
+			ConnectionType: connectionType,
+			DERPRegion:     derpRegion,
+			Timestamp:      time.Now().Unix(),
+		},
+	)
+	// trim down to max samples if necessary
+	if len(s.metrics[key]) > s.maxMetricSamples {
+		s.metrics[key] = s.metrics[key][1:]
+	}
+	s.metricsMu.Unlock()
 }
 
 func getClientSet(config *rest.Config) (loftclient.Interface, error) {

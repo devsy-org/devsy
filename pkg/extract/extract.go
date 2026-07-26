@@ -37,23 +37,12 @@ func Extract(origReader io.Reader, destFolder string, options ...Option) error {
 
 	// read ahead
 	bufioReader := bufio.NewReaderSize(origReader, 1024*1024)
-	testBytes, err := bufioReader.Peek(2) // read 2 bytes
+	reader, closer, err := detectReader(bufioReader)
 	if err != nil {
 		return err
 	}
-
-	// is gzipped?
-	var reader io.Reader
-	if testBytes[0] == 31 && testBytes[1] == 139 {
-		gzipReader, err := gzip.NewReader(bufioReader)
-		if err != nil {
-			return fmt.Errorf("error decompressing: %w", err)
-		}
-		defer func() { _ = gzipReader.Close() }()
-
-		reader = gzipReader
-	} else {
-		reader = bufioReader
+	if closer != nil {
+		defer func() { _ = closer.Close() }()
 	}
 
 	tarReader := tar.NewReader(reader)
@@ -65,6 +54,23 @@ func Extract(origReader io.Reader, destFolder string, options ...Option) error {
 			return nil
 		}
 	}
+}
+
+func detectReader(bufioReader *bufio.Reader) (io.Reader, io.Closer, error) {
+	testBytes, err := bufioReader.Peek(2) // read 2 bytes
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if testBytes[0] == 31 && testBytes[1] == 139 {
+		gzipReader, err := gzip.NewReader(bufioReader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error decompressing: %w", err)
+		}
+		return gzipReader, gzipReader, nil
+	}
+
+	return bufioReader, nil, nil
 }
 
 // withinDir checks that resolved stays inside the destFolder boundary.

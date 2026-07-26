@@ -62,42 +62,16 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 	}
 
 	localAddr := "localhost:" + port
-	if attr.RequireLocalPort {
-		if ok, _ := portpkg.IsAvailable(localAddr); !ok {
-			log.Warnf("Port %s required but unavailable, skipping forward", port)
-			return fmt.Errorf("required local port %s unavailable", port)
-		}
+	if err := ensureLocalPortAvailable(port, localAddr, attr); err != nil {
+		return err
 	}
 
-	if attr.ElevateIfNeeded {
-		portNum, _ := strconv.Atoi(port)
-		if portNum < 1024 {
-			if runtime.GOOS == "linux" {
-				log.Warnf(
-					"Port %s requires elevation (elevateIfNeeded=true); privileged port binding not supported in tunnel mode",
-					port,
-				)
-			} else {
-				log.Warnf("Port %s: elevateIfNeeded is only applicable on Linux", port)
-			}
-		}
-	}
+	warnIfElevationNeeded(port, attr)
 
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	f.portMap[port] = cancel
 
-	parts := []string{}
-	if attr.Label != "" {
-		parts = append(parts, attr.Label)
-	}
-	if attr.Protocol != "" {
-		parts = append(parts, attr.Protocol)
-	}
-	if len(parts) > 0 {
-		log.Infof("Start port-forwarding on port %s (%s)", port, strings.Join(parts, ", "))
-	} else {
-		log.Infof("Start port-forwarding on port %s", port)
-	}
+	logStartForwarding(port, attr)
 
 	go func(port string) {
 		network := "tcp"
@@ -116,6 +90,50 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 	}(port)
 
 	return nil
+}
+
+func ensureLocalPortAvailable(port, localAddr string, attr config2.PortAttribute) error {
+	if !attr.RequireLocalPort {
+		return nil
+	}
+	if ok, _ := portpkg.IsAvailable(localAddr); !ok {
+		log.Warnf("Port %s required but unavailable, skipping forward", port)
+		return fmt.Errorf("required local port %s unavailable", port)
+	}
+	return nil
+}
+
+func warnIfElevationNeeded(port string, attr config2.PortAttribute) {
+	if !attr.ElevateIfNeeded {
+		return
+	}
+	portNum, _ := strconv.Atoi(port)
+	if portNum >= 1024 {
+		return
+	}
+	if runtime.GOOS == "linux" {
+		log.Warnf(
+			"Port %s requires elevation (elevateIfNeeded=true); privileged port binding not supported in tunnel mode",
+			port,
+		)
+	} else {
+		log.Warnf("Port %s: elevateIfNeeded is only applicable on Linux", port)
+	}
+}
+
+func logStartForwarding(port string, attr config2.PortAttribute) {
+	parts := []string{}
+	if attr.Label != "" {
+		parts = append(parts, attr.Label)
+	}
+	if attr.Protocol != "" {
+		parts = append(parts, attr.Protocol)
+	}
+	if len(parts) > 0 {
+		log.Infof("Start port-forwarding on port %s (%s)", port, strings.Join(parts, ", "))
+	} else {
+		log.Infof("Start port-forwarding on port %s", port)
+	}
 }
 
 // StopForward stops the port forwarding for the given port.

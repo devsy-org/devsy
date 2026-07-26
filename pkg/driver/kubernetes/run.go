@@ -48,31 +48,46 @@ func (k *KubernetesDriver) RunDevContainer(
 	log.Debugf("Running devcontainer for workspace %q", workspaceId)
 	workspaceId = getID(workspaceId)
 
-	// namespace
-	if k.namespace != "" && k.options.CreateNamespace == pkgconfig.BoolTrue {
-		err := k.createNamespace(ctx)
-		if err != nil {
-			return err
-		}
+	if err := k.ensureNamespace(ctx); err != nil {
+		return err
 	}
 
-	// check if persistent volume claim already exists
+	initialize, options, err := k.ensureDevContainerPvc(ctx, workspaceId, options)
+	if err != nil {
+		return err
+	}
+
+	return k.runContainer(ctx, workspaceId, options, initialize)
+}
+
+func (k *KubernetesDriver) ensureNamespace(ctx context.Context) error {
+	if k.namespace == "" || k.options.CreateNamespace != pkgconfig.BoolTrue {
+		return nil
+	}
+
+	return k.createNamespace(ctx)
+}
+
+func (k *KubernetesDriver) ensureDevContainerPvc(
+	ctx context.Context,
+	workspaceId string,
+	options *driver.RunOptions,
+) (bool, *driver.RunOptions, error) {
 	initialize := false
 	pvc, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
 	if err != nil {
-		return err
-	} else if pvc == nil {
+		return false, nil, err
+	}
+	if pvc == nil {
 		if options == nil {
-			return fmt.Errorf(
+			return false, nil, fmt.Errorf(
 				"no options provided and no persistent volume claim found for workspace %q",
 				workspaceId,
 			)
 		}
 
-		// create persistent volume claim
-		err = k.createPersistentVolumeClaim(ctx, workspaceId, options)
-		if err != nil {
-			return err
+		if err := k.createPersistentVolumeClaim(ctx, workspaceId, options); err != nil {
+			return false, nil, err
 		}
 
 		initialize = true
@@ -83,13 +98,7 @@ func (k *KubernetesDriver) RunDevContainer(
 		options = containerInfo.Options
 	}
 
-	// create dev container
-	err = k.runContainer(ctx, workspaceId, options, initialize)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return initialize, options, nil
 }
 
 func (k *KubernetesDriver) runContainer(
@@ -97,57 +106,180 @@ func (k *KubernetesDriver) runContainer(
 	id string,
 	options *driver.RunOptions,
 	initialize bool,
-) (err error) {
-	// get workspace mount
+) error {
+	if options == nil {
+		return fmt.Errorf("no run options provided for workspace %q", id)
+	}
+
+	pod, err := k.buildPod(ctx, id, options, initialize)
+	if err != nil {
+		return err
+	}
+
+	skip, err := k.reconcileExistingPod(ctx, id)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
+	}
+
+	return k.runPod(ctx, id, pod)
+}
+
+func (k *KubernetesDriver) buildPod(
+	ctx context.Context,
+	id string,
+	options *driver.RunOptions,
+	initialize bool,
+) (*corev1.Pod, error) {
+	mount, err := k.resolveWorkspaceMount(options)
+	if err != nil {
+		return nil, err
+	}
+
+	pod, err := loadPodTemplate(k.options.PodManifestTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	initContainers, err := k.getInitContainers(options, pod, initialize)
+	if err != nil {
+		return nil, fmt.Errorf("build init container: %w", err)
+	}
+
+	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
+	capabilities := buildCapabilities(options.CapAdd)
+	envVars, daemonConfig := splitEnvVars(options.Env)
+
+	serviceAccount, err := k.ensureServiceAccount(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	meta, err := k.buildPodMetadata(pod, options)
+	if err != nil {
+		return nil, err
+	}
+
+	daemonConfigSecretName, err := k.ensureDaemonConfig(ctx, id, daemonConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	pullSecretsCreated, err := k.ensurePullSecrets(ctx, id, options.Image)
+	if err != nil {
+		return nil, err
+	}
+
+	k.assemblePodSpec(pod, id, &podSpecInputs{
+		options:                options,
+		meta:                   meta,
+		initContainers:         initContainers,
+		volumeMounts:           volumeMounts,
+		tmpfsVolumes:           tmpfsVolumes,
+		capabilities:           capabilities,
+		envVars:                envVars,
+		serviceAccount:         serviceAccount,
+		daemonConfigSecretName: daemonConfigSecretName,
+		pullSecretsCreated:     pullSecretsCreated,
+	})
+
+	return pod, nil
+}
+
+type podSpecInputs struct {
+	options                *driver.RunOptions
+	meta                   *podMetadata
+	initContainers         []corev1.Container
+	volumeMounts           []corev1.VolumeMount
+	tmpfsVolumes           []corev1.Volume
+	capabilities           *corev1.Capabilities
+	envVars                []corev1.EnvVar
+	serviceAccount         string
+	daemonConfigSecretName string
+	pullSecretsCreated     bool
+}
+
+func (k *KubernetesDriver) assemblePodSpec(pod *corev1.Pod, id string, in *podSpecInputs) {
+	pod.Name = id
+	pod.Labels = in.meta.labels
+
+	pod.Spec.ServiceAccountName = in.serviceAccount
+	pod.Spec.NodeSelector = in.meta.nodeSelector
+	pod.Spec.InitContainers = in.initContainers
+	pod.Spec.Containers = getContainers(
+		pod,
+		in.options.Image,
+		in.options.Entrypoint,
+		in.options.Cmd,
+		in.envVars,
+		in.volumeMounts,
+		in.capabilities,
+		in.meta.resources,
+		in.options.Privileged,
+		k.options.StrictSecurity,
+		in.daemonConfigSecretName,
+	)
+	pod.Spec.Volumes = append(
+		getVolumes(pod, id, in.daemonConfigSecretName),
+		in.tmpfsVolumes...)
+	k.finalizePodSpec(pod, id, in.pullSecretsCreated)
+}
+
+func (k *KubernetesDriver) resolveWorkspaceMount(
+	options *driver.RunOptions,
+) (*config.Mount, error) {
 	mount := options.WorkspaceMount
 	if mount == nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"workspace mount is suppressed; cannot run in Kubernetes without a workspace mount",
 		)
 	}
 	if mount.Target == "" {
-		return fmt.Errorf("workspace mount target is empty")
+		return nil, fmt.Errorf("workspace mount target is empty")
 	}
-	if k.options.WorkspaceVolumeMount != "" {
-		// Ensure workspace volume mount option is parent or same dir as workspace mount
-		rel, err := filepath.Rel(k.options.WorkspaceVolumeMount, mount.Target)
-		switch {
-		case err != nil:
-			log.Warnf("Relative filepath: %v", err)
-		case strings.HasPrefix(rel, ".."):
-			log.Warnf(
-				"Workspace volume mount needs to be the same as the workspace mount or a parent, skipping option. "+
-					"WorkspaceVolumeMount: %s, MountTarget: %s",
-				k.options.WorkspaceVolumeMount,
-				mount.Target,
-			)
-		default:
-			mount.Target = k.options.WorkspaceVolumeMount
-			log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
-		}
+	if k.options.WorkspaceVolumeMount == "" {
+		return mount, nil
 	}
 
-	// read pod template
-	pod := &corev1.Pod{
+	// Ensure workspace volume mount option is parent or same dir as workspace mount
+	rel, err := filepath.Rel(k.options.WorkspaceVolumeMount, mount.Target)
+	switch {
+	case err != nil:
+		log.Warnf("Relative filepath: %v", err)
+	case strings.HasPrefix(rel, ".."):
+		log.Warnf(
+			"Workspace volume mount needs to be the same as the workspace mount or a parent, skipping option. "+
+				"WorkspaceVolumeMount: %s, MountTarget: %s",
+			k.options.WorkspaceVolumeMount,
+			mount.Target,
+		)
+	default:
+		mount.Target = k.options.WorkspaceVolumeMount
+		log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
+	}
+
+	return mount, nil
+}
+
+func loadPodTemplate(templatePath string) (*corev1.Pod, error) {
+	if len(templatePath) > 0 {
+		log.Debugf("trying to get pod template manifest from %s", templatePath)
+		return getPodTemplate(templatePath)
+	}
+
+	return &corev1.Pod{
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
-	}
-	if len(k.options.PodManifestTemplate) > 0 {
-		log.Debugf("trying to get pod template manifest from %s", k.options.PodManifestTemplate)
-		pod, err = getPodTemplate(k.options.PodManifestTemplate)
-		if err != nil {
-			return err
-		}
-	}
+	}, nil
+}
 
-	// get init containers
-	initContainers, err := k.getInitContainers(options, pod, initialize)
-	if err != nil {
-		return fmt.Errorf("build init container: %w", err)
-	}
-
-	// loop over volume mounts
+func buildVolumeMounts(
+	mount *config.Mount,
+	options *driver.RunOptions,
+) ([]corev1.VolumeMount, []corev1.Volume) {
 	volumeMounts := []corev1.VolumeMount{getVolumeMount(0, mount)}
 	var tmpfsVolumes []corev1.Volume
 	for idx, mount := range options.Mounts {
@@ -177,20 +309,28 @@ func (k *KubernetesDriver) runContainer(
 		}
 	}
 
-	// capabilities
-	var capabilities *corev1.Capabilities
-	if len(options.CapAdd) > 0 {
-		capabilities = &corev1.Capabilities{}
-		for _, cap := range options.CapAdd {
-			capabilities.Add = append(capabilities.Add, corev1.Capability(cap))
-		}
+	return volumeMounts, tmpfsVolumes
+}
+
+func buildCapabilities(capAdd []string) *corev1.Capabilities {
+	if len(capAdd) == 0 {
+		return nil
 	}
 
-	// env vars
+	capabilities := &corev1.Capabilities{}
+	for _, c := range capAdd {
+		capabilities.Add = append(capabilities.Add, corev1.Capability(c))
+	}
+
+	return capabilities
+}
+
+// splitEnvVars converts the env map to EnvVars, extracting the daemon config
+// value which is mounted through a secret instead.
+func splitEnvVars(env map[string]string) ([]corev1.EnvVar, string) {
 	envVars := []corev1.EnvVar{}
 	daemonConfig := ""
-	for k, v := range options.Env {
-		// filter out daemon config, that's going to be mounted through a secret
+	for k, v := range env {
 		if k == pkgconfig.EnvWorkspaceDaemonConfig {
 			daemonConfig = v
 			continue
@@ -201,32 +341,46 @@ func (k *KubernetesDriver) runContainer(
 		})
 	}
 
-	// service account
-	serviceAccount := ""
-	if k.options.ServiceAccount != "" {
-		serviceAccount = k.options.ServiceAccount
+	return envVars, daemonConfig
+}
 
-		// create service account
-		err = k.createServiceAccount(ctx, id, serviceAccount)
-		if err != nil {
-			return fmt.Errorf("create service account: %w", err)
-		}
+func (k *KubernetesDriver) ensureServiceAccount(
+	ctx context.Context,
+	id string,
+) (string, error) {
+	if k.options.ServiceAccount == "" {
+		return "", nil
 	}
 
-	// labels
+	serviceAccount := k.options.ServiceAccount
+	if err := k.createServiceAccount(ctx, id, serviceAccount); err != nil {
+		return "", fmt.Errorf("create service account: %w", err)
+	}
+
+	return serviceAccount, nil
+}
+
+type podMetadata struct {
+	labels       map[string]string
+	nodeSelector map[string]string
+	resources    corev1.ResourceRequirements
+}
+
+func (k *KubernetesDriver) buildPodMetadata(
+	pod *corev1.Pod,
+	options *driver.RunOptions,
+) (*podMetadata, error) {
 	labels, err := getLabels(pod, k.options.Labels)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	labels[DevsyWorkspaceUIDLabel] = options.UID
 
-	// node selector
 	nodeSelector, err := getNodeSelector(pod, k.options.NodeSelector)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// parse resources
 	resources := corev1.ResourceRequirements{}
 	if len(pod.Spec.Containers) > 0 {
 		resources = pod.Spec.Containers[0].Resources
@@ -235,47 +389,42 @@ func (k *KubernetesDriver) runContainer(
 		resources = parseResources(k.options.Resources)
 	}
 
-	// ensure daemon config secret
-	daemonConfigSecretName := ""
-	if daemonConfig != "" {
-		daemonConfigSecretName = getDaemonSecretName(id)
-		err = k.EnsureDaemonConfigSecret(ctx, daemonConfigSecretName, daemonConfig)
-		if err != nil {
-			return err
-		}
+	return &podMetadata{
+		labels:       labels,
+		nodeSelector: nodeSelector,
+		resources:    resources,
+	}, nil
+}
+
+func (k *KubernetesDriver) ensureDaemonConfig(
+	ctx context.Context,
+	id, daemonConfig string,
+) (string, error) {
+	if daemonConfig == "" {
+		return "", nil
 	}
 
-	// ensure pull secrets
-	pullSecretsCreated := false
-	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue &&
-		k.agentConfig.InjectDockerCredentials == pkgconfig.BoolTrue {
-		pullSecretsCreated, err = k.EnsurePullSecret(ctx, getPullSecretsName(id), options.Image)
-		if err != nil {
-			return err
-		}
+	daemonConfigSecretName := getDaemonSecretName(id)
+	if err := k.EnsureDaemonConfigSecret(ctx, daemonConfigSecretName, daemonConfig); err != nil {
+		return "", err
 	}
 
-	// create the pod manifest
-	pod.Name = id
-	pod.Labels = labels
+	return daemonConfigSecretName, nil
+}
 
-	pod.Spec.ServiceAccountName = serviceAccount
-	pod.Spec.NodeSelector = nodeSelector
-	pod.Spec.InitContainers = initContainers
-	pod.Spec.Containers = getContainers(
-		pod,
-		options.Image,
-		options.Entrypoint,
-		options.Cmd,
-		envVars,
-		volumeMounts,
-		capabilities,
-		resources,
-		options.Privileged,
-		k.options.StrictSecurity,
-		daemonConfigSecretName,
-	)
-	pod.Spec.Volumes = append(getVolumes(pod, id, daemonConfigSecretName), tmpfsVolumes...)
+func (k *KubernetesDriver) ensurePullSecrets(
+	ctx context.Context,
+	id, image string,
+) (bool, error) {
+	if k.options.KubernetesPullSecretsEnabled != pkgconfig.BoolTrue ||
+		k.agentConfig.InjectDockerCredentials != pkgconfig.BoolTrue {
+		return false, nil
+	}
+
+	return k.EnsurePullSecret(ctx, getPullSecretsName(id), image)
+}
+
+func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecretsCreated bool) {
 	// avoids a problem where attaching volumes with large repositories would cause an extremely long pod startup time
 	// because changing the ownership of all files takes longer than the kubelet expects it to
 	if pod.Spec.SecurityContext == nil {
@@ -287,45 +436,40 @@ func (k *KubernetesDriver) runContainer(
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: getPullSecretsName(id)}}
 	}
 	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
-	// try to get existing pod
+}
+
+func (k *KubernetesDriver) reconcileExistingPod(ctx context.Context, id string) (bool, error) {
 	existingPod, err := k.getPod(ctx, id)
 	if err != nil {
-		return fmt.Errorf("get pod: %s: %w", id, err)
+		return false, fmt.Errorf("get pod: %s: %w", id, err)
+	}
+	if existingPod == nil {
+		return false, nil
 	}
 
-	if existingPod != nil {
-		existingOptions := &provider2.ProviderKubernetesDriverConfig{}
-		err := json.Unmarshal(
-			[]byte(existingPod.GetAnnotations()[DevsyLastAppliedAnnotation]),
-			existingOptions,
-		)
-		if err != nil {
+	existingOptions := &provider2.ProviderKubernetesDriverConfig{}
+	if raw := existingPod.GetAnnotations()[DevsyLastAppliedAnnotation]; raw != "" {
+		if err = json.Unmarshal([]byte(raw), existingOptions); err != nil {
 			log.Errorf("Error unmarshalling existing provider options, continuing...: %s", err)
 		}
-
-		// Nothing changed, can safely return
-		if optionsEqual(existingOptions, k.options) {
-			log.Infof(
-				"Pod %q already exists and nothing changed, skipping update",
-				existingPod.Name,
-			)
-			return nil
-		}
-
-		// Stop the current pod
-		log.Debug("Provider options changed")
-		err = k.waitPodDeleted(ctx, id)
-		if err != nil {
-			return fmt.Errorf("stop devcontainer: %s: %w", id, err)
-		}
 	}
 
-	err = k.runPod(ctx, id, pod)
-	if err != nil {
-		return err
+	// Nothing changed, can safely return
+	if optionsEqual(existingOptions, k.options) {
+		log.Infof(
+			"Pod %q already exists and nothing changed, skipping update",
+			existingPod.Name,
+		)
+		return true, nil
 	}
 
-	return nil
+	// Stop the current pod
+	log.Debug("Provider options changed")
+	if err := k.waitPodDeleted(ctx, id); err != nil {
+		return false, fmt.Errorf("stop devcontainer: %s: %w", id, err)
+	}
+
+	return false, nil
 }
 
 func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Pod) error {
@@ -421,20 +565,7 @@ func getContainers(
 		}
 	}
 
-	if existingDevsyContainer != nil {
-		devsyContainer.Env = append(existingDevsyContainer.Env, devsyContainer.Env...)
-		devsyContainer.EnvFrom = existingDevsyContainer.EnvFrom
-		devsyContainer.Ports = existingDevsyContainer.Ports
-		devsyContainer.VolumeMounts = append(
-			existingDevsyContainer.VolumeMounts,
-			devsyContainer.VolumeMounts...)
-		devsyContainer.ImagePullPolicy = existingDevsyContainer.ImagePullPolicy
-
-		if devsyContainer.SecurityContext == nil &&
-			existingDevsyContainer.SecurityContext != nil {
-			devsyContainer.SecurityContext = existingDevsyContainer.SecurityContext
-		}
-	}
+	mergeContainer(&devsyContainer, existingDevsyContainer)
 	retContainers = append(retContainers, devsyContainer)
 
 	return retContainers

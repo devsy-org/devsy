@@ -347,12 +347,13 @@ func isNumeric(s string) bool {
 // versions), it returns the one whose parent directory has the most recent
 // modification time, so that an auto-updated server is preferred over a
 // stale one.
-func (o *VsCodeServer) findInDir(root, binName string) string {
-	type candidate struct {
-		path    string
-		modTime time.Time
-	}
-	var candidates []candidate
+type binaryCandidate struct {
+	path    string
+	modTime time.Time
+}
+
+func collectBinaryCandidates(root, binName string) []binaryCandidate {
+	var candidates []binaryCandidate
 
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -365,25 +366,35 @@ func (o *VsCodeServer) findInDir(root, binName string) string {
 			return filepath.SkipDir
 		}
 
-		// The VS Code server gets installed into a staging directory, which is
-		// later renamed. Do not consider the staging directory a valid
-		// destination, as it won't be valid by the time the server binary is
-		// called.
-		if d.IsDir() && strings.Contains(pathRelative, ".staging") {
-			return filepath.SkipDir
+		if d.IsDir() {
+			// The VS Code server gets installed into a staging directory, which
+			// is later renamed. Do not consider the staging directory a valid
+			// destination, as it won't be valid by the time the server binary
+			// is called.
+			if strings.Contains(pathRelative, ".staging") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
-		if !d.IsDir() && d.Name() == binName {
-			dirInfo, err := os.Stat(filepath.Dir(path))
-			if err != nil {
-				return nil
-			}
-			candidates = append(candidates, candidate{path: path, modTime: dirInfo.ModTime()})
+		if d.Name() != binName {
+			return nil
 		}
+
+		dirInfo, err := os.Stat(filepath.Dir(path))
+		if err != nil {
+			return nil
+		}
+		candidates = append(candidates, binaryCandidate{path: path, modTime: dirInfo.ModTime()})
 
 		return nil
 	})
 
+	return candidates
+}
+
+func (o *VsCodeServer) findInDir(root, binName string) string {
+	candidates := collectBinaryCandidates(root, binName)
 	if len(candidates) == 0 {
 		return ""
 	}

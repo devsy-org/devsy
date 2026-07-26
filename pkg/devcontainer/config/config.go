@@ -587,26 +587,33 @@ func ParseMount(str string) Mount {
 	splitted := strings.SplitSeq(str, ",")
 	for split := range splitted {
 		splitted2 := strings.Split(split, "=")
-		key := splitted2[0]
-		switch key {
-		case "src", "source":
-			retMount.Source = splitted2[1]
-		case "workspaceMount":
-			retMount.Source = splitted2[1]
-		case "workspaceFolder":
-			retMount.Target = splitted2[1]
-		case "dst", "destination", "target":
-			retMount.Target = splitted2[1]
-		case "type":
-			retMount.Type = splitted2[1]
-		case "external":
-			retMount.External, _ = strconv.ParseBool(splitted2[1])
-		default:
+		if len(splitted2) < 2 {
 			retMount.Other = append(retMount.Other, split)
+			continue
 		}
+		applyMountField(&retMount, splitted2[0], splitted2, split)
 	}
 
 	return retMount
+}
+
+func applyMountField(retMount *Mount, key string, splitted2 []string, split string) {
+	switch key {
+	case "src", "source":
+		retMount.Source = splitted2[1]
+	case "workspaceMount":
+		retMount.Source = splitted2[1]
+	case "workspaceFolder":
+		retMount.Target = splitted2[1]
+	case "dst", "destination", "target":
+		retMount.Target = splitted2[1]
+	case "type":
+		retMount.Type = splitted2[1]
+	case "external":
+		retMount.External, _ = strconv.ParseBool(splitted2[1])
+	default:
+		retMount.Other = append(retMount.Other, split)
+	}
 }
 
 func (m *Mount) UnmarshalJSON(data []byte) error {
@@ -620,33 +627,36 @@ func (m *Mount) UnmarshalJSON(data []byte) error {
 		*m = ParseMount(obj)
 		return nil
 	case map[string]any:
-		sourceStr, ok := obj["source"].(string)
-		if ok {
-			m.Source = sourceStr
-		}
-		targetStr, ok := obj["target"].(string)
-		if ok {
-			m.Target = targetStr
-		}
-		typeStr, ok := obj["type"].(string)
-		if ok {
-			m.Type = typeStr
-		}
-		externalStr, ok := obj["external"].(bool)
-		if ok {
-			m.External = externalStr
-		}
-		otherInterface, ok := obj["other"].([]any)
-		if ok {
-			otherStr := make([]string, len(otherInterface))
-			for i := range otherInterface {
-				otherStr[i] = otherInterface[i].(string)
-			}
-			m.Other = otherStr
-		}
-		return nil
+		return m.unmarshalMountObject(obj)
 	}
 	return types.ErrUnsupportedType
+}
+
+func (m *Mount) unmarshalMountObject(obj map[string]any) error {
+	if sourceStr, ok := obj["source"].(string); ok {
+		m.Source = sourceStr
+	}
+	if targetStr, ok := obj["target"].(string); ok {
+		m.Target = targetStr
+	}
+	if typeStr, ok := obj["type"].(string); ok {
+		m.Type = typeStr
+	}
+	if externalStr, ok := obj["external"].(bool); ok {
+		m.External = externalStr
+	}
+	if otherInterface, ok := obj["other"].([]any); ok {
+		otherStr := make([]string, len(otherInterface))
+		for i := range otherInterface {
+			str, ok := otherInterface[i].(string)
+			if !ok {
+				return types.ErrUnsupportedType
+			}
+			otherStr[i] = str
+		}
+		m.Other = otherStr
+	}
+	return nil
 }
 
 // hasFlag returns true if any name appears in m.Other as a bare token or
