@@ -160,30 +160,67 @@ func (cmd *ListCmd) renderInstalledJSON(
 		return err
 	}
 	//nolint:forbidigo
-	fmt.Print(string(out))
+	fmt.Println(string(out))
 
 	return nil
 }
 
 // runAvailable lists providers available for installation.
 func (cmd *ListCmd) runAvailable(ctx context.Context) error {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+
 	jsonResult, err := fetchProviderRepos(ctx)
 	if err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintln(os.Stdout, "List of available providers from "+config.RepoOwner+":")
-	var rows [][]string
+	var providers []string
 	for _, v := range jsonResult {
 		name, ok := v["name"].(string)
 		if !ok || name == "" {
 			continue
 		}
 		if after, ok0 := strings.CutPrefix(name, config.ProviderPrefix); ok0 {
-			rows = append(rows, []string{after})
+			providers = append(providers, after)
 		}
 	}
+
+	switch mode {
+	case output.ModePlain:
+		return cmd.renderAvailablePlain(providers)
+	case output.ModeJSON:
+		return cmd.renderAvailableJSON(providers)
+	}
+
+	return nil
+}
+
+// renderAvailablePlain renders available providers in plain text format.
+func (cmd *ListCmd) renderAvailablePlain(providers []string) error {
+	_, _ = fmt.Fprintln(os.Stdout, "List of available providers from "+config.RepoOwner+":")
+	rows := make([][]string, 0, len(providers))
+	for _, name := range providers {
+		rows = append(rows, []string{name})
+	}
 	table.Print([]string{"Provider"}, rows)
+
+	return nil
+}
+
+// renderAvailableJSON renders available providers in JSON format.
+func (cmd *ListCmd) renderAvailableJSON(providers []string) error {
+	if providers == nil {
+		providers = []string{}
+	}
+	out, err := json.MarshalIndent(providers, "", "  ")
+	if err != nil {
+		return err
+	}
+	//nolint:forbidigo
+	fmt.Println(string(out))
 
 	return nil
 }
