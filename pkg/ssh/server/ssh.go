@@ -92,6 +92,51 @@ const (
 	DefaultUserPort int = 12023
 )
 
+const (
+	defaultKeepAliveInterval = 15 * time.Second
+	defaultKeepAliveCountMax = 8
+
+	envKeepAliveInterval = "DEVSY_SSH_KEEPALIVE_INTERVAL"
+	envKeepAliveCountMax = "DEVSY_SSH_KEEPALIVE_COUNT_MAX"
+)
+
+func keepAliveConfig() (time.Duration, int) {
+	return keepAliveInterval(), keepAliveCountMax()
+}
+
+func keepAliveInterval() time.Duration {
+	v := os.Getenv(envKeepAliveInterval)
+	if v == "" {
+		return defaultKeepAliveInterval
+	}
+	if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		return d
+	}
+	if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	log.Errorf(
+		"invalid %s=%q, using default %s",
+		envKeepAliveInterval, v, defaultKeepAliveInterval,
+	)
+	return defaultKeepAliveInterval
+}
+
+func keepAliveCountMax() int {
+	v := os.Getenv(envKeepAliveCountMax)
+	if v == "" {
+		return defaultKeepAliveCountMax
+	}
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		return n
+	}
+	log.Errorf(
+		"invalid %s=%q, using default %d",
+		envKeepAliveCountMax, v, defaultKeepAliveCountMax,
+	)
+	return defaultKeepAliveCountMax
+}
+
 type Server interface {
 	Serve(listener net.Listener) error
 	ListenAndServe() error
@@ -128,20 +173,16 @@ func NewServer(
 
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
+	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
 	server := &server{
 		shell:       sh,
 		workdir:     workdir,
 		reuseSock:   reuseSock,
 		currentUser: currentUser.Username,
 		sshServer: ssh.Server{
-			Addr: addr,
-			// Keep-alive at the connection level: detects dead peers in
-			// stdio mode where EOF on stdin can be delayed indefinitely by
-			// the proxy chain. 5s × 2 = ~10s detection so per-connection
-			// agent socket dirs are cleaned up well within typical
-			// test/health-check polling windows.
-			ClientAliveInterval: 5 * time.Second,
-			ClientAliveCountMax: 2,
+			Addr:                addr,
+			ClientAliveInterval: keepAliveInterval,
+			ClientAliveCountMax: keepAliveCountMax,
 			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
 				log.Debugf("Accepted forward: %s:%d", dhost, dport)
 				return true
