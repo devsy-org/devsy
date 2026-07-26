@@ -160,7 +160,7 @@ func (cmd *ListCmd) renderInstalledJSON(
 		return err
 	}
 	//nolint:forbidigo
-	fmt.Print(string(out))
+	fmt.Println(string(out))
 
 	return nil
 }
