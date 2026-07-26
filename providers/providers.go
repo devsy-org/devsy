@@ -7,6 +7,9 @@ import (
 //go:embed apple/provider.yaml
 var AppleProvider string
 
+//go:embed colima/provider.yaml
+var ColimaProvider string
+
 //go:embed docker/provider.yaml
 var DockerProvider string
 
@@ -23,6 +26,7 @@ var ProProvider string
 func GetBuiltInProviders() map[string]string {
 	return map[string]string{
 		"apple":      AppleProvider,
+		"colima":     ColimaProvider,
 		"docker":     DockerProvider,
 		"kubernetes": KubernetesProvider,
 		"podman":     PodmanProvider,
