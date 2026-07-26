@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/driver/docker"
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes"
+	"github.com/devsy-org/devsy/pkg/driver/microsandbox"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -26,9 +27,12 @@ func NewDriver(
 		return kubernetes.NewKubernetesDriver(workspaceInfo)
 	case provider2.AppleDriver:
 		return apple.NewAppleDriver(ctx, workspaceInfo)
+	case provider2.MicrosandboxDriver:
+		return microsandbox.NewMicrosandboxDriver(ctx, workspaceInfo)
 	}
 
-	return nil, fmt.Errorf("unrecognized driver %q, possible values are %s, %s, %s or %s",
+	return nil, fmt.Errorf(
+		"unrecognized driver %q, possible values are %s, %s, %s, %s or %s",
 		driver, provider2.DockerDriver, provider2.CustomDriver, provider2.KubernetesDriver,
-		provider2.AppleDriver)
+		provider2.AppleDriver, provider2.MicrosandboxDriver)
 }

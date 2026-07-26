@@ -1,0 +1,4 @@
+{
+  "name": "microsandbox",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu"
+}

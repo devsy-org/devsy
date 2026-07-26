@@ -254,6 +254,7 @@ func ResolveAgentConfig(
 	resolveAgentDockerConfig(&agentConfig, options)
 	resolveAgentKubernetesConfig(&agentConfig, options)
 	resolveAgentAppleConfig(&agentConfig, options)
+	resolveAgentMicrosandboxConfig(&agentConfig, options)
 	resolveAgentPathAndURL(&agentConfig, options, devConfig)
 	resolveAgentCredentials(&agentConfig, options, devConfig)
 
@@ -340,6 +341,34 @@ func resolveAgentAppleConfig(
 		resolver.ResolveDefaultValue(string(agentConfig.Apple.Rosetta), options),
 	)
 	agentConfig.Apple.Env = resolver.ResolveDefaultValues(agentConfig.Apple.Env, options)
+}
+
+func resolveAgentMicrosandboxConfig(
+	agentConfig *provider.ProviderAgentConfig,
+	options map[string]string,
+) {
+	agentConfig.Microsandbox.Memory = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.Memory,
+		options,
+	)
+	agentConfig.Microsandbox.CPUs = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.CPUs,
+		options,
+	)
+	agentConfig.Microsandbox.MaxMemory = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.MaxMemory,
+		options,
+	)
+	agentConfig.Microsandbox.MaxCPUs = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.MaxCPUs,
+		options,
+	)
+	agentConfig.Microsandbox.Ephemeral = types.StrBool(
+		resolver.ResolveDefaultValue(string(agentConfig.Microsandbox.Ephemeral), options),
+	)
+	agentConfig.Microsandbox.BlockEgress = types.StrBool(
+		resolver.ResolveDefaultValue(string(agentConfig.Microsandbox.BlockEgress), options),
+	)
 }
 
 func resolveAgentPathAndURL(

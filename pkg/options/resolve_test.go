@@ -751,3 +751,29 @@ func TestResolveAgentAppleConfig(t *testing.T) {
 	assert.Equal(t, types.StrBool("true"), agentConfig.Apple.Rosetta)
 	assert.Equal(t, "resolved", agentConfig.Apple.Env["KEY"])
 }
+
+func TestResolveAgentMicrosandboxConfig(t *testing.T) {
+	agentConfig := &provider.ProviderAgentConfig{}
+	agentConfig.Microsandbox.Memory = "${MICROSANDBOX_MEMORY}"
+	agentConfig.Microsandbox.CPUs = "${MICROSANDBOX_CPUS}"
+	agentConfig.Microsandbox.Ephemeral = types.StrBool("${MICROSANDBOX_EPHEMERAL}")
+
+	agentConfig.Microsandbox.MaxMemory = "${MICROSANDBOX_MAX_MEMORY}"
+	agentConfig.Microsandbox.BlockEgress = types.StrBool("${MICROSANDBOX_BLOCK_EGRESS}")
+
+	options := map[string]string{
+		"MICROSANDBOX_MEMORY":       "2048",
+		"MICROSANDBOX_CPUS":         "4",
+		"MICROSANDBOX_EPHEMERAL":    "true",
+		"MICROSANDBOX_MAX_MEMORY":   "8192",
+		"MICROSANDBOX_BLOCK_EGRESS": "true",
+	}
+
+	resolveAgentMicrosandboxConfig(agentConfig, options)
+
+	assert.Equal(t, "2048", agentConfig.Microsandbox.Memory)
+	assert.Equal(t, "4", agentConfig.Microsandbox.CPUs)
+	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.Ephemeral)
+	assert.Equal(t, "8192", agentConfig.Microsandbox.MaxMemory)
+	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.BlockEgress)
+}
