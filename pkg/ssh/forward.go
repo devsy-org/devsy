@@ -18,6 +18,8 @@ import (
 // should check for this error with errors.Is.
 var ErrIdleTimeout = errors.New("port forward idle timeout")
 
+var ErrTransportClosed = errors.New("ssh transport closed")
+
 type ForwardingFunction func(
 	net.Conn,
 	*ssh.Client,
@@ -114,6 +116,23 @@ func portForwarding(
 		}
 	}()
 
+	if client != nil {
+		transportClosed := make(chan struct{})
+		go func() {
+			if werr := client.Wait(); werr != nil {
+				log.Debugf("ssh transport closed on %s: %v", srcAddr, werr)
+			}
+			close(transportClosed)
+		}()
+		go func() {
+			select {
+			case <-done:
+			case <-transportClosed:
+				cancel(ErrTransportClosed)
+			}
+		}()
+	}
+
 	counter := newConnectionCounter(fwdCtx, exitAfterTimeout, func() {
 		log.Infof(
 			"Stopping port-forward on %s: idle for a while. "+
@@ -126,10 +145,11 @@ func portForwarding(
 		// waiting for a new connection
 		connection, err := listener.Accept()
 		if err != nil {
-			// If shutdown was caused by the idle timeout, surface that
-			// typed error so callers can choose to treat it as a clean exit.
-			if cause := context.Cause(fwdCtx); errors.Is(cause, ErrIdleTimeout) {
+			switch cause := context.Cause(fwdCtx); {
+			case errors.Is(cause, ErrIdleTimeout):
 				return ErrIdleTimeout
+			case errors.Is(cause, ErrTransportClosed):
+				return ErrTransportClosed
 			}
 			return err
 		}
