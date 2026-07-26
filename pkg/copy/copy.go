@@ -58,6 +58,29 @@ func ChownR(path string, userName string) error {
 	})
 }
 
+func MkdirAllChown(path string, perm os.FileMode, userName string) error {
+	var created []string
+	for cur := filepath.Clean(path); !Exists(cur); {
+		created = append(created, cur)
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+
+	if err := os.MkdirAll(path, perm); err != nil {
+		return err
+	}
+
+	for _, dir := range created {
+		if err := Chown(dir, userName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func RenameDirectory(srcDir, dest string) error {
 	err := Directory(srcDir, dest)
 	if err != nil {

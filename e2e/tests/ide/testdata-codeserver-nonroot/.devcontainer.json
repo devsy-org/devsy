@@ -1,0 +1,14 @@
+{
+  "name": "code-server non-root",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "devsyuser",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.tabSize": 2
+      }
+    }
+  }
+}

@@ -272,6 +272,44 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"leaves ~/.local writable by a non-root remoteUser after code-server settings install",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-codeserver-nonroot")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+				err = f.DevsyProviderAdd(ctx, "docker")
+				framework.ExpectNoError(err)
+				err = f.DevsyProviderUse(ctx, "docker")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				err = f.DevsyUpWithIDE(ctx,
+					"--ide=code-server", "--ide-launch=headless", tempDir)
+				framework.ExpectNoError(err)
+
+				for _, dir := range []string{"$HOME/.local", "$HOME/.local/share"} {
+					owner, err := f.DevsySSH(ctx, tempDir, "stat -c %U "+dir)
+					framework.ExpectNoError(err)
+					gomega.Expect(strings.TrimSpace(owner)).To(gomega.Equal("devsyuser"),
+						"%s should be owned by the remote user, not root", dir)
+				}
+
+				out, err := f.DevsySSH(ctx, tempDir,
+					"mkdir -p $HOME/.local/lib && echo ok")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("ok"),
+					"remote user should be able to create ~/.local/lib")
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+			},
+		)
+
+		ginkgo.It(
 			"does not log 'setup KubeConfig' on a workspace without kubeconfig forwarding",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
