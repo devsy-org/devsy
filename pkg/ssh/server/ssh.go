@@ -101,27 +101,40 @@ const (
 )
 
 func keepAliveConfig() (time.Duration, int) {
-	interval := defaultKeepAliveInterval
-	if v := os.Getenv(envKeepAliveInterval); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			interval = d
-		} else if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			interval = time.Duration(secs) * time.Second
-		} else {
-			log.Errorf("invalid %s=%q, using default %s", envKeepAliveInterval, v, defaultKeepAliveInterval)
-		}
-	}
+	return keepAliveInterval(), keepAliveCountMax()
+}
 
-	countMax := defaultKeepAliveCountMax
-	if v := os.Getenv(envKeepAliveCountMax); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			countMax = n
-		} else {
-			log.Errorf("invalid %s=%q, using default %d", envKeepAliveCountMax, v, defaultKeepAliveCountMax)
-		}
+func keepAliveInterval() time.Duration {
+	v := os.Getenv(envKeepAliveInterval)
+	if v == "" {
+		return defaultKeepAliveInterval
 	}
+	if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		return d
+	}
+	if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	log.Errorf(
+		"invalid %s=%q, using default %s",
+		envKeepAliveInterval, v, defaultKeepAliveInterval,
+	)
+	return defaultKeepAliveInterval
+}
 
-	return interval, countMax
+func keepAliveCountMax() int {
+	v := os.Getenv(envKeepAliveCountMax)
+	if v == "" {
+		return defaultKeepAliveCountMax
+	}
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		return n
+	}
+	log.Errorf(
+		"invalid %s=%q, using default %d",
+		envKeepAliveCountMax, v, defaultKeepAliveCountMax,
+	)
+	return defaultKeepAliveCountMax
 }
 
 type Server interface {
