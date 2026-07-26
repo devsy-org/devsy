@@ -33,3 +33,16 @@ func TestAppleProviderUsesAppleDriver(t *testing.T) {
 		t.Errorf("apple provider driver = %q, want %q", cfg.Agent.Driver, provider.AppleDriver)
 	}
 }
+
+func TestColimaProviderUsesDockerDriver(t *testing.T) {
+	cfg, err := provider.ParseProvider(strings.NewReader(providers.ColimaProvider))
+	if err != nil {
+		t.Fatalf("parse colima provider: %v", err)
+	}
+	if cfg.Agent.Driver != "" && cfg.Agent.Driver != provider.DockerDriver {
+		t.Errorf("colima provider driver = %q, want docker", cfg.Agent.Driver)
+	}
+	if _, ok := cfg.Agent.Docker.Env["DOCKER_HOST"]; !ok {
+		t.Errorf("colima provider missing DOCKER_HOST env for docker driver")
+	}
+}

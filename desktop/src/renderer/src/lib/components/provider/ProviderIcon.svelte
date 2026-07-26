@@ -6,6 +6,7 @@ const ICON_MAP: Record<string, string> = {
   docker: "./icons/providers/docker.svg",
   podman: "./icons/providers/podman.svg",
   apple: "./icons/providers/apple.svg",
+  colima: "./icons/providers/colima.png",
   aws: "./icons/providers/aws.svg",
   amazon: "./icons/providers/aws.svg",
   gcloud: "./icons/providers/gcp.svg",

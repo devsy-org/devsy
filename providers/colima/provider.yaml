@@ -1,0 +1,44 @@
+name: colima
+version: v1.0.0
+icon: https://dl.devsy.sh/assets/colima.png
+home: https://github.com/devsy-org/devsy
+description: |-
+  Devsy on Colima (Docker/containerd on macOS via Lima)
+optionGroups:
+  - options:
+      - COLIMA_PATH
+      - COLIMA_PROFILE
+      - COLIMA_HOST
+      - COLIMA_ELEVATION
+      - INACTIVITY_TIMEOUT
+    name: "Advanced Options"
+options:
+  INACTIVITY_TIMEOUT:
+    description: "If defined, will automatically stop the container after the inactivity period. Examples: 10m, 1h"
+  COLIMA_PATH:
+    description: The path where to find the docker binary Colima exposes.
+    default: docker
+  COLIMA_PROFILE:
+    description: The Colima profile (instance) to target. Corresponds to `colima start --profile`.
+    default: default
+  COLIMA_HOST:
+    global: true
+    description: The Colima Docker socket to connect to. Defaults to the socket for the selected profile.
+    command: |-
+      profile="${COLIMA_PROFILE:-default}"
+      echo "unix://${HOME}/.colima/${profile}/docker.sock"
+  COLIMA_ELEVATION:
+    description: "Optionally run docker commands through a privilege-elevation helper. One of: pkexec, sudo, doas, or none. Colima runs rootless by default; leave as none."
+    default: none
+agent:
+  containerInactivityTimeout: ${INACTIVITY_TIMEOUT}
+  local: true
+  docker:
+    path: ${COLIMA_PATH}
+    elevation: ${COLIMA_ELEVATION}
+    install: false
+    env:
+      DOCKER_HOST: ${COLIMA_HOST}
+exec:
+  command: |-
+    "${DEVSY}" internal sh -c "${COMMAND}"
