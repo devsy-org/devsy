@@ -167,6 +167,11 @@ func (cmd *ListCmd) renderInstalledJSON(
 
 // runAvailable lists providers available for installation.
 func (cmd *ListCmd) runAvailable(ctx context.Context) error {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+
 	jsonResult, err := fetchProviderRepos(ctx)
 	if err != nil {
 		return err
@@ -183,10 +188,6 @@ func (cmd *ListCmd) runAvailable(ctx context.Context) error {
 		}
 	}
 
-	mode, err := output.ResolveMode(cmd.ResultFormat)
-	if err != nil {
-		return err
-	}
 	switch mode {
 	case output.ModePlain:
 		return cmd.renderAvailablePlain(providers)
@@ -219,7 +220,7 @@ func (cmd *ListCmd) renderAvailableJSON(providers []string) error {
 		return err
 	}
 	//nolint:forbidigo
-	fmt.Print(string(out))
+	fmt.Println(string(out))
 
 	return nil
 }
