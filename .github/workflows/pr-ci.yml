@@ -122,6 +122,8 @@ jobs:
         if: matrix.runner == 'ubuntu-22.04' || matrix.runner == 'windows-latest'
         shell: bash
         working-directory: ./e2e
+        env:
+          CGO_ENABLED: 0
         run: |
           OUT="e2e.test"
           if [ "${{ runner.os }}" == "Windows" ]; then
