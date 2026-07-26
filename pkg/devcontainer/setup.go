@@ -344,7 +344,7 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 }
 
 func (r *runner) addSetupFlags(args *[]string) {
-	_, isDockerDriver := r.driver.(driver.DockerDriver)
+	_, isDockerDriver := r.driver.(driver.ImageDriver)
 
 	r.addChownFlag(args, isDockerDriver)
 	r.addDriverFlags(args, isDockerDriver)

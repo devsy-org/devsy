@@ -15,9 +15,6 @@ type Driver interface {
 	// CommandDevContainer runs the given command inside the devcontainer
 	CommandDevContainer(ctx context.Context, params *CommandParams) error
 
-	// RunDevContainer runs a devcontainer
-	RunDevContainer(ctx context.Context, workspaceID string, options *RunOptions) error
-
 	// TargetArchitecture returns the architecture of the container runtime. e.g. amd64 or arm64
 	TargetArchitecture(ctx context.Context, workspaceID string) (string, error)
 
@@ -39,8 +36,22 @@ type Driver interface {
 	) error
 }
 
-type ReprovisioningDriver interface {
+// RunOptionsDriver is a capability interface for drivers that run a devcontainer
+// directly from RunOptions. These drivers delegate container management to an
+// external orchestrator (e.g. a Kubernetes pod or a custom command) rather than
+// building and running a local OCI image; image drivers use ImageDriver instead.
+type RunOptionsDriver interface {
 	Driver
+
+	// RunDevContainer runs a devcontainer
+	RunDevContainer(ctx context.Context, workspaceID string, options *RunOptions) error
+}
+
+// ReprovisioningDriver is a capability interface for drivers that can reprovision
+// an existing devcontainer in place. Reprovisioning re-runs the container, so it
+// embeds RunOptionsDriver.
+type ReprovisioningDriver interface {
+	RunOptionsDriver
 
 	// CanReprovision returns true if the driver can reprovision the devcontainer
 	CanReprovision() bool

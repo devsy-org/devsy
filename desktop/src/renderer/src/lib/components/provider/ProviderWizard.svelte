@@ -37,6 +37,7 @@ import type { UnlistenFn } from "$lib/ipc/types.js"
 const PRESETS = [
   { name: "docker", description: "Local Docker containers" },
   { name: "podman", description: "Local Podman containers" },
+  { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
   { name: "ssh", description: "Remote SSH machines" },
   { name: "kubernetes", description: "Kubernetes clusters" },
   { name: "aws", description: "Amazon Web Services" },

@@ -96,7 +96,7 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_SetAppendsFlag() {
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},
 		driver: s.driver,
-		params: &driver.RunDockerDevContainerParams{
+		params: &driver.RunImageDevContainerParams{
 			Options:      &driver.RunOptions{Platform: "linux/amd64"},
 			ParsedConfig: &config.DevContainerConfig{},
 		},
@@ -109,7 +109,7 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_EmptyNoFlag() {
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},
 		driver: s.driver,
-		params: &driver.RunDockerDevContainerParams{
+		params: &driver.RunImageDevContainerParams{
 			Options:      &driver.RunOptions{Platform: ""},
 			ParsedConfig: &config.DevContainerConfig{},
 		},
@@ -124,7 +124,7 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_ExplicitInConfigNotDuplicated
 	b := &runArgsBuilder{
 		args:   []string{testRunArg},
 		driver: s.driver,
-		params: &driver.RunDockerDevContainerParams{
+		params: &driver.RunImageDevContainerParams{
 			Options: &driver.RunOptions{Platform: "linux/amd64"},
 			ParsedConfig: &config.DevContainerConfig{
 				NonComposeBase: config.NonComposeBase{

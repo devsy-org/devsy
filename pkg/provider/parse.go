@@ -235,8 +235,9 @@ func validateAgentDriver(config *ProviderConfig) error {
 
 	if config.Agent.Driver != "" && config.Agent.Driver != CustomDriver &&
 		config.Agent.Driver != DockerDriver &&
-		config.Agent.Driver != KubernetesDriver {
-		return fmt.Errorf("agent.driver can only be docker, kubernetes or custom")
+		config.Agent.Driver != KubernetesDriver &&
+		config.Agent.Driver != AppleDriver {
+		return fmt.Errorf("agent.driver can only be docker, kubernetes, apple or custom")
 	}
 
 	if config.Agent.Driver == CustomDriver {

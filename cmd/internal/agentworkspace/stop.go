@@ -66,7 +66,7 @@ func stopContainer(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 ) error {
 	log.Debugf("stopping Devsy container")
-	runner, err := CreateRunner(workspaceInfo)
+	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return err
 	}

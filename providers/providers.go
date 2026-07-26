@@ -4,6 +4,9 @@ import (
 	_ "embed"
 )
 
+//go:embed apple/provider.yaml
+var AppleProvider string
+
 //go:embed docker/provider.yaml
 var DockerProvider string
 
@@ -19,6 +22,7 @@ var ProProvider string
 // GetBuiltInProviders retrieves the built in providers.
 func GetBuiltInProviders() map[string]string {
 	return map[string]string{
+		"apple":      AppleProvider,
 		"docker":     DockerProvider,
 		"kubernetes": KubernetesProvider,
 		"podman":     PodmanProvider,

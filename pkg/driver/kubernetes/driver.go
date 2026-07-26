@@ -45,6 +45,9 @@ func NewKubernetesDriver(
 	}, nil
 }
 
+// The kubernetes driver runs devcontainers as pods and can reprovision them.
+var _ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
+
 type KubernetesDriver struct {
 	namespace string
 

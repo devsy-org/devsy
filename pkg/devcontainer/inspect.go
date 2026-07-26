@@ -10,7 +10,7 @@ import (
 )
 
 func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.ImageDetails, error) {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.ImageDriver)
 	if ok {
 		return dockerDriver.InspectImage(ctx, imageName)
 	}
@@ -44,7 +44,7 @@ func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.Im
 }
 
 func (r *runner) getImageTag(ctx context.Context, imageID string) (string, error) {
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.ImageDriver)
 	if ok {
 		return dockerDriver.GetImageTag(ctx, imageID)
 	}

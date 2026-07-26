@@ -124,6 +124,9 @@ type ProviderAgentConfig struct {
 
 	// Kubernetes holds kubernetes specific configuration
 	Kubernetes ProviderKubernetesDriverConfig `json:"kubernetes"`
+
+	// Apple holds Apple container specific configuration
+	Apple ProviderAppleDriverConfig `json:"apple"`
 }
 
 type ProviderDockerlessOptions struct {
@@ -151,7 +154,21 @@ const (
 	DockerDriver     = "docker"
 	KubernetesDriver = "kubernetes"
 	CustomDriver     = "custom"
+	AppleDriver      = "apple"
 )
+
+// ProviderAppleDriverConfig holds configuration for the Apple container driver,
+// which runs Linux containers as lightweight VMs on Apple silicon (macOS 26+).
+type ProviderAppleDriverConfig struct {
+	// Path where to find the `container` binary, defaults to 'container'
+	Path string `json:"path,omitempty"`
+
+	// Rosetta enables x86_64 emulation inside the guest.
+	Rosetta types.StrBool `json:"rosetta,omitempty"`
+
+	// Environment variables to set when running `container` commands
+	Env map[string]string `json:"env,omitempty"`
+}
 
 type ProviderCustomDriverConfig struct {
 	// FindDevContainer is used to find an existing devcontainer

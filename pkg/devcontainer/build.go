@@ -493,7 +493,7 @@ func (r *runner) executeBuild(
 
 	// check if we should fallback to dockerless.
 	// This should only be OSS kubernetes as of March 06, 2025.
-	dockerDriver, ok := r.driver.(driver.DockerDriver)
+	dockerDriver, ok := r.driver.(driver.ImageDriver)
 	if options.ForceDockerless || !ok {
 		if r.workspaceConfig.Agent.Dockerless.Disabled == pkgconfig.BoolTrue {
 			return nil, fmt.Errorf(

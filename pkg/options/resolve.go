@@ -246,6 +246,7 @@ func ResolveAgentConfig(
 	resolveAgentBaseConfig(&agentConfig, options, devConfig)
 	resolveAgentDockerConfig(&agentConfig, options)
 	resolveAgentKubernetesConfig(&agentConfig, options)
+	resolveAgentAppleConfig(&agentConfig, options)
 	resolveAgentPathAndURL(&agentConfig, options, devConfig)
 	resolveAgentCredentials(&agentConfig, options, devConfig)
 
@@ -321,6 +322,17 @@ func resolveAgentKubernetesConfig(
 		options,
 	)
 	k8s.DiskSize = resolver.ResolveDefaultValue(k8s.DiskSize, options)
+}
+
+func resolveAgentAppleConfig(
+	agentConfig *provider.ProviderAgentConfig,
+	options map[string]string,
+) {
+	agentConfig.Apple.Path = resolver.ResolveDefaultValue(agentConfig.Apple.Path, options)
+	agentConfig.Apple.Rosetta = types.StrBool(
+		resolver.ResolveDefaultValue(string(agentConfig.Apple.Rosetta), options),
+	)
+	agentConfig.Apple.Env = resolver.ResolveDefaultValues(agentConfig.Apple.Env, options)
 }
 
 func resolveAgentPathAndURL(

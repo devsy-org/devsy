@@ -95,6 +95,10 @@ func (f *fakeRuntime) FindRunning(
 	return f.findResult, f.findErr
 }
 
+func (f *fakeRuntime) Command() string { return "fake" }
+
+func (f *fakeRuntime) Environment() []string { return nil }
+
 func (f *fakeRuntime) Exec(_ context.Context, req ExecRequest) (int, error) {
 	stdout := req.Stdout
 	if stdout == nil {

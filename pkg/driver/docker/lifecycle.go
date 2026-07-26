@@ -215,17 +215,9 @@ func (d *dockerDriver) GetDevContainerLogs(
 	return d.Docker.GetContainerLogs(ctx, container.ID, stdout, stderr)
 }
 
-func (d *dockerDriver) RunDevContainer(
+func (d *dockerDriver) RunImageDevContainer(
 	ctx context.Context,
-	workspaceId string,
-	options *driver.RunOptions,
-) error {
-	return fmt.Errorf("unsupported")
-}
-
-func (d *dockerDriver) RunDockerDevContainer(
-	ctx context.Context,
-	params *driver.RunDockerDevContainerParams,
+	params *driver.RunImageDevContainerParams,
 ) error {
 	if err := d.EnsureImage(ctx, params.Options); err != nil {
 		return err
