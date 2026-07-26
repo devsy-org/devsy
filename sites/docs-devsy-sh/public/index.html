@@ -3,21 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          if (t !== "light" && t !== "dark") {
+            t = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
     <title>
-      Devsy — Standardized development workspaces, engineering at scale
+      Devsy: Standardized development workspaces, engineering at scale
     </title>
     <meta
       name="description"
       content="Devsy gives teams standardized workspaces that cut hardware cost, shorten onboarding, and raise developer productivity. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts."
     />
-    <link
-      rel="icon"
-      href="/docs/media/devsy-favicon.svg"
-      type="image/svg+xml"
-    />
+    <link rel="icon" href="/docs/media/devsy-favicon.svg" type="image/svg+xml" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Devsy" />
-    <meta property="og:title" content="Devsy — Engineering at scale" />
+    <meta property="og:title" content="Devsy: Engineering at scale" />
     <meta
       property="og:description"
       content="Standardized, reproducible development workspaces that run anywhere: local, cloud, Kubernetes, or remote SSH."
@@ -25,7 +34,7 @@
     <meta property="og:url" content="https://www.devsy.sh/" />
     <meta property="og:image" content="https://www.devsy.sh/docs/media/devsy.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Devsy — Engineering at scale" />
+    <meta name="twitter:title" content="Devsy: Engineering at scale" />
     <meta
       name="twitter:description"
       content="Standardized, reproducible development workspaces that run anywhere: local, cloud, Kubernetes, or remote SSH."
@@ -48,9 +57,43 @@
         --ink: #0b0b14;
         --slate: #545469;
         --line: #e7e7f0;
+        --bg: #ffffff;
         --bg-soft: #f7f7fc;
+        --surface: #ffffff;
+        --header-bg: rgba(255, 255, 255, 0.82);
+        --shadow: rgba(11, 11, 20, 0.28);
         --radius: 14px;
         --max: 1120px;
+      }
+
+      [data-theme="dark"] {
+        --purple: #8f74ff;
+        --purple-dark: #7c5cff;
+        --purple-light: #b9a5ff;
+        --ink: #e9e9f2;
+        --slate: #a1a1b8;
+        --line: #262637;
+        --bg: #0b0b14;
+        --bg-soft: #12121d;
+        --surface: #15151f;
+        --header-bg: rgba(11, 11, 20, 0.82);
+        --shadow: rgba(0, 0, 0, 0.55);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --purple: #8f74ff;
+          --purple-dark: #7c5cff;
+          --purple-light: #b9a5ff;
+          --ink: #e9e9f2;
+          --slate: #a1a1b8;
+          --line: #262637;
+          --bg: #0b0b14;
+          --bg-soft: #12121d;
+          --surface: #15151f;
+          --header-bg: rgba(11, 11, 20, 0.82);
+          --shadow: rgba(0, 0, 0, 0.55);
+        }
       }
 
       * {
@@ -65,9 +108,12 @@
         margin: 0;
         font-family: Inter, "Helvetica Neue", Arial, sans-serif;
         color: var(--ink);
-        background: #fff;
+        background: var(--bg);
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
+        transition:
+          background 0.2s ease,
+          color 0.2s ease;
       }
 
       a {
@@ -112,7 +158,7 @@
       }
 
       .btn-ghost {
-        background: #fff;
+        background: var(--surface);
         border-color: var(--line);
         color: var(--ink);
       }
@@ -127,16 +173,29 @@
         position: sticky;
         top: 0;
         z-index: 50;
-        background: rgba(255, 255, 255, 0.82);
+        background: var(--header-bg);
         backdrop-filter: saturate(180%) blur(12px);
         border-bottom: 1px solid var(--line);
       }
 
       .nav {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
         height: 68px;
+        gap: 16px;
+      }
+
+      /* Desktop: center the section links on the page, independent of the
+         brand and action widths on either side. */
+      @media (min-width: 992px) {
+        .nav-links {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+        }
       }
 
       .brand {
@@ -152,10 +211,16 @@
         display: block;
       }
 
+      .nav-menu {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+      }
+
       .nav-links {
         display: flex;
         align-items: center;
-        gap: 30px;
+        gap: 26px;
         font-size: 15px;
         font-weight: 500;
         color: var(--slate);
@@ -178,21 +243,107 @@
       .nav-cta {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 16px;
       }
 
-      /* Docs link surfaced in nav-cta only on mobile, where nav-links hides */
-      .nav-docs-mobile {
+      .nav-cta .btn {
+        height: 40px;
+        padding: 0 20px;
+      }
+
+      .nav-divider {
+        width: 1px;
+        height: 26px;
+        background: var(--line);
+      }
+
+      .nav-toggle {
         display: none;
+        width: 42px;
+        height: 42px;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--ink);
+        cursor: pointer;
       }
 
-      @media (max-width: 820px) {
-        .nav-links {
+      .theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        flex: none;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--ink);
+        cursor: pointer;
+        transition: border-color 0.2s ease;
+      }
+
+      .theme-toggle:hover {
+        border-color: var(--purple-light);
+      }
+
+      @media (max-width: 991px) {
+        .nav-toggle {
+          display: inline-flex;
+        }
+
+        .nav-menu {
+          position: absolute;
+          top: 68px;
+          left: 0;
+          right: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          padding: 12px 24px 20px;
+          background: var(--surface);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 24px 48px -28px var(--shadow);
           display: none;
         }
 
-        .nav-docs-mobile {
-          display: inline-flex;
+        .nav-menu.open {
+          display: flex;
+        }
+
+        .nav-links {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+        }
+
+        .nav-links a {
+          padding: 13px 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .nav-cta {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+          padding-top: 14px;
+        }
+
+        .nav-divider {
+          display: none;
+        }
+
+        .nav-cta .btn,
+        .nav-cta .nav-link-single {
+          width: 100%;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .theme-toggle {
+          width: 100%;
         }
       }
 
@@ -208,7 +359,7 @@
             rgba(124, 92, 255, 0.14),
             rgba(124, 92, 255, 0) 60%
           ),
-          #fff;
+          var(--bg);
       }
 
       h1 {
@@ -254,9 +405,9 @@
         max-width: 940px;
         border-radius: 18px;
         border: 1px solid var(--line);
-        box-shadow: 0 30px 80px -30px rgba(11, 11, 20, 0.28);
+        box-shadow: 0 30px 80px -30px var(--shadow);
         overflow: hidden;
-        background: #fff;
+        background: var(--surface);
       }
 
       .hero-media img {
@@ -315,7 +466,7 @@
         border: 1px solid var(--line);
         border-radius: var(--radius);
         padding: 28px;
-        background: #fff;
+        background: var(--surface);
         transition:
           transform 0.18s ease,
           box-shadow 0.2s ease,
@@ -372,7 +523,7 @@
       }
 
       .target {
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 12px;
         padding: 24px 20px;
@@ -414,7 +565,6 @@
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 26px;
-        counter-reset: step;
       }
 
       @media (max-width: 900px) {
@@ -424,35 +574,10 @@
       }
 
       .step {
-        position: relative;
-        padding-top: 8px;
-      }
-
-      /* Connector line between step badges (desktop only) */
-      .step:not(:last-child)::before {
-        content: "";
-        position: absolute;
-        top: 28px;
-        left: 52px;
-        right: -26px;
-        height: 2px;
-        background: linear-gradient(
-          90deg,
-          var(--purple-light),
-          var(--line)
-        );
-        z-index: 0;
-      }
-
-      @media (max-width: 900px) {
-        .step:not(:last-child)::before {
-          display: none;
-        }
+        text-align: center;
       }
 
       .step .num {
-        position: relative;
-        z-index: 1;
         width: 40px;
         height: 40px;
         border-radius: 11px;
@@ -461,7 +586,7 @@
         font-weight: 800;
         color: #fff;
         background: linear-gradient(140deg, var(--purple), var(--purple-light));
-        margin-bottom: 16px;
+        margin: 0 auto 16px;
       }
 
       .step h3 {
@@ -471,7 +596,8 @@
       }
 
       .step p {
-        margin: 0;
+        margin: 0 auto;
+        max-width: 320px;
         color: var(--slate);
         font-size: 15px;
       }
@@ -508,6 +634,90 @@
 
       .cta .btn-ghost:hover {
         border-color: #fff;
+      }
+
+      /* ---------- Services ---------- */
+      .service-cta {
+        text-align: center;
+        margin-top: 44px;
+      }
+
+      /* ---------- Contact form ---------- */
+      .contact-form {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      @media (max-width: 620px) {
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .field {
+        margin-bottom: 18px;
+        text-align: left;
+      }
+
+      .field label {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .field .optional {
+        font-weight: 400;
+        color: var(--slate);
+      }
+
+      .field input,
+      .field textarea {
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--surface);
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+
+      .field input:focus,
+      .field textarea:focus {
+        outline: none;
+        border-color: var(--purple);
+        box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
+      }
+
+      .field textarea {
+        resize: vertical;
+        min-height: 130px;
+      }
+
+      .form-hidden {
+        position: absolute;
+        left: -9999px;
+      }
+
+      .form-actions {
+        text-align: center;
+        margin-top: 8px;
+      }
+
+      .contact-note {
+        text-align: center;
+        color: var(--slate);
+        font-size: 14.5px;
+        margin-top: 18px;
       }
 
       /* ---------- Footer ---------- */
@@ -570,25 +780,59 @@
           </svg>
           devsy
         </a>
-        <nav class="nav-links">
-          <a href="#features">Features</a>
-          <a href="#anywhere">Deploy anywhere</a>
-          <a href="#how">How it works</a>
-          <a href="/docs/what-is-devsy">Docs</a>
-        </nav>
-        <div class="nav-cta">
-          <a class="nav-link-single nav-docs-mobile" href="/docs/what-is-devsy"
-            >Docs</a
+        <button
+          class="nav-toggle"
+          id="navToggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="navMenu"
+          aria-label="Open menu"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
           >
-          <a
-            class="nav-link-single"
-            href="https://github.com/devsy-org/devsy"
-            aria-label="GitHub"
-            >GitHub</a
-          >
-          <a class="btn btn-primary" href="/docs/getting-started/install"
-            >Get Started</a
-          >
+            <path d="M3 6h18M3 12h18M3 18h18" />
+          </svg>
+        </button>
+        <div class="nav-menu" id="navMenu">
+          <nav class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#anywhere">Deploy anywhere</a>
+            <a href="#how">How it works</a>
+            <a href="#services">Services</a>
+            <a href="/docs/what-is-devsy">Docs</a>
+          </nav>
+          <div class="nav-cta">
+            <span class="nav-divider" aria-hidden="true"></span>
+            <button
+              class="theme-toggle"
+              id="themeToggle"
+              type="button"
+              aria-label="Toggle theme"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+              </svg>
+            </button>
+            <a class="btn btn-primary" href="/docs/getting-started/install"
+              >Get Started</a
+            >
+          </div>
         </div>
       </div>
     </header>
@@ -597,9 +841,7 @@
       <!-- HERO -->
       <section class="hero">
         <div class="wrap">
-          <h1>
-            Ship from <span class="grad">day zero</span>.
-          </h1>
+          <h1>Ship from <span class="grad">day zero</span>.</h1>
           <p class="hero-sub">Standardized workspaces, engineering at scale.</p>
           <p class="lede">
             Devsy gives every engineer the same environment. Cut hardware cost,
@@ -610,9 +852,7 @@
             <a class="btn btn-primary" href="/docs/getting-started/install"
               >Get Started</a
             >
-            <a class="btn btn-ghost" href="/docs/what-is-devsy"
-              >Read the docs</a
-            >
+            <a class="btn btn-ghost" href="/docs/what-is-devsy">Read the docs</a>
           </div>
           <div class="hero-media">
             <img
@@ -707,9 +947,8 @@
               </div>
               <h3>Cost efficiency</h3>
               <p>
-                Run on infrastructure you already pay for. Prebuilds and
-                inactivity-based auto-shutdown mean you spend only on capacity
-                in use.
+                Run on infrastructure you own. Prebuilds and inactivity-based
+                auto-shutdown mean you pay for capacity in use.
               </p>
             </div>
             <div class="card">
@@ -751,8 +990,8 @@
               </div>
               <h3>IDE support</h3>
               <p>
-                Use the IDE you already know: VS Code, Cursor, Zed, the full
-                JetBrains suite, and more.
+                Use the IDE you know: VS Code, Cursor, Zed, the full JetBrains
+                suite, and more.
               </p>
             </div>
             <div class="card">
@@ -789,7 +1028,7 @@
             <div class="kicker">Deploy anywhere</div>
             <h2>Workspaces run where your work does</h2>
             <p>
-              Built on the open Devcontainer standard, so workspaces stay
+              Devsy builds on the open Devcontainer standard, so workspaces stay
               portable and repeatable across every provider backend.
             </p>
           </div>
@@ -899,11 +1138,158 @@
               <div class="num">3</div>
               <h3>Connect and build</h3>
               <p>
-                Your local IDE attaches to the workspace. The experience is the
-                same from laptop to cloud, prototype to production.
+                Your local IDE attaches to the workspace. The experience holds
+                from laptop to cloud, prototype to production.
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- SERVICES -->
+      <section id="services">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="kicker">Services</div>
+            <h2>Work with the team behind Devsy</h2>
+            <p>
+              Get hands-on help to standardize your development environments,
+              from a focused audit to a full rollout and ongoing support.
+            </p>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m21 21-4.3-4.3" />
+                  <circle cx="11" cy="11" r="8" />
+                </svg>
+              </div>
+              <h3>Dev Environment Audit</h3>
+              <p>
+                A focused review of how your team onboards and runs
+                environments. You get a scored assessment, a ranked list of your
+                top bottlenecks, and a working, standardized devcontainer for
+                one repository. Fixed scope, fixed price.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
+                </svg>
+              </div>
+              <h3>Implementation and rollout</h3>
+              <p>
+                We set up Devsy and devcontainers across your repositories. You
+                get standardized toolchains, prebuilds, and local-to-CI parity,
+                so every engineer ships from day zero.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+              <h3>Support and migration</h3>
+              <p>
+                Migrating off an abandoned tool like DevPod, or want a
+                maintained platform you can rely on? Get ongoing support,
+                upgrades, and hands-on migration help.
+              </p>
+            </div>
+          </div>
+          <div class="service-cta">
+            <a class="btn btn-primary" href="#contact">Get in touch</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTACT -->
+      <section id="contact" class="band">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="kicker">Contact</div>
+            <h2>Tell us about your team</h2>
+            <p>
+              Tell us where your dev-environment setup slows your team down, and
+              we'll reply with how we can help.
+            </p>
+          </div>
+          <form
+            name="contact"
+            method="POST"
+            data-netlify="true"
+            netlify-honeypot="bot-field"
+            class="contact-form"
+          >
+            <input type="hidden" name="form-name" value="contact" />
+            <p class="form-hidden">
+              <label
+                >Skip this field if you're human:
+                <input name="bot-field" /></label
+              >
+            </p>
+            <div class="form-row">
+              <div class="field">
+                <label for="name">Name</label>
+                <input id="name" type="text" name="name" required />
+              </div>
+              <div class="field">
+                <label for="email">Work email</label>
+                <input id="email" type="email" name="email" required />
+              </div>
+            </div>
+            <div class="field">
+              <label for="company"
+                >Company <span class="optional">(optional)</span></label
+              >
+              <input id="company" type="text" name="company" />
+            </div>
+            <div class="field">
+              <label for="message">How can we help?</label>
+              <textarea
+                id="message"
+                name="message"
+                required
+                placeholder="Tell us about your team size, current setup, and what you want to improve."
+              ></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Send message</button>
+            </div>
+            <p class="contact-note">
+              We'll get back to you within a couple of business days.
+            </p>
+          </form>
         </div>
       </section>
 
@@ -914,11 +1300,11 @@
             <h2>Scale your engineering, not your setup.</h2>
             <p>
               Get Devsy as a desktop app or a command-line tool and launch your
-              first standardized workspace now.
+              first standardized workspace.
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="/docs/getting-started/install"
-                >Download &amp; install</a
+                >Download and install</a
               >
               <a class="btn btn-ghost" href="https://github.com/devsy-org/devsy"
                 >View on GitHub</a
@@ -931,12 +1317,7 @@
 
     <footer>
       <div class="wrap foot">
-        <a
-          class="brand"
-          href="/"
-          style="font-size: 18px"
-          aria-label="Devsy home"
-        >
+        <a class="brand" href="/" style="font-size: 18px" aria-label="Devsy home">
           <svg
             width="24"
             height="24"
@@ -969,14 +1350,64 @@
         <nav class="foot-links">
           <a href="/docs/what-is-devsy">Documentation</a>
           <a href="/docs/getting-started/install">Install</a>
+          <a href="#services">Services</a>
           <a href="https://github.com/devsy-org/devsy">GitHub</a>
         </nav>
-        <span>© <span id="year">2026</span> Devsy, Inc.</span>
+        <span>&copy; <span id="year">2026</span> Devsy, Inc.</span>
       </div>
     </footer>
 
     <script>
       document.getElementById("year").textContent = new Date().getFullYear();
+
+      // Mobile navigation
+      (function () {
+        var toggle = document.getElementById("navToggle");
+        var menu = document.getElementById("navMenu");
+        if (toggle && menu) {
+          toggle.addEventListener("click", function () {
+            var open = menu.classList.toggle("open");
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+          });
+          menu.querySelectorAll("a").forEach(function (link) {
+            link.addEventListener("click", function () {
+              menu.classList.remove("open");
+              toggle.setAttribute("aria-expanded", "false");
+            });
+          });
+        }
+      })();
+
+      // Theme: light / dark
+      (function () {
+        var btn = document.getElementById("themeToggle");
+        if (!btn) return;
+        var sun =
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+        var moon =
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+        function current() {
+          return document.documentElement.getAttribute("data-theme") === "dark"
+            ? "dark"
+            : "light";
+        }
+        function apply(mode) {
+          document.documentElement.setAttribute("data-theme", mode);
+          btn.innerHTML = mode === "dark" ? sun : moon;
+          var label =
+            mode === "dark" ? "Switch to light theme" : "Switch to dark theme";
+          btn.setAttribute("aria-label", label);
+          btn.setAttribute("title", label);
+        }
+        apply(current());
+        btn.addEventListener("click", function () {
+          var next = current() === "dark" ? "light" : "dark";
+          try {
+            localStorage.setItem("theme", next);
+          } catch (e) {}
+          apply(next);
+        });
+      })();
     </script>
   </body>
 </html>
