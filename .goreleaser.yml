@@ -95,6 +95,7 @@ upx:
     ids: [devsy-linux, devsy-pro-dev]
     goos: [linux]
     compress: best
+    lzma: true
 
 archives:
   - formats: [tar.gz]
