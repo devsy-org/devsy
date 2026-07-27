@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -198,6 +199,8 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
 		return fmt.Errorf("ci is currently not supported for proxy providers")
 	}
+
+	cmd.WaitFor = string(setup.PhasePostCreate)
 
 	if _, err := up.RunHeadless(ctx, workspaceClient, up.HeadlessOptions{
 		GlobalFlags:        cmd.GlobalFlags,

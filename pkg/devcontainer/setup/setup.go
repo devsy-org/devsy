@@ -48,6 +48,7 @@ type ContainerSetupConfig struct {
 	SkipPostCreate    bool
 	SkipPostStart     bool
 	SkipPostAttach    bool
+	WaitFor           LifecyclePhase
 }
 
 // SetupContainerPreAttach runs container setup up to and including the waitFor
@@ -78,19 +79,18 @@ func SetupContainerPreAttach(
 	setupOptionalFeatures(ctx, cfg)
 
 	log.Debugf("running pre-attach lifecycle hooks")
-	deferred, err := RunPreAttachHooks(
-		ctx,
-		cfg.SetupInfo,
-		cfg.Prebuild,
-		cfg.Dotfiles,
-		cfg.SecretsEnv,
-		cfg.SecretsMount,
-		SkipPhases{
+	deferred, err := RunPreAttachHooks(ctx, cfg.SetupInfo, PreAttachOptions{
+		Prebuild:     cfg.Prebuild,
+		Dotfiles:     cfg.Dotfiles,
+		SecretsEnv:   cfg.SecretsEnv,
+		SecretsMount: cfg.SecretsMount,
+		Skip: SkipPhases{
 			PostCreate: cfg.SkipPostCreate,
 			PostStart:  cfg.SkipPostStart,
 			PostAttach: cfg.SkipPostAttach,
 		},
-	)
+		WaitFor: cfg.WaitFor,
+	})
 	if err != nil {
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}

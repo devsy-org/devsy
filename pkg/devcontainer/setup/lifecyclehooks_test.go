@@ -99,8 +99,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 		},
 	}
 
-	// Both functions should return nil with empty config (no commands to run)
-	deferred, err := RunPreAttachHooks(ctx, result, false, DotfilesConfig{}, nil, nil, SkipPhases{})
+	deferred, err := RunPreAttachHooks(ctx, result, PreAttachOptions{})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
@@ -139,21 +138,29 @@ func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
 }
 
 func (s *LifecycleHookTestSuite) TestResolveWaitForDefault() {
-	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor(""))
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("", ""))
 }
 
 func (s *LifecycleHookTestSuite) TestResolveWaitForValid() {
-	assert.Equal(s.T(), PhasePostCreate, resolveWaitFor("postCreateCommand"))
-	assert.Equal(s.T(), PhasePostStart, resolveWaitFor("postStartCommand"))
-	assert.Equal(s.T(), PhaseOnCreate, resolveWaitFor("onCreateCommand"))
-	assert.Equal(s.T(), PhasePostAttach, resolveWaitFor("postAttachCommand"))
-	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand"))
-	assert.Equal(s.T(), PhaseInitializeCommand, resolveWaitFor("initializeCommand"))
+	assert.Equal(s.T(), PhasePostCreate, resolveWaitFor("postCreateCommand", ""))
+	assert.Equal(s.T(), PhasePostStart, resolveWaitFor("postStartCommand", ""))
+	assert.Equal(s.T(), PhaseOnCreate, resolveWaitFor("onCreateCommand", ""))
+	assert.Equal(s.T(), PhasePostAttach, resolveWaitFor("postAttachCommand", ""))
+	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand", ""))
+	assert.Equal(s.T(), PhaseInitializeCommand, resolveWaitFor("initializeCommand", ""))
 }
 
 func (s *LifecycleHookTestSuite) TestResolveWaitForInvalid() {
-	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("bogus"))
-	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("POSTCREATECOMMAND"))
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("bogus", ""))
+	assert.Equal(s.T(), DefaultWaitFor, resolveWaitFor("POSTCREATECOMMAND", ""))
+}
+
+func (s *LifecycleHookTestSuite) TestResolveWaitForFloor() {
+	assert.Equal(s.T(), PhasePostCreate, resolveWaitFor("updateContentCommand", PhasePostCreate))
+	assert.Equal(s.T(), PhasePostStart, resolveWaitFor("postStartCommand", PhasePostCreate))
+	assert.Equal(s.T(), PhasePostCreate, resolveWaitFor("initializeCommand", PhasePostCreate))
+	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand", ""))
+	assert.Equal(s.T(), PhaseUpdateContent, resolveWaitFor("updateContentCommand", "bogus"))
 }
 
 func (s *LifecycleHookTestSuite) TestRunWithWaitForDefaultSplit() {
@@ -251,8 +258,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 		},
 	}
 
-	// In prebuild mode, no deferred hooks are returned regardless of waitFor.
-	deferred, err := RunPreAttachHooks(ctx, result, true, DotfilesConfig{}, nil, nil, SkipPhases{})
+	deferred, err := RunPreAttachHooks(ctx, result, PreAttachOptions{Prebuild: true})
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 }
