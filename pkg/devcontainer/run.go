@@ -92,6 +92,13 @@ func NewRunner(
 		return nil, err
 	}
 
+	preflightOpts := driver.PreflightOptions{
+		DisableAutoStart: workspaceConfig.CLIOptions.NoAutoStart || driver.AutoStartDisabledByEnv(),
+	}
+	if err := driver.DriverPreflight(ctx, drv, preflightOpts); err != nil {
+		return nil, err
+	}
+
 	return &runner{
 		driver:               drv,
 		agentPath:            agentPath,

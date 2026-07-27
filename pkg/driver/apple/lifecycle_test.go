@@ -32,8 +32,12 @@ type mockClient struct {
 	calls      []string   // ordered event log, e.g. "stop:c1", "remove:c1"
 	ranArgs    [][]string // exec/run argument lists, in call order
 	runWithDir string     // dir passed to the last RunWithDir call
+	systemDown bool       // SystemRunning reports false
+	ensureErr  error      // error returned by EnsureSystemRunning
 }
 
+func (m *mockClient) EnsureSystemRunning(context.Context) error  { return m.ensureErr }
+func (m *mockClient) SystemRunning(context.Context) bool         { return !m.systemDown }
 func (m *mockClient) EnsureBuilderRunning(context.Context) error { return nil }
 func (m *mockClient) FindDevContainer(context.Context, []string) (*config.ContainerDetails, error) {
 	return m.found, m.foundErr

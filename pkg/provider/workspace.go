@@ -245,6 +245,7 @@ type CLIOptions struct {
 	Recreate                    bool              `json:"recreate,omitempty"`
 	Prebuild                    bool              `json:"prebuild,omitempty"`
 	Reset                       bool              `json:"reset,omitempty"`
+	NoAutoStart                 bool              `json:"noAutoStart,omitempty"`
 	DisableDaemon               bool              `json:"disableDaemon,omitempty"`
 	DaemonInterval              string            `json:"daemonInterval,omitempty"`
 	GitCloneStrategy            git.CloneStrategy `json:"gitCloneStrategy,omitempty"`
