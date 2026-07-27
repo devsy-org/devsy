@@ -19,6 +19,8 @@ const (
 	testImage  = "example:latest"
 	testUser   = "vscode"
 	imgX       = "x:1"
+	testImg    = "img:1"
+	shPath     = "/bin/sh"
 	callFind   = "find:" + wsName
 	callRemove = "remove:" + wsName
 )
@@ -354,14 +356,14 @@ func TestRunDevContainerSetsEntrypoint(t *testing.T) {
 
 	err := d.RunDevContainer(context.Background(), "ws1", &driver.RunOptions{
 		Image:      testImage,
-		Entrypoint: "/bin/sh",
+		Entrypoint: shPath,
 		Cmd:        []string{"-c", "start", "-"},
 	})
 	if err != nil {
 		t.Fatalf("RunDevContainer: %v", err)
 	}
 	got := f.created[wsName].Entrypoint
-	want := []string{"/bin/sh", "-c", "start", "-"}
+	want := []string{shPath, "-c", "start", "-"}
 	if len(got) != len(want) {
 		t.Fatalf("entrypoint = %v, want %v", got, want)
 	}

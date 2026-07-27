@@ -3,6 +3,7 @@ package microsandbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,12 @@ import (
 type cliClient struct{}
 
 var _ sandboxClient = cliClient{}
+
+const (
+	cmdCreate = "create"
+	flagName  = "--name"
+	flagEnv   = "--env"
+)
 
 func (cliClient) EnsureInstalled(_ context.Context) error {
 	bin := msbBinary()
@@ -63,12 +70,17 @@ func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error)
 	out, err := exec.CommandContext(ctx, msbBinary(), "inspect", sandbox, "--format", "json").
 		Output()
 	if err != nil {
-		// inspect fails when the sandbox is absent, which is not an error here.
-		// A cancelled/timed-out context is, so do not mask it as "not found".
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("inspect microsandbox VM %q: %w", sandbox, ctx.Err())
 		}
-		return nil, nil
+		// A genuine "not found" means the sandbox is absent (nil, nil). Any other
+		// failure (permission, crash, bad invocation) is a real error to surface,
+		// so callers do not mistake it for an absent sandbox.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && strings.Contains(string(exitErr.Stderr), "not found") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("inspect microsandbox VM %q: %w", sandbox, err)
 	}
 	var raw struct {
 		Name         string `json:"name"`
@@ -135,7 +147,7 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 	for _, vol := range namedVolumes(mounts) {
 		// #nosec G204 -- args are a resolved binary path and a named-volume name
 		out, err := exec.CommandContext(ctx, msbBinary(), "volume", "create", vol).CombinedOutput()
-		if err != nil && !strings.Contains(strings.ToLower(string(out)), "exist") {
+		if err != nil && !strings.Contains(strings.ToLower(string(out)), "already exists") {
 			return fmt.Errorf("create microsandbox volume %q: %s: %w", vol, out, err)
 		}
 	}
@@ -143,7 +155,7 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 }
 
 func createArgs(sandbox string, spec sandboxSpec) []string {
-	args := []string{"create", "--name", sandbox}
+	args := []string{cmdCreate, flagName, sandbox}
 	args = append(args, runtimeArgs(spec)...)
 	args = append(args, resourceArgs(spec)...)
 	args = append(args, mountArgs(spec.Mounts)...)
@@ -156,7 +168,7 @@ func runtimeArgs(spec sandboxSpec) []string {
 		args = append(args, "--entrypoint", strings.Join(spec.Entrypoint, " "))
 	}
 	for k, v := range spec.Env {
-		args = append(args, "--env", k+"="+v)
+		args = append(args, flagEnv, k+"="+v)
 	}
 	for k, v := range spec.Labels {
 		args = append(args, "--label", k+"="+v)
@@ -230,7 +242,7 @@ func redactArgs(args []string) string {
 	out := make([]string, len(args))
 	copy(out, args)
 	for i := 0; i+1 < len(out); i++ {
-		if out[i] != "--env" {
+		if out[i] != flagEnv {
 			continue
 		}
 		if k, _, ok := strings.Cut(out[i+1], "="); ok {
