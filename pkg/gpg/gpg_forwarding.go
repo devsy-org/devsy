@@ -121,11 +121,19 @@ func (g *GPGConf) SetupGpgConf() error {
 	}
 	defer func() { _ = f.Close() }()
 
+	// Avoid concatenating onto a final line that lacks a trailing newline.
+	needsLeadingNewline := len(gpgConfig) > 0 && !strings.HasSuffix(string(gpgConfig), "\n")
+
 	for _, directive := range gpgConfDirectives {
 		if containsDirective(string(gpgConfig), directive) {
 			continue
 		}
-		if _, err := f.WriteString(directive + "\n"); err != nil {
+		line := directive + "\n"
+		if needsLeadingNewline {
+			line = "\n" + line
+			needsLeadingNewline = false
+		}
+		if _, err := f.WriteString(line); err != nil {
 			return err
 		}
 	}

@@ -55,6 +55,23 @@ func TestSetupGpgConf_PreservesExistingDirectives(t *testing.T) {
 	assert.Contains(t, got, "no-autostart")
 }
 
+func TestSetupGpgConf_ExistingFileWithoutTrailingNewline(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
+
+	g := &GPGConf{}
+	// no trailing newline on the existing directive
+	require.NoError(t, os.WriteFile(g.getConfigPath(), []byte("use-agent"), 0o600))
+	require.NoError(t, g.SetupGpgConf())
+
+	got := readConf(t, g.getConfigPath())
+	assert.NotContains(t, got, "use-agentno-autostart", "directives must not be concatenated")
+	for _, line := range []string{"use-agent", "no-autostart"} {
+		assert.True(t, containsDirective(got, line), "expected %q on its own line, got:\n%s", line, got)
+	}
+}
+
 func readConf(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
