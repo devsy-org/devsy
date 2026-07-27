@@ -34,7 +34,7 @@ type AppleHelper struct {
 // EnsureSystemRunning starts the container system service if it is not running;
 // it must be running before any container operation.
 func (h *AppleHelper) EnsureSystemRunning(ctx context.Context) error {
-	if h.systemRunning(ctx) {
+	if h.SystemRunning(ctx) {
 		return nil
 	}
 
@@ -358,7 +358,8 @@ func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func (h *AppleHelper) systemRunning(ctx context.Context) bool {
+// SystemRunning reports whether the container system service is running.
+func (h *AppleHelper) SystemRunning(ctx context.Context) bool {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, err := h.buildCmd(cctx, "system", "status").CombinedOutput()

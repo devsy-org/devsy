@@ -40,6 +40,7 @@ const (
 	MachineReuse              = "machine-reuse"
 	Mount                     = "mount"
 	MountWorkspaceGitRoot     = "mount-workspace-git-root"
+	NoAutoStart               = "no-auto-start"
 	NoCache                   = "no-cache"
 	Platform                  = "platform"
 	Prebuild                  = "prebuild"

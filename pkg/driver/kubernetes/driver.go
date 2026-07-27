@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -46,7 +47,22 @@ func NewKubernetesDriver(
 }
 
 // The kubernetes driver runs devcontainers as pods and can reprovision them.
-var _ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
+var (
+	_ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
+	_ driver.Preflighter          = (*KubernetesDriver)(nil)
+)
+
+// Preflight verifies the cluster's API server is reachable. A remote cluster
+// cannot be auto-started, so failures are surfaced as-is.
+func (k *KubernetesDriver) Preflight(ctx context.Context, _ driver.PreflightOptions) error {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if err := k.client.Ping(cctx); err != nil {
+		return &driver.PreflightError{Provider: provider2.KubernetesDriver, Err: err}
+	}
+	return nil
+}
 
 type KubernetesDriver struct {
 	namespace string

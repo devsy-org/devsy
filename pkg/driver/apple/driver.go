@@ -6,7 +6,9 @@ package apple
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"runtime"
 
 	"github.com/devsy-org/devsy/pkg/apple"
@@ -30,12 +32,15 @@ type appleDriver struct {
 	containerID string // set when the workspace source is an existing container
 }
 
-var _ driver.ImageDriver = (*appleDriver)(nil)
+var (
+	_ driver.ImageDriver = (*appleDriver)(nil)
+	_ driver.Preflighter = (*appleDriver)(nil)
+)
 
-// NewAppleDriver verifies the host is supported and the container system service
-// is running (ctx bounds the potentially-slow `container system start`).
+// NewAppleDriver verifies the host is supported and constructs the driver;
+// Preflight validates the container system service.
 func NewAppleDriver(
-	ctx context.Context,
+	_ context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (driver.ImageDriver, error) {
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
@@ -55,10 +60,6 @@ func NewAppleDriver(
 		Environment: makeEnvironment(workspaceInfo.Agent.Apple.Env),
 	}
 
-	if err := helper.EnsureSystemRunning(ctx); err != nil {
-		return nil, err
-	}
-
 	rosetta, err := workspaceInfo.Agent.Apple.Rosetta.Bool()
 	if err != nil {
 		log.Warnf(
@@ -76,6 +77,34 @@ func NewAppleDriver(
 		command:     command,
 		containerID: workspaceInfo.Workspace.Source.Container,
 	}, nil
+}
+
+// Preflight checks the `container` binary is installed and the system service
+// running, starting it unless auto-start is disabled.
+func (d *appleDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
+	if _, err := exec.LookPath(d.command); err != nil {
+		return &driver.PreflightError{
+			Provider: provider.AppleDriver,
+			Err:      fmt.Errorf("%s is not installed or not on PATH: %w", d.command, err),
+		}
+	}
+
+	if opts.DisableAutoStart {
+		if !d.Apple.SystemRunning(ctx) {
+			return &driver.PreflightError{
+				Provider: provider.AppleDriver,
+				Err: errors.New(
+					"container system service is not running (run `container system start`)",
+				),
+			}
+		}
+		return nil
+	}
+
+	if err := d.Apple.EnsureSystemRunning(ctx); err != nil {
+		return &driver.PreflightError{Provider: provider.AppleDriver, Err: err}
+	}
+	return nil
 }
 
 func makeEnvironment(env map[string]string) []string {

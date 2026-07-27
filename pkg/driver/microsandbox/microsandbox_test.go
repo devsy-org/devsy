@@ -30,22 +30,23 @@ const (
 // fakeClient is an in-memory sandboxClient that records calls, so the driver's
 // lifecycle logic can be tested without a live runtime.
 type fakeClient struct {
-	created    map[string]sandboxSpec
-	info       map[string]*sandboxInfo
-	calls      []string
-	execReq    execRequest
-	execName   string
-	failFind   error
-	failStop   error
-	failCreat  error
-	failEnsure error
+	created     map[string]sandboxSpec
+	info        map[string]*sandboxInfo
+	calls       []string
+	execReq     execRequest
+	execName    string
+	failFind    error
+	failStop    error
+	failCreat   error
+	failEnsure  error
+	failInstall error
 }
 
 func newFakeClient() *fakeClient {
 	return &fakeClient{created: map[string]sandboxSpec{}, info: map[string]*sandboxInfo{}}
 }
 
-func (f *fakeClient) EnsureInstalled(context.Context) error { return nil }
+func (f *fakeClient) EnsureInstalled(context.Context) error { return f.failInstall }
 
 func (f *fakeClient) EnsureImage(_ context.Context, image string) error {
 	f.calls = append(f.calls, "ensure:"+image)
