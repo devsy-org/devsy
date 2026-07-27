@@ -233,17 +233,16 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// Per-poll budget must exceed a cold devsy ssh connection's
-				// setup, or the poll is killed mid-connect and returns empty.
-				gomega.Eventually(func() (string, error) {
-					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				gomega.Eventually(func() string {
+					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					defer cancel()
-					return f.DevsySSH(
+					out, _ := f.DevsySSH(
 						pollCtx,
 						tempDir,
 						"test -S "+sockPath+" && echo PRESENT || echo GONE",
 					)
-				}).WithTimeout(90*time.Second).WithPolling(3*time.Second).
+					return out
+				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
 					Should(
 						gomega.ContainSubstring("GONE"),
 						"socket %s must be cleaned up after connection close",
@@ -307,17 +306,16 @@ var _ = ginkgo.Describe(
 				exitCmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+authSock)
 				_ = exitCmd.Run()
 
-				// Assert no devsy-ssh-agent-* dirs remain after close.
-				gomega.Eventually(func() (string, error) {
-					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				gomega.Eventually(func() string {
+					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					defer cancel()
-					out, err := f.DevsySSH(
+					out, _ := f.DevsySSH(
 						pollCtx,
 						tempDir,
 						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/devsy-ssh-agent-* 2>/dev/null | wc -l'",
 					)
-					return strings.TrimSpace(out), err
-				}).WithTimeout(90*time.Second).WithPolling(3*time.Second).
+					return strings.TrimSpace(out)
+				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
 					Should(
 						gomega.Equal("0"),
 						"no devsy-ssh-agent-* dir must remain after a no-forward connection closes",
