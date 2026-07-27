@@ -1,0 +1,49 @@
+name: microsandbox
+version: v1.0.0
+icon: https://dl.devsy.sh/assets/devsy.svg
+home: https://github.com/devsy-org/devsy
+description: |-
+  Devsy on microsandbox (hardware-isolated microVMs, libkrun)
+optionGroups:
+  - options:
+      - MICROSANDBOX_MEMORY
+      - MICROSANDBOX_CPUS
+      - MICROSANDBOX_MAX_MEMORY
+      - MICROSANDBOX_MAX_CPUS
+      - MICROSANDBOX_BLOCK_EGRESS
+      - MICROSANDBOX_EPHEMERAL
+      - INACTIVITY_TIMEOUT
+    name: "Advanced Options"
+options:
+  MICROSANDBOX_MEMORY:
+    description: "Guest memory limit in MiB. Empty uses the runtime default."
+  MICROSANDBOX_CPUS:
+    description: "Number of virtual CPUs. Empty uses the runtime default."
+  MICROSANDBOX_MAX_MEMORY:
+    description: "Hotplug memory ceiling in MiB. Empty uses the runtime default."
+  MICROSANDBOX_MAX_CPUS:
+    description: "Hotplug CPU ceiling. Empty uses the runtime default."
+  MICROSANDBOX_BLOCK_EGRESS:
+    description: "If true, deny the microVM outbound public network (sandbox hardening)."
+    default: "false"
+    type: boolean
+  MICROSANDBOX_EPHEMERAL:
+    description: "If true, the microVM's disk state is discarded when it stops."
+    default: "false"
+    type: boolean
+  INACTIVITY_TIMEOUT:
+    description: "If defined, will automatically stop the microVM after the inactivity period. Examples: 10m, 1h"
+agent:
+  containerInactivityTimeout: ${INACTIVITY_TIMEOUT}
+  local: true
+  driver: microsandbox
+  microsandbox:
+    memory: ${MICROSANDBOX_MEMORY}
+    cpus: ${MICROSANDBOX_CPUS}
+    maxMemory: ${MICROSANDBOX_MAX_MEMORY}
+    maxCpus: ${MICROSANDBOX_MAX_CPUS}
+    blockEgress: ${MICROSANDBOX_BLOCK_EGRESS}
+    ephemeral: ${MICROSANDBOX_EPHEMERAL}
+exec:
+  command: |-
+    "${DEVSY}" internal sh -c "${COMMAND}"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -17,7 +18,6 @@ const (
 	cleanVolumePrefix     = "devsy-agent-"
 	cleanVolumeMountPath  = "/opt/devsy"
 	cleanBinaryName       = "devsy"
-	cleanHelperImage      = "busybox:latest"
 	cleanDefaultDockerCmd = "docker"
 )
 
@@ -55,8 +55,8 @@ This forces a fresh binary injection on the next workspace start.`,
 		cliflags.String(
 			&cmd.HelperImage,
 			names.HelperImage,
-			cleanHelperImage,
-			"Helper image for volume operations",
+			"",
+			"Helper image for volume operations (default "+pkgconfig.DefaultHelperImage+", or $"+pkgconfig.EnvHelperImage+")",
 		),
 	)
 	return cleanCmd
@@ -125,8 +125,5 @@ func (cmd *CleanCmd) dockerCommand() string {
 }
 
 func (cmd *CleanCmd) helperImage() string {
-	if cmd.HelperImage != "" {
-		return cmd.HelperImage
-	}
-	return cleanHelperImage
+	return pkgconfig.HelperImage(cmd.HelperImage)
 }

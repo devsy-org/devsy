@@ -79,6 +79,12 @@ type credentialsHandlerFunc func(
 
 func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
 	routes := map[string]credentialsHandlerFunc{
+		// Root is a readiness probe (see waitForServer); it must return 200 so the
+		// server is detected as up. Unknown paths still 404 below.
+		"/": func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
+			writer.WriteHeader(http.StatusOK)
+			return nil
+		},
 		"/git-credentials":            handleGitCredentialsRequest,
 		"/docker-credentials":         handleDockerCredentialsRequest,
 		"/git-ssh-signature":          handleGitSSHSignatureRequest,

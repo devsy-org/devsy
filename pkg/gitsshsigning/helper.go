@@ -176,7 +176,9 @@ type gitConfigFilter struct {
 func removeSignatureHelper(content string) string {
 	f := &gitConfigFilter{current: sectionNone}
 	for line := range strings.Lines(content) {
-		f.process(strings.TrimRight(line, "\r\n"))
+		// Trim only the LF so a CRLF file keeps its \r and is not rewritten to
+		// LF on the lines this filter passes through unchanged.
+		f.process(strings.TrimRight(line, "\n"))
 	}
 	f.flush()
 

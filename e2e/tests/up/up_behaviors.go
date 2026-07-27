@@ -118,7 +118,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	)
 
 	ginkgo.It("should accept --update-remote-user-uid=on", func(ctx context.Context) {
-		if runtime.GOOS != "linux" {
+		if runtime.GOOS != osLinux {
 			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
 		}
 		_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
@@ -127,7 +127,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should accept --update-remote-user-uid=off", func(ctx context.Context) {
-		if runtime.GOOS != "linux" {
+		if runtime.GOOS != osLinux {
 			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
 		}
 		tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",

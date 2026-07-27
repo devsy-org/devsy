@@ -20,11 +20,10 @@ import (
 var _ AgentDelivery = (*LocalDockerDelivery)(nil)
 
 const (
-	defaultDockerCmd   = "docker"
-	podmanCmd          = "podman"
-	volumePrefix       = "devsy-agent-"
-	volumeMountPath    = "/opt/devsy"
-	defaultHelperImage = "busybox:latest"
+	defaultDockerCmd = "docker"
+	podmanCmd        = "podman"
+	volumePrefix     = "devsy-agent-"
+	volumeMountPath  = "/opt/devsy"
 
 	// cmdRun / flagRM build throwaway helper-container invocations.
 	cmdRun = "run"
@@ -141,10 +140,7 @@ func (d *LocalDockerDelivery) createVolume(
 }
 
 func (d *LocalDockerDelivery) helperImageName() string {
-	if d.HelperImage != "" {
-		return d.HelperImage
-	}
-	return defaultHelperImage
+	return pkgconfig.HelperImage(d.HelperImage)
 }
 
 func (d *LocalDockerDelivery) expectedVersion() string {

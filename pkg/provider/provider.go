@@ -127,6 +127,9 @@ type ProviderAgentConfig struct {
 
 	// Apple holds Apple container specific configuration
 	Apple ProviderAppleDriverConfig `json:"apple"`
+
+	// Microsandbox holds microsandbox microVM specific configuration
+	Microsandbox ProviderMicrosandboxDriverConfig `json:"microsandbox"`
 }
 
 type ProviderDockerlessOptions struct {
@@ -151,10 +154,11 @@ func (a ProviderAgentConfig) IsDockerDriver() bool {
 }
 
 const (
-	DockerDriver     = "docker"
-	KubernetesDriver = "kubernetes"
-	CustomDriver     = "custom"
-	AppleDriver      = "apple"
+	DockerDriver       = "docker"
+	KubernetesDriver   = "kubernetes"
+	CustomDriver       = "custom"
+	AppleDriver        = "apple"
+	MicrosandboxDriver = "microsandbox"
 )
 
 // ProviderAppleDriverConfig holds configuration for the Apple container driver,
@@ -168,6 +172,29 @@ type ProviderAppleDriverConfig struct {
 
 	// Environment variables to set when running `container` commands
 	Env map[string]string `json:"env,omitempty"`
+}
+
+// ProviderMicrosandboxDriverConfig holds configuration for the microsandbox
+// driver, which boots the devcontainer OCI image as a hardware-isolated microVM
+// (libkrun) via the microsandbox runtime.
+type ProviderMicrosandboxDriverConfig struct {
+	// Memory is the guest memory limit in MiB. Empty uses the runtime default.
+	Memory string `json:"memory,omitempty"`
+
+	// CPUs is the number of virtual CPUs. Empty uses the runtime default.
+	CPUs string `json:"cpus,omitempty"`
+
+	// MaxMemory is the hotplug memory ceiling in MiB. Empty uses the default.
+	MaxMemory string `json:"maxMemory,omitempty"`
+
+	// MaxCPUs is the hotplug CPU ceiling. Empty uses the default.
+	MaxCPUs string `json:"maxCpus,omitempty"`
+
+	// BlockEgress denies outbound public network (sandbox hardening).
+	BlockEgress types.StrBool `json:"blockEgress,omitempty"`
+
+	// Ephemeral removes the sandbox's disk state when it stops.
+	Ephemeral types.StrBool `json:"ephemeral,omitempty"`
 }
 
 type ProviderCustomDriverConfig struct {
@@ -212,8 +239,8 @@ type ProviderDockerDriverConfig struct {
 	// Environment variables to set when running docker commands
 	Env map[string]string `json:"env,omitempty"`
 
-	// HelperImage is used by LocalDockerDelivery for volume population.
-	// When empty, defaults to busybox:latest. A direct-copy fallback is used if the helper container approach fails.
+	// HelperImage overrides the helper image for volume operations. Empty falls
+	// back to DEVSY_HELPER_IMAGE, then config.DefaultHelperImage.
 	HelperImage string `json:"helperImage,omitempty"`
 
 	// Runtime identifies the container runtime explicitly (docker, podman, nerdctl).

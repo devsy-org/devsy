@@ -37,11 +37,31 @@ func NewBinaryManager(downloadURL string) (*BinaryManager, error) {
 
 	return &BinaryManager{
 		sources: []BinarySource{
+			&EnvPathSource{EnvVar: config.EnvAgentBinary},
 			&InjectSource{},
 			&FileCacheSource{Cache: cache, ExpectedVersion: expectedVersion},
 			&HTTPDownloadSource{BaseURL: downloadURL, Cache: cache, Version: expectedVersion},
 		},
 	}, nil
+}
+
+// EnvPathSource injects an agent binary from a local path named by an
+// environment variable, taking precedence over the built-in sources so an
+// offline host can supply the Linux binary. The operator must match its arch.
+type EnvPathSource struct {
+	EnvVar string
+}
+
+func (s *EnvPathSource) GetBinary(_ context.Context, _ string) (io.ReadCloser, error) {
+	path := strings.TrimSpace(os.Getenv(s.EnvVar))
+	if path == "" {
+		return nil, fmt.Errorf("no agent binary path set in %s", s.EnvVar)
+	}
+	return os.Open(path) // #nosec G304 G703 -- operator-provided local agent binary
+}
+
+func (s *EnvPathSource) SourceName() string {
+	return "local path override (" + s.EnvVar + ")"
 }
 
 func versionFromDownloadURL(downloadURL string) string {
