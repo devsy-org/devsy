@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
 func TestCreateArgsFull(t *testing.T) {
@@ -27,7 +29,7 @@ func TestCreateArgsFull(t *testing.T) {
 	args := createArgs(wsName, spec)
 
 	// name comes first, image last.
-	if args[0] != cmdCreate || args[1] != flagName || args[2] != wsName {
+	if args[0] != names.Create || args[1] != names.Flag(names.Name) || args[2] != wsName {
 		t.Errorf("prefix = %v", args[:3])
 	}
 	if args[len(args)-1] != testImg {
@@ -36,7 +38,7 @@ func TestCreateArgsFull(t *testing.T) {
 
 	want := [][2]string{
 		{"--entrypoint", "/bin/sh -c sleep infinity"},
-		{flagEnv, "K=v"},
+		{names.Flag(names.Env), "K=v"},
 		{"--label", "devsy.sh/user=vscode"},
 		{"--idle-timeout", "1m30s"},
 		{"--memory", "2048M"},
@@ -59,7 +61,7 @@ func TestCreateArgsFull(t *testing.T) {
 func TestCreateArgsMinimal(t *testing.T) {
 	args := createArgs(wsName, sandboxSpec{Image: testImg})
 	// Only name + image; no sizing/runtime flags for a bare spec.
-	want := []string{cmdCreate, flagName, wsName, testImg}
+	want := []string{names.Create, names.Flag(names.Name), wsName, testImg}
 	if !slices.Equal(args, want) {
 		t.Errorf("args = %v, want %v", args, want)
 	}
@@ -97,7 +99,15 @@ func TestResourceArgsOmitsZero(t *testing.T) {
 }
 
 func TestRedactArgsMasksEnvValues(t *testing.T) {
-	args := []string{cmdCreate, flagEnv, "TOKEN=s3cret", "--label", "k=v", flagEnv, "PLAIN=ok"}
+	args := []string{
+		names.Create,
+		names.Flag(names.Env),
+		"TOKEN=s3cret",
+		"--label",
+		"k=v",
+		names.Flag(names.Env),
+		"PLAIN=ok",
+	}
 	got := redactArgs(args)
 	if strings.Contains(got, "s3cret") || strings.Contains(got, "ok") {
 		t.Errorf("env values leaked: %q", got)

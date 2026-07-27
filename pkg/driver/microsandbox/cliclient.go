@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -22,12 +23,6 @@ import (
 type cliClient struct{}
 
 var _ sandboxClient = cliClient{}
-
-const (
-	cmdCreate = "create"
-	flagName  = "--name"
-	flagEnv   = "--env"
-)
 
 func (cliClient) EnsureInstalled(_ context.Context) error {
 	bin := msbBinary()
@@ -119,7 +114,7 @@ func (cliClient) Remove(ctx context.Context, sandbox string) error {
 func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) error {
 	args := []string{"exec", "--stream"}
 	if req.User != "" {
-		args = append(args, "--user", req.User)
+		args = append(args, names.Flag(names.User), req.User)
 	}
 	args = append(args, sandbox, "--")
 	if len(req.Argv) > 0 {
@@ -155,7 +150,7 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 }
 
 func createArgs(sandbox string, spec sandboxSpec) []string {
-	args := []string{cmdCreate, flagName, sandbox}
+	args := []string{names.Create, names.Flag(names.Name), sandbox}
 	args = append(args, runtimeArgs(spec)...)
 	args = append(args, resourceArgs(spec)...)
 	args = append(args, mountArgs(spec.Mounts)...)
@@ -168,10 +163,10 @@ func runtimeArgs(spec sandboxSpec) []string {
 		args = append(args, "--entrypoint", strings.Join(spec.Entrypoint, " "))
 	}
 	for k, v := range spec.Env {
-		args = append(args, flagEnv, k+"="+v)
+		args = append(args, names.Flag(names.Env), k+"="+v)
 	}
 	for k, v := range spec.Labels {
-		args = append(args, "--label", k+"="+v)
+		args = append(args, names.Flag(names.Label), k+"="+v)
 	}
 	if spec.IdleTimeout > 0 {
 		args = append(args, "--idle-timeout", spec.IdleTimeout.String())
@@ -213,13 +208,13 @@ func mountArgs(mounts []volumeMount) []string {
 }
 
 func namedVolumes(mounts []volumeMount) []string {
-	var names []string
+	var vols []string
 	for _, m := range mounts {
 		if !m.Tmpfs && m.Volume != "" {
-			names = append(names, m.Volume)
+			vols = append(vols, m.Volume)
 		}
 	}
-	return names
+	return vols
 }
 
 func msbRun(ctx context.Context, args ...string) error {
@@ -241,8 +236,9 @@ func msbRun(ctx context.Context, args ...string) error {
 func redactArgs(args []string) string {
 	out := make([]string, len(args))
 	copy(out, args)
+	envFlag := names.Flag(names.Env)
 	for i := 0; i+1 < len(out); i++ {
-		if out[i] != flagEnv {
+		if out[i] != envFlag {
 			continue
 		}
 		if k, _, ok := strings.Cut(out[i+1], "="); ok {
