@@ -233,14 +233,8 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// Each observation runs on a fresh devsy ssh connection whose
-				// cold setup (tunnel + container exec) can take well over 5s
-				// under CI load. The per-poll budget must comfortably exceed
-				// that or the poll process is killed mid-connect and returns
-				// empty, which is indistinguishable from "not yet cleaned up".
-				// The error is surfaced (not discarded) so a genuine leak or a
-				// persistent connection failure fails loudly instead of timing
-				// out on empty output.
+				// Per-poll budget must exceed a cold devsy ssh connection's
+				// setup, or the poll is killed mid-connect and returns empty.
 				gomega.Eventually(func() (string, error) {
 					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 					defer cancel()
@@ -313,9 +307,7 @@ var _ = ginkgo.Describe(
 				exitCmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+authSock)
 				_ = exitCmd.Run()
 
-				// On a fresh devsy ssh connection, assert no devsy-ssh-agent-*
-				// directories remain. With lazy allocation, none are ever
-				// created; with the cleanup goroutine, any leftover is removed.
+				// Assert no devsy-ssh-agent-* dirs remain after close.
 				gomega.Eventually(func() (string, error) {
 					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 					defer cancel()
