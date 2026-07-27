@@ -355,17 +355,27 @@ func (r *runner) addSetupFlags(args *[]string) {
 }
 
 func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
-	if shouldChownWorkspace(runtime.GOOS, isDockerDriver, r.isPodmanRuntime()) {
+	if shouldChownWorkspace(
+		runtime.GOOS,
+		isDockerDriver,
+		r.isPodmanRuntime(),
+		r.driverRequiresWorkspaceChown(),
+	) {
 		*args = append(*args, names.Flag(names.ChownWorkspace))
 	}
 }
 
 // shouldChownWorkspace reports whether the agent should chown the workspace
-// folder to the remote user during setup. Podman needs it on any host OS:
-// its `podman machine` bind mounts are root-owned inside the container, so a
-// non-root remote user can't enter the workspace folder otherwise.
-func shouldChownWorkspace(goos string, isDockerDriver, isPodman bool) bool {
-	return goos == goosLinux || !isDockerDriver || isPodman
+// folder to the remote user during setup. Podman and drivers reporting
+// driverNeedsChown expose bind mounts as root-owned in the guest, so a non-root
+// remote user can't enter the workspace folder otherwise.
+func shouldChownWorkspace(goos string, isDockerDriver, isPodman, driverNeedsChown bool) bool {
+	return goos == goosLinux || !isDockerDriver || isPodman || driverNeedsChown
+}
+
+func (r *runner) driverRequiresWorkspaceChown() bool {
+	c, ok := r.driver.(driver.WorkspaceChowner)
+	return ok && c.RequiresWorkspaceChown()
 }
 
 // isPodmanRuntime reports whether the docker driver is backed by the Podman

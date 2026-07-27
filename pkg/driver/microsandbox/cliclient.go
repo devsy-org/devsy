@@ -202,6 +202,12 @@ func mountArgs(mounts []volumeMount) []string {
 			args = append(args, "--tmpfs", m.Target)
 		case m.Volume != "":
 			args = append(args, "--mount-named", m.Volume+":"+m.Target)
+		case m.Source != "":
+			spec := m.Source + ":" + m.Target
+			if m.ReadOnly {
+				spec += ":ro"
+			}
+			args = append(args, "--mount-dir", spec)
 		}
 	}
 	return args

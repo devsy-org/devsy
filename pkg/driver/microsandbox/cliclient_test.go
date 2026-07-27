@@ -72,6 +72,8 @@ func TestMountArgsAndNamedVolumes(t *testing.T) {
 		{Target: "/a", Volume: "vol-a"},
 		{Target: "/b", Tmpfs: true},
 		{Target: "/c", Volume: "vol-c"},
+		{Target: testBindDst, Source: testBindSrc},
+		{Target: "/ro", Source: "/host/ro", ReadOnly: true},
 	}
 	if got := namedVolumes(mounts); !slices.Equal(got, []string{"vol-a", "vol-c"}) {
 		t.Errorf("namedVolumes = %v, want [vol-a vol-c]", got)
@@ -79,7 +81,9 @@ func TestMountArgsAndNamedVolumes(t *testing.T) {
 	args := mountArgs(mounts)
 	if !hasFlagValue(args, "--mount-named", "vol-a:/a") ||
 		!hasFlagValue(args, "--tmpfs", "/b") ||
-		!hasFlagValue(args, "--mount-named", "vol-c:/c") {
+		!hasFlagValue(args, "--mount-named", "vol-c:/c") ||
+		!hasFlagValue(args, "--mount-dir", testBindSrc+":"+testBindDst) ||
+		!hasFlagValue(args, "--mount-dir", "/host/ro:/ro:ro") {
 		t.Errorf("mountArgs = %v", args)
 	}
 }

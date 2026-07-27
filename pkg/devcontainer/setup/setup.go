@@ -336,9 +336,11 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
 		)
 		err = copy2.ChownR(setupInfo.SubstitutionContext.ContainerWorkspaceFolder, user)
-		// do not exit on error, we can have non-fatal errors
+		// Best effort: some entries (e.g. read-only .git pack files on a
+		// virtiofs share) legitimately cannot be chowned. The remote user can
+		// still work in the tree, so this is not worth a warning.
 		if err != nil {
-			log.Warn(err)
+			log.Debugf("chown workspace: some entries could not be chowned: %v", err)
 		}
 	}
 
