@@ -131,12 +131,15 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 const podmanMachineStartTimeout = 90 * time.Second
 
 // Ping reports whether the runtime daemon is reachable, returning its own
-// message (e.g. "Cannot connect to Podman") on failure.
+// message (e.g. "Cannot connect to Podman") on failure. It runs a bare `info`
+// and judges reachability by exit status: `--format` field names differ
+// between docker (.ServerVersion) and podman/nerdctl, so a shared template
+// would falsely fail non-docker runtimes.
 func (r *DockerHelper) Ping(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	out, err := r.buildCmd(cctx, "info", "--format", "{{.ServerVersion}}").CombinedOutput()
+	out, err := r.buildCmd(cctx, "info").CombinedOutput()
 	if err != nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return fmt.Errorf("%s: %w", msg, err)
