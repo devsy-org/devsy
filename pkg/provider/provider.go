@@ -212,8 +212,8 @@ type ProviderDockerDriverConfig struct {
 	// Environment variables to set when running docker commands
 	Env map[string]string `json:"env,omitempty"`
 
-	// HelperImage is used by LocalDockerDelivery for volume population.
-	// When empty, defaults to busybox:latest. A direct-copy fallback is used if the helper container approach fails.
+	// HelperImage overrides the helper image for volume operations. Empty falls
+	// back to DEVSY_HELPER_IMAGE, then config.DefaultHelperImage.
 	HelperImage string `json:"helperImage,omitempty"`
 
 	// Runtime identifies the container runtime explicitly (docker, podman, nerdctl).

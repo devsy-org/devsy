@@ -1,0 +1,92 @@
+name: Publish Agent Helper Image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: optional version override (defaults to the latest git tag)
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - images/agent-helper/**
+      - hack/agent_helper_image/**
+      - .github/workflows/publish-agent-helper.yml
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/agent-helper
+
+jobs:
+  publish:
+    name: Build and publish agent-helper image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: cross-compile helper binaries
+        run: go run ./hack/agent_helper_image
+
+      - name: resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            version="${{ inputs.tag }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            version="${{ github.ref_name }}"
+          else
+            version="$(git describe --tags --abbrev=0)"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Publish only on release / manual dispatch; pull_request runs build-only.
+      - name: generate GitHub App token
+        id: app-token
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
+
+      - name: log in to ghcr
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ steps.app-token.outputs.app-slug }}
+          password: ${{ steps.app-token.outputs.token }}
+
+      - name: docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+
+      - name: build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: images/agent-helper
+          file: images/agent-helper/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
