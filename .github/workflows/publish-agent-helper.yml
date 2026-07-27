@@ -44,7 +44,9 @@ jobs:
 
       - name: resolve version
         id: version
-        run: go run ./hack/agent_helper_image version -tag "${{ inputs.tag }}"
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: go run ./hack/agent_helper_image version -tag "$INPUT_TAG"
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -68,7 +70,10 @@ jobs:
       - name: check tag exists
         id: exists
         if: ${{ github.event_name != 'pull_request' }}
-        run: go run ./hack/agent_helper_image exists -image "${{ env.IMAGE }}" -tag "${{ steps.version.outputs.value }}"
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: go run ./hack/agent_helper_image exists -image "$IMAGE" -tag "$VERSION"
 
       - name: docker metadata
         id: meta

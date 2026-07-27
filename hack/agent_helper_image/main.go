@@ -10,6 +10,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -133,11 +134,54 @@ func runExists(args []string) error {
 	}
 
 	ref := *image + ":" + *tag
-	exists := exec.Command("docker", "manifest", "inspect", ref).Run() == nil
+	exists, err := manifestExists(ref)
+	if err != nil {
+		return err
+	}
 	if exists {
 		fmt.Printf("::notice::%s already exists; skipping push\n", ref)
 	}
 	return writeOutput("value", strconv.FormatBool(exists))
+}
+
+// manifestExists reports whether ref resolves in the registry. A response
+// indicating the tag or package is absent yields (false, nil); any other
+// failure (network, rate limit, transient registry outage) is returned as an
+// error so it is not silently misread as an available tag.
+//
+// This runs after a push-scoped registry login, so a "denied"/"unauthorized"
+// response means the package does not exist yet (e.g. the first publish) rather
+// than a credential problem — bad credentials would already have failed the
+// login step. Those are therefore treated as absence.
+func manifestExists(ref string) (bool, error) {
+	var stderr bytes.Buffer
+	cmd := exec.Command("docker", "manifest", "inspect", ref)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if isAbsent(stderr.String()) {
+			return false, nil
+		}
+		return false, fmt.Errorf("docker manifest inspect %s: %w: %s", ref, err, strings.TrimSpace(stderr.String()))
+	}
+	return true, nil
+}
+
+func isAbsent(stderr string) bool {
+	s := strings.ToLower(stderr)
+	for _, marker := range []string{
+		"no such manifest",
+		"manifest unknown",
+		"name unknown",
+		"not found",
+		"denied",
+		"unauthorized",
+		"forbidden",
+	} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeOutput appends key=value to $GITHUB_OUTPUT when running under GitHub
