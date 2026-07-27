@@ -889,9 +889,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (line) => {
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
-        (code) => {
+        (code, cliError) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+            code === 0 ? undefined : { level: "error", cliError },
           )
         },
         args.workspaceId,
@@ -927,9 +928,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (line) => {
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
-        (code) => {
+        (code, cliError) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+            code === 0 ? undefined : { level: "error", cliError },
           )
         },
         args.workspaceId,
