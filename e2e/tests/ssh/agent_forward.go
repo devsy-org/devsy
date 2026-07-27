@@ -233,11 +233,6 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// The cleanup hop traverses the devsy proxy → in-container
-				// SSH server's ctx.Done(), which can take several seconds
-				// under CI load. Each devsy ssh observation runs on a fresh
-				// connection so the just-closed socket's filesystem state is
-				// always up-to-date.
 				gomega.Eventually(func() string {
 					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					defer cancel()
@@ -311,9 +306,6 @@ var _ = ginkgo.Describe(
 				exitCmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+authSock)
 				_ = exitCmd.Run()
 
-				// On a fresh devsy ssh connection, assert no devsy-ssh-agent-*
-				// directories remain. With lazy allocation, none are ever
-				// created; with the cleanup goroutine, any leftover is removed.
 				gomega.Eventually(func() string {
 					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 					defer cancel()
