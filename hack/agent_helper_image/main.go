@@ -151,7 +151,9 @@ func writeOutput(key, value string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s=%s\n", key, value)
-	return err
+	if _, err := fmt.Fprintf(f, "%s=%s\n", key, value); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
