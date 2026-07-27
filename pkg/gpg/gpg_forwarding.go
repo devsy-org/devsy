@@ -145,7 +145,7 @@ func (g *GPGConf) SetupGpgConf() error {
 // given directive on its own line (ignoring surrounding whitespace), so we do
 // not append duplicates.
 func containsDirective(config, directive string) bool {
-	for _, line := range strings.Split(config, "\n") {
+	for line := range strings.SplitSeq(config, "\n") {
 		if strings.TrimSpace(line) == directive {
 			return true
 		}

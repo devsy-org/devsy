@@ -22,8 +22,9 @@ func TestSetupGpgConf_WritesRequiredDirectives(t *testing.T) {
 	for _, d := range gpgConfDirectives {
 		assert.Contains(t, got, d, "gpg.conf must enable %q for forwarding", d)
 	}
-	assert.Contains(t, gpgConfDirectives, "no-autostart",
-		"no-autostart is required to stop gpg spawning a local agent that clobbers the forwarded socket")
+	// no-autostart is the directive that stops gpg spawning a local agent
+	// that would clobber the forwarded socket.
+	assert.Contains(t, gpgConfDirectives, "no-autostart")
 }
 
 func TestSetupGpgConf_Idempotent(t *testing.T) {
@@ -68,13 +69,13 @@ func TestSetupGpgConf_ExistingFileWithoutTrailingNewline(t *testing.T) {
 	got := readConf(t, g.getConfigPath())
 	assert.NotContains(t, got, "use-agentno-autostart", "directives must not be concatenated")
 	for _, line := range []string{"use-agent", "no-autostart"} {
-		assert.True(t, containsDirective(got, line), "expected %q on its own line, got:\n%s", line, got)
+		assert.True(t, containsDirective(got, line), "missing directive %q in %q", line, got)
 	}
 }
 
 func readConf(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // test path is created by the test
 	require.NoError(t, err)
 	return string(b)
 }

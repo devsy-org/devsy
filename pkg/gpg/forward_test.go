@@ -53,7 +53,7 @@ func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
 		t.Fatal("superviseForward did not stop after ctx cancel")
 	}
 
-	data, err := os.ReadFile(runs)
+	data, err := os.ReadFile(runs) //nolint:gosec // test path is created by the test
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, strings.Count(string(data), "x"), 2,
 		"forward should have been restarted after exiting")
