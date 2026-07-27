@@ -113,12 +113,16 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 	}
 
 	log.Debugf("running deferred lifecycle hooks")
-	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, cmd.Prebuild, setup.DotfilesConfig{
-		Repository:    cmd.DotfilesRepo,
-		InstallScript: cmd.DotfilesScript,
-		RemoteUser:    config.GetRemoteUser(setupInfo),
-		// Mount values aren't in this process's env; read them back for redaction.
-	}, secretsEnvFromEnvironment(), setup.MountSecretsForRedaction(), setup.SkipPhases{})
+	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, setup.PreAttachOptions{
+		Prebuild: cmd.Prebuild,
+		Dotfiles: setup.DotfilesConfig{
+			Repository:    cmd.DotfilesRepo,
+			InstallScript: cmd.DotfilesScript,
+			RemoteUser:    config.GetRemoteUser(setupInfo),
+		},
+		SecretsEnv:   secretsEnvFromEnvironment(),
+		SecretsMount: setup.MountSecretsForRedaction(),
+	})
 	if err != nil {
 		return fmt.Errorf("deferred hooks setup: %w", err)
 	}
