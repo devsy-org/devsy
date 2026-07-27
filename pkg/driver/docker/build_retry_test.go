@@ -54,7 +54,7 @@ func TestClassifyBuildError(t *testing.T) {
 			t.Parallel()
 			classified := classifyBuildError(tt.err, tt.output)
 			if got := errors.Is(classified, errTransientBuild); got != tt.want {
-				t.Errorf("errors.Is(classifyBuildError(), errTransientBuild) = %v, want %v", got, tt.want)
+				t.Errorf("transient = %v, want %v", got, tt.want)
 			}
 			if tt.err != nil && !errors.Is(classified, tt.err) {
 				t.Errorf("classifyBuildError() dropped the original error")
