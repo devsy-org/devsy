@@ -46,6 +46,7 @@ export async function workspaceUp(params: {
   devcontainer?: string
   prebuildRepository?: string
   platform?: string
+  recovery?: boolean
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }
@@ -78,8 +79,11 @@ export async function workspaceReset(
   return invoke<string>("workspace_reset", { workspaceId, debug })
 }
 
-export async function workspaceStatus(workspaceId: string): Promise<string> {
-  return invoke<string>("workspace_status", { workspaceId })
+export async function workspaceStatus(
+  workspaceId: string,
+  recovery = false,
+): Promise<string> {
+  return invoke<string>("workspace_status", { workspaceId, recovery })
 }
 
 export async function workspaceRename(

@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
@@ -80,6 +81,8 @@ type runner struct {
 
 	id       string
 	idLabels []string
+
+	recovering bool
 }
 
 func NewRunner(
@@ -127,8 +130,12 @@ func (r *runner) Up(
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
-	if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
-		return nil, err
+	// Recovery skips initializeCommand: a failing host hook must not block the
+	// recovery container. In normal mode its failure is recovery-eligible.
+	if !options.Recovery {
+		if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
+			return nil, clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+		}
 	}
 
 	params := &runContainerParams{
@@ -138,16 +145,24 @@ func (r *runner) Up(
 		timeout:             timeout,
 	}
 
+	var result *config.Result
 	switch {
 	case isDockerFileConfig(substitutedConfig.Config),
 		substitutedConfig.Config.Image != "",
 		substitutedConfig.Config.ContainerID != "":
-		return r.runSingleContainer(ctx, params)
+		result, err = r.runSingleContainer(ctx, params)
 	case isDockerComposeConfig(substitutedConfig.Config):
-		return r.runDockerCompose(ctx, params)
+		if options.Recovery {
+			log.Warn("recovery mode is not supported for docker-compose dev containers; proceeding without it")
+		}
+		result, err = r.runDockerCompose(ctx, params)
 	default:
-		return r.runDefaultContainer(ctx, params)
+		result, err = r.runDefaultContainer(ctx, params)
 	}
+	if result != nil {
+		result.RecoveryContainer = r.recovering
+	}
+	return result, err
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {

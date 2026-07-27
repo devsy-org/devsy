@@ -1,0 +1,6 @@
+{
+  "name": "recovery-test",
+  "build": {
+    "dockerfile": "Dockerfile"
+  }
+}

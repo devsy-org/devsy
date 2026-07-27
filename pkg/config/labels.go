@@ -9,6 +9,7 @@ const (
 	DockerResourceLabel    = ReverseDomain + ".resource"
 	DockerVolumeRoleLabel  = ReverseDomain + ".volume-role"
 	DockerSeededLabel      = ReverseDomain + ".seeded"
+	DockerRecoveryLabel    = ReverseDomain + ".recovery"
 	DockerUserLabel        = BinaryName + ".user"
 
 	K8sCreatedLabel          = Domain + "/created"

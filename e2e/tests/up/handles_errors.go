@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -123,5 +124,40 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, initialList)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It(
+			"launches a recovery container after a failed build",
+			func(ctx context.Context) {
+				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
+				})
+
+				tempDir, err := framework.CopyToTempDir(
+					"tests/up/testdata/docker-recovery",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir, "--force")
+				})
+
+				err = f.DevsyUp(ctx, tempDir)
+				framework.ExpectError(err, "expected the failing build to error")
+
+				err = f.DevsyUp(ctx, tempDir, names.Flag(names.Recovery))
+				framework.ExpectNoError(err)
+
+				out, err := f.DevsySSH(ctx, tempDir, "echo -n recovered")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(
+					out,
+					"recovered",
+					"recovery container should be reachable",
+				)
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 	},
 )

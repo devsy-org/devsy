@@ -66,6 +66,33 @@ func TestCLIError_UnwrapPreservesChain(t *testing.T) {
 	}
 }
 
+func TestClassify_RecoverableBuildFailure(t *testing.T) {
+	got := Classify(Recoverable(fmt.Errorf("build image: boom")))
+	if got.Code != CodeBuildFailedRecoverable {
+		t.Fatalf("Code = %q, want %q", got.Code, CodeBuildFailedRecoverable)
+	}
+	if got.Message != "build image: boom" {
+		t.Fatalf("Message = %q, want the original message", got.Message)
+	}
+}
+
+func TestClassify_RecoverableThroughWrap(t *testing.T) {
+	wrapped := fmt.Errorf(
+		"start workspace: %w: %w",
+		Recoverable(fmt.Errorf("build image: boom")),
+		fmt.Errorf("agent exited"),
+	)
+	if got := Classify(wrapped); got.Code != CodeBuildFailedRecoverable {
+		t.Fatalf("Code = %q, want %q", got.Code, CodeBuildFailedRecoverable)
+	}
+}
+
+func TestRecoverable_NilStaysNil(t *testing.T) {
+	if Recoverable(nil) != nil {
+		t.Fatal("Recoverable(nil) should be nil")
+	}
+}
+
 func TestNewPanic(t *testing.T) {
 	got := NewPanic("boom")
 	if got.Code != CodePanic {

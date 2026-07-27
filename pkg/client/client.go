@@ -213,6 +213,7 @@ type WorkspaceStatus struct {
 	Context  string `json:"context,omitempty"`
 	Provider string `json:"provider,omitempty"`
 	State    string `json:"state,omitempty"`
+	Recovery bool   `json:"recovery,omitempty"`
 }
 
 type User struct {

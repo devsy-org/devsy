@@ -28,7 +28,9 @@ import type {
   ColorScheme,
   UIScale,
   LocalOptions,
+  OnBuildFailure,
 } from "$lib/stores/settings.js"
+import * as Select from "$lib/components/ui/select/index.js"
 import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -116,7 +118,14 @@ let local = $state<LocalOptions>({
   additionalCliFlags: "",
   additionalEnvVars: "",
   experimentalMultiDevcontainer: false,
+  onBuildFailure: "prompt",
 })
+
+const ON_BUILD_FAILURE_OPTIONS: { value: OnBuildFailure; label: string }[] = [
+  { value: "prompt", label: "Prompt with recovery options" },
+  { value: "auto-recovery", label: "Automatically open recovery container" },
+  { value: "nothing", label: "Do nothing" },
+]
 
 const shortcuts = [
   { keys: "Cmd/Ctrl + K", action: "Open command palette" },
@@ -196,6 +205,32 @@ function toggleLocal(key: keyof LocalOptions) {
             <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
           </div>
           <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <Label>On Build Failure</Label>
+            <p class="text-xs text-muted-foreground">What to do when a dev container build fails</p>
+          </div>
+          <Select.Root
+            type="single"
+            value={local.onBuildFailure}
+            onValueChange={(v) => {
+              if (v) {
+                local.onBuildFailure = v as OnBuildFailure
+                saveLocal("onBuildFailure", v)
+              }
+            }}
+          >
+            <Select.Trigger class="w-[280px] h-9">
+              <span>{ON_BUILD_FAILURE_OPTIONS.find((o) => o.value === local.onBuildFailure)?.label ?? "Prompt with recovery options"}</span>
+            </Select.Trigger>
+            <Select.Content>
+              {#each ON_BUILD_FAILURE_OPTIONS as o (o.value)}
+                <Select.Item value={o.value} label={o.label} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
 
         <div class="space-y-2">

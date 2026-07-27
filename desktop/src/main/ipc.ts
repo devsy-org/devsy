@@ -240,8 +240,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_status",
-    async (_event, args: { workspaceId: string }) => {
-      return cli.runRaw([
+    async (_event, args: { workspaceId: string; recovery?: boolean }) => {
+      const cliArgs = [
         "workspace",
         "status",
         args.workspaceId,
@@ -249,7 +249,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "json",
         "--timeout",
         "5s",
-      ])
+      ]
+      if (args.recovery) cliArgs.push("--recovery")
+      return cli.runRaw(cliArgs)
     },
   )
 
@@ -704,6 +706,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         devcontainer?: string
         prebuildRepository?: string
         platform?: string
+        recovery?: boolean
       },
     ) => {
       trackEvent("workspace_create", {
@@ -723,6 +726,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.prebuildRepository)
         cliArgs.push("--prebuild-repo", args.prebuildRepository)
       if (args.platform) cliArgs.push("--platform", args.platform)
+      if (args.recovery) cliArgs.push("--recovery")
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = crypto.randomUUID()
@@ -758,13 +762,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
           if (!sink.line(formatted)) return logStore.onDrain(logPath)
         },
-        (code) => {
+        (code, cliError) => {
           if (tunnelProcesses.get(wsId) === child) {
             tunnelProcesses.delete(wsId)
           }
           if (signalledDone) return
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+            code === 0 ? undefined : { level: "error", cliError },
           )
         },
         wsId,

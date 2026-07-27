@@ -1,6 +1,26 @@
 package config
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/devsy-org/devsy/pkg/clierr"
+)
+
+func TestResultErrRecoveryAvailable(t *testing.T) {
+	err := (&Result{Error: "build image: boom", RecoveryAvailable: true}).Err()
+	if err == nil || err.Error() != "build image: boom" {
+		t.Fatalf("Err() = %v, want message preserved", err)
+	}
+	if !errors.Is(err, clierr.ErrBuildFailedRecoverable) {
+		t.Fatal("recovery-available error must classify as recoverable")
+	}
+
+	plain := (&Result{Error: "boom"}).Err()
+	if errors.Is(plain, clierr.ErrBuildFailedRecoverable) {
+		t.Fatal("plain error must not be recoverable")
+	}
+}
 
 func TestResultErr(t *testing.T) {
 	tests := []struct {

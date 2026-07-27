@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 )
 
@@ -20,6 +21,9 @@ func (r *Result) Err() error {
 	if r == nil || r.Error == "" {
 		return nil
 	}
+	if r.RecoveryAvailable {
+		return clierr.Recoverable(errors.New(r.Error))
+	}
 	return errors.New(r.Error)
 }
 
@@ -29,13 +33,9 @@ type Result struct {
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`
 	ContainerDetails           *ContainerDetails           `json:"ContainerDetails"`
 	HostWarnings               []string                    `json:"HostWarnings,omitempty"`
-	// Error, when non-empty, indicates the agent failed to produce a usable
-	// devcontainer result and carries the underlying error message. This
-	// allows structured errors (e.g. host requirements not met) to flow back
-	// to the host side via the tunnel before the agent process exits, instead
-	// of being lost to a generic "did not receive a result back from agent"
-	// fallback.
-	Error string `json:"Error,omitempty"`
+	RecoveryContainer          bool                        `json:"RecoveryContainer,omitempty"`
+	Error                      string                      `json:"Error,omitempty"`
+	RecoveryAvailable          bool                        `json:"RecoveryAvailable,omitempty"`
 }
 
 type DevContainerConfigWithPath struct {

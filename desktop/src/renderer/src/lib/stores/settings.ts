@@ -213,7 +213,8 @@ export interface ContextOptions {
   sshConfigIncludePath: string
 }
 
-// Options stored locally (not supported by Devsy CLI context)
+export type OnBuildFailure = "prompt" | "auto-recovery" | "nothing"
+
 export interface LocalOptions {
   debugFlag: boolean
   sshKeyPath: string
@@ -223,6 +224,7 @@ export interface LocalOptions {
   additionalCliFlags: string
   additionalEnvVars: string
   experimentalMultiDevcontainer: boolean
+  onBuildFailure: OnBuildFailure
 }
 
 export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
@@ -254,6 +256,7 @@ export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
   additionalCliFlags: "",
   additionalEnvVars: "",
   experimentalMultiDevcontainer: false,
+  onBuildFailure: "prompt",
 }
 
 // Map from our keys to Devsy CLI context option keys
@@ -413,6 +416,50 @@ export function setWorkspaceFolder(
       delete map[workspaceId]
     }
     localStorage.setItem(WORKSPACE_FOLDERS_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}
+
+export interface WorkspaceRecoveryState {
+  buildFailed?: boolean
+  inRecovery?: boolean
+}
+
+const WORKSPACE_RECOVERY_KEY = "devsy-workspace-recovery"
+
+export function getWorkspaceRecoveryState(
+  workspaceId: string,
+): WorkspaceRecoveryState {
+  if (!browser) return {}
+  try {
+    const stored = localStorage.getItem(WORKSPACE_RECOVERY_KEY)
+    if (stored) {
+      const map = JSON.parse(stored) as Record<string, WorkspaceRecoveryState>
+      return map[workspaceId] ?? {}
+    }
+  } catch {
+    // ignore
+  }
+  return {}
+}
+
+export function setWorkspaceRecoveryState(
+  workspaceId: string,
+  state: WorkspaceRecoveryState,
+): void {
+  if (!browser) return
+  try {
+    const stored = localStorage.getItem(WORKSPACE_RECOVERY_KEY)
+    const map: Record<string, WorkspaceRecoveryState> = stored
+      ? JSON.parse(stored)
+      : {}
+    if (state.buildFailed || state.inRecovery) {
+      map[workspaceId] = state
+    } else {
+      delete map[workspaceId]
+    }
+    localStorage.setItem(WORKSPACE_RECOVERY_KEY, JSON.stringify(map))
   } catch {
     // ignore
   }

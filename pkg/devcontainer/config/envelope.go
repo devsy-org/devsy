@@ -13,6 +13,7 @@ type ResultEnvelope struct {
 	RemoteWorkspaceFolder string   `json:"remoteWorkspaceFolder"`
 	URL                   string   `json:"url,omitempty"`
 	Warnings              []string `json:"warnings,omitempty"`
+	Recovery              bool     `json:"recovery,omitempty"`
 }
 
 type ErrorEnvelope struct {
