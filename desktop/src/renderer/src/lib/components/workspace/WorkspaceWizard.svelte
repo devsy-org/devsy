@@ -469,8 +469,8 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   }
 }
 
-async function handleLaunch() {
-  if (resolvedIdInvalid || nameConflict) return
+async function handleLaunch(isRetry = false) {
+  if (resolvedIdInvalid || (nameConflict && !isRetry)) return
   launchRunning = true
   launchError = ""
   launchSuccess = false
@@ -1243,7 +1243,7 @@ function selectTemplate(t: { name: string; source: string }) {
               </Button>
             {:else if launchError}
               <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              <Button onclick={handleLaunch}>Retry</Button>
+              <Button onclick={() => handleLaunch(true)}>Retry</Button>
             {/if}
           </div>
         </div>
