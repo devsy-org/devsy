@@ -761,7 +761,7 @@ func persistResolvedConfig(
 
 	workspaceInfo.LastDevContainerConfig = result.DevContainerConfigWithPath
 	if err := agent.PersistAgentWorkspaceInfo(workspaceInfo); err != nil {
-		log.Errorf("persist resolved devcontainer config: %v", err)
+		log.Errorf("persist resolved config, daemon keeps default shutdown action: %v", err)
 	}
 }
 
