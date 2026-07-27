@@ -33,3 +33,16 @@ func TestAppleProviderUsesAppleDriver(t *testing.T) {
 		t.Errorf("apple provider driver = %q, want %q", cfg.Agent.Driver, provider.AppleDriver)
 	}
 }
+
+func TestMicrosandboxProviderUsesMicrosandboxDriver(t *testing.T) {
+	cfg, err := provider.ParseProvider(strings.NewReader(providers.MicrosandboxProvider))
+	if err != nil {
+		t.Fatalf("parse microsandbox provider: %v", err)
+	}
+	if cfg.Agent.Driver != provider.MicrosandboxDriver {
+		t.Errorf(
+			"microsandbox provider driver = %q, want %q",
+			cfg.Agent.Driver, provider.MicrosandboxDriver,
+		)
+	}
+}

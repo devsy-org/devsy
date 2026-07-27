@@ -18,6 +18,8 @@ const ICON_MAP: Record<string, string> = {
   kubernetes: "./icons/providers/kubernetes.svg",
   k8s: "./icons/providers/kubernetes.svg",
   k3s: "./icons/providers/kubernetes.svg",
+  microsandbox: "./icons/providers/microsandbox.svg",
+  microvm: "./icons/providers/microsandbox.svg",
   digitalocean: "./icons/providers/digitalocean.svg",
   ssh: "./icons/providers/ssh.svg",
   civo: "./icons/providers/civo.svg",

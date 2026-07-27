@@ -45,6 +45,11 @@ const (
 	// EnvHelperImage overrides the helper image for agent volume operations.
 	EnvHelperImage = "DEVSY_HELPER_IMAGE"
 
+	// EnvAgentBinary points to a local agent binary (matching the workspace's
+	// Linux architecture) to inject instead of downloading. Enables offline and
+	// air-gapped delivery on hosts that cannot supply the binary directly.
+	EnvAgentBinary = "DEVSY_AGENT_BINARY"
+
 	// EnvAgentPreferDownload forces agent binary download even if a local copy exists.
 	EnvAgentPreferDownload = "DEVSY_AGENT_PREFER_DOWNLOAD"
 

@@ -95,6 +95,26 @@ func TestNewAgentDelivery_KubernetesDriver_Native(t *testing.T) {
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
+func TestNewAgentDelivery_MicrosandboxUsesStreamDelivery(t *testing.T) {
+	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
+		return nil
+	}
+
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{
+				Driver: provider.MicrosandboxDriver,
+			},
+		},
+		PodExec: podExec,
+	}
+
+	d := NewAgentDelivery(opts)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.NotNil(t, native.Exec)
+}
+
 func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) {
 	execFn := func(ctx context.Context, cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		return nil
@@ -166,5 +186,17 @@ func TestNewAgentDelivery_AppleUsesShellDelivery(t *testing.T) {
 	d := NewAgentDelivery(opts)
 	if _, ok := d.(*LegacyShellDelivery); !ok {
 		t.Fatalf("apple driver must use shell delivery, got %T", d)
+	}
+}
+
+func TestNewAgentDelivery_MicrosandboxUsesShellDelivery(t *testing.T) {
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{Driver: provider.MicrosandboxDriver},
+		},
+	}
+	d := NewAgentDelivery(opts)
+	if _, ok := d.(*LegacyShellDelivery); !ok {
+		t.Fatalf("microsandbox driver must use shell delivery, got %T", d)
 	}
 }

@@ -38,6 +38,15 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 		log.Debugf("using shell-based delivery for apple driver")
 		return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
 
+	case driverType == provider.MicrosandboxDriver:
+		// Stream the agent binary over the SDK's guest exec (as kubernetes does);
+		// fall back to shell delivery when the driver exposes no argv exec.
+		if opts.PodExec == nil {
+			return legacyShellDelivery(opts, "microsandbox argv exec unavailable")
+		}
+		log.Debugf("using stream delivery (exec stream) for microsandbox")
+		return &KubernetesDelivery{Exec: opts.PodExec}
+
 	case opts.IsRemoteDocker:
 		log.Debugf("using remote docker delivery (docker cp)")
 		return remoteDockerDelivery(opts)

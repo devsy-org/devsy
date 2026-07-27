@@ -405,6 +405,13 @@ jobs:
             install-kind: true
             requires-secret: false
 
+          - label: up-provider-microsandbox
+            runner: ubuntu-latest
+            free-disk-space: true
+            install-kind: false
+            requires-secret: false
+            install-microsandbox: true
+
           #  Up Docker Compose tests
 
           - label: up-docker-compose
@@ -598,6 +605,14 @@ jobs:
           timeout 30 bash -c 'until sudo podman info >/dev/null 2>&1; do sleep 1; done'
           echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
           sudo podman info
+
+      - name: Install microsandbox (Linux)
+        if: matrix.install-microsandbox == true && runner.os == 'Linux'
+        run: |
+          curl -fsSL https://install.microsandbox.dev | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # The e2e test skips gracefully if KVM is unavailable on the runner.
+          "$HOME/.local/bin/msb" doctor || true
 
       - name: remove docker
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')

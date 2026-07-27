@@ -13,6 +13,9 @@ var DockerProvider string
 //go:embed kubernetes/provider.yaml
 var KubernetesProvider string
 
+//go:embed microsandbox/provider.yaml
+var MicrosandboxProvider string
+
 //go:embed podman/provider.yaml
 var PodmanProvider string
 
@@ -22,10 +25,11 @@ var ProProvider string
 // GetBuiltInProviders retrieves the built in providers.
 func GetBuiltInProviders() map[string]string {
 	return map[string]string{
-		"apple":      AppleProvider,
-		"docker":     DockerProvider,
-		"kubernetes": KubernetesProvider,
-		"podman":     PodmanProvider,
-		"pro":        ProProvider,
+		"apple":        AppleProvider,
+		"docker":       DockerProvider,
+		"kubernetes":   KubernetesProvider,
+		"microsandbox": MicrosandboxProvider,
+		"podman":       PodmanProvider,
+		"pro":          ProProvider,
 	}
 }
