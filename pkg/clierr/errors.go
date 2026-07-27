@@ -12,9 +12,10 @@ import (
 type Code string
 
 const (
-	CodeRateLimited Code = "RATE_LIMITED"
-	CodePanic       Code = "PANIC"
-	CodeUnknown     Code = "UNKNOWN"
+	CodeRateLimited            Code = "RATE_LIMITED"
+	CodePanic                  Code = "PANIC"
+	CodeUnknown                Code = "UNKNOWN"
+	CodeBuildFailedRecoverable Code = "BUILD_FAILED_RECOVERABLE"
 )
 
 type CLIError struct {
@@ -64,6 +65,23 @@ func (e *CLIError) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 
 var ErrRateLimited = errors.New("rate limited")
 
+var ErrBuildFailedRecoverable = errors.New("dev container build failed")
+
+type recoverableBuildError struct{ err error }
+
+func (e recoverableBuildError) Error() string { return e.err.Error() }
+func (e recoverableBuildError) Unwrap() error { return e.err }
+func (e recoverableBuildError) Is(target error) bool {
+	return target == ErrBuildFailedRecoverable
+}
+
+func Recoverable(err error) error {
+	if err == nil {
+		return nil
+	}
+	return recoverableBuildError{err: err}
+}
+
 func Classify(err error) *CLIError {
 	if err == nil {
 		return nil
@@ -72,6 +90,14 @@ func Classify(err error) *CLIError {
 	var cliErr *CLIError
 	if errors.As(err, &cliErr) && cliErr != nil {
 		return cliErr
+	}
+
+	if errors.Is(err, ErrBuildFailedRecoverable) {
+		return &CLIError{
+			Code:    CodeBuildFailedRecoverable,
+			Message: err.Error(),
+			wrapped: err,
+		}
 	}
 
 	if errors.Is(err, ErrRateLimited) {

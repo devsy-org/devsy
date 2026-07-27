@@ -3,11 +3,7 @@ import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
-import {
-  workspaceUp,
-  workspaceStop,
-  workspaceDelete,
-} from "$lib/ipc/commands.js"
+import { workspaceStop, workspaceDelete } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Workspace } from "$lib/types/index.js"
@@ -38,17 +34,9 @@ function handleOpen(e: Event) {
   goto(`/workspaces/${workspace.id}?action=open-ide`)
 }
 
-async function handleStart(e: Event) {
+function handleStart(e: Event) {
   e.stopPropagation()
-  acting = true
-  try {
-    await workspaceUp({ source: workspace.id })
-    toasts.success(`Starting ${workspace.id}...`)
-  } catch (err) {
-    toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
-  } finally {
-    acting = false
-  }
+  goto(`/workspaces/${workspace.id}?action=start`)
 }
 
 async function handleStop(e: Event) {
@@ -127,9 +115,7 @@ async function handleDelete() {
         Open
       </Button>
     {:else if isStopped}
-      <Button size="sm" onclick={handleStart} disabled={acting}>
-        {acting ? "Starting..." : "Start"}
-      </Button>
+      <Button size="sm" onclick={handleStart}>Start</Button>
     {/if}
     {#if isRunning || isBusy}
       <Button variant="outline" size="sm" onclick={handleStop} disabled={acting}>

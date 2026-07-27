@@ -9,17 +9,21 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/language"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/telemetry/distinctid"
 )
 
 var dockerlessImage = "ghcr.io/devsy-org/dockerless:0.2.0"
+
+var defaultRecoveryImage = language.MapConfig[language.None].Image
 
 const (
 	DevsyExtraEnvVar            = "DEVSY"
@@ -151,6 +155,10 @@ func (r *runner) resolveExistingContainer(
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*resolvedContainer, error) {
+	if isRecoveryContainer(containerDetails) {
+		r.recovering = true
+	}
+
 	containerDetails, err := r.ensureRunning(ctx, containerDetails)
 	if err != nil {
 		return nil, err
@@ -339,14 +347,25 @@ func (r *runner) buildNewContainerConfig(
 	ctx context.Context,
 	p *resolveParams,
 ) (*config.BuildInfo, *config.MergedDevContainerConfig, error) {
+	activeConfig := p.parsedConfig
+
 	buildInfo, err := r.build(
 		ctx,
-		p.parsedConfig,
+		activeConfig,
 		p.substitutionContext,
 		p.options.toBuildOptions(),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build image: %w", err)
+		if !p.options.Recovery {
+			log.Info("dev container build failed; re-run with --recovery to " +
+				"start a recovery container with features and lifecycle commands disabled")
+			return nil, nil, clierr.Recoverable(fmt.Errorf("build image: %w", err))
+		}
+		buildInfo, activeConfig, err = r.buildRecoveryContainerConfig(ctx, p, err)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.recovering = true
 	}
 
 	if p.options.Recreate {
@@ -356,7 +375,7 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	mergedConfig, err := config.MergeConfiguration(
-		p.parsedConfig.Config,
+		activeConfig.Config,
 		buildInfo.ImageMetadata.Config,
 	)
 	if err != nil {
@@ -372,6 +391,61 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	return buildInfo, mergedConfig, nil
+}
+
+// buildRecoveryContainerConfig rebuilds from a stripped-down config after a
+// failed build, returning the recovery build info and the config that produced it.
+func (r *runner) buildRecoveryContainerConfig(
+	ctx context.Context,
+	p *resolveParams,
+	buildErr error,
+) (*config.BuildInfo, *config.SubstitutedConfig, error) {
+	log.Warnf("dev container build failed: %v", buildErr)
+	log.Warn("recovery mode enabled: retrying with features and lifecycle commands " +
+		"disabled so the workspace can start; fix devcontainer.json and rebuild to " +
+		"restore the full container")
+
+	recoveryConfig := recoveryDevContainerConfig(p.parsedConfig)
+
+	buildInfo, err := r.build(
+		ctx,
+		recoveryConfig,
+		p.substitutionContext,
+		p.options.toBuildOptions(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf(
+			"build recovery image: %w (original build error: %v)", err, buildErr,
+		)
+	}
+
+	return buildInfo, recoveryConfig, nil
+}
+
+// recoveryDevContainerConfig strips features and lifecycle hooks, keeping a
+// plain image but swapping a (possibly broken) Dockerfile for a known-good image.
+// isRecoveryContainer reports whether an existing container was built in
+// recovery mode, read from the label stamped at run time.
+func isRecoveryContainer(details *config.ContainerDetails) bool {
+	return details != nil &&
+		details.Config.Labels[pkgconfig.DockerRecoveryLabel] == pkgconfig.LabelValueTrue
+}
+
+func recoveryDevContainerConfig(parsed *config.SubstitutedConfig) *config.SubstitutedConfig {
+	cloned := config.CloneDevContainerConfig(parsed.Config)
+	cloned.Features = nil
+	cloned.OverrideFeatureInstallOrder = nil
+	cloned.DevContainerActions = config.DevContainerActions{}
+
+	if cloned.Image == "" {
+		cloned.DockerfileContainer = config.DockerfileContainer{}
+		cloned.Image = defaultRecoveryImage
+	}
+
+	return &config.SubstitutedConfig{
+		Config: cloned,
+		Raw:    parsed.Raw,
+	}
 }
 
 // newContainerHostWarnings validates host requirements for a new container,
@@ -730,6 +804,9 @@ func (r *runner) getRunOptions(
 	labels := []string{
 		metadata.ImageMetadataLabel + "=" + string(marshalled),
 		config.UserLabel + "=" + imageUser,
+	}
+	if r.recovering {
+		labels = append(labels, pkgconfig.DockerRecoveryLabel+"="+pkgconfig.LabelValueTrue)
 	}
 
 	user := imageUser

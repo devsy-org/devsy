@@ -75,6 +75,9 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 				"instead of writing it"),
 		flags.Bool(&cmd.NoLockfile, names.NoLockfile, false,
 			"Disable devcontainer-lock.json generation and verification"),
+		flags.Bool(&cmd.Recovery, names.Recovery, false,
+			"If the dev container build fails, launch a recovery container with features and "+
+				"lifecycle commands disabled so you can repair devcontainer.json and rebuild"),
 	)
 	flags.RegisterDevContainerModifierFlags(upCmd.Flags(), flags.DevContainerModifierFlags{
 		Image:               &cmd.DevContainerImage,

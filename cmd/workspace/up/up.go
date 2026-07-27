@@ -330,8 +330,10 @@ func reportErr(err error, emitJSON bool, out io.Writer) error {
 func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := config2.GetContainerID(wctx.result)
 	var warnings []string
+	recovery := false
 	if wctx.result != nil {
 		warnings = wctx.result.HostWarnings
+		recovery = wctx.result.RecoveryContainer
 	}
 	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
@@ -339,6 +341,7 @@ func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 		RemoteWorkspaceFolder: wctx.workdir,
 		URL:                   ideURL,
 		Warnings:              warnings,
+		Recovery:              recovery,
 	})
 }
 
@@ -472,7 +475,7 @@ func (cmd *UpCmd) executeDevsyUp(
 func validateUpResult(result *config2.Result, err error) error {
 	if resultErr := result.Err(); resultErr != nil {
 		if err != nil {
-			return fmt.Errorf("start workspace: %s: %w", resultErr, err)
+			return fmt.Errorf("start workspace: %w: %w", resultErr, err)
 		}
 		return fmt.Errorf("start workspace: %w", resultErr)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/credentials"
@@ -151,11 +152,10 @@ func (cmd *UpCmd) up(
 ) error {
 	result, err := cmd.devsyUp(ctx, workspaceInfo)
 	if err != nil {
-		// Forward the structured error back to the host through the tunnel
-		// BEFORE returning so the CLI can surface the actual cause (e.g.
-		// host requirements not met) instead of the generic "did not
-		// receive a result back from agent" fallback.
-		errResult := &config2.Result{Error: err.Error()}
+		errResult := &config2.Result{
+			Error:             err.Error(),
+			RecoveryAvailable: errors.Is(err, clierr.ErrBuildFailedRecoverable),
+		}
 		if sendErr := cmd.sendResult(ctx, errResult, tunnelClient); sendErr != nil {
 			log.Errorf("failed to forward up error %q to host: %v", err, sendErr)
 		}

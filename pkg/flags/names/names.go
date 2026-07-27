@@ -51,6 +51,7 @@ const (
 	Pull                      = "pull"
 	PullFromInsideContainer   = "pull-from-inside-container"
 	Reconfigure               = "reconfigure"
+	Recovery                  = "recovery"
 	Recreate                  = "recreate"
 	RemoteUser                = "remote-user"
 	RemoveVolumes             = "remove-volumes"

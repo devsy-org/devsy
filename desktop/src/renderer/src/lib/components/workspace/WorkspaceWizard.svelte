@@ -11,6 +11,7 @@ import {
   GitBranch,
   FolderOpen,
   Container,
+  LifeBuoy,
 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
@@ -48,7 +49,11 @@ import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
+import {
+  isRecoverableBuildFailure,
+  isCommandSuccess,
+  stripAnsi,
+} from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
@@ -218,6 +223,9 @@ let commandId = $state<string | null>(null)
 let outputLines = $state<string[]>([])
 let launchRunning = $state(false)
 let launchError = $state("")
+let launchBuildFailed = $state(false)
+let launchIsRecovery = $state(false)
+let lastAttemptedId = $state("")
 let launchSuccess = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
 let confirmCancelOpen = $state(false)
@@ -465,14 +473,29 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
     } else {
       launchError = "Workspace creation failed. Check output for details."
       toasts.error(launchError)
+      if (isRecoverableBuildFailure(progress.cliError)) {
+        const pref = loadLocalOptions().onBuildFailure
+        if (pref === "auto-recovery" && !launchIsRecovery) {
+          void handleLaunch(true)
+        } else if (pref !== "nothing") {
+          launchBuildFailed = true
+        }
+      }
     }
   }
 }
 
-async function handleLaunch(isRetry = false) {
-  if (resolvedIdInvalid || (nameConflict && !isRetry)) return
+async function handleLaunch(recovery = false) {
+  // Retrying/recovering the id we already attempted is allowed; only a
+  // genuinely new conflicting id is blocked.
+  if (resolvedIdInvalid || (nameConflict && resolvedId !== lastAttemptedId)) {
+    return
+  }
+  lastAttemptedId = resolvedId
+  launchIsRecovery = recovery
   launchRunning = true
   launchError = ""
+  launchBuildFailed = false
   launchSuccess = false
   outputLines = []
   pendingLines = []
@@ -515,6 +538,7 @@ async function handleLaunch(isRetry = false) {
           ? emulationTarget
           : undefined,
       debug: loadLocalOptions().debugFlag,
+      recovery,
     })
 
     commandId = cmdId
@@ -1243,7 +1267,13 @@ function selectTemplate(t: { name: string; source: string }) {
               </Button>
             {:else if launchError}
               <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              <Button onclick={() => handleLaunch(true)}>Retry</Button>
+              {#if launchBuildFailed && !launchIsRecovery}
+                <Button variant="secondary" onclick={() => handleLaunch(true)}>
+                  <LifeBuoy class="h-4 w-4" />
+                  Reopen in Recovery Container
+                </Button>
+              {/if}
+              <Button onclick={() => handleLaunch()}>Retry</Button>
             {/if}
           </div>
         </div>

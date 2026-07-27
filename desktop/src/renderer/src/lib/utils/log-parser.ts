@@ -7,6 +7,14 @@ export function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "").replace(BRACKET_RE, "")
 }
 
+const RECOVERABLE_BUILD_FAILURE_CODE = "BUILD_FAILED_RECOVERABLE"
+
+export function isRecoverableBuildFailure(
+  cliError?: { code?: string } | null,
+): boolean {
+  return cliError?.code === RECOVERABLE_BUILD_FAILURE_CODE
+}
+
 export function isCommandSuccess(message: string | undefined | null): boolean {
   if (!message) return false
   const { message: body } = parseLogLine(message)
@@ -19,6 +27,23 @@ export function isCommandSuccess(message: string | undefined | null): boolean {
     }
   }
   return body === "Exit code: 0"
+}
+
+// Reads the container's actual recovery state from the success envelope, or
+// null when the message is not a parseable success envelope.
+export function parseRecoveryContainer(
+  message: string | undefined | null,
+): boolean | null {
+  if (!message) return null
+  const { message: body } = parseLogLine(message)
+  if (!body.startsWith("{")) return null
+  try {
+    const envelope = JSON.parse(body)
+    if (envelope.outcome === "success") return envelope.recovery === true
+  } catch {
+    // not valid JSON
+  }
+  return null
 }
 
 export interface ParsedLogLine {

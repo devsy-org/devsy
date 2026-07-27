@@ -68,6 +68,15 @@ describe("IPC commands", () => {
       })
     })
 
+    it("workspaceUp forwards recovery", async () => {
+      mockInvoke.mockResolvedValue("cmd-recovery")
+      await workspaceUp({ source: "my-repo", recovery: true })
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_up", {
+        source: "my-repo",
+        recovery: true,
+      })
+    })
+
     it("workspaceStop passes workspaceId", async () => {
       await workspaceStop("ws-1")
       expect(mockInvoke).toHaveBeenCalledWith("workspace_stop", {
@@ -94,8 +103,18 @@ describe("IPC commands", () => {
       const result = await workspaceStatus("ws-1")
       expect(mockInvoke).toHaveBeenCalledWith("workspace_status", {
         workspaceId: "ws-1",
+        recovery: false,
       })
       expect(result).toBe('{"state":"Running"}')
+    })
+
+    it("workspaceStatus requests recovery when asked", async () => {
+      mockInvoke.mockResolvedValue('{"state":"Running","recovery":true}')
+      await workspaceStatus("ws-1", true)
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_status", {
+        workspaceId: "ws-1",
+        recovery: true,
+      })
     })
 
     it("workspaceUp forwards devcontainer and prebuildRepository", async () => {

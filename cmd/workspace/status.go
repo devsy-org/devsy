@@ -15,6 +15,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,8 @@ type StatusCmd struct {
 	*flags.GlobalFlags
 	client2.StatusOptions
 
-	Timeout string
+	Timeout  string
+	Recovery bool
 }
 
 // NewStatusCmd creates a new command.
@@ -55,6 +57,9 @@ func NewStatusCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			"If enabled shows the workspace container status as well"),
 		cliflags.String(&cmd.Timeout, names.Timeout, "30s",
 			"The timeout to wait until the status can be retrieved"),
+		cliflags.Bool(&cmd.Recovery, names.Recovery, false,
+			"Include whether the running container is a recovery container "+
+				"(JSON output only)"),
 	)
 	return statusCmd
 }
@@ -90,12 +95,14 @@ func (cmd *StatusCmd) Run(
 	case output.ModePlain:
 		_, _ = fmt.Fprintln(os.Stdout, string(instanceStatus))
 	case output.ModeJSON:
-		out, err := json.Marshal(&client2.WorkspaceStatus{
+		status := client2.WorkspaceStatus{
 			ID:       client.Workspace(),
 			Context:  client.Context(),
 			Provider: client.Provider(),
 			State:    string(instanceStatus),
-		})
+			Recovery: cmd.resolveRecovery(client, instanceStatus),
+		}
+		out, err := json.Marshal(&status)
 		if err != nil {
 			return err
 		}
@@ -104,6 +111,23 @@ func (cmd *StatusCmd) Run(
 	}
 
 	return nil
+}
+
+// resolveRecovery reports whether the running container was built in recovery
+// mode, looked up from the persisted workspace result. It is opt-in (--recovery)
+// so the frequent status poll pays no extra disk read.
+func (cmd *StatusCmd) resolveRecovery(
+	c client2.BaseWorkspaceClient,
+	status client2.Status,
+) bool {
+	if !cmd.Recovery || status != client2.StatusRunning {
+		return false
+	}
+	result, err := provider.LoadWorkspaceResult(c.Context(), c.Workspace())
+	if err != nil || result == nil {
+		return false
+	}
+	return result.RecoveryContainer
 }
 
 func (cmd *StatusCmd) execute(ctx context.Context, args []string) error {

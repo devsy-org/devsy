@@ -6,11 +6,13 @@ import {
   ChevronsUpDown,
   ClipboardCopy,
   Ellipsis,
+  LifeBuoy,
   Monitor,
   Pencil,
   Play,
   RefreshCw,
   RotateCcw,
+  ScrollText,
   Square,
   SquareTerminal,
   Trash2,
@@ -41,6 +43,7 @@ import {
   workspaceDelete,
   workspaceRename,
   workspaceSetIde,
+  workspaceStatus,
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
@@ -50,14 +53,21 @@ import {
   loadLocalOptions,
   getWorkspaceFolder,
   setWorkspaceFolder,
+  getWorkspaceRecoveryState,
+  setWorkspaceRecoveryState,
 } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { trackEngagement } from "$lib/analytics.js"
-import type { LogEntry } from "$lib/types/index.js"
+import type { CommandProgress, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { formatTimestamp } from "$lib/utils/time.js"
-import { isCommandSuccess, stripAnsi } from "$lib/utils/log-parser.js"
+import {
+  isRecoverableBuildFailure,
+  isCommandSuccess,
+  parseRecoveryContainer,
+  stripAnsi,
+} from "$lib/utils/log-parser.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
@@ -116,11 +126,47 @@ function statusBadgeVariant(): "default" | "secondary" | "outline" {
   return "outline"
 }
 
+const BUILD_OPS = new Set(["Start", "Open IDE", "Recovery", "Rebuild", "Reset"])
+
 let activeTab = $state("overview")
 let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
 let operationLabel = $state("")
 let operationRunning = $state(false)
+let buildFailed = $state(false)
+let inRecovery = $state(false)
+// True only for a buildFailed loaded from persistence, so the reconciliation
+// clears stale banners from external rebuilds without touching in-app failures.
+let staleReconcilePending = $state(false)
+
+function persistRecovery() {
+  setWorkspaceRecoveryState(id, { buildFailed, inRecovery })
+}
+
+// Reconcile inRecovery against the container's persisted recovery state (set by
+// the last up, in-app or external), so a rebuild done outside the app is reflected.
+async function reconcileRecoveryFromStatus() {
+  try {
+    const status = JSON.parse(await workspaceStatus(id, true)) as {
+      state?: string
+      recovery?: boolean
+    }
+    if (status.state === "Running") {
+      inRecovery = status.recovery === true
+      persistRecovery()
+    }
+  } catch {
+    // status unavailable; keep persisted state
+  }
+}
+
+$effect(() => {
+  if (staleReconcilePending && isRunning && !operationRunning) {
+    staleReconcilePending = false
+    buildFailed = false
+    persistRecovery()
+  }
+})
 let unlisten: UnlistenFn | null = null
 let pendingLines: string[] = []
 let flushHandle: number | null = null
@@ -206,10 +252,17 @@ onMount(async () => {
           const success = isCommandSuccess(progress.message)
           if (success) {
             toasts.success(`${operationLabel} ${id} succeeded`)
+            if (BUILD_OPS.has(operationLabel)) {
+              buildFailed = false
+              const recovered = parseRecoveryContainer(progress.message)
+              inRecovery = recovered ?? operationLabel === "Recovery"
+              persistRecovery()
+            }
           } else {
             toasts.error(
               `${operationLabel} ${id} failed. Check output for details.`,
             )
+            handleBuildFailure(progress)
           }
           if (operationLabel === "Delete" && success) {
             goto("/workspaces")
@@ -225,18 +278,26 @@ onMount(async () => {
 
   loadLogs()
   customFolder = getWorkspaceFolder(id)
+  const rec = getWorkspaceRecoveryState(id)
+  buildFailed = rec.buildFailed ?? false
+  inRecovery = rec.inRecovery ?? false
+  staleReconcilePending = buildFailed
+  void reconcileRecoveryFromStatus()
 
-  // Auto-trigger IDE open when navigated with ?action=open-ide
   const qs = new URLSearchParams($querystring ?? "")
   const action = qs.get("action")
-  if (action === "open-ide") {
+  if (action === "open-ide" || action === "start") {
     // Clear query param so refresh doesn't re-trigger
     history.replaceState(
       {},
       "",
       window.location.pathname + window.location.hash.split("?")[0],
     )
-    handleOpenIde()
+    if (action === "open-ide") {
+      handleOpenIde()
+    } else {
+      handleStart()
+    }
   }
 })
 
@@ -346,6 +407,8 @@ function isDebug(): boolean {
 function startStreamingOp(label: string) {
   operationLabel = label
   operationRunning = true
+  buildFailed = false
+  persistRecovery()
   outputLines = []
   pendingLines = []
   if (flushHandle !== null) {
@@ -369,6 +432,45 @@ async function handleStart() {
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
+  }
+}
+
+function handleBuildFailure(progress: CommandProgress) {
+  if (
+    !BUILD_OPS.has(operationLabel) ||
+    !isRecoverableBuildFailure(progress.cliError)
+  ) {
+    return
+  }
+  const pref = loadLocalOptions().onBuildFailure
+  if (pref === "nothing") return
+  // Avoid a loop: don't auto-retry recovery when recovery itself failed.
+  if (pref === "auto-recovery" && operationLabel !== "Recovery") {
+    void handleRecovery()
+    return
+  }
+  buildFailed = true
+  inRecovery = false
+  persistRecovery()
+}
+
+async function handleRecovery() {
+  const ide = currentIde
+  const folder = customFolder || undefined
+  startStreamingOp("Recovery")
+  try {
+    commandId = await workspaceUp({
+      source: id,
+      ide,
+      recovery: true,
+      debug: isDebug(),
+      workspaceFolder: folder,
+    })
+  } catch (err) {
+    operationRunning = false
+    toasts.error(
+      `Failed to start recovery container: ${extractErrorMessage(err)}`,
+    )
   }
 }
 
@@ -514,6 +616,12 @@ async function handleRenameConfirmed() {
             {#if workspace.status}
               <span class={badgeVariants({ variant: statusBadgeVariant() })}>{workspace.status}</span>
             {/if}
+            {#if inRecovery}
+              <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                <LifeBuoy class="h-3 w-3" />
+                Recovery mode
+              </span>
+            {/if}
           </div>
 
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -599,6 +707,48 @@ async function handleRenameConfirmed() {
         </ButtonGroup.Root>
       </div>
     </div>
+
+    {#if buildFailed}
+      <div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-start gap-2 text-sm">
+          <LifeBuoy class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <p class="font-medium text-destructive">Dev container build failed</p>
+            <p class="text-muted-foreground">Open a recovery container (features and lifecycle commands disabled) to repair devcontainer.json, or retry the build.</p>
+          </div>
+        </div>
+        <ButtonGroup.Root class="shrink-0">
+          {#if operationLabel !== "Recovery"}
+            <Button variant="default" size="sm" onclick={handleRecovery} disabled={operationRunning}>
+              <LifeBuoy class="h-4 w-4" />
+              Reopen in Recovery Container
+            </Button>
+          {/if}
+          <Button variant="outline" size="sm" onclick={handleStart} disabled={operationRunning}>
+            <RefreshCw class="h-4 w-4" />
+            Retry
+          </Button>
+          <Button variant="outline" size="sm" onclick={() => (activeTab = "logs")}>
+            <ScrollText class="h-4 w-4" />
+            Show Log
+          </Button>
+        </ButtonGroup.Root>
+      </div>
+    {:else if inRecovery}
+      <div class="flex flex-col gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-start gap-2 text-sm">
+          <LifeBuoy class="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p class="font-medium text-amber-600 dark:text-amber-400">Running in recovery mode</p>
+            <p class="text-muted-foreground">Features and lifecycle commands are disabled. Fix devcontainer.json, then rebuild the full container.</p>
+          </div>
+        </div>
+        <Button variant="default" size="sm" onclick={handleRebuild} disabled={operationRunning}>
+          {#if operationRunning && operationLabel === "Rebuild"}<Spinner />{:else}<RotateCcw class="h-4 w-4" />{/if}
+          Rebuild full container
+        </Button>
+      </div>
+    {/if}
 
     <Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 overflow-hidden">
       <Tabs.List class="h-9 w-fit">

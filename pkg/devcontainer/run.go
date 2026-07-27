@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
@@ -80,6 +81,8 @@ type runner struct {
 
 	id       string
 	idLabels []string
+
+	recovering bool
 }
 
 func NewRunner(
@@ -134,8 +137,12 @@ func (r *runner) Up(
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
-	if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
-		return nil, err
+	// Recovery skips initializeCommand: a failing host hook must not block the
+	// recovery container. In normal mode its failure is recovery-eligible.
+	if !options.Recovery {
+		if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
+			return nil, clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+		}
 	}
 
 	params := &runContainerParams{
@@ -145,16 +152,11 @@ func (r *runner) Up(
 		timeout:             timeout,
 	}
 
-	switch {
-	case isDockerFileConfig(substitutedConfig.Config),
-		substitutedConfig.Config.Image != "",
-		substitutedConfig.Config.ContainerID != "":
-		return r.runSingleContainer(ctx, params)
-	case isDockerComposeConfig(substitutedConfig.Config):
-		return r.runDockerCompose(ctx, params)
-	default:
-		return r.runDefaultContainer(ctx, params)
+	result, err := r.dispatchByConfigKind(ctx, substitutedConfig, params)
+	if result != nil {
+		result.RecoveryContainer = r.recovering
 	}
+	return result, err
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
@@ -178,6 +180,30 @@ func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
 
 func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
 	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+}
+
+// dispatchByConfigKind routes to the container implementation for the config's
+// kind (image/Dockerfile, compose, or default/auto-detected).
+func (r *runner) dispatchByConfigKind(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	params *runContainerParams,
+) (*config.Result, error) {
+	switch {
+	case isDockerFileConfig(substitutedConfig.Config),
+		substitutedConfig.Config.Image != "",
+		substitutedConfig.Config.ContainerID != "":
+		return r.runSingleContainer(ctx, params)
+	case isDockerComposeConfig(substitutedConfig.Config):
+		if params.options.Recovery {
+			log.Warn(
+				"recovery mode is not supported for docker-compose dev containers; proceeding without it",
+			)
+		}
+		return r.runDockerCompose(ctx, params)
+	default:
+		return r.runDefaultContainer(ctx, params)
+	}
 }
 
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is

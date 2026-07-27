@@ -1,7 +1,13 @@
 import { get } from "svelte/store"
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { applyTheme, cycleTheme, theme } from "./settings.js"
+import {
+  applyTheme,
+  cycleTheme,
+  getWorkspaceRecoveryState,
+  setWorkspaceRecoveryState,
+  theme,
+} from "./settings.js"
 
 describe("settings store", () => {
   beforeEach(() => {
@@ -65,6 +71,39 @@ describe("settings store", () => {
       cycleTheme() // system
       cycleTheme() // light
       expect(get(theme)).toBe("light")
+    })
+  })
+
+  describe("workspace recovery state", () => {
+    it("returns empty state when nothing is stored", () => {
+      expect(getWorkspaceRecoveryState("ws-1")).toEqual({})
+    })
+
+    it("persists and reads back per-workspace state", () => {
+      setWorkspaceRecoveryState("ws-1", {
+        buildFailed: true,
+        inRecovery: false,
+      })
+      expect(getWorkspaceRecoveryState("ws-1")).toEqual({
+        buildFailed: true,
+        inRecovery: false,
+      })
+    })
+
+    it("keeps state isolated per workspace", () => {
+      setWorkspaceRecoveryState("ws-1", { inRecovery: true })
+      setWorkspaceRecoveryState("ws-2", { buildFailed: true })
+      expect(getWorkspaceRecoveryState("ws-1")).toEqual({ inRecovery: true })
+      expect(getWorkspaceRecoveryState("ws-2")).toEqual({ buildFailed: true })
+    })
+
+    it("clears the entry when no flags are set", () => {
+      setWorkspaceRecoveryState("ws-1", { buildFailed: true })
+      setWorkspaceRecoveryState("ws-1", {
+        buildFailed: false,
+        inRecovery: false,
+      })
+      expect(getWorkspaceRecoveryState("ws-1")).toEqual({})
     })
   })
 })

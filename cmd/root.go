@@ -212,6 +212,9 @@ func exitCodeForError(err error, machineMode bool) int {
 	if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 		return exitcode.Retryable
 	}
+	if cliErr.Code == clierr.CodeBuildFailedRecoverable {
+		return exitcode.BuildFailedRecoverable
+	}
 	return exitcode.Failure
 }
 

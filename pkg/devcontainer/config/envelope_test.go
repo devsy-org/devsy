@@ -197,3 +197,18 @@ func TestWriteErrorJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteResultJSON_Recovery(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteResultJSON(&buf, ResultEnvelope{Recovery: true}); err != nil {
+		t.Fatalf("WriteResultJSON: %v", err)
+	}
+
+	var envelope ResultEnvelope
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !envelope.Recovery {
+		t.Error("recovery field did not round-trip")
+	}
+}
