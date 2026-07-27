@@ -233,21 +233,17 @@ var _ = ginkgo.Describe(
 				closeCM()
 				closed = true
 
-				// The cleanup hop traverses the devsy proxy → in-container
-				// SSH server's ctx.Done(), which can take several seconds
-				// under CI load. Each devsy ssh observation runs on a fresh
-				// connection so the just-closed socket's filesystem state is
-				// always up-to-date.
-				gomega.Eventually(func() string {
-					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				// Per-poll budget must exceed a cold devsy ssh connection's
+				// setup, or the poll is killed mid-connect and returns empty.
+				gomega.Eventually(func() (string, error) {
+					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 					defer cancel()
-					out, _ := f.DevsySSH(
+					return f.DevsySSH(
 						pollCtx,
 						tempDir,
 						"test -S "+sockPath+" && echo PRESENT || echo GONE",
 					)
-					return out
-				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
+				}).WithTimeout(90*time.Second).WithPolling(3*time.Second).
 					Should(
 						gomega.ContainSubstring("GONE"),
 						"socket %s must be cleaned up after connection close",
@@ -311,19 +307,17 @@ var _ = ginkgo.Describe(
 				exitCmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+authSock)
 				_ = exitCmd.Run()
 
-				// On a fresh devsy ssh connection, assert no devsy-ssh-agent-*
-				// directories remain. With lazy allocation, none are ever
-				// created; with the cleanup goroutine, any leftover is removed.
-				gomega.Eventually(func() string {
-					pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				// Assert no devsy-ssh-agent-* dirs remain after close.
+				gomega.Eventually(func() (string, error) {
+					pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 					defer cancel()
-					out, _ := f.DevsySSH(
+					out, err := f.DevsySSH(
 						pollCtx,
 						tempDir,
 						"sh -c 'ls -d \"$XDG_RUNTIME_DIR\"/devsy-ssh-agent-* 2>/dev/null | wc -l'",
 					)
-					return strings.TrimSpace(out)
-				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
+					return strings.TrimSpace(out), err
+				}).WithTimeout(90*time.Second).WithPolling(3*time.Second).
 					Should(
 						gomega.Equal("0"),
 						"no devsy-ssh-agent-* dir must remain after a no-forward connection closes",
