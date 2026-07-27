@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 )
 
+const errBoom = "boom"
+
 func TestResultErrRecoveryAvailable(t *testing.T) {
 	err := (&Result{Error: "build image: boom", RecoveryAvailable: true}).Err()
 	if err == nil || err.Error() != "build image: boom" {
@@ -16,7 +18,7 @@ func TestResultErrRecoveryAvailable(t *testing.T) {
 		t.Fatal("recovery-available error must classify as recoverable")
 	}
 
-	plain := (&Result{Error: "boom"}).Err()
+	plain := (&Result{Error: errBoom}).Err()
 	if errors.Is(plain, clierr.ErrBuildFailedRecoverable) {
 		t.Fatal("plain error must not be recoverable")
 	}
@@ -31,7 +33,7 @@ func TestResultErr(t *testing.T) {
 	}{
 		{name: "nil result", result: nil, wantErr: false},
 		{name: "no error", result: &Result{}, wantErr: false},
-		{name: "with error", result: &Result{Error: "boom"}, wantErr: true, wantMsg: "boom"},
+		{name: "with error", result: &Result{Error: errBoom}, wantErr: true, wantMsg: errBoom},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -152,24 +152,35 @@ func (r *runner) Up(
 		timeout:             timeout,
 	}
 
-	var result *config.Result
-	switch {
-	case isDockerFileConfig(substitutedConfig.Config),
-		substitutedConfig.Config.Image != "",
-		substitutedConfig.Config.ContainerID != "":
-		result, err = r.runSingleContainer(ctx, params)
-	case isDockerComposeConfig(substitutedConfig.Config):
-		if options.Recovery {
-			log.Warn("recovery mode is not supported for docker-compose dev containers; proceeding without it")
-		}
-		result, err = r.runDockerCompose(ctx, params)
-	default:
-		result, err = r.runDefaultContainer(ctx, params)
-	}
+	result, err := r.dispatchByConfigKind(ctx, substitutedConfig, params)
 	if result != nil {
 		result.RecoveryContainer = r.recovering
 	}
 	return result, err
+}
+
+// dispatchByConfigKind routes to the container implementation for the config's
+// kind (image/Dockerfile, compose, or default/auto-detected).
+func (r *runner) dispatchByConfigKind(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	params *runContainerParams,
+) (*config.Result, error) {
+	switch {
+	case isDockerFileConfig(substitutedConfig.Config),
+		substitutedConfig.Config.Image != "",
+		substitutedConfig.Config.ContainerID != "":
+		return r.runSingleContainer(ctx, params)
+	case isDockerComposeConfig(substitutedConfig.Config):
+		if params.options.Recovery {
+			log.Warn(
+				"recovery mode is not supported for docker-compose dev containers; proceeding without it",
+			)
+		}
+		return r.runDockerCompose(ctx, params)
+	default:
+		return r.runDefaultContainer(ctx, params)
+	}
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {

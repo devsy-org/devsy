@@ -142,7 +142,10 @@ func TestRecoveryDevContainerConfig(t *testing.T) {
 		t.Errorf("Features must be cleared, got %v", got.Config.Features)
 	}
 	if len(got.Config.OverrideFeatureInstallOrder) != 0 {
-		t.Errorf("OverrideFeatureInstallOrder must be cleared, got %v", got.Config.OverrideFeatureInstallOrder)
+		t.Errorf(
+			"OverrideFeatureInstallOrder must be cleared, got %v",
+			got.Config.OverrideFeatureInstallOrder,
+		)
 	}
 	if len(got.Config.PostCreateCommand) != 0 || len(got.Config.OnCreateCommand) != 0 {
 		t.Error("lifecycle hooks must be cleared")
@@ -156,6 +159,14 @@ func TestRecoveryDevContainerConfig(t *testing.T) {
 	if got.Raw != parsed.Raw {
 		t.Error("Raw config must be preserved")
 	}
+}
+
+func TestRecoveryDevContainerConfigNoMutation(t *testing.T) {
+	source := &config.DevContainerConfig{}
+	source.Features = map[string]any{"ghcr.io/x/y:1": map[string]any{}}
+	source.PostCreateCommand = types.LifecycleHook{"install": {"npm install"}}
+
+	recoveryDevContainerConfig(&config.SubstitutedConfig{Config: source, Raw: source})
 
 	if len(source.Features) == 0 {
 		t.Error("source Features must not be mutated")
@@ -176,7 +187,11 @@ func TestRecoveryDevContainerConfigDockerfile(t *testing.T) {
 	got := recoveryDevContainerConfig(parsed)
 
 	if got.Config.Image != defaultRecoveryImage {
-		t.Errorf("Image = %q, want default recovery image %q", got.Config.Image, defaultRecoveryImage)
+		t.Errorf(
+			"Image = %q, want default recovery image %q",
+			got.Config.Image,
+			defaultRecoveryImage,
+		)
 	}
 	if got.Config.Dockerfile != "" || got.Config.Context != "" {
 		t.Error("Dockerfile build fields must be cleared")

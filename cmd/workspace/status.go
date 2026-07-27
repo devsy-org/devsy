@@ -100,13 +100,7 @@ func (cmd *StatusCmd) Run(
 			Context:  client.Context(),
 			Provider: client.Provider(),
 			State:    string(instanceStatus),
-		}
-		if cmd.Recovery && instanceStatus == client2.StatusRunning {
-			if result, loadErr := provider.LoadWorkspaceResult(
-				client.Context(), client.Workspace(),
-			); loadErr == nil && result != nil {
-				status.Recovery = result.RecoveryContainer
-			}
+			Recovery: cmd.resolveRecovery(client, instanceStatus),
 		}
 		out, err := json.Marshal(&status)
 		if err != nil {
@@ -117,6 +111,23 @@ func (cmd *StatusCmd) Run(
 	}
 
 	return nil
+}
+
+// resolveRecovery reports whether the running container was built in recovery
+// mode, looked up from the persisted workspace result. It is opt-in (--recovery)
+// so the frequent status poll pays no extra disk read.
+func (cmd *StatusCmd) resolveRecovery(
+	c client2.BaseWorkspaceClient,
+	status client2.Status,
+) bool {
+	if !cmd.Recovery || status != client2.StatusRunning {
+		return false
+	}
+	result, err := provider.LoadWorkspaceResult(c.Context(), c.Workspace())
+	if err != nil || result == nil {
+		return false
+	}
+	return result.RecoveryContainer
 }
 
 func (cmd *StatusCmd) execute(ctx context.Context, args []string) error {

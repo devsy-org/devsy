@@ -14,6 +14,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const cmdWorkspace = "workspace"
+
 var _ = ginkgo.Describe(
 	"testing up command that handles workspace errors",
 	ginkgo.Label("up-handle-errors"),
@@ -147,7 +149,7 @@ var _ = ginkgo.Describe(
 				})
 
 				_, _, err = f.ExecCommandCapture(ctx, []string{
-					"workspace", "up",
+					cmdWorkspace, "up",
 					names.Flag(names.Debug),
 					names.Flag(names.IDE), "none",
 					tempDir,
