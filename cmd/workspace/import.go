@@ -190,20 +190,8 @@ func (cmd *ImportCmd) importMachine(
 		return fmt.Errorf("get machine dir: %w", err)
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(machineDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("create machine dir: %w", err)
-	}
-
-	decoded, err := base64.RawStdEncoding.DecodeString(exportConfig.Machine.Data)
-	if err != nil {
-		return fmt.Errorf("decode machine data: %w", err)
-	}
-
-	err = extract.Extract(bytes.NewReader(decoded), machineDir)
-	if err != nil {
-		return fmt.Errorf("extract machine data: %w", err)
+	if err := extractExportDir(machineDir, exportConfig.Machine.Data, "machine"); err != nil {
+		return err
 	}
 
 	// exchange config
@@ -240,20 +228,8 @@ func (cmd *ImportCmd) importProvider(
 		return fmt.Errorf("get provider dir: %w", err)
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(providerDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("create provider dir: %w", err)
-	}
-
-	decoded, err := base64.RawStdEncoding.DecodeString(exportConfig.Provider.Data)
-	if err != nil {
-		return fmt.Errorf("decode provider data: %w", err)
-	}
-
-	err = extract.Extract(bytes.NewReader(decoded), providerDir)
-	if err != nil {
-		return fmt.Errorf("extract provider data: %w", err)
+	if err := extractExportDir(providerDir, exportConfig.Provider.Data, "provider"); err != nil {
+		return err
 	}
 
 	// exchange config
@@ -269,20 +245,46 @@ func (cmd *ImportCmd) importProvider(
 		return fmt.Errorf("save provider config: %w", err)
 	}
 
-	// add provider options
-	if exportConfig.Provider.Config != nil {
-		if devsyConfig.Current().Providers == nil {
-			devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
-		}
-
-		devsyConfig.Current().Providers[cmd.ProviderID] = exportConfig.Provider.Config
-		err = config.SaveConfig(devsyConfig)
-		if err != nil {
-			return fmt.Errorf("save devsy config: %w", err)
-		}
+	if err := cmd.applyProviderOptions(devsyConfig, exportConfig); err != nil {
+		return err
 	}
 
 	log.Infof("imported provider: providerId=%s", cmd.ProviderID)
+	return nil
+}
+
+func (cmd *ImportCmd) applyProviderOptions(
+	devsyConfig *config.Config,
+	exportConfig *provider.ExportConfig,
+) error {
+	if exportConfig.Provider.Config == nil {
+		return nil
+	}
+	if devsyConfig.Current().Providers == nil {
+		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
+	}
+
+	devsyConfig.Current().Providers[cmd.ProviderID] = exportConfig.Provider.Config
+	if err := config.SaveConfig(devsyConfig); err != nil {
+		return fmt.Errorf("save devsy config: %w", err)
+	}
+	return nil
+}
+
+func extractExportDir(dir, data, label string) error {
+	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create %s dir: %w", label, err)
+	}
+
+	decoded, err := base64.RawStdEncoding.DecodeString(data)
+	if err != nil {
+		return fmt.Errorf("decode %s data: %w", label, err)
+	}
+
+	if err := extract.Extract(bytes.NewReader(decoded), dir); err != nil {
+		return fmt.Errorf("extract %s data: %w", label, err)
+	}
 	return nil
 }
 
@@ -296,25 +298,43 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 		return fmt.Errorf("error listing workspaces: %w", err)
 	}
 
-	// check for workspace duplicate
-	if exportConfig.Workspace != nil {
-		for _, workspace := range workspaces {
-			if workspace.ID == cmd.WorkspaceID {
-				return fmt.Errorf(
-					"existing workspace with id %s found, use --workspace-id to override the workspace id",
-					cmd.WorkspaceID,
-				)
-			} else if workspace.UID == exportConfig.Workspace.UID {
-				return fmt.Errorf(
-					"existing workspace %s with uid %s found, use --workspace-id to override the workspace id",
-					workspace.ID,
-					workspace.UID,
-				)
-			}
+	if err := cmd.checkWorkspaceConflict(exportConfig, workspaces); err != nil {
+		return err
+	}
+	if err := cmd.checkMachineConflict(exportConfig, devsyConfig); err != nil {
+		return err
+	}
+	return cmd.checkProviderConflict(exportConfig, devsyConfig)
+}
+
+func (cmd *ImportCmd) checkWorkspaceConflict(
+	exportConfig *provider.ExportConfig,
+	workspaces []*provider.Workspace,
+) error {
+	if exportConfig.Workspace == nil {
+		return nil
+	}
+	for _, workspace := range workspaces {
+		if workspace.ID == cmd.WorkspaceID {
+			return fmt.Errorf(
+				"existing workspace with id %s found, use --workspace-id to override the workspace id",
+				cmd.WorkspaceID,
+			)
+		} else if workspace.UID == exportConfig.Workspace.UID {
+			return fmt.Errorf(
+				"existing workspace %s with uid %s found, use --workspace-id to override the workspace id",
+				workspace.ID,
+				workspace.UID,
+			)
 		}
 	}
+	return nil
+}
 
-	// check if machine already exists
+func (cmd *ImportCmd) checkMachineConflict(
+	exportConfig *provider.ExportConfig,
+	devsyConfig *config.Config,
+) error {
 	if !cmd.MachineReuse && exportConfig.Machine != nil {
 		if provider.MachineExists(devsyConfig.DefaultContext, cmd.MachineID) {
 			return fmt.Errorf(
@@ -324,8 +344,13 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 			)
 		}
 	}
+	return nil
+}
 
-	// check if provider already exists
+func (cmd *ImportCmd) checkProviderConflict(
+	exportConfig *provider.ExportConfig,
+	devsyConfig *config.Config,
+) error {
 	if !cmd.ProviderReuse && exportConfig.Provider != nil {
 		if provider.ProviderExists(devsyConfig.DefaultContext, cmd.ProviderID) {
 			return fmt.Errorf(
@@ -335,6 +360,5 @@ func (cmd *ImportCmd) checkForConflictingIDs(
 			)
 		}
 	}
-
 	return nil
 }

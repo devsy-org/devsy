@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -82,6 +83,14 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	return buildAndPushImages(ctx, runner, workspaceInfo)
+}
+
+func buildAndPushImages(
+	ctx context.Context,
+	runner devcontainer.Runner,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+) error {
 	// if there is no platform specified, we use empty to let
 	// the builder find out itself.
 	platforms := workspaceInfo.CLIOptions.Platforms
@@ -89,7 +98,6 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 		platforms = []string{""}
 	}
 
-	// build and push images
 	for _, platform := range platforms {
 		// build the image
 		imageName, err := runner.Build(ctx, provider2.BuildOptions{

@@ -111,31 +111,35 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 			})
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "", false)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = sshClient.Close() }()
-
-			session, err := sshClient.NewSession()
-			if err != nil {
-				return err
-			}
-			defer func() { _ = session.Close() }()
-
-			agentCommand := fmt.Sprintf(
-				"%q internal agent workspace logs --context %q --id %q",
-				client.AgentPath(),
-				client.Context(),
-				client.Workspace(),
-			)
-			if log.DebugEnabled() {
-				agentCommand += " --debug"
-			}
-
-			session.Stdout = os.Stdout
-			session.Stderr = os.Stderr
-			return session.Run(agentCommand)
+			return runLogsSession(stdout, stdin, client)
 		},
 	)
+}
+
+func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {
+	sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "", false)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sshClient.Close() }()
+
+	session, err := sshClient.NewSession()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = session.Close() }()
+
+	agentCommand := fmt.Sprintf(
+		"%q internal agent workspace logs --context %q --id %q",
+		client.AgentPath(),
+		client.Context(),
+		client.Workspace(),
+	)
+	if log.DebugEnabled() {
+		agentCommand += " --debug"
+	}
+
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+	return session.Run(agentCommand)
 }

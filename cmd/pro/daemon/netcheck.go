@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 	"tailscale.com/client/local"
+	"tailscale.com/ipn/ipnstate"
 )
 
 // NetcheckCmd holds the Devsy daemon flags.
@@ -100,21 +101,28 @@ func (cmd *NetcheckCmd) Run(
 			return err
 		}
 		regionLabel := fmt.Sprintf("DERP %d (%s)", region.RegionID, region.RegionCode)
-		for _, e := range report.Errors {
-			rows = append(rows, []string{regionLabel, "Error", e})
-		}
-		for _, w := range report.Warnings {
-			rows = append(rows, []string{regionLabel, "Warning", w})
-		}
-		for _, i := range report.Info {
-			rows = append(rows, []string{regionLabel, "Info", i})
-		}
-		if len(report.Errors) == 0 && len(report.Warnings) == 0 && len(report.Info) == 0 {
-			rows = append(rows, []string{regionLabel, "", ""})
-		}
+		rows = append(rows, derpRegionRows(report, regionLabel)...)
 	}
 
 	table.Print([]string{"Region", "Level", "Message"}, rows)
 
 	return nil
+}
+
+func derpRegionRows(report *ipnstate.DebugDERPRegionReport, regionLabel string) [][]string {
+	rows := [][]string{}
+	for _, e := range report.Errors {
+		rows = append(rows, []string{regionLabel, "Error", e})
+	}
+	for _, w := range report.Warnings {
+		rows = append(rows, []string{regionLabel, "Warning", w})
+	}
+	for _, i := range report.Info {
+		rows = append(rows, []string{regionLabel, "Info", i})
+	}
+	if len(report.Errors) == 0 && len(report.Warnings) == 0 && len(report.Info) == 0 {
+		rows = append(rows, []string{regionLabel, "", ""})
+	}
+
+	return rows
 }

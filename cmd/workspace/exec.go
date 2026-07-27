@@ -96,21 +96,9 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
-	if cmd.ContainerDataFolder != "" {
-		log.Warnf("--container-data-folder is accepted but not yet implemented for exec")
-	}
-	if cmd.SkipPostCreate {
-		log.Warnf("--skip-post-create is accepted but not yet implemented for exec")
-	}
+	cmd.warnUnsupportedFlags()
 
-	if err := cmd.validateRemoteEnv(); err != nil {
-		return err
-	}
-	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
-		return err
-	}
-
-	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+	if err := cmd.validateExecFlags(); err != nil {
 		return err
 	}
 
@@ -124,15 +112,45 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		return cmd.runWithContainerID(ctx, args)
 	}
 
+	return cmd.runWithWorkspace(ctx, args)
+}
+
+func (cmd *ExecCmd) warnUnsupportedFlags() {
+	if cmd.ContainerDataFolder != "" {
+		log.Warnf("--container-data-folder is accepted but not yet implemented for exec")
+	}
+	if cmd.SkipPostCreate {
+		log.Warnf("--skip-post-create is accepted but not yet implemented for exec")
+	}
+}
+
+func (cmd *ExecCmd) validateExecFlags() error {
+	if err := cmd.validateRemoteEnv(); err != nil {
+		return err
+	}
+	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
+		return err
+	}
+	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cmd *ExecCmd) resolveExecArgs() ([]string, error) {
 	cwd := ""
 	if cmd.WorkspaceName == "" && cmd.WorkspaceFolder == "" {
 		var err error
 		cwd, err = os.Getwd()
 		if err != nil {
-			return fmt.Errorf("determine current directory: %w", err)
+			return nil, fmt.Errorf("determine current directory: %w", err)
 		}
 	}
-	getArgs, err := resolveExecTarget(cmd, cwd)
+	return resolveExecTarget(cmd, cwd)
+}
+
+func (cmd *ExecCmd) runWithWorkspace(ctx context.Context, args []string) error {
+	getArgs, err := cmd.resolveExecArgs()
 	if err != nil {
 		return err
 	}
@@ -176,20 +194,32 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	probedEnv := runtime.ProbeEnv(ctx, target, userEnvProbe)
 	envMap := workspace2.BuildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
+	return cmd.execAndReport(ctx, execOpts{
+		dockerCmd: runtime.Command(),
+		dockerEnv: runtime.Environment(),
+		target:    target,
+		workdir:   workdir,
+		envMap:    envMap,
+	}, args, devcconfig.ResultEnvelope{
+		ContainerID:           containerDetails.ID,
+		RemoteUser:            user,
+		RemoteWorkspaceFolder: workdir,
+	})
+}
+
+func (cmd *ExecCmd) execAndReport(
+	ctx context.Context,
+	opts execOpts,
+	args []string,
+	envelope devcconfig.ResultEnvelope,
+) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
 
-	err = cmd.execInContainer(ctx, execOpts{
-		dockerCmd: runtime.Command(),
-		dockerEnv: runtime.Environment(),
-		target:    target,
-		workdir:   workdir,
-		envMap:    envMap,
-	}, args)
-	if err != nil {
+	if err := cmd.execInContainer(ctx, opts, args); err != nil {
 		if emitJSON {
 			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		}
@@ -197,11 +227,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
-			ContainerID:           containerDetails.ID,
-			RemoteUser:            user,
-			RemoteWorkspaceFolder: workdir,
-		})
+		_ = devcconfig.WriteResultJSON(os.Stderr, envelope)
 	}
 	return nil
 }
@@ -237,33 +263,16 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 
 	workdir := containerDetails.Config.WorkingDir
 
-	mode, err := output.ResolveMode(cmd.ResultFormat)
-	if err != nil {
-		return err
-	}
-	emitJSON := mode == output.ModeJSON
-
-	err = cmd.execInContainer(ctx, execOpts{
+	return cmd.execAndReport(ctx, execOpts{
 		dockerCmd: runtime.Command(),
 		dockerEnv: runtime.Environment(),
 		target:    target,
 		workdir:   workdir,
 		envMap:    envMap,
-	}, args)
-	if err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
-		return err
-	}
-
-	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
-			ContainerID:           containerDetails.ID,
-			RemoteWorkspaceFolder: workdir,
-		})
-	}
-	return nil
+	}, args, devcconfig.ResultEnvelope{
+		ContainerID:           containerDetails.ID,
+		RemoteWorkspaceFolder: workdir,
+	})
 }
 
 var errFolderNameConflict = fmt.Errorf(

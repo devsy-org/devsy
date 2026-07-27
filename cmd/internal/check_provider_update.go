@@ -57,54 +57,70 @@ func (cmd *CheckProviderUpdateCmd) Run(
 	}
 	providerName := args[0]
 
-	providerSourceRaw, err := workspace.ResolveProviderSource(
-		devsyConfig,
-		providerName,
-	)
-	if err != nil {
-		return fmt.Errorf("provider %s doesn't exist", providerName)
-	}
-
-	// retrieve current config for provider
-	allProviders, err := workspace.LoadAllProviders(devsyConfig)
+	providerSourceRaw, currentVersion, err := loadCurrentProvider(devsyConfig, providerName)
 	if err != nil {
 		return err
-	}
-	currentProvider, ok := allProviders[providerName]
-	if !ok {
-		return errProviderNotFound
 	}
 
 	latestProviderConfig, err := loadLatestProvider(ctx, providerSourceRaw)
 	if err != nil {
 		return err
 	}
-	currentProviderVersion, err := semver.Parse(
-		strings.TrimPrefix(currentProvider.Config.Version, "v"),
-	)
-	if err != nil {
-		return err
-	}
-	latestProviderVersion, err := semver.Parse(
-		strings.TrimPrefix(latestProviderConfig.Version, "v"),
-	)
+
+	versionCheck, err := resolveProviderVersions(currentVersion, latestProviderConfig.Version)
 	if err != nil {
 		return err
 	}
 
-	versionCheck := providerVersionCheck{UpdateAvailable: false}
-	// check if new version is newer
-	if latestProviderVersion.GT(currentProviderVersion) {
-		versionCheck.UpdateAvailable = true
-		versionCheck.LatestVersion = latestProviderConfig.Version
-	}
 	out, err := json.Marshal(versionCheck)
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(out))
+	fmt.Println(string(out)) //nolint:forbidigo // CLI stdout output
 
 	return nil
+}
+
+func loadCurrentProvider(
+	devsyConfig *config.Config,
+	providerName string,
+) (source string, currentVersion string, err error) {
+	source, err = workspace.ResolveProviderSource(devsyConfig, providerName)
+	if err != nil {
+		return "", "", fmt.Errorf("provider %s doesn't exist", providerName)
+	}
+
+	allProviders, err := workspace.LoadAllProviders(devsyConfig)
+	if err != nil {
+		return "", "", err
+	}
+	currentProvider, ok := allProviders[providerName]
+	if !ok {
+		return "", "", errProviderNotFound
+	}
+
+	return source, currentProvider.Config.Version, nil
+}
+
+func resolveProviderVersions(
+	current, latest string,
+) (providerVersionCheck, error) {
+	currentVersion, err := semver.Parse(strings.TrimPrefix(current, "v"))
+	if err != nil {
+		return providerVersionCheck{}, err
+	}
+	latestVersion, err := semver.Parse(strings.TrimPrefix(latest, "v"))
+	if err != nil {
+		return providerVersionCheck{}, err
+	}
+
+	versionCheck := providerVersionCheck{UpdateAvailable: false}
+	if latestVersion.GT(currentVersion) {
+		versionCheck.UpdateAvailable = true
+		versionCheck.LatestVersion = latest
+	}
+
+	return versionCheck, nil
 }
 
 func loadLatestProvider(

@@ -378,19 +378,33 @@ func login(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if accessKey != "" && !forceBrowser {
-		err = loader.LoginWithAccessKey(url, accessKey, true, true)
-	} else {
-		if skipBrowserLogin {
-			return fmt.Errorf("unable to login to loft host")
-		}
-		err = loader.Login(url, true)
+
+	return performLogin(loginParams{
+		loader:           loader,
+		url:              url,
+		accessKey:        accessKey,
+		skipBrowserLogin: skipBrowserLogin,
+		forceBrowser:     forceBrowser,
+	})
+}
+
+type loginParams struct {
+	loader           client.Client
+	url              string
+	accessKey        string
+	skipBrowserLogin bool
+	forceBrowser     bool
+}
+
+func performLogin(params loginParams) error {
+	if params.accessKey != "" && !params.forceBrowser {
+		return params.loader.LoginWithAccessKey(params.url, params.accessKey, true, true)
 	}
-	if err != nil {
-		return err
+	if params.skipBrowserLogin {
+		return fmt.Errorf("unable to login to loft host")
 	}
 
-	return nil
+	return params.loader.Login(params.url, true)
 }
 
 var fallbackProvider = `name: devsy-pro

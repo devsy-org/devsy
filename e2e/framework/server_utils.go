@@ -65,24 +65,32 @@ func getIP() string {
 		}
 
 		for _, addr := range addrs {
-			switch v := addr.(type) {
-			case *net.IPAddr:
-				if v.IP.To4() != nil {
-					if v.IP.DefaultMask().String() == "ffffff00" ||
-						v.IP.DefaultMask().String() == "ff000000" {
-						return v.IP.String()
-					}
-				}
-			case *net.IPNet:
-				if v.IP.To4() != nil {
-					if v.IP.DefaultMask().String() == "ffffff00" ||
-						v.IP.DefaultMask().String() == "ff000000" {
-						return v.IP.String()
-					}
-				}
+			if ip := matchIPv4(addr); ip != "" {
+				return ip
 			}
 		}
 	}
 
 	return "0.0.0.0"
+}
+
+func matchIPv4(addr net.Addr) string {
+	var ip net.IP
+	switch v := addr.(type) {
+	case *net.IPAddr:
+		ip = v.IP
+	case *net.IPNet:
+		ip = v.IP
+	default:
+		return ""
+	}
+
+	if ip.To4() == nil {
+		return ""
+	}
+	mask := ip.DefaultMask().String()
+	if mask == "ffffff00" || mask == "ff000000" {
+		return ip.String()
+	}
+	return ""
 }

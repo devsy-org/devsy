@@ -51,114 +51,138 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return troubleshootCmd
 }
 
-func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
-	var info struct {
-		CLIVersion            string
-		Config                *config.Config
-		Providers             map[string]provider.ProviderWithDefault
-		DevsyProInstances     []DevsyProInstance
-		Workspace             *pkgprovider.Workspace
-		WorkspaceStatus       client.Status
-		WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
-		DaemonStatus          *daemon.Status
+type troubleshootInfo struct {
+	CLIVersion            string
+	Config                *config.Config
+	Providers             map[string]provider.ProviderWithDefault
+	DevsyProInstances     []DevsyProInstance
+	Workspace             *pkgprovider.Workspace
+	WorkspaceStatus       client.Status
+	WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
+	DaemonStatus          *daemon.Status
 
-		Errors []PrintableError `json:",omitempty"`
+	Errors []PrintableError `json:",omitempty"`
+}
+
+func (info *troubleshootInfo) addErr(context string, err error) {
+	info.Errors = append(info.Errors, PrintableError{fmt.Errorf("%s: %w", context, err)})
+}
+
+func printTroubleshootInfo(info *troubleshootInfo) {
+	out, err := json.MarshalIndent(info, "", "  ")
+	if err == nil {
+		fmt.Print(string(out)) //nolint:forbidigo // CLI stdout output
+	} else {
+		fmt.Print(err)   //nolint:forbidigo // CLI stdout output
+		fmt.Print(*info) //nolint:forbidigo // CLI stdout output
 	}
-	info.CLIVersion = version.GetVersion()
+}
+
+func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
+	info := &troubleshootInfo{CLIVersion: version.GetVersion()}
 
 	// Print on every exit path, including panics.
-	defer func() {
-		out, err := json.MarshalIndent(info, "", "  ")
-		if err == nil {
-			fmt.Print(string(out))
-		} else {
-			fmt.Print(err)
-			fmt.Print(info)
-		}
-	}()
+	defer printTroubleshootInfo(info)
 
 	// Collect as much as possible — partial info beats no info, so do not
 	// return early on errors except where downstream steps require the result.
 	var err error
 	info.Config, err = config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
-		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("load config: %w", err)})
+		info.addErr("load config", err)
 		// Without the devsy config no further troubleshooting is possible.
 		return
 	}
 
 	info.Providers, err = collectProviders(info.Config)
 	if err != nil {
-		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("collect providers: %w", err)})
+		info.addErr("collect providers", err)
 	}
 
 	info.DevsyProInstances, err = collectPlatformInfo(info.Config)
 	if err != nil {
-		info.Errors = append(
-			info.Errors,
-			PrintableError{fmt.Errorf("collect platform info: %w", err)},
-		)
+		info.addErr("collect platform info", err)
 	}
 
+	cmd.collectWorkspaceInfo(ctx, info, args)
+}
+
+func (cmd *TroubleshootCmd) collectWorkspaceInfo(
+	ctx context.Context,
+	info *troubleshootInfo,
+	args []string,
+) {
 	workspaceClient, err := workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: info.Config,
 		Args:        args,
 		Owner:       cmd.Owner,
 	})
-	if err == nil {
-		info.Workspace = workspaceClient.WorkspaceConfig()
-		info.WorkspaceStatus, err = workspaceClient.Status(ctx, client.StatusOptions{})
-		if err != nil {
-			info.Errors = append(
-				info.Errors,
-				PrintableError{fmt.Errorf("workspace status: %w", err)},
-			)
-		}
-
-		if info.Workspace.Pro != nil {
-			// Multiple pro instances may be configured; locate the one that
-			// owns this workspace.
-			var proInstance DevsyProInstance
-
-			for _, instance := range info.DevsyProInstances {
-				if instance.ProviderName == info.Workspace.Provider.Name {
-					proInstance = instance
-					break
-				}
-			}
-
-			if proInstance.ProviderName != "" {
-				info.WorkspaceTroubleshoot, err = collectProWorkspaceInfo(
-					ctx,
-					info.Config,
-					proInstance.Host,
-					info.Workspace.UID,
-					info.Workspace.Pro.Project,
-				)
-				if err != nil {
-					info.Errors = append(
-						info.Errors,
-						PrintableError{fmt.Errorf("collect pro workspace info: %w", err)},
-					)
-				}
-			}
-		}
-	} else {
-		info.Errors = append(info.Errors, PrintableError{fmt.Errorf("get workspace: %w", err)})
+	if err != nil {
+		info.addErr("get workspace", err)
+		return
 	}
 
+	info.Workspace = workspaceClient.WorkspaceConfig()
+	info.WorkspaceStatus, err = workspaceClient.Status(ctx, client.StatusOptions{})
+	if err != nil {
+		info.addErr("workspace status", err)
+	}
+
+	if info.Workspace.Pro != nil {
+		info.WorkspaceTroubleshoot, err = collectWorkspaceProTroubleshoot(
+			ctx, info.Config, info.Workspace, info.DevsyProInstances,
+		)
+		if err != nil {
+			info.addErr("collect pro workspace info", err)
+		}
+	}
+
+	info.DaemonStatus, err = collectDaemonStatus(ctx, workspaceClient)
+	if err != nil {
+		info.addErr("get daemon status", err)
+	}
+}
+
+// collectWorkspaceProTroubleshoot locates the pro instance that owns the given
+// workspace and retrieves its troubleshooting info. It returns (nil, nil) when
+// no matching pro instance is configured.
+func collectWorkspaceProTroubleshoot(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	ws *pkgprovider.Workspace,
+	proInstances []DevsyProInstance,
+) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
+	// Multiple pro instances may be configured; locate the one that owns this workspace.
+	var proInstance DevsyProInstance
+	for _, instance := range proInstances {
+		if instance.ProviderName == ws.Provider.Name {
+			proInstance = instance
+			break
+		}
+	}
+
+	if proInstance.ProviderName == "" {
+		return nil, nil
+	}
+
+	return collectProWorkspaceInfo(ctx, devsyConfig, proInstance.Host, ws.UID, ws.Pro.Project)
+}
+
+// collectDaemonStatus returns the local daemon status when the client is a
+// daemon client, or (nil, nil) otherwise.
+func collectDaemonStatus(
+	ctx context.Context,
+	workspaceClient client.BaseWorkspaceClient,
+) (*daemon.Status, error) {
 	daemonClient, ok := workspaceClient.(client.DaemonClient)
-	if ok {
-		status, err := daemon.NewLocalClient(daemonClient.Provider()).Status(ctx, true)
-		if err != nil {
-			info.Errors = append(
-				info.Errors,
-				PrintableError{fmt.Errorf("get daemon status: %w", err)},
-			)
-		} else {
-			info.DaemonStatus = &status
-		}
+	if !ok {
+		return nil, nil
 	}
+	status, err := daemon.NewLocalClient(daemonClient.Provider()).Status(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	return &status, nil
 }
 
 // collectProWorkspaceInfo collects troubleshooting information for a Devsy Pro instance.

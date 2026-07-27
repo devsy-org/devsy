@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/survey"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/yaml"
 )
 
 type ClusterCmd struct {
@@ -124,54 +126,94 @@ func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	clusterName := args[0]
+
+	setup, err := cmd.setupCluster(ctx, clusterName)
 	if err != nil {
 		return err
+	}
+	managementClient := setup.managementClient
+
+	helmArgs := cmd.buildHelmArgs(setup.chartVersion, setup.accessKey)
+
+	secretsFile, err := writeAgentSecretsFile(setup.accessKey)
+	if err != nil {
+		return err
+	}
+	if secretsFile != "" {
+		defer func() { _ = os.Remove(secretsFile) }()
+		helmArgs = append(helmArgs, "--values", secretsFile)
+	}
+
+	clientset, err := loadKubeClientset(cmd.KubeContext)
+	if err != nil {
+		return err
+	}
+
+	if err := installAgent(ctx, clientset, cmd.Namespace, helmArgs); err != nil {
+		return err
+	}
+
+	if cmd.Wait {
+		if err := waitForClusterInitialized(ctx, managementClient, clusterName); err != nil {
+			return err
+		}
+	}
+
+	log.Infof("added cluster: cluster=%s", clusterName)
+
+	return nil
+}
+
+type clusterSetup struct {
+	managementClient kube.Interface
+	accessKey        *managementv1.ClusterAccessKey
+	chartVersion     string
+}
+
+type createClusterParams struct {
+	clusterName string
+	user        string
+	team        string
+}
+
+func (cmd *ClusterCmd) setupCluster(
+	ctx context.Context,
+	clusterName string,
+) (clusterSetup, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return clusterSetup{}, err
 	}
 
 	cmd.Host, err = ensureHost(devsyConfig, cmd.Host)
 	if err != nil {
-		return err
+		return clusterSetup{}, err
 	}
-
-	// Get clusterName from command argument
-	clusterName := args[0]
 
 	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host)
 	if err != nil {
-		return err
+		return clusterSetup{}, err
 	}
 
 	managementClient, err := baseClient.Management()
 	if err != nil {
-		return err
+		return clusterSetup{}, err
 	}
 
 	devsyVersion, err := baseClient.Version()
 	if err != nil {
-		return fmt.Errorf("get pro version: %w", err)
+		return clusterSetup{}, fmt.Errorf("get pro version: %w", err)
 	}
 
 	user, team := getUserOrTeam(baseClient)
 
-	_, err = managementClient.Loft().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: clusterName,
-		},
-		Spec: managementv1.ClusterSpec{
-			ClusterSpec: storagev1.ClusterSpec{
-				DisplayName: cmd.DisplayName,
-				Owner: &storagev1.UserOrTeam{
-					User: user,
-					Team: team,
-				},
-				NetworkPeer: true,
-				Access:      getAccess(user, team),
-			},
-		},
-	}, metav1.CreateOptions{})
-	if err != nil && !kerrors.IsAlreadyExists(err) {
-		return fmt.Errorf("create cluster: %w", err)
+	if err := cmd.createClusterResource(ctx, managementClient, createClusterParams{
+		clusterName: clusterName,
+		user:        user,
+		team:        team,
+	}); err != nil {
+		return clusterSetup{}, err
 	}
 
 	accessKey, err := managementClient.Loft().
@@ -179,14 +221,49 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		Clusters().
 		GetAccessKey(ctx, clusterName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get cluster access key: %w", err)
+		return clusterSetup{}, fmt.Errorf("get cluster access key: %w", err)
 	}
 
-	namespace := cmd.Namespace
+	return clusterSetup{
+		managementClient: managementClient,
+		accessKey:        accessKey,
+		chartVersion:     devsyVersion.Version,
+	}, nil
+}
 
-	helmArgs := []string{
-		"upgrade", "loft",
+func (cmd *ClusterCmd) createClusterResource(
+	ctx context.Context,
+	managementClient kube.Interface,
+	params createClusterParams,
+) error {
+	_, err := managementClient.Loft().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: params.clusterName,
+		},
+		Spec: managementv1.ClusterSpec{
+			ClusterSpec: storagev1.ClusterSpec{
+				DisplayName: cmd.DisplayName,
+				Owner: &storagev1.UserOrTeam{
+					User: params.user,
+					Team: params.team,
+				},
+				NetworkPeer: true,
+				Access:      getAccess(params.user, params.team),
+			},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil && !kerrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create cluster: %w", err)
 	}
+
+	return nil
+}
+
+func (cmd *ClusterCmd) buildHelmArgs(
+	chartVersion string,
+	accessKey *managementv1.ClusterAccessKey,
+) []string {
+	helmArgs := []string{"upgrade", "loft"}
 
 	if os.Getenv("DEVELOPMENT") == "true" {
 		helmArgs = []string{
@@ -196,7 +273,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 			cmp.Or(os.Getenv("DEVELOPMENT_CHART_DIR"), "./chart"),
 			"--create-namespace",
 			"--namespace",
-			namespace,
+			cmd.Namespace,
 			"--set",
 			"agentOnly=true",
 			"--set",
@@ -206,30 +283,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 			),
 		}
 	} else {
-		if cmd.HelmChartPath != "" {
-			helmArgs = append(helmArgs, cmd.HelmChartPath)
-		} else {
-			helmArgs = append(helmArgs, "loft", "--repo", "https://charts.devsy.sh")
-		}
-
-		if devsyVersion.Version != "" {
-			helmArgs = append(helmArgs, "--version", devsyVersion.Version)
-		}
-
-		if cmd.HelmChartVersion != "" {
-			helmArgs = append(helmArgs, "--version", cmd.HelmChartVersion)
-		}
-
-		// general arguments
-		helmArgs = append(
-			helmArgs,
-			"--install",
-			"--create-namespace",
-			"--namespace",
-			cmd.Namespace,
-			"--set",
-			"agentOnly=true",
-		)
+		helmArgs = cmd.appendReleaseArgs(helmArgs, chartVersion)
 	}
 
 	for _, set := range cmd.HelmSet {
@@ -239,39 +293,65 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		helmArgs = append(helmArgs, "--values", values)
 	}
 
+	return cmd.appendAccessKeyArgs(helmArgs, accessKey)
+}
+
+func (cmd *ClusterCmd) appendReleaseArgs(helmArgs []string, chartVersion string) []string {
+	if cmd.HelmChartPath != "" {
+		helmArgs = append(helmArgs, cmd.HelmChartPath)
+	} else {
+		helmArgs = append(helmArgs, "loft", "--repo", "https://charts.devsy.sh")
+	}
+
+	if chartVersion != "" {
+		helmArgs = append(helmArgs, "--version", chartVersion)
+	}
+
+	if cmd.HelmChartVersion != "" {
+		helmArgs = append(helmArgs, "--version", cmd.HelmChartVersion)
+	}
+
+	return append(
+		helmArgs,
+		"--install",
+		"--create-namespace",
+		"--namespace",
+		cmd.Namespace,
+		"--set",
+		"agentOnly=true",
+	)
+}
+
+func (cmd *ClusterCmd) appendAccessKeyArgs(
+	helmArgs []string,
+	accessKey *managementv1.ClusterAccessKey,
+) []string {
 	if accessKey.DevsyHost != "" {
 		helmArgs = append(helmArgs, "--set", "url="+accessKey.DevsyHost)
 	}
-
-	if accessKey.AccessKey != "" {
-		helmArgs = append(helmArgs, "--set", "token="+accessKey.AccessKey)
-	}
-
 	if cmd.Insecure || accessKey.Insecure {
 		helmArgs = append(helmArgs, "--set", "insecureSkipVerify=true")
 	}
-
-	if accessKey.CaCert != "" {
-		helmArgs = append(helmArgs, "--set", "additionalCA="+accessKey.CaCert)
-	}
-
 	if cmd.Wait {
 		helmArgs = append(helmArgs, "--wait")
 	}
-
 	if cmd.KubeContext != "" {
 		helmArgs = append(helmArgs, "--kube-context", cmd.KubeContext)
 	}
 
+	return helmArgs
+}
+
+func loadKubeClientset(kubeContext string) (*kubernetes.Clientset, error) {
 	kubeClientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
 		&clientcmd.ConfigOverrides{},
 	)
 
-	if cmd.KubeContext != "" {
+	if kubeContext != "" {
 		kubeConfig, err := kubeClientConfig.RawConfig()
 		if err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"there is an error loading your current kube config (%w), make sure you have access "+
 					"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 				err,
@@ -280,7 +360,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 
 		kubeClientConfig = clientcmd.NewNonInteractiveClientConfig(
 			kubeConfig,
-			cmd.KubeContext,
+			kubeContext,
 			&clientcmd.ConfigOverrides{},
 			clientcmd.NewDefaultClientConfigLoadingRules(),
 		)
@@ -288,7 +368,7 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 
 	config, err := kubeClientConfig.ClientConfig()
 	if err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"there is an error loading your current kube config (%w), make sure you have access "+
 				"to a kubernetes cluster and the command `kubectl get namespaces` is working",
 			err,
@@ -297,9 +377,52 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("create kube client: %w", err)
+		return nil, fmt.Errorf("create kube client: %w", err)
 	}
 
+	return clientset, nil
+}
+
+func writeAgentSecretsFile(accessKey *managementv1.ClusterAccessKey) (string, error) {
+	secrets := map[string]string{}
+	if accessKey.AccessKey != "" {
+		secrets["token"] = accessKey.AccessKey
+	}
+	if accessKey.CaCert != "" {
+		secrets["additionalCA"] = accessKey.CaCert
+	}
+	if len(secrets) == 0 {
+		return "", nil
+	}
+
+	data, err := yaml.Marshal(secrets)
+	if err != nil {
+		return "", fmt.Errorf("marshal agent secret values: %w", err)
+	}
+
+	f, err := os.CreateTemp("", "devsy-agent-values-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("create agent secret values file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write agent secret values file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("close agent secret values file: %w", err)
+	}
+
+	return f.Name(), nil
+}
+
+func installAgent(
+	ctx context.Context,
+	clientset *kubernetes.Clientset,
+	namespace string,
+	helmArgs []string,
+) error {
 	errChan := make(chan error)
 
 	go func() {
@@ -312,45 +435,48 @@ func (cmd *ClusterCmd) Run(ctx context.Context, args []string) error {
 		log.Info("Installing agent")
 		log.Debugf("Running helm command: %v", helmCmd.Args)
 
-		err = helmCmd.Run()
-		if err != nil {
+		if err := helmCmd.Run(); err != nil {
 			errChan <- fmt.Errorf("failed to install chart: %w", err)
 		}
 
 		close(errChan)
 	}()
 
-	_, err = platform.WaitForPodReady(ctx, clientset, namespace)
+	_, err := platform.WaitForPodReady(ctx, clientset, namespace)
 	if err = errors.Join(err, <-errChan); err != nil {
 		return fmt.Errorf("wait for pod: %w", err)
 	}
 
-	if cmd.Wait {
-		log.Info("Waiting for the cluster to be initialized")
-		waitErr := wait.PollUntilContextTimeout(
-			ctx,
-			time.Second,
-			5*time.Minute,
-			false,
-			func(ctx context.Context) (done bool, err error) {
-				clusterInstance, err := managementClient.Loft().
-					ManagementV1().
-					Clusters().
-					Get(ctx, clusterName, metav1.GetOptions{})
-				if err != nil && !kerrors.IsNotFound(err) {
-					return false, err
-				}
+	return nil
+}
 
-				return clusterInstance != nil &&
-					clusterInstance.Status.Phase == storagev1.ClusterStatusPhaseInitialized, nil
-			},
-		)
-		if waitErr != nil {
-			return fmt.Errorf("get cluster: %w", waitErr)
-		}
+func waitForClusterInitialized(
+	ctx context.Context,
+	managementClient kube.Interface,
+	clusterName string,
+) error {
+	log.Info("Waiting for the cluster to be initialized")
+	waitErr := wait.PollUntilContextTimeout(
+		ctx,
+		time.Second,
+		5*time.Minute,
+		false,
+		func(ctx context.Context) (done bool, err error) {
+			clusterInstance, err := managementClient.Loft().
+				ManagementV1().
+				Clusters().
+				Get(ctx, clusterName, metav1.GetOptions{})
+			if err != nil && !kerrors.IsNotFound(err) {
+				return false, err
+			}
+
+			return clusterInstance != nil &&
+				clusterInstance.Status.Phase == storagev1.ClusterStatusPhaseInitialized, nil
+		},
+	)
+	if waitErr != nil {
+		return fmt.Errorf("get cluster: %w", waitErr)
 	}
-
-	log.Infof("added cluster: cluster=%s", clusterName)
 
 	return nil
 }

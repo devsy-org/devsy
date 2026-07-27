@@ -59,40 +59,49 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		for _, entry := range ideparse.AllowedIDEs {
-			marker := ""
-			if devsyConfig.Current().DefaultIDE == string(entry.Name) {
-				marker = "*"
-			}
-			tableEntries = append(tableEntries, []string{
-				string(entry.Name),
-				marker,
-			})
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
-
-		table.Print([]string{
-			"Name",
-			"Default",
-		}, tableEntries)
+		printIDEsPlain(devsyConfig)
 	case output.ModeJSON:
-		ides := []IDEWithDefault{}
-		for _, entry := range ideparse.AllowedIDEs {
-			ides = append(ides, IDEWithDefault{
-				AllowedIDE: entry,
-				Default:    devsyConfig.Current().DefaultIDE == string(entry.Name),
-			})
-		}
-
-		out, err := json.MarshalIndent(ides, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintln(os.Stdout, string(out))
+		return printIDEsJSON(devsyConfig)
 	}
 
+	return nil
+}
+
+func printIDEsPlain(devsyConfig *config.Config) {
+	tableEntries := [][]string{}
+	for _, entry := range ideparse.AllowedIDEs {
+		marker := ""
+		if devsyConfig.Current().DefaultIDE == string(entry.Name) {
+			marker = "*"
+		}
+		tableEntries = append(tableEntries, []string{
+			string(entry.Name),
+			marker,
+		})
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	table.Print([]string{
+		"Name",
+		"Default",
+	}, tableEntries)
+}
+
+func printIDEsJSON(devsyConfig *config.Config) error {
+	ides := []IDEWithDefault{}
+	for _, entry := range ideparse.AllowedIDEs {
+		ides = append(ides, IDEWithDefault{
+			AllowedIDE: entry,
+			Default:    devsyConfig.Current().DefaultIDE == string(entry.Name),
+		})
+	}
+
+	out, err := json.MarshalIndent(ides, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 	return nil
 }

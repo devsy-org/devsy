@@ -68,30 +68,56 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	var timeoutDuration time.Duration
-	if cmd.Config.Timeout != "" {
-		var err error
-		timeoutDuration, err = time.ParseDuration(cmd.Config.Timeout)
-		if err != nil {
-			return fmt.Errorf("failed to parse timeout duration: %w", err)
-		}
-		if timeoutDuration > 0 {
-			if err := os.WriteFile(
-				config2.ContainerActivityFile,
-				nil,
-				0o666,
-			); err != nil { // #nosec G306
-				return fmt.Errorf("failed to create activity file: %w", err)
-			}
-			if err := os.Chmod(config2.ContainerActivityFile, 0o666); err != nil { // #nosec G302
-				return fmt.Errorf("failed to set activity file permissions: %w", err)
-			}
-		}
+	timeoutDuration, err := cmd.setupTimeout()
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(c.Context(), os.Interrupt, syscall.SIGTERM)
 
 	g, ctx := errgroup.WithContext(ctx)
+	cmd.startDaemonTasks(ctx, g, timeoutDuration)
+
+	err = g.Wait()
+	stop() // Restore default signal handling before exiting.
+	if err != nil {
+		log.Errorf("daemon error: %v", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+	return nil // Unreachable but needed.
+}
+
+func (cmd *DaemonCmd) setupTimeout() (time.Duration, error) {
+	if cmd.Config.Timeout == "" {
+		return 0, nil
+	}
+
+	timeoutDuration, err := time.ParseDuration(cmd.Config.Timeout)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse timeout duration: %w", err)
+	}
+	if timeoutDuration > 0 {
+		if err := os.WriteFile( // #nosec G306
+			config2.ContainerActivityFile,
+			nil,
+			0o666,
+		); err != nil {
+			return 0, fmt.Errorf("failed to create activity file: %w", err)
+		}
+		if err := os.Chmod(config2.ContainerActivityFile, 0o666); err != nil { // #nosec G302
+			return 0, fmt.Errorf("failed to set activity file permissions: %w", err)
+		}
+	}
+
+	return timeoutDuration, nil
+}
+
+func (cmd *DaemonCmd) startDaemonTasks(
+	ctx context.Context,
+	g *errgroup.Group,
+	timeoutDuration time.Duration,
+) {
 	var tasksStarted bool
 
 	// Start process reaper.
@@ -133,15 +159,6 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 			return nil
 		})
 	}
-
-	err := g.Wait()
-	stop() // Restore default signal handling before exiting.
-	if err != nil {
-		log.Errorf("daemon error: %v", err)
-		os.Exit(1)
-	}
-	os.Exit(0)
-	return nil // Unreachable but needed.
 }
 
 // loadConfig loads the daemon configuration from base64-encoded JSON.

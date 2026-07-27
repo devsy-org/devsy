@@ -7,11 +7,13 @@ import (
 	"net/url"
 	"os"
 
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
 	"github.com/spf13/cobra"
 )
@@ -72,6 +74,14 @@ func (cmd *RebuildCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("workspace %q not found in project %q", targetWorkspace, cmd.Project)
 	}
 
+	return execRebuild(ctx, baseClient, workspace)
+}
+
+func execRebuild(
+	ctx context.Context,
+	baseClient client.Client,
+	workspace *managementv1.DevsyWorkspaceInstance,
+) error {
 	opts := struct {
 		Recreate bool `json:"recreate"`
 	}{Recreate: true}

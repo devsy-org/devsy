@@ -138,8 +138,8 @@ func RunFromOptions(ctx context.Context, g *flags.GlobalFlags, opts Options) err
 	if err != nil {
 		return fmt.Errorf("prepare workspace client: %w", err)
 	}
-	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
-		return fmt.Errorf("extra devcontainer file is only supported with local provider")
+	if err := cmd.checkExtraDevContainerProvider(client); err != nil {
+		return err
 	}
 	telemetry.FromContext(ctx).SetClient(client)
 	if err := cmd.Run(ctx, devsyConfig, client, args); err != nil {
@@ -229,6 +229,13 @@ func (cmd *UpCmd) Run(
 		emitJSON:    emitJSON,
 		out:         out,
 	})
+}
+
+func (cmd *UpCmd) checkExtraDevContainerProvider(client client2.BaseWorkspaceClient) error {
+	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
+		return fmt.Errorf("extra devcontainer file is only supported with local provider")
+	}
+	return nil
 }
 
 func (cmd *UpCmd) applyConfig(devsyConfig *config.Config) {
@@ -353,8 +360,8 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("prepare workspace client: %w", err)
 	}
-	if cmd.ExtraDevContainerPath != "" && client.Provider() != "docker" {
-		return fmt.Errorf("extra devcontainer file is only supported with local provider")
+	if err := cmd.checkExtraDevContainerProvider(client); err != nil {
+		return err
 	}
 
 	telemetry.FromContext(cobraCmd.Context()).SetClient(client)

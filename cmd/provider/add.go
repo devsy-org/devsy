@@ -81,23 +81,49 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	providerName := cmd.Name
 
-	if providerName != "" {
-		if provider.ProviderNameRegEx.MatchString(providerName) {
-			return fmt.Errorf(
-				"provider name can only include lowercase letters, numbers or dashes",
-			)
-		}
-		if len(providerName) > 32 {
-			return fmt.Errorf("provider name cannot be longer than 32 characters")
-		}
+	if err := validateOptionalProviderName(providerName); err != nil {
+		return err
 	}
 
-	var providerConfig *provider.ProviderConfig
-	var options []string
+	providerConfig, options, err := cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("installed provider: providerName=%s", providerConfig.Name)
+	if !cmd.Use {
+		log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
+		return nil
+	}
+
+	return cmd.useProvider(ctx, devsyConfig, providerConfig, options)
+}
+
+func validateOptionalProviderName(providerName string) error {
+	if providerName == "" {
+		return nil
+	}
+	if provider.ProviderNameRegEx.MatchString(providerName) {
+		return fmt.Errorf(
+			"provider name can only include lowercase letters, numbers or dashes",
+		)
+	}
+	if len(providerName) > 32 {
+		return fmt.Errorf("provider name cannot be longer than 32 characters")
+	}
+	return nil
+}
+
+func (cmd *AddCmd) resolveProviderConfig(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName string,
+	args []string,
+) (*provider.ProviderConfig, []string, error) {
 	if cmd.FromExisting != "" {
 		if devsyConfig.Current() == nil ||
 			devsyConfig.Current().Providers[cmd.FromExisting] == nil {
-			return fmt.Errorf("provider %s does not exist", cmd.FromExisting)
+			return nil, nil, fmt.Errorf("provider %s does not exist", cmd.FromExisting)
 		}
 		providerWithOptions, err := workspace.CloneProvider(
 			ctx,
@@ -106,59 +132,58 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 			cmd.FromExisting,
 		)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
-		providerConfig = providerWithOptions.Config
-		options = mergeOptions(
+		return providerWithOptions.Config, mergeOptions(
 			providerWithOptions.Config.Options,
 			providerWithOptions.State.Options,
 			cmd.Options,
-		)
-	} else {
-		if len(args) != 1 {
-			return fmt.Errorf("specify either a URL or path, " +
-				"e.g. devsy provider add https://path/to/my/provider.yaml")
-		}
-		c, err := workspace.AddProvider(ctx, devsyConfig, providerName, args[0])
+		), nil
+	}
+
+	if len(args) != 1 {
+		return nil, nil, fmt.Errorf("specify either a URL or path, " +
+			"e.g. devsy provider add https://path/to/my/provider.yaml")
+	}
+	c, err := workspace.AddProvider(ctx, devsyConfig, providerName, args[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, cmd.Options, nil
+}
+
+func (cmd *AddCmd) useProvider(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerConfig *provider.ProviderConfig,
+	options []string,
+) error {
+	// First add: there are no prior user values to merge, so
+	// DiscardPriorValues is moot. Set it explicitly so future readers
+	// don't wonder whether merging matters here.
+	configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
+		Provider:           providerConfig,
+		ContextName:        devsyConfig.DefaultContext,
+		UserOptions:        options,
+		DiscardPriorValues: true,
+		SingleMachine:      &cmd.SingleMachine,
+	})
+	if configureErr != nil {
+		devsyConfig, err := config.LoadConfig(cmd.Context, "")
 		if err != nil {
 			return err
 		}
-		providerConfig = c
-		options = cmd.Options
-	}
 
-	log.Infof("installed provider: providerName=%s", providerConfig.Name)
-	if cmd.Use {
-		// First add: there are no prior user values to merge, so
-		// DiscardPriorValues is moot. Set it explicitly so future readers
-		// don't wonder whether merging matters here.
-		configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
-			Provider:           providerConfig,
-			ContextName:        devsyConfig.DefaultContext,
-			UserOptions:        options,
-			DiscardPriorValues: true,
-			SingleMachine:      &cmd.SingleMachine,
-		})
-		if configureErr != nil {
-			devsyConfig, err := config.LoadConfig(cmd.Context, "")
-			if err != nil {
-				return err
-			}
-
-			err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true)
-			if err != nil {
-				return fmt.Errorf("delete provider: %w", err)
-			}
-
-			return fmt.Errorf("configure provider: %w", configureErr)
+		err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true)
+		if err != nil {
+			return fmt.Errorf("delete provider: %w", err)
 		}
 
-		return writeDefaultProvider(cmd.Context, providerConfig.Name)
+		return fmt.Errorf("configure provider: %w", configureErr)
 	}
 
-	log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
-	return nil
+	return writeDefaultProvider(cmd.Context, providerConfig.Name)
 }
 
 // mergeOptions combines user options with existing options, user provided options take precedence.

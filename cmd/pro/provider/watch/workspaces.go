@@ -103,7 +103,32 @@ func (cmd *WorkspacesCmd) Run(
 	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
 	instanceStore := newStore(workspaceInformer, self, cmd.Context, filterByOwner)
 
-	_, err = workspaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err = workspaceInformer.Informer().
+		AddEventHandler(workspaceEventHandler(stdout, instanceStore))
+	if err != nil {
+		return err
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go func() {
+		factory.Start(stopCh)
+		factory.WaitForCacheSync(stopCh)
+
+		// Kick off initial message
+		printInstances(stdout, instanceStore.List())
+	}()
+
+	<-stopCh
+
+	return nil
+}
+
+func workspaceEventHandler(
+	stdout io.Writer,
+	instanceStore *instanceStore,
+) cache.ResourceEventHandlerFuncs {
+	return cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
 			instance, ok := obj.(*managementv1.DevsyWorkspaceInstance)
 			if !ok {
@@ -140,24 +165,7 @@ func (cmd *WorkspacesCmd) Run(
 			instanceStore.Delete(instance)
 			printInstances(stdout, instanceStore.List())
 		},
-	})
-	if err != nil {
-		return err
 	}
-
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-	go func() {
-		factory.Start(stopCh)
-		factory.WaitForCacheSync(stopCh)
-
-		// Kick off initial message
-		printInstances(stdout, instanceStore.List())
-	}()
-
-	<-stopCh
-
-	return nil
 }
 
 type instanceStore struct {
@@ -193,33 +201,8 @@ func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 	if s.filterByOwner && !platform.IsOwner(s.self, instance.Spec.Owner) {
 		return
 	}
-	var source *provider.WorkspaceSource
-	if instance.GetAnnotations() != nil &&
-		instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
-		source = provider.ParseWorkspaceSource(
-			instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation],
-		)
-	}
 
-	var ideConfig *provider.WorkspaceIDEConfig
-	if instance.GetLabels() != nil && instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel] != "" {
-		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
-		workspaceConfig, err := provider.LoadWorkspaceConfig(s.context, id)
-		if err == nil {
-			ideConfig = &workspaceConfig.IDE
-		}
-	}
-
-	proInstance := &ProWorkspaceInstance{
-		TypeMeta:   instance.TypeMeta,
-		ObjectMeta: instance.ObjectMeta,
-		Spec:       instance.Spec,
-		Status: ProWorkspaceInstanceStatus{
-			DevsyWorkspaceInstanceStatus: instance.Status,
-			Source:                       source,
-			IDE:                          ideConfig,
-		},
-	}
+	proInstance := s.buildProInstance(instance)
 
 	key := s.key(instance.ObjectMeta)
 	s.m.Lock()
@@ -255,61 +238,7 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	)
 	if err == nil {
 		for _, workspace := range localWorkspaces {
-			if workspace.Imported && workspace.Pro != nil {
-				// get instance for imported workspace
-				selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						storagev1.DevsyWorkspaceUIDLabel: workspace.UID,
-					},
-				})
-				if err != nil {
-					continue
-				}
-
-				l, err := s.informer.Lister().
-					DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Pro.Project)).
-					List(selector)
-				if err != nil {
-					continue
-				}
-				if len(l) == 0 {
-					continue
-				}
-				instance := l[0]
-				s.m.Lock()
-				if _, ok := s.instances[s.key(instance.ObjectMeta)]; ok {
-					continue
-				}
-				s.m.Unlock()
-
-				var source *provider.WorkspaceSource
-				if instance.GetAnnotations() != nil &&
-					instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
-					source = provider.ParseWorkspaceSource(
-						instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation],
-					)
-				}
-
-				var ideConfig *provider.WorkspaceIDEConfig
-				if instance.GetLabels() != nil &&
-					instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel] != "" {
-					id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
-					workspaceConfig, err := provider.LoadWorkspaceConfig(s.context, id)
-					if err == nil {
-						ideConfig = &workspaceConfig.IDE
-					}
-				}
-
-				proInstance := &ProWorkspaceInstance{
-					TypeMeta:   instance.TypeMeta,
-					ObjectMeta: instance.ObjectMeta,
-					Spec:       instance.Spec,
-					Status: ProWorkspaceInstanceStatus{
-						DevsyWorkspaceInstanceStatus: instance.Status,
-						Source:                       source,
-						IDE:                          ideConfig,
-					},
-				}
+			if proInstance := s.importedProInstance(workspace); proInstance != nil {
 				instanceList = append(instanceList, proInstance)
 			}
 		}
@@ -322,6 +251,75 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	s.m.Unlock()
 
 	return instanceList
+}
+
+func (s *instanceStore) buildProInstance(
+	instance *managementv1.DevsyWorkspaceInstance,
+) *ProWorkspaceInstance {
+	var source *provider.WorkspaceSource
+	if instance.GetAnnotations() != nil &&
+		instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
+		source = provider.ParseWorkspaceSource(
+			instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation],
+		)
+	}
+
+	var ideConfig *provider.WorkspaceIDEConfig
+	if instance.GetLabels() != nil && instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel] != "" {
+		id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
+		workspaceConfig, err := provider.LoadWorkspaceConfig(s.context, id)
+		if err == nil {
+			ideConfig = &workspaceConfig.IDE
+		}
+	}
+
+	return &ProWorkspaceInstance{
+		TypeMeta:   instance.TypeMeta,
+		ObjectMeta: instance.ObjectMeta,
+		Spec:       instance.Spec,
+		Status: ProWorkspaceInstanceStatus{
+			DevsyWorkspaceInstanceStatus: instance.Status,
+			Source:                       source,
+			IDE:                          ideConfig,
+		},
+	}
+}
+
+func (s *instanceStore) importedProInstance(
+	workspace *provider.Workspace,
+) *ProWorkspaceInstance {
+	if !workspace.Imported || workspace.Pro == nil {
+		return nil
+	}
+
+	// get instance for imported workspace
+	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			storagev1.DevsyWorkspaceUIDLabel: workspace.UID,
+		},
+	})
+	if err != nil {
+		return nil
+	}
+
+	l, err := s.informer.Lister().
+		DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Pro.Project)).
+		List(selector)
+	if err != nil {
+		return nil
+	}
+	if len(l) == 0 {
+		return nil
+	}
+	instance := l[0]
+	s.m.Lock()
+	if _, ok := s.instances[s.key(instance.ObjectMeta)]; ok {
+		s.m.Unlock()
+		return nil
+	}
+	s.m.Unlock()
+
+	return s.buildProInstance(instance)
 }
 
 func printInstances(w io.Writer, instances []*ProWorkspaceInstance) {

@@ -12,6 +12,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -65,47 +66,60 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	}
 	switch mode {
 	case output.ModeJSON:
-		sort.SliceStable(workspaces, func(i, j int) bool {
-			return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
-		})
-		out, err := json.Marshal(workspaces)
-		if err != nil {
+		if err := printJSONWorkspaces(workspaces); err != nil {
 			return err
 		}
-		fmt.Print(string(out))
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		sort.SliceStable(workspaces, func(i, j int) bool {
-			return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
-		})
-		for _, entry := range workspaces {
-			name := entry.ID
-			if entry.IsPro() && entry.Pro.DisplayName != "" && entry.ID != entry.Pro.DisplayName {
-				name = fmt.Sprintf("%s (%s)", entry.Pro.DisplayName, entry.ID)
-			}
-			tableEntries = append(tableEntries, []string{
-				name,
-				entry.Source.String(),
-				entry.Machine.ID,
-				entry.Provider.Name,
-				entry.IDE.Name,
-				time.Since(entry.LastUsedTimestamp.Time).Round(1 * time.Second).String(),
-				time.Since(entry.CreationTimestamp.Time).Round(1 * time.Second).String(),
-				fmt.Sprintf("%t", entry.IsPro()),
-			})
-		}
-
-		table.Print([]string{
-			"Name",
-			"Source",
-			"Machine",
-			"Provider",
-			"IDE",
-			"Last Used",
-			"Age",
-			"Pro",
-		}, tableEntries)
+		printPlainWorkspaces(workspaces)
 	}
 
 	return nil
+}
+
+func sortWorkspacesByLastUsed(workspaces []*provider.Workspace) {
+	sort.SliceStable(workspaces, func(i, j int) bool {
+		return workspaces[i].LastUsedTimestamp.Unix() > workspaces[j].LastUsedTimestamp.Unix()
+	})
+}
+
+func printJSONWorkspaces(workspaces []*provider.Workspace) error {
+	sortWorkspacesByLastUsed(workspaces)
+	out, err := json.Marshal(workspaces)
+	if err != nil {
+		return err
+	}
+	fmt.Print(string(out)) //nolint:forbidigo // CLI stdout output
+	return nil
+}
+
+func printPlainWorkspaces(workspaces []*provider.Workspace) {
+	sortWorkspacesByLastUsed(workspaces)
+	tableEntries := [][]string{}
+	for _, entry := range workspaces {
+		name := entry.ID
+		if entry.IsPro() && entry.Pro.DisplayName != "" && entry.ID != entry.Pro.DisplayName {
+			name = fmt.Sprintf("%s (%s)", entry.Pro.DisplayName, entry.ID)
+		}
+		tableEntries = append(tableEntries, []string{
+			name,
+			entry.Source.String(),
+			entry.Machine.ID,
+			entry.Provider.Name,
+			entry.IDE.Name,
+			time.Since(entry.LastUsedTimestamp.Time).Round(1 * time.Second).String(),
+			time.Since(entry.CreationTimestamp.Time).Round(1 * time.Second).String(),
+			fmt.Sprintf("%t", entry.IsPro()),
+		})
+	}
+
+	table.Print([]string{
+		"Name",
+		"Source",
+		"Machine",
+		"Provider",
+		"IDE",
+		"Last Used",
+		"Age",
+		"Pro",
+	}, tableEntries)
 }

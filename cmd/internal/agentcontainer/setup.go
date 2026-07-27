@@ -613,79 +613,71 @@ func fillContainerEnv(setupInfo *config.Result) error {
 	return nil
 }
 
+var vscodeFlavors = map[string]vscode.Flavor{
+	string(config2.IDEVSCode):         vscode.FlavorStable,
+	string(config2.IDEVSCodeInsiders): vscode.FlavorInsiders,
+	string(config2.IDECursor):         vscode.FlavorCursor,
+	string(config2.IDEPositron):       vscode.FlavorPositron,
+	string(config2.IDECodium):         vscode.FlavorCodium,
+	string(config2.IDEWindsurf):       vscode.FlavorWindsurf,
+	string(config2.IDEAntigravity):    vscode.FlavorAntigravity,
+	string(config2.IDEBob):            vscode.FlavorBob,
+}
+
+type jetbrainsServerFactory func(
+	string,
+	map[string]config2.OptionValue,
+) *jetbrains.GenericJetBrainsServer
+
+var jetbrainsServers = map[string]jetbrainsServerFactory{
+	string(config2.IDEGoland):    jetbrains.NewGolandServer,
+	string(config2.IDERustRover): jetbrains.NewRustRoverServer,
+	string(config2.IDEPyCharm):   jetbrains.NewPyCharmServer,
+	string(config2.IDEPhpStorm):  jetbrains.NewPhpStorm,
+	string(config2.IDEIntellij):  jetbrains.NewIntellij,
+	string(config2.IDECLion):     jetbrains.NewCLionServer,
+	string(config2.IDERider):     jetbrains.NewRiderServer,
+	string(config2.IDERubyMine):  jetbrains.NewRubyMineServer,
+	string(config2.IDEWebStorm):  jetbrains.NewWebStormServer,
+	string(config2.IDEDataSpell): jetbrains.NewDataSpellServer,
+}
+
 func (cmd *SetupContainerCmd) installIDE(
 	setupInfo *config.Result,
 	ide *provider2.WorkspaceIDEConfig,
 ) error {
+	if flavor, ok := vscodeFlavors[ide.Name]; ok {
+		return cmd.setupVSCode(setupInfo, ide.Options, flavor)
+	}
+	if newServer, ok := jetbrainsServers[ide.Name]; ok {
+		return newServer(config.GetRemoteUser(setupInfo), ide.Options).Install(setupInfo)
+	}
+
 	switch ide.Name {
 	case string(config2.IDENone):
 		return nil
-	case string(config2.IDEVSCode):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorStable)
-	case string(config2.IDEVSCodeInsiders):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorInsiders)
-	case string(config2.IDECursor):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCursor)
-	case string(config2.IDEPositron):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorPositron)
-	case string(config2.IDECodium):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorCodium)
-	case string(config2.IDEWindsurf):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorWindsurf)
-	case string(config2.IDEAntigravity):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorAntigravity)
-	case string(config2.IDEBob):
-		return cmd.setupVSCode(setupInfo, ide.Options, vscode.FlavorBob)
 	case string(config2.IDEOpenVSCode), string(config2.IDECodeServer), string(config2.IDEVSCodeWeb):
 		return cmd.setupBrowserIDE(ide.Name, setupInfo, ide.Options)
-	case string(config2.IDEGoland):
-		return jetbrains.NewGolandServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDERustRover):
-		return jetbrains.NewRustRoverServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDEPyCharm):
-		return jetbrains.NewPyCharmServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDEPhpStorm):
-		return jetbrains.NewPhpStorm(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDEIntellij):
-		return jetbrains.NewIntellij(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDECLion):
-		return jetbrains.NewCLionServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDERider):
-		return jetbrains.NewRiderServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDERubyMine):
-		return jetbrains.NewRubyMineServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDEWebStorm):
-		return jetbrains.NewWebStormServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
-	case string(config2.IDEDataSpell):
-		return jetbrains.NewDataSpellServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo)
+	}
+
+	return installNotebookIDE(setupInfo, ide)
+}
+
+func installNotebookIDE(
+	setupInfo *config.Result,
+	ide *provider2.WorkspaceIDEConfig,
+) error {
+	user := config.GetRemoteUser(setupInfo)
+	folder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
+	switch ide.Name {
 	case string(config2.IDEFleet):
-		return fleet.NewFleetServer(config.GetRemoteUser(setupInfo), ide.Options).
-			Install(setupInfo.SubstitutionContext.ContainerWorkspaceFolder)
+		return fleet.NewFleetServer(user, ide.Options).Install(folder)
 	case string(config2.IDEJupyterNotebook):
-		return jupyter.NewJupyterNotebookServer(
-			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options).
-			Install()
+		return jupyter.NewJupyterNotebookServer(folder, user, ide.Options).Install()
 	case string(config2.IDEMarimo):
-		return marimo.NewMarimoServer(
-			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options).
-			Install()
+		return marimo.NewMarimoServer(folder, user, ide.Options).Install()
 	case string(config2.IDERStudio):
-		return rstudio.NewRStudioServer(
-			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-			config.GetRemoteUser(setupInfo), ide.Options).
-			Install()
+		return rstudio.NewRStudioServer(folder, user, ide.Options).Install()
 	}
 
 	return nil

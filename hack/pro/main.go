@@ -26,36 +26,58 @@ func main() {
 		basePath = os.Args[2]
 	}
 
+	checksumMap := buildChecksumMap(basePath)
+
+	sourceFile, ok := os.LookupEnv("SOURCE_FILE")
+	absPath := loadProviderSource(sourceFile, ok)
+
+	replaced := strings.ReplaceAll(provider, "##VERSION##", os.Args[1])
+	replaced = applyChecksums(replaced, checksumMap, os.Getenv("PARTIAL") == "true")
+
+	if !ok {
+		fmt.Println(replaced)
+		return
+	}
+
+	// #nosec G306,G703 -- TODO Consider using a more secure permission setting and ownership if needed.
+	if err := os.WriteFile(absPath, []byte(replaced), 0o644); err != nil {
+		panic(err)
+	}
+}
+
+func buildChecksumMap(basePath string) map[string]string {
 	bin := config.BinaryName
-	checksumMap := map[string]string{
+	return map[string]string{
 		filepath.Join(basePath, bin+"-linux-amd64"):       "##CHECKSUM_LINUX_AMD64##",
 		filepath.Join(basePath, bin+"-linux-arm64"):       "##CHECKSUM_LINUX_ARM64##",
 		filepath.Join(basePath, bin+"-darwin-amd64"):      "##CHECKSUM_DARWIN_AMD64##",
 		filepath.Join(basePath, bin+"-darwin-arm64"):      "##CHECKSUM_DARWIN_ARM64##",
 		filepath.Join(basePath, bin+"-windows-amd64.exe"): "##CHECKSUM_WINDOWS_AMD64##",
 	}
+}
 
-	partial := os.Getenv("PARTIAL") == "true"
-	sourceFile, ok := os.LookupEnv("SOURCE_FILE")
-	absPath := ""
-
-	if ok {
-		var err error
-
-		absPath, err = filepath.Abs(sourceFile)
-		if err != nil {
-			panic(err)
-		}
-
-		providerBytes, err := os.ReadFile(absPath)
-		if err != nil {
-			panic(err)
-		}
-
-		provider = string(providerBytes)
+// loadProviderSource reads SOURCE_FILE into the package-level provider when
+// present and returns its absolute path (empty when unset).
+func loadProviderSource(sourceFile string, ok bool) string {
+	if !ok {
+		return ""
 	}
 
-	replaced := strings.ReplaceAll(provider, "##VERSION##", os.Args[1])
+	absPath, err := filepath.Abs(sourceFile)
+	if err != nil {
+		panic(err)
+	}
+
+	providerBytes, err := os.ReadFile(absPath)
+	if err != nil {
+		panic(err)
+	}
+
+	provider = string(providerBytes)
+	return absPath
+}
+
+func applyChecksums(content string, checksumMap map[string]string, partial bool) string {
 	for k, v := range checksumMap {
 		checksum, err := File(k)
 		if err != nil {
@@ -66,18 +88,9 @@ func main() {
 			panic(fmt.Errorf("generate checksum for %s: %w", k, err))
 		}
 
-		replaced = strings.ReplaceAll(replaced, v, checksum)
+		content = strings.ReplaceAll(content, v, checksum)
 	}
-
-	if ok {
-		// #nosec G306,G703 -- TODO Consider using a more secure permission setting and ownership if needed.
-		err := os.WriteFile(absPath, []byte(replaced), 0o644)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		fmt.Println(replaced)
-	}
+	return content
 }
 
 // File hashes a given file to a sha256 string.
