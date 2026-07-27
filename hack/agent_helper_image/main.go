@@ -6,6 +6,7 @@
 //
 //	build              cross-compile the helper binaries (default)
 //	version            resolve the image version and emit value=<version>
+//	exists             report whether an image tag already exists in the registry
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -40,6 +42,8 @@ func main() {
 		err = runBuild(args)
 	case "version":
 		err = runVersion(args)
+	case "exists":
+		err = runExists(args)
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}
@@ -110,15 +114,44 @@ func runVersion(args []string) error {
 	}
 
 	fmt.Println(version)
-	if out := os.Getenv("GITHUB_OUTPUT"); out != "" {
-		f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if _, err := fmt.Fprintf(f, "value=%s\n", version); err != nil {
-			return err
-		}
+	return writeOutput("value", version)
+}
+
+// runExists reports whether image:tag already exists in the registry, emitting
+// value=true|false to $GITHUB_OUTPUT so the publish workflow can skip the push
+// for an already-published version. It relies on the ambient docker credentials
+// established by an earlier registry login.
+func runExists(args []string) error {
+	fs := flag.NewFlagSet("exists", flag.ExitOnError)
+	image := fs.String("image", "", "image repository (without tag)")
+	tag := fs.String("tag", "", "image tag to check")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	return nil
+	if *image == "" || *tag == "" {
+		return fmt.Errorf("both -image and -tag are required")
+	}
+
+	ref := *image + ":" + *tag
+	exists := exec.Command("docker", "manifest", "inspect", ref).Run() == nil
+	if exists {
+		fmt.Printf("::notice::%s already exists; skipping push\n", ref)
+	}
+	return writeOutput("value", strconv.FormatBool(exists))
+}
+
+// writeOutput appends key=value to $GITHUB_OUTPUT when running under GitHub
+// Actions; otherwise it is a no-op.
+func writeOutput(key, value string) error {
+	out := os.Getenv("GITHUB_OUTPUT")
+	if out == "" {
+		return nil
+	}
+	f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "%s=%s\n", key, value)
+	return err
 }

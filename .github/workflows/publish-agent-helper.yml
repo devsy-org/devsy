@@ -68,15 +68,7 @@ jobs:
       - name: check tag exists
         id: exists
         if: ${{ github.event_name != 'pull_request' }}
-        run: |
-          set -euo pipefail
-          ref="${{ env.IMAGE }}:${{ steps.version.outputs.value }}"
-          if docker manifest inspect "$ref" >/dev/null 2>&1; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::$ref already exists; skipping push"
-          else
-            echo "value=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: go run ./hack/agent_helper_image exists -image "${{ env.IMAGE }}" -tag "${{ steps.version.outputs.value }}"
 
       - name: docker metadata
         id: meta
