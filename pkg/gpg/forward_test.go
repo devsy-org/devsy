@@ -39,12 +39,15 @@ func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		// each "run" exits immediately, forcing the supervisor to restart it
 		superviseForward(ctx, "/bin/sh", []string{"-c", "printf x >> " + runs})
 		close(done)
 	}()
 
-	time.Sleep(120 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		data, _ := os.ReadFile(runs) //nolint:gosec // test path is created by the test
+		return strings.Count(string(data), "x") >= 2
+	}, 5*time.Second, 10*time.Millisecond, "forward should be restarted after it exits")
+
 	cancel()
 
 	select {
@@ -52,11 +55,6 @@ func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("superviseForward did not stop after ctx cancel")
 	}
-
-	data, err := os.ReadFile(runs) //nolint:gosec // test path is created by the test
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, strings.Count(string(data), "x"), 2,
-		"forward should have been restarted after exiting")
 }
 
 func TestSuperviseForward_StopsImmediatelyIfCancelled(t *testing.T) {

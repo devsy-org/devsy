@@ -96,11 +96,6 @@ func (g *GPGConf) ImportOwnerTrust() error {
 	return gpgOwnerTrustCmd.Run()
 }
 
-// gpgConfDirectives are the gpg.conf options required for agent forwarding.
-// no-autostart is essential: without it, any gpg invocation made while the
-// forwarded socket is momentarily unavailable starts a local gpg-agent, which
-// replaces the forwarded-socket symlink with an empty local socket and
-// permanently breaks forwarding for the session.
 var gpgConfDirectives = []string{"use-agent", "no-autostart"}
 
 func (g *GPGConf) SetupGpgConf() error {
@@ -121,7 +116,6 @@ func (g *GPGConf) SetupGpgConf() error {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Avoid concatenating onto a final line that lacks a trailing newline.
 	needsLeadingNewline := len(gpgConfig) > 0 && !strings.HasSuffix(string(gpgConfig), "\n")
 
 	for _, directive := range gpgConfDirectives {
@@ -141,9 +135,6 @@ func (g *GPGConf) SetupGpgConf() error {
 	return nil
 }
 
-// containsDirective reports whether the gpg.conf contents already enable the
-// given directive on its own line (ignoring surrounding whitespace), so we do
-// not append duplicates.
 func containsDirective(config, directive string) bool {
 	for line := range strings.SplitSeq(config, "\n") {
 		if strings.TrimSpace(line) == directive {

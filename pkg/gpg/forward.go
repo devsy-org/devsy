@@ -12,18 +12,13 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
-// Backoff bounds for restarting the forwarding process; vars so tests can
-// shrink them.
 var (
 	forwardRestartMinBackoff = time.Second
 	forwardRestartMaxBackoff = 30 * time.Second
 )
 
-// ForwardAgent starts a background SSH connection that forwards the local GPG
-// agent and keeps it alive for the lifetime of ctx. The forwarding process is
-// supervised: if it exits (e.g. the connection drops while roaming), it is
-// restarted with exponential backoff so gpg forwarding self-heals without
-// reopening the workspace. It stops when ctx is cancelled.
+// ForwardAgent starts a supervised background SSH connection that forwards the
+// local GPG agent, restarting it until ctx is cancelled.
 func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error {
 	log.Debug("gpg forwarding enabled, performing immediately")
 
@@ -50,10 +45,6 @@ func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error
 	return nil
 }
 
-// superviseForward runs the forwarding command and restarts it whenever it
-// exits, until ctx is cancelled. Backoff grows exponentially on repeated
-// failures and resets once a run stays up longer than the maximum backoff, so
-// a flapping connection is retried gently while a stable one recovers quickly.
 func superviseForward(ctx context.Context, execPath string, args []string) {
 	backoff := forwardRestartMinBackoff
 	for {

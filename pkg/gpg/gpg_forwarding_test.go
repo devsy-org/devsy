@@ -22,8 +22,6 @@ func TestSetupGpgConf_WritesRequiredDirectives(t *testing.T) {
 	for _, d := range gpgConfDirectives {
 		assert.Contains(t, got, d, "gpg.conf must enable %q for forwarding", d)
 	}
-	// no-autostart is the directive that stops gpg spawning a local agent
-	// that would clobber the forwarded socket.
 	assert.Contains(t, gpgConfDirectives, "no-autostart")
 }
 
@@ -62,7 +60,6 @@ func TestSetupGpgConf_ExistingFileWithoutTrailingNewline(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
 
 	g := &GPGConf{}
-	// no trailing newline on the existing directive
 	require.NoError(t, os.WriteFile(g.getConfigPath(), []byte("use-agent"), 0o600))
 	require.NoError(t, g.SetupGpgConf())
 
