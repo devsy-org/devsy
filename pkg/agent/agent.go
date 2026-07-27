@@ -319,6 +319,18 @@ func DeleteWorkspaceBusyFile(folder string) {
 	_ = os.Remove(filepath.Join(folder, config.WorkspaceBusyFile))
 }
 
+// PersistAgentWorkspaceInfo writes the workspace info back to workspace.json
+// under workspaceInfo.Origin.
+func PersistAgentWorkspaceInfo(workspaceInfo *provider2.AgentWorkspaceInfo) error {
+	if workspaceInfo == nil || workspaceInfo.Origin == "" {
+		return errors.New("workspace origin is not set")
+	}
+	return writeWorkspaceInfo(
+		filepath.Join(workspaceInfo.Origin, provider2.WorkspaceConfigFile),
+		workspaceInfo,
+	)
+}
+
 func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo) error {
 	// copy workspace info
 	cloned := provider2.CloneAgentWorkspaceInfo(workspaceInfo)
@@ -327,7 +339,7 @@ func writeWorkspaceInfo(file string, workspaceInfo *provider2.AgentWorkspaceInfo
 	cloned.CLIOptions = provider2.CLIOptions{}
 
 	// encode workspace info
-	encoded, err := json.Marshal(workspaceInfo)
+	encoded, err := json.Marshal(cloned)
 	if err != nil {
 		return err
 	}

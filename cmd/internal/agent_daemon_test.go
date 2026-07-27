@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -87,6 +88,48 @@ func TestFindLatestActivity_PicksLatest(t *testing.T) {
 	require.NotNil(t, activity)
 	require.NotNil(t, ws)
 	assert.Equal(t, recentTime, *activity)
+}
+
+func workspaceWithShutdownAction(action string) *provider2.AgentWorkspaceInfo {
+	ws := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: "ws-test"}}
+	if action != "" {
+		ws.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+			Config: &config.DevContainerConfig{
+				DevContainerConfigBase: config.DevContainerConfigBase{ShutdownAction: action},
+			},
+		}
+	}
+	return ws
+}
+
+func TestEffectiveShutdownAction(t *testing.T) {
+	t.Run("prefers per-workspace config over flag", func(t *testing.T) {
+		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionStopContainer}
+		ws := workspaceWithShutdownAction(config.ShutdownActionNone)
+		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
+	})
+
+	t.Run("falls back to flag when workspace has no config", func(t *testing.T) {
+		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
+		ws := workspaceWithShutdownAction("")
+		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
+	})
+
+	t.Run("falls back to flag when config action is empty", func(t *testing.T) {
+		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
+		ws := &provider2.AgentWorkspaceInfo{
+			Workspace: &provider2.Workspace{ID: "ws-test"},
+			LastDevContainerConfig: &config.DevContainerConfigWithPath{
+				Config: &config.DevContainerConfig{},
+			},
+		}
+		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
+	})
+
+	t.Run("falls back to flag for nil workspace", func(t *testing.T) {
+		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionStopContainer}
+		assert.Equal(t, config.ShutdownActionStopContainer, cmd.effectiveShutdownAction(nil))
+	})
 }
 
 func TestEffectiveActivity(t *testing.T) {

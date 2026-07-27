@@ -162,6 +162,10 @@ func (cmd *UpCmd) up(
 		return err
 	}
 
+	// Persist so the daemon, started before the build resolved the config, can
+	// read the workspace's shutdownAction on the first up.
+	persistResolvedConfig(workspaceInfo, result)
+
 	// runner.Up can return (result, nil) where result carries a structured
 	// Error forwarded from the inner container-setup step. Treat that as a
 	// failure so the agent process exits non-zero and the host doesn't try
@@ -745,6 +749,20 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo) error {
 		workspaceInfo.CLIOptions.DaemonInterval,
 		shutdownAction,
 	)
+}
+
+func persistResolvedConfig(
+	workspaceInfo *provider.AgentWorkspaceInfo,
+	result *config2.Result,
+) {
+	if result == nil || result.Error != "" || result.DevContainerConfigWithPath == nil {
+		return
+	}
+
+	workspaceInfo.LastDevContainerConfig = result.DevContainerConfigWithPath
+	if err := agent.PersistAgentWorkspaceInfo(workspaceInfo); err != nil {
+		log.Errorf("persist resolved devcontainer config: %v", err)
+	}
 }
 
 func downloadLocalFolder(

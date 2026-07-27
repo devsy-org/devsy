@@ -173,7 +173,7 @@ func (cmd *DaemonCmd) checkAndShutdown(
 	latestActivity time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
 ) {
-	if cmd.ShutdownAction == config.ShutdownActionNone {
+	if cmd.effectiveShutdownAction(workspace) == config.ShutdownActionNone {
 		return
 	}
 
@@ -199,6 +199,20 @@ func (cmd *DaemonCmd) checkAndShutdown(
 	}
 
 	cmd.runShutdownCommand(ctx, workspace)
+}
+
+// effectiveShutdownAction prefers the workspace's resolved config, falling back
+// to the daemon's install-time flag when the workspace has none yet.
+func (cmd *DaemonCmd) effectiveShutdownAction(
+	workspace *provider2.AgentWorkspaceInfo,
+) string {
+	if workspace != nil &&
+		workspace.LastDevContainerConfig != nil &&
+		workspace.LastDevContainerConfig.Config != nil &&
+		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
+		return workspace.LastDevContainerConfig.Config.ShutdownAction
+	}
+	return cmd.ShutdownAction
 }
 
 func (cmd *DaemonCmd) runShutdownCommand(
