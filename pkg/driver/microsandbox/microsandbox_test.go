@@ -15,14 +15,16 @@ import (
 )
 
 const (
-	wsName     = "devsy-ws1"
-	testImage  = "example:latest"
-	testUser   = "vscode"
-	imgX       = "x:1"
-	testImg    = "img:1"
-	shPath     = "/bin/sh"
-	callFind   = "find:" + wsName
-	callRemove = "remove:" + wsName
+	wsName      = "devsy-ws1"
+	testImage   = "example:latest"
+	testUser    = "vscode"
+	imgX        = "x:1"
+	testImg     = "img:1"
+	shPath      = "/bin/sh"
+	callFind    = "find:" + wsName
+	callRemove  = "remove:" + wsName
+	testBindSrc = "/host/proj"
+	testBindDst = "/workspaces/proj"
 )
 
 // fakeClient is an in-memory sandboxClient that records calls, so the driver's
@@ -448,25 +450,40 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
-func TestBuildSpecMapsVolumeMountsSkipsBind(t *testing.T) {
+func TestBuildSpecMapsAllMountTypes(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
 	spec := d.buildSpec("ws1", &driver.RunOptions{
 		Image: imgX,
 		Mounts: []*config.Mount{
 			{Type: driver.MountTypeVolume, Source: "vol1", Target: "/data"},
 			{Type: driver.MountTypeTmpfs, Target: "/scratch"},
-			{Type: driver.MountTypeBind, Source: "/host", Target: "/mnt"},
+			{Type: driver.MountTypeBind, Source: testBindSrc, Target: "/mnt"},
 			nil,
 		},
 	})
-	if len(spec.Mounts) != 2 {
-		t.Fatalf("got %d mounts, want 2 (bind + nil skipped): %+v", len(spec.Mounts), spec.Mounts)
+	want := []volumeMount{
+		{Target: "/data", Volume: "vol1"},
+		{Target: "/scratch", Tmpfs: true},
+		{Target: "/mnt", Source: testBindSrc},
 	}
-	if spec.Mounts[0].Target != "/data" || spec.Mounts[0].Volume != "vol1" || spec.Mounts[0].Tmpfs {
-		t.Errorf("volume mount mapped wrong: %+v", spec.Mounts[0])
+	if !slices.Equal(spec.Mounts, want) {
+		t.Errorf("mounts = %+v, want %+v", spec.Mounts, want)
 	}
-	if spec.Mounts[1].Target != "/scratch" || !spec.Mounts[1].Tmpfs {
-		t.Errorf("tmpfs mount mapped wrong: %+v", spec.Mounts[1])
+}
+
+func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	spec := d.buildSpec("ws1", &driver.RunOptions{
+		Image: imgX,
+		WorkspaceMount: &config.Mount{
+			Type:   driver.MountTypeBind,
+			Source: testBindSrc,
+			Target: testBindDst,
+		},
+	})
+	want := []volumeMount{{Target: testBindDst, Source: testBindSrc}}
+	if !slices.Equal(spec.Mounts, want) {
+		t.Errorf("mounts = %+v, want %+v", spec.Mounts, want)
 	}
 }
 

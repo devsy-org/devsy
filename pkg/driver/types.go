@@ -47,6 +47,13 @@ type RunOptionsDriver interface {
 	RunDevContainer(ctx context.Context, workspaceID string, options *RunOptions) error
 }
 
+// WorkspaceChowner is a capability interface for drivers whose workspace bind
+// mount is root-owned in the guest, so the agent must chown it to the remote
+// user during setup rather than relying on a UID remap.
+type WorkspaceChowner interface {
+	RequiresWorkspaceChown() bool
+}
+
 // ReprovisioningDriver is a capability interface for drivers that can reprovision
 // an existing devcontainer in place. Reprovisioning re-runs the container, so it
 // embeds RunOptionsDriver.

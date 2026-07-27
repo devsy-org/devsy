@@ -22,9 +22,11 @@ type sandboxSpec struct {
 }
 
 type volumeMount struct {
-	Target string
-	Volume string
-	Tmpfs  bool
+	Target   string
+	Source   string
+	Volume   string
+	Tmpfs    bool
+	ReadOnly bool
 }
 
 type sandboxInfo struct {

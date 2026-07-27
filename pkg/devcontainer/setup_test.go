@@ -11,11 +11,12 @@ import (
 
 func TestShouldChownWorkspace(t *testing.T) {
 	cases := []struct {
-		name           string
-		goos           string
-		isDockerDriver bool
-		isPodman       bool
-		want           bool
+		name             string
+		goos             string
+		isDockerDriver   bool
+		isPodman         bool
+		driverNeedsChown bool
+		want             bool
 	}{
 		{
 			name: "linux docker host always chowns",
@@ -47,13 +48,23 @@ func TestShouldChownWorkspace(t *testing.T) {
 			name: "podman on linux chowns",
 			goos: goosLinux, isDockerDriver: true, isPodman: true, want: true,
 		},
+		{
+			// microsandbox shares the workspace over virtiofs root-owned, so a
+			// non-root remote user needs the chown even on macOS.
+			name:             "driver needing chown chowns despite docker driver on macOS",
+			goos:             goosDarwin,
+			isDockerDriver:   true,
+			isPodman:         false,
+			driverNeedsChown: true,
+			want:             true,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman)
+			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown)
 			if got != c.want {
-				t.Errorf("shouldChownWorkspace(%q, %v, %v) = %v, want %v",
-					c.goos, c.isDockerDriver, c.isPodman, got, c.want)
+				t.Errorf("shouldChownWorkspace(%q, %v, %v, %v) = %v, want %v",
+					c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown, got, c.want)
 			}
 		})
 	}

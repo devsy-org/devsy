@@ -243,6 +243,12 @@ func (d *microsandboxDriver) UpdateContainerUserUID(
 	return nil
 }
 
+// RequiresWorkspaceChown reports that the virtiofs workspace share is
+// root-owned in the guest, so the agent must chown it to the remote user.
+func (d *microsandboxDriver) RequiresWorkspaceChown() bool {
+	return true
+}
+
 func (d *microsandboxDriver) StartDevContainer(ctx context.Context, workspaceID string) error {
 	if err := d.client.Start(ctx, sandboxName(workspaceID)); err != nil {
 		return fmt.Errorf("start microsandbox VM: %w", err)
@@ -350,27 +356,48 @@ func (d *microsandboxDriver) buildSpec(workspaceID string, options *driver.RunOp
 		Labels:      labels,
 		Ephemeral:   d.defaults.ephemeral,
 		IdleTimeout: d.defaults.idleTimeout,
-		Mounts:      volumeMounts(options.Mounts),
+		Mounts:      volumeMounts(options),
 		MaxMemory:   d.defaults.maxMemory,
 		MaxCPUs:     d.defaults.maxCPUs,
 		BlockEgress: d.defaults.blockEgress,
 	}
 }
 
-func volumeMounts(mounts []*config.Mount) []volumeMount {
+func volumeMounts(options *driver.RunOptions) []volumeMount {
 	var out []volumeMount
-	for _, m := range mounts {
-		if m == nil || m.Target == "" {
-			continue
-		}
-		switch m.Type {
-		case driver.MountTypeVolume:
-			out = append(out, volumeMount{Target: m.Target, Volume: m.Source})
-		case driver.MountTypeTmpfs:
-			out = append(out, volumeMount{Target: m.Target, Tmpfs: true})
+	if b := bindMount(options.WorkspaceMount); b != nil {
+		out = append(out, *b)
+	}
+	for _, m := range options.Mounts {
+		if vm, ok := toVolumeMount(m); ok {
+			out = append(out, vm)
 		}
 	}
 	return out
+}
+
+func toVolumeMount(m *config.Mount) (volumeMount, bool) {
+	if m == nil || m.Target == "" {
+		return volumeMount{}, false
+	}
+	switch m.Type {
+	case driver.MountTypeBind:
+		if b := bindMount(m); b != nil {
+			return *b, true
+		}
+	case driver.MountTypeVolume:
+		return volumeMount{Target: m.Target, Volume: m.Source}, true
+	case driver.MountTypeTmpfs:
+		return volumeMount{Target: m.Target, Tmpfs: true}, true
+	}
+	return volumeMount{}, false
+}
+
+func bindMount(m *config.Mount) *volumeMount {
+	if m == nil || m.Source == "" || m.Target == "" {
+		return nil
+	}
+	return &volumeMount{Target: m.Target, Source: m.Source, ReadOnly: m.IsReadOnly()}
 }
 
 func warnUnsupportedOptions(options *driver.RunOptions) {

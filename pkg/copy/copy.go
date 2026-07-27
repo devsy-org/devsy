@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -40,22 +41,31 @@ func ChownR(path string, userName string) error {
 
 	uidInt, _ := strconv.Atoi(userID.Uid)
 	gidInt, _ := strconv.Atoi(userID.Gid)
-	return filepath.WalkDir(path, func(name string, dirEntry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	// #nosec G115 -- a resolved system uid is non-negative and fits uint32.
+	uidU32 := uint32(uidInt)
 
+	// A single un-chownable entry (e.g. a read-only file on a virtiofs share)
+	// must not abort the walk and leave the rest of the tree unowned.
+	var errs []error
+	_ = filepath.WalkDir(path, func(name string, dirEntry fs.DirEntry, err error) error {
+		if err != nil {
+			errs = append(errs, err)
+			return nil
+		}
 		info, err := dirEntry.Info()
 		if err != nil {
 			return nil
 		}
-
-		if IsUID(info, uint32(uidInt)) {
+		if IsUID(info, uidU32) {
 			return nil
 		}
-
-		return os.Lchown(name, uidInt, gidInt)
+		// #nosec G122 -- best-effort chown of a freshly provisioned tree we own; WalkDir yields real paths.
+		if err := os.Lchown(name, uidInt, gidInt); err != nil {
+			errs = append(errs, err)
+		}
+		return nil
 	})
+	return errors.Join(errs...)
 }
 
 func MkdirAllChown(path string, perm os.FileMode, userName string) error {

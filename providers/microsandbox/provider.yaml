@@ -17,6 +17,7 @@ optionGroups:
 options:
   MICROSANDBOX_MEMORY:
     description: "Guest memory limit in MiB. Empty uses the runtime default."
+    default: "2048"
   MICROSANDBOX_CPUS:
     description: "Number of virtual CPUs. Empty uses the runtime default."
   MICROSANDBOX_MAX_MEMORY:
