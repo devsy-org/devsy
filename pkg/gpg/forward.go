@@ -12,16 +12,15 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
-var (
-	forwardRestartMinBackoff = time.Second
-	forwardRestartMaxBackoff = 30 * time.Second
-)
+type backoff struct {
+	min, max time.Duration
+}
+
+var forwardRestartBackoff = backoff{min: time.Second, max: 30 * time.Second}
 
 // ForwardAgent starts a supervised background SSH connection that forwards the
 // local GPG agent, restarting it until ctx is cancelled.
 func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error {
-	log.Debug("gpg forwarding enabled, performing immediately")
-
 	execPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -40,13 +39,13 @@ func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error
 
 	args := buildForwardArgs(remoteUser, client.Context(), client.Workspace())
 
-	go superviseForward(ctx, execPath, args)
+	go superviseForward(ctx, execPath, args, forwardRestartBackoff)
 
 	return nil
 }
 
-func superviseForward(ctx context.Context, execPath string, args []string) {
-	backoff := forwardRestartMinBackoff
+func superviseForward(ctx context.Context, execPath string, args []string, b backoff) {
+	delay := b.min
 	for {
 		if ctx.Err() != nil {
 			return
@@ -59,17 +58,17 @@ func superviseForward(ctx context.Context, execPath string, args []string) {
 			return
 		}
 
-		if time.Since(start) >= forwardRestartMaxBackoff {
-			backoff = forwardRestartMinBackoff
+		if time.Since(start) >= b.max {
+			delay = b.min
 		}
-		log.Errorf("gpg-agent forward exited (%v); restarting in %s", runErr, backoff)
+		log.Errorf("gpg-agent forward exited (%v); restarting in %s", runErr, delay)
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
+		case <-time.After(delay):
 		}
-		backoff = min(2*backoff, forwardRestartMaxBackoff)
+		delay = min(2*delay, b.max)
 	}
 }
 

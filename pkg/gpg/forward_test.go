@@ -30,16 +30,13 @@ func TestBuildForwardArgs(t *testing.T) {
 }
 
 func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
-	oldMin, oldMax := forwardRestartMinBackoff, forwardRestartMaxBackoff
-	forwardRestartMinBackoff, forwardRestartMaxBackoff = 10*time.Millisecond, 20*time.Millisecond
-	t.Cleanup(func() { forwardRestartMinBackoff, forwardRestartMaxBackoff = oldMin, oldMax })
-
 	runs := filepath.Join(t.TempDir(), "runs")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
 	go func() {
-		superviseForward(ctx, "/bin/sh", []string{"-c", "printf x >> " + runs})
+		superviseForward(ctx, "/bin/sh", []string{"-c", "printf x >> " + runs},
+			backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond})
 		close(done)
 	}()
 
@@ -63,7 +60,8 @@ func TestSuperviseForward_StopsImmediatelyIfCancelled(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		superviseForward(ctx, "/bin/sh", []string{"-c", "exit 0"})
+		superviseForward(ctx, "/bin/sh", []string{"-c", "exit 0"},
+			backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond})
 		close(done)
 	}()
 

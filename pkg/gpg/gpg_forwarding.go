@@ -35,7 +35,7 @@ func IsGpgTunnelRunning(
 		command = fmt.Sprintf("su -c \"%s\" '%s'", command, user)
 	}
 
-	// capture the output, if it's empty it means we don't have gpg-forwarding
+	// empty output means the forwarded agent exposes no secret keys
 	var out bytes.Buffer
 	err := devssh.Run(ctx, devssh.RunOptions{
 		Client:  client,
@@ -44,7 +44,7 @@ func IsGpgTunnelRunning(
 		Stderr:  writer,
 	})
 
-	return err == nil && len(out.Bytes()) > 1
+	return err == nil && strings.TrimSpace(out.String()) != ""
 }
 
 func GetHostPubKey() ([]byte, error) {
@@ -56,57 +56,42 @@ func GetHostOwnerTrust() ([]byte, error) {
 }
 
 func (g *GPGConf) StopGpgAgent() error {
-	return exec.Command("gpgconf", []string{"--kill", "gpg-agent"}...).Run()
+	return exec.Command("gpgconf", "--kill", "gpg-agent").Run()
 }
 
 func (g *GPGConf) ImportGpgKey() error {
-	gpgImportCmd := exec.Command("gpg", "--import")
-
-	stdin, err := gpgImportCmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		defer func() { _ = stdin.Close() }()
-		_, _ = stdin.Write(g.PublicKey)
-	}()
-
-	out, err := gpgImportCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("import gpg public key: %s: %w", out, err)
-	}
-
-	return nil
+	return runGpgWithStdin(g.PublicKey, "--import")
 }
 
 func (g *GPGConf) ImportOwnerTrust() error {
-	gpgOwnerTrustCmd := exec.Command("gpg", "--import-ownertrust")
+	return runGpgWithStdin(g.OwnerTrust, "--import-ownertrust")
+}
 
-	stdin, err := gpgOwnerTrustCmd.StdinPipe()
+func runGpgWithStdin(input []byte, args ...string) error {
+	//nolint:gosec // args are internal gpg directive literals
+	cmd := exec.Command("gpg", args...)
+
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-
 	go func() {
 		defer func() { _ = stdin.Close() }()
-		_, _ = stdin.Write(g.OwnerTrust)
+		_, _ = stdin.Write(input)
 	}()
 
-	return gpgOwnerTrustCmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gpg %s: %s: %w", strings.Join(args, " "), out, err)
+	}
+	return nil
 }
 
 var gpgConfDirectives = []string{"use-agent", "no-autostart"}
 
 func (g *GPGConf) SetupGpgConf() error {
-	if _, err := os.Stat(g.getConfigPath()); err != nil {
-		if _, err = os.Create(g.getConfigPath()); err != nil {
-			return err
-		}
-	}
-
 	gpgConfig, err := os.ReadFile(g.getConfigPath())
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
@@ -160,11 +145,9 @@ func (g *GPGConf) SetupRemoteSocketDirTree() error {
 	).Run()
 }
 
-// This function will normalize the location of the forwarded socket.
-// the forwarding that happens in pkg/ssh/forward.go will forward the socket in
-// the same path (eg. /Users/foo/.gnupg/S.gpg-agent)
-// This function will use hardlinks to normalize it to where linux usually
-// expects the socket to be.
+// SetupRemoteSocketLink symlinks the well-known gpg-agent socket paths to the
+// forwarded socket, which pkg/ssh/forward.go binds at g.SocketPath (the host's
+// path, e.g. /Users/foo/.gnupg/S.gpg-agent).
 func (g *GPGConf) SetupRemoteSocketLink() error {
 	err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".gnupg"), 0o700)
 	if err != nil {
