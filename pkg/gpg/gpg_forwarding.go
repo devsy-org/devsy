@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
@@ -32,7 +33,7 @@ func IsGpgTunnelRunning(
 
 	command := "gpg -K"
 	if user != "" && user != "root" {
-		command = fmt.Sprintf("su -c \"%s\" '%s'", command, user)
+		command = shellescape.QuoteCommand([]string{"su", "-c", command, user})
 	}
 
 	// empty output means the forwarded agent exposes no secret keys
@@ -55,7 +56,7 @@ func GetHostOwnerTrust() ([]byte, error) {
 	return exec.Command("gpg", "--export-ownertrust").Output()
 }
 
-func (g *GPGConf) StopGpgAgent() error {
+func StopGpgAgent() error {
 	return exec.Command("gpgconf", "--kill", "gpg-agent").Run()
 }
 
@@ -89,22 +90,26 @@ func runGpgWithStdin(input []byte, args ...string) error {
 
 var gpgConfDirectives = []string{"use-agent", "no-autostart"}
 
-func (g *GPGConf) SetupGpgConf() error {
-	gpgConfig, err := os.ReadFile(g.getConfigPath())
+func SetupGpgConf() error {
+	existing, err := os.ReadFile(gpgConfigPath())
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	f, err := os.OpenFile(g.getConfigPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(gpgConfigPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
 
-	needsLeadingNewline := len(gpgConfig) > 0 && !strings.HasSuffix(string(gpgConfig), "\n")
+	return appendMissingDirectives(f, string(existing))
+}
+
+func appendMissingDirectives(f *os.File, existing string) error {
+	needsLeadingNewline := existing != "" && !strings.HasSuffix(existing, "\n")
 
 	for _, directive := range gpgConfDirectives {
-		if containsDirective(string(gpgConfig), directive) {
+		if containsDirective(existing, directive) {
 			continue
 		}
 		line := directive + "\n"
@@ -177,6 +182,6 @@ func (g *GPGConf) SetupRemoteSocketLink() error {
 	return nil
 }
 
-func (g *GPGConf) getConfigPath() string {
+func gpgConfigPath() string {
 	return filepath.Join(os.Getenv("HOME"), ".gnupg", "gpg.conf")
 }

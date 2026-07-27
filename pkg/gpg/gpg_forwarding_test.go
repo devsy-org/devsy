@@ -15,10 +15,9 @@ func TestSetupGpgConf_WritesRequiredDirectives(t *testing.T) {
 	t.Setenv("HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
 
-	g := &GPGConf{}
-	require.NoError(t, g.SetupGpgConf())
+	require.NoError(t, SetupGpgConf())
 
-	got := readConf(t, g.getConfigPath())
+	got := readConf(t, gpgConfigPath())
 	for _, d := range gpgConfDirectives {
 		assert.Contains(t, got, d, "gpg.conf must enable %q for forwarding", d)
 	}
@@ -30,12 +29,11 @@ func TestSetupGpgConf_Idempotent(t *testing.T) {
 	t.Setenv("HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
 
-	g := &GPGConf{}
-	require.NoError(t, g.SetupGpgConf())
-	require.NoError(t, g.SetupGpgConf())
+	require.NoError(t, SetupGpgConf())
+	require.NoError(t, SetupGpgConf())
 
 	for _, d := range gpgConfDirectives {
-		assert.Equal(t, 1, strings.Count(readConf(t, g.getConfigPath()), d+"\n"),
+		assert.Equal(t, 1, strings.Count(readConf(t, gpgConfigPath()), d+"\n"),
 			"directive %q should not be duplicated on repeated setup", d)
 	}
 }
@@ -45,11 +43,10 @@ func TestSetupGpgConf_PreservesExistingDirectives(t *testing.T) {
 	t.Setenv("HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
 
-	g := &GPGConf{}
-	require.NoError(t, os.WriteFile(g.getConfigPath(), []byte("use-agent\n"), 0o600))
-	require.NoError(t, g.SetupGpgConf())
+	require.NoError(t, os.WriteFile(gpgConfigPath(), []byte("use-agent\n"), 0o600))
+	require.NoError(t, SetupGpgConf())
 
-	got := readConf(t, g.getConfigPath())
+	got := readConf(t, gpgConfigPath())
 	assert.Equal(t, 1, strings.Count(got, "use-agent\n"))
 	assert.Contains(t, got, "no-autostart")
 }
@@ -59,11 +56,10 @@ func TestSetupGpgConf_ExistingFileWithoutTrailingNewline(t *testing.T) {
 	t.Setenv("HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, ".gnupg"), 0o700))
 
-	g := &GPGConf{}
-	require.NoError(t, os.WriteFile(g.getConfigPath(), []byte("use-agent"), 0o600))
-	require.NoError(t, g.SetupGpgConf())
+	require.NoError(t, os.WriteFile(gpgConfigPath(), []byte("use-agent"), 0o600))
+	require.NoError(t, SetupGpgConf())
 
-	got := readConf(t, g.getConfigPath())
+	got := readConf(t, gpgConfigPath())
 	assert.NotContains(t, got, "use-agentno-autostart", "directives must not be concatenated")
 	for _, line := range []string{"use-agent", "no-autostart"} {
 		assert.True(t, containsDirective(got, line), "missing directive %q in %q", line, got)
