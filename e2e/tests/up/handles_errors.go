@@ -2,10 +2,13 @@ package up
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -143,8 +146,18 @@ var _ = ginkgo.Describe(
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir, "--force")
 				})
 
-				err = f.DevsyUp(ctx, tempDir)
-				framework.ExpectError(err, "expected the failing build to error")
+				_, _, err = f.ExecCommandCapture(ctx, []string{
+					"workspace", "up",
+					names.Flag(names.Debug),
+					names.Flag(names.IDE), "none",
+					tempDir,
+				})
+				var exitErr *exec.ExitError
+				gomega.Expect(errors.As(err, &exitErr)).To(gomega.BeTrue(),
+					"expected an exec.ExitError, got %v", err)
+				gomega.Expect(exitErr.ExitCode()).To(
+					gomega.Equal(exitcode.BuildFailedRecoverable),
+					"failed build should exit with the recoverable code")
 
 				err = f.DevsyUp(ctx, tempDir, names.Flag(names.Recovery))
 				framework.ExpectNoError(err)
