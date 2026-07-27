@@ -1,12 +1,6 @@
 // Cross-compiles the agent-helper volume helper for each published arch into
 // images/agent-helper/dist, producing the per-arch binaries the FROM scratch
 // image copies in via TARGETARCH.
-//
-// Subcommands:
-//
-//	build              cross-compile the helper binaries (default)
-//	version            resolve the image version and emit value=<version>
-//	exists             report whether an image tag already exists in the registry
 package main
 
 import (
@@ -90,10 +84,6 @@ func build(dir string) error {
 	return nil
 }
 
-// runVersion resolves the image version, preferring an explicit -tag override
-// and otherwise reading images/agent-helper/VERSION. It emits value=<version>
-// to $GITHUB_OUTPUT when set, so the publish workflow can consume it, and also
-// prints the version to stdout.
 func runVersion(args []string) error {
 	fs := flag.NewFlagSet("version", flag.ExitOnError)
 	dir := fs.String("dir", "images/agent-helper", "agent-helper image directory")
@@ -118,10 +108,6 @@ func runVersion(args []string) error {
 	return writeOutput("value", version)
 }
 
-// runExists reports whether image:tag already exists in the registry, emitting
-// value=true|false to $GITHUB_OUTPUT so the publish workflow can skip the push
-// for an already-published version. It relies on the ambient docker credentials
-// established by an earlier registry login.
 func runExists(args []string) error {
 	fs := flag.NewFlagSet("exists", flag.ExitOnError)
 	image := fs.String("image", "", "image repository (without tag)")
@@ -144,15 +130,6 @@ func runExists(args []string) error {
 	return writeOutput("value", strconv.FormatBool(exists))
 }
 
-// manifestExists reports whether ref resolves in the registry. A response
-// indicating the tag or package is absent yields (false, nil); any other
-// failure (network, rate limit, transient registry outage) is returned as an
-// error so it is not silently misread as an available tag.
-//
-// This runs after a push-scoped registry login, so a "denied"/"unauthorized"
-// response means the package does not exist yet (e.g. the first publish) rather
-// than a credential problem — bad credentials would already have failed the
-// login step. Those are therefore treated as absence.
 func manifestExists(ref string) (bool, error) {
 	var stderr bytes.Buffer
 	cmd := exec.Command("docker", "manifest", "inspect", ref)
@@ -184,8 +161,6 @@ func isAbsent(stderr string) bool {
 	return false
 }
 
-// writeOutput appends key=value to $GITHUB_OUTPUT when running under GitHub
-// Actions; otherwise it is a no-op.
 func writeOutput(key, value string) error {
 	out := os.Getenv("GITHUB_OUTPUT")
 	if out == "" {
