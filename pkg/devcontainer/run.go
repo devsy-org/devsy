@@ -159,6 +159,29 @@ func (r *runner) Up(
 	return result, err
 }
 
+func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID: r.id,
+		User:        params.User,
+		Command:     params.Command,
+		Stdin:       params.Stdin,
+		Stdout:      params.Stdout,
+		Stderr:      params.Stderr,
+	})
+}
+
+func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
+	if err != nil {
+		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	return containerDetails, nil
+}
+
+func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
+	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+}
+
 // dispatchByConfigKind routes to the container implementation for the config's
 // kind (image/Dockerfile, compose, or default/auto-detected).
 func (r *runner) dispatchByConfigKind(
@@ -181,29 +204,6 @@ func (r *runner) dispatchByConfigKind(
 	default:
 		return r.runDefaultContainer(ctx, params)
 	}
-}
-
-func (r *runner) Command(ctx context.Context, params CommandParams) error {
-	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.id,
-		User:        params.User,
-		Command:     params.Command,
-		Stdin:       params.Stdin,
-		Stdout:      params.Stdout,
-		Stderr:      params.Stderr,
-	})
-}
-
-func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
-	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
-	if err != nil {
-		return nil, fmt.Errorf("find dev container: %w", err)
-	}
-	return containerDetails, nil
-}
-
-func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
-	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
 }
 
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is
