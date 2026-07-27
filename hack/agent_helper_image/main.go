@@ -135,10 +135,13 @@ func manifestExists(ref string) (bool, error) {
 	cmd := exec.Command("docker", "manifest", "inspect", ref)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if isAbsent(stderr.String()) {
+		msg := strings.TrimSpace(stderr.String())
+		if isAbsent(msg) {
 			return false, nil
 		}
-		return false, fmt.Errorf("docker manifest inspect %s: %w: %s", ref, err, strings.TrimSpace(stderr.String()))
+		return false, fmt.Errorf(
+			"docker manifest inspect %s: %w: %s", ref, err, msg,
+		)
 	}
 	return true, nil
 }
