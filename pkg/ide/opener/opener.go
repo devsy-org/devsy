@@ -324,7 +324,7 @@ type browserIDESpec struct {
 
 func openBrowserIDE(ctx context.Context, params IDEParams, spec browserIDESpec) (string, error) {
 	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(params.Client); err != nil {
+		if err := gpg.ForwardAgent(ctx, params.Client); err != nil {
 			return "", err
 		}
 	}

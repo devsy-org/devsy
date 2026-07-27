@@ -1,8 +1,10 @@
 package gpg
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -10,8 +12,19 @@ import (
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
-// ForwardAgent starts a background SSH connection that forwards the local GPG agent.
-func ForwardAgent(client client2.BaseWorkspaceClient) error {
+// Backoff bounds for restarting the forwarding process; vars so tests can
+// shrink them.
+var (
+	forwardRestartMinBackoff = time.Second
+	forwardRestartMaxBackoff = 30 * time.Second
+)
+
+// ForwardAgent starts a background SSH connection that forwards the local GPG
+// agent and keeps it alive for the lifetime of ctx. The forwarding process is
+// supervised: if it exits (e.g. the connection drops while roaming), it is
+// restarted with exponential backoff so gpg forwarding self-heals without
+// reopening the workspace. It stops when ctx is cancelled.
+func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error {
 	log.Debug("gpg forwarding enabled, performing immediately")
 
 	execPath, err := os.Executable()
@@ -32,14 +45,41 @@ func ForwardAgent(client client2.BaseWorkspaceClient) error {
 
 	args := buildForwardArgs(remoteUser, client.Context(), client.Workspace())
 
-	go func() {
-		//nolint:gosec // execPath comes from os.Executable()
-		if runErr := exec.Command(execPath, args...).Run(); runErr != nil {
-			log.Errorf("failure in forwarding gpg-agent: %v", runErr)
-		}
-	}()
+	go superviseForward(ctx, execPath, args)
 
 	return nil
+}
+
+// superviseForward runs the forwarding command and restarts it whenever it
+// exits, until ctx is cancelled. Backoff grows exponentially on repeated
+// failures and resets once a run stays up longer than the maximum backoff, so
+// a flapping connection is retried gently while a stable one recovers quickly.
+func superviseForward(ctx context.Context, execPath string, args []string) {
+	backoff := forwardRestartMinBackoff
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		start := time.Now()
+		//nolint:gosec // execPath comes from os.Executable()
+		runErr := exec.CommandContext(ctx, execPath, args...).Run()
+		if ctx.Err() != nil {
+			return
+		}
+
+		if time.Since(start) >= forwardRestartMaxBackoff {
+			backoff = forwardRestartMinBackoff
+		}
+		log.Errorf("gpg-agent forward exited (%v); restarting in %s", runErr, backoff)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(2*backoff, forwardRestartMaxBackoff)
+	}
 }
 
 func buildForwardArgs(user, context, workspace string) []string {
