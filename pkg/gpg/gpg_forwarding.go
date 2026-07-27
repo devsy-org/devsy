@@ -96,11 +96,16 @@ func (g *GPGConf) ImportOwnerTrust() error {
 	return gpgOwnerTrustCmd.Run()
 }
 
+// gpgConfDirectives are the gpg.conf options required for agent forwarding.
+// no-autostart is essential: without it, any gpg invocation made while the
+// forwarded socket is momentarily unavailable starts a local gpg-agent, which
+// replaces the forwarded-socket symlink with an empty local socket and
+// permanently breaks forwarding for the session.
+var gpgConfDirectives = []string{"use-agent", "no-autostart"}
+
 func (g *GPGConf) SetupGpgConf() error {
-	_, err := os.Stat(g.getConfigPath())
-	if err != nil {
-		_, err = os.Create(g.getConfigPath())
-		if err != nil {
+	if _, err := os.Stat(g.getConfigPath()); err != nil {
+		if _, err = os.Create(g.getConfigPath()); err != nil {
 			return err
 		}
 	}
@@ -110,20 +115,34 @@ func (g *GPGConf) SetupGpgConf() error {
 		return err
 	}
 
-	if !strings.Contains(string(gpgConfig), "use-agent") {
-		f, err := os.OpenFile(g.getConfigPath(),
-			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = f.Close() }()
+	f, err := os.OpenFile(g.getConfigPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
 
-		if _, err := f.WriteString("use-agent\n"); err != nil {
+	for _, directive := range gpgConfDirectives {
+		if containsDirective(string(gpgConfig), directive) {
+			continue
+		}
+		if _, err := f.WriteString(directive + "\n"); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// containsDirective reports whether the gpg.conf contents already enable the
+// given directive on its own line (ignoring surrounding whitespace), so we do
+// not append duplicates.
+func containsDirective(config, directive string) bool {
+	for _, line := range strings.Split(config, "\n") {
+		if strings.TrimSpace(line) == directive {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *GPGConf) SetupRemoteSocketDirTree() error {
