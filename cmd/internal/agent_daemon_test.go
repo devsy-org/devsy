@@ -109,9 +109,20 @@ func TestEffectiveShutdownAction(t *testing.T) {
 		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
 	})
 
-	t.Run("falls back to flag when config has no action", func(t *testing.T) {
+	t.Run("falls back to flag when workspace has no config", func(t *testing.T) {
 		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
 		ws := workspaceWithShutdownAction("")
+		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
+	})
+
+	t.Run("falls back to flag when config action is empty", func(t *testing.T) {
+		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
+		ws := &provider2.AgentWorkspaceInfo{
+			Workspace: &provider2.Workspace{ID: "ws-test"},
+			LastDevContainerConfig: &config.DevContainerConfigWithPath{
+				Config: &config.DevContainerConfig{},
+			},
+		}
 		assert.Equal(t, config.ShutdownActionNone, cmd.effectiveShutdownAction(ws))
 	})
 
