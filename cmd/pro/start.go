@@ -53,6 +53,10 @@ const (
 	LoftRouterDomainSecret = "loft-router-domain" // #nosec G101
 	passwordChangedHint    = "(has been changed)"
 	defaultUser            = "admin"
+
+	ingressNginx         = "ingress-nginx"
+	helmRepositoryConfig = "--repository-config=''"
+	trueString           = "true"
 )
 
 var defaultReleaseName = config.ProReleaseName
@@ -212,38 +216,13 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 		cmd.LocalPort = "9898"
 	}
 
-	err := cmd.prepare(ctx)
-	if err != nil {
-		return err
-	}
-	// Uninstall already existing instance
-	if cmd.Reset {
-		err = uninstall(
-			ctx,
-			cmd.KubeClient,
-			cmd.RestConfig,
-			cmd.Context,
-			cmd.Namespace,
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Is already installed?
-	isInstalled, err := isAlreadyInstalled(ctx, cmd.KubeClient, cmd.Namespace)
-	if err != nil {
+	if err := cmd.prepare(ctx); err != nil {
 		return err
 	}
 
-	// Use default password if none is set
-	if cmd.Password == "" {
-		defaultPassword, err := getDefaultPassword(ctx, cmd.KubeClient, cmd.Namespace)
-		if err != nil {
-			return err
-		}
-
-		cmd.Password = defaultPassword
+	isInstalled, err := cmd.prepareKubernetes(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Upgrade Devsy if already installed
@@ -256,17 +235,49 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	log.Info("This installer will help you to get started.")
 
 	// make sure we are ready for installing
-	err = cmd.prepareInstall(ctx)
-	if err != nil {
+	if err := cmd.prepareInstall(ctx); err != nil {
 		return err
 	}
 
-	err = cmd.upgrade(ctx)
-	if err != nil {
+	if err := cmd.upgrade(ctx); err != nil {
 		return err
 	}
 
 	return cmd.success(ctx)
+}
+
+func (cmd *StartCmd) prepareKubernetes(ctx context.Context) (bool, error) {
+	// Uninstall already existing instance
+	if cmd.Reset {
+		err := uninstall(
+			ctx,
+			cmd.KubeClient,
+			cmd.RestConfig,
+			cmd.Context,
+			cmd.Namespace,
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	// Is already installed?
+	isInstalled, err := isAlreadyInstalled(ctx, cmd.KubeClient, cmd.Namespace)
+	if err != nil {
+		return false, err
+	}
+
+	// Use default password if none is set
+	if cmd.Password == "" {
+		defaultPassword, err := getDefaultPassword(ctx, cmd.KubeClient, cmd.Namespace)
+		if err != nil {
+			return false, err
+		}
+
+		cmd.Password = defaultPassword
+	}
+
+	return isInstalled, nil
 }
 
 func (cmd *StartCmd) appendHostArgs(extraArgs []string) []string {
@@ -460,20 +471,8 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// check if installed locally
-	isLocal := isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace)
-	if isLocal {
-		// check if loft domain secret is there
-		if !cmd.NoTunnel {
-			loftRouterDomain, err := cmd.pingLoftRouter(ctx, loftPod)
-			if err != nil {
-				log.Errorf("Error retrieving loft router domain: %v", err)
-				log.Info("Fallback to use port-forwarding")
-			} else if loftRouterDomain != "" {
-				return cmd.successLoftRouter(loftRouterDomain)
-			}
-		}
-
-		return cmd.successLocal()
+	if isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace) {
+		return cmd.successLocalOrRouter(ctx, loftPod)
 	}
 
 	// get login link
@@ -483,32 +482,59 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 		return err
 	}
 
-	// check if loft is reachable
-	reachable, err := isHostReachable(ctx, host)
-	if !reachable || err != nil {
-		const (
-			YesOption = "Yes"
-			NoOption  = "No, re-run the DNS check"
-		)
-
-		answer, err := log.QuestionDefault(&survey.QuestionOptions{
-			Question:     "Unable to reach Devsy at https://" + host + ". Do you want to start port-forwarding instead?",
-			DefaultValue: YesOption,
-			Options: []string{
-				YesOption,
-				NoOption,
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		if answer == YesOption {
-			return cmd.successLocal()
-		}
+	usePortForward, err := cmd.confirmPortForwardIfUnreachable(ctx, host)
+	if err != nil {
+		return err
+	}
+	if usePortForward {
+		return cmd.successLocal()
 	}
 
 	return cmd.successRemote(ctx, host)
+}
+
+func (cmd *StartCmd) successLocalOrRouter(ctx context.Context, loftPod *corev1.Pod) error {
+	// check if loft domain secret is there
+	if !cmd.NoTunnel {
+		loftRouterDomain, err := cmd.pingLoftRouter(ctx, loftPod)
+		if err != nil {
+			log.Errorf("Error retrieving loft router domain: %v", err)
+			log.Info("Fallback to use port-forwarding")
+		} else if loftRouterDomain != "" {
+			return cmd.successLoftRouter(loftRouterDomain)
+		}
+	}
+
+	return cmd.successLocal()
+}
+
+func (cmd *StartCmd) confirmPortForwardIfUnreachable(
+	ctx context.Context,
+	host string,
+) (bool, error) {
+	reachable, err := isHostReachable(ctx, host)
+	if reachable && err == nil {
+		return false, nil
+	}
+
+	const (
+		YesOption = "Yes"
+		NoOption  = "No, re-run the DNS check"
+	)
+
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
+		Question:     "Unable to reach Devsy at https://" + host + ". Do you want to start port-forwarding instead?",
+		DefaultValue: YesOption,
+		Options: []string{
+			YesOption,
+			NoOption,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return answer == YesOption, nil
 }
 
 func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
@@ -652,14 +678,9 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 	}
 
 	// check if container is there
-	if containerID != "" && (cmd.Reset || cmd.Upgrade) {
-		log.Info("Existing instance found.")
-		err = cmd.uninstallDocker(ctx, containerID)
-		if err != nil {
-			return err
-		}
-
-		containerID = ""
+	containerID, err = cmd.resetExistingContainer(ctx, containerID)
+	if err != nil {
+		return err
 	}
 
 	// Use default password if none is set
@@ -690,6 +711,22 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 	}
 
 	return cmd.successDocker(ctx, containerID)
+}
+
+func (cmd *StartCmd) resetExistingContainer(
+	ctx context.Context,
+	containerID string,
+) (string, error) {
+	if containerID != "" && (cmd.Reset || cmd.Upgrade) {
+		log.Info("Existing instance found.")
+		if err := cmd.uninstallDocker(ctx, containerID); err != nil {
+			return "", err
+		}
+
+		return "", nil
+	}
+
+	return containerID, nil
 }
 
 func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) error {
@@ -952,9 +989,17 @@ func (cmd *StartCmd) findLoftContainer(
 		return "", nil
 	}
 
+	return cmd.resolveRunningContainer(ctx, arr, onlyRunning)
+}
+
+func (cmd *StartCmd) resolveRunningContainer(
+	ctx context.Context,
+	containerIDs []string,
+	onlyRunning bool,
+) (string, error) {
 	// remove the failed / exited containers
 	runningContainerID := ""
-	for _, containerID := range arr {
+	for _, containerID := range containerIDs {
 		containerState, err := cmd.inspectContainer(ctx, containerID)
 		switch {
 		case err != nil:
@@ -1124,82 +1169,10 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 
 	// Only ask if ingress should be enabled if --upgrade flag is not provided
 	if !cmd.Upgrade && term.IsTerminal(os.Stdin) {
-		log.Info("Existing instance found.")
-
-		// Check if Devsy is installed in a local cluster
-		isLocal := isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace)
-
-		// Skip question if --host flag is provided
-		if cmd.Host != "" {
-			enableIngress = true
-		}
-
-		if enableIngress {
-			if isLocal {
-				// Confirm with user if this is a local cluster
-				const (
-					YesOption = "Yes"
-					NoOption  = "No, my cluster is running not locally (GKE, EKS, Bare Metal, etc.)"
-				)
-
-				answer, err := log.QuestionDefault(&survey.QuestionOptions{
-					Question:     "Seems like your cluster is running locally (docker desktop, minikube, kind etc.). Is that correct?",
-					DefaultValue: YesOption,
-					Options: []string{
-						YesOption,
-						NoOption,
-					},
-				})
-				if err != nil {
-					return err
-				}
-
-				isLocal = answer == YesOption
-			}
-
-			if isLocal {
-				// Confirm with user if ingress should be installed in local cluster
-				var (
-					YesOption = "Yes, enable the ingress anyway"
-					NoOption  = "No"
-				)
-
-				answer, err := log.QuestionDefault(&survey.QuestionOptions{
-					Question:     "Enabling ingress is usually only useful for remote clusters. Do you still want to deploy the ingress to your local cluster?",
-					DefaultValue: NoOption,
-					Options: []string{
-						NoOption,
-						YesOption,
-					},
-				})
-				if err != nil {
-					return err
-				}
-
-				enableIngress = answer == YesOption
-			}
-		}
-
-		// Check if we need to enable ingress
-		if enableIngress {
-			// Ask for hostname if --host flag is not provided
-			if cmd.Host == "" {
-				host, err := enterHostNameQuestion()
-				if err != nil {
-					return err
-				}
-
-				cmd.Host = host
-			} else {
-				log.Info("Will enable an ingress with hostname: " + cmd.Host)
-			}
-
-			if term.IsTerminal(os.Stdin) {
-				err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context)
-				if err != nil {
-					return fmt.Errorf("install ingress controller: %w", err)
-				}
-			}
+		var err error
+		enableIngress, err = cmd.promptEnableIngress(ctx)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -1212,6 +1185,115 @@ func (cmd *StartCmd) handleAlreadyExistingInstallation(ctx context.Context) erro
 	}
 
 	return cmd.success(ctx)
+}
+
+func (cmd *StartCmd) promptEnableIngress(ctx context.Context) (bool, error) {
+	log.Info("Existing instance found.")
+
+	// Check if Devsy is installed in a local cluster
+	isLocal := isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace)
+
+	// Skip question if --host flag is provided
+	enableIngress := cmd.Host != ""
+	if !enableIngress {
+		return false, nil
+	}
+
+	if isLocal {
+		confirmedLocal, err := cmd.confirmLocalCluster()
+		if err != nil {
+			return false, err
+		}
+
+		isLocal = confirmedLocal
+	}
+
+	if isLocal {
+		anyway, err := cmd.confirmIngressOnLocal()
+		if err != nil {
+			return false, err
+		}
+
+		enableIngress = anyway
+	}
+
+	if !enableIngress {
+		return false, nil
+	}
+
+	if err := cmd.ensureHostAndIngress(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (cmd *StartCmd) confirmLocalCluster() (bool, error) {
+	// Confirm with user if this is a local cluster
+	const (
+		YesOption = "Yes"
+		NoOption  = "No, my cluster is running not locally (GKE, EKS, Bare Metal, etc.)"
+	)
+
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
+		Question:     "Seems like your cluster is running locally (docker desktop, minikube, kind etc.). Is that correct?",
+		DefaultValue: YesOption,
+		Options: []string{
+			YesOption,
+			NoOption,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return answer == YesOption, nil
+}
+
+func (cmd *StartCmd) confirmIngressOnLocal() (bool, error) {
+	// Confirm with user if ingress should be installed in local cluster
+	var (
+		YesOption = "Yes, enable the ingress anyway"
+		NoOption  = "No"
+	)
+
+	answer, err := log.QuestionDefault(&survey.QuestionOptions{
+		Question: "Enabling ingress is usually only useful for remote clusters. " +
+			"Do you still want to deploy the ingress to your local cluster?",
+		DefaultValue: NoOption,
+		Options: []string{
+			NoOption,
+			YesOption,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return answer == YesOption, nil
+}
+
+func (cmd *StartCmd) ensureHostAndIngress(ctx context.Context) error {
+	// Ask for hostname if --host flag is not provided
+	if cmd.Host == "" {
+		host, err := enterHostNameQuestion()
+		if err != nil {
+			return err
+		}
+
+		cmd.Host = host
+	} else {
+		log.Info("Will enable an ingress with hostname: " + cmd.Host)
+	}
+
+	if term.IsTerminal(os.Stdin) {
+		err := ensureIngressController(ctx, cmd.KubeClient, cmd.Context)
+		if err != nil {
+			return fmt.Errorf("install ingress controller: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
@@ -1457,14 +1539,9 @@ func uninstall(
 	restConfig *rest.Config,
 	kubeContext, namespace string,
 ) error {
-	releaseName := config.ProReleaseName
-	deploy, err := kubeClient.AppsV1().
-		Deployments(namespace).
-		Get(ctx, defaultDeploymentName, metav1.GetOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
+	releaseName, err := resolveReleaseName(ctx, kubeClient, namespace)
+	if err != nil {
 		return err
-	} else if deploy != nil && deploy.Labels != nil && deploy.Labels["release"] != "" {
-		releaseName = deploy.Labels["release"]
 	}
 
 	args := []string{
@@ -1488,10 +1565,12 @@ func uninstall(
 		return err
 	}
 
-	err = apiRegistrationClient.ApiregistrationV1().
-		APIServices().
-		Delete(ctx, "v1.management.devsy.sh", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
+	err = deleteIgnoreNotFound(func() error {
+		return apiRegistrationClient.ApiregistrationV1().
+			APIServices().
+			Delete(ctx, "v1.management.devsy.sh", metav1.DeleteOptions{})
+	})
+	if err != nil {
 		return err
 	}
 
@@ -1500,59 +1579,78 @@ func uninstall(
 		return err
 	}
 
-	err = kubeClient.CoreV1().
-		Secrets(namespace).
-		Delete(ctx, "loft-user-secret-admin", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	err = kubeClient.CoreV1().
-		Secrets(namespace).
-		Delete(ctx, LoftRouterDomainSecret, metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	// we also cleanup the validating webhook configuration and apiservice
-	err = kubeClient.AdmissionregistrationV1().
-		ValidatingWebhookConfigurations().
-		Delete(ctx, "loft-agent", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	err = apiRegistrationClient.ApiregistrationV1().
-		APIServices().
-		Delete(ctx, "v1alpha1.tenancy.kiosk.sh", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	err = apiRegistrationClient.ApiregistrationV1().
-		APIServices().
-		Delete(ctx, "v1.cluster.devsy.sh", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	err = kubeClient.CoreV1().
-		ConfigMaps(namespace).
-		Delete(ctx, "loft-agent-controller", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	err = kubeClient.CoreV1().
-		ConfigMaps(namespace).
-		Delete(ctx, "loft-applied-defaults", metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
+	err = deleteIgnoreNotFound(
+		func() error {
+			return kubeClient.CoreV1().
+				Secrets(namespace).
+				Delete(ctx, "loft-user-secret-admin", metav1.DeleteOptions{})
+		},
+		func() error {
+			return kubeClient.CoreV1().
+				Secrets(namespace).
+				Delete(ctx, LoftRouterDomainSecret, metav1.DeleteOptions{})
+		},
+		func() error {
+			return kubeClient.AdmissionregistrationV1().
+				ValidatingWebhookConfigurations().
+				Delete(ctx, "loft-agent", metav1.DeleteOptions{})
+		},
+		func() error {
+			return apiRegistrationClient.ApiregistrationV1().
+				APIServices().
+				Delete(ctx, "v1alpha1.tenancy.kiosk.sh", metav1.DeleteOptions{})
+		},
+		func() error {
+			return apiRegistrationClient.ApiregistrationV1().
+				APIServices().
+				Delete(ctx, "v1.cluster.devsy.sh", metav1.DeleteOptions{})
+		},
+		func() error {
+			return kubeClient.CoreV1().
+				ConfigMaps(namespace).
+				Delete(ctx, "loft-agent-controller", metav1.DeleteOptions{})
+		},
+		func() error {
+			return kubeClient.CoreV1().
+				ConfigMaps(namespace).
+				Delete(ctx, "loft-applied-defaults", metav1.DeleteOptions{})
+		},
+	)
+	if err != nil {
 		return err
 	}
 
 	fmt.Fprint(os.Stderr, "\n")
 	log.Info("uninstalled Devsy Pro")
 	fmt.Fprint(os.Stderr, "\n")
+
+	return nil
+}
+
+func resolveReleaseName(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	namespace string,
+) (string, error) {
+	releaseName := config.ProReleaseName
+	deploy, err := kubeClient.AppsV1().
+		Deployments(namespace).
+		Get(ctx, defaultDeploymentName, metav1.GetOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return "", err
+	} else if deploy != nil && deploy.Labels != nil && deploy.Labels["release"] != "" {
+		releaseName = deploy.Labels["release"]
+	}
+
+	return releaseName, nil
+}
+
+func deleteIgnoreNotFound(deletes ...func() error) error {
+	for _, del := range deletes {
+		if err := del(); err != nil && !kerrors.IsNotFound(err) {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -1663,71 +1761,92 @@ func ensureIngressController(
 	}
 
 	if answer == YesOption {
-		args := []string{
-			"install",
-			"ingress-nginx",
-			"ingress-nginx",
-			"--repository-config=''",
-			"--repo",
-			"https://kubernetes.github.io/ingress-nginx",
-			"--kube-context",
-			kubeContext,
-			"--namespace",
-			"ingress-nginx",
-			"--create-namespace",
-			"--set-string",
-			"controller.config.hsts=false",
-			"--wait",
-		}
-		fmt.Fprint(os.Stderr, "\n")
-		log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
-		log.Info("Waiting for ingress controller deployment, this can take several minutes")
-		helmCmd := exec.CommandContext(
-			ctx,
-			"helm",
-			args...) // #nosec G204 -- helm args are constructed internally
-		output, err := helmCmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
-		}
+		return installNginxIngress(ctx, kubeClient, kubeContext)
+	}
 
-		list, err := kubeClient.CoreV1().Secrets("ingress-nginx").List(ctx, metav1.ListOptions{
-			LabelSelector: "name=ingress-nginx,owner=helm,status=deployed",
-		})
-		if err != nil {
+	return nil
+}
+
+func installNginxIngress(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	kubeContext string,
+) error {
+	args := []string{
+		"install",
+		ingressNginx,
+		ingressNginx,
+		helmRepositoryConfig,
+		"--repo",
+		"https://kubernetes.github.io/ingress-nginx",
+		"--kube-context",
+		kubeContext,
+		"--namespace",
+		ingressNginx,
+		"--create-namespace",
+		"--set-string",
+		"controller.config.hsts=false",
+		"--wait",
+	}
+	fmt.Fprint(os.Stderr, "\n")
+	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
+	log.Info("Waiting for ingress controller deployment, this can take several minutes")
+	helmCmd := exec.CommandContext(
+		ctx,
+		"helm",
+		args...) // #nosec G204 -- helm args are constructed internally
+	output, err := helmCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
+	}
+
+	list, err := kubeClient.CoreV1().Secrets(ingressNginx).List(ctx, metav1.ListOptions{
+		LabelSelector: "name=ingress-nginx,owner=helm,status=deployed",
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(list.Items) == 1 {
+		if err := labelIngressSecret(ctx, kubeClient, list.Items[0]); err != nil {
 			return err
 		}
+	}
 
-		if len(list.Items) == 1 {
-			secret := list.Items[0]
-			originalSecret := secret.DeepCopy()
-			secret.Labels["devsy.sh/app"] = "true"
-			if secret.Annotations == nil {
-				secret.Annotations = map[string]string{}
-			}
+	log.Info("installed ingress-nginx to your kubernetes cluster!")
 
-			secret.Annotations["devsy.sh/url"] = "https://kubernetes.github.io/ingress-nginx"
-			originalJSON, err := json.Marshal(originalSecret)
-			if err != nil {
-				return err
-			}
-			modifiedJSON, err := json.Marshal(secret)
-			if err != nil {
-				return err
-			}
-			data, err := jsonpatch.CreateMergePatch(originalJSON, modifiedJSON)
-			if err != nil {
-				return err
-			}
-			_, err = kubeClient.CoreV1().
-				Secrets(secret.Namespace).
-				Patch(ctx, secret.Name, types.MergePatchType, data, metav1.PatchOptions{})
-			if err != nil {
-				return err
-			}
-		}
+	return nil
+}
 
-		log.Info("installed ingress-nginx to your kubernetes cluster!")
+func labelIngressSecret(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	secret corev1.Secret,
+) error {
+	originalSecret := secret.DeepCopy()
+	secret.Labels["devsy.sh/app"] = trueString
+	if secret.Annotations == nil {
+		secret.Annotations = map[string]string{}
+	}
+
+	secret.Annotations["devsy.sh/url"] = "https://kubernetes.github.io/ingress-nginx"
+	originalJSON, err := json.Marshal(originalSecret)
+	if err != nil {
+		return err
+	}
+	modifiedJSON, err := json.Marshal(secret)
+	if err != nil {
+		return err
+	}
+	data, err := jsonpatch.CreateMergePatch(originalJSON, modifiedJSON)
+	if err != nil {
+		return err
+	}
+	_, err = kubeClient.CoreV1().
+		Secrets(secret.Namespace).
+		Patch(ctx, secret.Name, types.MergePatchType, data, metav1.PatchOptions{})
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -1797,13 +1916,24 @@ func ensureAdminPassword(
 		if err != nil {
 			return false, err
 		}
-	case admin.Spec.PasswordRef == nil ||
-		admin.Spec.PasswordRef.SecretName == "" ||
-		admin.Spec.PasswordRef.SecretNamespace == "":
+	case passwordRefIncomplete(admin.Spec.PasswordRef):
 		return false, nil
 	}
 
-	key := admin.Spec.PasswordRef.Key
+	return ensureAdminPasswordSecret(ctx, kubeClient, admin.Spec.PasswordRef, password)
+}
+
+func passwordRefIncomplete(ref *storagev1.SecretRef) bool {
+	return ref == nil || ref.SecretName == "" || ref.SecretNamespace == ""
+}
+
+func ensureAdminPasswordSecret(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	ref *storagev1.SecretRef,
+	password string,
+) (bool, error) {
+	key := ref.Key
 	if key == "" {
 		key = "password"
 	}
@@ -1811,8 +1941,8 @@ func ensureAdminPassword(
 	passwordHash := fmt.Sprintf("%x", sha256.Sum256([]byte(password)))
 
 	secret, err := kubeClient.CoreV1().
-		Secrets(admin.Spec.PasswordRef.SecretNamespace).
-		Get(ctx, admin.Spec.PasswordRef.SecretName, metav1.GetOptions{})
+		Secrets(ref.SecretNamespace).
+		Get(ctx, ref.SecretName, metav1.GetOptions{})
 	if err != nil && !kerrors.IsNotFound(err) {
 		return false, err
 	} else if err == nil {
@@ -1834,8 +1964,8 @@ func ensureAdminPassword(
 	// create the password secret if it was not found, this can happen if you delete the loft namespace without deleting the admin user
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      admin.Spec.PasswordRef.SecretName,
-			Namespace: admin.Spec.PasswordRef.SecretNamespace,
+			Name:      ref.SecretName,
+			Namespace: ref.SecretNamespace,
 		},
 		Data: map[string][]byte{
 			key: []byte(passwordHash),
@@ -1945,7 +2075,7 @@ func upgradeRelease(
 		chartName,
 		"--install",
 		"--create-namespace",
-		"--repository-config=''",
+		helmRepositoryConfig,
 		"--kube-context",
 		kubeContext,
 		"--namespace",
@@ -1989,7 +2119,7 @@ func getReleaseManifests(
 		"template",
 		defaultReleaseName,
 		chartName,
-		"--repository-config=''",
+		helmRepositoryConfig,
 		"--kube-context",
 		kubeContext,
 		"--namespace",

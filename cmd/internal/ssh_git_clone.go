@@ -38,20 +38,9 @@ func NewSSHGitCloneCmd() *cobra.Command {
 }
 
 func (cmd *SSHGitClone) Run(ctx context.Context, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf(
-			"expected args in format: {user}@{host} {commands...}, received %q",
-			strings.Join(args, " "),
-		)
-	}
-	host := args[0]
-	sshCmdArgs := args[1:]
-	if len(host) == 0 || len(sshCmdArgs) == 0 {
-		return fmt.Errorf(
-			"unexpected input: host: %s, args: %s",
-			host,
-			strings.Join(sshCmdArgs, " "),
-		)
+	host, sshCmdArgs, err := parseSSHArgs(args)
+	if err != nil {
+		return err
 	}
 
 	user, addr, err := parseSSHHost(host)
@@ -64,7 +53,31 @@ func (cmd *SSHGitClone) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	sshClient, err := ssh.Dial("tcp", net.JoinHostPort(addr, cmd.Port), sshConfig)
+	return runSSHSession(sshConfig, net.JoinHostPort(addr, cmd.Port), sshCmdArgs)
+}
+
+func parseSSHArgs(args []string) (host string, sshCmdArgs []string, err error) {
+	if len(args) < 2 {
+		return "", nil, fmt.Errorf(
+			"expected args in format: {user}@{host} {commands...}, received %q",
+			strings.Join(args, " "),
+		)
+	}
+	host = args[0]
+	sshCmdArgs = args[1:]
+	if len(host) == 0 || len(sshCmdArgs) == 0 {
+		return "", nil, fmt.Errorf(
+			"unexpected input: host: %s, args: %s",
+			host,
+			strings.Join(sshCmdArgs, " "),
+		)
+	}
+
+	return host, sshCmdArgs, nil
+}
+
+func runSSHSession(sshConfig *ssh.ClientConfig, addr string, sshCmdArgs []string) error {
+	sshClient, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
 		return err
 	}
@@ -79,12 +92,8 @@ func (cmd *SSHGitClone) Run(ctx context.Context, args []string) error {
 	sess.Stdin = os.Stdin
 	sess.Stdout = os.Stdout
 	sess.Stderr = os.Stderr
-	err = sess.Run(command2.Quote(sshCmdArgs))
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return sess.Run(command2.Quote(sshCmdArgs))
 }
 
 func getConfig(userName string, keyFilePaths []string) (*ssh.ClientConfig, error) {

@@ -61,53 +61,63 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		for _, entry := range entries {
-			machineConfig, err := provider.LoadMachineConfig(
-				devsyConfig.DefaultContext,
-				entry.Name(),
-			)
-			if err != nil {
-				return fmt.Errorf("load machine config: %w", err)
-			}
-
-			tableEntries = append(tableEntries, []string{
-				machineConfig.ID,
-				machineConfig.Provider.Name,
-				time.Since(machineConfig.CreationTimestamp.Time).Round(1 * time.Second).String(),
-			})
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
-
-		table.Print([]string{
-			"Name",
-			"Provider",
-			"Age",
-		}, tableEntries)
+		return printMachinesPlain(devsyConfig, entries)
 	case output.ModeJSON:
-		tableEntries := []*provider.Machine{}
-		for _, entry := range entries {
-			machineConfig, err := provider.LoadMachineConfig(
-				devsyConfig.DefaultContext,
-				entry.Name(),
-			)
-			if err != nil {
-				return fmt.Errorf("load machine config: %w", err)
-			}
-
-			tableEntries = append(tableEntries, machineConfig)
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i].ID < tableEntries[j].ID
-		})
-		out, err := json.Marshal(tableEntries)
-		if err != nil {
-			return err
-		}
-		fmt.Print(string(out))
+		return printMachinesJSON(devsyConfig, entries)
 	}
 
+	return nil
+}
+
+func printMachinesPlain(devsyConfig *config.Config, entries []os.DirEntry) error {
+	tableEntries := [][]string{}
+	for _, entry := range entries {
+		machineConfig, err := provider.LoadMachineConfig(
+			devsyConfig.DefaultContext,
+			entry.Name(),
+		)
+		if err != nil {
+			return fmt.Errorf("load machine config: %w", err)
+		}
+
+		tableEntries = append(tableEntries, []string{
+			machineConfig.ID,
+			machineConfig.Provider.Name,
+			time.Since(machineConfig.CreationTimestamp.Time).Round(1 * time.Second).String(),
+		})
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	table.Print([]string{
+		"Name",
+		"Provider",
+		"Age",
+	}, tableEntries)
+	return nil
+}
+
+func printMachinesJSON(devsyConfig *config.Config, entries []os.DirEntry) error {
+	tableEntries := []*provider.Machine{}
+	for _, entry := range entries {
+		machineConfig, err := provider.LoadMachineConfig(
+			devsyConfig.DefaultContext,
+			entry.Name(),
+		)
+		if err != nil {
+			return fmt.Errorf("load machine config: %w", err)
+		}
+
+		tableEntries = append(tableEntries, machineConfig)
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i].ID < tableEntries[j].ID
+	})
+	out, err := json.Marshal(tableEntries)
+	if err != nil {
+		return err
+	}
+	fmt.Print(string(out)) //nolint:forbidigo // CLI stdout output
 	return nil
 }

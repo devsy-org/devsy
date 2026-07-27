@@ -60,27 +60,30 @@ func mergeFileEntries(paths []string) (base map[string]any, files []any, err err
 		if !ok {
 			continue
 		}
-		for _, e := range entries {
-			// Defensive: electron-builder always emits maps; skip non-map entries
-			// (prior behavior appended raw entries via variadic spread).
-			entry, ok := e.(map[string]any)
-			if !ok {
-				continue
-			}
-			url, _ := entry["url"].(string)
-			if url == "" {
-				files = append(files, entry)
-				continue
-			}
-			if idx, exists := seen[url]; exists {
-				files[idx] = entry // last-write-wins
-				continue
-			}
-			seen[url] = len(files)
-			files = append(files, entry)
-		}
+		files = appendEntries(files, seen, entries)
 	}
 	return base, files, nil
+}
+
+func appendEntries(files []any, seen map[string]int, entries []any) []any {
+	for _, e := range entries {
+		// Defensive: electron-builder always emits maps; skip non-map entries
+		// (prior behavior appended raw entries via variadic spread).
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		url, _ := entry["url"].(string)
+		if idx, exists := seen[url]; url != "" && exists {
+			files[idx] = entry // last-write-wins
+			continue
+		}
+		if url != "" {
+			seen[url] = len(files)
+		}
+		files = append(files, entry)
+	}
+	return files
 }
 
 // applyTopLevelFromFirst sets the top-level path/sha512/size from the

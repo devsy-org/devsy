@@ -30,10 +30,8 @@ func (cmd *UpCmd) validate() error {
 	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
 	}
-	if cmd.DefaultUserEnvProbe != "" {
-		if _, err := config2.NewUserEnvProbe(cmd.DefaultUserEnvProbe); err != nil {
-			return err
-		}
+	if err := cmd.validateUserEnvProbe(); err != nil {
+		return err
 	}
 	if err := cmd.resolveExtraDevContainerPath(); err != nil {
 		return err
@@ -46,6 +44,16 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+func (cmd *UpCmd) validateUserEnvProbe() error {
+	if cmd.DefaultUserEnvProbe == "" {
+		return nil
+	}
+	if _, err := config2.NewUserEnvProbe(cmd.DefaultUserEnvProbe); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cmd *UpCmd) resolveExtraDevContainerPath() error {

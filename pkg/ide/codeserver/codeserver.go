@@ -253,8 +253,7 @@ func (c *CodeServer) installSettings() error {
 	}
 	codeServerDataDir := filepath.Join(homeFolder, ".local", "share", "code-server")
 	settingsDir := filepath.Join(codeServerDataDir, "User")
-	// #nosec G301 -- match openvscode-server convention for parity.
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+	if err := copy2.MkdirAllChown(settingsDir, 0o755, c.userName); err != nil {
 		return err
 	}
 	if err := os.WriteFile(

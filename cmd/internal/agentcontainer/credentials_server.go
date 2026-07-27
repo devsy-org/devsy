@@ -96,21 +96,11 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 
 	// this message serves as a ping to the client
-	_, err = tunnelClient.Ping(ctx, &tunnel.Empty{})
-	if err != nil {
+	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	// forward ports
-	if cmd.ForwardPorts {
-		go func() {
-			log.Debugf("Start watching & forwarding open ports")
-			err = forwardPorts(ctx, tunnelClient)
-			if err != nil {
-				log.Errorf("error forwarding ports: %v", err)
-			}
-		}()
-	}
+	cmd.maybeForwardPorts(ctx, tunnelClient)
 
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
 	if ok, err := portpkg.IsAvailable(addr); !ok || err != nil {
@@ -119,63 +109,105 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 
 	// configure docker credential helper
-	if cmd.ConfigureDockerHelper {
-		err = dockercredentials.ConfigureCredentialsContainer(cmd.User, port)
-		if err != nil {
-			return err
-		}
+	if err := cmd.configureDockerHelper(port); err != nil {
+		return err
 	}
 
 	// configure git user
-	err = configureGitUserLocally(ctx, cmd.User, tunnelClient)
-	if err != nil {
+	if err := configureGitUserLocally(ctx, cmd.User, tunnelClient); err != nil {
 		log.Debugf("Error configuring git user: %v", err)
 		return err
 	}
 
 	// configure git credential helper
-	if cmd.ConfigureGitHelper {
-		binaryPath, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		err = gitcredentials.ConfigureHelper(ctx, binaryPath, cmd.User, port)
-		if err != nil {
-			return fmt.Errorf("configure git helper: %w", err)
-		}
-
-		// cleanup when we are done. This defer runs after the server loop
-		// returns on shutdown, when ctx is already canceled — use an uncanceled
-		// context so the helper is actually removed instead of aborting early.
-		cleanupCtx := context.WithoutCancel(ctx)
-		defer func(userName string) {
-			_ = gitcredentials.RemoveHelper(cleanupCtx, userName)
-		}(cmd.User)
+	cleanupGitHelper, err := cmd.configureGitCredentialHelper(ctx, port)
+	if err != nil {
+		return err
 	}
+	defer cleanupGitHelper()
 
 	// configure git ssh signature helper -- non-fatal so that a signing
 	// setup failure does not take down the entire credentials server
 	// (git/docker credential forwarding, port forwarding, etc.)
-	if cmd.GitUserSigningKey != "" {
-		decodedKey, err := base64.StdEncoding.DecodeString(cmd.GitUserSigningKey)
-		if err != nil {
-			log.Errorf("Failed to decode git SSH signing key, signing will be unavailable: %v", err)
-		} else {
-			err = gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey))
-			if err != nil {
-				log.Errorf(
-					"Failed to configure git SSH signature helper, signing will be unavailable: %v",
-					err,
-				)
-			} else {
-				defer func(userName string) {
-					_ = gitsshsigning.RemoveHelper(userName)
-				}(cmd.User)
-			}
-		}
-	}
+	cleanupGitSigning := cmd.configureGitSigningKey()
+	defer cleanupGitSigning()
 
 	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
+}
+
+func (cmd *CredentialsServerCmd) maybeForwardPorts(
+	ctx context.Context,
+	tunnelClient tunnel.TunnelClient,
+) {
+	if !cmd.ForwardPorts {
+		return
+	}
+	go func() {
+		log.Debugf("Start watching & forwarding open ports")
+		if err := forwardPorts(ctx, tunnelClient); err != nil {
+			log.Errorf("error forwarding ports: %v", err)
+		}
+	}()
+}
+
+func (cmd *CredentialsServerCmd) configureDockerHelper(port int) error {
+	if !cmd.ConfigureDockerHelper {
+		return nil
+	}
+	return dockercredentials.ConfigureCredentialsContainer(cmd.User, port)
+}
+
+func (cmd *CredentialsServerCmd) configureGitCredentialHelper(
+	ctx context.Context,
+	port int,
+) (func(), error) {
+	noop := func() {}
+	if !cmd.ConfigureGitHelper {
+		return noop, nil
+	}
+
+	binaryPath, err := os.Executable()
+	if err != nil {
+		return noop, err
+	}
+	if err := gitcredentials.ConfigureHelper(ctx, binaryPath, cmd.User, port); err != nil {
+		return noop, fmt.Errorf("configure git helper: %w", err)
+	}
+
+	// cleanup when we are done. This defer runs after the server loop
+	// returns on shutdown, when ctx is already canceled — use an uncanceled
+	// context so the helper is actually removed instead of aborting early.
+	cleanupCtx := context.WithoutCancel(ctx)
+	userName := cmd.User
+	return func() {
+		_ = gitcredentials.RemoveHelper(cleanupCtx, userName)
+	}, nil
+}
+
+func (cmd *CredentialsServerCmd) configureGitSigningKey() func() {
+	noop := func() {}
+	if cmd.GitUserSigningKey == "" {
+		return noop
+	}
+
+	decodedKey, err := base64.StdEncoding.DecodeString(cmd.GitUserSigningKey)
+	if err != nil {
+		log.Errorf("Failed to decode git SSH signing key, signing will be unavailable: %v", err)
+		return noop
+	}
+
+	if err := gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey)); err != nil {
+		log.Errorf(
+			"Failed to configure git SSH signature helper, signing will be unavailable: %v",
+			err,
+		)
+		return noop
+	}
+
+	userName := cmd.User
+	return func() {
+		_ = gitsshsigning.RemoveHelper(userName)
+	}
 }
 
 func configureGitUserLocally(
@@ -187,38 +219,52 @@ func configureGitUserLocally(
 	localGitUser, err := gitcredentials.GetUser(ctx, userName, "")
 	if err != nil {
 		return err
-	} else if localGitUser.Name != "" && localGitUser.Email != "" {
+	}
+	if localGitUser.Name != "" && localGitUser.Email != "" {
 		return nil
 	}
 
 	// set user & email if not found
-	response, err := client.GitUser(ctx, &tunnel.Empty{})
+	gitUser, err := fetchRemoteGitUser(ctx, client)
 	if err != nil {
-		return fmt.Errorf("retrieve git user: %w", err)
-	}
-
-	// parse git user from response
-	gitUser := &gitcredentials.GitUser{}
-	err = json.Unmarshal([]byte(response.Message), gitUser)
-	if err != nil {
-		return fmt.Errorf("decode git user: %w", err)
+		return err
 	}
 
 	// don't override what is already there
-	if localGitUser.Name != "" {
-		gitUser.Name = ""
-	}
-	if localGitUser.Email != "" {
-		gitUser.Email = ""
-	}
+	clearKnownGitUserFields(localGitUser, gitUser)
 
 	// set git user
-	err = gitcredentials.SetUser(ctx, userName, gitUser)
-	if err != nil {
+	if err := gitcredentials.SetUser(ctx, userName, gitUser); err != nil {
 		return fmt.Errorf("set git user & email: %w", err)
 	}
 
 	return nil
+}
+
+func fetchRemoteGitUser(
+	ctx context.Context,
+	client tunnel.TunnelClient,
+) (*gitcredentials.GitUser, error) {
+	response, err := client.GitUser(ctx, &tunnel.Empty{})
+	if err != nil {
+		return nil, fmt.Errorf("retrieve git user: %w", err)
+	}
+
+	gitUser := &gitcredentials.GitUser{}
+	if err := json.Unmarshal([]byte(response.Message), gitUser); err != nil {
+		return nil, fmt.Errorf("decode git user: %w", err)
+	}
+
+	return gitUser, nil
+}
+
+func clearKnownGitUserFields(local, remote *gitcredentials.GitUser) {
+	if local.Name != "" {
+		remote.Name = ""
+	}
+	if local.Email != "" {
+		remote.Email = ""
+	}
 }
 
 func forwardPorts(ctx context.Context, client tunnel.TunnelClient) error {

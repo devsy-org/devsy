@@ -72,60 +72,78 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		for _, proInstance := range proInstances {
-			entry := []string{
-				proInstance.Host,
-				proInstance.Provider,
-				time.Since(proInstance.CreationTimestamp.Time).Round(1 * time.Second).String(),
-			}
-			if cmd.Login {
-				err = checkLogin(ctx, devsyConfig, proInstance)
-				entry = append(entry, fmt.Sprintf("%t", err == nil))
-			}
+		cmd.printPlain(ctx, devsyConfig, proInstances)
+	case output.ModeJSON:
+		return cmd.printJSON(ctx, devsyConfig, proInstances)
+	}
 
-			tableEntries = append(tableEntries, entry)
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
+	return nil
+}
 
-		tableHeaders := []string{
-			"Host",
-			"Provider",
-			"Age",
+func (cmd *ListCmd) printPlain(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	proInstances []*provider.ProInstance,
+) {
+	tableEntries := [][]string{}
+	for _, proInstance := range proInstances {
+		entry := []string{
+			proInstance.Host,
+			proInstance.Provider,
+			time.Since(proInstance.CreationTimestamp.Time).Round(1 * time.Second).String(),
 		}
 		if cmd.Login {
-			tableHeaders = append(tableHeaders, "Authenticated")
+			err := checkLogin(ctx, devsyConfig, proInstance)
+			entry = append(entry, fmt.Sprintf("%t", err == nil))
 		}
 
-		table.Print(tableHeaders, tableEntries)
-	case output.ModeJSON:
-		tableEntries := []*proTableEntry{}
-		for _, proInstance := range proInstances {
-			entry := &proTableEntry{
-				ProInstance:  proInstance,
-				Context:      devsyConfig.DefaultContext,
-				Capabilities: getCapabilities(devsyConfig, proInstance),
-			}
-			if cmd.Login {
-				err = checkLogin(ctx, devsyConfig, proInstance)
-				isAuthenticated := err == nil
-				entry.Authenticated = &isAuthenticated
-			}
-
-			tableEntries = append(tableEntries, entry)
-		}
-
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i].Host < tableEntries[j].Host
-		})
-		out, err := json.Marshal(tableEntries)
-		if err != nil {
-			return err
-		}
-		fmt.Print(string(out))
+		tableEntries = append(tableEntries, entry)
 	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	tableHeaders := []string{
+		"Host",
+		"Provider",
+		"Age",
+	}
+	if cmd.Login {
+		tableHeaders = append(tableHeaders, "Authenticated")
+	}
+
+	table.Print(tableHeaders, tableEntries)
+}
+
+func (cmd *ListCmd) printJSON(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	proInstances []*provider.ProInstance,
+) error {
+	tableEntries := []*proTableEntry{}
+	for _, proInstance := range proInstances {
+		entry := &proTableEntry{
+			ProInstance:  proInstance,
+			Context:      devsyConfig.DefaultContext,
+			Capabilities: getCapabilities(devsyConfig, proInstance),
+		}
+		if cmd.Login {
+			err := checkLogin(ctx, devsyConfig, proInstance)
+			isAuthenticated := err == nil
+			entry.Authenticated = &isAuthenticated
+		}
+
+		tableEntries = append(tableEntries, entry)
+	}
+
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i].Host < tableEntries[j].Host
+	})
+	out, err := json.Marshal(tableEntries)
+	if err != nil {
+		return err
+	}
+	fmt.Print(string(out)) //nolint:forbidigo // CLI stdout output
 
 	return nil
 }

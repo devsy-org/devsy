@@ -60,42 +60,51 @@ func (cmd *OptionsCmd) Run(ctx context.Context, args []string) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		tableEntries := [][]string{}
-		for _, entry := range config.ContextOptions {
-			value := entryOptions[entry.Name].Value
-
-			tableEntries = append(tableEntries, []string{
-				entry.Name,
-				entry.Description,
-				entry.Default,
-				value,
-			})
-		}
-		sort.SliceStable(tableEntries, func(i, j int) bool {
-			return tableEntries[i][0] < tableEntries[j][0]
-		})
-
-		table.Print([]string{
-			"Name",
-			"Description",
-			"Default",
-			"Value",
-		}, tableEntries)
+		printContextOptionsPlain(entryOptions)
 	case output.ModeJSON:
-		options := map[string]optionWithValue{}
-		for _, entry := range config.ContextOptions {
-			options[entry.Name] = optionWithValue{
-				ContextOption: entry,
-				Value:         entryOptions[entry.Name].Value,
-			}
-		}
-
-		out, err := json.MarshalIndent(options, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Print(string(out))
+		return printContextOptionsJSON(entryOptions)
 	}
 
+	return nil
+}
+
+func printContextOptionsPlain(entryOptions map[string]config.OptionValue) {
+	tableEntries := [][]string{}
+	for _, entry := range config.ContextOptions {
+		value := entryOptions[entry.Name].Value
+
+		tableEntries = append(tableEntries, []string{
+			entry.Name,
+			entry.Description,
+			entry.Default,
+			value,
+		})
+	}
+	sort.SliceStable(tableEntries, func(i, j int) bool {
+		return tableEntries[i][0] < tableEntries[j][0]
+	})
+
+	table.Print([]string{
+		"Name",
+		"Description",
+		"Default",
+		"Value",
+	}, tableEntries)
+}
+
+func printContextOptionsJSON(entryOptions map[string]config.OptionValue) error {
+	options := map[string]optionWithValue{}
+	for _, entry := range config.ContextOptions {
+		options[entry.Name] = optionWithValue{
+			ContextOption: entry,
+			Value:         entryOptions[entry.Name].Value,
+		}
+	}
+
+	out, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Print(string(out)) //nolint:forbidigo // CLI stdout output
 	return nil
 }

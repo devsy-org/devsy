@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,29 +66,15 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
 	workspaces := []*managementv1.DevsyWorkspaceInstance{}
 	for _, p := range projectList.Items {
-		ns := project.ProjectNamespace(p.GetName())
-		workspaceList, err := managementClient.Loft().
-			ManagementV1().
-			DevsyWorkspaceInstances(ns).
-			List(ctx, metav1.ListOptions{})
-		if err != nil {
-			log.Infof("list workspaces in project %q: %v", p.GetName(), err)
-			continue
-		}
-
-		for _, instance := range workspaceList.Items {
-			instance := &instance
-			if filterByOwner && !platform.IsOwner(baseClient.Self(), instance.GetOwner()) {
-				continue
-			}
-
-			if instance.GetLabels() == nil {
-				instance.Labels = map[string]string{}
-			}
-			instance.Labels[config.K8sProjectLabel] = p.GetName()
-
-			workspaces = append(workspaces, instance)
-		}
+		workspaces = append(
+			workspaces,
+			projectWorkspaces(ctx, projectWorkspacesParams{
+				managementClient: managementClient,
+				baseClient:       baseClient,
+				projectName:      p.GetName(),
+				filterByOwner:    filterByOwner,
+			})...,
+		)
 	}
 
 	wBytes, err := json.Marshal(workspaces)
@@ -97,4 +84,44 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 	fmt.Println(string(wBytes))
 
 	return nil
+}
+
+type projectWorkspacesParams struct {
+	managementClient kube.Interface
+	baseClient       client.Client
+	projectName      string
+	filterByOwner    bool
+}
+
+func projectWorkspaces(
+	ctx context.Context,
+	params projectWorkspacesParams,
+) []*managementv1.DevsyWorkspaceInstance {
+	ns := project.ProjectNamespace(params.projectName)
+	workspaceList, err := params.managementClient.Loft().
+		ManagementV1().
+		DevsyWorkspaceInstances(ns).
+		List(ctx, metav1.ListOptions{})
+	if err != nil {
+		log.Infof("list workspaces in project %q: %v", params.projectName, err)
+		return nil
+	}
+
+	workspaces := []*managementv1.DevsyWorkspaceInstance{}
+	for _, instance := range workspaceList.Items {
+		instance := &instance
+		if params.filterByOwner &&
+			!platform.IsOwner(params.baseClient.Self(), instance.GetOwner()) {
+			continue
+		}
+
+		if instance.GetLabels() == nil {
+			instance.Labels = map[string]string{}
+		}
+		instance.Labels[config.K8sProjectLabel] = params.projectName
+
+		workspaces = append(workspaces, instance)
+	}
+
+	return workspaces
 }

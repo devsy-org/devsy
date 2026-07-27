@@ -55,47 +55,79 @@ func (cmd *WorkspaceCmd) Run(
 	}
 
 	// fully serialized instance, right now only used by GUI
-	instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv)
-	if instanceEnv != "" {
-		instance := &managementv1.DevsyWorkspaceInstance{} // init pointer
-		err := json.Unmarshal([]byte(instanceEnv), instance)
-		if err != nil {
-			return fmt.Errorf("unmarshal workpace instance %s: %w", instanceEnv, err)
-		}
-
-		updatedInstance, err := createInstance(ctx, baseClient, instance)
-		if err != nil {
-			return err
-		}
-
-		out, err := json.Marshal(updatedInstance)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(string(out))
-		return nil
+	if instanceEnv := os.Getenv(platform.WorkspaceInstanceEnv); instanceEnv != "" {
+		return createFromInstanceEnv(ctx, baseClient, instanceEnv)
 	}
 
 	// Info through env, right now only used by CLI
-	workspaceID := os.Getenv(config.EnvProviderWorkspaceID)
-	workspaceUID := os.Getenv(config.EnvProviderWorkspaceUID)
-	workspaceFolder := os.Getenv(config.EnvProviderWorkspaceFolder)
-	workspaceContext := os.Getenv(config.EnvProviderWorkspaceContext)
-	workspacePicture := os.Getenv(platform.WorkspacePictureEnv)
-	workspaceSource := os.Getenv(platform.WorkspaceSourceEnv)
-	if workspaceUID == "" || workspaceID == "" || workspaceFolder == "" {
-		return fmt.Errorf(
+	return createFromEnv(ctx, baseClient)
+}
+
+func createFromInstanceEnv(
+	ctx context.Context,
+	baseClient client.Client,
+	instanceEnv string,
+) error {
+	instance := &managementv1.DevsyWorkspaceInstance{} // init pointer
+	err := json.Unmarshal([]byte(instanceEnv), instance)
+	if err != nil {
+		return fmt.Errorf("unmarshal workspace instance %s: %w", instanceEnv, err)
+	}
+
+	updatedInstance, err := createInstance(ctx, baseClient, instance)
+	if err != nil {
+		return err
+	}
+
+	out, err := json.Marshal(updatedInstance)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(out)) //nolint:forbidigo // CLI stdout output
+	return nil
+}
+
+type workspaceEnv struct {
+	id      string
+	uid     string
+	folder  string
+	context string
+	picture string
+	source  string
+}
+
+func readWorkspaceEnv() (workspaceEnv, error) {
+	env := workspaceEnv{
+		id:      os.Getenv(config.EnvProviderWorkspaceID),
+		uid:     os.Getenv(config.EnvProviderWorkspaceUID),
+		folder:  os.Getenv(config.EnvProviderWorkspaceFolder),
+		context: os.Getenv(config.EnvProviderWorkspaceContext),
+		picture: os.Getenv(platform.WorkspacePictureEnv),
+		source:  os.Getenv(platform.WorkspaceSourceEnv),
+	}
+	if env.uid == "" || env.id == "" || env.folder == "" {
+		return env, fmt.Errorf(
 			"workspaceID, workspaceUID or workspace folder not found: %s, %s, %s",
-			workspaceID,
-			workspaceUID,
-			workspaceFolder,
+			env.id,
+			env.uid,
+			env.folder,
 		)
 	}
+
+	return env, nil
+}
+
+func createFromEnv(ctx context.Context, baseClient client.Client) error {
+	env, err := readWorkspaceEnv()
+	if err != nil {
+		return err
+	}
+
 	instance, err := platform.FindInstance(
 		ctx,
 		baseClient,
-		platform.FindInstanceOptions{UID: workspaceUID},
+		platform.FindInstanceOptions{UID: env.uid},
 	)
 	if err != nil {
 		return err
@@ -111,10 +143,10 @@ func (cmd *WorkspaceCmd) Run(
 	instance, err = form.CreateInstance(
 		ctx,
 		baseClient,
-		workspaceID,
-		workspaceUID,
-		workspaceSource,
-		workspacePicture,
+		env.id,
+		env.uid,
+		env.source,
+		env.picture,
 	)
 	if err != nil {
 		return err
@@ -125,6 +157,13 @@ func (cmd *WorkspaceCmd) Run(
 		return err
 	}
 
+	return saveImportedWorkspaceConfig(instance, env.context, env.id)
+}
+
+func saveImportedWorkspaceConfig(
+	instance *managementv1.DevsyWorkspaceInstance,
+	workspaceContext, workspaceID string,
+) error {
 	// once we have the instance, update workspace and save config
 	// TODO: Do we need a file lock?
 	workspaceConfig, err := provider.LoadWorkspaceConfig(workspaceContext, workspaceID)
