@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 func (d *dockerDriver) BuildDevContainer(
@@ -405,13 +406,48 @@ func (d *dockerDriver) executeBuild(
 	buildOptions *build.BuildOptions,
 ) error {
 	log.Infof("build with %s", strategy.name())
+
+	var lastErr error
+	err := wait.ExponentialBackoffWithContext(
+		ctx,
+		buildBackoff,
+		func(ctx context.Context) (bool, error) {
+			output, buildErr := d.runBuildAttempt(ctx, strategy, req, buildOptions)
+			lastErr = classifyBuildError(buildErr, output)
+			if lastErr == nil {
+				return true, nil
+			}
+			if !errors.Is(lastErr, errTransientBuild) {
+				return false, lastErr
+			}
+			log.Warnf("transient build failure, retrying: %v", lastErr)
+			return false, nil
+		},
+	)
+	if wait.Interrupted(err) {
+		return lastErr
+	}
+	return err
+}
+
+// runBuildAttempt runs the build once and returns the tail of the streamed
+// output alongside the error for transient-failure classification.
+func (d *dockerDriver) runBuildAttempt(
+	ctx context.Context,
+	strategy buildStrategy,
+	req driver.BuildRequest,
+	buildOptions *build.BuildOptions,
+) (string, error) {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	if err := strategy.build(ctx, writer, req.Options.Platform, buildOptions); err != nil {
-		return fmt.Errorf("%s build: %w", strategy.name(), err)
+	outputTail := &tailBuffer{limit: maxStderrDiagnostics}
+	multiWriter := io.MultiWriter(writer, outputTail)
+
+	if err := strategy.build(ctx, multiWriter, req.Options.Platform, buildOptions); err != nil {
+		return outputTail.String(), fmt.Errorf("%s build: %w", strategy.name(), err)
 	}
-	return nil
+	return "", nil
 }
 
 func (d *dockerDriver) createBuildInfo(
