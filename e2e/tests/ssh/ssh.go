@@ -22,6 +22,8 @@ import (
 const (
 	osWindows = "windows"
 
+	gpgTestKeyFingerprint = "07F681B9FD6C3411F679BFD1F51769DB572DDD3F"
+
 	envSSHAuthSock = "SSH_AUTH_SOCK"
 
 	sshOptStrictHostKeyCheckingNo = "StrictHostKeyChecking=no"
@@ -116,6 +118,43 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			devsySSHCtx, cancelSSH := context.WithDeadline(ctx, devsySSHDeadline)
 			defer cancelSSH()
 			err = f.DevsySSHEchoTestString(devsySSHCtx, tempDir)
+			framework.ExpectNoError(err)
+		},
+	)
+
+	ginkgo.It(
+		"should expose the host GPG secret key in the container via agent forwarding",
+		ginkgo.Label("gpg"),
+		ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		func(ctx ginkgo.SpecContext) {
+			if runtime.GOOS == osWindows {
+				ginkgo.Skip("skipping on windows")
+			}
+
+			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
+			framework.ExpectNoError(err)
+
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			_ = f.DevsyProviderAdd(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
+			framework.ExpectNoError(
+				framework.ImportGpgKey(filepath.Join(tempDir, "gpg-private.key")),
+			)
+
+			err = f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
+			framework.ExpectNoError(err)
+
+			sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
+			defer cancelSSH()
+			err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
 			framework.ExpectNoError(err)
 		},
 	)

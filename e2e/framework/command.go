@@ -468,34 +468,41 @@ func (f *Framework) SetupGPG(tmpDir string) error {
 	return exec.Command("gpg", "-k").Run()
 }
 
-func (f *Framework) DevsySSHGpgTestKey(ctx context.Context, workspace string) error {
-	pubKeyB, err := exec.Command("sh", "-c", "gpg -k --with-colons 2>/dev/null | grep sec | base64 -w0").
-		Output()
+func ImportGpgKey(privateKeyPath string) error {
+	// #nosec G204 -- test imports a controlled key path
+	out, err := exec.Command("gpg", "--batch", "--import", privateKeyPath).CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("import gpg private key: %s: %w", out, err)
 	}
+	if out, err := exec.Command("gpg-connect-agent", "/bye").CombinedOutput(); err != nil {
+		return fmt.Errorf("start gpg-agent: %s: %w", out, err)
+	}
+	return nil
+}
 
-	// First run to trigger the first forwarding
+func (f *Framework) DevsySSHGpgSecretKeyForwarded(
+	ctx context.Context,
+	workspace, expectedFingerprint string,
+) error {
 	stdout, _, err := f.ExecCommandCapture(ctx, []string{
 		cmdWorkspace,
 		cmdSSH,
 		names.Flag(names.AgentForwarding),
 		names.Flag(names.SSHGPGForwarding),
 		flagCommand,
-		"gpg -k --with-colons 2>/dev/null |grep sec |  base64 -w0", workspace,
+		"gpg --list-secret-keys --with-colons 2>/dev/null",
+		workspace,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("list secret keys in container: %w", err)
 	}
-
-	if stdout != string(pubKeyB) {
+	if !strings.Contains(stdout, expectedFingerprint) {
 		return fmt.Errorf(
-			"devsy gpg public key forwarding failed, expected %s, got %s",
-			string(pubKeyB),
+			"gpg agent forwarding failed: secret key %s not reachable in container, got: %q",
+			expectedFingerprint,
 			stdout,
 		)
 	}
-
 	return nil
 }
 
