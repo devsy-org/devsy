@@ -430,6 +430,39 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("retries launch even when the failed workspace is already in the store", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(
+      document.querySelectorAll("button"),
+    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "cmd-1",
+      message: "Exit code: 1",
+      done: true,
+    } as CommandProgress)
+    await flushAsync()
+
+    workspaces.set([{ id: "python" }])
+    await flushAsync()
+
+    workspaceUp.mockClear()
+    const retryBtn = queryByText("Retry") as HTMLButtonElement
+    await fireEvent.click(retryBtn)
+    await flushAsync()
+
+    expect(workspaceUp).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
   it("forwards assembled source plus workspaceFolder and build flags to workspaceUp", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, unmount } = render(WorkspaceWizard, {
