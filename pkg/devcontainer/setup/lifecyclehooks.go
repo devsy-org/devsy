@@ -72,17 +72,19 @@ func phaseHasCommands(all []phaseHook, phase LifecyclePhase) bool {
 	return false
 }
 
-// resolveWaitFor normalises the raw waitFor string from the config,
-// falling back to the spec default for empty or invalid values.
-func resolveWaitFor(raw string) LifecyclePhase {
-	if raw == "" {
-		return DefaultWaitFor
+// resolveWaitFor normalises the raw waitFor string from the config, falling
+// back to the spec default for empty or invalid values. A valid floor raises
+// the effective phase but never lowers it, so a later waitFor the user
+// configured is always honoured.
+func resolveWaitFor(raw string, floor LifecyclePhase) LifecyclePhase {
+	waitFor := DefaultWaitFor
+	if p := LifecyclePhase(raw); validWaitForPhase(p) {
+		waitFor = p
 	}
-	p := LifecyclePhase(raw)
-	if !validWaitForPhase(p) {
-		return DefaultWaitFor
+	if validWaitForPhase(floor) && phaseIndex(floor) > phaseIndex(waitFor) {
+		return floor
 	}
-	return p
+	return waitFor
 }
 
 // promoteDotfilesWaitFor ensures that when dotfiles are configured, the
@@ -264,39 +266,47 @@ type SkipPhases struct {
 	PostAttach bool
 }
 
+// PreAttachOptions configures a RunPreAttachHooks invocation. WaitFor is a
+// floor: it raises the effective waitFor phase but never lowers the value
+// configured in the devcontainer. Empty means use the configured value.
+type PreAttachOptions struct {
+	Prebuild     bool
+	Dotfiles     DotfilesConfig
+	SecretsEnv   []string
+	SecretsMount []string
+	Skip         SkipPhases
+	WaitFor      LifecyclePhase
+}
+
 // RunPreAttachHooks runs lifecycle hooks up to and including the waitFor phase
 // synchronously and returns a slice of deferred phases that should run in the
 // background. Dotfiles are installed between postCreateCommand and
 // postStartCommand per the devcontainer spec.
 //
-// When prebuild is true, only onCreateCommand and updateContentCommand are
+// When Prebuild is true, only onCreateCommand and updateContentCommand are
 // executed and waitFor is ignored.
 func RunPreAttachHooks(
 	ctx context.Context,
 	setupInfo *config.Result,
-	prebuild bool,
-	dotfiles DotfilesConfig,
-	secretsEnv []string,
-	secretsMount []string,
-	skip SkipPhases,
+	opts PreAttachOptions,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
-	mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
-	all := preAttachPhaseParams(setupInfo, env, prebuild)
+	mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
+	all := preAttachPhaseParams(setupInfo, env, opts.Prebuild)
 
 	// Insert the dotfiles phase between postCreate and postStart.
 	created := setupInfo.ContainerDetails.Created
-	all = insertDotfilesPhase(ctx, all, dotfiles, created)
+	all = insertDotfilesPhase(ctx, all, opts.Dotfiles, created)
 
 	// Remove skipped phases.
-	all = filterSkippedPhases(all, skip)
+	all = filterSkippedPhases(all, opts.Skip)
 
-	if prebuild {
+	if opts.Prebuild {
 		return DeferredHooks{}, runPrebuildHooks(all)
 	}
 
-	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor)
-	waitFor = promoteDotfilesWaitFor(waitFor, dotfiles)
+	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor, opts.WaitFor)
+	waitFor = promoteDotfilesWaitFor(waitFor, opts.Dotfiles)
 
 	if !phaseHasCommands(all, waitFor) {
 		log.Debugf(

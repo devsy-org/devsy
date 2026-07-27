@@ -284,6 +284,8 @@ type CLIOptions struct {
 	SkipPostAttach       bool `json:"skipPostAttach,omitempty"`
 	SkipHostRequirements bool `json:"skipHostRequirements,omitempty"`
 
+	WaitFor string `json:"waitFor,omitempty"`
+
 	// dotfiles options
 	DotfilesRepo       string `json:"dotfilesRepo,omitempty"`
 	DotfilesScript     string `json:"dotfilesScript,omitempty"`

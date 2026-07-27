@@ -254,6 +254,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 		SkipPostCreate:    sctx.workspaceInfo.CLIOptions.SkipPostCreate,
 		SkipPostStart:     sctx.workspaceInfo.CLIOptions.SkipPostStart,
 		SkipPostAttach:    sctx.workspaceInfo.CLIOptions.SkipPostAttach,
+		WaitFor:           setup.LifecyclePhase(sctx.workspaceInfo.CLIOptions.WaitFor),
 		Dotfiles: setup.DotfilesConfig{
 			Repository:    cmd.DotfilesRepo,
 			InstallScript: cmd.DotfilesScript,
