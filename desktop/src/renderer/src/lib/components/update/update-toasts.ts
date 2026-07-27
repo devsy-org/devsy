@@ -40,7 +40,7 @@ function fireDownloaded(s: UpdateStatus): void {
   toast.success(`Update v${s.version} ready`, {
     duration: Infinity,
     action: {
-      label: "Restart and Update",
+      label: "Restart",
       onClick: () => {
         installUpdate().catch(() => {
           toast.error("Failed to start update. Try restarting the app manually.")

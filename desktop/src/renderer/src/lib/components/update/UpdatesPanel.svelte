@@ -138,7 +138,7 @@ onMount(async () => {
           {#if s.state === "available"}
             <Button size="sm" onclick={() => downloadUpdate()}>Download</Button>
           {:else if s.state === "downloaded"}
-            <Button size="sm" onclick={() => installUpdate()}>Restart &amp; Update</Button>
+            <Button size="sm" onclick={() => installUpdate()}>Restart</Button>
           {:else}
             <Button
               variant="outline"
