@@ -53,7 +53,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	github.com/tailscale/hujson v0.0.0-20260722022634-78b5b162ee49
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/tidwall/gjson v1.19.0
 	github.com/tonistiigi/fsutil v0.0.0-20260717003753-6d9dc2ebad62
 	github.com/u-root/u-root v0.16.0
