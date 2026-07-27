@@ -67,6 +67,11 @@ func (c *Client) Client() *kubernetes.Clientset {
 	return c.client
 }
 
+// Ping reports whether the API server is reachable via its /version endpoint.
+func (c *Client) Ping(ctx context.Context) error {
+	return c.client.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx).Error()
+}
+
 func (c *Client) Config() *rest.Config {
 	return c.config
 }

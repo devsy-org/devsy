@@ -196,6 +196,9 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		),
 		flags.Bool(&cmd.Reset, names.Reset, false,
 			"Remove and recreate existing containers, including their sources"),
+		flags.Bool(&cmd.NoAutoStart, names.NoAutoStart, false,
+			"Do not auto-start a stopped provider backend (e.g. Podman machine); "+
+				"report it instead"),
 		flags.StringSlice(&cmd.PrebuildRepositories, names.PrebuildRepo, nil,
 			"Docker repository hosting prebuilds for this workspace"),
 		flags.StringArray(&cmd.WorkspaceEnv, names.WorkspaceEnv, nil,

@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"runtime"
 
 	"github.com/devsy-org/devsy/pkg/compose"
@@ -100,7 +101,59 @@ var (
 	_ driver.ImageDriver          = (*dockerDriver)(nil)
 	_ driver.ComposeDriver        = (*dockerDriver)(nil)
 	_ driver.DockerHelperProvider = (*dockerDriver)(nil)
+	_ driver.Preflighter          = (*dockerDriver)(nil)
 )
+
+// Preflight checks the runtime binary is installed and its daemon reachable,
+// starting a stopped Podman machine unless auto-start is disabled.
+func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
+	return runPreflight(ctx, opts, dockerProbe{
+		command:  d.Docker.DockerCommand,
+		runtime:  d.Docker.GetRuntime().Name(),
+		lookPath: exec.LookPath,
+		ping:     d.Docker.Ping,
+		start:    d.Docker.StartPodmanMachine,
+	})
+}
+
+// dockerProbe bundles the operations runPreflight depends on so the branching
+// can be exercised with fakes, without abstracting the whole DockerHelper.
+type dockerProbe struct {
+	command  string
+	runtime  docker.RuntimeName
+	lookPath func(string) (string, error)
+	ping     func(context.Context) error
+	start    func(context.Context) error
+}
+
+func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) error {
+	runtimeName := string(p.runtime)
+
+	if _, err := p.lookPath(p.command); err != nil {
+		return &driver.PreflightError{
+			Provider: runtimeName,
+			Err:      fmt.Errorf("%s is not installed or not on PATH: %w", p.command, err),
+		}
+	}
+
+	err := p.ping(ctx)
+	if err == nil {
+		return nil
+	}
+
+	if p.runtime == docker.RuntimePodman && !opts.DisableAutoStart {
+		log.Infof(
+			"Podman machine is not running, attempting to start it (this may take a while)...",
+		)
+		if startErr := p.start(ctx); startErr != nil {
+			log.Warnf("failed to start Podman machine: %v", startErr)
+		} else if err = p.ping(ctx); err == nil {
+			return nil
+		}
+	}
+
+	return &driver.PreflightError{Provider: runtimeName, Err: err}
+}
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
 	return runtime.GOARCH, nil

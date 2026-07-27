@@ -127,6 +127,40 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
+// podmanMachineStartTimeout bounds a Podman machine boot, which spins up a VM.
+const podmanMachineStartTimeout = 90 * time.Second
+
+// Ping reports whether the runtime daemon is reachable, returning its own
+// message (e.g. "Cannot connect to Podman") on failure.
+func (r *DockerHelper) Ping(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	out, err := r.buildCmd(cctx, "info", "--format", "{{.ServerVersion}}").CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+		return err
+	}
+	return nil
+}
+
+// StartPodmanMachine starts the default Podman machine, which must already exist.
+func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, podmanMachineStartTimeout)
+	defer cancel()
+
+	out, err := r.buildCmd(cctx, "machine", "start").CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *DockerHelper) FindDevContainer(
 	ctx context.Context,
 	labels []string,

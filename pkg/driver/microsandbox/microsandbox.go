@@ -47,7 +47,17 @@ var (
 	_ driver.RunOptionsDriver     = (*microsandboxDriver)(nil)
 	_ driver.ReprovisioningDriver = (*microsandboxDriver)(nil)
 	_ driver.ImageDriver          = (*microsandboxDriver)(nil)
+	_ driver.Preflighter          = (*microsandboxDriver)(nil)
 )
+
+// Preflight checks the microsandbox runtime binary is installed. There is no
+// daemon to auto-start, so a missing binary is surfaced for the user.
+func (d *microsandboxDriver) Preflight(ctx context.Context, _ driver.PreflightOptions) error {
+	if err := d.client.EnsureInstalled(ctx); err != nil {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
+	}
+	return nil
+}
 
 // CanReprovision returns false: in-place reprovision passes nil options, which
 // a microVM cannot rebuild from. --recreate still works via delete+create.
@@ -56,13 +66,10 @@ func (d *microsandboxDriver) CanReprovision() bool {
 }
 
 func NewMicrosandboxDriver(
-	ctx context.Context,
+	_ context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (driver.Driver, error) {
 	client := cliClient{}
-	if err := client.EnsureInstalled(ctx); err != nil {
-		return nil, fmt.Errorf("microsandbox runtime is not available: %w", err)
-	}
 
 	cfg := workspaceInfo.Agent.Microsandbox
 	defaults := specDefaults{

@@ -11,6 +11,8 @@ import (
 // appleClient is the subset of *apple.AppleHelper the driver depends on, so its
 // orchestration can be unit-tested with a mock instead of the real CLI.
 type appleClient interface {
+	EnsureSystemRunning(ctx context.Context) error
+	SystemRunning(ctx context.Context) bool
 	EnsureBuilderRunning(ctx context.Context) error
 	FindDevContainer(ctx context.Context, labels []string) (*config.ContainerDetails, error)
 	FindContainerByID(ctx context.Context, ids []string) (*config.ContainerDetails, error)
