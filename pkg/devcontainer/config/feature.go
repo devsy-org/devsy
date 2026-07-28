@@ -9,9 +9,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-// objectKeyOrder returns the keys of the named top-level object field in the
-// order they appear in the JSON document. It returns nil when the field is
-// absent or is not a JSON object.
 func objectKeyOrder(data []byte, field string) ([]string, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -29,10 +26,9 @@ func objectKeyOrder(data []byte, field string) ([]string, error) {
 	return decodeObjectKeys(value)
 }
 
-// decodeObjectKeys reads the keys of a JSON object in document order.
 func decodeObjectKeys(value json.RawMessage) ([]string, error) {
 	dec := json.NewDecoder(bytes.NewReader(value))
-	if _, err := dec.Token(); err != nil { // consume opening '{'
+	if _, err := dec.Token(); err != nil {
 		return nil, err
 	}
 
@@ -123,15 +119,9 @@ type FeatureConfig struct {
 	// Origin is the path where the feature was loaded from
 	Origin string `json:"-"`
 
-	// dependsOnOrder preserves the declaration order of DependsOn keys as they
-	// appear in devcontainer-feature.json. The reference devcontainer CLI emits
-	// lockfile dependsOn arrays in this order (Object.keys), so we retain it to
-	// produce byte-identical lockfiles.
 	dependsOnOrder []string `json:"-"`
 }
 
-// UnmarshalJSON decodes a FeatureConfig while capturing the declaration order
-// of the dependsOn object's keys, which a plain map cannot preserve.
 func (c *FeatureConfig) UnmarshalJSON(data []byte) error {
 	type alias FeatureConfig
 	if err := json.Unmarshal(data, (*alias)(c)); err != nil {
@@ -145,10 +135,6 @@ func (c *FeatureConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// DependsOnKeys returns the dependency feature identifiers in their original
-// declaration order, matching the reference devcontainer CLI's lockfile output.
-// It falls back to sorted keys when order was not captured (e.g. a
-// programmatically constructed config).
 func (c *FeatureConfig) DependsOnKeys() []string {
 	if c.capturedOrderMatchesDeps() {
 		return c.dependsOnOrder
@@ -161,10 +147,6 @@ func (c *FeatureConfig) DependsOnKeys() []string {
 	return keys
 }
 
-// capturedOrderMatchesDeps reports whether the captured declaration order still
-// describes exactly the current DependsOn keys. It guards against DependsOn
-// being mutated after unmarshal (e.g. a key swapped without changing the count),
-// in which case the sorted fallback is used instead of a stale order.
 func (c *FeatureConfig) capturedOrderMatchesDeps() bool {
 	if len(c.dependsOnOrder) != len(c.DependsOn) {
 		return false

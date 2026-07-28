@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -21,51 +20,6 @@ type LockedFeature struct {
 	Resolved  string   `json:"resolved,omitempty"`
 	Integrity string   `json:"integrity,omitempty"`
 	DependsOn []string `json:"dependsOn,omitempty"`
-}
-
-// UnmarshalJSON decodes a LockedFeature, normalizing dependsOn into the array
-// form regardless of how it was persisted. Older lockfiles (and those written
-// by pre-fix devsy builds) stored dependsOn as an object mapping feature IDs to
-// option objects; accepting both keeps pinning working across the transition.
-func (f *LockedFeature) UnmarshalJSON(data []byte) error {
-	type alias LockedFeature
-	aux := struct {
-		DependsOn json.RawMessage `json:"dependsOn,omitempty"`
-		*alias
-	}{alias: (*alias)(f)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	deps, err := normalizeLockDependsOn(aux.DependsOn)
-	if err != nil {
-		return err
-	}
-	f.DependsOn = deps
-	return nil
-}
-
-// normalizeLockDependsOn converts a persisted dependsOn value into the array
-// form. Array values are returned as-is; legacy object values contribute their
-// keys in sorted order (declaration order is unavailable and irrelevant, as the
-// loaded value is only used for pinning, never rewritten).
-func normalizeLockDependsOn(raw json.RawMessage) ([]string, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, nil
-	}
-	var arr []string
-	if err := json.Unmarshal(raw, &arr); err == nil {
-		return arr, nil
-	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return nil, fmt.Errorf("lockfile dependsOn must be an array or object: %w", err)
-	}
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys, nil
 }
 
 // Lockfile mirrors the devcontainer-lock.json structure: a map of feature

@@ -13,8 +13,6 @@ const (
 )
 
 func TestFeatureConfig_DependsOnKeysPreservesDeclarationOrder(t *testing.T) {
-	// Keys are intentionally not alphabetical to prove declaration order is
-	// preserved rather than sorted, matching the reference devcontainer CLI.
 	data := []byte(`{
 		"id": "example",
 		"dependsOn": {
@@ -36,8 +34,6 @@ func TestFeatureConfig_DependsOnKeysPreservesDeclarationOrder(t *testing.T) {
 }
 
 func TestFeatureConfig_DependsOnKeysFallsBackToSorted(t *testing.T) {
-	// A programmatically constructed config has no captured order; keys must be
-	// returned deterministically (sorted).
 	cfg := FeatureConfig{DependsOn: DependsOnField{
 		depZeta:  map[string]any{},
 		depAlpha: map[string]any{},
@@ -50,9 +46,6 @@ func TestFeatureConfig_DependsOnKeysFallsBackToSorted(t *testing.T) {
 }
 
 func TestFeatureConfig_DependsOnKeysFallsBackWhenKeyMutated(t *testing.T) {
-	// Declaration order is captured for zeta+alpha, then a key is swapped for a
-	// different one without changing the map size. The stale captured order must
-	// be rejected in favor of the sorted fallback.
 	data := []byte(
 		`{"id": "example", "dependsOn": {"ghcr.io/x/zeta:1": {}, "ghcr.io/x/alpha:1": {}}}`,
 	)
