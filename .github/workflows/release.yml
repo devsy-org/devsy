@@ -232,6 +232,13 @@ jobs:
             desktop/release/*.deb
             desktop/release/*.rpm
 
+      - name: upload macOS dmg for homebrew cask
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-dmg-${{ matrix.name }}
+          path: desktop/release/*.dmg
+
       - name: rewrite manifest URLs to GitHub Release assets
         if: hashFiles('desktop/release/latest*.yml', 'desktop/release/beta*.yml') != ''
         # Windows defaults to pwsh; `$REPO`/`$TAG` would be empty PowerShell vars.
@@ -372,7 +379,7 @@ jobs:
             ./Devsy.flatpak
 
   publish-homebrew:
-    name: Publish Homebrew Formula
+    name: Publish Homebrew Formula & Cask
     needs: [build-desktop]
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
@@ -397,6 +404,13 @@ jobs:
           name: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
 
+      - name: download macOS dmg artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: desktop-dmg-*
+          path: ${{ runner.temp }}/devsy-dmg/
+          merge-multiple: true
+
       - name: flatten CLI artifacts
         run: go run ./hack/release_artifacts inventory --dir "${{ runner.temp }}/devsy-bin" --flatten
 
@@ -409,13 +423,14 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: homebrew-tap
 
-      - name: generate and push formula
+      - name: generate and push formula and cask
         env:
           TAP_TOKEN: ${{ steps.app-token.outputs.token }}
           TAP_REPO: ${{ github.repository_owner }}/homebrew-tap
           REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
           BIN_DIR: ${{ runner.temp }}/devsy-bin
+          DMG_DIR: ${{ runner.temp }}/devsy-dmg
         run: |
           set -euo pipefail
 
@@ -425,23 +440,28 @@ jobs:
           fi
 
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
-          mkdir -p tap/Formula
+          mkdir -p tap/Formula tap/Casks
           go run ./hack/homebrew_formula \
             --bin-dir "$BIN_DIR" \
             --repo "$REPO" \
             --tag "$TAG" \
             --out tap/Formula/devsy.rb
+          go run ./hack/homebrew_cask \
+            --dmg-dir "$DMG_DIR" \
+            --repo "$REPO" \
+            --tag "$TAG" \
+            --out tap/Casks/devsy.rb
 
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
-            echo "Formula unchanged; nothing to publish"
+          git add Formula/devsy.rb Casks/devsy.rb
+          if git diff --cached --quiet; then
+            echo "Formula and cask unchanged; nothing to publish"
             exit 0
           fi
-          git add Formula/devsy.rb
           git commit -m "devsy ${TAG}"
-          git push
+          git push -u origin HEAD
 
   prerelease:
     name: Publish Prerelease
