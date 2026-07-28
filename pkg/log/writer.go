@@ -59,6 +59,16 @@ func (w *levelWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func (w *levelWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.buf.Len() > 0 {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
+	return nil
+}
+
 func (w *levelWriter) logLine(line string) {
 	if line == "" {
 		return
@@ -71,14 +81,4 @@ func (w *levelWriter) logLine(line string) {
 	default:
 		Info(line)
 	}
-}
-
-func (w *levelWriter) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.buf.Len() > 0 {
-		w.logLine(w.buf.String())
-		w.buf.Reset()
-	}
-	return nil
 }
