@@ -1,1 +1,1 @@
-{ "image": "ghcr.io/devsy-org/test-images/base:ubuntu" }
+{ "image": "ghcr.io/devsy-org/test-images/base:ubuntu", "remoteUser": "vscode" }

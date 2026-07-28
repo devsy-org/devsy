@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -134,52 +135,65 @@ func containsDirective(config, directive string) bool {
 	return false
 }
 
+// ContainerSocketPath is where the host gpg-agent socket is forwarded inside
+// the workspace container. It lives in a location the workspace user can always
+// reach, so no host-path mirroring or permission changes are required.
+const ContainerSocketPath = "/tmp/S.gpg-agent"
+
+// SetupRemoteSocketDirTree ensures the per-user runtime directory exists and is
+// owned by the workspace user, so the forwarded-socket symlink can be created
+// under it.
 func (g *GPGConf) SetupRemoteSocketDirTree() error {
-	err := exec.Command("sudo", "mkdir", "-p", "/run/user", filepath.Dir(g.SocketPath)).Run()
-	if err != nil {
+	runUserDir := filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
+
+	//nolint:gosec // runUserDir is a fixed per-uid runtime path, not user input
+	if err := exec.Command("sudo", "mkdir", "-p", runUserDir).Run(); err != nil {
 		return err
 	}
 
+	//nolint:gosec // runUserDir is a fixed per-uid runtime path, not user input
 	return exec.Command("sudo",
-		"chown",
-		"-R",
+		"chown", "-R",
 		strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()),
-		"/run/user",
-		filepath.Dir(g.SocketPath),
-		g.SocketPath,
+		runUserDir,
 	).Run()
 }
 
-// SetupRemoteSocketLink symlinks the well-known gpg-agent socket paths to the
-// forwarded socket, which pkg/ssh/forward.go binds at g.SocketPath (the host's
-// path, e.g. /Users/foo/.gnupg/S.gpg-agent).
+// SetupRemoteSocketLink points gpg's well-known agent socket locations at the
+// forwarded socket (g.SocketPath) so gpg talks to the host agent.
 func (g *GPGConf) SetupRemoteSocketLink() error {
-	err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".gnupg"), 0o700)
-	if err != nil {
-		return err
-	}
-
-	err = exec.Command("sudo", "ln", "-s", "-f", g.SocketPath, "/tmp/S.gpg-agent").Run()
-	if err != nil {
-		return err
-	}
-
-	symlinks := []string{
+	links := []string{
 		filepath.Join(os.Getenv("HOME"), ".gnupg", "S.gpg-agent"),
-		"/run/user/" + strconv.Itoa(os.Getuid()) + "/gnupg/S.gpg-agent",
+		filepath.Join("/run/user", strconv.Itoa(os.Getuid()), "gnupg", "S.gpg-agent"),
 	}
 
-	for _, link := range symlinks {
+	for _, link := range links {
+		//nolint:gosec // link derives from $HOME and the current uid, not user input
+		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+			return err
+		}
 		_ = os.Remove(link)
-		_ = os.MkdirAll(filepath.Dir(link), 0o755)
-
-		err = os.Symlink("/tmp/S.gpg-agent", link)
-		if err != nil {
+		if err := os.Symlink(g.SocketPath, link); err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return g.claimForwardedSocket()
+}
+
+// claimForwardedSocket takes ownership of the forwarded socket. The ssh server
+// binds it as root, but a non-root workspace user needs write access to connect
+// to it. The socket is bound asynchronously, so wait briefly for it to appear.
+func (g *GPGConf) claimForwardedSocket() error {
+	owner := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())
+	for range 30 {
+		if _, err := os.Stat(g.SocketPath); err == nil {
+			//nolint:gosec // g.SocketPath is the fixed forwarded socket path
+			return exec.Command("sudo", "chown", owner, g.SocketPath).Run()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("forwarded gpg socket %q did not appear", g.SocketPath)
 }
 
 func gpgConfigPath() string {
