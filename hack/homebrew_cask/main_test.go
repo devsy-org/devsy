@@ -27,6 +27,8 @@ func TestRender(t *testing.T) {
 
 	// sha256("content-Devsy_mac_arm64.dmg")
 	const wantARM = "f65094affc51b44bb65e948773afbdb527e5073f82569bcd9361deb17581807b"
+	// sha256("content-Devsy_mac_x64.dmg")
+	const wantIntel = "f1045e0e16797365c7f23e330cbab90e74218dc48b55a030fe23a93f4e8c6b9e"
 
 	for _, want := range []string{
 		`version "1.2.3"`, // leading v stripped
@@ -36,6 +38,7 @@ func TestRender(t *testing.T) {
 		`app "Devsy.app"`,
 		`homepage "https://www.devsy.sh"`,
 		`sha256 arm:   "` + wantARM + `"`,
+		`intel: "` + wantIntel + `"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cask missing %q\n---\n%s", want, out)
