@@ -1,23 +1,20 @@
 package log
 
 import (
+	"bytes"
 	"io"
+	"strings"
+	"sync"
 
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// Writer returns an io.WriteCloser that writes each line as a log entry at the given level.
-// Level uses the package constants: LevelInfo, LevelDebug, etc.
+// Writer returns an io.WriteCloser that logs each complete line written to
+// it as a structured entry at the given level, through the same encoder as
+// every other log call. Primarily used as a subprocess's Stdout/Stderr.
+// Close flushes any trailing line left without a newline.
 func Writer(level int) io.WriteCloser {
-	zapLevel := verbosityConstToZapLevel(level)
-	w, closer, _ := zap.Open("stderr")
-	_ = closer // stderr doesn't need closing
-	return &levelWriter{
-		sink:  w,
-		level: zapLevel,
-		core:  sugar.Load().Desugar().Core(),
-	}
+	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
 
 func verbosityConstToZapLevel(level int) zapcore.Level {
@@ -34,18 +31,54 @@ func verbosityConstToZapLevel(level int) zapcore.Level {
 }
 
 type levelWriter struct {
-	sink  zapcore.WriteSyncer
 	level zapcore.Level
-	core  zapcore.Core
+
+	mu  sync.Mutex
+	buf bytes.Buffer
 }
 
 func (w *levelWriter) Write(p []byte) (int, error) {
-	if !w.core.Enabled(w.level) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if !sugar.Load().Desugar().Core().Enabled(w.level) {
 		return len(p), nil // discard if below current level
 	}
-	return w.sink.Write(p)
+
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadString('\n')
+		if err != nil {
+			// Incomplete line: put it back for the next Write/Close.
+			w.buf.Reset()
+			w.buf.WriteString(line)
+			break
+		}
+		w.logLine(strings.TrimSuffix(line, "\n"))
+	}
+	return len(p), nil
+}
+
+func (w *levelWriter) logLine(line string) {
+	if line == "" {
+		return
+	}
+	switch w.level {
+	case zapcore.DebugLevel:
+		Debug(line)
+	case zapcore.ErrorLevel:
+		Error(line)
+	default:
+		Info(line)
+	}
 }
 
 func (w *levelWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.buf.Len() > 0 {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
 	return nil
 }
