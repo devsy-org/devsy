@@ -69,8 +69,7 @@ func (cmd *taskListCmd) run() error {
 		return json.NewEncoder(os.Stdout).Encode(states)
 	}
 	for _, s := range states {
-		//nolint:forbidigo // CLI stdout output
-		fmt.Printf("%s\t%s\t%s\t%s\n", s.ID, s.Status, s.Command, s.WorkspaceID)
+		_, _ = fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\n", s.ID, s.Status, s.Command, s.WorkspaceID)
 	}
 	return nil
 }
@@ -214,7 +213,7 @@ func emitTaskTransition(last, current *task.State, emitJSON bool) {
 		_ = config2.WriteStatusJSON(os.Stdout, event)
 		return
 	}
-	fmt.Printf("task %s: %s\n", current.ID, current.Phase) //nolint:forbidigo // CLI stdout output
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
 }
 
 // --- cancel ---
@@ -259,7 +258,7 @@ func (cmd *taskCancelCmd) run(id string) error {
 	if emitJSON {
 		return json.NewEncoder(os.Stdout).Encode(state)
 	}
-	fmt.Printf("task %s: canceled\n", state.ID) //nolint:forbidigo // CLI stdout output
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: canceled\n", state.ID)
 	return nil
 }
 
@@ -317,7 +316,7 @@ func reportTaskState(state *task.State, emitJSON bool) error {
 		return reportTaskStateJSON(state)
 	}
 
-	fmt.Printf("task %s: %s\n", state.ID, state.Status) //nolint:forbidigo // CLI stdout output
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", state.ID, state.Status)
 	if state.Status == task.StatusFailed {
 		return fmt.Errorf("%s", state.Error)
 	}
