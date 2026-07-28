@@ -22,13 +22,18 @@ func objectKeyOrder(data []byte, field string) ([]string, error) {
 		return nil, nil
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(value))
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(value, &obj); err != nil {
+		return nil, nil //nolint:nilerr // non-object values carry no key order
 	}
-	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
-		return nil, nil
+	return decodeObjectKeys(value)
+}
+
+// decodeObjectKeys reads the keys of a JSON object in document order.
+func decodeObjectKeys(value json.RawMessage) ([]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(value))
+	if _, err := dec.Token(); err != nil { // consume opening '{'
+		return nil, err
 	}
 
 	var keys []string
@@ -37,11 +42,7 @@ func objectKeyOrder(data []byte, field string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		key, ok := keyTok.(string)
-		if !ok {
-			return nil, fmt.Errorf("unexpected %s object key token: %v", field, keyTok)
-		}
-		keys = append(keys, key)
+		keys = append(keys, keyTok.(string))
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
 			return nil, err
