@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -161,6 +162,7 @@ func StartContainer(
 		ctx,
 		devcontainer.UpOptions{NoBuild: true},
 		workspaceConfig.InjectTimeout,
+		status.Nop(),
 	)
 	if err != nil {
 		return result, err

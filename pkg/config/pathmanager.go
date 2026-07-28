@@ -88,6 +88,7 @@ type PathManager interface {
 
 	// State sub-paths.
 	LogDir() (string, error)
+	TaskDir() (string, error)
 }
 
 // basePathManager implements every sub-path method by delegating the top-level
@@ -382,6 +383,16 @@ func (b *basePathManager) LogDir() (string, error) {
 	}
 
 	return filepath.Join(dir, "logs"), nil
+}
+
+// TaskDir holds pkg/task's state files for detached background tasks.
+func (b *basePathManager) TaskDir() (string, error) {
+	dir, err := b.pm.StateDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "tasks"), nil
 }
 
 // --- Singleton management ---

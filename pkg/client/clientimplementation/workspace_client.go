@@ -19,11 +19,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/gofrs/flock"
 )
@@ -290,15 +292,64 @@ func (s *workspaceClient) Status(
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if s.isMachineProvider() && len(s.config.Exec.Status) > 0 {
-		return s.machineStatus(ctx, opt)
+	var (
+		result client.Status
+		err    error
+	)
+	switch {
+	case s.isMachineProvider() && len(s.config.Exec.Status) > 0:
+		result, err = s.machineStatus(ctx, opt)
+	case opt.ContainerStatus:
+		result, err = s.getContainerStatus(ctx)
+	default:
+		result, err = s.workspaceFolderStatus()
+	}
+	if err != nil || result != client.StatusNotFound {
+		return result, err
 	}
 
-	if opt.ContainerStatus {
-		return s.getContainerStatus(ctx)
+	if override, ok := s.taskStatusOverride(); ok {
+		return override, nil
+	}
+	return result, nil
+}
+
+// taskStatusOverride reports Provisioning or Failed based on the most
+// recently started `up` task for this workspace, when more informative than
+// a bare "no container". A succeeded task implies nothing: if the container
+// is still missing after that, something else removed it. Best-effort: any
+// error reading task state reports ok=false rather than failing Status.
+func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
+	store, err := task.NewStore()
+	if err != nil {
+		return "", false
+	}
+	states, err := store.List()
+	if err != nil {
+		return "", false
 	}
 
-	return s.workspaceFolderStatus()
+	var latest *task.State
+	for _, st := range states {
+		if st.WorkspaceID != s.workspace.ID || st.Command != "up" {
+			continue
+		}
+		if latest == nil || st.StartedAt.After(latest.StartedAt) {
+			latest = st
+		}
+	}
+	if latest == nil {
+		return "", false
+	}
+
+	switch {
+	case !latest.Status.Terminal():
+		return client.StatusProvisioning, true
+	case latest.Status == task.StatusFailed:
+		return client.StatusFailed, true
+	default:
+		return "", false
+	}
 }
 
 func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
@@ -1100,7 +1151,8 @@ func runTunnelServer(
 		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.WorkspaceConfig(),
 		append(opts.TunnelOptions,
-			tunnelserver.WithGitToken(opts.CLIOptions.GitToken))...,
+			tunnelserver.WithGitToken(opts.CLIOptions.GitToken),
+			tunnelserver.WithStatusReporter(status.NewLogReporter()))...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel server: %w", err)

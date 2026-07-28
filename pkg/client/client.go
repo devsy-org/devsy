@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"golang.org/x/crypto/ssh"
 )
@@ -166,6 +167,10 @@ type UpOptions struct {
 
 	Stdin  io.Reader
 	Stdout io.Writer
+
+	// Reporter receives up-pipeline phase events when the implementation
+	// can observe them. May be nil.
+	Reporter status.Reporter
 }
 
 type SshOptions struct {
@@ -182,6 +187,10 @@ const (
 	StatusBusy     = "Busy"
 	StatusStopped  = "Stopped"
 	StatusNotFound = "NotFound"
+	// No container yet, but a pkg/task `up --detach` task is building one.
+	StatusProvisioning = "Provisioning"
+	// No container, and the most recent `up --detach` task errored.
+	StatusFailed = "Failed"
 )
 
 func ParseStatus(in string) (Status, error) {
@@ -195,11 +204,18 @@ func ParseStatus(in string) (Status, error) {
 		return StatusStopped, nil
 	case "NOTFOUND":
 		return StatusNotFound, nil
+	case "PROVISIONING":
+		return StatusProvisioning, nil
+	case "FAILED":
+		return StatusFailed, nil
 	default:
 		return StatusNotFound, fmt.Errorf(
 			"error parsing status: %q unrecognized status, needs to be one of: %v",
 			in,
-			[]string{StatusRunning, StatusBusy, StatusStopped, StatusNotFound},
+			[]string{
+				StatusRunning, StatusBusy, StatusStopped, StatusNotFound,
+				StatusProvisioning, StatusFailed,
+			},
 		)
 	}
 }

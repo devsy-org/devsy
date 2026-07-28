@@ -3,6 +3,7 @@
 package command
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"syscall"
@@ -34,8 +35,15 @@ func kill(pid string) error {
 		return err
 	}
 
-	_ = syscall.Kill(parsedPid, syscall.SIGTERM)
+	if err := syscall.Kill(parsedPid, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil // already exited
+		}
+		return err
+	}
 	time.Sleep(2 * time.Second)
-	_ = syscall.Kill(parsedPid, syscall.SIGKILL)
+	if err := syscall.Kill(parsedPid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
 	return nil
 }

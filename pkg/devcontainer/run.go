@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
 	"github.com/devsy-org/devsy/pkg/encoding"
@@ -18,7 +19,13 @@ import (
 
 // Runner drives the lifecycle of a single workspace's dev container.
 type Runner interface {
-	Up(ctx context.Context, options UpOptions, timeout time.Duration) (*config.Result, error)
+	// Up reports phase transitions to reporter; pass status.Nop() to skip.
+	Up(
+		ctx context.Context,
+		options UpOptions,
+		timeout time.Duration,
+		reporter status.Reporter,
+	) (*config.Result, error)
 	Build(ctx context.Context, options provider.BuildOptions) (string, error)
 	Find(ctx context.Context) (*config.ContainerDetails, error)
 	Command(ctx context.Context, params CommandParams) error
@@ -83,6 +90,10 @@ type runner struct {
 	idLabels []string
 
 	recovering bool
+
+	// Set at the start of Up; read by other runner methods via this field
+	// rather than threaded through every call site.
+	reporter status.Reporter
 }
 
 func NewRunner(
@@ -110,6 +121,7 @@ func NewRunner(
 		id:                   GetRunnerIDFromWorkspace(workspaceConfig.Workspace),
 		idLabels:             workspaceConfig.CLIOptions.IDLabels,
 		workspaceConfig:      workspaceConfig,
+		reporter:             status.Nop(),
 	}, nil
 }
 
@@ -124,25 +136,38 @@ func (r *runner) Up(
 	ctx context.Context,
 	options UpOptions,
 	timeout time.Duration,
+	reporter status.Reporter,
 ) (*config.Result, error) {
+	if reporter == nil {
+		reporter = status.Nop()
+	}
+	r.reporter = reporter
+
 	log.Debugf(
 		"Up devcontainer for workspace %q with timeout %s",
 		r.workspaceConfig.Workspace.ID,
 		timeout,
 	)
 
+	status.Enter(reporter, status.PhaseResolvingConfig, "")
 	substitutedConfig, substitutionContext, err := r.getSubstitutedConfig(options.CLIOptions)
 	if err != nil {
+		status.Fail(reporter, status.PhaseResolvingConfig, err)
 		return nil, err
 	}
+	status.Leave(reporter, status.PhaseResolvingConfig, "")
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
 	// Recovery skips initializeCommand: a failing host hook must not block the
 	// recovery container. In normal mode its failure is recovery-eligible.
 	if !options.Recovery {
+		status.Enter(reporter, status.PhaseInitializeCommand, "")
 		if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
-			return nil, clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+			err = clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+			status.Fail(reporter, status.PhaseInitializeCommand, err)
+			return nil, err
 		}
+		status.Leave(reporter, status.PhaseInitializeCommand, "")
 	}
 
 	params := &runContainerParams{
@@ -156,6 +181,11 @@ func (r *runner) Up(
 	if result != nil {
 		result.RecoveryContainer = r.recovering
 	}
+	if err != nil {
+		status.Fail(reporter, status.PhaseReady, err)
+		return result, err
+	}
+	status.Leave(reporter, status.PhaseReady, "")
 	return result, err
 }
 

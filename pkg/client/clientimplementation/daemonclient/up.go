@@ -2,6 +2,7 @@ package daemonclient
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	devsyconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
@@ -65,7 +67,7 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		return nil, err
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, taskID)
+	return waitTaskDone(ctx, managementClient, instance, taskID, reporterOrNop(opt.Reporter))
 }
 
 func migratedRebuildError(
@@ -152,6 +154,13 @@ func startUpTask(
 	return managementClient, taskID, nil
 }
 
+func reporterOrNop(r status.Reporter) status.Reporter {
+	if r == nil {
+		return status.Nop()
+	}
+	return r
+}
+
 type createUpTaskParams struct {
 	managementClient kube.Interface
 	instance         *managementv1.DevsyWorkspaceInstance
@@ -208,8 +217,9 @@ func waitTaskDone(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
+	reporter status.Reporter,
 ) (*config.Result, error) {
-	exitCode, err := observeTask(ctx, managementClient, instance, taskID)
+	exitCode, err := observeTask(ctx, managementClient, instance, taskID, reporter)
 	if err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	} else if exitCode != 0 {
@@ -284,6 +294,7 @@ func observeTask(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 	taskID string,
+	reporter status.Reporter,
 ) (int, error) {
 	var (
 		exitCode int
@@ -318,7 +329,7 @@ func observeTask(
 		}
 	}()
 	go func() {
-		exitCode, err = printLogs(printCtx, managementClient, instance, taskID)
+		exitCode, err = printLogs(printCtx, managementClient, instance, taskID, reporter)
 		errChan <- err
 	}()
 
@@ -344,6 +355,7 @@ func printLogs(
 	managementClient kube.Interface,
 	workspace *managementv1.DevsyWorkspaceInstance,
 	taskID string,
+	reporter status.Reporter,
 ) (int, error) {
 	// get logs reader
 	log.Debugf("printing logs of task: %s", taskID)
@@ -384,6 +396,12 @@ func printLogs(
 		<-stderrDone
 	}()
 
+	// The remote task runs the same devsy CLI, so its stdout carries the
+	// same NDJSON status lines a local `up` does; sniff them out here.
+	statusWriter := newStatusSniffingWriter(stdoutStreamer, reporter)
+	defer statusWriter.Close()
+	stdout := io.Writer(statusWriter)
+
 	// loop over all lines
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -394,7 +412,7 @@ func printLogs(
 			return -1, fmt.Errorf("error parsing JSON from logs reader: %w, line: %s", err, line)
 		}
 
-		exitCode, done, err := writeMessage(stdoutStreamer, stderrStreamer, message)
+		exitCode, done, err := writeMessage(stdout, stderrStreamer, message)
 		if done {
 			return exitCode, err
 		}
@@ -427,6 +445,49 @@ func writeMessage(stdout, stderr io.Writer, message *Message) (int, bool, error)
 	}
 
 	return 0, false, nil
+}
+
+// statusSniffingWriter splits a byte stream into lines, forwards each
+// status NDJSON envelope line to reporter, and passes every other line
+// through to next unchanged.
+type statusSniffingWriter struct {
+	next     io.Writer
+	reporter status.Reporter
+	buf      bytes.Buffer
+}
+
+func newStatusSniffingWriter(next io.Writer, reporter status.Reporter) *statusSniffingWriter {
+	return &statusSniffingWriter{next: next, reporter: reporter}
+}
+
+func (w *statusSniffingWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadString('\n')
+		if err != nil {
+			// Incomplete line: put it back for the next Write/Close.
+			w.buf.Reset()
+			w.buf.WriteString(line)
+			break
+		}
+		if event, ok := config.ParseStatusLine(line); ok {
+			w.reporter.Report(event)
+			continue
+		}
+		if _, err := w.next.Write([]byte(line)); err != nil {
+			return len(p), err
+		}
+	}
+	return len(p), nil
+}
+
+func (w *statusSniffingWriter) Close() error {
+	if w.buf.Len() == 0 {
+		return nil
+	}
+	_, err := w.next.Write(w.buf.Bytes())
+	w.buf.Reset()
+	return err
 }
 
 const (

@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -72,9 +73,12 @@ func (r *runner) setupContainer(
 	ctx context.Context,
 	params *setupContainerParams,
 ) (*config.Result, error) {
+	status.Enter(r.reporter, status.PhaseInjectingAgent, "")
 	if err := r.injectAgentIntoContainer(ctx, params.timeout); err != nil {
+		status.Fail(r.reporter, status.PhaseInjectingAgent, err)
 		return nil, err
 	}
+	status.Leave(r.reporter, status.PhaseInjectingAgent, "")
 	log.Debugf("injected into container")
 	defer log.Debugf("done setting up container")
 
@@ -85,7 +89,14 @@ func (r *runner) setupContainer(
 
 	setupCommand := r.buildSetupCommand(info.compressed, info.workspaceConfigCompressed)
 
-	return r.executeSetup(ctx, info.result, setupCommand)
+	status.Enter(r.reporter, status.PhaseRunningLifecycleHook, "")
+	result, err := r.executeSetup(ctx, info.result, setupCommand)
+	if err != nil {
+		status.Fail(r.reporter, status.PhaseRunningLifecycleHook, err)
+		return result, err
+	}
+	status.Leave(r.reporter, status.PhaseRunningLifecycleHook, "")
+	return result, nil
 }
 
 func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Duration) error {
@@ -182,6 +193,26 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		return fmt.Errorf("deliver agent (post-start): %w", err)
 	}
 	return nil
+}
+
+// prefetchAgentBinary warms the binary cache while the container builds.
+// Best-effort: failures are ignored, and the real injection-path
+// acquisition retries from scratch regardless.
+func (r *runner) prefetchAgentBinary(ctx context.Context) {
+	arch, err := r.deliveryArch(ctx)
+	if err != nil {
+		return
+	}
+	binarySource, err := r.newBinarySource()
+	if err != nil {
+		return
+	}
+	rc, err := binarySource(ctx, arch)
+	if err != nil {
+		return
+	}
+	defer rc.Close()
+	_, _ = io.Copy(io.Discard, rc)
 }
 
 func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
@@ -471,6 +502,7 @@ func (r *runner) executeSetup(
 				r.workspaceConfig.CLIOptions.SecretsMount,
 			),
 			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
+			tunnelserver.WithStatusReporter(r.reporter),
 		)
 	}
 

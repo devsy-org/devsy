@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -15,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -368,18 +370,44 @@ func prepareLock(
 	return lock, nil
 }
 
+// getUserFeatures resolves every feature the user configured directly.
+// Each resolution can involve a network pull (OCI) or tarball download, so
+// they run concurrently rather than one at a time; featureProcessor and
+// lockfileState are safe for concurrent use (see their doc comments).
 func getUserFeatures(
 	processor *featureProcessor,
 	devContainerConfig *config.DevContainerConfig,
 ) (map[string]*config.FeatureSet, error) {
-	userFeatures := map[string]*config.FeatureSet{}
+	type resolved struct {
+		key        string
+		featureSet *config.FeatureSet
+	}
+
+	g, _ := errgroup.WithContext(context.Background())
+	results := make([]resolved, len(devContainerConfig.Features))
+	i := 0
 	for featureID, featureOptions := range devContainerConfig.Features {
-		featureSet, err := processor.processFeature(featureID, featureOptions)
-		if err != nil {
-			return nil, fmt.Errorf("process feature %s: %w", featureID, err)
-		}
-		key := featureDeduplicationKey(featureSet.ConfigID, featureSet.Version)
-		userFeatures[key] = featureSet
+		idx := i
+		i++
+		g.Go(func() error {
+			featureSet, err := processor.processFeature(featureID, featureOptions)
+			if err != nil {
+				return fmt.Errorf("process feature %s: %w", featureID, err)
+			}
+			results[idx] = resolved{
+				key:        featureDeduplicationKey(featureSet.ConfigID, featureSet.Version),
+				featureSet: featureSet,
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	userFeatures := make(map[string]*config.FeatureSet, len(results))
+	for _, r := range results {
+		userFeatures[r.key] = r.featureSet
 	}
 	return userFeatures, nil
 }

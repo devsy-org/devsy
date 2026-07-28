@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/devsyconfig"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
@@ -91,7 +92,7 @@ func RunSetupServer(
 }
 
 func New(options ...Option) *tunnelServer {
-	s := &tunnelServer{}
+	s := &tunnelServer{statusReporter: status.Nop()}
 	for _, o := range options {
 		s = o(s)
 	}
@@ -116,6 +117,8 @@ type tunnelServer struct {
 	platformOptions *devsy.PlatformOptions
 	secrets         []*tunnel.Secret
 	gitToken        *provider2.GitToken
+
+	statusReporter status.Reporter
 }
 
 func (t *tunnelServer) RunWithResult(
@@ -426,6 +429,19 @@ func (t *tunnelServer) Log(ctx context.Context, message *tunnel.LogMessage) (*tu
 		log.Info(strings.TrimSpace(message.Message))
 	}
 
+	return &tunnel.Empty{}, nil
+}
+
+func (t *tunnelServer) Status(
+	ctx context.Context,
+	update *tunnel.StatusUpdate,
+) (*tunnel.Empty, error) {
+	t.statusReporter.Report(status.Event{
+		Phase:   status.Phase(update.Phase),
+		Step:    update.Step,
+		Started: update.Started,
+		Err:     update.Error,
+	})
 	return &tunnel.Empty{}, nil
 }
 

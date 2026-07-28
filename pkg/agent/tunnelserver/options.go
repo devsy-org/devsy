@@ -6,6 +6,7 @@ import (
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
@@ -71,6 +72,14 @@ func WithSecrets(env, mount []string) Option {
 func WithGitToken(token *provider2.GitToken) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.gitToken = token
+		return s
+	}
+}
+
+// WithStatusReporter forwards inbound StatusUpdate RPCs to reporter.
+func WithStatusReporter(reporter status.Reporter) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.statusReporter = reporter
 		return s
 	}
 }

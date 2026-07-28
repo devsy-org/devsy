@@ -13,6 +13,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
@@ -54,8 +55,24 @@ type UpCmd struct {
 	// Read via Changed() so unset is distinguishable from explicit false.
 	pullFromInsideContainerFlag bool
 
+	// See cmd.runDetached.
+	Detach bool
+	// Set only on the detached child re-exec (--task-id).
+	taskID string
+
 	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
 	Out io.Writer
+
+	// Set at the start of Run; nil until then.
+	statusReporter status.Reporter
+}
+
+// reporter falls back to a no-op when Run hasn't set one yet.
+func (cmd *UpCmd) reporter() status.Reporter {
+	if cmd.statusReporter == nil {
+		return status.Nop()
+	}
+	return cmd.statusReporter
 }
 
 // Options is the structured input form of the up command.
@@ -215,20 +232,45 @@ func (cmd *UpCmd) Run(
 	emitJSON := mode == output.ModeJSON
 
 	out := cmd.stdout()
+	cmd.statusReporter = newStatusReporter(emitJSON, out)
+
+	t, err := cmd.openTask()
+	if err != nil {
+		return err
+	}
+	if t != nil {
+		cmd.statusReporter = status.Tee(cmd.statusReporter, t.Reporter())
+		// The submitting process's guessed label may not match the
+		// resolved ID; client.Status() looks tasks up by this label.
+		if err := t.SetWorkspaceID(client.Workspace()); err != nil {
+			failTask(t, err)
+			return err
+		}
+	}
+
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
+		failTask(t, err)
 		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
+		succeedTask(t, nil)
 		return nil // Platform mode or prebuild-only run.
 	}
-	return cmd.finalizeUp(ctx, &finalizeUpArgs{
+
+	err = cmd.finalizeUp(ctx, &finalizeUpArgs{
 		devsyConfig: devsyConfig,
 		client:      client,
 		wctx:        wctx,
 		emitJSON:    emitJSON,
 		out:         out,
 	})
+	if err != nil {
+		failTask(t, err)
+		return err
+	}
+	succeedTask(t, wctx.result)
+	return nil
 }
 
 func (cmd *UpCmd) checkExtraDevContainerProvider(client client2.BaseWorkspaceClient) error {
@@ -348,6 +390,9 @@ func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
+	}
+	if cmd.Detach && cmd.taskID == "" {
+		return cmd.runDetached(args)
 	}
 	cmd.applyPullFromInsideContainerOverride(cobraCmd)
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)

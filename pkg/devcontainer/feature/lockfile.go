@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -150,9 +151,13 @@ type lockfileMode struct {
 }
 
 // lockfileState carries the lockfile loaded for pinning and collects the
-// entries resolved during a fetch so they can be written afterwards.
+// entries resolved during a fetch so they can be written afterwards. record
+// is called concurrently when features are fetched in parallel, so writes to
+// entries are guarded by mu; loaded is populated once before any fetch starts
+// and only read afterward, so it needs no locking.
 type lockfileState struct {
 	loaded  *Lockfile
+	mu      sync.Mutex
 	entries map[string]LockedFeature
 }
 
@@ -169,12 +174,15 @@ func (l *lockfileState) pin(featureID string) (resolved, integrity string, ok bo
 	return entry.Resolved, entry.Integrity, true
 }
 
-// record stores the resolved entry for a feature identifier.
+// record stores the resolved entry for a feature identifier. Safe to call
+// concurrently from multiple feature fetches.
 func (l *lockfileState) record(featureID string, entry LockedFeature) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
 	l.entries[featureID] = entry
+	l.mu.Unlock()
 }
 
 // newLockfileState loads the lockfile for the given config to enable pinning.

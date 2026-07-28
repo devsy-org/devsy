@@ -14,6 +14,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/language"
@@ -80,11 +81,17 @@ func (r *runner) runSingleContainer(
 		options:             options,
 	}
 
+	// Overlaps with the container build/start below instead of waiting.
+	go r.prefetchAgentBinary(ctx)
+
 	// Resolve container: ensure we have a running container with merged config.
+	status.Enter(r.reporter, status.PhaseStartingContainer, "")
 	resolved, err := r.resolveContainer(ctx, params, containerDetails)
 	if err != nil {
+		status.Fail(r.reporter, status.PhaseStartingContainer, err)
 		return nil, err
 	}
+	status.Leave(r.reporter, status.PhaseStartingContainer, "")
 
 	return r.setupContainer(ctx, &setupContainerParams{
 		rawConfig:           parsedConfig.Raw,

@@ -7,6 +7,7 @@ import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
+import { parseCliEnvelope } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { CliRunner } from "./cli.js"
@@ -165,6 +166,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     string,
     import("node:child_process").ChildProcess
   >()
+  // Maps workspaceId -> task id for still-running `up --detach` submissions.
+  // Stopping the tunnelProcesses entry (a poller) doesn't stop provisioning;
+  // only cancelling the task by id does.
+  const activeUpTasks = new Map<string, string>()
 
   /**
    * Terminate every desktop-spawned process tied to a workspace and wait for
@@ -173,6 +178,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
    * workspace's log directory.
    */
   async function quiesceWorkspace(workspaceId: string): Promise<void> {
+    const taskId = activeUpTasks.get(workspaceId)
+    if (taskId) {
+      activeUpTasks.delete(workspaceId)
+      await cli
+        .run(["workspace", "task", "cancel", taskId])
+        .catch(() => undefined)
+    }
+
     const tunnelProc = tunnelProcesses.get(workspaceId)
     if (tunnelProc) {
       tunnelProcesses.delete(workspaceId)
@@ -737,32 +750,85 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (line) => logStore.appendLog(logPath, line),
         () => logStore.closeLog(logPath),
       )
-      let signalledDone = false
 
-      // Kill any existing tunnel process for this workspace before starting a new one
+      // Kill any existing tunnel/poller process and cancel any still-running
+      // task for this workspace before starting a new one.
       const existing = tunnelProcesses.get(wsId)
       if (existing) {
         existing.kill("SIGTERM")
         tunnelProcesses.delete(wsId)
       }
+      const existingTask = activeUpTasks.get(wsId)
+      if (existingTask) {
+        activeUpTasks.delete(wsId)
+        await cli
+          .run(["workspace", "task", "cancel", existingTask])
+          .catch(() => undefined)
+      }
 
+      // Submit: returns almost immediately with the background task's id.
+      let taskId: string
+      try {
+        const submitted = await cli.run<{ kind: string; id: string }>([
+          ...cliArgs,
+          "--detach",
+        ])
+        taskId = submitted.id
+      } catch (error) {
+        const err = error as Error & { cliError?: CLIError }
+        void sink.done(formatLogLine(err.message, "ERROR"), {
+          level: "error",
+          cliError: err.cliError ?? { code: "up_failed", message: err.message },
+        })
+        return cmdId
+      }
+      activeUpTasks.set(wsId, taskId)
+
+      let signalledDone = false
       const child = await cli.runStreaming(
-        cliArgs,
-        (line) => {
+        ["workspace", "task", "logs", taskId, "--follow"],
+        (line, stream) => {
           if (signalledDone) return
+
+          // Structured NDJSON envelopes only ever appear on stdout; stderr
+          // carries freeform zap log lines.
+          const envelope = stream === "stdout" ? parseCliEnvelope(line) : undefined
+
+          if (envelope?.kind === "status") {
+            deps.getMainWindow()?.webContents.send("workspace-status", {
+              commandId: cmdId,
+              workspaceId: wsId,
+              phase: envelope.phase,
+              step: envelope.step,
+              started: envelope.started,
+              error: envelope.error,
+            })
+            return
+          }
+
           const formatted = formatLogLine(line)
 
-          if (line.includes('"outcome":"success"')) {
+          if (envelope?.kind === "result") {
             signalledDone = true
-            // Track this as a tunnel process (it stays alive for the tunnel)
-            tunnelProcesses.set(wsId, child)
+            activeUpTasks.delete(wsId)
             void sink.done(formatted)
+            return
+          }
+
+          if (envelope?.kind === "error") {
+            signalledDone = true
+            activeUpTasks.delete(wsId)
+            void sink.done(formatted, {
+              level: "error",
+              cliError: { code: "up_failed", message: envelope.message },
+            })
             return
           }
 
           if (!sink.line(formatted)) return logStore.onDrain(logPath)
         },
         (code, cliError) => {
+          activeUpTasks.delete(wsId)
           if (tunnelProcesses.get(wsId) === child) {
             tunnelProcesses.delete(wsId)
           }
@@ -774,6 +840,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         },
         wsId,
       )
+      // Tracked so quiesceWorkspace can also stop the poller; the task
+      // cancellation above is what actually stops the provisioning itself.
+      tunnelProcesses.set(wsId, child)
 
       return cmdId
     },

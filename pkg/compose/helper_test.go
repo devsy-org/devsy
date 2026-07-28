@@ -2,6 +2,7 @@ package compose
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -183,6 +184,17 @@ func (r stubRuntime) GPUAvailable(_ context.Context, _ *docker.DockerHelper) (bo
 }
 
 func (s *HelperTestSuite) TestNewComposeHelperPodmanRuntimeUsesDockerCommand() {
+	// NewComposeHelper's podman detector shells out to a live `podman
+	// compose`, which needs a running podman machine/socket (e.g. on macOS,
+	// `podman machine start`) even when the podman binary is installed. CI
+	// runners (Linux) run podman natively and don't hit this; a local dev
+	// machine without a started VM would otherwise see this test silently
+	// fall through to a different compose backend and fail on the assertion
+	// below rather than skip.
+	if exec.Command("podman", "compose", "version").Run() != nil {
+		s.T().Skip("podman compose not reachable in test environment (is podman machine running?)")
+	}
+
 	helper := &docker.DockerHelper{
 		DockerCommand: "podman",
 		Runtime:       stubRuntime{name: docker.RuntimePodman},

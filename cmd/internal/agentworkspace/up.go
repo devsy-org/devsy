@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/dockerinstall"
 	"github.com/devsy-org/devsy/pkg/extract"
@@ -150,7 +151,7 @@ func (cmd *UpCmd) up(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
 ) error {
-	result, err := cmd.devsyUp(ctx, workspaceInfo)
+	result, err := cmd.devsyUp(ctx, workspaceInfo, tunnelClient)
 	if err != nil {
 		errResult := &config2.Result{
 			Error:             err.Error(),
@@ -200,16 +201,18 @@ func (cmd *UpCmd) sendResult(
 func (cmd *UpCmd) devsyUp(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
+	tunnelClient tunnel.TunnelClient,
 ) (*config2.Result, error) {
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return nil, err
 	}
 
+	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
 	return runner.Up(ctx, devcontainer.UpOptions{
 		CLIOptions:    workspaceInfo.CLIOptions,
 		RegistryCache: workspaceInfo.RegistryCache,
-	}, workspaceInfo.InjectTimeout)
+	}, workspaceInfo.InjectTimeout, reporter)
 }
 
 func CreateRunner(
