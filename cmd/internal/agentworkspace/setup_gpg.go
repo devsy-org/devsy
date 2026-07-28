@@ -113,7 +113,7 @@ func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
 
 func configureGPGAgent(gpgConf *gpg.GPGConf) error {
 	log.Debugf("Stopping container gpg-agent")
-	if err := gpgConf.StopGpgAgent(); err != nil {
+	if err := gpg.StopGpgAgent(); err != nil {
 		return fmt.Errorf("stop container gpg-agent: %w", err)
 	}
 
@@ -135,7 +135,7 @@ func configureGPGAgent(gpgConf *gpg.GPGConf) error {
 	// Now we again kill the agent and remove the socket to really be sure every
 	// thing is clean
 	log.Debugf("Ensure stopping container gpg-agent")
-	if err := gpgConf.StopGpgAgent(); err != nil {
+	if err := gpg.StopGpgAgent(); err != nil {
 		return fmt.Errorf("ensure stopping container gpg-agent: %w", err)
 	}
 
@@ -145,7 +145,7 @@ func configureGPGAgent(gpgConf *gpg.GPGConf) error {
 	}
 
 	log.Debugf("Setup gpg.conf")
-	if err := gpgConf.SetupGpgConf(); err != nil {
+	if err := gpg.SetupGpgConf(); err != nil {
 		return fmt.Errorf("setup gpg.conf: %w", err)
 	}
 

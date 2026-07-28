@@ -1,9 +1,15 @@
 package gpg
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildForwardArgs(t *testing.T) {
@@ -21,4 +27,47 @@ func TestBuildForwardArgs(t *testing.T) {
 		"--command", "sleep infinity",
 	}
 	assert.Equal(t, expected, got)
+}
+
+func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		superviseForward(ctx, "/bin/sh", []string{"-c", "printf x >> " + runs},
+			backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond})
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		data, _ := os.ReadFile(runs) //nolint:gosec // test path is created by the test
+		return strings.Count(string(data), "x") >= 2
+	}, 5*time.Second, 10*time.Millisecond, "forward should be restarted after it exits")
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("superviseForward did not stop after ctx cancel")
+	}
+}
+
+func TestSuperviseForward_StopsImmediatelyIfCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		superviseForward(ctx, "/bin/sh", []string{"-c", "exit 0"},
+			backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("superviseForward should return promptly when ctx is already cancelled")
+	}
 }

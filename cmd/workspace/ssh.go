@@ -745,7 +745,10 @@ func (cmd *SSHCmd) setupGPGAgent(
 
 	gitKey := gpg.SigningKey(ctx)
 
-	cmd.ReverseForwardPorts = append(cmd.ReverseForwardPorts, gpgExtraSocketPath)
+	cmd.ReverseForwardPorts = append(
+		cmd.ReverseForwardPorts,
+		gpg.ContainerSocketPath+":"+gpgExtraSocketPath,
+	)
 
 	// Now we forward the agent socket to the remote, and setup remote gpg to use it
 	forwardAgent := []string{
@@ -757,7 +760,7 @@ func (cmd *SSHCmd) setupGPGAgent(
 		names.Flag(names.OwnerTrust),
 		ownerTrustArgument,
 		names.Flag(names.SocketPath),
-		gpgExtraSocketPath,
+		gpg.ContainerSocketPath,
 	}
 
 	if log.DebugEnabled() {
