@@ -163,7 +163,10 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 		"sh", "-c", script,
 	}
 
-	out, err := d.cmd(ctx, args...).CombinedOutput()
+	// Stdout only: stderr carries docker's own diagnostics, including a full
+	// image-pull transcript when the helper image isn't cached yet, which
+	// CombinedOutput would fold into the detected "version" string.
+	out, err := d.cmd(ctx, args...).Output()
 	if err != nil {
 		log.Debugf("failed to detect agent version in volume: %v", err)
 		return ""
