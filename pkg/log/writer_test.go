@@ -6,8 +6,10 @@ import (
 	"testing"
 )
 
+const testFormatJSON = "json"
+
 func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: "json"})
+	Init(Config{Verbosity: 2, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -33,7 +35,7 @@ func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 }
 
 func TestWriter_SplitsMultipleLinesInOneWrite(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: "json"})
+	Init(Config{Verbosity: 2, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -58,7 +60,7 @@ func TestWriter_SplitsMultipleLinesInOneWrite(t *testing.T) {
 }
 
 func TestWriter_FlushesTrailingPartialLineOnClose(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: "json"})
+	Init(Config{Verbosity: 2, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -82,7 +84,7 @@ func TestWriter_FlushesTrailingPartialLineOnClose(t *testing.T) {
 }
 
 func TestWriter_DiscardsBelowConfiguredLevel(t *testing.T) {
-	Init(Config{Verbosity: 1, Format: "json"}) // info+ only, debug disabled
+	Init(Config{Verbosity: 1, Format: testFormatJSON}) // info+ only, debug disabled
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
