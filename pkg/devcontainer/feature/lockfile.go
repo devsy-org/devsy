@@ -16,10 +16,10 @@ import (
 // LockedFeature is a single pinned entry in a devcontainer-lock.json file. It
 // mirrors the structure produced by the reference devcontainer CLI.
 type LockedFeature struct {
-	Version   string         `json:"version,omitempty"`
-	Resolved  string         `json:"resolved,omitempty"`
-	Integrity string         `json:"integrity,omitempty"`
-	DependsOn map[string]any `json:"dependsOn,omitempty"`
+	Version   string   `json:"version,omitempty"`
+	Resolved  string   `json:"resolved,omitempty"`
+	Integrity string   `json:"integrity,omitempty"`
+	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
 // Lockfile mirrors the devcontainer-lock.json structure: a map of feature

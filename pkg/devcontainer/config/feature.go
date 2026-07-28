@@ -1,11 +1,51 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/devsy-org/devsy/pkg/types"
 )
+
+func objectKeyOrder(data []byte, field string) ([]string, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	value, ok := raw[field]
+	if !ok {
+		return nil, nil
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(value, &obj); err != nil {
+		return nil, nil //nolint:nilerr // non-object values carry no key order
+	}
+	return decodeObjectKeys(value)
+}
+
+func decodeObjectKeys(value json.RawMessage) ([]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(value))
+	if _, err := dec.Token(); err != nil {
+		return nil, err
+	}
+
+	var keys []string
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, keyTok.(string))
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return nil, err
+		}
+	}
+	return keys, nil
+}
 
 type FeatureSet struct {
 	ConfigID string
@@ -78,6 +118,45 @@ type FeatureConfig struct {
 
 	// Origin is the path where the feature was loaded from
 	Origin string `json:"-"`
+
+	dependsOnOrder []string `json:"-"`
+}
+
+func (c *FeatureConfig) UnmarshalJSON(data []byte) error {
+	type alias FeatureConfig
+	if err := json.Unmarshal(data, (*alias)(c)); err != nil {
+		return err
+	}
+	order, err := objectKeyOrder(data, "dependsOn")
+	if err != nil {
+		return err
+	}
+	c.dependsOnOrder = order
+	return nil
+}
+
+func (c *FeatureConfig) DependsOnKeys() []string {
+	if c.capturedOrderMatchesDeps() {
+		return c.dependsOnOrder
+	}
+	keys := make([]string, 0, len(c.DependsOn))
+	for k := range c.DependsOn {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (c *FeatureConfig) capturedOrderMatchesDeps() bool {
+	if len(c.dependsOnOrder) != len(c.DependsOn) {
+		return false
+	}
+	for _, k := range c.dependsOnOrder {
+		if _, ok := c.DependsOn[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type DependsOnField map[string]any
