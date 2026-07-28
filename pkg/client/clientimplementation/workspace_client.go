@@ -314,44 +314,6 @@ func (s *workspaceClient) Status(
 	return result, nil
 }
 
-// taskStatusOverride reports Provisioning or Failed based on the most
-// recently started `up` task for this workspace, when more informative than
-// a bare "no container". A succeeded task implies nothing: if the container
-// is still missing after that, something else removed it. Best-effort: any
-// error reading task state reports ok=false rather than failing Status.
-func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
-	store, err := task.NewStore()
-	if err != nil {
-		return "", false
-	}
-	states, err := store.List()
-	if err != nil {
-		return "", false
-	}
-
-	var latest *task.State
-	for _, st := range states {
-		if st.WorkspaceID != s.workspace.ID || st.Command != "up" {
-			continue
-		}
-		if latest == nil || st.StartedAt.After(latest.StartedAt) {
-			latest = st
-		}
-	}
-	if latest == nil {
-		return "", false
-	}
-
-	switch {
-	case !latest.Status.Terminal():
-		return client.StatusProvisioning, true
-	case latest.Status == task.StatusFailed:
-		return client.StatusFailed, true
-	default:
-		return "", false
-	}
-}
-
 func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -369,6 +331,51 @@ func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 	}
 
 	return machineClient.Describe(ctx)
+}
+
+// taskStatusOverride reports Provisioning or Failed based on the most
+// recently started `up` task for this workspace, when more informative than
+// a bare "no container". A succeeded task implies nothing: if the container
+// is still missing after that, something else removed it. Best-effort: any
+// error reading task state reports ok=false rather than failing Status.
+func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
+	latest := s.latestUpTask()
+	if latest == nil {
+		return "", false
+	}
+
+	switch {
+	case !latest.Status.Terminal():
+		return client.StatusProvisioning, true
+	case latest.Status == task.StatusFailed:
+		return client.StatusFailed, true
+	default:
+		return "", false
+	}
+}
+
+// latestUpTask returns the most recently started `up` task recorded for this
+// workspace, or nil if none exists or task state can't be read.
+func (s *workspaceClient) latestUpTask() *task.State {
+	store, err := task.NewStore()
+	if err != nil {
+		return nil
+	}
+	states, err := store.List()
+	if err != nil {
+		return nil
+	}
+
+	var latest *task.State
+	for _, st := range states {
+		if st.WorkspaceID != s.workspace.ID || st.Command != "up" {
+			continue
+		}
+		if latest == nil || st.StartedAt.After(latest.StartedAt) {
+			latest = st
+		}
+	}
+	return latest
 }
 
 func (s *workspaceClient) agentConfig() provider.ProviderAgentConfig {

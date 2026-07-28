@@ -307,10 +307,8 @@ func TestConcurrentUpdatesAcrossStoreInstancesAreSerialized(t *testing.T) {
 
 	const n = 20
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range n {
+		wg.Go(func() {
 			store, err := NewStoreAt(dir)
 			if err != nil {
 				t.Errorf("NewStoreAt: %v", err)
@@ -321,7 +319,7 @@ func TestConcurrentUpdatesAcrossStoreInstancesAreSerialized(t *testing.T) {
 			}); err != nil {
 				t.Errorf("update: %v", err)
 			}
-		}(i)
+		})
 	}
 	wg.Wait()
 
@@ -345,13 +343,11 @@ func TestConcurrentReportsAreRaceSafe(t *testing.T) {
 
 	reporter := task.Reporter()
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			status.Enter(reporter, status.PhaseBuildingImage, "")
 			status.Leave(reporter, status.PhaseBuildingImage, "")
-		}()
+		})
 	}
 	wg.Wait()
 

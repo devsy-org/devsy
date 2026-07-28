@@ -27,6 +27,18 @@ type tunnelStatusReporter struct {
 	events chan *tunnel.StatusUpdate
 }
 
+func (r *tunnelStatusReporter) Report(e status.Event) {
+	select {
+	case r.events <- &tunnel.StatusUpdate{
+		Phase:   string(e.Phase),
+		Step:    e.Step,
+		Started: e.Started,
+		Error:   e.Err,
+	}:
+	case <-r.ctx.Done():
+	}
+}
+
 func (r *tunnelStatusReporter) worker() {
 	for {
 		select {
@@ -37,17 +49,5 @@ func (r *tunnelStatusReporter) worker() {
 		case <-r.ctx.Done():
 			return
 		}
-	}
-}
-
-func (r *tunnelStatusReporter) Report(e status.Event) {
-	select {
-	case r.events <- &tunnel.StatusUpdate{
-		Phase:   string(e.Phase),
-		Step:    e.Step,
-		Started: e.Started,
-		Error:   e.Err,
-	}:
-	case <-r.ctx.Done():
 	}
 }

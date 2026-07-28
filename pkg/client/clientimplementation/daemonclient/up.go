@@ -399,7 +399,7 @@ func printLogs(
 	// The remote task runs the same devsy CLI, so its stdout carries the
 	// same NDJSON status lines a local `up` does; sniff them out here.
 	statusWriter := newStatusSniffingWriter(stdoutStreamer, reporter)
-	defer statusWriter.Close()
+	defer func() { _ = statusWriter.Close() }()
 	stdout := io.Writer(statusWriter)
 
 	// loop over all lines

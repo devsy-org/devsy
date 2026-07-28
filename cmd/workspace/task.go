@@ -69,6 +69,7 @@ func (cmd *taskListCmd) run() error {
 		return json.NewEncoder(os.Stdout).Encode(states)
 	}
 	for _, s := range states {
+		//nolint:forbidigo // CLI stdout output
 		fmt.Printf("%s\t%s\t%s\t%s\n", s.ID, s.Status, s.Command, s.WorkspaceID)
 	}
 	return nil
@@ -161,30 +162,34 @@ func (cmd *taskLogsCmd) run(id string) error {
 	if err != nil {
 		return fmt.Errorf("parse --interval: %w", err)
 	}
-	return followTask(context.Background(), store, id, interval, emitJSON)
+	return followTask(context.Background(), store, followTaskOptions{
+		id:       id,
+		interval: interval,
+		emitJSON: emitJSON,
+	})
 }
 
-func followTask(
-	ctx context.Context,
-	store *task.Store,
-	id string,
-	interval time.Duration,
-	emitJSON bool,
-) error {
+type followTaskOptions struct {
+	id       string
+	interval time.Duration
+	emitJSON bool
+}
+
+func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) error {
 	var last *task.State
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
 
 	for {
-		state, err := store.Get(id)
+		state, err := store.Get(opts.id)
 		if err != nil {
 			return err
 		}
-		emitTaskTransition(last, state, emitJSON)
+		emitTaskTransition(last, state, opts.emitJSON)
 		last = state
 
 		if state.Status.Terminal() {
-			return reportTaskState(state, emitJSON)
+			return reportTaskState(state, opts.emitJSON)
 		}
 
 		select {
@@ -209,7 +214,7 @@ func emitTaskTransition(last, current *task.State, emitJSON bool) {
 		_ = config2.WriteStatusJSON(os.Stdout, event)
 		return
 	}
-	fmt.Printf("task %s: %s\n", current.ID, current.Phase)
+	fmt.Printf("task %s: %s\n", current.ID, current.Phase) //nolint:forbidigo // CLI stdout output
 }
 
 // --- cancel ---
@@ -254,7 +259,7 @@ func (cmd *taskCancelCmd) run(id string) error {
 	if emitJSON {
 		return json.NewEncoder(os.Stdout).Encode(state)
 	}
-	fmt.Printf("task %s: canceled\n", state.ID)
+	fmt.Printf("task %s: canceled\n", state.ID) //nolint:forbidigo // CLI stdout output
 	return nil
 }
 
@@ -312,7 +317,7 @@ func reportTaskState(state *task.State, emitJSON bool) error {
 		return reportTaskStateJSON(state)
 	}
 
-	fmt.Printf("task %s: %s\n", state.ID, state.Status)
+	fmt.Printf("task %s: %s\n", state.ID, state.Status) //nolint:forbidigo // CLI stdout output
 	if state.Status == task.StatusFailed {
 		return fmt.Errorf("%s", state.Error)
 	}

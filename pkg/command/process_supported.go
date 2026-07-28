@@ -42,7 +42,8 @@ func kill(pid string) error {
 		return err
 	}
 	time.Sleep(2 * time.Second)
-	if err := syscall.Kill(parsedPid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	err = syscall.Kill(parsedPid, syscall.SIGKILL)
+	if err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
 	return nil

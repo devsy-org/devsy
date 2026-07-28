@@ -37,7 +37,8 @@ func TestFail(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(r.events))
 	}
 	got := r.events[0]
-	if got.Phase != PhaseFailed || got.Err != "boom" || got.Step != string(PhaseRunningLifecycleHook) {
+	wantStep := string(PhaseRunningLifecycleHook)
+	if got.Phase != PhaseFailed || got.Err != "boom" || got.Step != wantStep {
 		t.Errorf("unexpected fail event: %+v", got)
 	}
 }

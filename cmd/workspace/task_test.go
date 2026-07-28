@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/task"
 )
 
+const testResultContainerID = "abc123"
+
 func TestResultEnvelopeFrom_NilResult(t *testing.T) {
 	got := resultEnvelopeFrom(&task.State{})
 	if got.ContainerID != "" || got.RemoteUser != "" || got.Recovery || len(got.Warnings) != 0 {
@@ -20,14 +22,14 @@ func TestResultEnvelopeFrom_PopulatedResult(t *testing.T) {
 			HostWarnings:      []string{"warn"},
 			RecoveryContainer: true,
 			ContainerDetails: &config.ContainerDetails{
-				ID: "abc123",
+				ID: testResultContainerID,
 			},
 		},
 	}
 
 	got := resultEnvelopeFrom(state)
-	if got.ContainerID != "abc123" {
-		t.Errorf("ContainerID = %q, want %q", got.ContainerID, "abc123")
+	if got.ContainerID != testResultContainerID {
+		t.Errorf("ContainerID = %q, want %q", got.ContainerID, testResultContainerID)
 	}
 	if !got.Recovery {
 		t.Error("expected Recovery = true")

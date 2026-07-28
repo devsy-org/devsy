@@ -67,14 +67,6 @@ type UpCmd struct {
 	statusReporter status.Reporter
 }
 
-// reporter falls back to a no-op when Run hasn't set one yet.
-func (cmd *UpCmd) reporter() status.Reporter {
-	if cmd.statusReporter == nil {
-		return status.Nop()
-	}
-	return cmd.statusReporter
-}
-
 // Options is the structured input form of the up command.
 type Options struct {
 	Source           string // git URL, local path, image, or workspace name
@@ -271,6 +263,14 @@ func (cmd *UpCmd) Run(
 	}
 	succeedTask(t, wctx.result)
 	return nil
+}
+
+// reporter falls back to a no-op when Run hasn't set one yet.
+func (cmd *UpCmd) reporter() status.Reporter {
+	if cmd.statusReporter == nil {
+		return status.Nop()
+	}
+	return cmd.statusReporter
 }
 
 func (cmd *UpCmd) checkExtraDevContainerProvider(client client2.BaseWorkspaceClient) error {

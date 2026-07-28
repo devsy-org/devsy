@@ -38,27 +38,21 @@ func (plainStatusReporter) Report(e status.Event) {
 	}
 }
 
+var phaseLabels = map[status.Phase]string{
+	status.PhaseCloningRepository:    "cloning repository",
+	status.PhaseResolvingConfig:      "resolving devcontainer config",
+	status.PhaseInitializeCommand:    "running initializeCommand",
+	status.PhaseBuildingImage:        "building image",
+	status.PhaseStartingContainer:    "starting container",
+	status.PhaseInjectingAgent:       "injecting agent",
+	status.PhaseRunningLifecycleHook: "running lifecycle hooks",
+	status.PhaseWaitingFor:           "waiting for readiness",
+	status.PhaseReady:                "ready",
+}
+
 func phaseLabel(p status.Phase) string {
-	switch p {
-	case status.PhaseCloningRepository:
-		return "cloning repository"
-	case status.PhaseResolvingConfig:
-		return "resolving devcontainer config"
-	case status.PhaseInitializeCommand:
-		return "running initializeCommand"
-	case status.PhaseBuildingImage:
-		return "building image"
-	case status.PhaseStartingContainer:
-		return "starting container"
-	case status.PhaseInjectingAgent:
-		return "injecting agent"
-	case status.PhaseRunningLifecycleHook:
-		return "running lifecycle hooks"
-	case status.PhaseWaitingFor:
-		return "waiting for readiness"
-	case status.PhaseReady:
-		return "ready"
-	default:
-		return string(p)
+	if label, ok := phaseLabels[p]; ok {
+		return label
 	}
+	return string(p)
 }

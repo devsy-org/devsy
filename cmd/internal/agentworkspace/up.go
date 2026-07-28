@@ -24,7 +24,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
-	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/dockerinstall"
 	"github.com/devsy-org/devsy/pkg/extract"

@@ -18,9 +18,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/compress"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
+	"github.com/devsy-org/devsy/pkg/devcontainer/status"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -211,7 +211,7 @@ func (r *runner) prefetchAgentBinary(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	_, _ = io.Copy(io.Discard, rc)
 }
 
