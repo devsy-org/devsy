@@ -435,13 +435,13 @@ jobs:
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git add Formula/devsy.rb
+          if git diff --cached --quiet; then
             echo "Formula unchanged; nothing to publish"
             exit 0
           fi
-          git add Formula/devsy.rb
           git commit -m "devsy ${TAG}"
-          git push
+          git push -u origin HEAD
 
   prerelease:
     name: Publish Prerelease
