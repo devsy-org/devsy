@@ -49,6 +49,27 @@ func TestFeatureConfig_DependsOnKeysFallsBackToSorted(t *testing.T) {
 	}
 }
 
+func TestFeatureConfig_DependsOnKeysFallsBackWhenKeyMutated(t *testing.T) {
+	// Declaration order is captured for zeta+alpha, then a key is swapped for a
+	// different one without changing the map size. The stale captured order must
+	// be rejected in favor of the sorted fallback.
+	data := []byte(
+		`{"id": "example", "dependsOn": {"ghcr.io/x/zeta:1": {}, "ghcr.io/x/alpha:1": {}}}`,
+	)
+
+	var cfg FeatureConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	delete(cfg.DependsOn, depAlpha)
+	cfg.DependsOn[depMid] = map[string]any{}
+
+	want := []string{depMid, depZeta}
+	if got := cfg.DependsOnKeys(); !reflect.DeepEqual(got, want) {
+		t.Errorf("DependsOnKeys() = %v, want %v", got, want)
+	}
+}
+
 func TestFeatureConfig_DependsOnKeysEmpty(t *testing.T) {
 	var cfg FeatureConfig
 	if got := cfg.DependsOnKeys(); len(got) != 0 {

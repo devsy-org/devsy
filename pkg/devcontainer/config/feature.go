@@ -150,7 +150,7 @@ func (c *FeatureConfig) UnmarshalJSON(data []byte) error {
 // It falls back to sorted keys when order was not captured (e.g. a
 // programmatically constructed config).
 func (c *FeatureConfig) DependsOnKeys() []string {
-	if len(c.dependsOnOrder) == len(c.DependsOn) {
+	if c.capturedOrderMatchesDeps() {
 		return c.dependsOnOrder
 	}
 	keys := make([]string, 0, len(c.DependsOn))
@@ -159,6 +159,22 @@ func (c *FeatureConfig) DependsOnKeys() []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// capturedOrderMatchesDeps reports whether the captured declaration order still
+// describes exactly the current DependsOn keys. It guards against DependsOn
+// being mutated after unmarshal (e.g. a key swapped without changing the count),
+// in which case the sorted fallback is used instead of a stale order.
+func (c *FeatureConfig) capturedOrderMatchesDeps() bool {
+	if len(c.dependsOnOrder) != len(c.DependsOn) {
+		return false
+	}
+	for _, k := range c.dependsOnOrder {
+		if _, ok := c.DependsOn[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type DependsOnField map[string]any

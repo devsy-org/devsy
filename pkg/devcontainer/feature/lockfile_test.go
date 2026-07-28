@@ -3,6 +3,7 @@ package feature
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -89,6 +90,65 @@ func TestReadLockfile_ParsesEntries(t *testing.T) {
 	}
 	if entry.Version != "1.3.8" || entry.Integrity != "sha256:abc" {
 		t.Errorf("unexpected entry: %+v", entry)
+	}
+}
+
+func TestReadLockfile_NormalizesLegacyObjectDependsOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devcontainer-lock.json")
+	// Legacy/pre-fix lockfiles stored dependsOn as an object mapping IDs to
+	// option objects. ReadLockfile must accept it and keep pinning working.
+	content := `{
+  "features": {
+    "ghcr.io/x/go-task:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/x/go-task@sha256:t",
+      "integrity": "sha256:t",
+      "dependsOn": {
+        "ghcr.io/x/picolayer:1": {}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := ReadLockfile(path)
+	if err != nil {
+		t.Fatalf("ReadLockfile: %v", err)
+	}
+	entry := lf.Features["ghcr.io/x/go-task:1"]
+	if entry.Integrity != "sha256:t" {
+		t.Errorf("integrity lost: %+v", entry)
+	}
+	want := []string{"ghcr.io/x/picolayer:1"}
+	if !reflect.DeepEqual(entry.DependsOn, want) {
+		t.Errorf("dependsOn = %v, want %v", entry.DependsOn, want)
+	}
+}
+
+func TestReadLockfile_KeepsArrayDependsOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devcontainer-lock.json")
+	content := `{
+  "features": {
+    "ghcr.io/x/go-task:1": {
+      "version": "1.0.0",
+      "integrity": "sha256:t",
+      "dependsOn": ["ghcr.io/x/picolayer:1"]
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lf, err := ReadLockfile(path)
+	if err != nil {
+		t.Fatalf("ReadLockfile: %v", err)
+	}
+	want := []string{"ghcr.io/x/picolayer:1"}
+	if got := lf.Features["ghcr.io/x/go-task:1"].DependsOn; !reflect.DeepEqual(got, want) {
+		t.Errorf("dependsOn = %v, want %v", got, want)
 	}
 }
 
