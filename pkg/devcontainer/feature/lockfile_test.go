@@ -125,6 +125,33 @@ func TestWriteLockfile_CreatesSortedStable(t *testing.T) {
 	}
 }
 
+func TestWriteLockfile_DependsOnIsArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devcontainer-lock.json")
+	lf := &Lockfile{Features: map[string]LockedFeature{
+		lockTestFeatureA: {
+			Version:   lockTestVersion,
+			Resolved:  lockTestResolvedA,
+			Integrity: lockTestShaA,
+			DependsOn: []string{"ghcr.io/b/feature:1"},
+		},
+	}}
+
+	if err := WriteLockfile(path, lf, false); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	// The reference devcontainer CLI serializes dependsOn as an array of
+	// feature identifiers, not an object.
+	if !strings.Contains(content, "\"dependsOn\": [") {
+		t.Errorf("expected dependsOn as JSON array, got:\n%s", content)
+	}
+}
+
 func TestWriteLockfile_SkipsUnchanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devcontainer-lock.json")
 	lf := &Lockfile{Features: map[string]LockedFeature{

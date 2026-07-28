@@ -529,7 +529,7 @@ func (p *featureProcessor) recordLockEntry(
 		Integrity: res.integrity,
 	}
 	if len(cfg.DependsOn) > 0 {
-		entry.DependsOn = map[string]any(cfg.DependsOn)
+		entry.DependsOn = cfg.DependsOnKeys()
 	}
 	p.lock.record(featureID, entry)
 }
