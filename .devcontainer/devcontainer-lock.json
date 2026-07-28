@@ -1,0 +1,38 @@
+{
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "2.1.0",
+      "resolved": "ghcr.io/devcontainers/features/node@sha256:586c9a6f7dd40bd3ba2cd41e7f2f88dcc31fbe5d1442afcbf07ffbc66b686857",
+      "integrity": "sha256:586c9a6f7dd40bd3ba2cd41e7f2f88dcc31fbe5d1442afcbf07ffbc66b686857"
+    },
+    "ghcr.io/skevetter/features/curl:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/skevetter/features/curl@sha256:51d9731e398d4d80fb0adf41725f3fb141186f7e28b3bb000a737abcdc8dace4",
+      "integrity": "sha256:51d9731e398d4d80fb0adf41725f3fb141186f7e28b3bb000a737abcdc8dace4"
+    },
+    "ghcr.io/skevetter/features/go-task:1": {
+      "version": "1.0.0",
+      "resolved": "ghcr.io/skevetter/features/go-task@sha256:347d13ba8faa01a1073d237eae5fe21897cad4bfe2cd6404a97cdda466812c71",
+      "integrity": "sha256:347d13ba8faa01a1073d237eae5fe21897cad4bfe2cd6404a97cdda466812c71",
+      "dependsOn": ["ghcr.io/skevetter/features/picolayer:1"]
+    },
+    "ghcr.io/skevetter/features/picolayer:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/skevetter/features/picolayer@sha256:0e3ba730535d31b899c5e6d55c3aa9392c593b9ac636692c08c6fa6396d87885",
+      "integrity": "sha256:0e3ba730535d31b899c5e6d55c3aa9392c593b9ac636692c08c6fa6396d87885",
+      "dependsOn": ["ghcr.io/skevetter/features/curl:1"]
+    },
+    "ghcr.io/skevetter/features/prek:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/skevetter/features/prek@sha256:1d7d19b7cf02315489a688407dbf9f4fb40b882faaa3f1ea704eb03ee6ebd284",
+      "integrity": "sha256:1d7d19b7cf02315489a688407dbf9f4fb40b882faaa3f1ea704eb03ee6ebd284",
+      "dependsOn": ["ghcr.io/skevetter/features/picolayer:1"]
+    },
+    "ghcr.io/skevetter/features/uv:1": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/skevetter/features/uv@sha256:fe1f083d4fab240688d95f7e77f297e6f346f270dd7c9d567a8a6e912c8a38e5",
+      "integrity": "sha256:fe1f083d4fab240688d95f7e77f297e6f346f270dd7c9d567a8a6e912c8a38e5",
+      "dependsOn": ["ghcr.io/skevetter/features/picolayer:1"]
+    }
+  }
+}
