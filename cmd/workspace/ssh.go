@@ -745,8 +745,6 @@ func (cmd *SSHCmd) setupGPGAgent(
 
 	gitKey := gpg.SigningKey(ctx)
 
-	// Forward the host's extra socket to a container-local path the workspace
-	// user can reach, rather than mirroring the host's path into the container.
 	cmd.ReverseForwardPorts = append(
 		cmd.ReverseForwardPorts,
 		gpg.ContainerSocketPath+":"+gpgExtraSocketPath,

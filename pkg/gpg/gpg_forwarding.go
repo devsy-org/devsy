@@ -135,14 +135,10 @@ func containsDirective(config, directive string) bool {
 	return false
 }
 
-// ContainerSocketPath is where the host gpg-agent socket is forwarded inside
-// the workspace container. It lives in a location the workspace user can always
-// reach, so no host-path mirroring or permission changes are required.
+// ContainerSocketPath is the container-local path the host gpg-agent socket is
+// forwarded to; any workspace user can reach it.
 const ContainerSocketPath = "/tmp/S.gpg-agent"
 
-// SetupRemoteSocketDirTree ensures the per-user runtime directory exists and is
-// owned by the workspace user, so the forwarded-socket symlink can be created
-// under it.
 func (g *GPGConf) SetupRemoteSocketDirTree() error {
 	runUserDir := filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
 
@@ -159,8 +155,6 @@ func (g *GPGConf) SetupRemoteSocketDirTree() error {
 	).Run()
 }
 
-// SetupRemoteSocketLink points gpg's well-known agent socket locations at the
-// forwarded socket (g.SocketPath) so gpg talks to the host agent.
 func (g *GPGConf) SetupRemoteSocketLink() error {
 	links := []string{
 		filepath.Join(os.Getenv("HOME"), ".gnupg", "S.gpg-agent"),
@@ -181,9 +175,9 @@ func (g *GPGConf) SetupRemoteSocketLink() error {
 	return g.claimForwardedSocket()
 }
 
-// claimForwardedSocket takes ownership of the forwarded socket. The ssh server
-// binds it as root, but a non-root workspace user needs write access to connect
-// to it. The socket is bound asynchronously, so wait briefly for it to appear.
+// claimForwardedSocket takes ownership of the socket, which the ssh server
+// binds as root; a non-root user needs write access to connect. It is bound
+// asynchronously, so wait briefly for it to appear.
 func (g *GPGConf) claimForwardedSocket() error {
 	owner := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())
 	for range 30 {
