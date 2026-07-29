@@ -1,4 +1,4 @@
-package self
+package update
 
 import (
 	"testing"
