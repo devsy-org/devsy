@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestRoot builds a small command tree that mirrors the real one:
-// subcommands, a persistent flag with an env var, and a local flag on a leaf.
 func newTestRoot(t *testing.T) *cobra.Command {
 	t.Helper()
 	root := &cobra.Command{Use: "devsy", Short: "Devsy", Long: "Devsy long description."}
@@ -29,14 +27,13 @@ func newTestRoot(t *testing.T) *cobra.Command {
 	list.Flags().Bool("skip-pro", false, "Don't list pro workspaces")
 	ws.AddCommand(list)
 	root.AddCommand(ws)
-	root.AddCommand(&cobra.Command{Use: "loose", Short: "Ungrouped command", Run: noop})
+	root.AddCommand(&cobra.Command{Use: "loose", Short: "A loose command", Run: noop})
 
 	Install(root)
 	return root
 }
 
-// renderHelp captures help output for the command at path. Output goes to a
-// bytes.Buffer, which is not a terminal, so colorprofile strips all styling and
+// A bytes.Buffer is not a terminal, so colorprofile strips styling and
 // assertions can match plain text.
 func renderHelp(t *testing.T, root *cobra.Command, path ...string) string {
 	t.Helper()
@@ -64,7 +61,6 @@ func TestRender_RootSections(t *testing.T) {
 	assert.Contains(t, out, "Run \"devsy <subcommand> --help\"")
 }
 
-// Every subcommand lands in one alphabetical section, regardless of grouping.
 func TestRender_SubcommandsAreFlatAndSorted(t *testing.T) {
 	out := renderHelp(t, newTestRoot(t))
 
@@ -72,13 +68,10 @@ func TestRender_SubcommandsAreFlatAndSorted(t *testing.T) {
 	assert.Contains(t, body, "loose")
 	assert.Contains(t, body, "workspace")
 	assert.Less(t, strings.Index(body, "loose"), strings.Index(body, "workspace"))
-	// Group headers must not survive the switch to a flat listing.
 	assert.NotContains(t, out, "CORE COMMANDS:")
 	assert.NotContains(t, out, "ADDITIONAL COMMANDS:")
 }
 
-// The env var belongs on the flag's signature line, beside the flag name, so it
-// can carry the purple accent independently of the description text.
 func TestRender_EnvVarOnSignatureLine(t *testing.T) {
 	out := renderHelp(t, newTestRoot(t))
 
@@ -92,8 +85,6 @@ func TestRender_HidesHiddenFlags(t *testing.T) {
 	assert.NotContains(t, out, "hidden-global")
 }
 
-// A root command's own persistent flags are global to the whole tree, so they
-// must be listed under GLOBAL OPTIONS rather than the root's local OPTIONS.
 func TestRender_RootPersistentFlagsAreGlobal(t *testing.T) {
 	out := renderHelp(t, newTestRoot(t))
 	assert.Contains(t, sectionBody(t, out, "GLOBAL OPTIONS:"), "--provider")
@@ -109,7 +100,6 @@ func TestRender_LeafSeparatesLocalFromGlobal(t *testing.T) {
 	assert.NotContains(t, out, "for more information about a subcommand")
 }
 
-// Defaults that carry no information are omitted so signature lines stay scannable.
 func TestDefaultText_OmitsZeroValues(t *testing.T) {
 	root := &cobra.Command{Use: "x", Run: func(*cobra.Command, []string) {}}
 	fs := root.Flags()
@@ -131,7 +121,6 @@ func TestRender_NoColorWhenNotATerminal(t *testing.T) {
 	assert.NotContains(t, out, "\x1b[", "styling must be stripped for non-terminal output")
 }
 
-// signatureLine returns the rendered line containing the given flag name.
 func signatureLine(t *testing.T, out, flagName string) string {
 	t.Helper()
 	for line := range strings.SplitSeq(out, "\n") {
@@ -143,8 +132,7 @@ func signatureLine(t *testing.T, out, flagName string) string {
 	return ""
 }
 
-// sectionBody returns the body of a named section, stopping at the next section
-// header. Headers are the only unindented, uppercase, colon-terminated lines.
+// Section headers are the only unindented, uppercase, colon-terminated lines.
 func sectionBody(t *testing.T, out, header string) string {
 	t.Helper()
 	_, rest, found := strings.Cut(out, header)

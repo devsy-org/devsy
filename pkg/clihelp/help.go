@@ -1,6 +1,4 @@
-// Package clihelp renders `devsy --help` output: uppercase section headers,
-// grouped subcommand listings, and flags shown above their wrapped descriptions
-// with the Devsy purple accent on flag names and environment variables.
+// Package clihelp renders `devsy --help` output.
 package clihelp
 
 import (
@@ -20,25 +18,16 @@ import (
 )
 
 const (
-	// indent is the left margin for entries inside a section.
-	indent = "  "
-	// descIndent is the left margin for a flag's description line, set one
-	// level deeper than the flag itself so the two read as a pair.
-	descIndent = "      "
-	// nameColumn is the width reserved for a subcommand name before its
-	// short description. Devsy's longest command name is well inside this.
-	nameColumn = 12
-	// defaultWidth is the wrap width used when stdout is not a terminal.
+	indent       = "  "
+	descIndent   = "      "
+	nameColumn   = 12
 	defaultWidth = 80
-	// maxWidth keeps prose readable on very wide terminals.
-	maxWidth = 100
-	// minWidth is a floor so wrapping never degenerates on tiny terminals.
-	minWidth = 40
+	maxWidth     = 100
+	minWidth     = 40
 )
 
-// Install makes this renderer the help and usage output for cmd and every
-// command beneath it. Cobra propagates help/usage functions to children, so a
-// single call on the root command covers the whole tree.
+// Install applies this renderer to cmd and, since cobra propagates help and
+// usage functions to children, every command beneath it.
 func Install(cmd *cobra.Command) {
 	cmd.SetHelpFunc(func(c *cobra.Command, _ []string) {
 		render(c, c.OutOrStdout())
@@ -49,13 +38,10 @@ func Install(cmd *cobra.Command) {
 	})
 }
 
-// render writes the full help body for cmd to out, downsampling color to
-// whatever the destination supports (and stripping it entirely when the output
-// is redirected or NO_COLOR is set).
 func render(cmd *cobra.Command, out io.Writer) {
-	// os.Environ() is passed explicitly: colorprofile.NewWriter documents a nil
-	// environ as meaning os.Environ(), but v0.4.3 builds an empty map instead,
-	// so TERM reads as unset and every profile collapses to NoTTY (no color).
+	// colorprofile.NewWriter documents a nil environ as meaning os.Environ(),
+	// but v0.4.3 builds an empty map instead, so TERM reads as unset and every
+	// profile collapses to NoTTY, silently stripping all color.
 	w := colorprofile.NewWriter(out, os.Environ())
 	width := wrapWidth(out)
 
@@ -69,8 +55,6 @@ func render(cmd *cobra.Command, out io.Writer) {
 	_, _ = io.WriteString(w, b.String())
 }
 
-// wrapWidth returns the column at which prose should wrap, based on the
-// terminal size when out is a terminal.
 func wrapWidth(out io.Writer) int {
 	f, ok := out.(interface{ Fd() uintptr })
 	if !ok {
@@ -93,8 +77,6 @@ func clamp(v, low, high int) int {
 	return v
 }
 
-// writeIntro emits the command's long description, or its short one when no
-// long form is set.
 func writeIntro(b *strings.Builder, cmd *cobra.Command, width int) {
 	desc := cmd.Long
 	if desc == "" {
@@ -107,8 +89,6 @@ func writeIntro(b *strings.Builder, cmd *cobra.Command, width int) {
 	b.WriteString("\n\n")
 }
 
-// writeUsage emits the USAGE section, plus any Example block the command
-// carries.
 func writeUsage(b *strings.Builder, cmd *cobra.Command) {
 	section(b, "USAGE")
 	if cmd.Runnable() {
@@ -129,7 +109,6 @@ func writeUsage(b *strings.Builder, cmd *cobra.Command) {
 	b.WriteString("\n")
 }
 
-// writeCommands lists every visible subcommand in one alphabetical section.
 func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 	var subs []*cobra.Command
 	for _, sub := range cmd.Commands() {
@@ -161,10 +140,8 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 	b.WriteString("\n")
 }
 
-// writeFlags emits the command's own flags under OPTIONS and the global flags
-// under GLOBAL OPTIONS. Globals are the ones this command declares as
-// persistent (on the root) plus everything inherited from ancestors — both
-// apply to subcommands, so they belong in the same section.
+// A command's own persistent flags apply to its subcommands just as inherited
+// ones do, so both are listed as global.
 func writeFlags(b *strings.Builder, cmd *cobra.Command, width int) {
 	persistent := cmd.PersistentFlags()
 	var local, global []*pflag.Flag
@@ -200,8 +177,6 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command, width int) {
 	}
 }
 
-// writeFlagList renders each flag as a signature line — name, value type, env
-// var, default — followed by its indented, wrapped description.
 func writeFlagList(b *strings.Builder, list []*pflag.Flag, width int) {
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	for _, f := range list {
@@ -216,8 +191,6 @@ func writeFlagList(b *strings.Builder, list []*pflag.Flag, width int) {
 	}
 }
 
-// flagSignature builds the styled first line for a flag, e.g.
-// "-v, --verbose count, $DEVSY_VERBOSE (default: 0)".
 func flagSignature(f *pflag.Flag) string {
 	var parts []string
 	if f.Shorthand != "" {
@@ -239,8 +212,8 @@ func flagSignature(f *pflag.Flag) string {
 	return sig
 }
 
-// defaultText renders a flag's default as "(default: x)", omitting zero values
-// that carry no information.
+// Zero-ish defaults carry no information, so they are omitted to keep
+// signature lines scannable.
 func defaultText(f *pflag.Flag) string {
 	switch f.DefValue {
 	case "", "false", "0", "[]", "0s":
@@ -249,8 +222,6 @@ func defaultText(f *pflag.Flag) string {
 	return fmt.Sprintf("(default: %s)", f.DefValue)
 }
 
-// flagUsage returns a flag's description with the value-type backquotes that
-// pflag uses for naming stripped out.
 func flagUsage(f *pflag.Flag) string {
 	_, usage := pflag.UnquoteUsage(f)
 	return strings.TrimSpace(usage)
@@ -272,15 +243,14 @@ func section(b *strings.Builder, title string) {
 	b.WriteString("\n")
 }
 
-// wrapIndent wraps text to width and prefixes every resulting line with prefix.
 func wrapIndent(text string, width int, prefix string) string {
 	limit := max(minWidth/2, width-len(prefix))
 	wrapped := ansi.Wordwrap(strings.TrimSpace(text), limit, " -")
 	return indentBlock(wrapped, prefix)
 }
 
-// wrapHanging wraps text to width assuming the first line already begins at
-// column col, indenting continuation lines to line up under it.
+// wrapHanging assumes the first line already begins at column col, so only
+// continuation lines are padded to line up under it.
 func wrapHanging(text string, width, col int) string {
 	limit := max(minWidth/2, width-col)
 	lines := strings.Split(ansi.Wordwrap(strings.TrimSpace(text), limit, " -"), "\n")
@@ -291,7 +261,6 @@ func wrapHanging(text string, width, col int) string {
 	return strings.Join(lines, "\n")
 }
 
-// indentBlock prefixes every non-empty line of text with prefix.
 func indentBlock(text, prefix string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {

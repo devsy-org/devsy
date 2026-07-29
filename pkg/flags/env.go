@@ -18,9 +18,8 @@ func EnvName(flagName string) string {
 	return config.EnvPrefix + strings.ToUpper(strings.ReplaceAll(flagName, "-", "_"))
 }
 
-// EnvAnnotation is the pflag annotation key under which BindEnv records a
-// flag's canonical env var name. The help renderer reads it to display the env
-// var beside the flag instead of burying it in the description text.
+// EnvAnnotation keys the flag's env var name for the help renderer, which shows
+// it beside the flag rather than buried in the description.
 const EnvAnnotation = "devsy_env"
 
 // BindEnv wires the canonical DEVSY_* env var into a cobra flag. Call it
