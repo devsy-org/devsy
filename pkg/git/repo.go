@@ -262,6 +262,8 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 	w := log.Writer(log.LevelInfo)
 	defer func() { _ = w.Close() }()
 
+	pw := newProgressWriter(w)
+
 	env := append([]string{}, r.env...)
 	if smudgeSkippedForClone(c.lfsMode) {
 		env = append(env, "GIT_LFS_SKIP_SMUDGE=1")
@@ -270,9 +272,12 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 	_, err := r.runner.Run(ctx, RunOptions{
 		Env:    env,
 		Args:   c.args(repository, r.path),
-		Stdout: w,
-		Stderr: w,
+		Stdout: pw,
+		Stderr: pw,
 	})
+	if closeErr := pw.Close(); err == nil {
+		err = closeErr
+	}
 	return err
 }
 
