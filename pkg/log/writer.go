@@ -9,10 +9,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Writer returns an io.WriteCloser that logs each complete line written to
-// it as a structured entry at the given level, through the same encoder as
-// every other log call. Primarily used as a subprocess's Stdout/Stderr.
-// Close flushes any trailing line left without a newline.
 func Writer(level int) io.WriteCloser {
 	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
