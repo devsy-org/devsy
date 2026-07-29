@@ -163,7 +163,7 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 		"sh", "-c", script,
 	}
 
-	out, err := d.cmd(ctx, args...).CombinedOutput()
+	out, err := d.cmd(ctx, args...).Output()
 	if err != nil {
 		log.Debugf("failed to detect agent version in volume: %v", err)
 		return ""
