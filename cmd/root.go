@@ -27,6 +27,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/template"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -62,6 +63,21 @@ const (
 	envProEnabled = "DEVSY_PRO_ENABLED"
 
 	internalCommand = "internal"
+
+	rootLong = "Devsy — standardized development workspaces built on devcontainers, " +
+		"running on Docker, Kubernetes, cloud providers, and SSH remote hosts."
+
+	rootExample = `- Start a workspace from the current directory:
+
+    $ devsy workspace up .
+
+- Open an SSH session to a workspace:
+
+    $ devsy workspace ssh my-workspace
+
+- Configure a provider:
+
+    $ devsy provider add docker`
 )
 
 func proEnabled() bool {
@@ -250,13 +266,17 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 // without reaching for package-level mutable state.
 func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	rootCmd := &cobra.Command{
-		Use:           config.BinaryName,
-		Short:         "Devsy",
-		Version:       version.GetVersion(),
+		Use:     config.BinaryName,
+		Short:   "Devsy",
+		Long:    rootLong,
+		Example: rootExample,
+		Version: version.GetVersion(),
+
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
+	clihelp.Install(rootCmd)
 	persistentFlags := rootCmd.PersistentFlags()
 	globalFlags := flags.SetGlobalFlags(persistentFlags)
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
@@ -293,6 +313,13 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
+	registerGroups(rootCmd)
+	registerSubcommands(rootCmd, globalFlags)
+
+	return rootCmd, globalFlags
+}
+
+func registerGroups(rootCmd *cobra.Command) {
 	groups := []*cobra.Group{
 		{ID: groupCore, Title: "Core commands:"},
 		{ID: groupConfig, Title: "Configuration commands:"},
@@ -303,10 +330,6 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		groups = append(groups, &cobra.Group{ID: groupPlatform, Title: "Platform commands:"})
 	}
 	rootCmd.AddGroup(groups...)
-
-	registerSubcommands(rootCmd, globalFlags)
-
-	return rootCmd, globalFlags
 }
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {

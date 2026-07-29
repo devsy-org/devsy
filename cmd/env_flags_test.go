@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	pkgflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -68,7 +69,12 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 			require.NotNil(t, f, "flag --%s not found on %q", tc.flagName, tc.cmdPath)
 			assert.Equal(t, tc.want, f.Value.String())
 			assert.True(t, f.Changed, "Changed must be true so MarkFlagRequired passes")
-			assert.Contains(t, f.Usage, tc.envName, "usage should advertise env var")
+			assert.Equal(
+				t,
+				[]string{tc.envName},
+				f.Annotations[pkgflags.EnvAnnotation],
+				"env var should be annotated for the help renderer",
+			)
 		})
 	}
 }
