@@ -1,23 +1,20 @@
 package log
 
 import (
+	"bytes"
 	"io"
+	"sync"
 
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// Writer returns an io.WriteCloser that writes each line as a log entry at the given level.
-// Level uses the package constants: LevelInfo, LevelDebug, etc.
+// maxPendingLine bounds how much unterminated output levelWriter buffers
+// before logging it anyway, so a subprocess that never emits a newline
+// can't grow the pending line without limit.
+const maxPendingLine = 64 * 1024
+
 func Writer(level int) io.WriteCloser {
-	zapLevel := verbosityConstToZapLevel(level)
-	w, closer, _ := zap.Open("stderr")
-	_ = closer // stderr doesn't need closing
-	return &levelWriter{
-		sink:  w,
-		level: zapLevel,
-		core:  sugar.Load().Desugar().Core(),
-	}
+	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
 
 func verbosityConstToZapLevel(level int) zapcore.Level {
@@ -34,18 +31,56 @@ func verbosityConstToZapLevel(level int) zapcore.Level {
 }
 
 type levelWriter struct {
-	sink  zapcore.WriteSyncer
 	level zapcore.Level
-	core  zapcore.Core
+
+	mu  sync.Mutex
+	buf bytes.Buffer
 }
 
 func (w *levelWriter) Write(p []byte) (int, error) {
-	if !w.core.Enabled(w.level) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if !sugar.Load().Desugar().Core().Enabled(w.level) {
 		return len(p), nil // discard if below current level
 	}
-	return w.sink.Write(p)
+
+	total := len(p)
+	for {
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			break
+		}
+		w.buf.Write(p[:i])
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+		p = p[i+1:]
+	}
+	w.buf.Write(p)
+	if w.buf.Len() > maxPendingLine {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
+	return total, nil
 }
 
 func (w *levelWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.buf.Len() > 0 {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
 	return nil
+}
+
+func (w *levelWriter) logLine(line string) {
+	switch w.level {
+	case zapcore.DebugLevel:
+		Debug(line)
+	case zapcore.ErrorLevel:
+		Error(line)
+	default:
+		Info(line)
+	}
 }
