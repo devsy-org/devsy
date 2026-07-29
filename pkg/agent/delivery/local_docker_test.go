@@ -266,10 +266,6 @@ func TestDetectVolumeVersion_ReturnsEmptyOnFailure(t *testing.T) {
 
 func TestDetectVolumeVersion_IgnoresStderrNoise(t *testing.T) {
 	tmpDir := t.TempDir()
-
-	// Simulates docker writing an image-pull transcript to stderr (as it
-	// does when the helper image isn't cached) alongside the script's real
-	// stdout output. Only the stdout content should be returned.
 	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
 	script := "#!/bin/sh\n" +
 		"case \"$1\" in\n" +
