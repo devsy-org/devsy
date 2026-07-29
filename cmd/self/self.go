@@ -9,7 +9,7 @@ import (
 func NewSelfCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "self",
-		Short: "Manage the devsy CLI itself",
+		Short: "Manage the CLI itself",
 	}
 	cmd.AddCommand(NewUpdateCmd())
 	return cmd

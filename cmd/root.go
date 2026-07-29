@@ -51,12 +51,6 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	groupCore         = "core"
-	groupConfig       = "config"
-	groupPlatform     = "platform"
-	groupDevcontainer = "devcontainer"
-	groupMeta         = "meta"
-
 	// envProEnabled gates registration of the `pro` command tree. The pro
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
@@ -313,70 +307,29 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
-	registerGroups(rootCmd)
 	registerSubcommands(rootCmd, globalFlags)
 
 	return rootCmd, globalFlags
 }
 
-func registerGroups(rootCmd *cobra.Command) {
-	groups := []*cobra.Group{
-		{ID: groupCore, Title: "Core commands:"},
-		{ID: groupConfig, Title: "Configuration commands:"},
-		{ID: groupDevcontainer, Title: "Devcontainer commands:"},
-		{ID: groupMeta, Title: "Meta:"},
-	}
-	if proEnabled() {
-		groups = append(groups, &cobra.Group{ID: groupPlatform, Title: "Platform commands:"})
-	}
-	rootCmd.AddGroup(groups...)
-}
-
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
-	providerCmd := provider.NewProviderCmd(globalFlags)
-	providerCmd.GroupID = groupConfig
-	rootCmd.AddCommand(providerCmd)
-	ideCmd := ide.NewIDECmd(globalFlags)
-	ideCmd.GroupID = groupConfig
-	rootCmd.AddCommand(ideCmd)
-	machineCmd := machine.NewMachineCmd(globalFlags)
-	machineCmd.GroupID = groupCore
-	rootCmd.AddCommand(machineCmd)
-	contextCmd := context.NewContextCmd(globalFlags)
-	contextCmd.GroupID = groupConfig
-	rootCmd.AddCommand(contextCmd)
-	secretsCmd := secretscmd.NewSecretsCmd(globalFlags)
-	secretsCmd.GroupID = groupConfig
-	rootCmd.AddCommand(secretsCmd)
-	envCmd := envcmd.NewEnvCmd(globalFlags)
-	envCmd.GroupID = groupConfig
-	rootCmd.AddCommand(envCmd)
+	rootCmd.AddCommand(
+		ci.NewCICmd(globalFlags),
+		cliconfig.NewConfigCmd(globalFlags),
+		context.NewContextCmd(globalFlags),
+		envcmd.NewEnvCmd(globalFlags),
+		feature.NewFeatureCmd(globalFlags),
+		ide.NewIDECmd(globalFlags),
+		machine.NewMachineCmd(globalFlags),
+		mcp.NewMCPCmd(globalFlags),
+		provider.NewProviderCmd(globalFlags),
+		secretscmd.NewSecretsCmd(globalFlags),
+		self.NewSelfCmd(globalFlags),
+		template.NewTemplateCmd(globalFlags),
+		wsCmdPkg.NewWorkspaceCmd(globalFlags),
+		cmdinternal.NewInternalCmd(globalFlags),
+	)
 	if proEnabled() {
-		proCmd := pro.NewProCmd(globalFlags)
-		proCmd.GroupID = groupPlatform
-		rootCmd.AddCommand(proCmd)
+		rootCmd.AddCommand(pro.NewProCmd(globalFlags))
 	}
-	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
-	wsCmd.GroupID = groupCore
-	rootCmd.AddCommand(wsCmd)
-
-	selfCmd := self.NewSelfCmd(globalFlags)
-	selfCmd.GroupID = groupMeta
-	rootCmd.AddCommand(selfCmd)
-	mcpCmd := mcp.NewMCPCmd(globalFlags)
-	mcpCmd.GroupID = groupMeta
-	rootCmd.AddCommand(mcpCmd)
-	configCmd := cliconfig.NewConfigCmd(globalFlags)
-	configCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(configCmd)
-	featureCmd := feature.NewFeatureCmd(globalFlags)
-	featureCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(featureCmd)
-	templateCmd := template.NewTemplateCmd(globalFlags)
-	templateCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(templateCmd)
-	ciCmd := ci.NewCICmd(globalFlags)
-	ciCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(ciCmd)
-	rootCmd.AddCommand(cmdinternal.NewInternalCmd(globalFlags))
 }

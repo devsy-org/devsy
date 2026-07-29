@@ -129,62 +129,19 @@ func writeUsage(b *strings.Builder, cmd *cobra.Command) {
 	b.WriteString("\n")
 }
 
-// writeCommands lists available subcommands, preserving the command groups
-// declared on the root command and collecting ungrouped ones under a trailing
-// section.
+// writeCommands lists every visible subcommand in one alphabetical section.
 func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
-	if !cmd.HasAvailableSubCommands() {
+	var subs []*cobra.Command
+	for _, sub := range cmd.Commands() {
+		if sub.IsAvailableCommand() || sub.IsAdditionalHelpTopicCommand() {
+			subs = append(subs, sub)
+		}
+	}
+	if len(subs) == 0 {
 		return
 	}
 
-	grouped, ungrouped := partitionCommands(cmd)
-
-	for _, group := range cmd.Groups() {
-		subs := grouped[group.ID]
-		if len(subs) == 0 {
-			continue
-		}
-		section(b, sectionTitle(group.Title))
-		writeCommandList(b, subs, width)
-		b.WriteString("\n")
-	}
-
-	if len(ungrouped) > 0 {
-		title := "SUBCOMMANDS"
-		if len(grouped) > 0 {
-			title = "ADDITIONAL COMMANDS"
-		}
-		section(b, title)
-		writeCommandList(b, ungrouped, width)
-		b.WriteString("\n")
-	}
-}
-
-// partitionCommands splits cmd's visible subcommands into those belonging to a
-// declared group, keyed by group ID, and those without one.
-func partitionCommands(cmd *cobra.Command) (map[string][]*cobra.Command, []*cobra.Command) {
-	grouped := map[string][]*cobra.Command{}
-	var ungrouped []*cobra.Command
-	for _, sub := range cmd.Commands() {
-		if !sub.IsAvailableCommand() && !sub.IsAdditionalHelpTopicCommand() {
-			continue
-		}
-		if sub.GroupID != "" && cmd.ContainsGroup(sub.GroupID) {
-			grouped[sub.GroupID] = append(grouped[sub.GroupID], sub)
-			continue
-		}
-		ungrouped = append(ungrouped, sub)
-	}
-	return grouped, ungrouped
-}
-
-// sectionTitle normalizes a cobra group title ("Core commands:") into a section
-// header ("CORE COMMANDS").
-func sectionTitle(groupTitle string) string {
-	return strings.ToUpper(strings.TrimRight(strings.TrimSpace(groupTitle), ":"))
-}
-
-func writeCommandList(b *strings.Builder, subs []*cobra.Command, width int) {
+	section(b, "SUBCOMMANDS")
 	sort.Slice(subs, func(i, j int) bool { return subs[i].Name() < subs[j].Name() })
 	for _, sub := range subs {
 		name := sub.Name()
@@ -201,6 +158,7 @@ func writeCommandList(b *strings.Builder, subs []*cobra.Command, width int) {
 		b.WriteString(wrapHanging(sub.Short, width, descCol))
 		b.WriteString("\n")
 	}
+	b.WriteString("\n")
 }
 
 // writeFlags emits the command's own flags under OPTIONS and the global flags

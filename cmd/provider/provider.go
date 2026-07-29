@@ -9,7 +9,7 @@ import (
 func NewProviderCmd(flags *flags.GlobalFlags) *cobra.Command {
 	providerCmd := &cobra.Command{
 		Use:   "provider",
-		Short: "Devsy Provider commands",
+		Short: "Manage providers",
 	}
 
 	providerCmd.AddCommand(NewAddCmd(flags))

@@ -11,12 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestRoot builds a small command tree that mirrors the real one: grouped
+// newTestRoot builds a small command tree that mirrors the real one:
 // subcommands, a persistent flag with an env var, and a local flag on a leaf.
 func newTestRoot(t *testing.T) *cobra.Command {
 	t.Helper()
 	root := &cobra.Command{Use: "devsy", Short: "Devsy", Long: "Devsy long description."}
-	root.AddGroup(&cobra.Group{ID: "core", Title: "Core commands:"})
 
 	pf := root.PersistentFlags()
 	pf.String("provider", "", "The provider to use")
@@ -25,7 +24,7 @@ func newTestRoot(t *testing.T) *cobra.Command {
 	require.NoError(t, pf.MarkHidden("hidden-global"))
 
 	noop := func(*cobra.Command, []string) {}
-	ws := &cobra.Command{Use: "workspace", Short: "Manage workspaces", GroupID: "core"}
+	ws := &cobra.Command{Use: "workspace", Short: "Manage workspaces"}
 	list := &cobra.Command{Use: "list", Short: "List workspaces", Run: noop}
 	list.Flags().Bool("skip-pro", false, "Don't list pro workspaces")
 	ws.AddCommand(list)
@@ -54,19 +53,28 @@ func renderHelp(t *testing.T, root *cobra.Command, path ...string) string {
 	return buf.String()
 }
 
-func TestRender_RootSectionsAndGroups(t *testing.T) {
+func TestRender_RootSections(t *testing.T) {
 	out := renderHelp(t, newTestRoot(t))
 
 	assert.Contains(t, out, "Devsy long description.")
 	assert.Contains(t, out, "USAGE:")
 	assert.Contains(t, out, "devsy [global-flags] <subcommand>")
-	assert.Contains(t, out, "CORE COMMANDS:")
-	assert.Contains(t, out, "workspace")
-	// Commands with no group land in a trailing section, not the group listing.
-	assert.Contains(t, out, "ADDITIONAL COMMANDS:")
-	assert.Contains(t, out, "loose")
+	assert.Contains(t, out, "SUBCOMMANDS:")
 	assert.Contains(t, out, "GLOBAL OPTIONS:")
 	assert.Contains(t, out, "Run \"devsy <subcommand> --help\"")
+}
+
+// Every subcommand lands in one alphabetical section, regardless of grouping.
+func TestRender_SubcommandsAreFlatAndSorted(t *testing.T) {
+	out := renderHelp(t, newTestRoot(t))
+
+	body := sectionBody(t, out, "SUBCOMMANDS:")
+	assert.Contains(t, body, "loose")
+	assert.Contains(t, body, "workspace")
+	assert.Less(t, strings.Index(body, "loose"), strings.Index(body, "workspace"))
+	// Group headers must not survive the switch to a flat listing.
+	assert.NotContains(t, out, "CORE COMMANDS:")
+	assert.NotContains(t, out, "ADDITIONAL COMMANDS:")
 }
 
 // The env var belongs on the flag's signature line, beside the flag name, so it
@@ -135,15 +143,20 @@ func signatureLine(t *testing.T, out, flagName string) string {
 	return ""
 }
 
-// section returns the body of a named section, up to the next section header.
+// sectionBody returns the body of a named section, stopping at the next section
+// header. Headers are the only unindented, uppercase, colon-terminated lines.
 func sectionBody(t *testing.T, out, header string) string {
 	t.Helper()
 	_, rest, found := strings.Cut(out, header)
 	require.True(t, found, "section %q not found in:\n%s", header, out)
-	for _, next := range []string{"OPTIONS:", "GLOBAL OPTIONS:", "COMMANDS:"} {
-		if body, _, cut := strings.Cut(rest, next); cut {
-			rest = body
+
+	var body []string
+	for line := range strings.SplitSeq(rest, "\n") {
+		if strings.HasSuffix(line, ":") && line == strings.ToUpper(line) &&
+			!strings.HasPrefix(line, " ") && strings.TrimSpace(line) != "" {
+			break
 		}
+		body = append(body, line)
 	}
-	return rest
+	return strings.Join(body, "\n")
 }

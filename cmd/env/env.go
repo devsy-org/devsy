@@ -10,7 +10,7 @@ import (
 func NewEnvCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	envCmd := &cobra.Command{
 		Use:   "env",
-		Short: "Devsy managed environment variables",
+		Short: "Manage environment variables",
 		Long: `Manage named environment variables stored per context and injected
 into workspaces. Values are stored in plaintext in the Devsy config directory;
 use "devsy secret" for sensitive values.`,

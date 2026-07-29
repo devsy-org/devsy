@@ -9,7 +9,7 @@ import (
 func NewMCPCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Run Devsy as a Model Context Protocol server",
+		Short: "Run as a Model Context Protocol server",
 	}
 	cmd.AddCommand(NewServeCmd(globalFlags))
 	return cmd
