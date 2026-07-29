@@ -28,10 +28,10 @@ func newProgressWriter(next io.Writer) *progressWriter {
 }
 
 func (w *progressWriter) Write(p []byte) (int, error) {
-	for _, b := range p {
+	for i, b := range p {
 		if b == '\r' || b == '\n' {
 			if err := w.flush(); err != nil {
-				return len(p), err
+				return i + 1, err
 			}
 			continue
 		}

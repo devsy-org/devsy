@@ -263,7 +263,6 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 	defer func() { _ = w.Close() }()
 
 	pw := newProgressWriter(w)
-	defer func() { _ = pw.Close() }()
 
 	env := append([]string{}, r.env...)
 	if smudgeSkippedForClone(c.lfsMode) {
@@ -276,6 +275,9 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 		Stdout: pw,
 		Stderr: pw,
 	})
+	if closeErr := pw.Close(); err == nil {
+		err = closeErr
+	}
 	return err
 }
 
