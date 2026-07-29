@@ -83,7 +83,7 @@ func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.Read
 			log.Debugf("acquired binary from %s", source.SourceName())
 			return binary, nil
 		}
-		log.Debugf("source %s failed: %v", source.SourceName(), err)
+		log.Debugf("source %s unavailable, trying next: %v", source.SourceName(), err)
 	}
 	return nil, ErrBinaryNotFound
 }
