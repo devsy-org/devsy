@@ -264,6 +264,27 @@ func TestDetectVolumeVersion_ReturnsEmptyOnFailure(t *testing.T) {
 	assert.Empty(t, ver)
 }
 
+func TestDetectVolumeVersion_IgnoresStderrNoise(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  run)\n" +
+		"    echo \"Unable to find image 'busybox:latest' locally\" >&2\n" +
+		"    echo \"latest: Pulling from library/busybox\" >&2\n" +
+		"    echo \"v1.2.3\"\n" +
+		"    ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	ver := d.detectVolumeVersion(context.Background(), "test-vol")
+	assert.Equal(t, "v1.2.3", ver)
+}
+
 func TestDetectVolumeVersion_ReturnsEmptyWhenNoBinary(t *testing.T) {
 	tmpDir := t.TempDir()
 
