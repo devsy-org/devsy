@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -46,16 +47,43 @@ func TestWriter_SplitsMultipleLinesInOneWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
+
+	// A line split across two Write calls (as os/exec delivers subprocess
+	// output in arbitrary chunks) must still be logged as one complete
+	// record, not two fragments.
+	if _, err := w.Write([]byte("line three\nline ")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := w.Write([]byte("four\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
 	_ = Sync()
 
 	lines := strings.Split(strings.TrimSpace(sink.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("got %d lines, want 2: %q", len(lines), lines)
+	wantMsgs := []string{"line one", "line two", "line three", "line four"}
+	if len(lines) != len(wantMsgs) {
+		t.Fatalf("got %d lines, want %d: %q", len(lines), len(wantMsgs), lines)
 	}
-	for _, l := range lines {
-		if !strings.HasPrefix(l, "{") || !strings.HasSuffix(l, "}") {
-			t.Errorf("line is not valid single-object JSON: %q", l)
-		}
+	for i, l := range lines {
+		assertJSONLineMsg(t, i, l, wantMsgs[i])
+	}
+}
+
+func assertJSONLineMsg(t *testing.T, i int, line, wantMsg string) {
+	t.Helper()
+	if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
+		t.Errorf("line %d is not valid single-object JSON: %q", i, line)
+		return
+	}
+	var rec struct {
+		Msg string `json:"msg"`
+	}
+	if err := json.Unmarshal([]byte(line), &rec); err != nil {
+		t.Errorf("line %d: json.Unmarshal: %v", i, err)
+		return
+	}
+	if rec.Msg != wantMsg {
+		t.Errorf("line %d msg = %q, want %q", i, rec.Msg, wantMsg)
 	}
 }
 
@@ -80,6 +108,28 @@ func TestWriter_FlushesTrailingPartialLineOnClose(t *testing.T) {
 
 	if !strings.Contains(sink.String(), "no trailing newline") {
 		t.Errorf("expected trailing partial line flushed on Close, got %q", sink.String())
+	}
+}
+
+func TestWriter_PreservesBlankLines(t *testing.T) {
+	Init(Config{Verbosity: 2, Format: testFormatJSON})
+
+	var sink bytes.Buffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	w := Writer(LevelInfo)
+	if _, err := w.Write([]byte("one\n\ntwo\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	_ = Sync()
+
+	lines := strings.Split(strings.TrimSpace(sink.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want 3 (blank line preserved): %q", len(lines), lines)
+	}
+	if !strings.Contains(lines[1], `"msg":""`) {
+		t.Errorf("line 1 = %q, want an empty msg field", lines[1])
 	}
 }
 

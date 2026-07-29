@@ -3,11 +3,15 @@ package log
 import (
 	"bytes"
 	"io"
-	"strings"
 	"sync"
 
 	"go.uber.org/zap/zapcore"
 )
+
+// maxPendingLine bounds how much unterminated output levelWriter buffers
+// before logging it anyway, so a subprocess that never emits a newline
+// can't grow the pending line without limit.
+const maxPendingLine = 64 * 1024
 
 func Writer(level int) io.WriteCloser {
 	return &levelWriter{level: verbosityConstToZapLevel(level)}
@@ -41,18 +45,23 @@ func (w *levelWriter) Write(p []byte) (int, error) {
 		return len(p), nil // discard if below current level
 	}
 
-	w.buf.Write(p)
+	total := len(p)
 	for {
-		line, err := w.buf.ReadString('\n')
-		if err != nil {
-			// Incomplete line: put it back for the next Write/Close.
-			w.buf.Reset()
-			w.buf.WriteString(line)
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
 			break
 		}
-		w.logLine(strings.TrimSuffix(line, "\n"))
+		w.buf.Write(p[:i])
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+		p = p[i+1:]
 	}
-	return len(p), nil
+	w.buf.Write(p)
+	if w.buf.Len() > maxPendingLine {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
+	return total, nil
 }
 
 func (w *levelWriter) Close() error {
@@ -66,9 +75,6 @@ func (w *levelWriter) Close() error {
 }
 
 func (w *levelWriter) logLine(line string) {
-	if line == "" {
-		return
-	}
 	switch w.level {
 	case zapcore.DebugLevel:
 		Debug(line)
