@@ -23,10 +23,11 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro"
 	"github.com/devsy-org/devsy/cmd/provider"
 	secretscmd "github.com/devsy-org/devsy/cmd/secrets"
-	"github.com/devsy-org/devsy/cmd/self"
 	"github.com/devsy-org/devsy/cmd/template"
+	"github.com/devsy-org/devsy/cmd/update"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -50,18 +51,27 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	groupCore         = "core"
-	groupConfig       = "config"
-	groupPlatform     = "platform"
-	groupDevcontainer = "devcontainer"
-	groupMeta         = "meta"
-
 	// envProEnabled gates registration of the `pro` command tree. The pro
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
 	envProEnabled = "DEVSY_PRO_ENABLED"
 
 	internalCommand = "internal"
+
+	rootLong = "Devsy — standardized development workspaces built on devcontainers, " +
+		"running on Docker, Kubernetes, cloud providers, and SSH remote hosts."
+
+	rootExample = `- Start a workspace from the current directory:
+
+    $ devsy workspace up .
+
+- Open an SSH session to a workspace:
+
+    $ devsy workspace ssh my-workspace
+
+- Configure a provider:
+
+    $ devsy provider add docker`
 )
 
 func proEnabled() bool {
@@ -250,13 +260,17 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 // without reaching for package-level mutable state.
 func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	rootCmd := &cobra.Command{
-		Use:           config.BinaryName,
-		Short:         "Devsy",
-		Version:       version.GetVersion(),
+		Use:     config.BinaryName,
+		Short:   "Devsy",
+		Long:    rootLong,
+		Example: rootExample,
+		Version: version.GetVersion(),
+
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
+	clihelp.Install(rootCmd)
 	persistentFlags := rootCmd.PersistentFlags()
 	globalFlags := flags.SetGlobalFlags(persistentFlags)
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
@@ -293,67 +307,29 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		return nil
 	}
 
-	groups := []*cobra.Group{
-		{ID: groupCore, Title: "Core commands:"},
-		{ID: groupConfig, Title: "Configuration commands:"},
-		{ID: groupDevcontainer, Title: "Devcontainer commands:"},
-		{ID: groupMeta, Title: "Meta:"},
-	}
-	if proEnabled() {
-		groups = append(groups, &cobra.Group{ID: groupPlatform, Title: "Platform commands:"})
-	}
-	rootCmd.AddGroup(groups...)
-
 	registerSubcommands(rootCmd, globalFlags)
 
 	return rootCmd, globalFlags
 }
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
-	providerCmd := provider.NewProviderCmd(globalFlags)
-	providerCmd.GroupID = groupConfig
-	rootCmd.AddCommand(providerCmd)
-	ideCmd := ide.NewIDECmd(globalFlags)
-	ideCmd.GroupID = groupConfig
-	rootCmd.AddCommand(ideCmd)
-	machineCmd := machine.NewMachineCmd(globalFlags)
-	machineCmd.GroupID = groupCore
-	rootCmd.AddCommand(machineCmd)
-	contextCmd := context.NewContextCmd(globalFlags)
-	contextCmd.GroupID = groupConfig
-	rootCmd.AddCommand(contextCmd)
-	secretsCmd := secretscmd.NewSecretsCmd(globalFlags)
-	secretsCmd.GroupID = groupConfig
-	rootCmd.AddCommand(secretsCmd)
-	envCmd := envcmd.NewEnvCmd(globalFlags)
-	envCmd.GroupID = groupConfig
-	rootCmd.AddCommand(envCmd)
+	rootCmd.AddCommand(
+		ci.NewCICmd(globalFlags),
+		cliconfig.NewConfigCmd(globalFlags),
+		context.NewContextCmd(globalFlags),
+		envcmd.NewEnvCmd(globalFlags),
+		feature.NewFeatureCmd(globalFlags),
+		ide.NewIDECmd(globalFlags),
+		machine.NewMachineCmd(globalFlags),
+		mcp.NewMCPCmd(globalFlags),
+		provider.NewProviderCmd(globalFlags),
+		secretscmd.NewSecretsCmd(globalFlags),
+		template.NewTemplateCmd(globalFlags),
+		update.NewUpdateCmd(),
+		wsCmdPkg.NewWorkspaceCmd(globalFlags),
+		cmdinternal.NewInternalCmd(globalFlags),
+	)
 	if proEnabled() {
-		proCmd := pro.NewProCmd(globalFlags)
-		proCmd.GroupID = groupPlatform
-		rootCmd.AddCommand(proCmd)
+		rootCmd.AddCommand(pro.NewProCmd(globalFlags))
 	}
-	wsCmd := wsCmdPkg.NewWorkspaceCmd(globalFlags)
-	wsCmd.GroupID = groupCore
-	rootCmd.AddCommand(wsCmd)
-
-	selfCmd := self.NewSelfCmd(globalFlags)
-	selfCmd.GroupID = groupMeta
-	rootCmd.AddCommand(selfCmd)
-	mcpCmd := mcp.NewMCPCmd(globalFlags)
-	mcpCmd.GroupID = groupMeta
-	rootCmd.AddCommand(mcpCmd)
-	configCmd := cliconfig.NewConfigCmd(globalFlags)
-	configCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(configCmd)
-	featureCmd := feature.NewFeatureCmd(globalFlags)
-	featureCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(featureCmd)
-	templateCmd := template.NewTemplateCmd(globalFlags)
-	templateCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(templateCmd)
-	ciCmd := ci.NewCICmd(globalFlags)
-	ciCmd.GroupID = groupDevcontainer
-	rootCmd.AddCommand(ciCmd)
-	rootCmd.AddCommand(cmdinternal.NewInternalCmd(globalFlags))
 }

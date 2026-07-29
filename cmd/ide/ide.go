@@ -10,7 +10,7 @@ import (
 func NewIDECmd(flags *flags.GlobalFlags) *cobra.Command {
 	ideCmd := &cobra.Command{
 		Use:   "ide",
-		Short: "Devsy IDE commands",
+		Short: "Manage IDE preferences",
 	}
 
 	ideCmd.AddCommand(NewUseCmd(flags))

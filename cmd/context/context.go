@@ -9,7 +9,7 @@ import (
 func NewContextCmd(flags *flags.GlobalFlags) *cobra.Command {
 	contextCmd := &cobra.Command{
 		Use:   "context",
-		Short: "Devsy Context commands",
+		Short: "Manage contexts",
 	}
 
 	contextCmd.AddCommand(NewCreateCmd(flags))

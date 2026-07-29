@@ -10,7 +10,7 @@ import (
 func NewSecretsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	secretsCmd := &cobra.Command{
 		Use:   "secret",
-		Short: "Devsy Secrets commands",
+		Short: "Manage secrets",
 		Long: `Manage named secrets stored locally and injected into workspaces.
 
 Secret values are kept in the OS keyring (macOS Keychain, Windows Credential

@@ -9,7 +9,7 @@ import (
 func NewMachineCmd(flags *flags.GlobalFlags) *cobra.Command {
 	machineCmd := &cobra.Command{
 		Use:   "machine",
-		Short: "Devsy Machine commands",
+		Short: "Manage provider-hosted machines",
 	}
 
 	machineCmd.AddCommand(NewListCmd(flags))
