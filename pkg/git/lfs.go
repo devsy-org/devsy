@@ -25,7 +25,9 @@ var lfsDisableFilterArgs = []string{
 
 func cloneArgsForLFS() []string {
 	if !command.Exists(binGitLFS) {
-		log.Info("git-lfs not found, disabling LFS filters for clone; LFS files will be pointer stubs")
+		log.Info(
+			"git-lfs not found, disabling LFS filters for clone; LFS files will be pointer stubs",
+		)
 		return lfsDisableFilterArgs
 	}
 	return nil
