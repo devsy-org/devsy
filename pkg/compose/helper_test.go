@@ -237,7 +237,7 @@ func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() 
 		s.T().Skipf("compose binary not available in test environment: %v", err)
 	}
 
-	s.Contains([]string{"nerdctl", testDockerCmd, testDockerComposeCmd}, ch.Command)
+	s.Contains([]string{"nerdctl", testDockerCmd, testDockerComposeCmd, testPodmanCmd}, ch.Command)
 }
 
 func (s *HelperTestSuite) TestTryComposeSubcommandUsesProvidedCommand() {

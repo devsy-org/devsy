@@ -238,7 +238,7 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 
 	destPath := filepath.Join(mountpoint, binaryName())
 
-	if d.isPodman() {
+	if d.isRootlessPodman(ctx) {
 		return d.populateVolumeViaUnshare(ctx, destPath, data)
 	}
 
@@ -270,6 +270,21 @@ func (d *LocalDockerDelivery) populateVolumeViaUnshare(
 
 func (d *LocalDockerDelivery) isPodman() bool {
 	return filepath.Base(d.dockerCommand()) == podmanCmd
+}
+
+// isRootlessPodman reports whether the configured podman is running rootless.
+// Only rootless podman requires "podman unshare" to write into a volume's
+// mountpoint; rootful podman's mountpoint is directly writable like docker's.
+func (d *LocalDockerDelivery) isRootlessPodman(ctx context.Context) bool {
+	if !d.isPodman() {
+		return false
+	}
+	out, err := d.cmd(ctx, "info", "--format", "{{.Host.Security.Rootless}}").Output()
+	if err != nil {
+		log.Debugf("failed to detect podman rootless mode, assuming rootful: %v", err)
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
 }
 
 func (d *LocalDockerDelivery) volumeMountpoint(
