@@ -560,7 +560,7 @@ jobs:
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         id: kind-cache-windows
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/kind.exe
           key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.24.0
@@ -626,7 +626,7 @@ jobs:
       - name: cache microsandbox (Linux)
         if: matrix.install-microsandbox == true && runner.os == 'Linux'
         id: msb-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.microsandbox
