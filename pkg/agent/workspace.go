@@ -297,10 +297,14 @@ func removeGitCredentialHelper(ctx context.Context, helper, workspaceDir string)
 	if helper == "" {
 		return
 	}
-	if err := gitcredentials.RemoveHelperFromPath(
-		ctx,
-		gitcredentials.GetLocalGitConfigPath(workspaceDir),
-	); err != nil {
+	gitConfigPath := gitcredentials.GetLocalGitConfigPath(workspaceDir)
+	if _, err := os.Stat(gitConfigPath); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Errorf("stat git config: %v", err)
+		}
+		return
+	}
+	if err := gitcredentials.RemoveHelperFromPath(ctx, gitConfigPath); err != nil {
 		log.Errorf("remove git credential helper: %v", err)
 	}
 }
