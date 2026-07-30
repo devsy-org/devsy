@@ -10,7 +10,7 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
-	github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29
+	github.com/Microsoft/go-winio v0.6.3-0.20260107145400-75610162e7da
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
