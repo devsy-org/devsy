@@ -265,13 +265,14 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 	pw := newProgressWriter(w)
 
 	env := append([]string{}, r.env...)
-	if smudgeSkippedForClone(c.lfsMode) {
-		env = append(env, "GIT_LFS_SKIP_SMUDGE=1")
-	}
+	env = append(env, cloneEnvForLFS()...)
+
+	args := c.args(repository, r.path)
+	args = append(args, cloneArgsForLFS()...)
 
 	_, err := r.runner.Run(ctx, RunOptions{
 		Env:    env,
-		Args:   c.args(repository, r.path),
+		Args:   args,
 		Stdout: pw,
 		Stderr: pw,
 	})

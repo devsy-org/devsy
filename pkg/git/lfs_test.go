@@ -32,14 +32,20 @@ func TestLFSModeResolution(t *testing.T) {
 	}
 }
 
-func TestSmudgeAlwaysSkippedForClone(t *testing.T) {
-	// The smudge filter is skipped at clone time for every mode; hydration is
-	// done explicitly afterward (or not at all).
-	for _, mode := range []LFSMode{LFSFull, LFSSetupOnly, LFSSkip} {
-		if !smudgeSkippedForClone(mode) {
-			t.Errorf("smudgeSkippedForClone(%v) = false, want true", mode)
-		}
+func TestCloneEnvForLFS(t *testing.T) {
+	want := []string(nil)
+	if command.Exists(binGitLFS) {
+		want = []string{"GIT_LFS_SKIP_SMUDGE=1"}
 	}
+	assert.DeepEqual(t, want, cloneEnvForLFS())
+}
+
+func TestCloneArgsForLFS(t *testing.T) {
+	var want []string
+	if !command.Exists(binGitLFS) {
+		want = lfsDisableFilterArgs
+	}
+	assert.DeepEqual(t, want, cloneArgsForLFS())
 }
 
 // lfsSubcommands returns the `lfs ...` invocations a fakeRunner recorded.

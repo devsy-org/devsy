@@ -13,15 +13,29 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// lfsFilterMarker is the .gitattributes token that marks a path as LFS-tracked.
 var lfsFilterMarker = []byte("filter=lfs")
 
-// smudgeSkippedForClone reports whether the clone should set GIT_LFS_SKIP_SMUDGE.
-func smudgeSkippedForClone(mode LFSMode) bool {
-	if mode == LFSFull && !command.Exists(binGitLFS) {
-		log.Info("git-lfs not found, skipping LFS smudge; LFS files will be pointer stubs")
+// GIT_LFS_SKIP_SMUDGE is read by the git-lfs binary itself, so it's no help
+// when that binary is missing; disable the filter driver instead.
+var lfsDisableFilterArgs = []string{
+	flagConfig, "filter.lfs.process=",
+	flagConfig, "filter.lfs.smudge=cat",
+	flagConfig, "filter.lfs.clean=cat",
+}
+
+func cloneArgsForLFS() []string {
+	if !command.Exists(binGitLFS) {
+		log.Info("git-lfs not found, disabling LFS filters for clone; LFS files will be pointer stubs")
+		return lfsDisableFilterArgs
 	}
-	return true
+	return nil
+}
+
+func cloneEnvForLFS() []string {
+	if command.Exists(binGitLFS) {
+		return []string{"GIT_LFS_SKIP_SMUDGE=1"}
+	}
+	return nil
 }
 
 // SetupLFS configures Git LFS in the repository.
