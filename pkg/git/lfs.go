@@ -21,6 +21,7 @@ var lfsDisableFilterArgs = []string{
 	flagConfig, "filter.lfs.process=",
 	flagConfig, "filter.lfs.smudge=cat",
 	flagConfig, "filter.lfs.clean=cat",
+	flagConfig, "filter.lfs.required=false",
 }
 
 func cloneArgsForLFS() []string {

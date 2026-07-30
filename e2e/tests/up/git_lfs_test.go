@@ -74,6 +74,7 @@ func simulateStaleGlobalLFSConfig(t *testing.T) {
 	runGit(t, home, "config", "--global", "filter.lfs.process", "git-lfs filter-process")
 	runGit(t, home, "config", "--global", "filter.lfs.smudge", "git-lfs smudge -- %f")
 	runGit(t, home, "config", "--global", "filter.lfs.clean", "git-lfs clean -- %f")
+	runGit(t, home, "config", "--global", "filter.lfs.required", "true")
 }
 
 // newLFSFixtureRepo creates a repo declaring an LFS-tracked file, using local
@@ -86,6 +87,7 @@ func newLFSFixtureRepo(t *testing.T) string {
 	runGit(t, dir, "config", "filter.lfs.clean", "cat")
 	runGit(t, dir, "config", "filter.lfs.smudge", "cat")
 	runGit(t, dir, "config", "filter.lfs.process", "")
+	runGit(t, dir, "config", "filter.lfs.required", "false")
 
 	writeFile(
 		t,
