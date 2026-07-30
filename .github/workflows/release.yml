@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-latest
           - runner: macos-latest
           - runner: windows-latest
     runs-on: ${{ matrix.runner }}
@@ -60,7 +60,7 @@ jobs:
       matrix:
         include:
           - name: linux-x64
-            os: ubuntu-24.04
+            os: ubuntu-latest
             go-os: linux
             go-arch: amd64
             builder-args: --linux
