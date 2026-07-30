@@ -557,6 +557,14 @@ jobs:
           & "$installDir\podman.exe" machine set --rootful
           & "$installDir\podman.exe" machine start
 
+      - name: cache kind.exe (Windows)
+        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        id: kind-cache-windows
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/kind.exe
+          key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.24.0
+
       - name: setup kind (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: bash
@@ -564,14 +572,16 @@ jobs:
           KIND_EXPERIMENTAL_PROVIDER: podman
           DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
-          curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
-          expected="6f724188289cc79395f45afae0f2b85e0d220c2b84c6ed2f5047d9d0c9a67028"
-          actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}' | sed 's/^[^a-f0-9]*//')
-          if [ "$actual" != "$expected" ]; then
-            echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
-            exit 1
+          if [ "${{ steps.kind-cache-windows.outputs.cache-hit }}" != "true" ]; then
+            curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
+            expected="6f724188289cc79395f45afae0f2b85e0d220c2b84c6ed2f5047d9d0c9a67028"
+            actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}' | sed 's/^[^a-f0-9]*//')
+            if [ "$actual" != "$expected" ]; then
+              echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
+              exit 1
+            fi
+            echo "kind.exe checksum verified: $actual"
           fi
-          echo "kind.exe checksum verified: $actual"
 
           export PATH="$RUNNER_TEMP:$PATH"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
@@ -606,10 +616,32 @@ jobs:
           echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
           sudo podman info
 
-      - name: Install microsandbox (Linux)
+      - name: get microsandbox latest version
         if: matrix.install-microsandbox == true && runner.os == 'Linux'
+        id: msb-version
+        run: |
+          version=$(curl -fsSL https://api.github.com/repos/superradcompany/microsandbox/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: cache microsandbox (Linux)
+        if: matrix.install-microsandbox == true && runner.os == 'Linux'
+        id: msb-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.microsandbox
+            ~/.local/bin/msb
+            ~/.local/bin/microsandbox
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-${{ steps.msb-version.outputs.version }}
+
+      - name: Install microsandbox (Linux)
+        if: matrix.install-microsandbox == true && runner.os == 'Linux' && steps.msb-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL https://install.microsandbox.dev | sh
+
+      - name: configure microsandbox (Linux)
+        if: matrix.install-microsandbox == true && runner.os == 'Linux'
+        run: |
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           # The e2e test skips gracefully if KVM is unavailable on the runner.
           "$HOME/.local/bin/msb" doctor || true
