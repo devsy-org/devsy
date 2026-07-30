@@ -299,8 +299,9 @@ func removeGitCredentialHelper(ctx context.Context, helper, workspaceDir string)
 	}
 	gitConfigPath := gitcredentials.GetLocalGitConfigPath(workspaceDir)
 	if _, err := os.Stat(gitConfigPath); err != nil {
-		// Nothing to clean up, e.g. the clone failed and the workspace dir was
-		// already removed.
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Errorf("stat git config: %v", err)
+		}
 		return
 	}
 	if err := gitcredentials.RemoveHelperFromPath(ctx, gitConfigPath); err != nil {

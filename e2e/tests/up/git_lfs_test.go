@@ -36,22 +36,26 @@ func TestCloneLFSRepoSucceedsWithoutGitLFSBinary(t *testing.T) {
 	}
 }
 
-// hideGitLFSFromPath restricts PATH to a directory containing only "git",
-// simulating a host without the git-lfs binary installed.
+// hideGitLFSFromPath restricts PATH to a directory containing only "git" and
+// "cat", simulating a host without the git-lfs binary installed. "cat" stays
+// available so the clone's filter.lfs.smudge=cat override actually runs,
+// rather than relying on git's fallback for an unresolvable filter command.
 func hideGitLFSFromPath(t *testing.T) {
 	t.Helper()
 
 	if !command.Exists("git") {
 		t.Skip("git not installed")
 	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not found on PATH")
-	}
 
 	binDir := t.TempDir()
-	if err := os.Symlink(realGit, filepath.Join(binDir, "git")); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"git", "cat"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			t.Skipf("%s not found on PATH", name)
+		}
+		if err := os.Symlink(path, filepath.Join(binDir, name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", binDir)
 }
