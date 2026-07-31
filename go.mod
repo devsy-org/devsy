@@ -35,7 +35,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.21.7
+	github.com/google/go-containerregistry v0.21.8
 	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260731170845-2ea098f4b134
 	github.com/google/go-github/v89 v89.0.0
 	github.com/google/uuid v1.6.0
@@ -304,7 +304,7 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
