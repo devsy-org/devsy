@@ -94,8 +94,6 @@ func (t *Task) HoldWorkerLock() error {
 	if !locked {
 		return fmt.Errorf("task %s already has a running worker", t.id)
 	}
-	// Deliberately retained, never unlocked: the handle must outlive this call
-	// so the lock is held for the process's lifetime.
 	t.workerLock = lock
 	return nil
 }
