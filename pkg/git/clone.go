@@ -107,12 +107,18 @@ func WithSkipLFS() Option {
 	return WithLFSMode(LFSSkip)
 }
 
+// WithAllowLFSInstall permits SetupLFS to install the git-lfs binary itself.
+func WithAllowLFSInstall(allow bool) Option {
+	return func(c *cloneConfig) { c.allowLFSInstall = allow }
+}
+
 // cloneConfig is the resolved set of clone options.
 type cloneConfig struct {
 	strategy          CloneStrategy
 	branch            string
 	credentialHelper  string
 	recurseSubmodules bool
+	allowLFSInstall   bool
 	lfsMode           LFSMode
 }
 

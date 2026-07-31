@@ -2,7 +2,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,7 +91,7 @@ func TestSetupLFSModeCommands(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, fake := newLFSRepo(t)
-			At(dir, WithRunner(fake)).SetupLFS(context.Background(), tc.mode)
+			At(dir, WithRunner(fake)).SetupLFS(context.Background(), tc.mode, false)
 
 			var got []string
 			for _, args := range lfsSubcommands(fake) {
@@ -98,6 +100,63 @@ func TestSetupLFSModeCommands(t *testing.T) {
 			assert.DeepEqual(t, tc.want, got)
 		})
 	}
+}
+
+func TestSetupLFSSkipsWhenBinaryMissingAndInstallNotAllowed(t *testing.T) {
+	hideGitLFSFromPath(t)
+	stubLFSInstaller(t, func(context.Context) error {
+		t.Fatal("lfsInstaller must not be called when allowInstall is false")
+		return nil
+	})
+
+	dir, fake := newLFSRepo(t)
+	At(dir, WithRunner(fake)).SetupLFS(context.Background(), LFSFull, false)
+
+	if got := lfsSubcommands(fake); got != nil {
+		t.Errorf("lfs subcommands = %v, want none", got)
+	}
+}
+
+func TestSetupLFSInstallsWhenBinaryMissingAndInstallAllowed(t *testing.T) {
+	hideGitLFSFromPath(t)
+
+	var called bool
+	stubLFSInstaller(t, func(context.Context) error {
+		called = true
+		return errors.New("install unavailable in this environment")
+	})
+
+	dir, fake := newLFSRepo(t)
+	At(dir, WithRunner(fake)).SetupLFS(context.Background(), LFSFull, true)
+
+	if !called {
+		t.Error("lfsInstaller was not called despite allowInstall being true")
+	}
+	if got := lfsSubcommands(fake); got != nil {
+		t.Errorf("lfs subcommands = %v, want none (install failed)", got)
+	}
+}
+
+func stubLFSInstaller(t *testing.T, fn func(context.Context) error) {
+	t.Helper()
+	original := lfsInstaller
+	lfsInstaller = fn
+	t.Cleanup(func() { lfsInstaller = original })
+}
+
+func hideGitLFSFromPath(t *testing.T) {
+	t.Helper()
+
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found on PATH")
+	}
+
+	binDir := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(binDir, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 }
 
 func TestRepoUsesLFS(t *testing.T) {

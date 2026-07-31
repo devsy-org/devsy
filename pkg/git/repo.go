@@ -173,7 +173,7 @@ func (r *Repo) CloneFromInfo(
 
 	// Bare clones have no worktree to hydrate.
 	if c.strategy != BareCloneStrategy {
-		r.SetupLFS(ctx, c.lfsMode)
+		r.SetupLFS(ctx, c.lfsMode, c.allowLFSInstall)
 	}
 	return nil
 }
