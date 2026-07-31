@@ -3,6 +3,8 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +48,40 @@ func TestReleaseStrategyRequiresReleaseSource(t *testing.T) {
 	// git has no release source; the release strategy must refuse it.
 	err := releaseStrategy{}.install(context.Background(), gitTool)
 	assert.Assert(t, err != nil)
+}
+
+func TestPkgManagerStrategyUsableRequiresRoot(t *testing.T) {
+	s := &pkgManagerStrategy{manager: "sh"} // "sh" always exists in test environments
+
+	original := isRoot
+	t.Cleanup(func() { isRoot = original })
+
+	isRoot = func() bool { return true }
+	assert.Assert(t, s.usable())
+
+	isRoot = func() bool { return false }
+	assert.Assert(t, !s.usable())
+}
+
+func TestEnsureDirWritable(t *testing.T) {
+	assert.NilError(t, ensureDirWritable(t.TempDir()))
+}
+
+func TestEnsureDirWritableCreatesMissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does", "not", "exist", "yet")
+	assert.NilError(t, ensureDirWritable(dir))
+}
+
+func TestEnsureDirWritableRejectsReadOnlyDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission test not meaningful when running as root")
+	}
+
+	dir := t.TempDir()
+	// #nosec G302 -- intentional: testing restrictive perms
+	assert.NilError(t, os.Chmod(dir, 0o500))
+
+	assert.Assert(t, ensureDirWritable(dir) != nil)
 }
 
 // fakeStrategy is a test installStrategy with configurable behavior.

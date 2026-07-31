@@ -84,6 +84,13 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 		}
 	}
 
+	// Check writability before downloading: a permission error here is
+	// guaranteed regardless of host/provider type, so there's no point
+	// spending a network round trip to discover it after the fact.
+	if err := ensureDirWritable(installDir); err != nil {
+		return fmt.Errorf("install dir %q is not writable: %w", installDir, err)
+	}
+
 	req := fetchRequest{
 		binary:   binary,
 		url:      s.downloadURL(s.version, asset),
@@ -96,9 +103,6 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 	}
 	defer cleanup()
 
-	if err := os.MkdirAll(installDir, 0o750); err != nil {
-		return fmt.Errorf("create install dir %q: %w", installDir, err)
-	}
 	dst := filepath.Join(installDir, req.execName)
 	if err := moveExecutable(src, dst); err != nil {
 		return fmt.Errorf("install %s to %q: %w", binary, dst, err)
@@ -205,4 +209,20 @@ func moveExecutable(src, dst string) error {
 	}
 	// #nosec G306,G703 -- dst is internally constructed; an executable must be world-executable
 	return os.WriteFile(dst, data, 0o755)
+}
+
+// ensureDirWritable creates dir if needed and confirms it's actually
+// writable by the current process, without relying on any host/provider
+// heuristic.
+func ensureDirWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	probe, err := os.CreateTemp(dir, ".devsy-write-test-*")
+	if err != nil {
+		return err
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	return os.Remove(name)
 }
