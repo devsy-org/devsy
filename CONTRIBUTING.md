@@ -180,6 +180,35 @@ This requires:
    ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 up examples/simple
    ```
 
+### Testing Agent Changes Against a Remote/SSH Provider
+
+The Quick Start above works because with a local `docker` provider, the CLI
+process you just built *is* the agent. For any remote/SSH/cloud provider, the
+agent runs as a separate binary injected onto that host, so testing a change
+to agent code (`pkg/agent`, `pkg/git`, etc.) needs a couple of extra steps.
+
+1. Build dev binaries for every OS/arch (`task cli:build:dev` builds all of
+   them in one pass: `dist/devsy-dev_<os>_<arch>*/devsy-<os>-<arch>`).
+2. Set `DEVSY_AGENT_BINARY` to the binary matching your **remote host's**
+   OS/arch (not your own machine's) before running `up`/`ssh`/etc. Check
+   `devsy workspace list` for the provider's `HOST`/target arch if unsure.
+3. If you've tested against that workspace before, the remote host likely
+   already has an agent binary cached at the provider's `AGENT_PATH`. A dev
+   build (`version == v0.0.0`) skips the remote version check and only
+   verifies *that a binary exists* there — so a stale cached binary is
+   silently reused instead of your new one. Delete it first to force a fresh
+   injection: `ssh <host> rm -f <AGENT_PATH>` (both values are in
+   `devsy workspace list`'s provider options).
+
+```bash
+task cli:build:dev
+ssh <host> rm -f <AGENT_PATH>
+DEVSY_AGENT_BINARY=./dist/devsy-dev_linux_arm64_v8.0/devsy-linux-arm64 \
+  ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 workspace up <workspace> --reset
+```
+
+`task cli:test:remote` automates this (see below).
+
 ### Using Act for Local CI Testing
 
 ```bash
@@ -265,6 +294,7 @@ task cli:build              # Build CLI for production
 task cli:build:dev          # Build CLI for development
 task cli:lint               # Run linters
 task cli:test               # Run unit tests
+task cli:test:remote        # Test agent changes against a remote/SSH provider workspace
 task cli:tidy               # Tidy go.mod and go.sum
 
 # Desktop tasks

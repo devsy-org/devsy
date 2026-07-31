@@ -88,6 +88,28 @@ tasks:
     desc: run devsy unit tests
     cmd: go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic
 
+  cli:test:remote:
+    # usage: HOST=user@host AGENT_PATH=/tmp/user/devsy/agent task cli:test:remote -- <workspace> [extra up flags]
+    # HOST/AGENT_PATH come from `devsy workspace list`'s provider options.
+    # GOOS/GOARCH target the remote host (default linux/arm64); override for e.g. an amd64 cloud VM.
+    desc: build a dev binary and inject it into a remote/SSH-provider workspace, bypassing the stale cached-binary reuse
+    vars:
+      GOOS: '{{.GOOS | default "linux"}}'
+      GOARCH: '{{.GOARCH | default "arm64"}}'
+    preconditions:
+      - sh: '[ -n "{{.HOST}}" ]'
+        msg: "HOST is required, e.g. HOST=user@host task cli:test:remote -- my-workspace"
+      - sh: '[ -n "{{.AGENT_PATH}}" ]'
+        msg: "AGENT_PATH is required (see `devsy workspace list`), e.g. AGENT_PATH=/tmp/user/devsy/agent"
+    cmds:
+      - task: cli:build:dev
+      - ssh {{.HOST}} rm -f {{.AGENT_PATH}}
+      - |
+        set -e
+        remote_bin="$(find dist -maxdepth 1 -type d -name 'devsy-dev_{{.GOOS}}_{{.GOARCH}}*')/devsy-{{.GOOS}}-{{.GOARCH}}"
+        local_bin="$(find dist -maxdepth 1 -type d -name "devsy-dev_$(go env GOOS)_$(go env GOARCH)*")/devsy-$(go env GOOS)-$(go env GOARCH)"
+        DEVSY_AGENT_BINARY="$remote_bin" "$local_bin" workspace up {{.CLI_ARGS}} --reset
+
   cli:test:e2e:build:
     desc: build devsy for e2e tests
     status:
