@@ -518,9 +518,15 @@ func bindReverseForwards(
 	portMappings []string,
 ) ([]boundReverseForward, error) {
 	var bound []boundReverseForward
+	closeBound := func() {
+		for _, b := range bound {
+			_ = b.listener.Close()
+		}
+	}
 	for _, portMapping := range portMappings {
 		mapping, err := port.ParsePortSpec(portMapping)
 		if err != nil {
+			closeBound()
 			return nil, fmt.Errorf("parse port mapping: %w", err)
 		}
 
@@ -530,6 +536,7 @@ func bindReverseForwards(
 			mapping.Host.Address,
 		)
 		if err != nil {
+			closeBound()
 			return nil, fmt.Errorf("listen for reverse forward %s: %w", portMapping, err)
 		}
 		bound = append(bound, boundReverseForward{portMapping, mapping, listener})
