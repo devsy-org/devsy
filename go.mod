@@ -25,7 +25,7 @@ require (
 	github.com/devsy-org/apiserver v1.5.3
 	github.com/devsy-org/ssh v1.2.2
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.7.0+incompatible
+	github.com/docker/cli v29.7.1+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/docker-credential-helpers v0.9.8
 	github.com/docker/go-connections v0.8.1
