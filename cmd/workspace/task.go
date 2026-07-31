@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/spf13/cobra"
 )
@@ -64,11 +65,19 @@ func (cmd *taskListCmd) run() error {
 	}
 
 	if emitJSON {
-		return json.NewEncoder(os.Stdout).Encode(states)
+		out, err := json.MarshalIndent(states, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
+		return nil
 	}
+
+	rows := make([][]string, 0, len(states))
 	for _, s := range states {
-		_, _ = fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\n", s.ID, s.Status, s.Command, s.WorkspaceID)
+		rows = append(rows, []string{s.ID, string(s.Status), s.Command, s.WorkspaceID})
 	}
+	table.Print([]string{"ID", "Status", "Command", "Workspace"}, rows)
 	return nil
 }
 
@@ -249,7 +258,7 @@ func (cmd *taskCancelCmd) run(id string) error {
 	if emitJSON {
 		return json.NewEncoder(os.Stdout).Encode(state)
 	}
-	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: canceled", state.ID))
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: canceled\n", state.ID)
 	return nil
 }
 
@@ -298,7 +307,7 @@ func (cmd *taskRmCmd) run(id string) error {
 	if emitJSON {
 		return json.NewEncoder(os.Stdout).Encode(struct{}{})
 	}
-	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: removed", id))
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: removed\n", id)
 	return nil
 }
 
@@ -315,7 +324,7 @@ func reportTaskState(state *task.State, emitJSON bool) error {
 		return reportTaskStateJSON(state)
 	}
 
-	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: %s", state.ID, state.Status))
+	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", state.ID, state.Status)
 	if state.Status == task.StatusFailed {
 		return fmt.Errorf("%s", taskErrorMessage(state))
 	}
