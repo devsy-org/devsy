@@ -7,6 +7,7 @@ import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
+import { parseCliEnvelope } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { CliRunner } from "./cli.js"
@@ -165,14 +166,52 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     string,
     import("node:child_process").ChildProcess
   >()
+  // Maps workspaceId -> task id for still-running `up --detach` submissions.
+  const activeUpTasks = new Map<string, string>()
+  // Serializes the cancel/submit/register sequence per workspace.
+  const upSubmitChains = new Map<string, Promise<unknown>>()
 
   /**
-   * Terminate every desktop-spawned process tied to a workspace and wait for
-   * them to actually exit. Called before stop/delete so destructive CLI runs
-   * don't race with in-flight children that are still appending to the
-   * workspace's log directory.
+   * Run fn after any prior invocation for the same workspace has settled.
+   * Concurrent `up` submissions would otherwise both pass the cancel step
+   * before either registers its task, leaving the first one running with no
+   * map entry to cancel it by.
    */
-  async function quiesceWorkspace(workspaceId: string): Promise<void> {
+  function serializePerWorkspace<T>(
+    workspaceId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    // Chain entries never reject, so a failed run doesn't poison the queue.
+    const prev = upSubmitChains.get(workspaceId) ?? Promise.resolve()
+    const next = prev.then(fn)
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    upSubmitChains.set(workspaceId, settled)
+    void settled.then(() => {
+      if (upSubmitChains.get(workspaceId) === settled) {
+        upSubmitChains.delete(workspaceId)
+      }
+    })
+    return next
+  }
+
+  /**
+   * Cancel a workspace's in-flight `up` task and terminate its status-follow
+   * child, awaiting exit so the handle is never dropped while the process is
+   * still alive (which would orphan it beyond the reach of any later kill).
+   */
+  async function cancelActiveUp(workspaceId: string): Promise<void> {
+    const taskId = activeUpTasks.get(workspaceId)
+    if (taskId) {
+      // Retain the mapping until the cancel lands, and let a failure reject.
+      await cli.run(["workspace", "task", "cancel", taskId])
+      if (activeUpTasks.get(workspaceId) === taskId) {
+        activeUpTasks.delete(workspaceId)
+      }
+    }
+
     const tunnelProc = tunnelProcesses.get(workspaceId)
     if (tunnelProc) {
       tunnelProcesses.delete(workspaceId)
@@ -186,7 +225,22 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       tunnelProc.kill("SIGTERM")
       await tunnelExit
     }
-    await Promise.all([cli.cancelFor(workspaceId), pty.cancelFor(workspaceId)])
+  }
+
+  /**
+   * Terminate every desktop-spawned process tied to a workspace and wait for
+   * them to actually exit. Called before stop/delete so destructive CLI runs
+   * don't race with in-flight children that are still appending to the
+   * workspace's log directory.
+   */
+  async function quiesceWorkspace(workspaceId: string): Promise<void> {
+    await serializePerWorkspace(workspaceId, async () => {
+      await cancelActiveUp(workspaceId)
+      await Promise.all([
+        cli.cancelFor(workspaceId),
+        pty.cancelFor(workspaceId),
+      ])
+    })
   }
 
   /**
@@ -583,7 +637,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     async (_event, args: { name: string; value: string }) => {
       trackEvent("secret_set")
       try {
-        await cli.runRawStdin(["secret", "set", args.name, "--stdin"], args.value)
+        await cli.runRawStdin(
+          ["secret", "set", args.name, "--stdin"],
+          args.value,
+        )
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
@@ -721,8 +778,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder)
         cliArgs.push("--workspace-folder", args.workspaceFolder)
-      if (args.devcontainer)
-        cliArgs.push("--devcontainer", args.devcontainer)
+      if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
       if (args.prebuildRepository)
         cliArgs.push("--prebuild-repo", args.prebuildRepository)
       if (args.platform) cliArgs.push("--platform", args.platform)
@@ -737,45 +793,123 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (line) => logStore.appendLog(logPath, line),
         () => logStore.closeLog(logPath),
       )
-      let signalledDone = false
 
-      // Kill any existing tunnel process for this workspace before starting a new one
-      const existing = tunnelProcesses.get(wsId)
-      if (existing) {
-        existing.kill("SIGTERM")
-        tunnelProcesses.delete(wsId)
-      }
-
-      const child = await cli.runStreaming(
-        cliArgs,
-        (line) => {
-          if (signalledDone) return
-          const formatted = formatLogLine(line)
-
-          if (line.includes('"outcome":"success"')) {
-            signalledDone = true
-            // Track this as a tunnel process (it stays alive for the tunnel)
-            tunnelProcesses.set(wsId, child)
-            void sink.done(formatted)
-            return
+      return serializePerWorkspace(wsId, async () => {
+        // Tear down any prior run for this workspace before starting a new
+        // one.
+        let taskId: string
+        try {
+          await cancelActiveUp(wsId)
+          // Submit: returns immediately with the background task's id.
+          const submitted = await cli.run<{ kind: string; id: string }>([
+            ...cliArgs,
+            "--detach",
+          ])
+          if (!submitted?.id) {
+            throw new Error("workspace up --detach returned no task id")
           }
+          taskId = submitted.id
+        } catch (error) {
+          const err = error as Error & { cliError?: CLIError }
+          void sink.done(formatLogLine(err.message, "ERROR"), {
+            level: "error",
+            cliError: err.cliError ?? {
+              code: "up_failed",
+              message: err.message,
+            },
+          })
+          return cmdId
+        }
+        activeUpTasks.set(wsId, taskId)
 
-          if (!sink.line(formatted)) return logStore.onDrain(logPath)
-        },
-        (code, cliError) => {
-          if (tunnelProcesses.get(wsId) === child) {
-            tunnelProcesses.delete(wsId)
+        // A newer submission may already own the entry and must stay cancellable.
+        const releaseTask = () => {
+          if (activeUpTasks.get(wsId) === taskId) {
+            activeUpTasks.delete(wsId)
           }
-          if (signalledDone) return
-          void sink.done(
-            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            code === 0 ? undefined : { level: "error", cliError },
+        }
+
+        let signalledDone = false
+        let child: import("node:child_process").ChildProcess
+        try {
+          child = await cli.runStreaming(
+            ["workspace", "task", "logs", taskId, "--follow"],
+            (line, stream) => {
+              if (signalledDone) return
+
+              // Structured NDJSON envelopes only ever appear on stdout; stderr
+              // carries freeform zap log lines.
+              const envelope =
+                stream === "stdout" ? parseCliEnvelope(line) : undefined
+
+              if (envelope?.kind === "status") {
+                deps.getMainWindow()?.webContents.send("workspace-status", {
+                  commandId: cmdId,
+                  workspaceId: wsId,
+                  phase: envelope.phase,
+                  step: envelope.step,
+                  started: envelope.started,
+                  error: envelope.error,
+                })
+                return
+              }
+
+              const formatted = formatLogLine(line)
+
+              if (envelope?.kind === "result") {
+                signalledDone = true
+                releaseTask()
+                void sink.done(formatted)
+                return
+              }
+
+              if (envelope?.kind === "error") {
+                signalledDone = true
+                releaseTask()
+                void sink.done(formatted, {
+                  level: "error",
+                  cliError: { code: "up_failed", message: envelope.message },
+                })
+                return
+              }
+
+              if (!sink.line(formatted)) return logStore.onDrain(logPath)
+            },
+            (code, cliError) => {
+              // No releaseTask: the follower dying says nothing about the
+              // detached worker, and would orphan a still-running task.
+              if (tunnelProcesses.get(wsId) === child) {
+                tunnelProcesses.delete(wsId)
+              }
+              if (signalledDone) return
+              void sink.done(
+                formatLogLine(
+                  `Exit code: ${code}`,
+                  code === 0 ? "INFO" : "ERROR",
+                ),
+                code === 0 ? undefined : { level: "error", cliError },
+              )
+            },
+            wsId,
           )
-        },
-        wsId,
-      )
+        } catch (error) {
+          // The task is already submitted; keep it registered so a later
+          // cancel can still reach it, and close the sink so the UI isn't
+          // left waiting on a follower that never started.
+          const err = error as Error & { cliError?: CLIError }
+          void sink.done(formatLogLine(err.message, "ERROR"), {
+            level: "error",
+            cliError: err.cliError ?? {
+              code: "up_follow_failed",
+              message: err.message,
+            },
+          })
+          return cmdId
+        }
+        tunnelProcesses.set(wsId, child)
 
-      return cmdId
+        return cmdId
+      })
     },
   )
 

@@ -75,6 +75,7 @@ function defaultState() {
         context: "default",
       },
     ],
+    tasks: {},
   }
 }
 
@@ -92,6 +93,7 @@ function saveState(state) {
 }
 
 const state = loadState()
+state.tasks = state.tasks || {}
 
 const rawArgs = process.argv.slice(2)
 
@@ -190,17 +192,8 @@ function handleSsh() {
   process.exit(0)
 }
 
-function handleUp(args) {
-  const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
-  const source = positional[0]
-  out("Resolving source...")
-  out("Pulling image...")
-  out("Starting workspace...")
-  out("Workspace ready.")
-  const wsId =
-    idFlag ||
-    (source ? source.split("/").pop().replace(".git", "") : "") ||
-    "workspace"
+// Adds a completed workspace to state.
+function materializeWorkspace(wsId, source, providerFlag, ideFlag) {
   state.workspaces.push({
     id: wsId,
     uid: `ws-${Date.now()}`,
@@ -213,7 +206,124 @@ function handleUp(args) {
     context: "default",
   })
   saveState(state)
+}
+
+function handleUp(args) {
+  const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
+  const source = positional[0]
+  const wsId =
+    idFlag ||
+    (source ? source.split("/").pop().replace(".git", "") : "") ||
+    "workspace"
+
+  // submits a background task instead of running to completion.
+  if (args.includes("--detach")) {
+    const taskId = `task-${Date.now()}`
+    state.tasks[taskId] = {
+      id: taskId,
+      status: "pending",
+      source,
+      wsId,
+      providerFlag,
+      ideFlag,
+    }
+    saveState(state)
+    out({ kind: "task", id: taskId })
+    process.exit(0)
+    return
+  }
+
+  out("Resolving source")
+  out("Pulling image")
+  out("Starting workspace")
+  out("Workspace ready")
+  materializeWorkspace(wsId, source, providerFlag, ideFlag)
   process.exit(0)
+}
+
+// Handlers for `workspace task <verb>`, backing the up --detach flow above.
+function handleTaskList() {
+  out(Object.values(state.tasks))
+}
+
+function handleTaskGet(args) {
+  const t = state.tasks[args[0]]
+  if (!t) {
+    process.stderr.write(`mock-devsy: task not found: ${args[0]}\n`)
+    process.exit(1)
+    return
+  }
+  out(t)
+}
+
+function handleTaskLogs(args) {
+  const t = state.tasks[args[0]]
+  if (!t) {
+    process.stderr.write(`mock-devsy: task not found: ${args[0]}\n`)
+    process.exit(1)
+    return
+  }
+
+  out("Resolving source")
+  out("Pulling image")
+  out("Starting workspace")
+  out("Workspace ready")
+  materializeWorkspace(t.wsId, t.source, t.providerFlag, t.ideFlag)
+  t.status = "succeeded"
+  saveState(state)
+
+  // Single-line NDJSON result envelope.
+  out(
+    JSON.stringify({
+      kind: "result",
+      outcome: "success",
+      containerId: `mock-container-${t.wsId}`,
+      remoteUser: "vscode",
+      remoteWorkspaceFolder: `/workspaces/${t.wsId}`,
+    }),
+  )
+  process.exit(0)
+}
+
+function handleTaskCancel(args) {
+  const t = state.tasks[args[0]]
+  if (t) {
+    t.status = "canceled"
+    saveState(state)
+  }
+  out({})
+}
+
+function handleTaskRm(args) {
+  delete state.tasks[args[0]]
+  saveState(state)
+  out({})
+}
+
+function handleTask(args) {
+  const verb = args[0]
+  const rest = args.slice(1)
+  const handlers = {
+    list: () => handleTaskList(),
+    ls: () => handleTaskList(),
+    get: () => handleTaskGet(rest),
+    describe: () => handleTaskGet(rest),
+    show: () => handleTaskGet(rest),
+    logs: () => handleTaskLogs(rest),
+    attach: () => handleTaskLogs(rest),
+    cancel: () => handleTaskCancel(rest),
+    stop: () => handleTaskCancel(rest),
+    rm: () => handleTaskRm(rest),
+    delete: () => handleTaskRm(rest),
+    remove: () => handleTaskRm(rest),
+  }
+  const handler = handlers[verb]
+  if (!handler) {
+    process.stderr.write(`mock-devsy: unknown task subcommand '${verb}'\n`)
+    process.exit(2)
+    return
+  }
+  handler()
 }
 
 function handleStop(args) {
@@ -267,6 +377,7 @@ const workspaceHandlers = {
   status: handleStatus,
   ssh: handleSsh,
   up: handleUp,
+  task: handleTask,
   stop: handleStop,
   delete: handleDelete,
   rename: handleRename,

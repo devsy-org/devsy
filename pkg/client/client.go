@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -162,10 +163,10 @@ type CommandOptions struct {
 type UpOptions struct {
 	provider.CLIOptions
 
-	Debug bool
-
-	Stdin  io.Reader
-	Stdout io.Writer
+	Debug    bool
+	Stdin    io.Reader
+	Stdout   io.Writer
+	Reporter status.Reporter
 }
 
 type SshOptions struct {
@@ -178,10 +179,12 @@ type SshOptions struct {
 type Status string
 
 const (
-	StatusRunning  = "Running"
-	StatusBusy     = "Busy"
-	StatusStopped  = "Stopped"
-	StatusNotFound = "NotFound"
+	StatusRunning      = "Running"
+	StatusBusy         = "Busy"
+	StatusStopped      = "Stopped"
+	StatusNotFound     = "NotFound"
+	StatusProvisioning = "Provisioning"
+	StatusFailed       = "Failed"
 )
 
 func ParseStatus(in string) (Status, error) {
@@ -195,11 +198,18 @@ func ParseStatus(in string) (Status, error) {
 		return StatusStopped, nil
 	case "NOTFOUND":
 		return StatusNotFound, nil
+	case "PROVISIONING":
+		return StatusProvisioning, nil
+	case "FAILED":
+		return StatusFailed, nil
 	default:
 		return StatusNotFound, fmt.Errorf(
 			"error parsing status: %q unrecognized status, needs to be one of: %v",
 			in,
-			[]string{StatusRunning, StatusBusy, StatusStopped, StatusNotFound},
+			[]string{
+				StatusRunning, StatusBusy, StatusStopped, StatusNotFound,
+				StatusProvisioning, StatusFailed,
+			},
 		)
 	}
 }

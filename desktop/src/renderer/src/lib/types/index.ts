@@ -148,6 +148,16 @@ export interface CommandProgress {
   cliError?: import("../../../../shared/cli-error.js").CLIError
 }
 
+/** A workspace phase transition, pushed as it happens. */
+export interface WorkspaceStatus {
+  commandId: string
+  workspaceId: string
+  phase: string
+  step?: string
+  started: boolean
+  error?: string
+}
+
 export interface AuditEntry {
   id: number
   timestamp: string

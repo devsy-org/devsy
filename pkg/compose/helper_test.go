@@ -2,8 +2,10 @@ package compose
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/suite"
@@ -183,6 +185,13 @@ func (r stubRuntime) GPUAvailable(_ context.Context, _ *docker.DockerHelper) (bo
 }
 
 func (s *HelperTestSuite) TestNewComposeHelperPodmanRuntimeUsesDockerCommand() {
+	// Skip for local development when I do not have Podman machine running
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelProbe()
+	if exec.CommandContext(probeCtx, testPodmanCmd, "compose", "version").Run() != nil {
+		s.T().Skip("podman compose not reachable (is podman machine running?)")
+	}
+
 	helper := &docker.DockerHelper{
 		DockerCommand: "podman",
 		Runtime:       stubRuntime{name: docker.RuntimePodman},
@@ -267,8 +276,5 @@ func (s *HelperTestSuite) TestNewComposeHelperNonPodmanFallbackUsesPodman() {
 		s.T().Skipf("no compose binary available in test environment: %v", err)
 	}
 
-	// When Docker runtime succeeds, it should use testDockerCmd — but if Docker Compose V2
-	// is unavailable, the fallback should independently probe "podman", not re-try testDockerCmd.
-	// We verify here that the successful helper uses a valid command.
 	s.Contains([]string{testDockerCmd, testPodmanCmd, testDockerComposeCmd}, ch.Command)
 }

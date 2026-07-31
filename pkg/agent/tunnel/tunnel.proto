@@ -8,6 +8,7 @@ package tunnel;
 service Tunnel {
   rpc Ping(Empty) returns (Empty) {}
   rpc Log(LogMessage) returns (Empty) {}
+  rpc Status(StatusUpdate) returns (Empty) {}
   rpc SendResult(Message) returns (Empty) {}
 
   rpc DockerCredentials(Message) returns (Message) {}
@@ -75,6 +76,13 @@ enum LogLevel {
 message LogMessage {
   LogLevel logLevel = 1;
   string message = 2;
+}
+
+message StatusUpdate {
+  string phase = 1;
+  string step = 2;
+  bool started = 3;
+  string error = 4;
 }
 
 message Empty {

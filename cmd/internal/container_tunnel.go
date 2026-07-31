@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/spf13/cobra"
 )
 
@@ -161,6 +162,7 @@ func StartContainer(
 		ctx,
 		devcontainer.UpOptions{NoBuild: true},
 		workspaceConfig.InjectTimeout,
+		status.Nop(),
 	)
 	if err != nil {
 		return result, err

@@ -4,9 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/devsy-org/devsy/pkg/status"
+)
+
+const (
+	KindStatus = "status"
+	KindResult = "result"
+	KindError  = "error"
+	KindTask   = "task"
 )
 
 type ResultEnvelope struct {
+	Kind                  string   `json:"kind"`
 	Outcome               string   `json:"outcome"`
 	ContainerID           string   `json:"containerId"`
 	RemoteUser            string   `json:"remoteUser"`
@@ -17,14 +28,40 @@ type ResultEnvelope struct {
 }
 
 type ErrorEnvelope struct {
+	Kind    string `json:"kind"`
 	Outcome string `json:"outcome"`
 	Message string `json:"message"`
 }
 
-// WriteResultJSON serializes env as a success envelope to w. The caller
-// supplies the envelope fields; this function stamps Outcome="success" and
-// appends a trailing newline.
+// StatusEnvelope is one NDJSON line reporting a phase transition of the up
+// pipeline.
+type StatusEnvelope struct {
+	Kind    string `json:"kind"`
+	Phase   string `json:"phase"`
+	Step    string `json:"step,omitempty"`
+	Started bool   `json:"started"`
+	Error   string `json:"error,omitempty"`
+}
+
+// TaskEnvelope is the single line `up --detach` writes to stdout.
+type TaskEnvelope struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+// WriteTaskJSON serializes a submitted task's ID as an NDJSON line to w.
+func WriteTaskJSON(w io.Writer, id string) error {
+	data, err := json.Marshal(TaskEnvelope{Kind: KindTask, ID: id})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s\n", data)
+	return err
+}
+
+// WriteResultJSON serializes env as a success envelope.
 func WriteResultJSON(w io.Writer, env ResultEnvelope) error {
+	env.Kind = KindResult
 	env.Outcome = "success"
 	data, err := json.Marshal(env)
 	if err != nil {
@@ -36,8 +73,44 @@ func WriteResultJSON(w io.Writer, env ResultEnvelope) error {
 
 func WriteErrorJSON(w io.Writer, msg string) error {
 	env := ErrorEnvelope{
+		Kind:    KindError,
 		Outcome: "error",
 		Message: msg,
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s\n", data)
+	return err
+}
+
+// ParseStatusLine parses line as a status NDJSON envelope.
+func ParseStatusLine(line string) (status.Event, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "{") {
+		return status.Event{}, false
+	}
+	var env StatusEnvelope
+	if err := json.Unmarshal([]byte(trimmed), &env); err != nil || env.Kind != KindStatus {
+		return status.Event{}, false
+	}
+	return status.Event{
+		Phase:   status.Phase(env.Phase),
+		Step:    env.Step,
+		Started: env.Started,
+		Err:     env.Error,
+	}, true
+}
+
+// WriteStatusJSON serializes a status.Event as an NDJSON status line.
+func WriteStatusJSON(w io.Writer, e status.Event) error {
+	env := StatusEnvelope{
+		Kind:    KindStatus,
+		Phase:   string(e.Phase),
+		Step:    e.Step,
+		Started: e.Started,
+		Error:   e.Err,
 	}
 	data, err := json.Marshal(env)
 	if err != nil {

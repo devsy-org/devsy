@@ -251,6 +251,12 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 			false,
 			"Clone the source inside the container instead of bind-mounting from the host (unset = auto-detect)",
 		),
+		flags.Bool(&cmd.Detach, names.Detach, false,
+			"Submit the workspace for provisioning and return immediately; "+
+				"poll progress with 'workspace task get <id>' or 'workspace task logs <id> -f'").
+			Shorthand("d"),
+		flags.String(&cmd.taskID, names.TaskID, "",
+			"Internal: report progress into this task ID instead of stdout").Hidden(),
 	)
 }
 
