@@ -84,9 +84,6 @@ func (s *releaseSource) install(ctx context.Context, binary string) error {
 		}
 	}
 
-	// Check writability before downloading: a permission error here is
-	// guaranteed regardless of host/provider type, so there's no point
-	// spending a network round trip to discover it after the fact.
 	if err := ensureDirWritable(installDir); err != nil {
 		return fmt.Errorf("install dir %q is not writable: %w", installDir, err)
 	}
@@ -211,9 +208,6 @@ func moveExecutable(src, dst string) error {
 	return os.WriteFile(dst, data, 0o755)
 }
 
-// ensureDirWritable creates dir if needed and confirms it's actually
-// writable by the current process, without relying on any host/provider
-// heuristic.
 func ensureDirWritable(dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err

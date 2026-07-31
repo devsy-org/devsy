@@ -107,13 +107,10 @@ type pkgManagerStrategy struct {
 
 func (s *pkgManagerStrategy) name() string { return s.manager }
 
-// isRoot is overridable in tests.
 var isRoot = func() bool { return os.Geteuid() == 0 }
 
 // usable requires root: package installs write to system-owned locations
-// (e.g. apt's lock files, dpkg's database) regardless of whether the host
-// is "local" or devsy-provisioned, so checking privilege directly avoids an
-// install attempt that's guaranteed to fail with permission denied.
+// (e.g. apt's lock files, dpkg's database).
 func (s *pkgManagerStrategy) usable() bool {
 	return command.Exists(s.manager) && isRoot()
 }
