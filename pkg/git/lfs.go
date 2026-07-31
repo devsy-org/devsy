@@ -53,20 +53,8 @@ func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode, allowInstall bool) {
 		return
 	}
 
-	if !command.Exists(binGitLFS) {
-		if !allowInstall {
-			log.Info(
-				"repository uses git-lfs but the binary is not installed, LFS files will be pointer stubs",
-			)
-			return
-		}
-		if err := lfsInstaller(ctx); err != nil {
-			log.Warnf(
-				"repository uses git-lfs but it could not be installed, LFS files will be pointer stubs: %v",
-				err,
-			)
-			return
-		}
+	if !command.Exists(binGitLFS) && !ensureLFSBinary(ctx, allowInstall) {
+		return
 	}
 
 	if err := r.lfs(ctx, "install", "--local"); err != nil {
@@ -81,6 +69,25 @@ func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode, allowInstall bool) {
 	if err := r.lfs(ctx, "pull"); err != nil {
 		log.Warnf("git-lfs pull failed, LFS files may be pointer stubs: %v", err)
 	}
+}
+
+// ensureLFSBinary installs git-lfs when allowInstall is set, reporting
+// whether the binary is now available.
+func ensureLFSBinary(ctx context.Context, allowInstall bool) bool {
+	if !allowInstall {
+		log.Info(
+			"repository uses git-lfs but the binary is not installed, LFS files will be pointer stubs",
+		)
+		return false
+	}
+	if err := lfsInstaller(ctx); err != nil {
+		log.Warnf(
+			"repository uses git-lfs but it could not be installed, LFS files will be pointer stubs: %v",
+			err,
+		)
+		return false
+	}
+	return true
 }
 
 // lfs runs a `git lfs <args...>` subcommand in the repository, returning any
