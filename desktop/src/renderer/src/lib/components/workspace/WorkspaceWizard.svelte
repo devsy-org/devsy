@@ -786,7 +786,7 @@ function selectTemplate(t: { name: string; source: string }) {
 {/snippet}
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
-  <Dialog.Content class="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+  <Dialog.Content class="sm:max-w-4xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
     <Dialog.Header class="sr-only">
       <Dialog.Title>Create Workspace</Dialog.Title>
       <Dialog.Description>
