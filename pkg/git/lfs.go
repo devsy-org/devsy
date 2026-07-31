@@ -41,14 +41,10 @@ func cloneEnvForLFS() []string {
 	return nil
 }
 
-// lfsInstaller installs git-lfs; overridable in tests to avoid a real
-// package-manager/network install attempt.
+// lfsInstaller is overridable in tests.
 var lfsInstaller = InstallLFS
 
-// SetupLFS configures Git LFS in the repository. When git-lfs isn't
-// installed, it's only installed automatically if allowInstall is set,
-// matching ensureGit's rule of never installing tools into a user's local
-// environment.
+// SetupLFS configures Git LFS in the repository.
 func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode, allowInstall bool) {
 	if mode == LFSSkip {
 		return

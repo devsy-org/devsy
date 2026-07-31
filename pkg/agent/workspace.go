@@ -319,10 +319,6 @@ func ensureGit(ctx context.Context, agentConfig *provider2.ProviderAgentConfig) 
 	return git.InstallBinary(ctx)
 }
 
-// isLocalAgent reports whether the agent is running in the user's own local
-// environment, as opposed to a devsy-provisioned remote/cloud host. Devsy
-// only installs missing tools on hosts it provisions and controls, never
-// into a user's local environment.
 func isLocalAgent(agentConfig *provider2.ProviderAgentConfig) bool {
 	local, _ := agentConfig.Local.Bool()
 	return local

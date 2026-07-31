@@ -107,9 +107,7 @@ func WithSkipLFS() Option {
 	return WithLFSMode(LFSSkip)
 }
 
-// WithAllowLFSInstall permits SetupLFS to install the git-lfs binary itself
-// when it's missing. Reserve this for environments Devsy provisions and
-// controls; never enable it for a user's local environment.
+// WithAllowLFSInstall permits SetupLFS to install the git-lfs binary itself.
 func WithAllowLFSInstall(allow bool) Option {
 	return func(c *cloneConfig) { c.allowLFSInstall = allow }
 }
