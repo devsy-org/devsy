@@ -29,7 +29,7 @@ func IsGpgTunnelRunning(
 	user string,
 	client *ssh.Client,
 ) bool {
-	writer := log.Writer(log.LevelDebug)
+	writer := log.PassthroughWriter()
 	defer func() { _ = writer.Close() }()
 
 	command := "gpg -K"

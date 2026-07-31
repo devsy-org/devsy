@@ -134,7 +134,7 @@ func TestWriter_PreservesBlankLines(t *testing.T) {
 }
 
 func TestPassthroughWriter_WritesRawBytesUnformatted(t *testing.T) {
-	Init(Config{Quiet: true, Format: testFormatJSON}) // fatal-only; passthrough must ignore this
+	Init(Config{Quiet: true, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)

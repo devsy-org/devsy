@@ -18,16 +18,8 @@ func Writer(level int) io.WriteCloser {
 	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
 
-// PassthroughWriter returns an io.WriteCloser that writes bytes exactly as
-// received: no level filtering, no line buffering, no structured formatting.
-// Writes go to stderr and to any sinks registered via AddSink, the same
-// destinations Writer uses, so consumers of captured output don't need to
-// special-case it.
-//
-// Use it only when the subprocess's own output is already meant to reach the
-// user verbatim — e.g. an interactive PTY session — where wrapping each line
-// as a leveled log entry would misrepresent or garble it. For subprocess
-// stderr/stdout that should be reported through normal logging, use Writer.
+// PassthroughWriter writes bytes exactly as received, with no level
+// filtering, line buffering, or structured formatting.
 func PassthroughWriter() io.WriteCloser {
 	return passthroughWriter{}
 }
