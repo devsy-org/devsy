@@ -27,9 +27,9 @@ func PassthroughWriter() io.WriteCloser {
 type passthroughWriter struct{}
 
 func (passthroughWriter) Write(p []byte) (int, error) {
-	n, err := os.Stderr.Write(p)
+	_, _ = os.Stderr.Write(p)
 	_, _ = extraSinks.Write(p)
-	return n, err
+	return len(p), nil
 }
 
 func (passthroughWriter) Close() error { return nil }
