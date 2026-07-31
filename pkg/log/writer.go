@@ -3,6 +3,7 @@ package log
 import (
 	"bytes"
 	"io"
+	"os"
 	"sync"
 
 	"go.uber.org/zap/zapcore"
@@ -16,6 +17,22 @@ const maxPendingLine = 64 * 1024
 func Writer(level int) io.WriteCloser {
 	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
+
+// PassthroughWriter writes bytes exactly as received, with no level
+// filtering, line buffering, or structured formatting.
+func PassthroughWriter() io.WriteCloser {
+	return passthroughWriter{}
+}
+
+type passthroughWriter struct{}
+
+func (passthroughWriter) Write(p []byte) (int, error) {
+	_, _ = os.Stderr.Write(p)
+	_, _ = extraSinks.Write(p)
+	return len(p), nil
+}
+
+func (passthroughWriter) Close() error { return nil }
 
 func verbosityConstToZapLevel(level int) zapcore.Level {
 	switch level {

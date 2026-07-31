@@ -133,6 +133,23 @@ func TestWriter_PreservesBlankLines(t *testing.T) {
 	}
 }
 
+func TestPassthroughWriter_WritesRawBytesUnformatted(t *testing.T) {
+	Init(Config{Quiet: true, Format: testFormatJSON})
+
+	var sink bytes.Buffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	w := PassthroughWriter()
+	if _, err := w.Write([]byte("raw output\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	if got := sink.String(); got != "raw output\n" {
+		t.Errorf("got %q, want raw bytes with no structured formatting", got)
+	}
+}
+
 func TestWriter_DiscardsBelowConfiguredLevel(t *testing.T) {
 	Init(Config{Verbosity: 1, Format: testFormatJSON}) // info+ only, debug disabled
 
