@@ -91,11 +91,31 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 		}
 	}
 
-	// delete workspace folder
+	removeWorkspaceFolders(workspaceInfo)
+
+	return nil
+}
+
+// removeWorkspaceFolders deletes the workspace's config folder and cached
+// content folder, logging rather than failing on either error since deletion
+// should proceed best-effort once the container/daemon are already gone.
+func removeWorkspaceFolders(workspaceInfo *provider2.AgentWorkspaceInfo) {
 	if err := forceRemoveAll(workspaceInfo.Origin); err != nil {
 		log.Errorf("remove workspace folder: %v", err)
 	}
-	return nil
+	if err := removeContentFolder(workspaceInfo); err != nil {
+		log.Errorf("remove workspace content folder: %v", err)
+	}
+}
+
+// removeContentFolder deletes the workspace's cached content folder, unless
+// it's the user's own local folder mounted directly rather than a devsy copy.
+func removeContentFolder(workspaceInfo *provider2.AgentWorkspaceInfo) error {
+	if workspaceInfo.ContentFolder == "" ||
+		workspaceInfo.ContentFolder == workspaceInfo.Workspace.Source.LocalFolder {
+		return nil
+	}
+	return forceRemoveAll(workspaceInfo.ContentFolder)
 }
 
 func removeContainer(
