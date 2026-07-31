@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
 func skipIfPermissionsNotEnforced(t *testing.T) {
@@ -118,5 +120,50 @@ func TestForceRemoveAll_NestedReadOnlyDirectories(t *testing.T) {
 func TestForceRemoveAll_EmptyString(t *testing.T) {
 	if err := forceRemoveAll(""); err != nil {
 		t.Fatalf("forceRemoveAll with empty string should not error: %v", err)
+	}
+}
+
+func TestRemoveContentFolder_RemovesDevsyManagedContent(t *testing.T) {
+	dir := t.TempDir()
+	content := filepath.Join(dir, "contents", "my-workspace")
+	if err := os.MkdirAll(content, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceInfo := &provider2.AgentWorkspaceInfo{
+		ContentFolder: content,
+		Workspace:     &provider2.Workspace{},
+	}
+	if err := removeContentFolder(workspaceInfo); err != nil {
+		t.Fatalf("removeContentFolder failed: %v", err)
+	}
+	assertRemoved(t, content)
+}
+
+func TestRemoveContentFolder_SkipsUsersOwnLocalFolder(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "my-project")
+	if err := os.MkdirAll(local, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceInfo := &provider2.AgentWorkspaceInfo{
+		ContentFolder: local,
+		Workspace: &provider2.Workspace{
+			Source: provider2.WorkspaceSource{LocalFolder: local},
+		},
+	}
+	if err := removeContentFolder(workspaceInfo); err != nil {
+		t.Fatalf("removeContentFolder failed: %v", err)
+	}
+	if _, err := os.Stat(local); err != nil {
+		t.Fatalf("expected local folder to survive, got stat err: %v", err)
+	}
+}
+
+func TestRemoveContentFolder_EmptyContentFolder(t *testing.T) {
+	workspaceInfo := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{}}
+	if err := removeContentFolder(workspaceInfo); err != nil {
+		t.Fatalf("removeContentFolder with empty ContentFolder should not error: %v", err)
 	}
 }
