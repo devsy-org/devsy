@@ -3,6 +3,7 @@ package log
 import (
 	"bytes"
 	"io"
+	"os"
 	"sync"
 
 	"go.uber.org/zap/zapcore"
@@ -16,6 +17,30 @@ const maxPendingLine = 64 * 1024
 func Writer(level int) io.WriteCloser {
 	return &levelWriter{level: verbosityConstToZapLevel(level)}
 }
+
+// PassthroughWriter returns an io.WriteCloser that writes bytes exactly as
+// received: no level filtering, no line buffering, no structured formatting.
+// Writes go to stderr and to any sinks registered via AddSink, the same
+// destinations Writer uses, so consumers of captured output don't need to
+// special-case it.
+//
+// Use it only when the subprocess's own output is already meant to reach the
+// user verbatim — e.g. an interactive PTY session — where wrapping each line
+// as a leveled log entry would misrepresent or garble it. For subprocess
+// stderr/stdout that should be reported through normal logging, use Writer.
+func PassthroughWriter() io.WriteCloser {
+	return passthroughWriter{}
+}
+
+type passthroughWriter struct{}
+
+func (passthroughWriter) Write(p []byte) (int, error) {
+	n, err := os.Stderr.Write(p)
+	_, _ = extraSinks.Write(p)
+	return n, err
+}
+
+func (passthroughWriter) Close() error { return nil }
 
 func verbosityConstToZapLevel(level int) zapcore.Level {
 	switch level {
