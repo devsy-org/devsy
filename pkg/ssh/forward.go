@@ -79,16 +79,41 @@ func ReversePortForward(
 	remoteNetwork, remoteAddr, localNetwork, localAddr string,
 	exitAfterTimeout time.Duration,
 ) error {
-	listener, err := client.Listen(remoteNetwork, remoteAddr)
+	listener, err := ReverseListen(client, remoteNetwork, remoteAddr)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = listener.Close() }()
+	return RunReverseForward(ctx, client, ReverseForwardOpts{
+		Listener:         listener,
+		RemoteAddr:       remoteAddr,
+		LocalNetwork:     localNetwork,
+		LocalAddr:        localAddr,
+		ExitAfterTimeout: exitAfterTimeout,
+	})
+}
 
+// ReverseListen binds the remote listener; pair with RunReverseForward.
+func ReverseListen(client *ssh.Client, remoteNetwork, remoteAddr string) (net.Listener, error) {
+	return client.Listen(remoteNetwork, remoteAddr)
+}
+
+// ReverseForwardOpts groups the parameters for RunReverseForward.
+type ReverseForwardOpts struct {
+	Listener         net.Listener
+	RemoteAddr       string
+	LocalNetwork     string
+	LocalAddr        string
+	ExitAfterTimeout time.Duration
+}
+
+// RunReverseForward runs the forwarding loop for a listener obtained via
+// ReverseListen, closing it on return.
+func RunReverseForward(ctx context.Context, client *ssh.Client, opts ReverseForwardOpts) error {
+	defer func() { _ = opts.Listener.Close() }()
 	return portForwarding(
-		ctx, client, listener,
-		remoteAddr, localNetwork, localAddr,
-		exitAfterTimeout, reverseForward,
+		ctx, client, opts.Listener,
+		opts.RemoteAddr, opts.LocalNetwork, opts.LocalAddr,
+		opts.ExitAfterTimeout, reverseForward,
 	)
 }
 

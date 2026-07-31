@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"strings"
@@ -476,6 +477,84 @@ func (cmd *SSHCmd) reverseForwardPorts(
 	return <-errChan
 }
 
+type boundReverseForward struct {
+	portMapping string
+	mapping     port.Mapping
+	listener    net.Listener
+}
+
+// startReverseForwardsAndWait blocks until every forward's listener is bound,
+// unlike reverseForwardPorts which blocks for the forward's lifetime.
+func (cmd *SSHCmd) startReverseForwardsAndWait(
+	ctx context.Context,
+	containerClient *ssh.Client,
+) error {
+	timeout, err := cmd.forwardTimeout()
+	if err != nil {
+		return err
+	}
+
+	bound, err := bindReverseForwards(containerClient, cmd.ReverseForwardPorts)
+	if err != nil {
+		return err
+	}
+
+	for _, b := range bound {
+		log.Infof(
+			"Reverse forwarding local %s/%s to remote %s/%s",
+			b.mapping.Host.Protocol,
+			b.mapping.Host.Address,
+			b.mapping.Container.Protocol,
+			b.mapping.Container.Address,
+		)
+		go runReverseForwardInBackground(ctx, containerClient, b, timeout)
+	}
+
+	return nil
+}
+
+func bindReverseForwards(
+	containerClient *ssh.Client,
+	portMappings []string,
+) ([]boundReverseForward, error) {
+	var bound []boundReverseForward
+	for _, portMapping := range portMappings {
+		mapping, err := port.ParsePortSpec(portMapping)
+		if err != nil {
+			return nil, fmt.Errorf("parse port mapping: %w", err)
+		}
+
+		listener, err := devssh.ReverseListen(
+			containerClient,
+			mapping.Host.Protocol,
+			mapping.Host.Address,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("listen for reverse forward %s: %w", portMapping, err)
+		}
+		bound = append(bound, boundReverseForward{portMapping, mapping, listener})
+	}
+	return bound, nil
+}
+
+func runReverseForwardInBackground(
+	ctx context.Context,
+	containerClient *ssh.Client,
+	b boundReverseForward,
+	timeout time.Duration,
+) {
+	err := devssh.RunReverseForward(ctx, containerClient, devssh.ReverseForwardOpts{
+		Listener:         b.listener,
+		RemoteAddr:       b.mapping.Host.Address,
+		LocalNetwork:     b.mapping.Container.Protocol,
+		LocalAddr:        b.mapping.Container.Address,
+		ExitAfterTimeout: timeout,
+	})
+	if err != nil && !errors.Is(err, devssh.ErrIdleTimeout) && !errors.Is(err, io.EOF) {
+		log.Errorf("error forwarding %s: %v", b.portMapping, err)
+	}
+}
+
 func (cmd *SSHCmd) forwardPorts(
 	ctx context.Context,
 	containerClient *ssh.Client,
@@ -782,9 +861,9 @@ func (cmd *SSHCmd) setupGPGAgent(
 		gpgExtraSocketPath,
 	)
 
-	go func() {
-		log.Error(cmd.reverseForwardPorts(ctx, containerClient))
-	}()
+	if err := cmd.startReverseForwardsAndWait(ctx, containerClient); err != nil {
+		return fmt.Errorf("start gpg-agent reverse forward: %w", err)
+	}
 
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
