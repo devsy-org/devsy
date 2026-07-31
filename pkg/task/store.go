@@ -187,6 +187,17 @@ func (s *Store) failAbandoned(state *State) *State {
 	return reconciled
 }
 
+// workerAlive guards against signaling a PID whose original worker already
+// exited and got recycled to an unrelated process.
+func (s *Store) workerAlive(id string) bool {
+	lock, ok := s.claimDeadWorkerLock(id)
+	if !ok {
+		return true
+	}
+	_ = lock.Unlock()
+	return false
+}
+
 // claimDeadWorkerLock acquires the task's worker lock, which only succeeds when
 // no worker holds it.
 func (s *Store) claimDeadWorkerLock(id string) (*flock.Flock, bool) {

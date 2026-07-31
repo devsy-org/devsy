@@ -90,6 +90,12 @@ func TestReporterRecordsFailure(t *testing.T) {
 	if state.Error != "boom" {
 		t.Errorf("error = %q, want %q", state.Error, "boom")
 	}
+	if state.Status != StatusFailed {
+		t.Errorf("status = %q, want %q", state.Status, StatusFailed)
+	}
+	if !state.Status.Terminal() {
+		t.Error("a failed-phase report must leave the task in a terminal state")
+	}
 }
 
 func TestSucceedRecordsResult(t *testing.T) {

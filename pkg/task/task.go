@@ -161,7 +161,7 @@ func (t *Task) Cancel() error {
 	if err != nil {
 		return err
 	}
-	if pid == 0 {
+	if pid == 0 || !t.store.workerAlive(t.id) {
 		return nil
 	}
 	return command.Kill(strconv.Itoa(pid))
@@ -193,6 +193,9 @@ func (r taskReporter) Report(e status.Event) {
 			return
 		}
 		if e.Phase == status.PhaseFailed {
+			s.Status = StatusFailed
+			s.Phase = string(e.Phase)
+			s.Step = e.Step
 			s.Error = e.Err
 			return
 		}

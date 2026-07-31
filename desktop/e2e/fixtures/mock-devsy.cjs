@@ -217,7 +217,14 @@ function handleUp(args) {
     "workspace"
 
   // submits a background task instead of running to completion.
-  if (args.includes("--detach")) {
+  const isDetach = args.some(
+    (a) =>
+      a === "--detach" ||
+      a === "--detach=true" ||
+      a === "-d" ||
+      a === "-d=true",
+  )
+  if (isDetach) {
     const taskId = `task-${Date.now()}`
     state.tasks[taskId] = {
       id: taskId,
@@ -264,6 +271,33 @@ function handleTaskLogs(args) {
     return
   }
 
+  if (t.status !== "pending") {
+    // Already terminal: return the stored result instead of re-running
+    // materialization and clobbering the workspace state a second time.
+    if (t.status !== "succeeded") {
+      out(
+        JSON.stringify({
+          kind: "error",
+          outcome: "error",
+          message: `task ${t.id} ${t.status}`,
+        }),
+      )
+      process.exit(1)
+      return
+    }
+    out(
+      JSON.stringify({
+        kind: "result",
+        outcome: "success",
+        containerId: `mock-container-${t.wsId}`,
+        remoteUser: "vscode",
+        remoteWorkspaceFolder: `/workspaces/${t.wsId}`,
+      }),
+    )
+    process.exit(0)
+    return
+  }
+
   out("Resolving source")
   out("Pulling image")
   out("Starting workspace")
@@ -287,15 +321,34 @@ function handleTaskLogs(args) {
 
 function handleTaskCancel(args) {
   const t = state.tasks[args[0]]
-  if (t) {
-    t.status = "canceled"
-    saveState(state)
+  if (!t) {
+    process.stderr.write(`mock-devsy: task not found: ${args[0]}\n`)
+    process.exit(1)
+    return
   }
+  // Matches the real CLI's Task.Cancel, which records the outcome as failed.
+  t.status = "failed"
+  saveState(state)
   out({})
 }
 
 function handleTaskRm(args) {
-  delete state.tasks[args[0]]
+  const id = args[0]
+  const force = args.includes("--force")
+  const t = state.tasks[id]
+  if (!t) {
+    process.stderr.write(`mock-devsy: task not found: ${id}\n`)
+    process.exit(1)
+    return
+  }
+  if (!force && t.status !== "succeeded" && t.status !== "failed") {
+    process.stderr.write(
+      `mock-devsy: task ${id} is still ${t.status}; cancel it first or delete with force\n`,
+    )
+    process.exit(1)
+    return
+  }
+  delete state.tasks[id]
   saveState(state)
   out({})
 }

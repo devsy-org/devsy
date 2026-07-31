@@ -249,7 +249,7 @@ func (cmd *taskCancelCmd) run(id string) error {
 	if emitJSON {
 		return json.NewEncoder(os.Stdout).Encode(state)
 	}
-	_, _ = fmt.Fprintf(os.Stdout, "task %s: canceled\n", state.ID)
+	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: canceled", state.ID))
 	return nil
 }
 
@@ -278,6 +278,10 @@ func newTaskRmCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *taskRmCmd) run(id string) error {
+	emitJSON, err := resolveEmitJSON(cmd.GlobalFlags)
+	if err != nil {
+		return err
+	}
 	store, err := task.NewStore()
 	if err != nil {
 		return err
@@ -287,7 +291,15 @@ func (cmd *taskRmCmd) run(id string) error {
 			return err
 		}
 	}
-	return store.Delete(id, cmd.Force)
+	if err := store.Delete(id, cmd.Force); err != nil {
+		return err
+	}
+
+	if emitJSON {
+		return json.NewEncoder(os.Stdout).Encode(struct{}{})
+	}
+	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: removed", id))
+	return nil
 }
 
 func resolveEmitJSON(g *flags.GlobalFlags) (bool, error) {
@@ -303,20 +315,30 @@ func reportTaskState(state *task.State, emitJSON bool) error {
 		return reportTaskStateJSON(state)
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", state.ID, state.Status)
+	_, _ = fmt.Fprintln(os.Stdout, fmt.Sprintf("task %s: %s", state.ID, state.Status))
 	if state.Status == task.StatusFailed {
-		return fmt.Errorf("%s", state.Error)
+		return fmt.Errorf("%s", taskErrorMessage(state))
 	}
 	return nil
+}
+
+// taskErrorMessage falls back to a generic message when a failed task has
+// no recorded error, so callers never see a blank error.
+func taskErrorMessage(state *task.State) string {
+	if state.Error != "" {
+		return state.Error
+	}
+	return fmt.Sprintf("task %s failed", state.ID)
 }
 
 func reportTaskStateJSON(state *task.State) error {
 	switch state.Status {
 	case task.StatusFailed:
-		if err := config2.WriteErrorJSON(os.Stdout, state.Error); err != nil {
+		message := taskErrorMessage(state)
+		if err := config2.WriteErrorJSON(os.Stdout, message); err != nil {
 			return err
 		}
-		return fmt.Errorf("%s", state.Error)
+		return fmt.Errorf("%s", message)
 	case task.StatusSucceeded:
 		return config2.WriteResultJSON(os.Stdout, resultEnvelopeFrom(state))
 	default:

@@ -12,8 +12,12 @@ func (logReporter) Report(e Event) {
 	switch {
 	case e.Phase == PhaseFailed:
 		log.Debugf("up: phase %q failed: %s", e.Step, e.Err)
+	case e.Started && e.Step != "":
+		log.Debugf("up: entering phase %q: %s", e.Phase, e.Step)
 	case e.Started:
 		log.Debugf("up: entering phase %q", e.Phase)
+	case e.Step != "":
+		log.Debugf("up: completed phase %q: %s", e.Phase, e.Step)
 	default:
 		log.Debugf("up: completed phase %q", e.Phase)
 	}

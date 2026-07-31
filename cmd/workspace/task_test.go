@@ -38,3 +38,19 @@ func TestResultEnvelopeFrom_PopulatedResult(t *testing.T) {
 		t.Errorf("Warnings = %v", got.Warnings)
 	}
 }
+
+func TestTaskErrorMessage(t *testing.T) {
+	t.Run("uses recorded error", func(t *testing.T) {
+		got := taskErrorMessage(&task.State{ID: "t1", Error: "boom"})
+		if got != "boom" {
+			t.Errorf("got %q, want %q", got, "boom")
+		}
+	})
+
+	t.Run("falls back when empty", func(t *testing.T) {
+		got := taskErrorMessage(&task.State{ID: "t1"})
+		if got == "" {
+			t.Error("got empty message, want a non-empty fallback")
+		}
+	})
+}
