@@ -41,8 +41,15 @@ func cloneEnvForLFS() []string {
 	return nil
 }
 
-// SetupLFS configures Git LFS in the repository.
-func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode) {
+// lfsInstaller installs git-lfs; overridable in tests to avoid a real
+// package-manager/network install attempt.
+var lfsInstaller = InstallLFS
+
+// SetupLFS configures Git LFS in the repository. When git-lfs isn't
+// installed, it's only installed automatically if allowInstall is set,
+// matching ensureGit's rule of never installing tools into a user's local
+// environment.
+func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode, allowInstall bool) {
 	if mode == LFSSkip {
 		return
 	}
@@ -51,10 +58,19 @@ func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode) {
 	}
 
 	if !command.Exists(binGitLFS) {
-		log.Info(
-			"repository uses git-lfs but the binary is not installed, LFS files will be pointer stubs",
-		)
-		return
+		if !allowInstall {
+			log.Info(
+				"repository uses git-lfs but the binary is not installed, LFS files will be pointer stubs",
+			)
+			return
+		}
+		if err := lfsInstaller(ctx); err != nil {
+			log.Warnf(
+				"repository uses git-lfs but it could not be installed, LFS files will be pointer stubs: %v",
+				err,
+			)
+			return
+		}
 	}
 
 	if err := r.lfs(ctx, "install", "--local"); err != nil {

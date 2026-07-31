@@ -2,9 +2,32 @@ package agent
 
 import (
 	"testing"
+
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 const explicitAgentDir = "/some/dir"
+
+func TestIsLocalAgent(t *testing.T) {
+	cases := []struct {
+		name  string
+		local types.StrBool
+		want  bool
+	}{
+		{"local true", "true", true},
+		{"local false", "false", false},
+		{"unset defaults to remote", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isLocalAgent(&provider2.ProviderAgentConfig{Local: tc.local})
+			if got != tc.want {
+				t.Errorf("isLocalAgent(%q) = %v, want %v", tc.local, got, tc.want)
+			}
+		})
+	}
+}
 
 func withContainerDetector(t *testing.T, fn func() bool) {
 	t.Helper()

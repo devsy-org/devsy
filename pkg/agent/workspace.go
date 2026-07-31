@@ -313,10 +313,19 @@ func ensureGit(ctx context.Context, agentConfig *provider2.ProviderAgentConfig) 
 	if command.Exists("git") {
 		return nil
 	}
-	if local, _ := agentConfig.Local.Bool(); local {
+	if isLocalAgent(agentConfig) {
 		return errors.New("git not installed: install git and add it to PATH")
 	}
 	return git.InstallBinary(ctx)
+}
+
+// isLocalAgent reports whether the agent is running in the user's own local
+// environment, as opposed to a devsy-provisioned remote/cloud host. Devsy
+// only installs missing tools on hosts it provisions and controls, never
+// into a user's local environment.
+func isLocalAgent(agentConfig *provider2.ProviderAgentConfig) bool {
+	local, _ := agentConfig.Local.Bool()
+	return local
 }
 
 func setupGitSSH(
@@ -418,7 +427,8 @@ func cloneViaGit(ctx context.Context, p CloneWorkspaceParams, extraEnv []string)
 	repo := git.At(p.WorkspaceDir,
 		git.WithStrictHostKeyChecking(p.Options.StrictHostKeyChecking),
 		git.WithEnv(extraEnv))
-	if err := repo.CloneFromInfo(ctx, gitInfo, p.Helper, getGitOptions(p.Options)...); err != nil {
+	gitOpts := getGitOptions(p.Options, p.AgentConfig)
+	if err := repo.CloneFromInfo(ctx, gitInfo, p.Helper, gitOpts...); err != nil {
 		return failedClone(p.WorkspaceDir, "clone repository", err)
 	}
 	return nil
@@ -452,7 +462,10 @@ func applyDevsyIgnore(workspaceDir string) error {
 	return nil
 }
 
-func getGitOptions(options provider2.CLIOptions) []git.Option {
+func getGitOptions(
+	options provider2.CLIOptions,
+	agentConfig *provider2.ProviderAgentConfig,
+) []git.Option {
 	var gitOpts []git.Option
 	if options.GitCloneStrategy != "" {
 		gitOpts = append(gitOpts, git.WithCloneStrategy(options.GitCloneStrategy))
@@ -468,6 +481,7 @@ func getGitOptions(options provider2.CLIOptions) []git.Option {
 	} else {
 		gitOpts = append(gitOpts, git.WithLFSMode(options.GitLFSMode))
 	}
+	gitOpts = append(gitOpts, git.WithAllowLFSInstall(!isLocalAgent(agentConfig)))
 	if options.GitCloneRecursiveSubmodules {
 		gitOpts = append(gitOpts, git.WithRecursiveSubmodules())
 	}
