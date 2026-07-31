@@ -315,7 +315,7 @@ function handleDone() {
 </script>
 
 <Dialog.Root bind:open>
-  <Dialog.Content class="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+  <Dialog.Content class="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
     <Dialog.Header class="sr-only">
       <Dialog.Title>Add Provider</Dialog.Title>
       <Dialog.Description>
