@@ -217,6 +217,9 @@ func ensureDirWritable(dir string) error {
 		return err
 	}
 	name := probe.Name()
-	_ = probe.Close()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
 	return os.Remove(name)
 }
