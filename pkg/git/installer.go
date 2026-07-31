@@ -15,11 +15,6 @@ func InstallBinary(ctx context.Context) error {
 	return newInstaller(defaultRunner).ensure(ctx, gitTool)
 }
 
-// InstallLFS installs the git-lfs binary if it is not already available.
-func InstallLFS(ctx context.Context) error {
-	return newInstaller(defaultRunner).ensure(ctx, lfsTool)
-}
-
 // tool identifies a git-related binary the installer can provide.
 type tool struct {
 	binary  string

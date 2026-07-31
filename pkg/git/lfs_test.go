@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -98,6 +99,32 @@ func TestSetupLFSModeCommands(t *testing.T) {
 			assert.DeepEqual(t, tc.want, got)
 		})
 	}
+}
+
+func TestSetupLFSSkipsWhenBinaryMissing(t *testing.T) {
+	hideGitLFSFromPath(t)
+
+	dir, fake := newLFSRepo(t)
+	At(dir, WithRunner(fake)).SetupLFS(context.Background(), LFSFull)
+
+	if got := lfsSubcommands(fake); got != nil {
+		t.Errorf("lfs subcommands = %v, want none", got)
+	}
+}
+
+func hideGitLFSFromPath(t *testing.T) {
+	t.Helper()
+
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found on PATH")
+	}
+
+	binDir := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(binDir, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 }
 
 func TestRepoUsesLFS(t *testing.T) {

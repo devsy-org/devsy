@@ -51,13 +51,10 @@ func (r *Repo) SetupLFS(ctx context.Context, mode LFSMode) {
 	}
 
 	if !command.Exists(binGitLFS) {
-		if err := InstallLFS(ctx); err != nil {
-			log.Warnf(
-				"repository uses git-lfs but it could not be installed, LFS files will be pointer stubs: %v",
-				err,
-			)
-			return
-		}
+		log.Info(
+			"repository uses git-lfs but the binary is not installed, LFS files will be pointer stubs",
+		)
+		return
 	}
 
 	if err := r.lfs(ctx, "install", "--local"); err != nil {
