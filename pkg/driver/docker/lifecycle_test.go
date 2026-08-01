@@ -169,6 +169,7 @@ esac
 	assert.Contains(t, string(contents), "commit")
 	assert.Contains(t, string(contents), "c1")
 	assert.Contains(t, string(contents), "ghcr.io/acme/snapshots:my-ws-20260731150405-fs")
+	assert.Contains(t, string(contents), "LABEL sh.devsy.snapshot=true")
 }
 
 func TestCommitContainer_NotFound(t *testing.T) {

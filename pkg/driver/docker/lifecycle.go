@@ -15,6 +15,14 @@ import (
 
 const containerRestartAttempts = 3
 
+// snapshotImageLabel marks a committed image as a devsy workspace snapshot,
+// so it's identifiable via `docker inspect`/`docker images --filter` by
+// anyone who pulls or lists it outside `devsy snapshot` tooling — the
+// snapshot manifest (pkg/snapshot) already carries richer sh.devsy.snapshot.*
+// metadata, but that lives in a separate OCI artifact a raw image pull won't
+// see.
+const snapshotImageLabel = "sh.devsy.snapshot=true"
+
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
@@ -161,7 +169,7 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	args := []string{"commit", container.ID, tag}
+	args := []string{"commit", "--change", "LABEL " + snapshotImageLabel, container.ID, tag}
 
 	log.Debugf(
 		"running docker commit command: command=%s, args=%s",

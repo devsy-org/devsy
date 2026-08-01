@@ -29,6 +29,6 @@ func resolveRegistry(flagValue string, devsyConfig *config.Config) (string, erro
 	}
 	return "", fmt.Errorf(
 		"no snapshot registry configured: pass --registry or set SNAPSHOT_REGISTRY " +
-			"(devsy context set-options --option SNAPSHOT_REGISTRY=<registry>)",
+			"(devsy context set -o SNAPSHOT_REGISTRY=<registry>)",
 	)
 }

@@ -59,6 +59,10 @@ module.exports = {
         },
         {
           type: "doc",
+          id: "developing-in-workspaces/workspace-snapshots",
+        },
+        {
+          type: "doc",
           id: "developing-in-workspaces/continuous-integration",
         },
         {
