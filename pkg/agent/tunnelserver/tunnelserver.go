@@ -436,6 +436,8 @@ func (t *tunnelServer) Status(
 	ctx context.Context,
 	update *tunnel.StatusUpdate,
 ) (*tunnel.Empty, error) {
+	// No Pipeline: the tunnel only carries container-side up events, and the
+	// host's reporter stamps the pipeline on arrival.
 	t.statusReporter.Report(status.Event{
 		Phase:   status.Phase(update.Phase),
 		Step:    update.Step,

@@ -1,11 +1,12 @@
 import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
-import { launchApp } from "./electron-app.js"
+import { launchApp, resetMockState } from "./electron-app.js"
 
 let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
+  resetMockState()
   ;({ app, page } = await launchApp())
 })
 

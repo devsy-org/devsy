@@ -249,7 +249,7 @@ onMount(async () => {
           }
           flushLines()
           operationRunning = false
-          const success = isCommandSuccess(progress.message)
+          const success = isCommandSuccess(progress.message, progress.success)
           if (success) {
             toasts.success(`${operationLabel} ${id} succeeded`)
             if (BUILD_OPS.has(operationLabel)) {

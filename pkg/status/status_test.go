@@ -56,6 +56,35 @@ func TestNopDiscardsEvents(t *testing.T) {
 	Enter(Nop(), PhaseReady, "")
 }
 
+func TestForPipelineStampsEveryEvent(t *testing.T) {
+	r := &recordingReporter{}
+	stamped := ForPipeline(r, PipelineProvider)
+
+	Enter(stamped, PhaseBuildingImage, "")
+	Fail(stamped, PhaseBuildingImage, errors.New("boom"))
+
+	if len(r.events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(r.events))
+	}
+	for i, e := range r.events {
+		if e.Pipeline != PipelineProvider {
+			t.Errorf("event %d: pipeline = %q, want %q", i, e.Pipeline, PipelineProvider)
+		}
+	}
+}
+
+func TestForPipelineOverridesInboundPipeline(t *testing.T) {
+	r := &recordingReporter{}
+	ForPipeline(r, PipelineProvider).Report(Event{
+		Phase:    PhaseReady,
+		Pipeline: PipelineWorkspaceUp,
+	})
+
+	if r.events[0].Pipeline != PipelineProvider {
+		t.Errorf("pipeline = %q, want it restamped to %q", r.events[0].Pipeline, PipelineProvider)
+	}
+}
+
 func TestTeeForwardsToEachReporter(t *testing.T) {
 	a, b := &recordingReporter{}, &recordingReporter{}
 	Enter(Tee(a, b), PhaseReady, "")

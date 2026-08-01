@@ -3,12 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -67,14 +69,23 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		providerSource = args[1]
 	}
 
-	providerConfig, err := workspace.UpdateProvider(ctx, devsyConfig, args[0], providerSource)
+	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
 	if err != nil {
 		return err
 	}
 
+	status.Enter(reporter, status.PhaseInstallingProvider, args[0])
+	providerConfig, err := workspace.UpdateProvider(ctx, devsyConfig, args[0], providerSource)
+	if err != nil {
+		status.Fail(reporter, status.PhaseInstallingProvider, err)
+		return err
+	}
+	status.Leave(reporter, status.PhaseInstallingProvider, providerConfig.Name)
+
 	log.Infof("updated provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
 		log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
+		// No PhaseReady: not ready until a following `provider init` runs.
 		return nil
 	}
 
@@ -85,11 +96,16 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		Provider:    providerConfig,
 		ContextName: devsyConfig.DefaultContext,
 		UserOptions: cmd.Options,
+		Reporter:    reporter,
 	}); err != nil {
 		return fmt.Errorf("configure provider: %w", err)
 	}
 
-	return writeDefaultProvider(cmd.Context, providerConfig.Name)
+	if err := writeDefaultProvider(cmd.Context, providerConfig.Name); err != nil {
+		return err
+	}
+	status.Leave(reporter, status.PhaseReady, providerConfig.Name)
+	return nil
 }
 
 func (cmd *SetSourceCmd) runPinVersion(

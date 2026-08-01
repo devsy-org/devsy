@@ -26,7 +26,11 @@ import {
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { workspaces, workspacesLoading } from "$lib/stores/workspaces.js"
+import {
+  workspaceJobs,
+  workspaces,
+  workspacesLoading,
+} from "$lib/stores/workspaces.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
 
@@ -90,6 +94,17 @@ function isStopped(ws: Workspace) {
     ws.status.toLowerCase() === "stopped" ||
     ws.status.toLowerCase() === "notfound"
   )
+}
+
+// The delete job wins over the polled status until the next poll catches up.
+// A failed delete drops out of "deleting" so the row isn't stuck forever.
+function isDeleting(ws: Workspace): boolean {
+  const job = $workspaceJobs[ws.id]
+  return job?.activity === "deleting" && !job.error
+}
+
+function deleteError(ws: Workspace): string | undefined {
+  return $workspaceJobs[ws.id]?.error
 }
 
 async function handleStart(ws: Workspace) {
@@ -199,7 +214,7 @@ async function handleDelete() {
         </Table.Header>
         <Table.Body>
           {#each filtered as ws (ws.id)}
-            {@const busy = actingOn === ws.id}
+            {@const busy = actingOn === ws.id || isDeleting(ws)}
             <Table.Row
               class="cursor-pointer"
               onclick={() => goto(`/workspaces/${ws.id}`)}
@@ -216,7 +231,13 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell>
-                {#if ws.status}
+                {#if isDeleting(ws)}
+                  <span class={badgeVariants({ variant: "secondary" })}>Deleting</span>
+                {:else if deleteError(ws)}
+                  <span class={badgeVariants({ variant: "destructive" })} title={deleteError(ws)}>
+                    Delete failed
+                  </span>
+                {:else if ws.status}
                   <span class={badgeVariants({ variant: statusVariant(ws.status) })}>{ws.status}</span>
                 {/if}
               </Table.Cell>

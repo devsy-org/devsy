@@ -2,10 +2,14 @@ import { get, writable } from "svelte/store"
 import { workspaceList, workspaceStatus } from "$lib/ipc/commands.js"
 import { onWorkspacesChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
-import type { Workspace } from "$lib/types/index.js"
+import type { Workspace, WorkspaceJob } from "$lib/types/index.js"
 
 export const workspaces = writable<Workspace[]>([])
 export const workspacesLoading = writable(true)
+
+// In-flight workspace deletes, keyed by workspace id. Owned by the main
+// process so it survives navigation and window reload.
+export const workspaceJobs = writable<Record<string, WorkspaceJob>>({})
 
 let unlisten: UnlistenFn | null = null
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -25,8 +29,9 @@ export async function initWorkspaces() {
   }
 
   try {
-    unlisten = await onWorkspacesChanged((updated) => {
+    unlisten = await onWorkspacesChanged((updated, jobs) => {
       workspaces.set(updated)
+      workspaceJobs.set(jobs)
       fetchStatuses(updated)
     })
   } catch {

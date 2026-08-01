@@ -110,6 +110,18 @@ function out(data) {
   )
 }
 
+function providerStatus(phase, started, step) {
+  out(
+    JSON.stringify({
+      kind: "status",
+      pipeline: "provider",
+      phase,
+      ...(step ? { step } : {}),
+      started,
+    }),
+  )
+}
+
 // Parse a slice of args (positional + recognized flags) into a result object.
 function parseArgs(args) {
   const positional = []
@@ -395,14 +407,19 @@ function handleStop(args) {
 function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
-  out("Deleting workspace...")
-  out("Workspace deleted.")
-  const idx = state.workspaces.findIndex((w) => w.id === wsId)
-  if (idx !== -1) {
-    state.workspaces.splice(idx, 1)
-    saveState(state)
-  }
-  process.exit(0)
+  // *probe suffix delays deletion so lifecycle tests can observe in-flight state.
+  const deleteMs = /probe$/.test(wsId) ? 1500 : 0
+  setTimeout(() => {
+    out("Deleting workspace...")
+    out("Workspace deleted.")
+    const latest = loadState()
+    const idx = latest.workspaces.findIndex((w) => w.id === wsId)
+    if (idx !== -1) {
+      latest.workspaces.splice(idx, 1)
+      saveState(latest)
+    }
+    process.exit(0)
+  }, deleteMs)
 }
 
 function handleRename(args) {
@@ -489,8 +506,10 @@ if (cmd === "workspace") {
     process.stderr.write(`mock-devsy: unknown workspace subcommand '${verb}'\n`)
     process.exit(2)
   }
+  // No unconditional exit(0) here: handleDelete's setTimeout would get killed
+  // before firing. `return` still skips the non-workspace switch below.
   handler(rawArgs.slice(2))
-  process.exit(0)
+  return
 }
 
 // Non-workspace top-level commands (preserved verbatim).
@@ -530,8 +549,11 @@ switch (cmd) {
       case "add": {
         const provName = extra
         if (provName) {
-          for (const key of Object.keys(state.providers)) {
-            state.providers[key].default = false
+          const takesDefault = !rawArgs.includes("--use=false")
+          if (takesDefault) {
+            for (const key of Object.keys(state.providers)) {
+              state.providers[key].default = false
+            }
           }
           state.providers[provName] = {
             config: {
@@ -544,11 +566,33 @@ switch (cmd) {
               optionGroups: [],
             },
             state: { initialized: false },
-            default: true,
+            default: takesDefault,
           }
           saveState(state)
         }
-        out("")
+        // No ready phase: install finished, init has not run.
+        providerStatus("installing_provider", true)
+        providerStatus("installing_provider", false, provName)
+        process.exit(0)
+        break
+      }
+      case "init": {
+        const provName = extra || providerFlag
+        providerStatus("resolving_options", true, provName)
+        providerStatus("resolving_options", false, provName)
+        providerStatus("running_init", true, provName)
+        // *probe suffix delays init so lifecycle tests can observe in-flight state.
+        const initMs = /probe$/.test(provName) ? 5000 : 150
+        setTimeout(() => {
+          const latest = loadState()
+          if (provName && latest.providers[provName]) {
+            latest.providers[provName].state.initialized = true
+            saveState(latest)
+          }
+          providerStatus("running_init", false, provName)
+          providerStatus("ready", false, provName)
+          process.exit(0)
+        }, initMs)
         break
       }
       case "delete": {
@@ -592,6 +636,17 @@ switch (cmd) {
           saveState(state)
         }
         out("")
+        break
+      }
+      case "set-source": {
+        const provName = extra
+        if (provName && state.providers[provName]) {
+          state.providers[provName].state.initialized = false
+          saveState(state)
+        }
+        providerStatus("installing_provider", true, provName)
+        providerStatus("installing_provider", false, provName)
+        process.exit(0)
         break
       }
       case "versions":

@@ -6,11 +6,13 @@ import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
+import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
 import { initAutoUpdater, stopAutoUpdater } from "./updater.js"
 import { Watcher } from "./watcher.js"
+import { WorkspaceJobs } from "./workspace-jobs.js"
 
 const PROTOCOL = "devsy"
 
@@ -160,6 +162,9 @@ app.whenReady().then(() => {
     stopAutoUpdater()
   })
 
+  const providerJobs = new ProviderJobs()
+  const workspaceJobs = new WorkspaceJobs()
+
   // Register IPC handlers
   const {
     tunnelProcesses,
@@ -171,6 +176,8 @@ app.whenReady().then(() => {
     logStore,
     pty: ptyManager,
     getMainWindow: () => mainWindow,
+    providerJobs,
+    workspaceJobs,
   })
 
   // Start state watcher
@@ -179,7 +186,14 @@ app.whenReady().then(() => {
     daemon: daemonManager.daemonClient,
     state,
     getMainWindow: () => mainWindow,
+    providerJobs,
+    workspaceJobs,
   })
+  providerJobs.onChange(() => watcher.broadcastProviders())
+  providerJobs.setRefresh(() => watcher.refreshProviders())
+  workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
+  workspaceJobs.setRefresh(() => watcher.refreshWorkspaces())
+
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
 
