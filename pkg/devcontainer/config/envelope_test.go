@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/status"
 )
 
 //nolint:goconst,cyclop,funlen // test table values
@@ -210,5 +212,62 @@ func TestWriteResultJSON_Recovery(t *testing.T) {
 	}
 	if !envelope.Recovery {
 		t.Error("recovery field did not round-trip")
+	}
+}
+
+func TestWriteStatusJSONRoundTrips(t *testing.T) {
+	tests := []struct {
+		name string
+		e    status.Event
+	}{
+		{name: "entering phase", e: status.Event{Phase: status.PhaseBuildingImage, Started: true}},
+		{name: "completed phase", e: status.Event{Phase: status.PhaseBuildingImage, Started: false}},
+		{name: "with step", e: status.Event{Phase: status.PhaseRunningLifecycleHook, Step: "postCreate", Started: true}},
+		{name: "failed phase", e: status.Event{Phase: status.PhaseFailed, Step: "building_image", Err: "boom"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := WriteStatusJSON(&buf, tt.e); err != nil {
+				t.Fatalf("WriteStatusJSON: %v", err)
+			}
+			got, ok := ParseStatusLine(buf.String())
+			if !ok {
+				t.Fatalf("ParseStatusLine did not accept our own output: %q", buf.String())
+			}
+			if got != tt.e {
+				t.Errorf("round-tripped event = %+v, want %+v", got, tt.e)
+			}
+		})
+	}
+}
+
+func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{name: "not JSON", line: "Pulling image..."},
+		{name: "wrong kind", line: `{"kind":"result","phase":"ready","started":true}`},
+		{name: "missing phase", line: `{"kind":"status","started":true}`},
+		{name: "empty phase", line: `{"kind":"status","phase":"","started":true}`},
+		{name: "missing started", line: `{"kind":"status","phase":"ready"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := ParseStatusLine(tt.line); ok {
+				t.Errorf("ParseStatusLine(%q) = ok, want rejected", tt.line)
+			}
+		})
+	}
+}
+
+func TestParseStatusLineAcceptsExplicitStartedFalse(t *testing.T) {
+	event, ok := ParseStatusLine(`{"kind":"status","phase":"ready","started":false}`)
+	if !ok {
+		t.Fatal("ParseStatusLine rejected a valid completed-phase envelope")
+	}
+	if event.Started {
+		t.Errorf("Started = true, want false")
 	}
 }

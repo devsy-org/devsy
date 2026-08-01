@@ -34,12 +34,13 @@ type ErrorEnvelope struct {
 }
 
 // StatusEnvelope is one NDJSON line reporting a phase transition of the up
-// pipeline.
+// pipeline. Started is a pointer so ParseStatusLine can tell a line that
+// omitted it (not one of ours) from one that explicitly set it false.
 type StatusEnvelope struct {
 	Kind    string `json:"kind"`
 	Phase   string `json:"phase"`
 	Step    string `json:"step,omitempty"`
-	Started bool   `json:"started"`
+	Started *bool  `json:"started"`
 	Error   string `json:"error,omitempty"`
 }
 
@@ -85,31 +86,35 @@ func WriteErrorJSON(w io.Writer, msg string) error {
 	return err
 }
 
-// ParseStatusLine parses line as a status NDJSON envelope.
+// ParseStatusLine parses line as a status NDJSON envelope. It rejects lines
+// missing phase or started, since those two fields are what an incidental
+// non-status line (e.g. from build/pull output) is unlikely to also carry.
 func ParseStatusLine(line string) (status.Event, bool) {
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "{") {
 		return status.Event{}, false
 	}
 	var env StatusEnvelope
-	if err := json.Unmarshal([]byte(trimmed), &env); err != nil || env.Kind != KindStatus {
+	if err := json.Unmarshal([]byte(trimmed), &env); err != nil ||
+		env.Kind != KindStatus || env.Phase == "" || env.Started == nil {
 		return status.Event{}, false
 	}
 	return status.Event{
 		Phase:   status.Phase(env.Phase),
 		Step:    env.Step,
-		Started: env.Started,
+		Started: *env.Started,
 		Err:     env.Error,
 	}, true
 }
 
 // WriteStatusJSON serializes a status.Event as an NDJSON status line.
 func WriteStatusJSON(w io.Writer, e status.Event) error {
+	started := e.Started
 	env := StatusEnvelope{
 		Kind:    KindStatus,
 		Phase:   string(e.Phase),
 		Step:    e.Step,
-		Started: e.Started,
+		Started: &started,
 		Error:   e.Err,
 	}
 	data, err := json.Marshal(env)
