@@ -47,17 +47,31 @@ describe("Watcher.refreshProviders", () => {
     expect(concurrentCalls).toBe(0)
   })
 
-  it("resolves only after a query that started at-or-after the call", async () => {
-    let callCount = 0
+  it("does not start the second query until the first has finished", async () => {
+    // Counting completed queries isn't enough to prove ordering: two
+    // concurrent queries and two serialized ones both finish two queries.
+    // Recording start/end order is what actually distinguishes them.
+    const events: string[] = []
+    let releaseFirst!: () => void
     const { watcher } = makeWatcher(async () => {
-      callCount++
-      await new Promise((r) => setTimeout(r, 10))
+      const id = events.filter((e) => e.startsWith("start")).length + 1
+      events.push(`start-${id}`)
+      if (id === 1) {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      events.push(`end-${id}`)
       return {}
     })
 
-    const callsBeforeRefresh = callCount
-    await watcher.refreshProviders()
+    const first = watcher.refreshProviders()
+    await Promise.resolve() // let the first query actually start
+    const second = watcher.refreshProviders()
+    await Promise.resolve()
+    releaseFirst()
+    await Promise.all([first, second])
 
-    expect(callCount).toBeGreaterThan(callsBeforeRefresh)
+    expect(events).toEqual(["start-1", "end-1", "start-2", "end-2"])
   })
 })
