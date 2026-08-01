@@ -408,16 +408,12 @@ function handleStop(args) {
 function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
-  // Workspaces named *probe belong to lifecycle tests, where delete must
-  // outlast the render/poll cycle or there is no in-flight state to observe.
-  // Everything else stays instant so unrelated specs aren't slowed down.
+  // *probe suffix delays deletion so lifecycle tests can observe in-flight state.
   const deleteMs = /probe$/.test(wsId) ? 1500 : 0
   setTimeout(() => {
     out("Deleting workspace...")
     out("Workspace deleted.")
-    // Re-read: the snapshot taken at startup is up to 1.5s stale, and
-    // writing it back would clobber any add/delete another spec performed
-    // against this shared fixture meanwhile.
+    // Re-read: avoid clobbering a concurrent spec's writes with our stale snapshot.
     const latest = loadState()
     const idx = latest.workspaces.findIndex((w) => w.id === wsId)
     if (idx !== -1) {
@@ -512,13 +508,8 @@ if (cmd === "workspace") {
     process.stderr.write(`mock-devsy: unknown workspace subcommand '${verb}'\n`)
     process.exit(2)
   }
-  // No unconditional exit here: handleDelete defers its own exit behind a
-  // setTimeout for *probe workspaces, and calling process.exit(0)
-  // immediately after would kill the process before that timer fires.
-  // Handlers that finish synchronously (list, status, rename, ...) just
-  // let the process exit naturally once nothing is left pending. `return`
-  // (not exit) still stops this script falling through to the
-  // provider/machine/context switch below.
+  // No unconditional exit(0) here: handleDelete's setTimeout would get killed
+  // before firing. `return` still skips the non-workspace switch below.
   handler(rawArgs.slice(2))
   return
 }
@@ -596,15 +587,10 @@ switch (cmd) {
         providerStatus("resolving_options", true, provName)
         providerStatus("resolving_options", false, provName)
         providerStatus("running_init", true, provName)
-        // Providers named *probe belong to lifecycle tests, where init must
-        // outlast the ~1.5s a new card takes to render or there is no
-        // in-flight state to observe. Everything else stays fast so unrelated
-        // specs aren't slowed down.
+        // *probe suffix delays init so lifecycle tests can observe in-flight state.
         const initMs = /probe$/.test(provName) ? 5000 : 150
         setTimeout(() => {
-          // Re-read: the snapshot taken at startup is up to 5s stale, and
-          // writing it back would clobber any add/delete another spec
-          // performed against this shared fixture meanwhile.
+          // Re-read: avoid clobbering a concurrent spec's writes with our stale snapshot.
           const latest = loadState()
           if (provName && latest.providers[provName]) {
             latest.providers[provName].state.initialized = true

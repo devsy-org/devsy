@@ -96,10 +96,8 @@ function isStopped(ws: Workspace) {
   )
 }
 
-// The delete job wins over the polled status: a delete in flight would
-// otherwise still read as "running" or "stopped" until the next poll. A
-// failed delete drops out of "deleting" so the row isn't stuck disabled
-// forever; retrying (workspaceJobs.start()) clears the recorded error.
+// The delete job wins over the polled status until the next poll catches up.
+// A failed delete drops out of "deleting" so the row isn't stuck forever.
 function isDeleting(ws: Workspace): boolean {
   const job = $workspaceJobs[ws.id]
   return job?.activity === "deleting" && !job.error
