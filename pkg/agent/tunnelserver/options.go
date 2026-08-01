@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/netstat"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 )
 
 type Option func(*tunnelServer) *tunnelServer
@@ -71,6 +72,17 @@ func WithSecrets(env, mount []string) Option {
 func WithGitToken(token *provider2.GitToken) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.gitToken = token
+		return s
+	}
+}
+
+// WithStatusReporter forwards inbound StatusUpdate RPCs to reporter. A nil
+// reporter is ignored, since it would replace the Nop default and panic.
+func WithStatusReporter(reporter status.Reporter) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		if reporter != nil {
+			s.statusReporter = reporter
+		}
 		return s
 	}
 }

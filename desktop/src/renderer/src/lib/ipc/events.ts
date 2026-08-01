@@ -4,6 +4,7 @@ import type {
   Machine,
   Provider,
   Workspace,
+  WorkspaceStatus,
 } from "$lib/types/index.js"
 import { listen } from "./bridge.js"
 import type { UnlistenFn } from "./types.js"
@@ -48,6 +49,7 @@ export const EVENT_NAMES = {
   MACHINES_CHANGED: "machines-changed",
   CONTEXTS_CHANGED: "contexts-changed",
   COMMAND_PROGRESS: "command-progress",
+  WORKSPACE_STATUS: "workspace-status",
   UPDATE_STATUS: "update-status",
 } as const
 
@@ -101,6 +103,14 @@ export function onCommandProgress(
   callback: (progress: CommandProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<CommandProgress>(EVENT_NAMES.COMMAND_PROGRESS, (event) => {
+    callback(event.payload)
+  })
+}
+
+export function onWorkspaceStatus(
+  callback: (status: WorkspaceStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<WorkspaceStatus>(EVENT_NAMES.WORKSPACE_STATUS, (event) => {
     callback(event.payload)
   })
 }

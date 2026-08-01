@@ -155,8 +155,8 @@ test.describe.serial("Create Workspace Wizard", () => {
     // The review step's primary button is labeled "Launch"
     await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-    // Mock CLI streams: "Resolving source...", "Pulling image...",
-    // "Starting workspace...", "Workspace ready."
+    // Mock CLI streams: "Resolving source", "Pulling image",
+    // "Starting workspace", "Workspace ready."
     await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
       timeout: 10000,
     })

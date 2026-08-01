@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -153,6 +154,7 @@ type lockfileMode struct {
 // entries resolved during a fetch so they can be written afterwards.
 type lockfileState struct {
 	loaded  *Lockfile
+	mu      sync.Mutex
 	entries map[string]LockedFeature
 }
 
@@ -174,7 +176,9 @@ func (l *lockfileState) record(featureID string, entry LockedFeature) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
 	l.entries[featureID] = entry
+	l.mu.Unlock()
 }
 
 // newLockfileState loads the lockfile for the given config to enable pinning.

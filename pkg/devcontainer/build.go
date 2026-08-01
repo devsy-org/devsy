@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 )
 
 func (r *runner) build(
@@ -460,7 +461,14 @@ func (r *runner) buildImage(
 		}
 	}
 
-	return r.executeBuild(ctx, params, prebuildHash, targetArch)
+	status.Enter(r.reporter, status.PhaseBuildingImage, "")
+	buildInfo, err := r.executeBuild(ctx, params, prebuildHash, targetArch)
+	if err != nil {
+		status.Fail(r.reporter, status.PhaseBuildingImage, err)
+		return nil, err
+	}
+	status.Leave(r.reporter, status.PhaseBuildingImage, "")
+	return buildInfo, nil
 }
 
 // executeBuild dispatches the actual image build to the appropriate backend:

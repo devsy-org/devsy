@@ -99,6 +99,7 @@ func (cmd *UpCmd) devsyUpProxy(
 		true,
 		client.WorkspaceConfig(),
 		tunnelserver.WithGitToken(cmd.GitToken),
+		tunnelserver.WithStatusReporter(cmd.reporter()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel machine: %w", err)
@@ -137,6 +138,7 @@ func (cmd *UpCmd) devsyUpDaemon(
 	return client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
 		Debug:      cmd.Debug,
+		Reporter:   cmd.reporter(),
 	})
 }
 
@@ -181,6 +183,7 @@ func (cmd *UpCmd) devsyUpMachine(
 				AgentCommand:    "up",
 				TunnelOptions: []tunnelserver.Option{
 					tunnelserver.WithPlatformOptions(&cmd.Platform),
+					tunnelserver.WithStatusReporter(cmd.reporter()),
 				},
 			},
 		)
@@ -230,6 +233,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 				client.AgentInjectDockerCredentials(cmd.CLIOptions),
 				client.WorkspaceConfig(),
 				tunnelserver.WithGitToken(cmd.GitToken),
+				tunnelserver.WithStatusReporter(cmd.reporter()),
 			)
 		},
 	})

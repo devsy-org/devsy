@@ -24,6 +24,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/gofrs/flock"
 )
@@ -290,15 +292,26 @@ func (s *workspaceClient) Status(
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if s.isMachineProvider() && len(s.config.Exec.Status) > 0 {
-		return s.machineStatus(ctx, opt)
+	var (
+		result client.Status
+		err    error
+	)
+	switch {
+	case s.isMachineProvider() && len(s.config.Exec.Status) > 0:
+		result, err = s.machineStatus(ctx, opt)
+	case opt.ContainerStatus:
+		result, err = s.getContainerStatus(ctx)
+	default:
+		result, err = s.workspaceFolderStatus()
+	}
+	if err != nil || result != client.StatusNotFound {
+		return result, err
 	}
 
-	if opt.ContainerStatus {
-		return s.getContainerStatus(ctx)
+	if override, ok := s.taskStatusOverride(); ok {
+		return override, nil
 	}
-
-	return s.workspaceFolderStatus()
+	return result, nil
 }
 
 func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
@@ -318,6 +331,57 @@ func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 	}
 
 	return machineClient.Describe(ctx)
+}
+
+// taskStatusOverride reports Provisioning or Failed based on the most
+// recently started `up` task for this workspace.
+func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
+	latest := s.latestUpTask()
+	if latest == nil {
+		return "", false
+	}
+
+	switch {
+	case !latest.Status.Terminal():
+		return client.StatusProvisioning, true
+	case latest.Status == task.StatusFailed:
+		return client.StatusFailed, true
+	default:
+		return "", false
+	}
+}
+
+// latestUpTask returns the most recently started `up` task recorded for this
+// workspace, or nil if none exists or task state can't be read.
+func (s *workspaceClient) latestUpTask() *task.State {
+	store, err := task.NewStore()
+	if err != nil {
+		return nil
+	}
+	states, err := store.List()
+	if err != nil {
+		return nil
+	}
+
+	latest := newestUpTask(states, s.workspace.ID)
+	if latest == nil {
+		return nil
+	}
+	return store.Reconcile(latest)
+}
+
+// newestUpTask picks the most recently started `up` task for workspaceID.
+func newestUpTask(states []*task.State, workspaceID string) *task.State {
+	var latest *task.State
+	for _, st := range states {
+		if st.WorkspaceID != workspaceID || st.Command != "up" {
+			continue
+		}
+		if latest == nil || st.StartedAt.After(latest.StartedAt) {
+			latest = st
+		}
+	}
+	return latest
 }
 
 func (s *workspaceClient) agentConfig() provider.ProviderAgentConfig {
@@ -1092,6 +1156,12 @@ func runTunnelServer(
 	opts BuildAgentClientOptions,
 	stdoutReader, stdinWriter *os.File,
 ) (*config2.Result, error) {
+	tunnelOptions := []tunnelserver.Option{
+		tunnelserver.WithStatusReporter(status.NewLogReporter()),
+		tunnelserver.WithGitToken(opts.CLIOptions.GitToken),
+	}
+	tunnelOptions = append(tunnelOptions, opts.TunnelOptions...)
+
 	result, err := tunnelserver.RunUpServer(
 		ctx,
 		stdoutReader,
@@ -1099,8 +1169,7 @@ func runTunnelServer(
 		opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
 		opts.WorkspaceClient.WorkspaceConfig(),
-		append(opts.TunnelOptions,
-			tunnelserver.WithGitToken(opts.CLIOptions.GitToken))...,
+		tunnelOptions...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel server: %w", err)

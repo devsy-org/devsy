@@ -29,5 +29,6 @@ func NewWorkspaceCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd.AddCommand(NewImportCmd(globalFlags))
 	cmd.AddCommand(NewPingCmd(globalFlags))
 	cmd.AddCommand(NewTroubleshootCmd(globalFlags))
+	cmd.AddCommand(NewTaskCmd(globalFlags))
 	return cmd
 }
