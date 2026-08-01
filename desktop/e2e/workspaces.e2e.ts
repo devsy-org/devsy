@@ -69,7 +69,7 @@ test.describe("Workspace lifecycle badges", () => {
     try {
       await api("workspace_up", {
         source: "https://example.com/deleteprobe.git",
-        id: "deleteprobe",
+        workspaceId: "deleteprobe",
       })
       await expect(main.locator("text=deleteprobe")).toBeVisible({
         timeout: 5000,
