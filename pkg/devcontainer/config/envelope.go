@@ -34,8 +34,8 @@ type ErrorEnvelope struct {
 }
 
 // StatusEnvelope is one NDJSON line reporting a phase transition of the up
-// pipeline. Started is a pointer so ParseStatusLine can tell a line that
-// omitted it (not one of ours) from one that explicitly set it false.
+// pipeline. Started is a pointer so an omitted field is distinguishable
+// from an explicit false.
 type StatusEnvelope struct {
 	Kind    string `json:"kind"`
 	Phase   string `json:"phase"`
@@ -86,9 +86,9 @@ func WriteErrorJSON(w io.Writer, msg string) error {
 	return err
 }
 
-// ParseStatusLine parses line as a status NDJSON envelope. It rejects lines
-// missing phase or started, since those two fields are what an incidental
-// non-status line (e.g. from build/pull output) is unlikely to also carry.
+// ParseStatusLine parses line as a status NDJSON envelope, rejecting lines
+// missing phase or started so an incidental non-status line isn't mistaken
+// for one.
 func ParseStatusLine(line string) (status.Event, bool) {
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "{") {
