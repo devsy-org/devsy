@@ -16,6 +16,7 @@ import (
 
 const (
 	registryFlag        = "--registry"
+	debugFlag           = "--debug"
 	snapshotCmd         = "snapshot"
 	snapshotVerbCreate  = "create"
 	snapshotVerbRestore = "restore"
@@ -81,6 +82,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 
 		out, _, err := f.ExecCommandCapture(ctx, []string{
 			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
 		})
 		framework.ExpectNoError(err)
 		snapshotRef := strings.TrimSpace(out)
@@ -90,7 +92,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, restoredID)
 
 		_, _, err = f.ExecCommandCapture(ctx, []string{
-			snapshotCmd, snapshotVerbRestore, snapshotRef, "--workspace-id", restoredID,
+			snapshotCmd, snapshotVerbRestore, snapshotRef, "--workspace-id", restoredID, debugFlag,
 		})
 		framework.ExpectNoError(err)
 
@@ -132,6 +134,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 
 		out, _, err := f.ExecCommandCapture(ctx, []string{
 			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
 		})
 		framework.ExpectNoError(err)
 		snapshotRef := strings.TrimSpace(out)
@@ -140,7 +143,8 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, transferredID)
 
 		_, _, err = f.ExecCommandCapture(ctx, []string{
-			snapshotCmd, snapshotVerbRestore, snapshotRef, "--workspace-id", transferredID,
+			snapshotCmd, snapshotVerbRestore, snapshotRef,
+			"--workspace-id", transferredID, debugFlag,
 		})
 		framework.ExpectNoError(err)
 
@@ -213,7 +217,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		cleanupReg = func() {}
 
 		_, _, err = f.ExecCommandCapture(ctx, []string{
-			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registry,
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registry, debugFlag,
 		})
 		gomega.Expect(err).To(gomega.HaveOccurred())
 

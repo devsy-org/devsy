@@ -205,7 +205,7 @@ func (f *Framework) DevsySSH(
 	out, err := execWithSSHRetry(ctx, workspace, func(ctx context.Context) (string, string, error) {
 		return f.ExecCommandCapture(
 			ctx,
-			[]string{cmdWorkspace, cmdSSH, workspace, flagCommand, command},
+			[]string{cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug},
 		)
 	})
 	if err != nil {

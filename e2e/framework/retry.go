@@ -157,6 +157,11 @@ func execWithSSHRetry(
 		return lastOut, err
 	}
 	if err != nil && lastErr != nil {
+		if lastStderr != "" {
+			return lastOut, fmt.Errorf(
+				"after %d attempts: %w (stderr: %s)", attempt, lastErr, lastStderr,
+			)
+		}
 		return lastOut, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
 	}
 	return lastOut, err
