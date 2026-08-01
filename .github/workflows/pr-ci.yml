@@ -522,13 +522,23 @@ jobs:
           UUID=$(python -c "import uuid; print(uuid.uuid4().hex)")
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
+      - name: cache podman installer (Windows)
+        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        id: podman-cache-windows
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/podman.msi
+          key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
+
       - name: install and start podman (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         run: |
-          $msiUrl = "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
           $msiPath = "$env:RUNNER_TEMP\podman.msi"
-          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          if ("${{ steps.podman-cache-windows.outputs.cache-hit }}" -ne "true") {
+            $msiUrl = "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
+            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          }
 
           $expectedHash = "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57"
           $actualHash = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash.ToLower()
