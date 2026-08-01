@@ -70,6 +70,25 @@ func TestResolveInitState_LiveLockHeldMeansInitializing(t *testing.T) {
 	}
 }
 
+func TestResolveInitState_InitializedTakesPrecedenceOverInitError(t *testing.T) {
+	useTempDevsyHome(t)
+
+	// initProvider must reset Initialized to false before a retry runs, so
+	// this combination shouldn't occur on disk in practice. Locks in the
+	// intended precedence if it ever does: a stale Initialized=true still
+	// reads as initialized, since InitError alone is not a failure signal.
+	got, err := ResolveInitState("default", "docker", &config.ProviderConfig{
+		Initialized: true,
+		InitError:   "boom",
+	})
+	if err != nil {
+		t.Fatalf("ResolveInitState: %v", err)
+	}
+	if got != InitStateInitialized {
+		t.Fatalf("got %q, want %q", got, InitStateInitialized)
+	}
+}
+
 func TestResolveInitState_FreeLockWithAttemptMeansFailed(t *testing.T) {
 	useTempDevsyHome(t)
 

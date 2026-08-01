@@ -47,7 +47,7 @@ func ResolveInitState(contextName, name string, state *config.ProviderConfig) (I
 		return "", err
 	}
 
-	locked, err := lock.TryLock()
+	locked, err := lock.TryRLock()
 	if err != nil {
 		return "", fmt.Errorf("check init lock: %w", err)
 	}

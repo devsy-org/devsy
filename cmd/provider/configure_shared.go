@@ -205,6 +205,7 @@ func initProvider(
 
 	entry.InitAttempted = true
 	entry.InitError = ""
+	entry.Initialized = false
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save init state: %w", err)
 	}
@@ -233,8 +234,9 @@ func initProvider(
 const maxInitErrorLen = 500
 
 func truncateInitError(msg string) string {
-	if len(msg) <= maxInitErrorLen {
+	runes := []rune(msg)
+	if len(runes) <= maxInitErrorLen {
 		return msg
 	}
-	return msg[:maxInitErrorLen] + "…"
+	return string(runes[:maxInitErrorLen]) + "…"
 }
