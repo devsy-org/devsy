@@ -203,10 +203,6 @@ func initProvider(
 	}
 	entry := devsyConfig.Current().Providers[provider.Name]
 
-	// No mutex needed: the flock above already serializes concurrent callers
-	// for this provider, in-process or across processes. Persisted here (not
-	// deferred to ConfigureProvider's final save) so a concurrent
-	// `provider list` sees "initializing" for the duration of Exec.Init.
 	entry.InitAttempted = true
 	entry.InitError = ""
 	if err := config.SaveConfig(devsyConfig); err != nil {
@@ -224,10 +220,6 @@ func initProvider(
 	})
 	if runErr != nil {
 		entry.InitError = truncateInitError(runErr.Error())
-		// Best-effort: InitAttempted is already durably true from the save
-		// above, so ResolveInitState still reports "failed" once the deferred
-		// unlock releases the init lock even if this save fails; only the
-		// diagnostic InitError message would be lost.
 		if saveErr := config.SaveConfig(devsyConfig); saveErr != nil {
 			log.Warnf("save init failure state for provider %s: %v", provider.Name, saveErr)
 		}
