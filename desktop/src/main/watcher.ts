@@ -57,6 +57,10 @@ export class Watcher {
   private fsWatcher: ReturnType<typeof watch> | null = null
   private polling = false
   private pollQueued = false
+  // Serializes pollProviders so a manual refreshProviders() can never
+  // overlap a scheduled poll; each queued call is guaranteed a fresh read
+  // that starts after it was requested.
+  private providerPollChain: Promise<void> = Promise.resolve()
 
   constructor(private deps: WatcherDeps) {}
 
@@ -100,7 +104,7 @@ export class Watcher {
     try {
       await Promise.allSettled([
         this.pollWorkspaces(),
-        this.pollProviders(),
+        this.queueProviderPoll(),
         this.pollMachines(),
         this.pollContexts(),
       ])
@@ -146,9 +150,20 @@ export class Watcher {
     }
   }
 
-  /** Re-read provider state from disk now, without waiting for the poll. */
+  /**
+   * Re-read provider state from disk now, without waiting for the next
+   * scheduled poll. Queued behind any poll already in flight, so the
+   * result reflects a read that started after this call rather than one
+   * a concurrent scheduled poll is about to overwrite.
+   */
   async refreshProviders(): Promise<void> {
-    await this.pollProviders()
+    await this.queueProviderPoll()
+  }
+
+  private queueProviderPoll(): Promise<void> {
+    const run = this.providerPollChain.then(() => this.pollProviders())
+    this.providerPollChain = run
+    return run
   }
 
   private async pollProviders(): Promise<void> {

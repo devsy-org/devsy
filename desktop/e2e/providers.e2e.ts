@@ -106,40 +106,42 @@ test.describe("Provider lifecycle badges", () => {
       void api.invoke("provider_init", { name: "lifecycleprobe" })
     })
 
-    const card = main.locator("button", { hasText: "lifecycleprobe" }).first()
-    await expect(card).toBeVisible({ timeout: 10000 })
+    try {
+      const card = main.locator("button", { hasText: "lifecycleprobe" }).first()
+      await expect(card).toBeVisible({ timeout: 10000 })
 
-    // Sample continuously from in-flight through settled. The red badge must
-    // never appear at any point: not during install/init, and not in the
-    // window between the job clearing and the provider list catching up.
-    let sawBusy = false
-    let settled = false
-    const deadline = Date.now() + 8000
-    while (Date.now() < deadline) {
-      const text = ((await card.textContent()) ?? "").toLowerCase()
-      expect(text).not.toContain("not initialized")
-      if (/installing|initializing/.test(text)) sawBusy = true
-      // Reached only once the busy label is replaced by the settled badge.
-      if (sawBusy && /(^|\s)initialized/.test(text)) {
-        settled = true
-        break
-      }
-      await page.waitForTimeout(100)
-    }
-
-    expect(sawBusy, "expected a busy badge during install/init").toBe(true)
-    expect(settled, "expected the card to settle as initialized").toBe(true)
-
-    // Mock CLI state is shared across specs, so don't leave this behind.
-    await page.evaluate(async () => {
-      await (
-        window as unknown as {
-          electronAPI: {
-            invoke: (c: string, a?: Record<string, unknown>) => Promise<unknown>
-          }
+      // Sample continuously from in-flight through settled. The red badge must
+      // never appear at any point: not during install/init, and not in the
+      // window between the job clearing and the provider list catching up.
+      let sawBusy = false
+      let settled = false
+      const deadline = Date.now() + 8000
+      while (Date.now() < deadline) {
+        const text = ((await card.textContent()) ?? "").toLowerCase()
+        expect(text).not.toContain("not initialized")
+        if (/installing|initializing/.test(text)) sawBusy = true
+        // Reached only once the busy label is replaced by the settled badge.
+        if (sawBusy && /(^|\s)initialized/.test(text)) {
+          settled = true
+          break
         }
-      ).electronAPI.invoke("provider_delete", { name: "lifecycleprobe" })
-    })
+        await page.waitForTimeout(100)
+      }
+
+      expect(sawBusy, "expected a busy badge during install/init").toBe(true)
+      expect(settled, "expected the card to settle as initialized").toBe(true)
+    } finally {
+      // Mock CLI state is shared across specs, so don't leave this behind.
+      await page.evaluate(async () => {
+        await (
+          window as unknown as {
+            electronAPI: {
+              invoke: (c: string, a?: Record<string, unknown>) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke("provider_delete", { name: "lifecycleprobe" })
+      })
+    }
   })
 
   // An abandoned wizard (skip init, or close mid-flow) leaves the install's
@@ -167,15 +169,17 @@ test.describe("Provider lifecycle badges", () => {
     await api("provider_delete", { name: "skipprobe" })
     await api("provider_add", { name: "skipprobe" })
 
-    const card = main.locator("button", { hasText: "skipprobe" }).first()
-    await expect(card).toContainText(/installing/i, { timeout: 10000 })
+    try {
+      const card = main.locator("button", { hasText: "skipprobe" }).first()
+      await expect(card).toContainText(/installing/i, { timeout: 10000 })
 
-    // What the wizard does on skip/close.
-    await api("provider_release_job", { name: "skipprobe" })
+      // What the wizard does on skip/close.
+      await api("provider_release_job", { name: "skipprobe" })
 
-    // Settles to the honest uninitialized state rather than staying busy.
-    await expect(card).toContainText(/not initialized/i, { timeout: 10000 })
-
-    await api("provider_delete", { name: "skipprobe" })
+      // Settles to the honest uninitialized state rather than staying busy.
+      await expect(card).toContainText(/not initialized/i, { timeout: 10000 })
+    } finally {
+      await api("provider_delete", { name: "skipprobe" })
+    }
   })
 })

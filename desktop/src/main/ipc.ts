@@ -294,29 +294,31 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     cliArgs: string[],
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      void cli.runStreaming(
-        cliArgs,
-        (line, stream) => {
-          if (stream !== "stdout") return
-          const envelope = parseCliEnvelope(line)
-          if (envelope?.kind === "status") {
-            providerJobs.report(
-              name,
-              envelope.phase as ProviderPhase,
-              envelope.error,
-            )
-          }
-        },
-        (code, cliError) => {
-          if (code === 0) {
-            resolve()
-            return
-          }
-          const message =
-            cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`
-          reject(Object.assign(new Error(message), { cliError }))
-        },
-      )
+      cli
+        .runStreaming(
+          cliArgs,
+          (line, stream) => {
+            if (stream !== "stdout") return
+            const envelope = parseCliEnvelope(line)
+            if (envelope?.kind === "status") {
+              providerJobs.report(
+                name,
+                envelope.phase as ProviderPhase,
+                envelope.error,
+              )
+            }
+          },
+          (code, cliError) => {
+            if (code === 0) {
+              resolve()
+              return
+            }
+            const message =
+              cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`
+            reject(Object.assign(new Error(message), { cliError }))
+          },
+        )
+        .catch(reject)
     })
   }
 
