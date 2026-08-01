@@ -21,10 +21,7 @@ var ErrNoWorkspaceFound = errors.New("no workspace found")
 type ProviderWithOptions struct {
 	Config *provider.ProviderConfig `json:"config,omitempty"`
 	State  *config.ProviderConfig   `json:"state,omitempty"`
-
-	// Status is the resolved init lifecycle state (not_initialized,
-	// initializing, initialized, failed). See provider.ResolveInitState.
-	Status provider.InitState `json:"status,omitempty"`
+	Status provider.InitState       `json:"status,omitempty"`
 }
 
 type ProviderParams struct {

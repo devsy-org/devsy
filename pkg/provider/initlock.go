@@ -19,11 +19,9 @@ const (
 	InitStateFailed         InitState = "failed"
 )
 
-// GetProviderInitLock returns the advisory lock used to signal that a
-// provider's init command is currently running. Held for the duration of
-// Exec.Init in initProvider; ResolveInitState probes it (without blocking) to
-// tell a live "initializing" run apart from one abandoned by a crashed
-// process, since the OS releases the lock the moment that process dies.
+// GetProviderInitLock returns the advisory lock held while a provider's init
+// command runs, so ResolveInitState can tell a live "initializing" run apart
+// from one abandoned by a crashed process.
 func GetProviderInitLock(contextName, name string) (*flock.Flock, error) {
 	locksDir, err := GetLocksDir(contextName)
 	if err != nil {

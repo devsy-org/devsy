@@ -203,9 +203,10 @@ func initProvider(
 	}
 	entry := devsyConfig.Current().Providers[provider.Name]
 
-	// Persist immediately so a concurrent `provider list` sees "initializing"
-	// for the duration of Exec.Init rather than waiting for the caller's final
-	// save at the end of ConfigureProvider.
+	// No mutex needed: the flock above already serializes concurrent callers
+	// for this provider, in-process or across processes. Persisted here (not
+	// deferred to ConfigureProvider's final save) so a concurrent
+	// `provider list` sees "initializing" for the duration of Exec.Init.
 	entry.InitAttempted = true
 	entry.InitError = ""
 	if err := config.SaveConfig(devsyConfig); err != nil {
@@ -237,9 +238,6 @@ func initProvider(
 	return nil
 }
 
-// maxInitErrorLen bounds how much of a failed init command's error we persist
-// to config.json, which (unlike interactive CLI/log output) may be synced,
-// backed up, or included in support bundles.
 const maxInitErrorLen = 500
 
 func truncateInitError(msg string) string {
