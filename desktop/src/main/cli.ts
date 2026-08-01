@@ -299,7 +299,6 @@ export class CliRunner {
 
     let settled = false
     const finish = (code: number, cliError?: CLIError): void => {
-      // "error" and "close" can both fire; report the outcome once.
       if (settled) return
       settled = true
       this.activeChildren.delete(child)

@@ -61,8 +61,6 @@ test.describe("Workspace lifecycle badges", () => {
       [channel, args] as const,
     )
 
-  // Deleting previously showed no visual trace until the CLI exited and the
-  // next poll ran; it must show a "Deleting" badge for the duration.
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
 

@@ -27,8 +27,6 @@ func newTestTailer(t *testing.T, taskID string) (*logTailer, string) {
 	return tailer, tailer.path
 }
 
-// fakeRuntimeDirPathManager overrides only RuntimeDir so tests can point
-// ProcessStreamsFile at a temp directory without touching the real state dir.
 type fakeRuntimeDirPathManager struct {
 	config.PathManager
 	dir string
@@ -120,9 +118,6 @@ func TestLogTailerFlushEmitsTrailingPartialLine(t *testing.T) {
 }
 
 func TestFollowTaskStreamsWorkerLogOutput(t *testing.T) {
-	// End-to-end: followTask must forward the worker's real log output
-	// (captured in its streams file) to stderr as it polls, not just the
-	// synthesized phase-transition events from task state.
 	dir := t.TempDir()
 	config.SetPathManager(fakeRuntimeDirPathManager{dir: dir})
 	t.Cleanup(config.ResetPathManager)

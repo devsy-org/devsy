@@ -227,9 +227,6 @@ describe("CliRunner", () => {
 
   describe("runStreaming", () => {
     it("reports an exit when the child fails to spawn", async () => {
-      // A spawn failure emits "error" and never "close". Callers wrap this in
-      // a promise settled from onExit, so without this the promise never
-      // settles and the provider job stays busy forever.
       const child = fakeStreamingChild()
       const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
       mockSpawn.mockReturnValue(child)

@@ -128,14 +128,6 @@ let visibleOptions = $derived(
 )
 
 function reset() {
-  // provider_add leaves its job open so the badge stays busy across the
-  // add→init handoff. If we're leaving without a finished init, nothing else
-  // will ever close it, so the card would spin on "installing…" forever.
-  //
-  // Not when init is still running: that job belongs to a live command which
-  // closes it from its own exit handler, and the badge should keep tracking it
-  // after the wizard is gone. A failed job is safe to release either way —
-  // finish() preserves the recorded failure.
   if (providerName && currentStep !== "complete" && !initRunning) {
     void providerReleaseJob(providerName).catch(() => undefined)
   }

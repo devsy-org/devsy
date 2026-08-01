@@ -28,10 +28,6 @@ function makeWatcher(runProviderList: () => Promise<Record<string, unknown>>) {
 
 describe("Watcher.refreshProviders", () => {
   it("does not run concurrently with another in-flight provider query", async () => {
-    // Simulates the race the fix closes: a manual refresh (e.g. after an
-    // install finishes) landing while a scheduled poll's provider query is
-    // still in flight. Both queries hitting the CLI at once could let the
-    // scheduled poll's stale result overwrite the refresh's fresh one.
     let inFlight = 0
     let concurrentCalls = 0
     const { watcher } = makeWatcher(async () => {
@@ -50,9 +46,6 @@ describe("Watcher.refreshProviders", () => {
   })
 
   it("does not start the second query until the first has finished", async () => {
-    // Counting completed queries isn't enough to prove ordering: two
-    // concurrent queries and two serialized ones both finish two queries.
-    // Recording start/end order is what actually distinguishes them.
     const events: string[] = []
     let releaseFirst!: () => void
     const { watcher } = makeWatcher(async () => {

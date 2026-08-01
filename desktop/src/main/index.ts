@@ -162,12 +162,7 @@ app.whenReady().then(() => {
     stopAutoUpdater()
   })
 
-  // Shared between the IPC handlers that run provider commands and the
-  // watcher that broadcasts provider state, so in-flight work is reported
-  // alongside what's on disk.
   const providerJobs = new ProviderJobs()
-  // Same idea for workspace delete, which is fire-and-forget from the IPC
-  // handler's perspective.
   const workspaceJobs = new WorkspaceJobs()
 
   // Register IPC handlers
@@ -194,8 +189,6 @@ app.whenReady().then(() => {
     providerJobs,
     workspaceJobs,
   })
-  // Phase transitions are pushed immediately rather than waiting for the
-  // next disk poll, which is what made the old badge lag visible.
   providerJobs.onChange(() => watcher.broadcastProviders())
   providerJobs.setRefresh(() => watcher.refreshProviders())
   workspaceJobs.onChange(() => watcher.broadcastWorkspaces())

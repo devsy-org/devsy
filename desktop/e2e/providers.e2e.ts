@@ -84,9 +84,6 @@ test.describe("Providers Page", () => {
 })
 
 test.describe("Provider lifecycle badges", () => {
-  // The bug this guards: `provider add` persists the provider with
-  // initialized:false before init runs, so the card briefly rendered the red
-  // "not initialized" badge for several seconds.
   test("never shows 'not initialized' while add+init is in flight", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
 
@@ -98,11 +95,8 @@ test.describe("Provider lifecycle badges", () => {
           }
         }
       ).electronAPI
-      // Mock CLI state persists across runs, so start from a clean slate;
-      // a leftover initialized provider would skip the window under test.
       await api.invoke("provider_delete", { name: "lifecycleprobe" })
       await api.invoke("provider_add", { name: "lifecycleprobe" })
-      // Not awaited: the assertions below run while init is still going.
       void api.invoke("provider_init", { name: "lifecycleprobe" })
     })
 
@@ -110,9 +104,6 @@ test.describe("Provider lifecycle badges", () => {
       const card = main.locator("button", { hasText: "lifecycleprobe" }).first()
       await expect(card).toBeVisible({ timeout: 10000 })
 
-      // Sample continuously from in-flight through settled. The red badge must
-      // never appear at any point: not during install/init, and not in the
-      // window between the job clearing and the provider list catching up.
       let sawBusy = false
       let settled = false
       const deadline = Date.now() + 8000
@@ -176,7 +167,7 @@ test.describe("Provider lifecycle badges", () => {
       // What the wizard does on skip/close.
       await api("provider_release_job", { name: "skipprobe" })
 
-      // Settles to the honest uninitialized state rather than staying busy.
+      // Settles to the uninitialized state rather than staying busy.
       await expect(card).toContainText(/not initialized/i, { timeout: 10000 })
     } finally {
       await api("provider_delete", { name: "skipprobe" })

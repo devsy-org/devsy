@@ -8,8 +8,6 @@ import {
 
 describe("isCommandSuccess", () => {
   it("trusts an explicit success flag over the message", () => {
-    // The flag comes from the real exit code, so it wins even when the text
-    // would sniff the other way.
     expect(isCommandSuccess("Exit code: 0", false)).toBe(false)
     expect(isCommandSuccess("something went wrong", true)).toBe(true)
   })

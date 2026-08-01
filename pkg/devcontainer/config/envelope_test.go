@@ -307,8 +307,6 @@ func TestStatusLineRoundTripsPipeline(t *testing.T) {
 }
 
 func TestParseStatusLineWithoutPipeline(t *testing.T) {
-	// A CLI predating the field omits it; parsing must still recognize the
-	// line rather than rejecting it as a non-status envelope.
 	line := `{"kind":"status","phase":"ready","started":false}`
 
 	got, ok := ParseStatusLine(line)

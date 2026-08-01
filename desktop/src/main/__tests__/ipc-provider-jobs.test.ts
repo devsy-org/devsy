@@ -179,7 +179,6 @@ describe("provider job lifecycle over IPC", () => {
   })
 
   it("does not blame a successful init for a refresh failure afterward", async () => {
-    // `provider init` itself succeeds; only the post-success refresh fails.
     const { providerJobs } = setup(() => ({
       lines: [statusLine("running_init"), statusLine("ready")],
       code: 0,
@@ -188,9 +187,6 @@ describe("provider job lifecycle over IPC", () => {
 
     await invoke("provider_init", { name: "docker" })
 
-    // The bug this guards: finish()'s success path rejecting (via a failed
-    // refresh) must not get caught and re-reported as if the init command
-    // itself had failed with the refresh's error message.
     expect(providerJobs.get("docker")?.error).not.toBe("refresh boom")
   })
 })

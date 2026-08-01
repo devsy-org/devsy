@@ -2,9 +2,7 @@
 // long-running commands.
 package status
 
-// Pipeline identifies which command's progress an Event describes. Consumers
-// share one event stream, so phase names alone are ambiguous: without this a
-// sink cannot tell a provider install from a workspace up.
+// Pipeline identifies which command's progress an Event describes.
 type Pipeline string
 
 const (
@@ -13,7 +11,7 @@ const (
 )
 
 // Phase identifies a step in a pipeline. PhaseReady and PhaseFailed are
-// shared terminal phases; the rest belong to one pipeline.
+// shared terminal phases.
 type Phase string
 
 // Workspace up phases.
@@ -41,9 +39,6 @@ const (
 
 // Event is one phase transition.
 type Event struct {
-	// Pipeline is stamped by ForPipeline rather than at each call site, so it
-	// is empty on a directly-constructed event. Consumers should treat empty
-	// as PipelineWorkspaceUp, which is what pre-discriminator CLIs emitted.
 	Pipeline Pipeline `json:"pipeline,omitempty"`
 	Phase    Phase    `json:"phase"`
 	Step     string   `json:"step,omitempty"`

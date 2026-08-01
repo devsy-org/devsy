@@ -11,8 +11,6 @@ import (
 
 // newStatusReporter drives provider progress output: one NDJSON status line
 // per phase transition in JSON mode, human-readable info lines otherwise.
-// Mirrors cmd/workspace/up's reporter so both pipelines look the same to a
-// consumer reading the stream.
 func newStatusReporter(resultFormat string, out io.Writer) (status.Reporter, error) {
 	mode, err := output.ResolveMode(resultFormat)
 	if err != nil {

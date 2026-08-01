@@ -21,8 +21,6 @@ describe("WorkspaceJobs", () => {
     const first = jobs.start("ws1")
     const second = jobs.start("ws1")
 
-    // A slow/duplicate exit callback for the first delete arrives after a
-    // retry has already started a second one for the same workspace.
     await jobs.finish("ws1", first, "boom")
 
     expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
@@ -49,14 +47,11 @@ describe("WorkspaceJobs", () => {
   })
 
   it("ignores a failure for a workspace with no active job", async () => {
-    // e.g. a stale exit callback firing after clear() already ran.
     await jobs.finish("ws1", 1, "boom")
     expect(jobs.get("ws1")).toBeUndefined()
   })
 
   it("refreshes the workspace list before clearing a finished job", async () => {
-    // Clearing first would briefly show the deleted workspace as still
-    // present from the stale list.
     const order: string[] = []
     jobs.setRefresh(async () => {
       order.push(`refresh(job=${jobs.get("ws1") ? "present" : "gone"})`)
@@ -81,8 +76,6 @@ describe("WorkspaceJobs", () => {
     const generation = jobs.start("ws1")
     const finishing = jobs.finish("ws1", generation)
 
-    // A new delete for the same id is submitted before the first finish
-    // resolves (e.g. a quick retry after the first attempt looked stuck).
     jobs.start("ws1")
     releaseRefresh?.()
     await finishing

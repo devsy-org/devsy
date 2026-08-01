@@ -64,8 +64,6 @@ describe("ProviderCard", () => {
     unmount()
   })
 
-  // The original bug: `provider add` persists the provider before init runs,
-  // so the watcher reports initialized:false while the install is in flight.
   it("shows installing rather than not initialized during install", () => {
     providerJobs.set({
       ssh: { activity: "installing", phase: "installing_provider" },

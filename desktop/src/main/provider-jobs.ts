@@ -11,7 +11,7 @@
  * which is exactly when a multi-second install is still running.
  */
 
-/** Phases emitted by the Go provider pipeline (pkg/status). */
+/** Phases emitted by the Go provider pipeline. */
 export type ProviderPhase =
   | "installing_provider"
   | "resolving_options"

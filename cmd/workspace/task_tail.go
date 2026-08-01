@@ -10,10 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/task"
 )
 
-// logTailer streams a detached worker's captured stdout/stderr (see
-// pkg/command.StartBackground) as it's written, so `task logs --follow`
-// shows the worker's real log output — including debug-level lines —
-// instead of only the synthesized phase-transition events.
+// logTailer streams a detached worker's captured stdout/stderr as it's written.
 type logTailer struct {
 	path string
 	file *os.File
@@ -81,10 +78,6 @@ func (t *logTailer) emit(w io.Writer, chunk []byte) {
 	}
 }
 
-// writeLine skips structured NDJSON envelopes (status/result/error/task):
-// the worker's own stdout carries the same envelopes this command already
-// reports from polled task state, so passing them through here would just
-// duplicate them as noise alongside the worker's actual log lines.
 func (t *logTailer) writeLine(w io.Writer, line []byte) {
 	if isEnvelopeLine(line) {
 		return

@@ -263,8 +263,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   /**
    * Track a provider job for the duration of fn, so the job cannot outlive the
    * work it describes. Opening a job in one place and closing it in another
-   * leaves the card spinning forever on any path that forgets — prefer this to
-   * calling start/finish by hand.
+   * leaves the card spinning forever on any path that forgets.
    *
    * Errors are recorded on the job and rethrown, leaving the caller's own
    * error handling intact.
@@ -1131,9 +1130,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.debug) cliArgs.push("--debug")
       cliArgs.push("--force")
 
-      // The card shows "Deleting" until finish() below, whether this
-      // succeeds or fails — a failure still leaves the card able to explain
-      // why instead of reverting to idle with no context.
+      // The card shows "Deleting" until finish() below
       const jobGeneration = workspaceJobs.start(args.workspaceId)
 
       cli.runStreaming(

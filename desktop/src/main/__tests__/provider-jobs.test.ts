@@ -51,8 +51,6 @@ describe("ProviderJobs", () => {
   })
 
   it("refreshes provider state before clearing a finished job", async () => {
-    // Clearing first would briefly expose initialized:false from the stale
-    // list — the red badge this class exists to prevent.
     const order: string[] = []
     jobs.setRefresh(async () => {
       order.push(`refresh(job=${jobs.get("docker") ? "present" : "gone"})`)
@@ -66,9 +64,6 @@ describe("ProviderJobs", () => {
   })
 
   it("does not clear a newer job started while refresh was in flight", async () => {
-    // refresh is a real CLI round-trip. If a second command starts during it,
-    // the first finish() must not delete the entry the new one is using —
-    // its report() calls would find no job and the card would look idle.
     let releaseRefresh: (() => void) | undefined
     jobs.setRefresh(
       () =>
@@ -80,7 +75,6 @@ describe("ProviderJobs", () => {
     jobs.start("docker", "installing")
     const finishing = jobs.finish("docker")
 
-    // A re-init lands before the first finish resolves.
     jobs.start("docker", "initializing")
     releaseRefresh?.()
     await finishing

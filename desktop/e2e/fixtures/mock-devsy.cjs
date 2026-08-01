@@ -110,7 +110,6 @@ function out(data) {
   )
 }
 
-// Single-line NDJSON status envelope, matching pkg/status + envelope.go.
 function providerStatus(phase, started, step) {
   out(
     JSON.stringify({
@@ -413,7 +412,6 @@ function handleDelete(args) {
   setTimeout(() => {
     out("Deleting workspace...")
     out("Workspace deleted.")
-    // Re-read: avoid clobbering a concurrent spec's writes with our stale snapshot.
     const latest = loadState()
     const idx = latest.workspaces.findIndex((w) => w.id === wsId)
     if (idx !== -1) {
@@ -551,16 +549,12 @@ switch (cmd) {
       case "add": {
         const provName = extra
         if (provName) {
-          // The desktop passes --use=false, which installs without changing
-          // the default provider; only `provider use` does that.
           const takesDefault = !rawArgs.includes("--use=false")
           if (takesDefault) {
             for (const key of Object.keys(state.providers)) {
               state.providers[key].default = false
             }
           }
-          // Written uninitialized, exactly as the real CLI does: `provider
-          // add --use=false` persists before any init runs.
           state.providers[provName] = {
             config: {
               name: provName,
@@ -590,7 +584,6 @@ switch (cmd) {
         // *probe suffix delays init so lifecycle tests can observe in-flight state.
         const initMs = /probe$/.test(provName) ? 5000 : 150
         setTimeout(() => {
-          // Re-read: avoid clobbering a concurrent spec's writes with our stale snapshot.
           const latest = loadState()
           if (provName && latest.providers[provName]) {
             latest.providers[provName].state.initialized = true
@@ -647,8 +640,6 @@ switch (cmd) {
       }
       case "set-source": {
         const provName = extra
-        // Mirrors UpdateProvider: new binaries, so Initialized is cleared and
-        // the caller is expected to chain `provider init`.
         if (provName && state.providers[provName]) {
           state.providers[provName].state.initialized = false
           saveState(state)

@@ -37,9 +37,7 @@ type ErrorEnvelope struct {
 // pipeline. Started is a pointer so an omitted field is distinguishable
 // from an explicit false.
 type StatusEnvelope struct {
-	Kind string `json:"kind"`
-	// Pipeline names the command being reported. Omitted by pre-discriminator
-	// CLIs, so an empty value means workspace up.
+	Kind     string `json:"kind"`
 	Pipeline string `json:"pipeline,omitempty"`
 	Phase    string `json:"phase"`
 	Step     string `json:"step,omitempty"`
