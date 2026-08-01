@@ -151,9 +151,10 @@ $effect(() => {
 })
 
 async function handleSetDefault() {
+  const name = provider.name
   try {
-    await providerUse(provider.name)
-    toasts.success(`Set ${provider.name} as default provider`)
+    await providerUse(name)
+    toasts.success(`Set ${name} as default provider`)
   } catch (err) {
     toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
   }
@@ -181,11 +182,12 @@ function handleUpdate() {
 }
 
 async function runUpdate() {
+  const name = provider.name
   updating = true
   try {
-    await providerUpdate(provider.name)
-    toasts.success(`Updated ${provider.name}`)
-    await loadVersionsFor(provider.name)
+    await providerUpdate(name)
+    toasts.success(`Updated ${name}`)
+    await loadVersionsFor(name)
     await refreshUpdates()
   } catch (err) {
     toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
@@ -196,11 +198,12 @@ async function runUpdate() {
 }
 
 async function runSwitch() {
+  const name = provider.name
   switching = true
   try {
-    await providerSetVersion(provider.name, targetTag)
-    toasts.success(`Switched ${provider.name} to ${targetTag}`)
-    await loadVersionsFor(provider.name)
+    await providerSetVersion(name, targetTag)
+    toasts.success(`Switched ${name} to ${targetTag}`)
+    await loadVersionsFor(name)
     await refreshUpdates()
   } catch (err) {
     toasts.error(`Failed to switch version: ${extractErrorMessage(err)}`)
@@ -227,14 +230,15 @@ function extractCliError(err: unknown): CLIError | null {
 }
 
 async function handleInitialize() {
+  const name = provider.name
   initializing = true
   initError = null
-  markInitializing(provider.name)
+  markInitializing(name)
   try {
-    await providerInit(provider.name)
+    await providerInit(name)
     const updated = await providerList()
     providers.set(updated)
-    toasts.success(`Initialized ${provider.name}`)
+    toasts.success(`Initialized ${name}`)
   } catch (err) {
     const cliError = extractCliError(err)
     if (cliError) {
@@ -242,15 +246,12 @@ async function handleInitialize() {
     } else {
       initError = {
         code: "UNKNOWN",
-        message:
-          err instanceof Error
-            ? err.message
-            : `Failed to initialize ${provider.name}.`,
+        message: err instanceof Error ? err.message : `Failed to initialize ${name}.`,
       }
     }
   } finally {
     initializing = false
-    clearInitializing(provider.name)
+    clearInitializing(name)
   }
 }
 
