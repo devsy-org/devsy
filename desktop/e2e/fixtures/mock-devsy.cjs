@@ -408,14 +408,20 @@ function handleStop(args) {
 function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
-  out("Deleting workspace...")
-  out("Workspace deleted.")
-  const idx = state.workspaces.findIndex((w) => w.id === wsId)
-  if (idx !== -1) {
-    state.workspaces.splice(idx, 1)
-    saveState(state)
-  }
-  process.exit(0)
+  // Workspaces named *probe belong to lifecycle tests, where delete must
+  // outlast the render/poll cycle or there is no in-flight state to observe.
+  // Everything else stays instant so unrelated specs aren't slowed down.
+  const deleteMs = /probe$/.test(wsId) ? 1500 : 0
+  setTimeout(() => {
+    out("Deleting workspace...")
+    out("Workspace deleted.")
+    const idx = state.workspaces.findIndex((w) => w.id === wsId)
+    if (idx !== -1) {
+      state.workspaces.splice(idx, 1)
+      saveState(state)
+    }
+    process.exit(0)
+  }, deleteMs)
 }
 
 function handleRename(args) {
@@ -502,8 +508,15 @@ if (cmd === "workspace") {
     process.stderr.write(`mock-devsy: unknown workspace subcommand '${verb}'\n`)
     process.exit(2)
   }
+  // No unconditional exit here: handleDelete defers its own exit behind a
+  // setTimeout for *probe workspaces, and calling process.exit(0)
+  // immediately after would kill the process before that timer fires.
+  // Handlers that finish synchronously (list, status, rename, ...) just
+  // let the process exit naturally once nothing is left pending. `return`
+  // (not exit) still stops this script falling through to the
+  // provider/machine/context switch below.
   handler(rawArgs.slice(2))
-  process.exit(0)
+  return
 }
 
 // Non-workspace top-level commands (preserved verbatim).

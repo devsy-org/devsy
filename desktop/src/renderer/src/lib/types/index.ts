@@ -92,6 +92,16 @@ export interface ProviderJob {
   error?: string
 }
 
+/**
+ * In-flight workspace delete, tracked by the main process for the same
+ * reason as ProviderJob: workspace_delete returns as soon as the CLI
+ * command is launched, so nothing else records that a delete is running.
+ */
+export interface WorkspaceJob {
+  activity: "deleting"
+  error?: string
+}
+
 export interface ProviderVersion {
   tag: string
   publishedAt: string

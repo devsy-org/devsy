@@ -15,11 +15,13 @@ function makeWatcher(runProviderList: () => Promise<Record<string, unknown>>) {
     }),
   }
   const providerJobs = { snapshot: vi.fn().mockReturnValue({}) }
+  const workspaceJobs = { snapshot: vi.fn().mockReturnValue({}) }
   const watcher = new Watcher({
     cli: cli as never,
     state: state as never,
     getMainWindow: () => null,
     providerJobs: providerJobs as never,
+    workspaceJobs: workspaceJobs as never,
   })
   return { watcher, cli, state }
 }

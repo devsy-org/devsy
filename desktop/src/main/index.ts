@@ -12,6 +12,7 @@ import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
 import { initAutoUpdater, stopAutoUpdater } from "./updater.js"
 import { Watcher } from "./watcher.js"
+import { WorkspaceJobs } from "./workspace-jobs.js"
 
 const PROTOCOL = "devsy"
 
@@ -165,6 +166,9 @@ app.whenReady().then(() => {
   // watcher that broadcasts provider state, so in-flight work is reported
   // alongside what's on disk.
   const providerJobs = new ProviderJobs()
+  // Same idea for workspace delete, which is fire-and-forget from the IPC
+  // handler's perspective.
+  const workspaceJobs = new WorkspaceJobs()
 
   // Register IPC handlers
   const {
@@ -178,6 +182,7 @@ app.whenReady().then(() => {
     pty: ptyManager,
     getMainWindow: () => mainWindow,
     providerJobs,
+    workspaceJobs,
   })
 
   // Start state watcher
@@ -187,11 +192,14 @@ app.whenReady().then(() => {
     state,
     getMainWindow: () => mainWindow,
     providerJobs,
+    workspaceJobs,
   })
   // Phase transitions are pushed immediately rather than waiting for the
   // next disk poll, which is what made the old badge lag visible.
   providerJobs.onChange(() => watcher.broadcastProviders())
   providerJobs.setRefresh(() => watcher.refreshProviders())
+  workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
+  workspaceJobs.setRefresh(() => watcher.refreshWorkspaces())
 
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()

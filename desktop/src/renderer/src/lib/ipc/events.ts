@@ -5,6 +5,7 @@ import type {
   Provider,
   ProviderJob,
   Workspace,
+  WorkspaceJob,
   WorkspaceStatus,
 } from "$lib/types/index.js"
 import { listen } from "./bridge.js"
@@ -56,6 +57,7 @@ export const EVENT_NAMES = {
 
 interface WorkspacesPayload {
   workspaces: Workspace[]
+  jobs?: Record<string, WorkspaceJob>
 }
 interface ProvidersPayload {
   providers: Provider[]
@@ -70,10 +72,13 @@ interface ContextsPayload {
 }
 
 export function onWorkspacesChanged(
-  callback: (workspaces: Workspace[]) => void,
+  callback: (
+    workspaces: Workspace[],
+    jobs: Record<string, WorkspaceJob>,
+  ) => void,
 ): Promise<UnlistenFn> {
   return listen<WorkspacesPayload>(EVENT_NAMES.WORKSPACES_CHANGED, (event) => {
-    callback(event.payload.workspaces)
+    callback(event.payload.workspaces, event.payload.jobs ?? {})
   })
 }
 

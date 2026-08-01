@@ -32,6 +32,7 @@ import {
   setReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
+import type { WorkspaceJobs } from "./workspace-jobs.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -96,6 +97,7 @@ interface IpcDependencies {
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
+  workspaceJobs: WorkspaceJobs
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -172,7 +174,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
 } {
-  const { cli, state, logStore, pty, providerJobs } = deps
+  const { cli, state, logStore, pty, providerJobs, workspaceJobs } = deps
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -1129,15 +1131,26 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.debug) cliArgs.push("--debug")
       cliArgs.push("--force")
 
+      // The card shows "Deleting" until finish() below, whether this
+      // succeeds or fails — a failure still leaves the card able to explain
+      // why instead of reverting to idle with no context.
+      workspaceJobs.start(args.workspaceId)
+
       cli.runStreaming(
         cliArgs,
         (line) => {
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
-        (code) => {
+        (code, cliError) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
             { success: code === 0 },
+          )
+          void workspaceJobs.finish(
+            args.workspaceId,
+            code === 0
+              ? undefined
+              : cliError?.message ?? `delete exited with code ${code}`,
           )
         },
         args.workspaceId,

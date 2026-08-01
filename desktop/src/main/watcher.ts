@@ -7,6 +7,7 @@ import type { CliRunner } from "./cli.js"
 import type { DaemonClient } from "./daemon-client.js"
 import type { ProviderJobs } from "./provider-jobs.js"
 import type { DaemonState } from "./state.js"
+import type { WorkspaceJobs } from "./workspace-jobs.js"
 
 interface WatcherDeps {
   cli: CliRunner
@@ -14,6 +15,7 @@ interface WatcherDeps {
   state: DaemonState
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
+  workspaceJobs: WorkspaceJobs
 }
 
 interface ContextEntry {
@@ -61,6 +63,9 @@ export class Watcher {
   // overlap a scheduled poll; each queued call is guaranteed a fresh read
   // that starts after it was requested.
   private providerPollChain: Promise<void> = Promise.resolve()
+  // Same serialization for pollWorkspaces, so a manual refreshWorkspaces()
+  // (e.g. after a delete finishes) can't overlap a scheduled poll.
+  private workspacePollChain: Promise<void> = Promise.resolve()
 
   constructor(private deps: WatcherDeps) {}
 
@@ -103,7 +108,7 @@ export class Watcher {
     this.polling = true
     try {
       await Promise.allSettled([
-        this.pollWorkspaces(),
+        this.queueWorkspacePoll(),
         this.queueProviderPoll(),
         this.pollMachines(),
         this.pollContexts(),
@@ -131,6 +136,17 @@ export class Watcher {
     return cliFn()
   }
 
+  /** Re-read the workspace list from disk now, without waiting for the next scheduled poll. */
+  async refreshWorkspaces(): Promise<void> {
+    await this.queueWorkspacePoll()
+  }
+
+  private queueWorkspacePoll(): Promise<void> {
+    const run = this.workspacePollChain.then(() => this.pollWorkspaces())
+    this.workspacePollChain = run
+    return run
+  }
+
   private async pollWorkspaces(): Promise<void> {
     try {
       const workspaces = await this.queryWithFallback(
@@ -141,13 +157,23 @@ export class Watcher {
       )
       const changed = this.deps.state.updateWorkspaces(workspaces as any[])
       if (changed) {
-        this.send("workspaces-changed", {
-          workspaces: this.deps.state.workspaceList(),
-        })
+        this.broadcastWorkspaces()
       }
     } catch {
       // Silently ignore poll failures
     }
+  }
+
+  /**
+   * Push the workspace list plus in-flight job state. Sent on one channel so
+   * the two can't arrive out of order and show a deleted-but-still-listed
+   * workspace as idle between the delete finishing and the list catching up.
+   */
+  broadcastWorkspaces(): void {
+    this.send("workspaces-changed", {
+      workspaces: this.deps.state.workspaceList(),
+      jobs: this.deps.workspaceJobs.snapshot(),
+    })
   }
 
   /** Re-read provider state from disk now, without waiting for the next scheduled poll. */
