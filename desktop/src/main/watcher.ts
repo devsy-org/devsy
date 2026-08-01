@@ -150,12 +150,7 @@ export class Watcher {
     }
   }
 
-  /**
-   * Re-read provider state from disk now, without waiting for the next
-   * scheduled poll. Queued behind any poll already in flight, so the
-   * result reflects a read that started after this call rather than one
-   * a concurrent scheduled poll is about to overwrite.
-   */
+  /** Re-read provider state from disk now, without waiting for the next scheduled poll. */
   async refreshProviders(): Promise<void> {
     await this.queueProviderPoll()
   }
