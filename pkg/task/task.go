@@ -20,6 +20,12 @@ var (
 	ErrAbandoned = errors.New("worker exited without recording a result")
 )
 
+// WorkerProcessName returns the background-process name a detached task's
+// worker is registered under.
+func WorkerProcessName(id string) string {
+	return "devsy-up-" + id
+}
+
 type Status string
 
 const (

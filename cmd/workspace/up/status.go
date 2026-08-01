@@ -11,10 +11,11 @@ import (
 
 // newStatusReporter drives `up`'s progress output.
 func newStatusReporter(emitJSON bool, out io.Writer) status.Reporter {
+	var r status.Reporter = plainStatusReporter{}
 	if emitJSON {
-		return &jsonStatusReporter{out: out}
+		r = &jsonStatusReporter{out: out}
 	}
-	return plainStatusReporter{}
+	return status.ForPipeline(r, status.PipelineWorkspaceUp)
 }
 
 // jsonStatusReporter serializes write events.

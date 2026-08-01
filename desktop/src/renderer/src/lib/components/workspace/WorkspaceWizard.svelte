@@ -465,7 +465,7 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
     flushLines()
     launchRunning = false
     clearWatchdog()
-    if (isCommandSuccess(progress.message)) {
+    if (isCommandSuccess(progress.message, progress.success)) {
       launchSuccess = true
       launchedWorkspaceId = wsId ?? null
       toasts.success(`Workspace ${wsId ?? "created"} is ready`)

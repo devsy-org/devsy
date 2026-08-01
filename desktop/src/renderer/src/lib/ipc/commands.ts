@@ -140,6 +140,14 @@ export async function providerInitStreaming(name: string): Promise<string> {
   return invoke<string>("provider_init_streaming", { name })
 }
 
+/**
+ * Release a provider job the caller opened but will not finish, e.g. when the
+ * user skips initialization or abandons the add wizard after the install.
+ */
+export async function providerReleaseJob(name: string): Promise<void> {
+  return invoke<void>("provider_release_job", { name })
+}
+
 export async function providerUpdate(name: string): Promise<void> {
   return invoke("provider_update", { name })
 }

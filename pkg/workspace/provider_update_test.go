@@ -3,8 +3,49 @@ package workspace
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestClearInitialized(t *testing.T) {
+	newConfig := func(providers map[string]*config.ProviderConfig) *config.Config {
+		return &config.Config{
+			DefaultContext: testDefaultContext,
+			Contexts: map[string]*config.ContextConfig{
+				testDefaultContext: {Providers: providers},
+			},
+		}
+	}
+
+	const updated, other = "updated-provider", "other-provider"
+
+	t.Run("resets an initialized provider", func(t *testing.T) {
+		cfg := newConfig(map[string]*config.ProviderConfig{
+			updated: {Initialized: true},
+		})
+
+		clearInitialized(cfg, updated)
+
+		assert.False(t, cfg.Current().Providers[updated].Initialized)
+	})
+
+	t.Run("leaves other providers untouched", func(t *testing.T) {
+		cfg := newConfig(map[string]*config.ProviderConfig{
+			updated: {Initialized: true},
+			other:   {Initialized: true},
+		})
+
+		clearInitialized(cfg, updated)
+
+		assert.True(t, cfg.Current().Providers[other].Initialized)
+	})
+
+	t.Run("no-ops for an unknown provider", func(t *testing.T) {
+		cfg := newConfig(map[string]*config.ProviderConfig{})
+
+		assert.NotPanics(t, func() { clearInitialized(cfg, "missing") })
+	})
+}
 
 func TestShouldSkipProviderUpdate(t *testing.T) {
 	tests := []struct {

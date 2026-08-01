@@ -81,7 +81,7 @@ require (
 	mvdan.cc/sh/v3 v3.13.1
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/yaml v1.6.0
-	tailscale.com v1.102.0
+	tailscale.com v1.102.1
 )
 
 require (

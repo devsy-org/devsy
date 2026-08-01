@@ -1,11 +1,15 @@
 <script lang="ts">
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
-import { Star, Loader2, AlertTriangle } from "@lucide/svelte"
+import { Star, Loader2 } from "@lucide/svelte"
 import ProviderIcon from "./ProviderIcon.svelte"
 import { providerVersions } from "$lib/stores/providerVersions.js"
+import { providerJobs } from "$lib/stores/providers.js"
+import { providerStatus } from "$lib/utils/provider-status.js"
 import type { Provider } from "$lib/types/index.js"
 
 let { provider, onopen }: { provider: Provider; onopen?: () => void } = $props()
+
+let status = $derived(providerStatus(provider, $providerJobs[provider.name]))
 
 function sourceDisplay(p: Provider): string {
   if (p.source?.github) return p.source.github
@@ -38,20 +42,19 @@ function sourceDisplay(p: Provider): string {
       {/if}
     </div>
     <div class="flex gap-1.5 shrink-0">
-      {#if provider.status === "initialized"}
-        <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
-      {:else if provider.status === "initializing"}
+      {#if status.kind === "ready"}
+        <span class={badgeVariants({ variant: "secondary" })}>{status.label}</span>
+      {:else if status.kind === "busy"}
         <span class="{badgeVariants({ variant: 'outline' })} gap-1">
           <Loader2 class="size-3 animate-spin" />
-          initializing…
+          {status.label}
         </span>
-      {:else if provider.status === "failed"}
-        <span class="{badgeVariants({ variant: 'destructive' })} gap-1">
-          <AlertTriangle class="size-3" />
-          failed
+      {:else if status.kind === "failed"}
+        <span class={badgeVariants({ variant: "destructive" })} title={status.error}>
+          {status.label}
         </span>
       {:else}
-        <span class={badgeVariants({ variant: "destructive" })}>not initialized</span>
+        <span class={badgeVariants({ variant: "destructive" })}>{status.label}</span>
       {/if}
       {#if provider.version}
         <span class={badgeVariants({ variant: "outline" })}>{provider.version}</span>

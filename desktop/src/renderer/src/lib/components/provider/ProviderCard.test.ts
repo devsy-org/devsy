@@ -14,12 +14,12 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
 })
 
 import ProviderCard from "./ProviderCard.svelte"
+import { providerJobs } from "$lib/stores/providers.js"
 
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
     name,
     version: "0.1.0",
-    status: "initialized",
     state: { initialized: true },
     ...extras,
   }
@@ -51,38 +51,53 @@ describe("ProviderCard", () => {
     unmount()
   })
 
-  it("shows the initializing badge while status is initializing", () => {
+  it("shows the initializing badge while an uninitialized provider is in flight", () => {
+    providerJobs.set({ ssh: { activity: "initializing", phase: "running_init" } })
     const { container, unmount } = render(ProviderCard, {
-      props: {
-        provider: makeProvider("ssh", { status: "initializing", state: { initialized: false } }),
-      },
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
     })
 
     const text = container.textContent ?? ""
     expect(text.toLowerCase()).toContain("initializing")
     expect(text.toLowerCase()).not.toContain("not initialized")
+    providerJobs.set({})
     unmount()
   })
 
-  it("shows the failed badge when status is failed", () => {
+  it("shows installing rather than not initialized during install", () => {
+    providerJobs.set({
+      ssh: { activity: "installing", phase: "installing_provider" },
+    })
     const { container, unmount } = render(ProviderCard, {
-      props: {
-        provider: makeProvider("ssh", { status: "failed", state: { initialized: false } }),
-      },
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
     })
 
-    expect((container.textContent ?? "").toLowerCase()).toContain("failed")
+    const text = (container.textContent ?? "").toLowerCase()
+    expect(text).toContain("installing")
+    expect(text).not.toContain("not initialized")
+    providerJobs.set({})
     unmount()
   })
 
-  it("shows not initialized when status is not_initialized", () => {
+  it("shows a failure badge when the job recorded an error", () => {
+    providerJobs.set({
+      ssh: { activity: "initializing", phase: "failed", error: "init: boom" },
+    })
     const { container, unmount } = render(ProviderCard, {
-      props: {
-        provider: makeProvider("ssh", {
-          status: "not_initialized",
-          state: { initialized: false },
-        }),
-      },
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+    })
+
+    const text = (container.textContent ?? "").toLowerCase()
+    expect(text).toContain("failed")
+    expect(text).not.toContain("not initialized")
+    providerJobs.set({})
+    unmount()
+  })
+
+  it("shows not initialized when no job is in flight", () => {
+    providerJobs.set({})
+    const { container, unmount } = render(ProviderCard, {
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
     })
 
     expect((container.textContent ?? "").toLowerCase()).toContain(

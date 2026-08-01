@@ -20,6 +20,7 @@ import {
   providerInitStreaming,
   providerList,
   providerOptions,
+  providerReleaseJob,
   providerSetOptions,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
@@ -127,6 +128,9 @@ let visibleOptions = $derived(
 )
 
 function reset() {
+  if (providerName && currentStep !== "complete" && !initRunning) {
+    void providerReleaseJob(providerName).catch(() => undefined)
+  }
   currentStep = "select"
   error = ""
   source = ""
@@ -162,7 +166,7 @@ onMount(async () => {
       }
       if (progress.done) {
         initRunning = false
-        if (isCommandSuccess(progress.message)) {
+        if (isCommandSuccess(progress.message, progress.success)) {
           refreshAndComplete()
         } else {
           initError =
@@ -297,8 +301,12 @@ async function refreshAndComplete() {
   currentStep = "complete"
 }
 
-function handleSkipInit() {
-  refreshAndComplete()
+// Skipping init leaves the provider installed but uninitialized, which is a
+// settled state: release the job so the card shows that rather than staying
+// busy on the install that already finished.
+async function handleSkipInit() {
+  await providerReleaseJob(providerName).catch(() => undefined)
+  await refreshAndComplete()
 }
 
 function handleDone() {

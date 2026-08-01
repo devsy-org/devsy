@@ -37,11 +37,12 @@ type ErrorEnvelope struct {
 // pipeline. Started is a pointer so an omitted field is distinguishable
 // from an explicit false.
 type StatusEnvelope struct {
-	Kind    string `json:"kind"`
-	Phase   string `json:"phase"`
-	Step    string `json:"step,omitempty"`
-	Started *bool  `json:"started"`
-	Error   string `json:"error,omitempty"`
+	Kind     string `json:"kind"`
+	Pipeline string `json:"pipeline,omitempty"`
+	Phase    string `json:"phase"`
+	Step     string `json:"step,omitempty"`
+	Started  *bool  `json:"started"`
+	Error    string `json:"error,omitempty"`
 }
 
 // TaskEnvelope is the single line `up --detach` writes to stdout.
@@ -100,10 +101,11 @@ func ParseStatusLine(line string) (status.Event, bool) {
 		return status.Event{}, false
 	}
 	return status.Event{
-		Phase:   status.Phase(env.Phase),
-		Step:    env.Step,
-		Started: *env.Started,
-		Err:     env.Error,
+		Pipeline: status.Pipeline(env.Pipeline),
+		Phase:    status.Phase(env.Phase),
+		Step:     env.Step,
+		Started:  *env.Started,
+		Err:      env.Error,
 	}, true
 }
 
@@ -111,11 +113,12 @@ func ParseStatusLine(line string) (status.Event, bool) {
 func WriteStatusJSON(w io.Writer, e status.Event) error {
 	started := e.Started
 	env := StatusEnvelope{
-		Kind:    KindStatus,
-		Phase:   string(e.Phase),
-		Step:    e.Step,
-		Started: &started,
-		Error:   e.Err,
+		Kind:     KindStatus,
+		Pipeline: string(e.Pipeline),
+		Phase:    string(e.Phase),
+		Step:     e.Step,
+		Started:  &started,
+		Error:    e.Err,
 	}
 	data, err := json.Marshal(env)
 	if err != nil {
