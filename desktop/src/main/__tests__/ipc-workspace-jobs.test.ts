@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
 
@@ -81,14 +81,15 @@ function invoke(channel: string, args: Record<string, unknown>) {
   return handler({}, args)
 }
 
-function waitForExitCallback(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 10))
-}
-
 describe("workspace delete job lifecycle over IPC", () => {
   beforeEach(() => {
     handlers.clear()
     vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it("shows a deleting job while the command runs, then clears it", async () => {
@@ -99,7 +100,9 @@ describe("workspace delete job lifecycle over IPC", () => {
     await invoke("workspace_delete", { workspaceId: "ws1" })
     expect(workspaceJobs.get("ws1")).toEqual({ activity: "deleting" })
 
-    await waitForExitCallback()
+    // Deterministically flush the mock's exit callback instead of racing it
+    // against a fixed wall-clock wait.
+    await vi.runAllTimersAsync()
 
     expect(workspaceJobs.get("ws1")).toBeUndefined()
   })
@@ -108,7 +111,7 @@ describe("workspace delete job lifecycle over IPC", () => {
     const { workspaceJobs } = setup(1)
 
     await invoke("workspace_delete", { workspaceId: "ws1" })
-    await waitForExitCallback()
+    await vi.runAllTimersAsync()
 
     expect(workspaceJobs.get("ws1")?.error).toBe("boom")
   })
