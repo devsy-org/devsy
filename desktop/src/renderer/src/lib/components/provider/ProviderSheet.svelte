@@ -93,7 +93,9 @@ let hasUnfilledRequired = $derived.by(() => {
   return requiredOptions.some(([key]) => !optionValues[key]?.trim())
 })
 
-let versionEntry = $derived($providerVersions.byProvider[provider.name])
+let versionEntry = $derived(
+  provider ? $providerVersions.byProvider[provider.name] : undefined,
+)
 
 let groupedOptions = $derived.by(() => {
   const groups: Record<string, [string, ProviderOption][]> = {}
@@ -137,7 +139,7 @@ async function loadOptions() {
 }
 
 $effect(() => {
-  if (!open) {
+  if (!open || !provider) {
     loadedFor = null
     return
   }
@@ -253,10 +255,11 @@ async function handleInitialize() {
 }
 
 async function handleDelete() {
+  const name = provider.name
   deleting = true
   try {
-    await providerDelete(provider.name)
-    toasts.success(`Deleted ${provider.name}`)
+    await providerDelete(name)
+    toasts.success(`Deleted ${name}`)
     confirmDeleteOpen = false
     open = false
     ondeleted?.()
@@ -318,6 +321,7 @@ async function handleSaveOptions() {
 }
 </script>
 
+{#if provider}
 <Sheet.Root bind:open>
   <Sheet.ResizableContent>
     <Sheet.Header class="p-6">
@@ -526,3 +530,4 @@ async function handleSaveOptions() {
   loading={switching}
   onconfirm={runSwitch}
 />
+{/if}
