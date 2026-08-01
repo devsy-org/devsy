@@ -238,5 +238,5 @@ func truncateInitError(msg string) string {
 	if len(runes) <= maxInitErrorLen {
 		return msg
 	}
-	return string(runes[:maxInitErrorLen]) + "…"
+	return string(runes[:maxInitErrorLen]) + "..."
 }
