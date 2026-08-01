@@ -53,7 +53,7 @@ func launchDetached(taskID string) error {
 	}
 
 	args := append(detachedArgs(os.Args[1:]), names.Flag(names.TaskID), taskID)
-	return command.StartBackground("devsy-up-"+taskID, func() (*exec.Cmd, error) {
+	return command.StartBackground(task.WorkerProcessName(taskID), func() (*exec.Cmd, error) {
 		return &exec.Cmd{
 			Path: execPath,
 			Args: append([]string{execPath}, args...),

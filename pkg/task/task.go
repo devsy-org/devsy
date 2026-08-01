@@ -20,6 +20,14 @@ var (
 	ErrAbandoned = errors.New("worker exited without recording a result")
 )
 
+// WorkerProcessName returns the background-process name a detached task's
+// worker is registered under, matching StartBackground's naming. Shared so
+// a caller can locate the worker's captured stdout/stderr via
+// pkg/config.PathManager.ProcessStreamsFile without duplicating the scheme.
+func WorkerProcessName(id string) string {
+	return "devsy-up-" + id
+}
+
 type Status string
 
 const (
