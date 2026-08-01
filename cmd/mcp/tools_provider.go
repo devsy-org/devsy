@@ -16,6 +16,7 @@ type providerSummary struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 	Default bool   `json:"default,omitempty"`
+	Status  string `json:"status,omitempty"`
 }
 
 type providerListOutput struct {
@@ -108,6 +109,7 @@ func handleProviderList(_ context.Context, g *flags.GlobalFlags) (providerListOu
 			Name:    entry.Config.Name,
 			Version: entry.Config.Version,
 			Default: entry.Config.Name == defaultProvider,
+			Status:  string(entry.Status),
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {

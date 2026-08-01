@@ -164,7 +164,37 @@ func initProvider(
 	provider *provider2.ProviderConfig,
 	io2 initIO,
 ) error {
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
+	lock, err := provider2.GetProviderInitLock(devsyConfig.DefaultContext, provider.Name)
+	if err != nil {
+		return fmt.Errorf("get init lock: %w", err)
+	}
+	locked, err := lock.TryLock()
+	if err != nil {
+		return fmt.Errorf("lock provider init: %w", err)
+	}
+	if !locked {
+		return fmt.Errorf("provider %q is already being initialized", provider.Name)
+	}
+	defer func() { _ = lock.Unlock() }()
+
+	if devsyConfig.Current().Providers == nil {
+		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
+	}
+	if devsyConfig.Current().Providers[provider.Name] == nil {
+		devsyConfig.Current().Providers[provider.Name] = &config.ProviderConfig{}
+	}
+	entry := devsyConfig.Current().Providers[provider.Name]
+
+	// Persist immediately so a concurrent `provider list` sees "initializing"
+	// for the duration of Exec.Init rather than waiting for the caller's final
+	// save at the end of ConfigureProvider.
+	entry.InitAttempted = true
+	entry.InitError = ""
+	if err := config.SaveConfig(devsyConfig); err != nil {
+		return fmt.Errorf("save init state: %w", err)
+	}
+
+	runErr := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
 		Ctx:     ctx,
 		Command: provider.Exec.Init,
 		Context: devsyConfig.DefaultContext,
@@ -173,15 +203,30 @@ func initProvider(
 		Stdout:  io2.stdout,
 		Stderr:  io2.stderr,
 	})
-	if err != nil {
-		return fmt.Errorf("init: %w", err)
+	if runErr != nil {
+		entry.InitError = truncateInitError(runErr.Error())
+		// Best-effort: InitAttempted is already durably true from the save
+		// above, so ResolveInitState still reports "failed" once the deferred
+		// unlock releases the init lock even if this save fails; only the
+		// diagnostic InitError message would be lost.
+		if saveErr := config.SaveConfig(devsyConfig); saveErr != nil {
+			log.Warnf("save init failure state for provider %s: %v", provider.Name, saveErr)
+		}
+		return fmt.Errorf("init: %w", runErr)
 	}
-	if devsyConfig.Current().Providers == nil {
-		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
-	}
-	if devsyConfig.Current().Providers[provider.Name] == nil {
-		devsyConfig.Current().Providers[provider.Name] = &config.ProviderConfig{}
-	}
-	devsyConfig.Current().Providers[provider.Name].Initialized = true
+
+	entry.Initialized = true
 	return nil
+}
+
+// maxInitErrorLen bounds how much of a failed init command's error we persist
+// to config.json, which (unlike interactive CLI/log output) may be synced,
+// backed up, or included in support bundles.
+const maxInitErrorLen = 500
+
+func truncateInitError(msg string) string {
+	if len(msg) <= maxInitErrorLen {
+		return msg
+	}
+	return msg[:maxInitErrorLen] + "…"
 }

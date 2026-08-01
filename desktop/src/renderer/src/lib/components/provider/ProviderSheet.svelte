@@ -28,11 +28,7 @@ import {
   providerRename,
   providerSetVersion,
 } from "$lib/ipc/commands.js"
-import {
-  providers,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
+import { providers } from "$lib/stores/providers.js"
 import {
   providerVersions,
   loadVersionsFor,
@@ -227,7 +223,6 @@ function extractCliError(err: unknown): CLIError | null {
 async function handleInitialize() {
   initializing = true
   initError = null
-  markInitializing(provider.name)
   try {
     await providerInit(provider.name)
     const updated = await providerList()
@@ -248,7 +243,6 @@ async function handleInitialize() {
     }
   } finally {
     initializing = false
-    clearInitializing(provider.name)
   }
 }
 
@@ -367,8 +361,12 @@ async function handleSaveOptions() {
             Default
           </span>
         {/if}
-        {#if provider.state?.initialized}
+        {#if provider.status === "initialized"}
           <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
+        {:else if provider.status === "initializing"}
+          <span class={badgeVariants({ variant: "outline" })}>initializing…</span>
+        {:else if provider.status === "failed"}
+          <span class={badgeVariants({ variant: "destructive" })}>failed</span>
         {/if}
       </Sheet.Title>
       {#if provider.description}
@@ -377,7 +375,7 @@ async function handleSaveOptions() {
     </Sheet.Header>
 
     <div class="flex items-center gap-2 px-6">
-      {#if provider.state?.initialized !== true}
+      {#if provider.status !== "initialized" && provider.status !== "initializing"}
         <Button variant="outline" size="sm" onclick={handleInitialize} disabled={initializing}>
           {#if initializing}
             <Spinner class="mr-2 size-3" />

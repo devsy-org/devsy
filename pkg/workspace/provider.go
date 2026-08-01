@@ -21,6 +21,10 @@ var ErrNoWorkspaceFound = errors.New("no workspace found")
 type ProviderWithOptions struct {
 	Config *provider.ProviderConfig `json:"config,omitempty"`
 	State  *config.ProviderConfig   `json:"state,omitempty"`
+
+	// Status is the resolved init lifecycle state (not_initialized,
+	// initializing, initialized, failed). See provider.ResolveInitState.
+	Status provider.InitState `json:"status,omitempty"`
 }
 
 type ProviderParams struct {
@@ -62,6 +66,21 @@ func LoadAllProviders(
 
 	if err := loadUnconfiguredProviders(devsyConfig, retProviders); err != nil {
 		return nil, err
+	}
+
+	for name, entry := range retProviders {
+		status, err := provider.ResolveInitState(devsyConfig.DefaultContext, name, entry.State)
+		if err != nil {
+			log.Warnf("error resolving init state for provider %s: %v", name, err)
+			// Never leave Status empty: an unset value renders as a blank
+			// column and is dropped from JSON by omitempty.
+			if entry.State != nil && entry.State.Initialized {
+				status = provider.InitStateInitialized
+			} else {
+				status = provider.InitStateNotInitialized
+			}
+		}
+		entry.Status = status
 	}
 
 	return retProviders, nil

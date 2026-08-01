@@ -67,6 +67,8 @@ export interface ProviderOption {
   group?: string
 }
 
+export type ProviderStatus = "not_initialized" | "initializing" | "initialized" | "failed"
+
 export interface Provider {
   name: string
   version?: string
@@ -75,6 +77,7 @@ export interface Provider {
   options?: Record<string, ProviderOption>
   optionGroups?: ProviderOptionGroup[]
   isDefault?: boolean
+  status?: ProviderStatus
   state?: {
     initialized?: boolean
     singleMachine?: boolean

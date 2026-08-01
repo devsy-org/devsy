@@ -31,9 +31,6 @@ vi.mock("$lib/stores/providers.js", async () => {
   const { writable } = await import("svelte/store")
   return {
     providers: writable([]),
-    initializingProviders: writable(new Set()),
-    markInitializing: vi.fn(),
-    clearInitializing: vi.fn(),
   }
 })
 
@@ -77,6 +74,7 @@ function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
     name,
     version: "0.1.0",
+    status: "initialized",
     state: { initialized: true },
     ...extras,
   }

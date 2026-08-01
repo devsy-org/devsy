@@ -23,11 +23,7 @@ import {
   providerSetOptions,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
-import {
-  providers,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
+import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
@@ -166,7 +162,6 @@ onMount(async () => {
       }
       if (progress.done) {
         initRunning = false
-        clearInitializing(providerName)
         if (isCommandSuccess(progress.message)) {
           refreshAndComplete()
         } else {
@@ -284,12 +279,10 @@ async function startInit() {
   initError = null
   initStartError = ""
   initLines = []
-  markInitializing(providerName)
   try {
     initCommandId = await providerInitStreaming(providerName)
   } catch (err) {
     initRunning = false
-    clearInitializing(providerName)
     initStartError = `Failed to start initialization: ${err instanceof Error ? err.message : String(err)}`
   }
 }

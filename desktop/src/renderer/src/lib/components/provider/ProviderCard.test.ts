@@ -14,16 +14,12 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
 })
 
 import ProviderCard from "./ProviderCard.svelte"
-import {
-  initializingProviders,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
 
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
     name,
     version: "0.1.0",
+    status: "initialized",
     state: { initialized: true },
     ...extras,
   }
@@ -55,24 +51,38 @@ describe("ProviderCard", () => {
     unmount()
   })
 
-  it("shows the initializing badge while an uninitialized provider is in flight", () => {
-    initializingProviders.set(new Set())
-    markInitializing("ssh")
+  it("shows the initializing badge while status is initializing", () => {
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { status: "initializing", state: { initialized: false } }),
+      },
     })
 
     const text = container.textContent ?? ""
     expect(text.toLowerCase()).toContain("initializing")
     expect(text.toLowerCase()).not.toContain("not initialized")
-    clearInitializing("ssh")
     unmount()
   })
 
-  it("shows not initialized when no init is in flight", () => {
-    initializingProviders.set(new Set())
+  it("shows the failed badge when status is failed", () => {
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { status: "failed", state: { initialized: false } }),
+      },
+    })
+
+    expect((container.textContent ?? "").toLowerCase()).toContain("failed")
+    unmount()
+  })
+
+  it("shows not initialized when status is not_initialized", () => {
+    const { container, unmount } = render(ProviderCard, {
+      props: {
+        provider: makeProvider("ssh", {
+          status: "not_initialized",
+          state: { initialized: false },
+        }),
+      },
     })
 
     expect((container.textContent ?? "").toLowerCase()).toContain(
