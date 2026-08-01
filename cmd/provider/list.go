@@ -115,7 +115,7 @@ func (cmd *ListCmd) renderInstalledPlain(
 			entry.Config.Name,
 			entry.Config.Version,
 			strconv.FormatBool(devsyConfig.Current().DefaultProvider == entry.Config.Name),
-			strconv.FormatBool(entry.State != nil && entry.State.Initialized),
+			string(entry.Status),
 			entry.Config.Description,
 		})
 	}
@@ -127,7 +127,7 @@ func (cmd *ListCmd) renderInstalledPlain(
 		"Name",
 		"Version",
 		"Default",
-		"Initialized",
+		"Status",
 		"Description",
 	}, tableEntries)
 

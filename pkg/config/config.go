@@ -73,6 +73,17 @@ type ProviderConfig struct {
 	// Initialized holds if the provider was initialized correctly.
 	Initialized bool `json:"initialized,omitempty"`
 
+	// InitAttempted holds if an initialization attempt has been started, used
+	// with the provider's init lock (see pkg/provider) to tell "never
+	// initialized" apart from "attempted but didn't finish" when Initialized
+	// is false.
+	InitAttempted bool `json:"initAttempted,omitempty"`
+
+	// InitError holds the truncated error from the last failed initialization
+	// attempt. Empty on success, if never run, or if abandoned by a crashed
+	// process.
+	InitError string `json:"initError,omitempty"`
+
 	// SingleMachine signals Devsy if a single machine should be used for this provider.
 	SingleMachine bool `json:"singleMachine,omitempty"`
 
