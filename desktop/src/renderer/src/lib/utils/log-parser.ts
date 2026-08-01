@@ -15,7 +15,17 @@ export function isRecoverableBuildFailure(
   return cliError?.code === RECOVERABLE_BUILD_FAILURE_CODE
 }
 
-export function isCommandSuccess(message: string | undefined | null): boolean {
+/**
+ * Whether a finished command succeeded.
+ *
+ * Prefer `progress.success`, which the main process sets from the actual exit
+ * code. The message-sniffing fallback only covers events emitted without it.
+ */
+export function isCommandSuccess(
+  message: string | undefined | null,
+  success?: boolean,
+): boolean {
+  if (success !== undefined) return success
   if (!message) return false
   const { message: body } = parseLogLine(message)
   if (body.startsWith("{")) {

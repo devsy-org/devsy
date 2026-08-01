@@ -196,6 +196,7 @@ const COMMANDS: Record<string, Handler> = {
   provider_update: () => undefined,
   provider_options: () => PROVIDER_OPTIONS,
   provider_set_options: () => undefined,
+  provider_release_job: () => undefined,
 
   // Machines
   machine_list: () => MACHINES,

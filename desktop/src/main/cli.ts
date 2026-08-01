@@ -297,7 +297,11 @@ export class CliRunner {
       })
     }
 
-    child.on("close", (code) => {
+    let settled = false
+    const finish = (code: number, cliError?: CLIError): void => {
+      // "error" and "close" can both fire; report the outcome once.
+      if (settled) return
+      settled = true
       this.activeChildren.delete(child)
       if (workspaceId) {
         const bucket = this.childrenByWorkspace.get(workspaceId)
@@ -307,7 +311,18 @@ export class CliRunner {
         }
       }
       this.release()
-      onExit(code ?? -1, lastCliError)
+      onExit(code, cliError)
+    }
+
+    // A spawn failure (missing binary, EACCES) emits "error" and never
+    // "close". Without this, onExit never fires: callers that wrap this in a
+    // promise hang forever, and the concurrency slot is never released.
+    child.on("error", (err) => {
+      finish(-1, { code: "spawn_failed", message: err.message })
+    })
+
+    child.on("close", (code) => {
+      finish(code ?? -1, lastCliError)
     })
 
     return child

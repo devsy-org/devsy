@@ -2,27 +2,14 @@ import { writable } from "svelte/store"
 import { providerList } from "$lib/ipc/commands.js"
 import { onProvidersChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
-import type { Provider } from "$lib/types/index.js"
+import type { Provider, ProviderJob } from "$lib/types/index.js"
 
 export const providers = writable<Provider[]>([])
 export const providersLoading = writable(true)
 
-// Names of providers whose initialization is currently in flight. Lets cards
-// show an "initializing…" state instead of the red "not initialized" badge
-// during the multi-second init that runs after a provider is added.
-export const initializingProviders = writable<Set<string>>(new Set())
-
-export function markInitializing(name: string) {
-  initializingProviders.update((set) => new Set(set).add(name))
-}
-
-export function clearInitializing(name: string) {
-  initializingProviders.update((set) => {
-    const next = new Set(set)
-    next.delete(name)
-    return next
-  })
-}
+// In-flight provider work, keyed by provider name. Owned by the main process
+// so it survives the wizard closing, navigation, and window reload.
+export const providerJobs = writable<Record<string, ProviderJob>>({})
 
 let unlisten: UnlistenFn | null = null
 
@@ -38,8 +25,9 @@ export async function initProviders() {
   }
 
   try {
-    unlisten = await onProvidersChanged((updated) => {
+    unlisten = await onProvidersChanged((updated, jobs) => {
       providers.set(updated)
+      providerJobs.set(jobs)
     })
   } catch {
     // Event listener setup failed

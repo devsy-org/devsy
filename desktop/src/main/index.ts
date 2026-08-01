@@ -6,6 +6,7 @@ import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
+import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
@@ -160,6 +161,11 @@ app.whenReady().then(() => {
     stopAutoUpdater()
   })
 
+  // Shared between the IPC handlers that run provider commands and the
+  // watcher that broadcasts provider state, so in-flight work is reported
+  // alongside what's on disk.
+  const providerJobs = new ProviderJobs()
+
   // Register IPC handlers
   const {
     tunnelProcesses,
@@ -171,6 +177,7 @@ app.whenReady().then(() => {
     logStore,
     pty: ptyManager,
     getMainWindow: () => mainWindow,
+    providerJobs,
   })
 
   // Start state watcher
@@ -179,7 +186,13 @@ app.whenReady().then(() => {
     daemon: daemonManager.daemonClient,
     state,
     getMainWindow: () => mainWindow,
+    providerJobs,
   })
+  // Phase transitions are pushed immediately rather than waiting for the
+  // next disk poll, which is what made the old badge lag visible.
+  providerJobs.onChange(() => watcher.broadcastProviders())
+  providerJobs.setRefresh(() => watcher.refreshProviders())
+
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
 

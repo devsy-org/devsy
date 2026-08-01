@@ -110,6 +110,19 @@ function out(data) {
   )
 }
 
+// Single-line NDJSON status envelope, matching pkg/status + envelope.go.
+function providerStatus(phase, started, step) {
+  out(
+    JSON.stringify({
+      kind: "status",
+      pipeline: "provider",
+      phase,
+      ...(step ? { step } : {}),
+      started,
+    }),
+  )
+}
+
 // Parse a slice of args (positional + recognized flags) into a result object.
 function parseArgs(args) {
   const positional = []
@@ -530,9 +543,16 @@ switch (cmd) {
       case "add": {
         const provName = extra
         if (provName) {
-          for (const key of Object.keys(state.providers)) {
-            state.providers[key].default = false
+          // The desktop passes --use=false, which installs without changing
+          // the default provider; only `provider use` does that.
+          const takesDefault = !rawArgs.includes("--use=false")
+          if (takesDefault) {
+            for (const key of Object.keys(state.providers)) {
+              state.providers[key].default = false
+            }
           }
+          // Written uninitialized, exactly as the real CLI does: `provider
+          // add --use=false` persists before any init runs.
           state.providers[provName] = {
             config: {
               name: provName,
@@ -544,11 +564,39 @@ switch (cmd) {
               optionGroups: [],
             },
             state: { initialized: false },
-            default: true,
+            default: takesDefault,
           }
           saveState(state)
         }
-        out("")
+        // No ready phase: install finished, init has not run.
+        providerStatus("installing_provider", true)
+        providerStatus("installing_provider", false, provName)
+        process.exit(0)
+        break
+      }
+      case "init": {
+        const provName = extra || providerFlag
+        providerStatus("resolving_options", true, provName)
+        providerStatus("resolving_options", false, provName)
+        providerStatus("running_init", true, provName)
+        // Providers named *probe belong to lifecycle tests, where init must
+        // outlast the ~1.5s a new card takes to render or there is no
+        // in-flight state to observe. Everything else stays fast so unrelated
+        // specs aren't slowed down.
+        const initMs = /probe$/.test(provName) ? 5000 : 150
+        setTimeout(() => {
+          // Re-read: the snapshot taken at startup is up to 5s stale, and
+          // writing it back would clobber any add/delete another spec
+          // performed against this shared fixture meanwhile.
+          const latest = loadState()
+          if (provName && latest.providers[provName]) {
+            latest.providers[provName].state.initialized = true
+            saveState(latest)
+          }
+          providerStatus("running_init", false, provName)
+          providerStatus("ready", false, provName)
+          process.exit(0)
+        }, initMs)
         break
       }
       case "delete": {
@@ -592,6 +640,19 @@ switch (cmd) {
           saveState(state)
         }
         out("")
+        break
+      }
+      case "set-source": {
+        const provName = extra
+        // Mirrors UpdateProvider: new binaries, so Initialized is cleared and
+        // the caller is expected to chain `provider init`.
+        if (provName && state.providers[provName]) {
+          state.providers[provName].state.initialized = false
+          saveState(state)
+        }
+        providerStatus("installing_provider", true, provName)
+        providerStatus("installing_provider", false, provName)
+        process.exit(0)
         break
       }
       case "versions":

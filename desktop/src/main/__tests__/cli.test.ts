@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { Readable } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
 
@@ -21,6 +22,17 @@ function fakeChild() {
     stdin.written = input
   }
   child.stdin = stdin
+  return child
+}
+
+/** A child whose stdout/stderr are real streams, as readline requires. */
+function fakeStreamingChild() {
+  const child = new EventEmitter() as EventEmitter & {
+    stdout: Readable
+    stderr: Readable
+  }
+  child.stdout = new Readable({ read() {} })
+  child.stderr = new Readable({ read() {} })
   return child
 }
 
@@ -210,6 +222,39 @@ describe("CliRunner", () => {
         expect.objectContaining({ env: expect.any(Object) }),
         expect.any(Function),
       )
+    })
+  })
+
+  describe("runStreaming", () => {
+    it("reports an exit when the child fails to spawn", async () => {
+      // A spawn failure emits "error" and never "close". Callers wrap this in
+      // a promise settled from onExit, so without this the promise never
+      // settles and the provider job stays busy forever.
+      const child = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(child)
+
+      const onExit = vi.fn()
+      await cli.runStreaming(["provider", "init", "docker"], () => {}, onExit)
+      child.emit("error", new Error("spawn ENOENT"))
+
+      await vi.waitFor(() => expect(onExit).toHaveBeenCalledTimes(1))
+      const [code, cliError] = onExit.mock.calls[0]
+      expect(code).toBe(-1)
+      expect(cliError?.message).toContain("spawn ENOENT")
+    })
+
+    it("reports the exit once when error and close both fire", async () => {
+      const child = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(child)
+
+      const onExit = vi.fn()
+      await cli.runStreaming(["provider", "init", "docker"], () => {}, onExit)
+      child.emit("error", new Error("boom"))
+      child.emit("close", 1)
+
+      await vi.waitFor(() => expect(onExit).toHaveBeenCalledTimes(1))
     })
   })
 

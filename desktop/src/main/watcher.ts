@@ -5,6 +5,7 @@ import { watch } from "chokidar"
 import type { BrowserWindow } from "electron"
 import type { CliRunner } from "./cli.js"
 import type { DaemonClient } from "./daemon-client.js"
+import type { ProviderJobs } from "./provider-jobs.js"
 import type { DaemonState } from "./state.js"
 
 interface WatcherDeps {
@@ -12,6 +13,7 @@ interface WatcherDeps {
   daemon?: DaemonClient
   state: DaemonState
   getMainWindow: () => BrowserWindow | null
+  providerJobs: ProviderJobs
 }
 
 interface ContextEntry {
@@ -144,6 +146,11 @@ export class Watcher {
     }
   }
 
+  /** Re-read provider state from disk now, without waiting for the poll. */
+  async refreshProviders(): Promise<void> {
+    await this.pollProviders()
+  }
+
   private async pollProviders(): Promise<void> {
     try {
       const raw = await this.queryWithFallback(
@@ -160,13 +167,23 @@ export class Watcher {
       const providers = parseProviderEntries(raw)
       const changed = this.deps.state.updateProviders(providers as any[])
       if (changed) {
-        this.send("providers-changed", {
-          providers: this.deps.state.providerList(),
-        })
+        this.broadcastProviders()
       }
     } catch {
       // Silently ignore poll failures
     }
+  }
+
+  /**
+   * Push the provider list plus in-flight job state. Sent on one channel so
+   * the two can't arrive out of order and render a provider as idle-and-
+   * uninitialized between an install finishing and its job clearing.
+   */
+  broadcastProviders(): void {
+    this.send("providers-changed", {
+      providers: this.deps.state.providerList(),
+      jobs: this.deps.providerJobs.snapshot(),
+    })
   }
 
   private async pollMachines(): Promise<void> {

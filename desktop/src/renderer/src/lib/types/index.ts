@@ -81,6 +81,17 @@ export interface Provider {
   }
 }
 
+/**
+ * In-flight provider work, tracked by the main process. Distinct from
+ * `Provider.state.initialized`, which records whether the provider on disk
+ * has run its init — false both for "never initialized" and "installing now".
+ */
+export interface ProviderJob {
+  activity: "installing" | "initializing" | "updating"
+  phase?: string
+  error?: string
+}
+
 export interface ProviderVersion {
   tag: string
   publishedAt: string
@@ -141,6 +152,12 @@ export interface CommandProgress {
   /** Optional log level; populated when the underlying stderr line was JSON. */
   level?: "info" | "warn" | "error"
   done: boolean
+  /**
+   * Whether the command succeeded. Set on the final (done: true) event by the
+   * main process, which knows the exit code — consumers should read this
+   * rather than pattern-matching the log text.
+   */
+  success?: boolean
   /**
    * Structured CLI error. Present only on the final (done: true) event when the
    * CLI emitted a `cliError` field on its zap JSON output.

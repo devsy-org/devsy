@@ -20,14 +20,11 @@ import {
   providerInitStreaming,
   providerList,
   providerOptions,
+  providerReleaseJob,
   providerSetOptions,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
-import {
-  providers,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
+import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
@@ -131,6 +128,17 @@ let visibleOptions = $derived(
 )
 
 function reset() {
+  // provider_add leaves its job open so the badge stays busy across the
+  // add→init handoff. If we're leaving without a finished init, nothing else
+  // will ever close it, so the card would spin on "installing…" forever.
+  //
+  // Not when init is still running: that job belongs to a live command which
+  // closes it from its own exit handler, and the badge should keep tracking it
+  // after the wizard is gone. A failed job is safe to release either way —
+  // finish() preserves the recorded failure.
+  if (providerName && currentStep !== "complete" && !initRunning) {
+    void providerReleaseJob(providerName).catch(() => undefined)
+  }
   currentStep = "select"
   error = ""
   source = ""
@@ -166,8 +174,7 @@ onMount(async () => {
       }
       if (progress.done) {
         initRunning = false
-        clearInitializing(providerName)
-        if (isCommandSuccess(progress.message)) {
+        if (isCommandSuccess(progress.message, progress.success)) {
           refreshAndComplete()
         } else {
           initError =
@@ -284,12 +291,10 @@ async function startInit() {
   initError = null
   initStartError = ""
   initLines = []
-  markInitializing(providerName)
   try {
     initCommandId = await providerInitStreaming(providerName)
   } catch (err) {
     initRunning = false
-    clearInitializing(providerName)
     initStartError = `Failed to start initialization: ${err instanceof Error ? err.message : String(err)}`
   }
 }
@@ -304,8 +309,12 @@ async function refreshAndComplete() {
   currentStep = "complete"
 }
 
-function handleSkipInit() {
-  refreshAndComplete()
+// Skipping init leaves the provider installed but uninitialized, which is a
+// settled state: release the job so the card shows that rather than staying
+// busy on the install that already finished.
+async function handleSkipInit() {
+  await providerReleaseJob(providerName).catch(() => undefined)
+  await refreshAndComplete()
 }
 
 function handleDone() {

@@ -284,3 +284,41 @@ func TestParseStatusLineAcceptsExplicitStartedFalse(t *testing.T) {
 		t.Errorf("Started = true, want false")
 	}
 }
+
+func TestStatusLineRoundTripsPipeline(t *testing.T) {
+	var buf bytes.Buffer
+	want := status.Event{
+		Pipeline: status.PipelineProvider,
+		Phase:    status.Phase("downloading_binaries"),
+		Step:     "docker",
+		Started:  true,
+	}
+	if err := WriteStatusJSON(&buf, want); err != nil {
+		t.Fatalf("WriteStatusJSON: %v", err)
+	}
+
+	got, ok := ParseStatusLine(buf.String())
+	if !ok {
+		t.Fatalf("ParseStatusLine did not recognize %q", buf.String())
+	}
+	if got != want {
+		t.Errorf("round-trip: got %+v, want %+v", got, want)
+	}
+}
+
+func TestParseStatusLineWithoutPipeline(t *testing.T) {
+	// A CLI predating the field omits it; parsing must still recognize the
+	// line rather than rejecting it as a non-status envelope.
+	line := `{"kind":"status","phase":"ready","started":false}`
+
+	got, ok := ParseStatusLine(line)
+	if !ok {
+		t.Fatalf("ParseStatusLine(%q) = not ok", line)
+	}
+	if got.Pipeline != "" {
+		t.Errorf("pipeline = %q, want empty", got.Pipeline)
+	}
+	if got.Phase != status.PhaseReady {
+		t.Errorf("phase = %q, want %q", got.Phase, status.PhaseReady)
+	}
+}

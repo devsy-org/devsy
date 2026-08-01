@@ -336,6 +336,7 @@ func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 	}
 
 	cleanupOldOptions(p.DevsyConfig, providerConfig)
+	clearInitialized(p.DevsyConfig, providerConfig.Name)
 
 	if err := config.SaveConfig(p.DevsyConfig); err != nil {
 		return nil, err
@@ -413,6 +414,16 @@ func downloadAndSaveProvider(
 	}
 
 	return provider.SaveProviderConfig(p.DevsyConfig.DefaultContext, providerConfig)
+}
+
+// clearInitialized marks a provider uninitialized after its source changes.
+// The replacement binaries have not run their Exec.Init, so the old source's
+// result says nothing about this one; leaving it set reports the provider as
+// ready to loadInitializedProvider when it may not be.
+func clearInitialized(devsyConfig *config.Config, providerName string) {
+	if providerState := devsyConfig.Current().Providers[providerName]; providerState != nil {
+		providerState.Initialized = false
+	}
 }
 
 func cleanupOldOptions(devsyConfig *config.Config, providerConfig *provider.ProviderConfig) {

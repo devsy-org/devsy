@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  isCommandSuccess,
   isRecoverableBuildFailure,
   parseRecoveryContainer,
 } from "./log-parser.js"
+
+describe("isCommandSuccess", () => {
+  it("trusts an explicit success flag over the message", () => {
+    // The flag comes from the real exit code, so it wins even when the text
+    // would sniff the other way.
+    expect(isCommandSuccess("Exit code: 0", false)).toBe(false)
+    expect(isCommandSuccess("something went wrong", true)).toBe(true)
+  })
+
+  it("falls back to message sniffing when no flag is given", () => {
+    expect(isCommandSuccess("Exit code: 0")).toBe(true)
+    expect(isCommandSuccess("Exit code: 1")).toBe(false)
+    expect(isCommandSuccess('{"outcome":"success"}')).toBe(true)
+    expect(isCommandSuccess(null)).toBe(false)
+  })
+})
 
 describe("isRecoverableBuildFailure", () => {
   it("matches the recoverable build-failure code", () => {

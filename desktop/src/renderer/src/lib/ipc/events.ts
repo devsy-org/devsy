@@ -3,6 +3,7 @@ import type {
   Context,
   Machine,
   Provider,
+  ProviderJob,
   Workspace,
   WorkspaceStatus,
 } from "$lib/types/index.js"
@@ -58,6 +59,7 @@ interface WorkspacesPayload {
 }
 interface ProvidersPayload {
   providers: Provider[]
+  jobs?: Record<string, ProviderJob>
 }
 interface MachinesPayload {
   machines: Machine[]
@@ -76,10 +78,10 @@ export function onWorkspacesChanged(
 }
 
 export function onProvidersChanged(
-  callback: (providers: Provider[]) => void,
+  callback: (providers: Provider[], jobs: Record<string, ProviderJob>) => void,
 ): Promise<UnlistenFn> {
   return listen<ProvidersPayload>(EVENT_NAMES.PROVIDERS_CHANGED, (event) => {
-    callback(event.payload.providers)
+    callback(event.payload.providers, event.payload.jobs ?? {})
   })
 }
 

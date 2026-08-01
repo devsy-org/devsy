@@ -14,11 +14,7 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
 })
 
 import ProviderCard from "./ProviderCard.svelte"
-import {
-  initializingProviders,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
+import { providerJobs } from "$lib/stores/providers.js"
 
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
@@ -56,8 +52,7 @@ describe("ProviderCard", () => {
   })
 
   it("shows the initializing badge while an uninitialized provider is in flight", () => {
-    initializingProviders.set(new Set())
-    markInitializing("ssh")
+    providerJobs.set({ ssh: { activity: "initializing", phase: "running_init" } })
     const { container, unmount } = render(ProviderCard, {
       props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
     })
@@ -65,12 +60,44 @@ describe("ProviderCard", () => {
     const text = container.textContent ?? ""
     expect(text.toLowerCase()).toContain("initializing")
     expect(text.toLowerCase()).not.toContain("not initialized")
-    clearInitializing("ssh")
+    providerJobs.set({})
     unmount()
   })
 
-  it("shows not initialized when no init is in flight", () => {
-    initializingProviders.set(new Set())
+  // The original bug: `provider add` persists the provider before init runs,
+  // so the watcher reports initialized:false while the install is in flight.
+  it("shows installing rather than not initialized during install", () => {
+    providerJobs.set({
+      ssh: { activity: "installing", phase: "installing_provider" },
+    })
+    const { container, unmount } = render(ProviderCard, {
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+    })
+
+    const text = (container.textContent ?? "").toLowerCase()
+    expect(text).toContain("installing")
+    expect(text).not.toContain("not initialized")
+    providerJobs.set({})
+    unmount()
+  })
+
+  it("shows a failure badge when the job recorded an error", () => {
+    providerJobs.set({
+      ssh: { activity: "initializing", phase: "failed", error: "init: boom" },
+    })
+    const { container, unmount } = render(ProviderCard, {
+      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+    })
+
+    const text = (container.textContent ?? "").toLowerCase()
+    expect(text).toContain("failed")
+    expect(text).not.toContain("not initialized")
+    providerJobs.set({})
+    unmount()
+  })
+
+  it("shows not initialized when no job is in flight", () => {
+    providerJobs.set({})
     const { container, unmount } = render(ProviderCard, {
       props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
     })

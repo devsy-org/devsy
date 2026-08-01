@@ -1,11 +1,14 @@
 import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
-import { launchApp } from "./electron-app.js"
+import { launchApp, resetMockState } from "./electron-app.js"
 
 let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
+  // The badge counts below assert the mock's default fixture exactly, so
+  // start from a clean slate rather than inheriting another spec's CRUD.
+  resetMockState()
   ;({ app, page } = await launchApp())
 })
 

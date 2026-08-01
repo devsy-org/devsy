@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -11,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -85,18 +87,31 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return err
 	}
 
-	providerConfig, options, err := cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
+	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
 	if err != nil {
 		return err
 	}
 
+	status.Enter(reporter, status.PhaseInstallingProvider, providerName)
+	providerConfig, options, err := cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
+	if err != nil {
+		status.Fail(reporter, status.PhaseInstallingProvider, err)
+		return err
+	}
+	status.Leave(reporter, status.PhaseInstallingProvider, providerConfig.Name)
+
 	log.Infof("installed provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
 		log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
+		// No PhaseReady: installed but not initialized.
 		return nil
 	}
 
-	return cmd.useProvider(ctx, devsyConfig, providerConfig, options)
+	if err := cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter); err != nil {
+		return err
+	}
+	status.Leave(reporter, status.PhaseReady, providerConfig.Name)
+	return nil
 }
 
 func validateOptionalProviderName(providerName string) error {
@@ -158,6 +173,7 @@ func (cmd *AddCmd) useProvider(
 	devsyConfig *config.Config,
 	providerConfig *provider.ProviderConfig,
 	options []string,
+	reporter status.Reporter,
 ) error {
 	// First add: there are no prior user values to merge, so
 	// DiscardPriorValues is moot. Set it explicitly so future readers
@@ -168,6 +184,7 @@ func (cmd *AddCmd) useProvider(
 		UserOptions:        options,
 		DiscardPriorValues: true,
 		SingleMachine:      &cmd.SingleMachine,
+		Reporter:           reporter,
 	})
 	if configureErr != nil {
 		devsyConfig, err := config.LoadConfig(cmd.Context, "")

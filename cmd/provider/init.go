@@ -1,11 +1,14 @@
 package provider
 
 import (
+	"os"
+
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -39,14 +42,23 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ConfigureProvider(cobraCmd.Context(), ProviderOptionsConfig{
+			reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
+			if err != nil {
+				return err
+			}
+			if err := ConfigureProvider(cobraCmd.Context(), ProviderOptionsConfig{
 				Provider:           p.Config,
 				ContextName:        devsyConfig.DefaultContext,
 				UserOptions:        cmd.Options,
 				DiscardPriorValues: cmd.Reset,
 				SkipInit:           cmd.SkipInit,
 				SingleMachine:      &cmd.SingleMachine,
-			})
+				Reporter:           reporter,
+			}); err != nil {
+				return err
+			}
+			status.Leave(reporter, status.PhaseReady, name)
+			return nil
 		},
 		ValidArgsFunction: func(
 			rootCmd *cobra.Command,

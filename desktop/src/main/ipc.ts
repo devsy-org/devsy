@@ -10,6 +10,11 @@ import type { CLIError } from "../shared/cli-error.js"
 import { parseCliEnvelope } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import { loadCatalog } from "./image-catalog.js"
+import type {
+  ProviderActivity,
+  ProviderJobs,
+  ProviderPhase,
+} from "./provider-jobs.js"
 import type { CliRunner } from "./cli.js"
 import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
@@ -90,6 +95,7 @@ interface IpcDependencies {
   logStore: LogStore
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
+  providerJobs: ProviderJobs
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -101,7 +107,11 @@ interface ProgressSink {
   line(formatted: string): boolean
   done(
     finalLine: string,
-    extra?: { level?: "info" | "warn" | "error"; cliError?: CLIError },
+    extra?: {
+      level?: "info" | "warn" | "error"
+      cliError?: CLIError
+      success?: boolean
+    },
   ): Promise<void>
 }
 
@@ -122,6 +132,7 @@ function createLogSink(
       message?: string
       level?: "info" | "warn" | "error"
       cliError?: CLIError
+      success?: boolean
     },
   ): void {
     if (timer) {
@@ -161,7 +172,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
 } {
-  const { cli, state, logStore, pty } = deps
+  const { cli, state, logStore, pty, providerJobs } = deps
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -240,6 +251,72 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         cli.cancelFor(workspaceId),
         pty.cancelFor(workspaceId),
       ])
+    })
+  }
+
+  function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
+  }
+
+  /**
+   * Track a provider job for the duration of fn, so the job cannot outlive the
+   * work it describes. Opening a job in one place and closing it in another
+   * leaves the card spinning forever on any path that forgets — prefer this to
+   * calling start/finish by hand.
+   *
+   * Errors are recorded on the job and rethrown, leaving the caller's own
+   * error handling intact.
+   */
+  async function withProviderJob<T>(
+    name: string,
+    activity: ProviderActivity,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    providerJobs.start(name, activity)
+    try {
+      const result = await fn()
+      await providerJobs.finish(name)
+      return result
+    } catch (error) {
+      const cliError = (error as { cliError?: CLIError }).cliError
+      await providerJobs.finish(name, cliError?.message ?? errorMessage(error))
+      throw error
+    }
+  }
+
+  /**
+   * Run a provider CLI command, feeding its NDJSON status lines into the job
+   * registry so the UI tracks phases as they happen instead of only learning
+   * the outcome at exit.
+   */
+  function runProviderWithStatus(
+    name: string,
+    cliArgs: string[],
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      void cli.runStreaming(
+        cliArgs,
+        (line, stream) => {
+          if (stream !== "stdout") return
+          const envelope = parseCliEnvelope(line)
+          if (envelope?.kind === "status") {
+            providerJobs.report(
+              name,
+              envelope.phase as ProviderPhase,
+              envelope.error,
+            )
+          }
+        },
+        (code, cliError) => {
+          if (code === 0) {
+            resolve()
+            return
+          }
+          const message =
+            cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`
+          reject(Object.assign(new Error(message), { cliError }))
+        },
+      )
     })
   }
 
@@ -361,14 +438,36 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.singleMachine) {
         cliArgs.push("--single-machine")
       }
-      await cli.runRaw(cliArgs)
+
+      // Not withProviderJob: the job outlives this call so the badge stays busy
+      // until the wizard's chained provider_init finishes. The opener closes it,
+      // via provider_release_job on any path that abandons the install.
+      providerJobs.start(args.name, "installing")
+      try {
+        await runProviderWithStatus(args.name, cliArgs)
+      } catch (error) {
+        await providerJobs.finish(args.name, errorMessage(error))
+        throw error
+      }
     },
   )
 
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_delete")
     await cli.runRaw(["provider", "delete", args.name])
+    // Drop any retained failure so a re-added provider starts clean.
+    providerJobs.clear(args.name)
   })
+
+  // Releases a job the caller opened but will not finish — e.g. the wizard
+  // installs a provider, then the user skips initialization or closes the
+  // dialog. Without this the card would spin on "installing…" indefinitely.
+  ipcMain.handle(
+    "provider_release_job",
+    async (_event, args: { name: string }) => {
+      await providerJobs.finish(args.name)
+    },
+  )
 
   ipcMain.handle("provider_use", async (_event, args: { name: string }) => {
     await cli.runRaw(["provider", "use", args.name])
@@ -380,12 +479,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // own-properties, so a thrown Error with a .cliError attached would lose it.
   ipcMain.handle("provider_init", async (_event, args: { name: string }) => {
     try {
-      await cli.runRaw(["provider", "init", args.name])
+      await withProviderJob(args.name, "initializing", () =>
+        runProviderWithStatus(args.name, ["provider", "init", args.name]),
+      )
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
+      return { ok: false, message: errorMessage(err), cliError } as const
     }
   })
 
@@ -395,9 +495,24 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const cmdId = crypto.randomUUID()
       const win = deps.getMainWindow()
 
+      // Not withProviderJob: the job outlives the handler, closed from onExit.
+      providerJobs.start(args.name, "initializing")
       await cli.runStreaming(
         ["provider", "init", args.name],
-        (line, _stream, meta) => {
+        (line, stream, meta) => {
+          // Status envelopes drive the job registry; everything else is log
+          // text for the wizard's output pane.
+          if (stream === "stdout") {
+            const envelope = parseCliEnvelope(line)
+            if (envelope?.kind === "status") {
+              providerJobs.report(
+                args.name,
+                envelope.phase as ProviderPhase,
+                envelope.error,
+              )
+              return
+            }
+          }
           const formatted = formatLogLine(line)
           win?.webContents.send("command-progress", {
             commandId: cmdId,
@@ -406,7 +521,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             done: false,
           })
         },
-        (code, cliError) => {
+        async (code, cliError) => {
+          // Finish first: it refreshes the provider list, so the wizard's
+          // done signal can't arrive while the card still reads uninitialized.
+          await providerJobs.finish(
+            args.name,
+            code === 0
+              ? undefined
+              : (cliError?.message ?? `provider init exited with ${code}`),
+          )
           const exitMsg = formatLogLine(
             `Exit code: ${code}`,
             code === 0 ? "INFO" : "ERROR",
@@ -415,6 +538,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             commandId: cmdId,
             message: exitMsg,
             level: code === 0 ? "info" : "error",
+            success: code === 0,
             cliError,
             done: true,
           })
@@ -425,8 +549,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  // set-source installs replacement binaries and clears Initialized, since
+  // the new binary has not run its init. Chain init so the provider ends up
+  // usable rather than sitting in a needs-re-init state the user must notice.
   ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await cli.runRaw(["provider", "set-source", args.name, "--use=false"])
+    await withProviderJob(args.name, "updating", async () => {
+      await runProviderWithStatus(args.name, [
+        "provider",
+        "set-source",
+        args.name,
+        "--use=false",
+      ])
+      await runProviderWithStatus(args.name, ["provider", "init", args.name])
+    })
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
@@ -485,13 +620,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "provider_set_version",
     async (_event, args: { name: string; tag: string }) => {
-      await cli.runRaw([
-        "provider",
-        "set-source",
-        args.name,
-        "--version",
-        args.tag,
-      ])
+      // Pinning a version swaps binaries via the same update path, so it
+      // clears Initialized and needs the same re-init as a source change.
+      await withProviderJob(args.name, "updating", async () => {
+        await runProviderWithStatus(args.name, [
+          "provider",
+          "set-source",
+          args.name,
+          "--version",
+          args.tag,
+        ])
+        await runProviderWithStatus(args.name, ["provider", "init", args.name])
+      })
     },
   )
 
@@ -813,6 +953,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           const err = error as Error & { cliError?: CLIError }
           void sink.done(formatLogLine(err.message, "ERROR"), {
             level: "error",
+            success: false,
             cliError: err.cliError ?? {
               code: "up_failed",
               message: err.message,
@@ -859,7 +1000,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               if (envelope?.kind === "result") {
                 signalledDone = true
                 releaseTask()
-                void sink.done(formatted)
+                void sink.done(formatted, { success: true })
                 return
               }
 
@@ -868,6 +1009,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 releaseTask()
                 void sink.done(formatted, {
                   level: "error",
+                  success: false,
                   cliError: { code: "up_failed", message: envelope.message },
                 })
                 return
@@ -887,7 +1029,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   `Exit code: ${code}`,
                   code === 0 ? "INFO" : "ERROR",
                 ),
-                code === 0 ? undefined : { level: "error", cliError },
+                code === 0
+                  ? { success: true }
+                  : { level: "error", success: false, cliError },
               )
             },
             wsId,
@@ -899,6 +1043,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           const err = error as Error & { cliError?: CLIError }
           void sink.done(formatLogLine(err.message, "ERROR"), {
             level: "error",
+            success: false,
             cliError: err.cliError ?? {
               code: "up_follow_failed",
               message: err.message,
@@ -943,6 +1088,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+            { success: code === 0 },
           )
         },
         args.workspaceId,
@@ -988,6 +1134,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (code) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+            { success: code === 0 },
           )
         },
         args.workspaceId,
@@ -1026,7 +1173,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (code, cliError) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            code === 0 ? undefined : { level: "error", cliError },
+            code === 0
+              ? { success: true }
+              : { level: "error", success: false, cliError },
           )
         },
         args.workspaceId,
@@ -1065,7 +1214,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (code, cliError) => {
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            code === 0 ? undefined : { level: "error", cliError },
+            code === 0
+              ? { success: true }
+              : { level: "error", success: false, cliError },
           )
         },
         args.workspaceId,
