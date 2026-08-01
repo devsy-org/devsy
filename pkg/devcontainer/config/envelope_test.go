@@ -221,9 +221,22 @@ func TestWriteStatusJSONRoundTrips(t *testing.T) {
 		e    status.Event
 	}{
 		{name: "entering phase", e: status.Event{Phase: status.PhaseBuildingImage, Started: true}},
-		{name: "completed phase", e: status.Event{Phase: status.PhaseBuildingImage, Started: false}},
-		{name: "with step", e: status.Event{Phase: status.PhaseRunningLifecycleHook, Step: "postCreate", Started: true}},
-		{name: "failed phase", e: status.Event{Phase: status.PhaseFailed, Step: "building_image", Err: "boom"}},
+		{
+			name: "completed phase",
+			e:    status.Event{Phase: status.PhaseBuildingImage, Started: false},
+		},
+		{
+			name: "with step",
+			e: status.Event{
+				Phase:   status.PhaseRunningLifecycleHook,
+				Step:    "postCreate",
+				Started: true,
+			},
+		},
+		{
+			name: "failed phase",
+			e:    status.Event{Phase: status.PhaseFailed, Step: "building_image", Err: "boom"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
