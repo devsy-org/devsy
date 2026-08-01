@@ -77,7 +77,9 @@ test.describe("Workspace lifecycle badges", () => {
       })
 
       // Not awaited: the assertions below run while the delete is in flight.
-      void api("workspace_delete", { workspaceId: "deleteprobe" })
+      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
+        () => undefined,
+      )
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({

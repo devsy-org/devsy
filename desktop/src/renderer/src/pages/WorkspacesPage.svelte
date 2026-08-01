@@ -97,9 +97,16 @@ function isStopped(ws: Workspace) {
 }
 
 // The delete job wins over the polled status: a delete in flight would
-// otherwise still read as "running" or "stopped" until the next poll.
+// otherwise still read as "running" or "stopped" until the next poll. A
+// failed delete drops out of "deleting" so the row isn't stuck disabled
+// forever; retrying (workspaceJobs.start()) clears the recorded error.
 function isDeleting(ws: Workspace): boolean {
-  return $workspaceJobs[ws.id]?.activity === "deleting"
+  const job = $workspaceJobs[ws.id]
+  return job?.activity === "deleting" && !job.error
+}
+
+function deleteError(ws: Workspace): string | undefined {
+  return $workspaceJobs[ws.id]?.error
 }
 
 async function handleStart(ws: Workspace) {
@@ -228,6 +235,10 @@ async function handleDelete() {
               <Table.Cell>
                 {#if isDeleting(ws)}
                   <span class={badgeVariants({ variant: "secondary" })}>Deleting</span>
+                {:else if deleteError(ws)}
+                  <span class={badgeVariants({ variant: "destructive" })} title={deleteError(ws)}>
+                    Delete failed
+                  </span>
                 {:else if ws.status}
                   <span class={badgeVariants({ variant: statusVariant(ws.status) })}>{ws.status}</span>
                 {/if}

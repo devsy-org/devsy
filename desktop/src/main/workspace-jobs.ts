@@ -36,11 +36,18 @@ export class WorkspaceJobs {
     for (const listener of this.listeners) listener()
   }
 
-  /** Begin tracking a delete, clearing any previous failure. */
-  start(id: string): void {
+  /**
+   * Begin tracking a delete, clearing any previous failure. Returns a
+   * generation token the caller must pass to finish() so a stale exit
+   * callback from an earlier delete of the same workspace can't land on
+   * a retry that has already superseded it.
+   */
+  start(id: string): number {
     this.jobs.set(id, { activity: "deleting" })
-    this.generations.set(id, ++this.lastGeneration)
+    const generation = ++this.lastGeneration
+    this.generations.set(id, generation)
     this.emit()
+    return generation
   }
 
   /** Stop tracking a workspace, discarding any recorded failure. */
@@ -50,14 +57,16 @@ export class WorkspaceJobs {
   }
 
   /**
-   * Finish a job. A failure is retained so the UI can explain it; success
-   * drops the entry once the workspace list has caught up, so the card
-   * doesn't flash back to its pre-delete state for one poll cycle.
+   * Finish the job started under `generation`. A failure is retained so the
+   * UI can explain it; success drops the entry once the workspace list has
+   * caught up, so the card doesn't flash back to its pre-delete state for
+   * one poll cycle. Either way, a generation mismatch means a retry has
+   * already superseded this job, so the call is a no-op.
    */
-  async finish(id: string, error?: string): Promise<void> {
+  async finish(id: string, generation: number, error?: string): Promise<void> {
+    if (this.generations.get(id) !== generation) return
+
     if (error) {
-      const job = this.jobs.get(id)
-      if (!job) return
       this.jobs.set(id, { activity: "deleting", error })
       this.emit()
       return
@@ -66,7 +75,6 @@ export class WorkspaceJobs {
     if (!job) return
     if (job.error) return
 
-    const generation = this.generations.get(id)
     await this.refresh?.()
     // refresh is a CLI round-trip; a newer job may own the entry by now.
     if (this.generations.get(id) !== generation) return

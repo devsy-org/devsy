@@ -415,10 +415,14 @@ function handleDelete(args) {
   setTimeout(() => {
     out("Deleting workspace...")
     out("Workspace deleted.")
-    const idx = state.workspaces.findIndex((w) => w.id === wsId)
+    // Re-read: the snapshot taken at startup is up to 1.5s stale, and
+    // writing it back would clobber any add/delete another spec performed
+    // against this shared fixture meanwhile.
+    const latest = loadState()
+    const idx = latest.workspaces.findIndex((w) => w.id === wsId)
     if (idx !== -1) {
-      state.workspaces.splice(idx, 1)
-      saveState(state)
+      latest.workspaces.splice(idx, 1)
+      saveState(latest)
     }
     process.exit(0)
   }, deleteMs)

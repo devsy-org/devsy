@@ -10,16 +10,28 @@ describe("WorkspaceJobs", () => {
   })
 
   it("tracks a delete until it finishes", async () => {
-    jobs.start("ws1")
+    const generation = jobs.start("ws1")
     expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
 
-    await jobs.finish("ws1")
+    await jobs.finish("ws1", generation)
     expect(jobs.get("ws1")).toBeUndefined()
   })
 
+  it("does not let a stale failure land on a newer job", async () => {
+    const first = jobs.start("ws1")
+    const second = jobs.start("ws1")
+
+    // A slow/duplicate exit callback for the first delete arrives after a
+    // retry has already started a second one for the same workspace.
+    await jobs.finish("ws1", first, "boom")
+
+    expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
+    expect(second).not.toBe(first)
+  })
+
   it("retains the failure so the UI can explain it", async () => {
-    jobs.start("ws1")
-    await jobs.finish("ws1", "delete exited with code 1")
+    const generation = jobs.start("ws1")
+    await jobs.finish("ws1", generation, "delete exited with code 1")
 
     expect(jobs.get("ws1")).toEqual({
       activity: "deleting",
@@ -28,17 +40,17 @@ describe("WorkspaceJobs", () => {
   })
 
   it("does not let a later release erase a recorded failure", async () => {
-    jobs.start("ws1")
-    await jobs.finish("ws1", "boom")
+    const generation = jobs.start("ws1")
+    await jobs.finish("ws1", generation, "boom")
 
-    await jobs.finish("ws1")
+    await jobs.finish("ws1", generation)
 
     expect(jobs.get("ws1")?.error).toBe("boom")
   })
 
   it("ignores a failure for a workspace with no active job", async () => {
     // e.g. a stale exit callback firing after clear() already ran.
-    await jobs.finish("ws1", "boom")
+    await jobs.finish("ws1", 1, "boom")
     expect(jobs.get("ws1")).toBeUndefined()
   })
 
@@ -50,8 +62,8 @@ describe("WorkspaceJobs", () => {
       order.push(`refresh(job=${jobs.get("ws1") ? "present" : "gone"})`)
     })
 
-    jobs.start("ws1")
-    await jobs.finish("ws1")
+    const generation = jobs.start("ws1")
+    await jobs.finish("ws1", generation)
 
     expect(order).toEqual(["refresh(job=present)"])
     expect(jobs.get("ws1")).toBeUndefined()
@@ -66,8 +78,8 @@ describe("WorkspaceJobs", () => {
         }),
     )
 
-    jobs.start("ws1")
-    const finishing = jobs.finish("ws1")
+    const generation = jobs.start("ws1")
+    const finishing = jobs.finish("ws1", generation)
 
     // A new delete for the same id is submitted before the first finish
     // resolves (e.g. a quick retry after the first attempt looked stuck).

@@ -1134,7 +1134,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       // The card shows "Deleting" until finish() below, whether this
       // succeeds or fails — a failure still leaves the card able to explain
       // why instead of reverting to idle with no context.
-      workspaceJobs.start(args.workspaceId)
+      const jobGeneration = workspaceJobs.start(args.workspaceId)
 
       cli.runStreaming(
         cliArgs,
@@ -1148,6 +1148,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           )
           void workspaceJobs.finish(
             args.workspaceId,
+            jobGeneration,
             code === 0
               ? undefined
               : cliError?.message ?? `delete exited with code ${code}`,
