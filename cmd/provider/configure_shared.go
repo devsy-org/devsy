@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 )
 
 // ProviderOptionsConfig parameterizes ConfigureProvider.
@@ -32,6 +33,15 @@ type ProviderOptionsConfig struct {
 	SkipInit           bool
 	SkipSubOptions     bool
 	SingleMachine      *bool
+
+	Reporter status.Reporter
+}
+
+func (cfg ProviderOptionsConfig) reporter() status.Reporter {
+	if cfg.Reporter == nil {
+		return status.Nop()
+	}
+	return cfg.Reporter
 }
 
 func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
@@ -91,13 +101,18 @@ func configureProviderOptions(
 	}
 
 	// fill defaults
+	reporter := cfg.reporter()
+	status.Enter(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
 	devsyConfig, err = options2.ResolveOptions(
 		ctx, devsyConfig, cfg.Provider, options,
 		cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("resolve options: %w", err)
+		err = fmt.Errorf("resolve options: %w", err)
+		status.Fail(reporter, status.PhaseResolvingOptions, err)
+		return nil, err
 	}
+	status.Leave(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
 
 	// run init command
 	if !cfg.SkipInit {
@@ -107,10 +122,13 @@ func configureProviderOptions(
 		stderr := log.Writer(log.LevelError)
 		defer func() { _ = stderr.Close() }()
 
+		status.Enter(reporter, status.PhaseRunningInit, cfg.Provider.Name)
 		err = initProvider(ctx, devsyConfig, cfg.Provider, initIO{stdout: stdout, stderr: stderr})
 		if err != nil {
+			status.Fail(reporter, status.PhaseRunningInit, err)
 			return nil, err
 		}
+		status.Leave(reporter, status.PhaseRunningInit, cfg.Provider.Name)
 	}
 
 	return devsyConfig, nil

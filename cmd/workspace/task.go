@@ -185,7 +185,12 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
 
+	tailer := newLogTailer(opts.id)
+	defer tailer.flush(os.Stderr)
+
 	for {
+		tailer.poll(os.Stderr)
+
 		state, err := store.Get(opts.id)
 		if err != nil {
 			return err

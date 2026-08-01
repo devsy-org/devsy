@@ -31,9 +31,7 @@ vi.mock("$lib/stores/providers.js", async () => {
   const { writable } = await import("svelte/store")
   return {
     providers: writable([]),
-    initializingProviders: writable(new Set()),
-    markInitializing: vi.fn(),
-    clearInitializing: vi.fn(),
+    providerJobs: writable({}),
   }
 })
 

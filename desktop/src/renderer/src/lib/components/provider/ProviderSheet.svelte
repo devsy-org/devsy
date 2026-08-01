@@ -28,11 +28,7 @@ import {
   providerRename,
   providerSetVersion,
 } from "$lib/ipc/commands.js"
-import {
-  providers,
-  markInitializing,
-  clearInitializing,
-} from "$lib/stores/providers.js"
+import { providers, providerJobs } from "$lib/stores/providers.js"
 import {
   providerVersions,
   loadVersionsFor,
@@ -40,6 +36,7 @@ import {
 } from "$lib/stores/providerVersions.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { providerStatus } from "$lib/utils/provider-status.js"
 import type { Provider, ProviderOption } from "$lib/types/index.js"
 
 let {
@@ -70,6 +67,11 @@ let updating = $state(false)
 let confirmSwitchOpen = $state(false)
 let targetTag = $state("")
 let switching = $state(false)
+let status = $derived(
+  provider
+    ? providerStatus(provider, $providerJobs[provider.name])
+    : { kind: "uninitialized" as const, label: "" },
+)
 
 function openVersionSwitch(tag: string) {
   targetTag = tag
@@ -185,8 +187,11 @@ async function runUpdate() {
   const name = provider.name
   updating = true
   try {
+    // Also re-initializes: the new binaries have not run their init, and
+    // set-source clears the initialized flag accordingly.
     await providerUpdate(name)
     toasts.success(`Updated ${name}`)
+    providers.set(await providerList())
     await loadVersionsFor(name)
     await refreshUpdates()
   } catch (err) {
@@ -203,6 +208,7 @@ async function runSwitch() {
   try {
     await providerSetVersion(name, targetTag)
     toasts.success(`Switched ${name} to ${targetTag}`)
+    providers.set(await providerList())
     await loadVersionsFor(name)
     await refreshUpdates()
   } catch (err) {
@@ -233,7 +239,6 @@ async function handleInitialize() {
   const name = provider.name
   initializing = true
   initError = null
-  markInitializing(name)
   try {
     await providerInit(name)
     const updated = await providerList()
@@ -251,7 +256,6 @@ async function handleInitialize() {
     }
   } finally {
     initializing = false
-    clearInitializing(name)
   }
 }
 
@@ -372,8 +376,19 @@ async function handleSaveOptions() {
             Default
           </span>
         {/if}
-        {#if provider.state?.initialized}
-          <span class={badgeVariants({ variant: "secondary" })}>initialized</span>
+        {#if status.kind === "ready"}
+          <span class={badgeVariants({ variant: "secondary" })}>{status.label}</span>
+        {:else if status.kind === "busy"}
+          <span class="{badgeVariants({ variant: 'outline' })} gap-1">
+            <Spinner class="size-3" />
+            {status.label}
+          </span>
+        {:else if status.kind === "failed"}
+          <span class={badgeVariants({ variant: "destructive" })} title={status.error}>
+            {status.label}
+          </span>
+        {:else}
+          <span class={badgeVariants({ variant: "destructive" })}>{status.label}</span>
         {/if}
       </Sheet.Title>
       {#if provider.description}
@@ -382,7 +397,7 @@ async function handleSaveOptions() {
     </Sheet.Header>
 
     <div class="flex items-center gap-2 px-6">
-      {#if provider.state?.initialized !== true}
+      {#if status.kind !== "ready" && status.kind !== "busy"}
         <Button variant="outline" size="sm" onclick={handleInitialize} disabled={initializing}>
           {#if initializing}
             <Spinner class="mr-2 size-3" />

@@ -2,9 +2,19 @@
 // long-running commands.
 package status
 
-// Phase identifies a step in the up pipeline.
+// Pipeline identifies which command's progress an Event describes.
+type Pipeline string
+
+const (
+	PipelineWorkspaceUp Pipeline = "workspace_up"
+	PipelineProvider    Pipeline = "provider"
+)
+
+// Phase identifies a step in a pipeline. PhaseReady and PhaseFailed are
+// shared terminal phases.
 type Phase string
 
+// Workspace up phases.
 const (
 	PhaseCloningRepository    Phase = "cloning_repository"
 	PhaseResolvingConfig      Phase = "resolving_config"
@@ -18,12 +28,22 @@ const (
 	PhaseFailed               Phase = "failed"
 )
 
+// Provider phases. Installing covers source resolution and binary download;
+// ResolvingOptions and RunningInit are the two halves of provider init, split
+// because only the latter executes provider-supplied code.
+const (
+	PhaseInstallingProvider Phase = "installing_provider"
+	PhaseResolvingOptions   Phase = "resolving_options"
+	PhaseRunningInit        Phase = "running_init"
+)
+
 // Event is one phase transition.
 type Event struct {
-	Phase   Phase  `json:"phase"`
-	Step    string `json:"step,omitempty"`
-	Started bool   `json:"started"`
-	Err     string `json:"error,omitempty"`
+	Pipeline Pipeline `json:"pipeline,omitempty"`
+	Phase    Phase    `json:"phase"`
+	Step     string   `json:"step,omitempty"`
+	Started  bool     `json:"started"`
+	Err      string   `json:"error,omitempty"`
 }
 
 // Reporter receives status events as they occur. Implementations must be
@@ -45,6 +65,23 @@ func Fail(r Reporter, phase Phase, err error) {
 		return
 	}
 	r.Report(Event{Phase: PhaseFailed, Step: string(phase), Err: err.Error()})
+}
+
+// ForPipeline stamps every event a reporter receives with pipeline, so the
+// Enter/Leave/Fail helpers stay pipeline-agnostic and each producer declares
+// its pipeline once where it builds its reporter.
+func ForPipeline(r Reporter, pipeline Pipeline) Reporter {
+	return pipelineReporter{next: r, pipeline: pipeline}
+}
+
+type pipelineReporter struct {
+	next     Reporter
+	pipeline Pipeline
+}
+
+func (p pipelineReporter) Report(e Event) {
+	e.Pipeline = p.pipeline
+	p.next.Report(e)
 }
 
 type nopReporter struct{}

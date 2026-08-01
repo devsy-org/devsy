@@ -44,6 +44,51 @@ test.describe("Workspaces Page", () => {
   })
 })
 
+test.describe("Workspace lifecycle badges", () => {
+  const api = async (channel: string, args: Record<string, unknown>) =>
+    page.evaluate(
+      ([c, a]) =>
+        (
+          window as unknown as {
+            electronAPI: {
+              invoke: (
+                c: string,
+                a?: Record<string, unknown>,
+              ) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke(c as string, a as Record<string, unknown>),
+      [channel, args] as const,
+    )
+
+  test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
+    const main = page.locator('[data-slot="sidebar-inset"] main')
+
+    try {
+      await api("workspace_up", {
+        source: "https://example.com/deleteprobe.git",
+        workspaceId: "deleteprobe",
+      })
+      await expect(main.locator("text=deleteprobe")).toBeVisible({
+        timeout: 5000,
+      })
+
+      // Not awaited: the assertions below run while the delete is in flight.
+      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
+        () => undefined,
+      )
+
+      await expect(main).toContainText("Deleting", { timeout: 3000 })
+      await expect(main.locator("text=deleteprobe")).not.toBeVisible({
+        timeout: 5000,
+      })
+    } finally {
+      // Mock CLI state is shared across specs, so don't leave this behind.
+      await api("workspace_delete", { workspaceId: "deleteprobe" })
+    }
+  })
+})
+
 test.describe.serial("Create Workspace Wizard", () => {
   test("should open the wizard and show step 1 (provider)", async () => {
     await page.getByRole("button", { name: /create workspace/i }).click()
