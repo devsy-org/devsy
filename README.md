@@ -8,7 +8,7 @@
   </a>
 </p>
 
-Devsy enables teams to scale development using standardized workspaces — cutting hardware cost, shortening onboarding, and improving developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
+Devsy enables teams and their AI coding agents to scale development using standardized, isolated workspaces. It cuts hardware cost, shortens onboarding, contains agent risk, and improves developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
 <table align="center">
 <tr>
@@ -168,6 +168,44 @@ Features include prebuilds, inactivity-based shutdown, and Git and Docker creden
 <td width="50%" valign="top">
 <b>Desktop App</b><br>
 The desktop app manages workspaces; the CLI drives automation and platform integration.
+</td>
+</tr>
+</table>
+
+<h2 align="center">Secure Containers for Agents</h2>
+<p align="center">
+AI coding agents execute real commands with real access. Devsy gives each agent its own isolated, disposable container built from the same <code>devcontainer.json</code> your team uses, so agents run without putting your host, secrets, or other projects at risk.
+</p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<b>Sandboxed by default</b><br>
+Filesystem, network, and process isolation per agent. A bad command or a prompt-injected instruction can't reach your host, other projects, or secrets.
+</td>
+<td width="50%" valign="top">
+<b>Scoped credentials</b><br>
+Git and Docker credentials sync into the workspace, not the agent's host. Revoke or rotate a workspace's access without touching your machine.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b>Destroy and rebuild in seconds</b><br>
+Tear a container down and rebuild it clean from <code>devcontainer.json</code>. No manual cleanup, no lingering state.
+</td>
+<td width="50%" valign="top">
+<b>One environment, many agents</b><br>
+Spin up as many isolated agent workspaces as you need from the same definition your team uses for development.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b>Run where it's cheapest</b><br>
+Local Docker for quick tasks, Kubernetes or cloud providers to fan out dozens of agents at once. Auto-shutdown stops idle agent workspaces from burning budget.
+</td>
+<td width="50%" valign="top">
+<b>Same setup, every time</b><br>
+No environment drift between agent runs. Every workspace starts from the same reproducible definition.
 </td>
 </tr>
 </table>
