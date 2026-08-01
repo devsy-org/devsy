@@ -57,6 +57,7 @@ func TestLogTailerEmitsLinesAsTheyAreAppended(t *testing.T) {
 		t.Fatalf("got %q, want %q", out.String(), "first line\n")
 	}
 
+	// #nosec G304 -- path is t.TempDir()-derived
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("open for append: %v", err)
