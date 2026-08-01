@@ -88,8 +88,9 @@ export class ProviderJobs {
   async finish(name: string, error?: string): Promise<void> {
     if (error) {
       const job = this.jobs.get(name)
+      if (!job) return
       this.jobs.set(name, {
-        activity: job?.activity ?? "initializing",
+        activity: job.activity,
         phase: "failed",
         error,
       })

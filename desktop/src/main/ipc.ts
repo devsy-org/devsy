@@ -273,15 +273,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     fn: () => Promise<T>,
   ): Promise<T> {
     providerJobs.start(name, activity)
+    let result: T
     try {
-      const result = await fn()
-      await providerJobs.finish(name)
-      return result
+      result = await fn()
     } catch (error) {
       const cliError = (error as { cliError?: CLIError }).cliError
       await providerJobs.finish(name, cliError?.message ?? errorMessage(error))
       throw error
     }
+    await providerJobs.finish(name)
+    return result
   }
 
   /**
