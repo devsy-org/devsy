@@ -20,6 +20,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	agentsnapshot "github.com/devsy-org/devsy/pkg/agent/snapshot"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -423,11 +424,35 @@ func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.Container
 }
 
 func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
+	mounts := config.GetMounts(sctx.setupInfo)
+
+	// Snapshot restore runs regardless of the StreamMounts flag: StreamMounts
+	// only gates the legacy host-streaming path (forced true for non-docker
+	// drivers), but a snapshot-sourced workspace needs its volumes restored
+	// on every driver, docker included.
+	if sctx.workspaceInfo.Source.Snapshot != "" {
+		if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 {
+			files, err := os.ReadDir(mounts[0].Target)
+			if err == nil && len(files) > 0 {
+				log.Debugf("skip snapshot restore because %s is not empty", mounts[0].Target)
+				return nil
+			}
+		}
+		log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
+		if err := agentsnapshot.RestoreVolumes(
+			sctx.ctx,
+			sctx.workspaceInfo.Source.Snapshot,
+			mounts,
+		); err != nil {
+			return fmt.Errorf("restore snapshot volumes: %w", err)
+		}
+		return nil
+	}
+
 	if !cmd.StreamMounts {
 		return nil
 	}
 
-	mounts := config.GetMounts(sctx.setupInfo)
 	log.Debugf("syncing mounts: %v", mounts)
 	for _, m := range mounts {
 		if !sctx.workspaceInfo.CLIOptions.Reset {

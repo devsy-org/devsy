@@ -571,7 +571,7 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 }
 
 // prepareWorkspaceSource dispatches on the workspace source type (git, local
-// folder, image, or container).
+// folder, image, container, or snapshot).
 func prepareWorkspaceSource(ctx context.Context, params prepareWorkspaceParams, exists bool) error {
 	source := params.workspaceInfo.Workspace.Source
 	switch {
@@ -587,6 +587,13 @@ func prepareWorkspaceSource(ctx context.Context, params prepareWorkspaceParams, 
 	case source.Image != "":
 		params.logger.Debugf("prepare image")
 		return prepareImage(params.workspaceInfo.ContentFolder, source.Image)
+	case source.Snapshot != "":
+		// Nothing to fetch here: the content folder stays empty, and the
+		// container's filesystem/volumes are restored from the registry once
+		// the container is up (see cmd/internal/agentcontainer/setup.go's
+		// Source.Snapshot branch, which calls agentsnapshot.RestoreVolumes).
+		params.logger.Debugf("workspace is a snapshot restore, nothing to do")
+		return nil
 	case source.Container != "":
 		params.logger.Debugf("workspace is a container, nothing to do")
 		return nil

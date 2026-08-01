@@ -138,3 +138,52 @@ func TestEnsureContainerRunning_NeverStartsFailsFast(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, docker.ErrContainerTerminal)
 }
+
+func TestCommitContainer_RunsDockerCommit(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "committed")
+	script := `#!/bin/sh
+case "$1" in
+  ps)
+    echo "c1"
+    ;;
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    ;;
+  commit)
+    echo "$@" > "` + marker + `"
+    ;;
+esac
+`
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	fsTag := "ghcr.io/acme/snapshots:my-ws-20260731150405-fs"
+	err := d.CommitContainer(context.Background(), "my-ws", fsTag)
+
+	require.NoError(t, err)
+	assert.FileExists(t, marker)
+	contents, err := os.ReadFile(marker) //nolint:gosec // marker is t.TempDir()
+	require.NoError(t, err)
+	assert.Contains(t, string(contents), "commit")
+	assert.Contains(t, string(contents), "c1")
+	assert.Contains(t, string(contents), "ghcr.io/acme/snapshots:my-ws-20260731150405-fs")
+}
+
+func TestCommitContainer_NotFound(t *testing.T) {
+	script := `#!/bin/sh
+case "$1" in
+  ps)
+    # Return empty - no containers found
+    ;;
+esac
+`
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	err := d.CommitContainer(context.Background(), "missing-ws", "tag:latest")
+	require.Error(t, err)
+}

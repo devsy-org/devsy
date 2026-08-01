@@ -25,6 +25,7 @@ service Tunnel {
 
   rpc StreamWorkspace(Empty) returns (stream Chunk) {}
   rpc StreamMount(StreamMountRequest) returns (stream Chunk) {}
+  rpc StreamSnapshotVolumes(Empty) returns (stream Chunk) {}
 }
 
 message StreamMountRequest {

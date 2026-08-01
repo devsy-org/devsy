@@ -183,6 +183,8 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 		),
 		flags.String(&cmd.Source, names.Source, "",
 			"Workspace source (e.g. git:https://github.com/my-org/my-repo)"),
+		flags.String(&cmd.FromSnapshot, names.FromSnapshot, "",
+			"Create the workspace from a snapshot ref instead of the given source"),
 		flags.StringArray(&cmd.ProviderOptions, names.ProviderOption, nil,
 			"Provider option (KEY=VALUE, repeatable)"),
 		flags.Bool(&cmd.Reconfigure, names.Reconfigure, false,

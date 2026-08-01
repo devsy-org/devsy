@@ -3,8 +3,9 @@ package provider
 import "testing"
 
 const (
-	testRepoURL     = "https://github.com/devsy-org/devsy"
-	testSchemeHTTPS = "https"
+	testRepoURL         = "https://github.com/devsy-org/devsy"
+	testSchemeHTTPS     = "https"
+	testProviderSnapRef = "ghcr.io/acme/s:my-ws-20260731150405"
 )
 
 func TestParseWorkspaceSource_GitURLs(t *testing.T) {
@@ -90,5 +91,84 @@ func TestIsPlausibleGitSource(t *testing.T) {
 				t.Errorf("isPlausibleGitSource(%q) = %v; want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseWorkspaceSource_Snapshot(t *testing.T) {
+	src := ParseWorkspaceSource("snapshot:ghcr.io/acme/snapshots:my-ws-20260731150405")
+	if src == nil {
+		t.Fatal("expected non-nil source")
+	}
+	if src.Snapshot != "ghcr.io/acme/snapshots:my-ws-20260731150405" {
+		t.Fatalf("got snapshot ref %q", src.Snapshot)
+	}
+	if src.Type() != WorkspaceSourceSnapshot {
+		t.Fatalf("got type %q, want %q", src.Type(), WorkspaceSourceSnapshot)
+	}
+	if src.String() != WorkspaceSourceSnapshot+"ghcr.io/acme/snapshots:my-ws-20260731150405" {
+		t.Fatalf("got string %q", src.String())
+	}
+}
+
+// TestWorkspaceSource_TypeAndStringAgreeOnKindPrecedence guards against a
+// regression to two independently-maintained field-precedence switches:
+// String() and Type() must always select the same populated field, even when
+// a caller (incorrectly) sets more than one. Both delegate to kind() as the
+// single source of truth for precedence, so this can no longer drift.
+func TestWorkspaceSource_TypeAndStringAgreeOnKindPrecedence(t *testing.T) {
+	// Image and Snapshot both set: kind() must pick one (Image, since it is
+	// checked first), and both Type() and String() must agree with that
+	// choice and with each other.
+	src := WorkspaceSource{
+		Image:    "ghcr.io/acme/img:1.0",
+		Snapshot: testProviderSnapRef,
+	}
+
+	if src.Type() != WorkspaceSourceImage {
+		t.Fatalf("got type %q, want %q", src.Type(), WorkspaceSourceImage)
+	}
+	if src.String() != WorkspaceSourceImage+"ghcr.io/acme/img:1.0" {
+		t.Fatalf("got string %q", src.String())
+	}
+}
+
+func TestWorkspaceSource_KindPrecedenceOrder(t *testing.T) {
+	all := WorkspaceSource{
+		GitRepository: "https://github.com/acme/repo",
+		LocalFolder:   "/home/me/project",
+		Image:         "ghcr.io/acme/img:1.0",
+		Container:     "my-container",
+		Snapshot:      testProviderSnapRef,
+	}
+	if got, want := all.kind(), workspaceSourceKindGit; got != want {
+		t.Fatalf("kind() = %v, want %v (git takes precedence over all others)", got, want)
+	}
+
+	noGit := all
+	noGit.GitRepository = ""
+	if got, want := noGit.kind(), workspaceSourceKindLocal; got != want {
+		t.Fatalf("kind() = %v, want %v", got, want)
+	}
+
+	noLocal := noGit
+	noLocal.LocalFolder = ""
+	if got, want := noLocal.kind(), workspaceSourceKindImage; got != want {
+		t.Fatalf("kind() = %v, want %v", got, want)
+	}
+
+	noImage := noLocal
+	noImage.Image = ""
+	if got, want := noImage.kind(), workspaceSourceKindContainer; got != want {
+		t.Fatalf("kind() = %v, want %v", got, want)
+	}
+
+	onlySnapshot := WorkspaceSource{Snapshot: all.Snapshot}
+	if got, want := onlySnapshot.kind(), workspaceSourceKindSnapshot; got != want {
+		t.Fatalf("kind() = %v, want %v", got, want)
+	}
+
+	empty := WorkspaceSource{}
+	if got, want := empty.kind(), workspaceSourceKindNone; got != want {
+		t.Fatalf("kind() = %v, want %v", got, want)
 	}
 }

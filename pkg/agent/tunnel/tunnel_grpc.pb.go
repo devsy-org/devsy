@@ -21,22 +21,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Tunnel_Ping_FullMethodName              = "/tunnel.Tunnel/Ping"
-	Tunnel_Log_FullMethodName               = "/tunnel.Tunnel/Log"
-	Tunnel_Status_FullMethodName            = "/tunnel.Tunnel/Status"
-	Tunnel_SendResult_FullMethodName        = "/tunnel.Tunnel/SendResult"
-	Tunnel_DockerCredentials_FullMethodName = "/tunnel.Tunnel/DockerCredentials"
-	Tunnel_GitCredentials_FullMethodName    = "/tunnel.Tunnel/GitCredentials"
-	Tunnel_GitSSHSignature_FullMethodName   = "/tunnel.Tunnel/GitSSHSignature"
-	Tunnel_GitUser_FullMethodName           = "/tunnel.Tunnel/GitUser"
-	Tunnel_DevsyConfig_FullMethodName       = "/tunnel.Tunnel/DevsyConfig"
-	Tunnel_GPGPublicKeys_FullMethodName     = "/tunnel.Tunnel/GPGPublicKeys"
-	Tunnel_KubeConfig_FullMethodName        = "/tunnel.Tunnel/KubeConfig"
-	Tunnel_Secrets_FullMethodName           = "/tunnel.Tunnel/Secrets"
-	Tunnel_ForwardPort_FullMethodName       = "/tunnel.Tunnel/ForwardPort"
-	Tunnel_StopForwardPort_FullMethodName   = "/tunnel.Tunnel/StopForwardPort"
-	Tunnel_StreamWorkspace_FullMethodName   = "/tunnel.Tunnel/StreamWorkspace"
-	Tunnel_StreamMount_FullMethodName       = "/tunnel.Tunnel/StreamMount"
+	Tunnel_Ping_FullMethodName                  = "/tunnel.Tunnel/Ping"
+	Tunnel_Log_FullMethodName                   = "/tunnel.Tunnel/Log"
+	Tunnel_Status_FullMethodName                = "/tunnel.Tunnel/Status"
+	Tunnel_SendResult_FullMethodName            = "/tunnel.Tunnel/SendResult"
+	Tunnel_DockerCredentials_FullMethodName     = "/tunnel.Tunnel/DockerCredentials"
+	Tunnel_GitCredentials_FullMethodName        = "/tunnel.Tunnel/GitCredentials"
+	Tunnel_GitSSHSignature_FullMethodName       = "/tunnel.Tunnel/GitSSHSignature"
+	Tunnel_GitUser_FullMethodName               = "/tunnel.Tunnel/GitUser"
+	Tunnel_DevsyConfig_FullMethodName           = "/tunnel.Tunnel/DevsyConfig"
+	Tunnel_GPGPublicKeys_FullMethodName         = "/tunnel.Tunnel/GPGPublicKeys"
+	Tunnel_KubeConfig_FullMethodName            = "/tunnel.Tunnel/KubeConfig"
+	Tunnel_Secrets_FullMethodName               = "/tunnel.Tunnel/Secrets"
+	Tunnel_ForwardPort_FullMethodName           = "/tunnel.Tunnel/ForwardPort"
+	Tunnel_StopForwardPort_FullMethodName       = "/tunnel.Tunnel/StopForwardPort"
+	Tunnel_StreamWorkspace_FullMethodName       = "/tunnel.Tunnel/StreamWorkspace"
+	Tunnel_StreamMount_FullMethodName           = "/tunnel.Tunnel/StreamMount"
+	Tunnel_StreamSnapshotVolumes_FullMethodName = "/tunnel.Tunnel/StreamSnapshotVolumes"
 )
 
 // TunnelClient is the client API for Tunnel service.
@@ -59,6 +60,7 @@ type TunnelClient interface {
 	StopForwardPort(ctx context.Context, in *StopForwardPortRequest, opts ...grpc.CallOption) (*StopForwardPortResponse, error)
 	StreamWorkspace(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
 	StreamMount(ctx context.Context, in *StreamMountRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
+	StreamSnapshotVolumes(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
 }
 
 type tunnelClient struct {
@@ -247,6 +249,25 @@ func (c *tunnelClient) StreamMount(ctx context.Context, in *StreamMountRequest, 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Tunnel_StreamMountClient = grpc.ServerStreamingClient[Chunk]
 
+func (c *tunnelClient) StreamSnapshotVolumes(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Tunnel_ServiceDesc.Streams[2], Tunnel_StreamSnapshotVolumes_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[Empty, Chunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tunnel_StreamSnapshotVolumesClient = grpc.ServerStreamingClient[Chunk]
+
 // TunnelServer is the server API for Tunnel service.
 // All implementations must embed UnimplementedTunnelServer
 // for forward compatibility.
@@ -267,6 +288,7 @@ type TunnelServer interface {
 	StopForwardPort(context.Context, *StopForwardPortRequest) (*StopForwardPortResponse, error)
 	StreamWorkspace(*Empty, grpc.ServerStreamingServer[Chunk]) error
 	StreamMount(*StreamMountRequest, grpc.ServerStreamingServer[Chunk]) error
+	StreamSnapshotVolumes(*Empty, grpc.ServerStreamingServer[Chunk]) error
 	mustEmbedUnimplementedTunnelServer()
 }
 
@@ -324,6 +346,9 @@ func (UnimplementedTunnelServer) StreamWorkspace(*Empty, grpc.ServerStreamingSer
 }
 func (UnimplementedTunnelServer) StreamMount(*StreamMountRequest, grpc.ServerStreamingServer[Chunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamMount not implemented")
+}
+func (UnimplementedTunnelServer) StreamSnapshotVolumes(*Empty, grpc.ServerStreamingServer[Chunk]) error {
+	return status.Error(codes.Unimplemented, "method StreamSnapshotVolumes not implemented")
 }
 func (UnimplementedTunnelServer) mustEmbedUnimplementedTunnelServer() {}
 func (UnimplementedTunnelServer) testEmbeddedByValue()                {}
@@ -620,6 +645,17 @@ func _Tunnel_StreamMount_Handler(srv interface{}, stream grpc.ServerStream) erro
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Tunnel_StreamMountServer = grpc.ServerStreamingServer[Chunk]
 
+func _Tunnel_StreamSnapshotVolumes_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(Empty)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(TunnelServer).StreamSnapshotVolumes(m, &grpc.GenericServerStream[Empty, Chunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tunnel_StreamSnapshotVolumesServer = grpc.ServerStreamingServer[Chunk]
+
 // Tunnel_ServiceDesc is the grpc.ServiceDesc for Tunnel service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -693,6 +729,11 @@ var Tunnel_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamMount",
 			Handler:       _Tunnel_StreamMount_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamSnapshotVolumes",
+			Handler:       _Tunnel_StreamSnapshotVolumes_Handler,
 			ServerStreams: true,
 		},
 	},

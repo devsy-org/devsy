@@ -412,6 +412,15 @@ jobs:
             requires-secret: false
             install-microsandbox: true
 
+          # Snapshot tests
+
+          - label: snapshot
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            configure-insecure-registry: true
+
           #  Up Docker Compose tests
 
           - label: up-docker-compose
@@ -690,6 +699,27 @@ jobs:
           sudo systemctl stop docker.socket docker.service
           sudo apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
           sudo rm -rf /var/lib/docker /var/lib/containerd /usr/bin/docker /usr/bin/dockerd
+
+      # The snapshot e2e suite pushes/pulls against a local registry:2
+      # fixture at host.docker.internal:15500 (see e2e/tests/snapshot/helper.go),
+      # reachable both from the host CLI and from inside the workspace
+      # container. Plain-HTTP is only safe here because that address is
+      # always local to this runner.
+      #
+      # host.docker.internal is Docker Desktop/OrbStack magic; plain Linux
+      # (this runner) resolves it for neither the host CLI process nor
+      # containers by default. The container side gets it via the fixture
+      # devcontainer.json's "--add-host=host.docker.internal:host-gateway"
+      # runArgs; the host side (the devsy CLI's own push-permission checks,
+      # which run before any container exists) needs an explicit /etc/hosts
+      # entry, since there's no running container to attach a gateway to yet.
+      - name: configure insecure registry for snapshot tests (Linux)
+        if: matrix.configure-insecure-registry == true && runner.os == 'Linux'
+        run: |
+          echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+          echo '{"insecure-registries": ["host.docker.internal:15500"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          timeout 30 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 
       - name: generate GitHub App token
         if: matrix.requires-secret == true && needs.can-read-secret.outputs.secret-set == 'true'

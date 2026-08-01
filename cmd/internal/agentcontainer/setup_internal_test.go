@@ -3,12 +3,23 @@
 package agentcontainer
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
 	"encoding/json"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	pkgsnapshot "github.com/devsy-org/devsy/pkg/snapshot"
+	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,4 +80,171 @@ func TestSecretsEnvRoundTripPreservesMultilineValues(t *testing.T) {
 
 	got := secretsEnvFromEnvironment()
 	assert.Equal(t, entries, got)
+}
+
+// buildSnapshotTestTar writes a tiny single-file tar+gzip archive in memory,
+// mirroring the shape produced by pkg/extract.WriteTarExclude.
+func buildSnapshotTestTar(t *testing.T, name, content string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: name,
+		Mode: 0o644,
+		Size: int64(len(content)),
+	}))
+	_, err := tw.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, gw.Close())
+
+	return buf.Bytes()
+}
+
+// TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse guards against a
+// regression where the snapshot-restore branch lived behind the
+// `!cmd.StreamMounts` early return. StreamMounts is only forced true for
+// non-docker drivers, so on the default docker driver a snapshot-sourced
+// workspace would silently skip restoring its volumes. This test drives the
+// real syncMounts entry point (not RestoreVolumes directly) with
+// StreamMounts=false to prove the restore still runs.
+func TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	repo := host + "/acme/snapshots"
+	ctx := context.Background()
+
+	tarBytes := buildSnapshotTestTar(t, "workspaces/e2e/hello.txt", "hi")
+	volDigest, volSize, err := pkgsnapshot.PushBlob(
+		ctx,
+		repo,
+		pkgsnapshot.VolumesMediaType,
+		strings.NewReader(string(tarBytes)),
+	)
+	require.NoError(t, err)
+	imgDigest, imgSize, err := pkgsnapshot.PushBlob(
+		ctx,
+		repo,
+		"application/vnd.docker.distribution.manifest.v2+json",
+		strings.NewReader("img"),
+	)
+	require.NoError(t, err)
+
+	manifest, err := pkgsnapshot.BuildManifest(pkgsnapshot.BuildManifestOptions{
+		WorkspaceUID: "uid-1", CreatedAt: time.Now(), SourceProvider: "docker",
+		MountPrefix:          "workspaces/e2e",
+		ContainerImageDigest: imgDigest, ContainerImageSize: imgSize,
+		VolumesDigest: volDigest, VolumesSize: volSize,
+	})
+	require.NoError(t, err)
+	ref, err := pkgsnapshot.NewRef(repo, "my-ws", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, pkgsnapshot.PushManifest(ctx, ref.String(), manifest))
+
+	dest := t.TempDir()
+	mountTarget := filepath.Join(dest, "workspaces/e2e")
+
+	setupInfo := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{
+			WorkspaceMount: "type=bind,target=" + mountTarget,
+		},
+		MergedConfig: &config.MergedDevContainerConfig{},
+	}
+
+	cmd := &SetupContainerCmd{StreamMounts: false}
+	sctx := &setupContext{
+		ctx:       ctx,
+		setupInfo: setupInfo,
+		workspaceInfo: &provider2.ContainerWorkspaceInfo{
+			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
+		},
+	}
+
+	require.NoError(t, cmd.syncMounts(sctx))
+
+	gotPath := filepath.Join(mountTarget, "hello.txt")
+	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
+	require.NoError(t, err)
+	assert.Equal(t, "hi", string(got))
+}
+
+// TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty guards against
+// re-extracting a snapshot's volumes over an already-populated mount (e.g. on
+// container restart), which would silently discard local changes made since
+// the last restore.
+func TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty(t *testing.T) {
+	ref, err := pkgsnapshot.NewRef("example.com/acme/snapshots", "my-ws", time.Now())
+	require.NoError(t, err)
+
+	dest := t.TempDir()
+	mountTarget := filepath.Join(dest, "workspaces/e2e")
+	require.NoError(t, os.MkdirAll(mountTarget, 0o750))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(mountTarget, "local-change.txt"), []byte("keep me"), 0o600),
+	)
+
+	setupInfo := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{
+			WorkspaceMount: "type=bind,target=" + mountTarget,
+		},
+		MergedConfig: &config.MergedDevContainerConfig{},
+	}
+
+	cmd := &SetupContainerCmd{StreamMounts: false}
+	sctx := &setupContext{
+		ctx:       context.Background(),
+		setupInfo: setupInfo,
+		workspaceInfo: &provider2.ContainerWorkspaceInfo{
+			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
+		},
+	}
+
+	// No manifest is pushed for ref: if syncMounts attempted a restore here it
+	// would fail pulling the manifest, so a nil error proves the restore was
+	// skipped rather than attempted and silently swallowed.
+	require.NoError(t, cmd.syncMounts(sctx))
+
+	gotPath := filepath.Join(mountTarget, "local-change.txt")
+	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
+	require.NoError(t, err)
+	assert.Equal(t, "keep me", string(got))
+}
+
+// TestSyncMounts_SnapshotMultiMountFailsLoudly asserts that a snapshot
+// source with more than one mount fails explicitly instead of silently
+// restoring only the first mount and dropping the rest.
+func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
+	dest := t.TempDir()
+	setupInfo := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{
+			WorkspaceMount: "type=bind,target=" + filepath.Join(dest, "workspaces/e2e"),
+		},
+		MergedConfig: &config.MergedDevContainerConfig{
+			NonComposeBase: config.NonComposeBase{
+				Mounts: []*config.Mount{
+					{Type: "bind", Source: "/host/extra", Target: filepath.Join(dest, "extra")},
+				},
+			},
+		},
+	}
+
+	cmd := &SetupContainerCmd{StreamMounts: false}
+	sctx := &setupContext{
+		ctx:       context.Background(),
+		setupInfo: setupInfo,
+		workspaceInfo: &provider2.ContainerWorkspaceInfo{
+			Source: provider2.WorkspaceSource{
+				Snapshot: "example.com/acme/snapshots:my-ws-20260101000000",
+			},
+		},
+	}
+
+	err := cmd.syncMounts(sctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not yet support multiple mounts")
 }

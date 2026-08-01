@@ -117,5 +117,9 @@ func exportWorkspace(
 		return nil, fmt.Errorf("export provider config: %w", err)
 	}
 
+	if workspaceConfig.Source.Type() == provider.WorkspaceSourceSnapshot {
+		retConfig.SnapshotRef = workspaceConfig.Source.Snapshot
+	}
+
 	return retConfig, nil
 }

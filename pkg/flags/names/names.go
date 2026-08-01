@@ -52,6 +52,7 @@ const (
 	ProviderReuse             = "provider-reuse"
 	Pull                      = "pull"
 	PullFromInsideContainer   = "pull-from-inside-container"
+	FromSnapshot              = "from-snapshot"
 	Reconfigure               = "reconfigure"
 	Recovery                  = "recovery"
 	Recreate                  = "recreate"

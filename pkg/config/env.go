@@ -29,6 +29,13 @@ const (
 	// shared HTTP client. Enabled by default.
 	EnvInsecureTLS = "DEVSY_INSECURE_TLS"
 
+	// EnvInsecureDockerInternal, when truthy, opts into treating a snapshot
+	// registry ref rooted at host.docker.internal as insecure (plain HTTP).
+	// Off by default: a hostname alone is not proof a registry is local, so
+	// this is an explicit opt-in for local dev/test fixtures rather than an
+	// automatic judgment call in production registry operations.
+	EnvInsecureDockerInternal = "DEVSY_INSECURE_DOCKER_INTERNAL"
+
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 

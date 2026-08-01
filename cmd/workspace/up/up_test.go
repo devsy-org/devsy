@@ -1,10 +1,14 @@
 package up
 
 import (
+	"context"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,6 +18,7 @@ const (
 	flagNameMount   = "mount"
 	flagMount       = "--" + flagNameMount
 	testBindMountAB = "type=bind,source=/a,target=/b"
+	testSnapshotRef = "ghcr.io/acme/s:my-ws-20260731150405-abcxyz"
 )
 
 func TestUpCmd_NoLockfileAndFrozenLockfileMutuallyExclusive(t *testing.T) {
@@ -321,6 +326,99 @@ func TestBuildUpCmd_DefaultsIDEToNone(t *testing.T) {
 		cmd.IDE,
 		"MCP path must default IDE to none — there's no human to attach an IDE to",
 	)
+}
+
+func TestUpCmd_FromSnapshotSetsSource(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	src, err := cmd.resolveExplicitSource()
+	require.NoError(t, err)
+	require.NotNil(t, src)
+	require.Equal(t, testSnapshotRef, src.Snapshot)
+}
+
+func TestUpCmd_FromSnapshotSetsDevContainerSource(t *testing.T) {
+	// Parity check: --from-snapshot must compose the exact same
+	// DevContainerSource override that `devsy snapshot restore` uses
+	// (pkg/snapshot.RestoreComposition), so both entry points restore
+	// identically.
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	_, err := cmd.resolveExplicitSource()
+	require.NoError(t, err)
+	assert.Equal(t, "image:"+testSnapshotRef+"-fs", cmd.DevContainerSource)
+}
+
+func TestUpCmd_FromSnapshotDerivesWorkspaceIDWhenIDUnset(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	_, err := cmd.resolveExplicitSource()
+	require.NoError(t, err)
+	assert.Equal(t, "my-ws", cmd.ID)
+}
+
+func TestUpCmd_FromSnapshotDoesNotOverrideExplicitID(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	cmd.ID = "explicit-id"
+	_, err := cmd.resolveExplicitSource()
+	require.NoError(t, err)
+	assert.Equal(t, "explicit-id", cmd.ID)
+}
+
+func TestUpCmd_ResolveExplicitSourceNilWhenUnset(t *testing.T) {
+	cmd := &UpCmd{}
+	src, err := cmd.resolveExplicitSource()
+	require.NoError(t, err)
+	require.Nil(t, src)
+}
+
+func TestUpCmd_ResolveExplicitSourceErrorsOnBadRef(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: "not a valid ref!!"}
+	_, err := cmd.resolveExplicitSource()
+	require.Error(t, err)
+}
+
+func TestUpCmd_ValidateFromSnapshotConflictsWithSourceFlag(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	cmd.Source = "git:https://github.com/acme/example"
+	err := cmd.validateFromSnapshot(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot combine --from-snapshot with an explicit source")
+}
+
+func TestUpCmd_ValidateFromSnapshotConflictsWithPositionalArg(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	err := cmd.validateFromSnapshot(context.Background(), []string{"some-workspace"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot combine --from-snapshot with an explicit source")
+}
+
+func TestUpCmd_ValidateFromSnapshotNoOpWhenUnset(t *testing.T) {
+	cmd := &UpCmd{}
+	require.NoError(t, cmd.validateFromSnapshot(context.Background(), []string{"some-workspace"}))
+}
+
+func TestUpCmd_ValidateFromSnapshotRejectsPlatformMode(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	cmd.Platform.Enabled = true
+	err := cmd.validateFromSnapshot(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "platform mode")
+}
+
+func TestUpCmd_ValidateFromSnapshotFailsOnMalformedRef(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: "not a valid ref!!"}
+	err := cmd.validateFromSnapshot(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validate --from-snapshot ref")
+}
+
+func TestUpCmd_ValidateFromSnapshotFailsOnMissingManifest(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	cmd := &UpCmd{FromSnapshot: host + "/acme/snapshots:my-ws-20260731150405"}
+	err := cmd.validateFromSnapshot(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validate --from-snapshot ref")
 }
 
 func TestBuildUpCmd_DoesNotMutateCallerGlobalFlags(t *testing.T) {

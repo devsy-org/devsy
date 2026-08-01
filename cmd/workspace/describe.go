@@ -167,8 +167,9 @@ func (cmd *DescribeCmd) execute(ctx context.Context, args []string) error {
 	return cmd.Run(ctx, client)
 }
 
-// describeSource condenses a WorkspaceSource into a single human-readable line,
-// picking the populated variant: git, then local folder, image, or container.
+// describeSource condenses a WorkspaceSource into a single human-readable
+// line, picking the populated variant: git, then local folder, image,
+// container, or snapshot.
 func describeSource(src provider.WorkspaceSource) string {
 	switch {
 	case src.GitRepository != "":
@@ -179,6 +180,8 @@ func describeSource(src provider.WorkspaceSource) string {
 		return src.Image
 	case src.Container != "":
 		return src.Container
+	case src.Snapshot != "":
+		return provider.WorkspaceSourceSnapshot + src.Snapshot
 	default:
 		return ""
 	}

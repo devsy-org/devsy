@@ -44,10 +44,11 @@ type microsandboxDriver struct {
 }
 
 var (
-	_ driver.RunOptionsDriver     = (*microsandboxDriver)(nil)
-	_ driver.ReprovisioningDriver = (*microsandboxDriver)(nil)
-	_ driver.ImageDriver          = (*microsandboxDriver)(nil)
-	_ driver.Preflighter          = (*microsandboxDriver)(nil)
+	_ driver.RunOptionsDriver      = (*microsandboxDriver)(nil)
+	_ driver.ReprovisioningDriver  = (*microsandboxDriver)(nil)
+	_ driver.ImageDriver           = (*microsandboxDriver)(nil)
+	_ driver.SnapshotCapableDriver = (*microsandboxDriver)(nil)
+	_ driver.Preflighter           = (*microsandboxDriver)(nil)
 )
 
 // Preflight checks the microsandbox runtime binary is installed. There is no
@@ -239,6 +240,20 @@ func (d *microsandboxDriver) TagDevContainer(ctx context.Context, image, tag str
 		return err
 	}
 	return dockerDriver.TagDevContainer(ctx, image, tag)
+}
+
+func (d *microsandboxDriver) CommitContainer(ctx context.Context, workspaceID, tag string) error {
+	dockerDriver, err := d.dockerImageDriver()
+	if err != nil {
+		return err
+	}
+	snapshotCapable, ok := dockerDriver.(driver.SnapshotCapableDriver)
+	if !ok {
+		return fmt.Errorf(
+			"microsandbox's underlying docker driver does not support snapshot commit",
+		)
+	}
+	return snapshotCapable.CommitContainer(ctx, workspaceID, tag)
 }
 
 func (d *microsandboxDriver) UpdateContainerUserUID(

@@ -150,6 +150,31 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 	return nil
 }
 
+func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag string) error {
+	container, err := d.FindDevContainer(ctx, workspaceID)
+	if err != nil {
+		return err
+	} else if container == nil {
+		return fmt.Errorf("container not found")
+	}
+
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+
+	args := []string{"commit", container.ID, tag}
+
+	log.Debugf(
+		"running docker commit command: command=%s, args=%s",
+		d.Docker.DockerCommand,
+		strings.Join(args, " "),
+	)
+	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
+		return fmt.Errorf("commit container %s: %w", container.ID, err)
+	}
+
+	return nil
+}
+
 func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
 	container, err := d.FindDevContainer(ctx, workspaceId)
 	if err != nil {

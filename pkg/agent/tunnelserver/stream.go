@@ -9,25 +9,33 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
+// NewStreamReader adapts stream into an io.Reader. A non-EOF error from
+// stream.Recv() propagates to the reader via CloseWithError rather than
+// being silently converted to a clean io.EOF: masking it as EOF would let a
+// mid-stream failure (e.g. a dropped gRPC connection) look like a
+// successful, but truncated, transfer to whatever is consuming the reader
+// (extract.Extract for StreamWorkspace/StreamMount, and the snapshot
+// volumes blob push). This is shared by every Tunnel_StreamWorkspaceClient
+// consumer, not just snapshots — see stream_test.go for coverage of both.
 func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient) io.Reader {
 	reader, writer := io.Pipe()
 
 	go func() {
-		defer func() { _ = writer.Close() }()
-
 		for {
 			resp, err := stream.Recv()
 			if resp != nil && len(resp.Content) > 0 {
-				_, err = writer.Write(resp.Content)
-				if err != nil {
-					log.Debugf("Error writing to pipe: %v", err)
+				if _, werr := writer.Write(resp.Content); werr != nil {
+					log.Debugf("Error writing to pipe: %v", werr)
+					_ = writer.CloseWithError(werr)
 					return
 				}
 			}
 			if errors.Is(err, io.EOF) {
+				_ = writer.Close()
 				return
 			} else if err != nil {
 				log.Debugf("Error receiving from stream: %v", err)
+				_ = writer.CloseWithError(err)
 				return
 			}
 		}

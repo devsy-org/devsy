@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 	"gotest.tools/assert"
 	"gotest.tools/assert/cmp"
 )
@@ -73,4 +74,19 @@ func TestCaseMergeContextOption(t *testing.T) {
 			fmt.Println(tc.description)
 		}
 	}
+}
+
+func TestSnapshotRegistryOption_DefaultsEmpty(t *testing.T) {
+	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
+	require.Equal(t, "", c.ContextOption(ContextOptionSnapshotRegistry))
+}
+
+func TestSnapshotRegistryOption_Registered(t *testing.T) {
+	found := false
+	for _, opt := range ContextOptions {
+		if opt.Name == ContextOptionSnapshotRegistry {
+			found = true
+		}
+	}
+	require.True(t, found, "SNAPSHOT_REGISTRY must be a registered context option")
 }
