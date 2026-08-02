@@ -545,7 +545,7 @@ func (r *runner) createComposeService(params *composeServiceParams) *composetype
 	composeService := params.composeService
 	featuresBuildInfo := params.featuresBuildInfo
 
-	// Clone Build instead of starting empty, so fields this function doesn't
+	// Clone Build instead of starting empty, so fields this function does not
 	// set explicitly (Platforms, ShmSize, CacheFrom, ...) aren't dropped.
 	var build composetypes.BuildConfig
 	if composeService.Build != nil {
