@@ -88,9 +88,6 @@ func NewCredentialsServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
-	// Own a child of ctx for the lifetime of this call: an early return below
-	// (docker/git setup failing) must stop the port-forwarding goroutine
-	// started by maybeForwardPorts, not leave it running past this Run call.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -135,9 +132,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 // claimPort binds port and returns the listener, holding it exclusively so
 // no other session can bind the same port until the caller closes it (or
 // hands it to RunCredentialsServerWithListener). Only one session's
-// credentials-server can hold this port at a time. Returning an error (not
-// nil) on contention matters: RunServices (pkg/tunnel/services.go) wraps
-// this command in retry.OnError, which only retries on a non-nil error.
+// credentials-server can hold this port at a time.
 func claimPort(port int) (net.Listener, error) {
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
 	ln, err := net.Listen("tcp", addr)
@@ -190,9 +185,6 @@ func (cmd *CredentialsServerCmd) configureGitCredentialHelper(
 		return noop, fmt.Errorf("configure git helper: %w", err)
 	}
 
-	// cleanup when we are done. This defer runs after the server loop
-	// returns on shutdown, when ctx is already canceled — use an uncanceled
-	// context so the helper is actually removed instead of aborting early.
 	cleanupCtx := context.WithoutCancel(ctx)
 	userName := cmd.User
 	return func() {
@@ -231,7 +223,6 @@ func configureGitUserLocally(
 	userName string,
 	client tunnel.TunnelClient,
 ) error {
-	// get local credentials
 	localGitUser, err := gitcredentials.GetUser(ctx, userName, "")
 	if err != nil {
 		return err
@@ -240,16 +231,13 @@ func configureGitUserLocally(
 		return nil
 	}
 
-	// set user & email if not found
 	gitUser, err := fetchRemoteGitUser(ctx, client)
 	if err != nil {
 		return err
 	}
 
-	// don't override what is already there
 	clearKnownGitUserFields(localGitUser, gitUser)
 
-	// set git user
 	if err := gitcredentials.SetUser(ctx, userName, gitUser); err != nil {
 		return fmt.Errorf("set git user & email: %w", err)
 	}
