@@ -9,7 +9,7 @@ import (
 
 func TestBuildManifest_RoundTrip(t *testing.T) {
 	opts := BuildManifestOptions{
-		WorkspaceUID:         "uid-123",
+		WorkspaceUID:         testWorkspaceUID,
 		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
 		Parent:               "",
 		DevContainerHash:     "abc123",
@@ -44,7 +44,7 @@ func TestBuildManifest_RoundTrip(t *testing.T) {
 
 func TestBuildManifest_MessageAnnotationOnlyWhenNonEmpty(t *testing.T) {
 	base := BuildManifestOptions{
-		WorkspaceUID:         "uid-123",
+		WorkspaceUID:         testWorkspaceUID,
 		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
 		ContainerImageDigest: "sha256:" + zeroDigest,
 		VolumesDigest:        "sha256:" + oneDigest,
@@ -73,7 +73,7 @@ func TestBuildManifest_MessageAnnotationOnlyWhenNonEmpty(t *testing.T) {
 
 func TestBuildManifest_RunArgsRoundTrip(t *testing.T) {
 	opts := BuildManifestOptions{
-		WorkspaceUID:         "uid-123",
+		WorkspaceUID:         testWorkspaceUID,
 		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
 		ContainerImageDigest: "sha256:" + zeroDigest,
 		VolumesDigest:        "sha256:" + oneDigest,
@@ -95,7 +95,7 @@ func TestBuildManifest_RunArgsRoundTrip(t *testing.T) {
 
 func TestManifest_RunArgs_NilWhenAbsent(t *testing.T) {
 	opts := BuildManifestOptions{
-		WorkspaceUID:         "uid-123",
+		WorkspaceUID:         testWorkspaceUID,
 		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
 		ContainerImageDigest: "sha256:" + zeroDigest,
 		VolumesDigest:        "sha256:" + oneDigest,
@@ -134,4 +134,7 @@ var (
 	oneDigest  = "1111111111111111111111111111111111111111111111111111111111111111"[:64]
 )
 
-const testSourceProvider = "docker"
+const (
+	testSourceProvider = "docker"
+	testWorkspaceUID   = "uid-123"
+)
