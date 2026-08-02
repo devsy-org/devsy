@@ -35,6 +35,12 @@ const (
 	// to the committed image, which bypasses the project devcontainer.json
 	// and would otherwise silently drop them.
 	AnnotationRunArgs = "sh.devsy.snapshot.run-args"
+	// AnnotationContainerEnv is the create-time devcontainer.json's
+	// containerEnv (JSON-encoded map[string]string), replayed onto the
+	// restored container for the same reason as AnnotationRunArgs: restore
+	// pins DevContainerSource to the committed image, bypassing the project
+	// devcontainer.json and silently dropping any containerEnv it set.
+	AnnotationContainerEnv = "sh.devsy.snapshot.container-env"
 )
 
 // Descriptor mirrors the OCI content descriptor fields we need; kept minimal
@@ -64,6 +70,7 @@ type BuildManifestOptions struct {
 	Message          string
 	MountPrefix      string
 	RunArgs          []string
+	ContainerEnv     map[string]string
 
 	ContainerImageDigest string
 	ContainerImageSize   int64
@@ -97,12 +104,8 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 	if opts.Message != "" {
 		annotations[AnnotationMessage] = opts.Message
 	}
-	if len(opts.RunArgs) > 0 {
-		raw, err := json.Marshal(opts.RunArgs)
-		if err != nil {
-			return nil, fmt.Errorf("build snapshot manifest: marshal run args: %w", err)
-		}
-		annotations[AnnotationRunArgs] = string(raw)
+	if err := addDevContainerOverrideAnnotations(annotations, opts); err != nil {
+		return nil, err
 	}
 
 	return &Manifest{
@@ -130,6 +133,30 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 	}, nil
 }
 
+// addDevContainerOverrideAnnotations JSON-encodes the create-time
+// devcontainer.json settings that restore must replay onto the image-sourced
+// synthesized config (see pkg/devcontainer's rawConfigFromSource), each only
+// when non-empty so an unset override doesn't leave a spurious annotation.
+func addDevContainerOverrideAnnotations(
+	annotations map[string]string, opts BuildManifestOptions,
+) error {
+	if len(opts.RunArgs) > 0 {
+		raw, err := json.Marshal(opts.RunArgs)
+		if err != nil {
+			return fmt.Errorf("build snapshot manifest: marshal run args: %w", err)
+		}
+		annotations[AnnotationRunArgs] = string(raw)
+	}
+	if len(opts.ContainerEnv) > 0 {
+		raw, err := json.Marshal(opts.ContainerEnv)
+		if err != nil {
+			return fmt.Errorf("build snapshot manifest: marshal container env: %w", err)
+		}
+		annotations[AnnotationContainerEnv] = string(raw)
+	}
+	return nil
+}
+
 // RunArgs decodes the create-time devcontainer.json's runArgs from the
 // manifest, or returns nil when the snapshot carries none.
 func (m *Manifest) RunArgs() ([]string, error) {
@@ -142,6 +169,20 @@ func (m *Manifest) RunArgs() ([]string, error) {
 		return nil, fmt.Errorf("parse %s annotation: %w", AnnotationRunArgs, err)
 	}
 	return args, nil
+}
+
+// ContainerEnv decodes the create-time devcontainer.json's containerEnv from
+// the manifest, or returns nil when the snapshot carries none.
+func (m *Manifest) ContainerEnv() (map[string]string, error) {
+	raw, ok := m.Annotations[AnnotationContainerEnv]
+	if !ok || raw == "" {
+		return nil, nil
+	}
+	var env map[string]string
+	if err := json.Unmarshal([]byte(raw), &env); err != nil {
+		return nil, fmt.Errorf("parse %s annotation: %w", AnnotationContainerEnv, err)
+	}
+	return env, nil
 }
 
 func (m *Manifest) MarshalOCI() ([]byte, error) {

@@ -90,6 +90,10 @@ func (cmd *RestoreCmd) Run(
 	if err != nil {
 		return fmt.Errorf("read snapshot run args: %w", err)
 	}
+	containerEnv, err := manifest.ContainerEnv()
+	if err != nil {
+		return fmt.Errorf("read snapshot container env: %w", err)
+	}
 
 	log.Infof("restoring snapshot: ref=%s workspaceId=%s", snapshotRef, ws.ID)
 
@@ -100,6 +104,7 @@ func (cmd *RestoreCmd) Run(
 		IDE:                "none",
 		DevContainerSource: ws.DevContainerSource,
 		RunArgs:            runArgs,
+		ContainerEnv:       containerEnv,
 	})
 }
 

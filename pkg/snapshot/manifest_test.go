@@ -108,6 +108,43 @@ func TestManifest_RunArgs_NilWhenAbsent(t *testing.T) {
 	require.Nil(t, runArgs)
 }
 
+func TestBuildManifest_ContainerEnvRoundTrip(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         testWorkspaceUID,
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		VolumesDigest:        "sha256:" + oneDigest,
+		ContainerEnv:         map[string]string{"DEVSY_INSECURE_DOCKER_INTERNAL": "true"},
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+
+	raw, err := built.MarshalOCI()
+	require.NoError(t, err)
+	parsed, err := ParseManifest(raw)
+	require.NoError(t, err)
+
+	containerEnv, err := parsed.ContainerEnv()
+	require.NoError(t, err)
+	require.Equal(t, opts.ContainerEnv, containerEnv)
+}
+
+func TestManifest_ContainerEnv_NilWhenAbsent(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         testWorkspaceUID,
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		VolumesDigest:        "sha256:" + oneDigest,
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+	containerEnv, err := built.ContainerEnv()
+	require.NoError(t, err)
+	require.Nil(t, containerEnv)
+}
+
 func TestParseManifest_RejectsInvalidSchemaVersion(t *testing.T) {
 	invalidManifest := []byte(
 		`{"schemaVersion":1,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`,

@@ -4,5 +4,8 @@
   "runArgs": [
     "--add-host=host.docker.internal:host-gateway",
     "--label=devsy-e2e-snapshot-runargs=true"
-  ]
+  ],
+  "containerEnv": {
+    "DEVSY_INSECURE_DOCKER_INTERNAL": "true"
+  }
 }

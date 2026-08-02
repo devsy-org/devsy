@@ -81,6 +81,10 @@ type Options struct {
 	// (e.g. --add-host) still take effect. Used by snapshot restore to replay
 	// the original devcontainer.json's runArgs.
 	RunArgs []string
+	// ContainerEnv are extra container environment variables to apply under
+	// the same suppressed-discovery circumstances as RunArgs. Used by
+	// snapshot restore to replay the original devcontainer.json's containerEnv.
+	ContainerEnv map[string]string
 }
 
 type HeadlessOptions struct {
@@ -196,6 +200,7 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	cmd.DevContainerPath = opts.DevcontainerPath
 	cmd.DevContainerSource = opts.DevContainerSource
 	cmd.RunArgs = opts.RunArgs
+	cmd.ContainerEnv = opts.ContainerEnv
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}

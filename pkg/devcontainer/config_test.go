@@ -472,7 +472,7 @@ func TestGetRawConfig_SourceImageCarriesRunArgs(t *testing.T) {
 	r := newRunnerAt(folder)
 
 	conf, err := r.getRawConfig(provider2.CLIOptions{
-		DevContainerSource: "image:python",
+		DevContainerSource: testImgSrc,
 		RunArgs:            []string{"--add-host=host.docker.internal:host-gateway"},
 	})
 	if err != nil {
@@ -483,6 +483,26 @@ func TestGetRawConfig_SourceImageCarriesRunArgs(t *testing.T) {
 			"RunArgs = %v, want [--add-host=host.docker.internal:host-gateway] "+
 				"(snapshot restore relies on this to reach a host.docker.internal-only registry)",
 			conf.RunArgs,
+		)
+	}
+}
+
+func TestGetRawConfig_SourceImageCarriesContainerEnv(t *testing.T) {
+	folder := t.TempDir()
+	r := newRunnerAt(folder)
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{
+		DevContainerSource: testImgSrc,
+		ContainerEnv:       map[string]string{"DEVSY_INSECURE_DOCKER_INTERNAL": "true"},
+	})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.ContainerEnv["DEVSY_INSECURE_DOCKER_INTERNAL"] != "true" {
+		t.Errorf(
+			"ContainerEnv = %v, want DEVSY_INSECURE_DOCKER_INTERNAL=true "+
+				"(snapshot restore relies on this to reach an insecure registry from inside the container)",
+			conf.ContainerEnv,
 		)
 	}
 }
@@ -555,7 +575,7 @@ func TestGetRawConfig_SourcePreservesRootDevcontainerJSON(t *testing.T) {
 	}
 	r := newRunnerAt(folder)
 
-	opts := provider2.CLIOptions{DevContainerSource: "image:python"}
+	opts := provider2.CLIOptions{DevContainerSource: testImgSrc}
 	if _, err := r.getRawConfig(opts); err != nil {
 		t.Fatalf("getRawConfig: %v", err)
 	}

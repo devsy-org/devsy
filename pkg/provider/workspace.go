@@ -262,8 +262,13 @@ type CLIOptions struct {
 	// devcontainer.json, so runArgs it would have set (e.g. --add-host) still
 	// take effect. Used by snapshot restore to replay the original
 	// devcontainer.json's runArgs onto the restored, image-sourced container.
-	RunArgs          []string `json:"runArgs,omitempty"`
-	GitSSHSigningKey string   `json:"gitSshSigningKey,omitempty"`
+	RunArgs []string `json:"runArgs,omitempty"`
+	// ContainerEnv are extra container environment variables applied under
+	// the same suppressed-discovery circumstances as RunArgs, for the same
+	// reason: snapshot restore replaying the original devcontainer.json's
+	// containerEnv onto the restored, image-sourced container.
+	ContainerEnv     map[string]string `json:"containerEnv,omitempty"`
+	GitSSHSigningKey string            `json:"gitSshSigningKey,omitempty"`
 	// SSHAuthSockID is used when looking for SSH_AUTH_SOCK, defaults to a new
 	// random ID if not set (only used for browser IDEs).
 	SSHAuthSockID              string   `json:"sshAuthSockID,omitempty"`

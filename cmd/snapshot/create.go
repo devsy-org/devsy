@@ -106,6 +106,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		Message:              cmd.Message,
 		MountPrefix:          vols.MountPrefix,
 		RunArgs:              vols.RunArgs,
+		ContainerEnv:         vols.ContainerEnv,
 		ContainerImageDigest: imgDigest,
 		ContainerImageSize:   imgSize,
 		VolumesDigest:        vols.Digest,
@@ -265,10 +266,11 @@ func (cmd *CreateCmd) imageDriver(
 
 // pushedVolumes describes a successfully-pushed volumes blob.
 type pushedVolumes struct {
-	Digest      string
-	Size        int64
-	MountPrefix string
-	RunArgs     []string
+	Digest       string
+	Size         int64
+	MountPrefix  string
+	RunArgs      []string
+	ContainerEnv map[string]string
 }
 
 // The volumes RPC (StreamSnapshotVolumes) is served by a tunnelServer reading
@@ -304,10 +306,11 @@ func (cmd *CreateCmd) pushVolumes(
 		return nil, fmt.Errorf("push volumes: %w", err)
 	}
 	return &pushedVolumes{
-		Digest:      digest,
-		Size:        size,
-		MountPrefix: mountPrefix,
-		RunArgs:     result.MergedConfig.RunArgs,
+		Digest:       digest,
+		Size:         size,
+		MountPrefix:  mountPrefix,
+		RunArgs:      result.MergedConfig.RunArgs,
+		ContainerEnv: result.MergedConfig.ContainerEnv,
 	}, nil
 }
 
