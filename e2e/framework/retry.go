@@ -72,6 +72,15 @@ func isRetryableSSHError(err error, stderr string) bool {
 			return true
 		}
 	}
+	// A freshly created/committed container's filesystem can briefly report
+	// permission-denied on an executable that exists and is correctly
+	// permissioned moments later — an overlay2/docker-commit settling race,
+	// not a real permission problem. Seen immediately after `up
+	// --from-snapshot`/`snapshot restore` into a brand-new container, before
+	// any other command has given the filesystem a moment to settle.
+	if strings.Contains(lower, "fork/exec") && strings.Contains(lower, "permission denied") {
+		return true
+	}
 	return false
 }
 
