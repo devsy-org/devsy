@@ -135,7 +135,11 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 		return
 	}
 	t.failureReported = true
-	writeGPGForwardFailedOSC(os.Stderr, err.Error())
+	// The desktop toast gets a fixed, concise reason rather than err.Error():
+	// the underlying error can wrap remote SSH exit output, which isn't
+	// something to surface verbatim in the UI. Full detail stays in the log
+	// line above (visible with --debug).
+	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
 }
 
 // setup forwards the local gpg-agent into the remote container by using

@@ -30,14 +30,22 @@ func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
 
 // forwardPortsIfRequested handles -L/-R forwarding when requested. The returned
 // bool reports whether forwarding took over (the caller should return err).
+// -L and -R together aren't supported: each takes over the whole session
+// (never returning to hand off to the shell), so running both would mean
+// silently dropping one — this reports an explicit error instead.
 func (cmd *SSHCmd) forwardPortsIfRequested(
 	ctx context.Context,
 	sshClient *ssh.Client,
 ) (bool, error) {
-	if len(cmd.ForwardPorts) > 0 {
+	hasForward := len(cmd.ForwardPorts) > 0
+	hasReverse := len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding
+	if hasForward && hasReverse {
+		return true, fmt.Errorf("-L and -R cannot be combined in a single ssh invocation")
+	}
+	if hasForward {
 		return true, cmd.forwardPorts(ctx, sshClient)
 	}
-	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
+	if hasReverse {
 		return true, cmd.reverseForwardPorts(ctx, sshClient)
 	}
 	return false, nil
@@ -91,7 +99,7 @@ type portForwardRun struct {
 func (cmd *SSHCmd) forwardPorts(ctx context.Context, containerClient *ssh.Client) error {
 	timeout, err := cmd.forwardTimeout()
 	if err != nil {
-		return fmt.Errorf("parse forward ports timeout: %w", err)
+		return err
 	}
 	return runPortForwards(ctx, containerClient, portForwardRun{
 		portMappings: cmd.ForwardPorts,
@@ -103,7 +111,7 @@ func (cmd *SSHCmd) forwardPorts(ctx context.Context, containerClient *ssh.Client
 func (cmd *SSHCmd) reverseForwardPorts(ctx context.Context, containerClient *ssh.Client) error {
 	timeout, err := cmd.forwardTimeout()
 	if err != nil {
-		return fmt.Errorf("parse forward ports timeout: %w", err)
+		return err
 	}
 	return runPortForwards(ctx, containerClient, portForwardRun{
 		portMappings: cmd.ReverseForwardPorts,
@@ -113,10 +121,11 @@ func (cmd *SSHCmd) reverseForwardPorts(ctx context.Context, containerClient *ssh
 }
 
 // runPortForwards starts one forwarding goroutine per mapping and blocks
-// until the first one reports a result (an error, or a clean exit via idle
-// timeout / EOF) or ctx is done.
+// until every mapping has exited cleanly (idle timeout or EOF), one reports
+// a real error, or ctx is done. A single mapping's clean exit doesn't tear
+// down the others: with multiple -L/-R mappings, an idle timeout on one
+// shouldn't end the whole session while its siblings are still useful.
 func runPortForwards(ctx context.Context, containerClient *ssh.Client, run portForwardRun) error {
-	timeout, dir := run.timeout, run.dir
 	errChan := make(chan error, len(run.portMappings))
 	for _, portMapping := range run.portMappings {
 		mapping, err := port.ParsePortSpec(portMapping)
@@ -126,33 +135,59 @@ func runPortForwards(ctx context.Context, containerClient *ssh.Client, run portF
 
 		log.Infof(
 			"%s local %s/%s to remote %s/%s",
-			dir.logPrefix,
+			run.dir.logPrefix,
 			mapping.Host.Protocol,
 			mapping.Host.Address,
 			mapping.Container.Protocol,
 			mapping.Container.Address,
 		)
-		go func(portMapping string, mapping port.Mapping) {
-			err := dir.forward(ctx, containerClient, mapping, timeout)
-			if errors.Is(err, devssh.ErrIdleTimeout) {
-				log.Infof("%s %s exited due to idle timeout", dir.logLabel, portMapping)
-				errChan <- nil
-				return
-			}
-			if err == nil || errors.Is(err, io.EOF) {
-				errChan <- nil
-				return
-			}
-			errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
-		}(portMapping, mapping)
+		go runPortForward(ctx, containerClient, singlePortForward{
+			dir:         run.dir,
+			timeout:     run.timeout,
+			portMapping: portMapping,
+			mapping:     mapping,
+			errChan:     errChan,
+		})
 	}
 
-	select {
-	case err := <-errChan:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
+	for range run.portMappings {
+		select {
+		case err := <-errChan:
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+	return nil
+}
+
+// singlePortForward bundles a single runPortForward invocation's inputs so
+// it stays within the linter's argument-count limit.
+type singlePortForward struct {
+	dir         forwardDirection
+	timeout     time.Duration
+	portMapping string
+	mapping     port.Mapping
+	errChan     chan<- error
+}
+
+// runPortForward runs a single mapping's forward and reports its outcome on
+// f.errChan: nil for a clean exit (idle timeout or EOF), the wrapped error
+// otherwise.
+func runPortForward(ctx context.Context, containerClient *ssh.Client, f singlePortForward) {
+	err := f.dir.forward(ctx, containerClient, f.mapping, f.timeout)
+	if errors.Is(err, devssh.ErrIdleTimeout) {
+		log.Infof("%s %s exited due to idle timeout", f.dir.logLabel, f.portMapping)
+		f.errChan <- nil
+		return
+	}
+	if err == nil || errors.Is(err, io.EOF) {
+		f.errChan <- nil
+		return
+	}
+	f.errChan <- fmt.Errorf("error forwarding %s: %w", f.portMapping, err)
 }
 
 type boundReverseForward struct {

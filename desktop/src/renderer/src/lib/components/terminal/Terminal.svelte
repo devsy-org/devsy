@@ -170,6 +170,27 @@ onMount(async () => {
     term.open(containerEl)
     fitAddon.fit()
 
+    const instance: TerminalInstance = {
+      term,
+      fitAddon,
+      unlistenOutput,
+      unlistenExit,
+      unsubscribeTheme: undefined,
+      onGpgForwardFailed,
+    }
+    // Register before flushing outputBuffer below: term.write drives the OSC
+    // parser synchronously, so a failure notification buffered during the
+    // async import window above would otherwise be parsed and discarded
+    // before this handler exists to catch it.
+    const oscHandler = term.parser.registerOscHandler(
+      GPG_FORWARD_FAILED_OSC,
+      (data) => {
+        instance.onGpgForwardFailed?.(data)
+        return true
+      },
+    )
+    instance.disposeOscHandler = () => oscHandler.dispose()
+
     // Flush any output that arrived during async imports
     for (const data of outputBuffer) {
       term.write(data)
@@ -180,28 +201,12 @@ onMount(async () => {
       terminalWrite(sessionId, Array.from(encoded))
     })
 
-    const unsubscribeTheme = theme.subscribe(() => {
+    instance.unsubscribeTheme = theme.subscribe(() => {
       if (term) {
         term.options.theme = resolveTheme()
       }
     })
 
-    const instance: TerminalInstance = {
-      term,
-      fitAddon,
-      unlistenOutput,
-      unlistenExit,
-      unsubscribeTheme,
-      onGpgForwardFailed,
-    }
-    const oscHandler = term.parser.registerOscHandler(
-      GPG_FORWARD_FAILED_OSC,
-      (data) => {
-        instance.onGpgForwardFailed?.(data)
-        return true
-      },
-    )
-    instance.disposeOscHandler = () => oscHandler.dispose()
     setTerminalInstance(sessionId, instance)
   }
 

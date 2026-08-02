@@ -14,17 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// listenUnixSocket creates a real Unix domain socket at path, registers it
-// for cleanup, and returns it. The caller must run this on the test
-// goroutine (or join the calling goroutine) before the test returns, so the
-// listener is registered before t.Cleanup fires and a net.Listen failure is
-// observed by the test rather than silently dropped in a detached goroutine.
-func listenUnixSocket(t *testing.T, path string) net.Listener {
-	t.Helper()
-	ln, err := net.Listen("unix", path)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = ln.Close() })
-	return ln
+// listenUnixSocket creates a real Unix domain socket at path and returns it
+// along with any error. It deliberately avoids require.NoError/t.Cleanup:
+// those call t.FailNow, which the testing package requires to run on the
+// test's own goroutine, but this helper is called from a background
+// goroutine in TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears.
+// The caller must check the returned error and register cleanup itself, on
+// the test goroutine.
+func listenUnixSocket(path string) (net.Listener, error) {
+	return net.Listen("unix", path)
 }
 
 // shortSocketDir returns a short-enough temp dir for a unix socket path:
@@ -98,13 +96,19 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	socketPath := filepath.Join(shortSocketDir(t), "S.gpg-agent")
 	g := &GPGConf{SocketPath: socketPath}
 
+	var listener net.Listener
+	var listenErr error
 	listenerReady := make(chan struct{})
 	go func() {
 		defer close(listenerReady)
 		time.Sleep(50 * time.Millisecond)
-		listenUnixSocket(t, socketPath)
+		listener, listenErr = listenUnixSocket(socketPath)
 	}()
-	defer func() { <-listenerReady }()
+	defer func() {
+		<-listenerReady
+		require.NoError(t, listenErr)
+		_ = listener.Close()
+	}()
 
 	start := time.Now()
 	err := g.claimForwardedSocket(context.Background())

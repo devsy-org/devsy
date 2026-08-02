@@ -63,3 +63,18 @@ func TestWriteGPGForwardFailedOSC_TruncatesLongReason(t *testing.T) {
 		t.Fatalf("body length = %d, want %d", len(body), gpgForwardFailedReasonMaxLen)
 	}
 }
+
+func TestWriteGPGForwardFailedOSC_TruncatesByRunesNotBytes(t *testing.T) {
+	var buf bytes.Buffer
+	// "é" is 2 bytes in UTF-8; byte-based truncation would produce a body
+	// longer than gpgForwardFailedReasonMaxLen bytes or split a rune in two.
+	reason := strings.Repeat("é", gpgForwardFailedReasonMaxLen+100)
+	writeGPGForwardFailedOSC(&buf, reason)
+
+	got := buf.String()
+	prefix := fmt.Sprintf("\x1b]%d;", gpgForwardFailedOSC)
+	body := got[len(prefix) : len(got)-1]
+	if n := len([]rune(body)); n != gpgForwardFailedReasonMaxLen {
+		t.Fatalf("body rune count = %d, want %d", n, gpgForwardFailedReasonMaxLen)
+	}
+}

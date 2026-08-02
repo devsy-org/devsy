@@ -100,11 +100,15 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	cmd.maybeForwardPorts(ctx, tunnelClient)
-
+	// Claim the port before starting anything else: on contention this
+	// returns an error so RunServices' retry (pkg/tunnel/services.go) tries
+	// again later, and starting the port watcher beforehand would leak an
+	// orphaned goroutine on every failed attempt.
 	if err := checkPortClaimable(port); err != nil {
 		return err
 	}
+
+	cmd.maybeForwardPorts(ctx, tunnelClient)
 
 	// configure docker credential helper
 	if err := cmd.configureDockerHelper(port); err != nil {
