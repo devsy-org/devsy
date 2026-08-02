@@ -431,12 +431,9 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	// drivers), but a snapshot-sourced workspace needs its volumes restored
 	// on every driver, docker included.
 	if sctx.workspaceInfo.Source.Snapshot != "" {
-		if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 {
-			files, err := os.ReadDir(mounts[0].Target)
-			if err == nil && len(files) > 0 {
-				log.Debugf("skip snapshot restore because %s is not empty", mounts[0].Target)
-				return nil
-			}
+		if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
+			skipSnapshotRestore(mounts[0].Target) {
+			return nil
 		}
 		log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
 		if err := agentsnapshot.RestoreVolumes(
@@ -474,6 +471,21 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	}
 
 	return nil
+}
+
+// skipSnapshotRestore reports whether target already has content, in which
+// case a snapshot restore into it would be destructive and is skipped.
+func skipSnapshotRestore(target string) bool {
+	files, err := os.ReadDir(target)
+	if err != nil || len(files) == 0 {
+		return false
+	}
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		names = append(names, f.Name())
+	}
+	log.Debugf("skip snapshot restore because %s is not empty: entries=%v", target, names)
+	return true
 }
 
 func (cmd *SetupContainerCmd) setupGitCredentials(
