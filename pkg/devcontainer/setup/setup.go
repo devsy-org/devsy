@@ -312,7 +312,14 @@ func linkRootHome(setupInfo *config.Result) error {
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	user := config.GetRemoteUser(setupInfo)
-	exists, err := markerFileExists("chownWorkspace", "")
+	// Marker content is the workspace ID, not empty: a snapshot-restored
+	// container runs the ORIGINAL workspace's committed image, which already
+	// carries a chownWorkspace marker from when that original workspace was
+	// set up. That marker says nothing about whether THIS container's freshly
+	// restored (root-owned, just-extracted) volume content has been chowned,
+	// so an empty/content-agnostic marker would wrongly skip chown here and
+	// leave the workspace folder inaccessible to the remote user.
+	exists, err := markerFileExists("chownWorkspace", os.Getenv(pkgconfig.EnvWorkspaceID))
 	if err != nil {
 		return err
 	} else if exists {
