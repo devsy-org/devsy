@@ -13,8 +13,8 @@ func PipeJSONStream() (io.WriteCloser, chan struct{}) {
 	reader, writer := io.Pipe()
 	go func() {
 		ReadJSONStream(reader)
-		// See PipeJSONStreamWithFallback: closing here unblocks a Write on
-		// writer if the scanner stopped early instead of at pipe close.
+		// closing here unblocks a Write on writer if the scanner
+		// stopped early instead of at pipe close.
 		_ = reader.Close()
 		close(done)
 	}()
@@ -22,7 +22,7 @@ func PipeJSONStream() (io.WriteCloser, chan struct{}) {
 	return writer, done
 }
 
-// PipeJSONStreamWithFallback is like PipeJSONStream, but a line that isn't
+// PipeJSONStreamWithFallback is like PipeJSONStream, but a line that is not
 // valid JSON is written verbatim (with a trailing newline) to fallback
 // instead of being silently dropped. Use this when the writer's lifetime
 // spans more than one process/phase and only some of them are known to

@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-// TestPipeJSONStreamWithFallback_OversizedLineUnblocksWriter verifies that a
-// line exceeding the scanner's buffer cap doesn't leave the pipe reader open
-// after the goroutine exits: a later Write must fail promptly instead of
-// blocking forever with nothing left draining the pipe.
 func TestPipeJSONStreamWithFallback_OversizedLineUnblocksWriter(t *testing.T) {
 	writer, done := PipeJSONStreamWithFallback(PassthroughWriter())
 

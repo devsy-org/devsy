@@ -101,9 +101,9 @@ func (t *gpgTunnel) run(ctx context.Context, sshClient *ssh.Client) {
 // ensure checks whether the GPG tunnel is currently live and, if not,
 // (re-)establishes it. A setup failure is only reported if the tunnel is
 // still down immediately after: a concurrent terminal may have won the bind
-// race in the interim, which isn't a real failure. The OSC failure
-// notification fires only on the healthy-to-failed transition (gated by
-// failureReported), not on every health-check tick.
+// race in the interim, which is not a real failure. The OSC failure
+// notification fires only on the healthy-to-failed transition, not on
+// every health-check tick.
 func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
 		log.Debugf("GPG tunnel is running, skipping setup")
@@ -220,9 +220,7 @@ func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
 }
 
 // ensureForwardBound binds the reverse-listen socket at most once per
-// process (see forwardBound); setup's remote command still re-runs every
-// time to repair remote-side agent state (stopped agent, stale keys), which
-// doesn't require touching the reverse-forward at all.
+// process.
 func (t *gpgTunnel) ensureForwardBound(
 	ctx context.Context,
 	containerClient *ssh.Client,
@@ -249,13 +247,13 @@ func (t *gpgTunnel) ensureForwardBound(
 }
 
 // runGPGTunnelInBackground runs the tunnel's first setup synchronously, so
-// the SSH command that follows doesn't race a still-forwarding gpg-agent,
+// the SSH command that follows does not race a still-forwarding gpg-agent,
 // then starts t.run's periodic health-check loop in a goroutine tied to a
 // context derived from ctx. It returns a wait func that cancels that context
 // and blocks until the goroutine exits. Callers defer the wait func
 // immediately after starting the tunnel, so a session that returns while the
-// tunnel's health-check loop is mid-tick doesn't block on the session's own
-// (often much longer-lived) ctx.
+// tunnel's health-check loop is mid-tick does not block on the session's own
+// ctx.
 func runGPGTunnelInBackground(
 	ctx context.Context,
 	t *gpgTunnel,

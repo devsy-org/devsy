@@ -30,9 +30,7 @@ func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
 
 // forwardPortsIfRequested handles -L/-R forwarding when requested. The returned
 // bool reports whether forwarding took over (the caller should return err).
-// -L and -R together aren't supported: each takes over the whole session
-// (never returning to hand off to the shell), so running both would mean
-// silently dropping one — this reports an explicit error instead.
+// -L and -R together are not supported.
 func (cmd *SSHCmd) forwardPortsIfRequested(
 	ctx context.Context,
 	sshClient *ssh.Client,
