@@ -50,7 +50,7 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/pkg/sftp v1.13.11
 	github.com/posthog/posthog-go v1.22.0
-	github.com/shirou/gopsutil/v4 v4.26.6
+	github.com/shirou/gopsutil/v4 v4.26.7
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -81,7 +81,7 @@ require (
 	mvdan.cc/sh/v3 v3.13.1
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/yaml v1.6.0
-	tailscale.com v1.102.0
+	tailscale.com v1.102.1
 )
 
 require (
@@ -155,7 +155,7 @@ require (
 	github.com/devsy-org/admin-apis v1.2.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

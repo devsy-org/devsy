@@ -377,7 +377,12 @@ func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd 
 	var allArgs []string
 	allArgs = append(allArgs, h.Args...)
 	allArgs = append(allArgs, args...)
-	return exec.CommandContext(ctx, h.Command, allArgs...)
+	//nolint:gosec // G204: command and args come from trusted provider config
+	cmd := exec.CommandContext(ctx, h.Command, allArgs...)
+	if h.Docker != nil && h.Docker.Environment != nil {
+		cmd.Env = append(os.Environ(), h.Docker.Environment...)
+	}
+	return cmd
 }
 
 // runCmdCapture runs the provided command, capturing stdout and stderr separately.

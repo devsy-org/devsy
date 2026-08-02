@@ -21,7 +21,7 @@
     </title>
     <meta
       name="description"
-      content="Devsy gives teams standardized workspaces that cut hardware cost, shorten onboarding, and raise developer productivity. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts."
+      content="Devsy gives teams and AI coding agents standardized, isolated workspaces that cut hardware cost, shorten onboarding, and contain agent risk. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts."
     />
     <link rel="icon" href="/docs/media/devsy-favicon.svg" type="image/svg+xml" />
     <meta property="og:type" content="website" />
@@ -803,6 +803,7 @@
         <div class="nav-menu" id="navMenu">
           <nav class="nav-links">
             <a href="#features">Features</a>
+            <a href="#agents">Agents</a>
             <a href="#anywhere">Deploy anywhere</a>
             <a href="#how">How it works</a>
             <a href="#services">Services</a>
@@ -1015,6 +1016,162 @@
               <p>
                 If a provider doesn't exist for your platform, build your own
                 with a small provider spec.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGENTS -->
+      <section id="agents">
+        <div class="wrap">
+          <div class="section-head">
+            <div class="kicker">For AI agents</div>
+            <h2>Secure, disposable environments for every agent you run</h2>
+            <p>
+              AI coding agents execute real commands with real access. Devsy
+              gives each one its own isolated, reproducible container, so
+              agents run without putting your host, secrets, or other
+              projects at risk.
+            </p>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="5" y="11" width="14" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+              </div>
+              <h3>Sandboxed by default</h3>
+              <p>
+                Each agent gets its own container with filesystem, network,
+                and process isolation. A bad command or a prompt-injected
+                instruction can't reach your host, your other projects, or
+                your secrets.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="8" cy="15" r="4" />
+                  <path d="M10.5 12.5 19 4M19 4h-4M19 4v4" />
+                </svg>
+              </div>
+              <h3>Scoped credentials</h3>
+              <p>
+                Git and Docker credentials sync into the workspace, not the
+                agent's host. Revoke or rotate a workspace's access without
+                touching your machine.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+                </svg>
+              </div>
+              <h3>Destroy and rebuild in seconds</h3>
+              <p>
+                Something looks off? Tear the container down and rebuild
+                clean from <code>devcontainer.json</code>. No manual cleanup,
+                no lingering state.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M12 3 2 8l10 5 10-5-10-5ZM2 13l10 5 10-5"
+                  />
+                </svg>
+              </div>
+              <h3>One environment, many agents</h3>
+              <p>
+                Spin up as many isolated agent workspaces as you need from
+                the same <code>devcontainer.json</code> your team uses for
+                development.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+                </svg>
+              </div>
+              <h3>Run where it's cheapest</h3>
+              <p>
+                Local Docker for quick tasks, Kubernetes or cloud providers
+                when you need to fan out dozens of agents at once.
+                Auto-shutdown keeps idle agent workspaces from burning
+                budget.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico" aria-hidden="true">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </div>
+              <h3>Same setup, every time</h3>
+              <p>
+                No environment drift between agent runs. Every workspace
+                starts from the same reproducible definition, so agent
+                output stays comparable.
               </p>
             </div>
           </div>

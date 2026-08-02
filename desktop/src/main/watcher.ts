@@ -34,6 +34,7 @@ export interface ProviderEntry {
     optionGroups?: unknown[]
   }
   state?: { initialized?: boolean; singleMachine?: boolean }
+  status?: string
   default?: boolean
 }
 
@@ -47,6 +48,7 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     options: entry.config.options ?? {},
     optionGroups: entry.config.optionGroups ?? [],
     isDefault: entry.default ?? false,
+    status: entry.status ?? "not_initialized",
     state: {
       initialized: entry.state?.initialized ?? false,
       singleMachine: entry.state?.singleMachine ?? false,

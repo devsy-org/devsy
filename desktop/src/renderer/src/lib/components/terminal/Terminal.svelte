@@ -17,14 +17,20 @@ import {
 } from "$lib/stores/terminal-instances.js"
 import { get } from "svelte/store"
 
+// OSC 9977 is a private-use sequence the devsy CLI emits when GPG-agent
+// forwarding fails but the SSH session continues anyway.
+const GPG_FORWARD_FAILED_OSC = 9977
+
 let {
   sessionId,
   active = true,
   onExit,
+  onGpgForwardFailed,
 }: {
   sessionId: string
   active?: boolean
   onExit?: (exitCode?: number, signal?: number) => void
+  onGpgForwardFailed?: (reason: string) => void
 } = $props()
 
 let containerEl: HTMLDivElement | undefined = $state()
@@ -103,6 +109,7 @@ onMount(async () => {
     // Reattach existing terminal to the new container
     term = existing.term
     fitAddon = existing.fitAddon
+    existing.onGpgForwardFailed = onGpgForwardFailed
     const el = term.element?.parentElement ?? term.element
     if (el) containerEl.appendChild(el)
     requestAnimationFrame(() => {
@@ -163,6 +170,23 @@ onMount(async () => {
     term.open(containerEl)
     fitAddon.fit()
 
+    const instance: TerminalInstance = {
+      term,
+      fitAddon,
+      unlistenOutput,
+      unlistenExit,
+      unsubscribeTheme: undefined,
+      onGpgForwardFailed,
+    }
+    const oscHandler = term.parser.registerOscHandler(
+      GPG_FORWARD_FAILED_OSC,
+      (data) => {
+        instance.onGpgForwardFailed?.(data)
+        return true
+      },
+    )
+    instance.disposeOscHandler = () => oscHandler.dispose()
+
     // Flush any output that arrived during async imports
     for (const data of outputBuffer) {
       term.write(data)
@@ -173,19 +197,13 @@ onMount(async () => {
       terminalWrite(sessionId, Array.from(encoded))
     })
 
-    const unsubscribeTheme = theme.subscribe(() => {
+    instance.unsubscribeTheme = theme.subscribe(() => {
       if (term) {
         term.options.theme = resolveTheme()
       }
     })
 
-    setTerminalInstance(sessionId, {
-      term,
-      fitAddon,
-      unlistenOutput,
-      unlistenExit,
-      unsubscribeTheme,
-    })
+    setTerminalInstance(sessionId, instance)
   }
 
   resizeObserver = new ResizeObserver(() => {
