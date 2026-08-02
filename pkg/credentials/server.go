@@ -64,6 +64,8 @@ func RunCredentialsServerWithListener(
 	srv := &http.Server{
 		Handler:           newCredentialsHandler(ctx, client),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errChan := make(chan error, 1)

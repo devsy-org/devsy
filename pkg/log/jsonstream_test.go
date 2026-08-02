@@ -14,7 +14,17 @@ func TestPipeJSONStreamWithFallback_OversizedLineUnblocksWriter(t *testing.T) {
 	writer, done := PipeJSONStreamWithFallback(PassthroughWriter())
 
 	oversized := strings.Repeat("a", 2*1024*1024) + "\n"
-	_, _ = writer.Write([]byte(oversized))
+	firstWriteDone := make(chan struct{})
+	go func() {
+		defer close(firstWriteDone)
+		_, _ = writer.Write([]byte(oversized))
+	}()
+
+	select {
+	case <-firstWriteDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial write blocked instead of being drained by the scanner")
+	}
 
 	select {
 	case <-done:
