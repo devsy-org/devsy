@@ -183,17 +183,6 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 	return nil
 }
 
-func (d *dockerDriver) RemoveImage(ctx context.Context, tag string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
-	args := []string{"rmi", tag}
-	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
-		return fmt.Errorf("remove image %s: %w", tag, err)
-	}
-	return nil
-}
-
 func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
 	container, err := d.FindDevContainer(ctx, workspaceId)
 	if err != nil {

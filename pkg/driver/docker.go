@@ -99,8 +99,4 @@ type SnapshotCapableDriver interface {
 	// image, tagged as tag, to capture apt installs, global packages, and
 	// other filesystem drift for workspace snapshots.
 	CommitContainer(ctx context.Context, workspaceID, tag string) error
-
-	// RemoveImage removes the given locally-tagged image, e.g. to reclaim
-	// disk after a committed snapshot image has been pushed to a registry.
-	RemoveImage(ctx context.Context, tag string) error
 }

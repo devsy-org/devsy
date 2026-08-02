@@ -207,13 +207,14 @@ func (cmd *CreateCmd) commitAndPushImage(
 		return nil, fmt.Errorf("read pushed image digest: %w", err)
 	}
 
-	// Best-effort: the fsTag-tagged image already exists in the registry by
-	// digest, so a failure to remove the local copy only costs disk space,
-	// not correctness.
-	if err := imgDriver.RemoveImage(ctx, fsTag); err != nil {
-		log.Warnf("remove local snapshot image %s: %v", fsTag, err)
-	}
-
+	// Deliberately not removing the local fsTag-tagged image after push:
+	// `up --from-snapshot`/`snapshot restore` commonly run against this same
+	// tag right after create, and would otherwise have to re-fetch it
+	// remotely (pkg/image.GetImage), which doesn't honor this package's
+	// dockerInternalHost insecure-registry override the way pkg/snapshot's
+	// own parseReference does — breaking against any plain-HTTP registry
+	// (e.g. the e2e registry:2 fixture). Leaving the local image in place
+	// avoids that remote round-trip entirely for the common case.
 	return img, nil
 }
 
