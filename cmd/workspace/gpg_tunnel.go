@@ -78,13 +78,13 @@ func newGPGTunnel(cmd *SSHCmd, devsyConfig *config.Config) *gpgTunnel {
 // run watches the tunnel for the life of ctx, (re-)establishing it whenever
 // it's found down. Call this in a goroutine tied to a context that's
 // cancelled as soon as the owning SSH session ends (see
-// runGPGTunnelInBackground).
+// runGPGTunnelInBackground). The first ensure runs synchronously before this
+// goroutine starts (see runGPGTunnelInBackground), so this loop only needs
+// to handle the periodic re-checks.
 func (t *gpgTunnel) run(ctx context.Context, sshClient *ssh.Client) {
 	if !t.enabled {
 		return
 	}
-
-	t.ensure(ctx, sshClient)
 
 	ticker := time.NewTicker(gpgTunnelHealthCheckInterval)
 	defer ticker.Stop()
@@ -248,17 +248,23 @@ func (t *gpgTunnel) ensureForwardBound(
 	return nil
 }
 
-// runGPGTunnelInBackground starts t.run in a goroutine tied to a context
-// derived from ctx, and returns a wait func that cancels that context and
-// blocks until the goroutine exits. Callers defer the wait func immediately
-// after starting the tunnel, so a session that returns while the tunnel's
-// health-check loop is mid-tick doesn't block on the session's own (often
-// much longer-lived) ctx.
+// runGPGTunnelInBackground runs the tunnel's first setup synchronously, so
+// the SSH command that follows doesn't race a still-forwarding gpg-agent,
+// then starts t.run's periodic health-check loop in a goroutine tied to a
+// context derived from ctx. It returns a wait func that cancels that context
+// and blocks until the goroutine exits. Callers defer the wait func
+// immediately after starting the tunnel, so a session that returns while the
+// tunnel's health-check loop is mid-tick doesn't block on the session's own
+// (often much longer-lived) ctx.
 func runGPGTunnelInBackground(
 	ctx context.Context,
 	t *gpgTunnel,
 	sshClient *ssh.Client,
 ) (wait func()) {
+	if t.enabled {
+		t.ensure(ctx, sshClient)
+	}
+
 	tunnelCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
