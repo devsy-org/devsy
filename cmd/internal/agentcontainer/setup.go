@@ -473,16 +473,28 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	return nil
 }
 
-// skipSnapshotRestore reports whether target already has content, in which
-// case a snapshot restore into it would be destructive and is skipped.
+// synthesizedDevContainerName is the devcontainer.json devsy synthesizes for
+// image/none-sourced workspaces (pkg/devcontainer's saveSynthesizedConfig). A
+// snapshot-sourced restore gets one too, written into the mount target before
+// syncMounts ever runs, so it must not count as "already has content" below.
+var synthesizedDevContainerName = ".devcontainer." + config2.BinaryName + ".json"
+
+// skipSnapshotRestore reports whether target already has real content, in
+// which case a snapshot restore into it would be destructive and is skipped.
 func skipSnapshotRestore(target string) bool {
 	files, err := os.ReadDir(target)
-	if err != nil || len(files) == 0 {
+	if err != nil {
 		return false
 	}
-	names := make([]string, 0, len(files))
+	var names []string
 	for _, f := range files {
+		if f.Name() == synthesizedDevContainerName {
+			continue
+		}
 		names = append(names, f.Name())
+	}
+	if len(names) == 0 {
+		return false
 	}
 	log.Debugf("skip snapshot restore because %s is not empty: entries=%v", target, names)
 	return true
