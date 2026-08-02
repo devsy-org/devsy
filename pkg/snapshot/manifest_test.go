@@ -42,6 +42,39 @@ func TestBuildManifest_RoundTrip(t *testing.T) {
 	require.Equal(t, opts.VolumesDigest, parsed.Layers[1].Digest)
 }
 
+func TestBuildManifest_UsesObservedContainerImageMediaType(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:            testWorkspaceUID,
+		CreatedAt:               time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		SourceProvider:          testSourceProvider,
+		ContainerImageMediaType: "application/vnd.oci.image.manifest.v1+json",
+		ContainerImageDigest:    "sha256:" + zeroDigest,
+		ContainerImageSize:      1024,
+		VolumesDigest:           "sha256:" + oneDigest,
+		VolumesSize:             2048,
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+	require.Equal(t, opts.ContainerImageMediaType, built.Layers[0].MediaType)
+}
+
+func TestBuildManifest_DefaultsContainerImageMediaTypeWhenUnset(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         testWorkspaceUID,
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		SourceProvider:       testSourceProvider,
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		ContainerImageSize:   1024,
+		VolumesDigest:        "sha256:" + oneDigest,
+		VolumesSize:          2048,
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+	require.Equal(t, defaultContainerImageMediaType, built.Layers[0].MediaType)
+}
+
 func TestBuildManifest_MessageAnnotationOnlyWhenNonEmpty(t *testing.T) {
 	base := BuildManifestOptions{
 		WorkspaceUID:         testWorkspaceUID,

@@ -88,7 +88,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		return fmt.Errorf("check push permissions for %s: %w", fsTag, err)
 	}
 
-	imgDigest, imgSize, err := cmd.commitAndPushImage(ctx, target, fsTag)
+	img, err := cmd.commitAndPushImage(ctx, target, fsTag)
 	if err != nil {
 		return err
 	}
@@ -99,18 +99,19 @@ func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 	}
 
 	manifest, err := snapshotpkg.BuildManifest(snapshotpkg.BuildManifestOptions{
-		WorkspaceUID:         target.Workspace.UID,
-		CreatedAt:            time.Now(),
-		DevContainerHash:     devContainerConfigHash(target.Workspace.DevContainerConfig),
-		SourceProvider:       target.Workspace.Provider.Name,
-		Message:              cmd.Message,
-		MountPrefix:          vols.MountPrefix,
-		RunArgs:              vols.RunArgs,
-		ContainerEnv:         vols.ContainerEnv,
-		ContainerImageDigest: imgDigest,
-		ContainerImageSize:   imgSize,
-		VolumesDigest:        vols.Digest,
-		VolumesSize:          vols.Size,
+		WorkspaceUID:            target.Workspace.UID,
+		CreatedAt:               time.Now(),
+		DevContainerHash:        devContainerConfigHash(target.Workspace.DevContainerConfig),
+		SourceProvider:          target.Workspace.Provider.Name,
+		Message:                 cmd.Message,
+		MountPrefix:             vols.MountPrefix,
+		RunArgs:                 vols.RunArgs,
+		ContainerEnv:            vols.ContainerEnv,
+		ContainerImageMediaType: img.MediaType,
+		ContainerImageDigest:    img.Digest,
+		ContainerImageSize:      img.Size,
+		VolumesDigest:           vols.Digest,
+		VolumesSize:             vols.Size,
 	})
 	if err != nil {
 		return err
@@ -162,30 +163,37 @@ func (cmd *CreateCmd) resolveTarget(
 	}, nil
 }
 
+// pushedImage describes a successfully committed and pushed container image.
+type pushedImage struct {
+	Digest    string
+	Size      int64
+	MediaType string
+}
+
 // commitAndPushImage commits the target workspace's running container
-// filesystem and pushes it as fsTag, returning the pushed image's digest and
-// size.
+// filesystem and pushes it as fsTag, returning the pushed image's digest,
+// size, and the media type the registry actually reported for it.
 func (cmd *CreateCmd) commitAndPushImage(
 	ctx context.Context, target *snapshotTarget, fsTag string,
-) (string, int64, error) {
+) (*pushedImage, error) {
 	imgDriver, err := cmd.imageDriver(ctx, target.Client)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
 
 	runnerID := devcontainer.GetRunnerIDFromWorkspace(target.Workspace)
 	if err := imgDriver.CommitContainer(ctx, runnerID, fsTag); err != nil {
-		return "", 0, fmt.Errorf("commit container: %w", err)
+		return nil, fmt.Errorf("commit container: %w", err)
 	}
 	if err := imgDriver.PushDevContainer(ctx, fsTag); err != nil {
-		return "", 0, fmt.Errorf("push container image: %w", err)
+		return nil, fmt.Errorf("push container image: %w", err)
 	}
 
-	imgDigest, imgSize, err := pushedImageDigestAndSize(ctx, target.Repository, fsTag)
+	img, err := pushedImageDigestAndSize(ctx, target.Repository, fsTag)
 	if err != nil {
-		return "", 0, fmt.Errorf("read pushed image digest: %w", err)
+		return nil, fmt.Errorf("read pushed image digest: %w", err)
 	}
-	return imgDigest, imgSize, nil
+	return img, nil
 }
 
 // imageDriver and the volumes tunnel (newLocalTunnelClient) both assume the
@@ -363,20 +371,20 @@ func newLocalTunnelClient(
 func pushedImageDigestAndSize(
 	ctx context.Context,
 	repository, imageRef string,
-) (string, int64, error) {
+) (*pushedImage, error) {
 	ref, err := snapshotpkg.ParseImageReference(imageRef)
 	if err != nil {
-		return "", 0, fmt.Errorf("parse image reference %q: %w", imageRef, err)
+		return nil, fmt.Errorf("parse image reference %q: %w", imageRef, err)
 	}
 
 	keychain, err := image.GetKeychain(ctx)
 	if err != nil {
-		return "", 0, fmt.Errorf("create authentication keychain: %w", err)
+		return nil, fmt.Errorf("create authentication keychain: %w", err)
 	}
 
 	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(keychain))
 	if err != nil {
-		return "", 0, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"get image descriptor for %s: %w",
 			imageRef,
 			image.SanitizeRegistryError(err),
@@ -389,10 +397,14 @@ func pushedImageDigestAndSize(
 		string(desc.MediaType),
 		bytes.NewReader(desc.Manifest),
 	); err != nil {
-		return "", 0, fmt.Errorf("push image manifest %s as blob: %w", desc.Digest, err)
+		return nil, fmt.Errorf("push image manifest %s as blob: %w", desc.Digest, err)
 	}
 
-	return desc.Digest.String(), desc.Size, nil
+	return &pushedImage{
+		Digest:    desc.Digest.String(),
+		Size:      desc.Size,
+		MediaType: string(desc.MediaType),
+	}, nil
 }
 
 // devContainerConfigHash lets restores detect drift between the snapshot and

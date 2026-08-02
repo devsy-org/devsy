@@ -34,20 +34,25 @@ func TestIsDockerInternalHost(t *testing.T) {
 func TestParseReference_TreatsDockerInternalHostAsSecureByDefault(t *testing.T) {
 	t.Setenv(config.EnvInsecureDockerInternal, "")
 
-	secureRef, err := parseReference("ghcr.io/acme/repo:tag")
+	ref, err := parseReference("host.docker.internal:5000/acme/repo:tag")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	notOptedInRef, err := parseReference("host.docker.internal:5000/acme/repo:tag")
+	if got := ref.Context().Scheme(); got != "https" {
+		t.Fatalf("expected https without %s set, got %q", config.EnvInsecureDockerInternal, got)
+	}
+}
+
+func TestParseReference_TreatsDockerInternalHostAsSecureWhenExplicitlyFalse(t *testing.T) {
+	t.Setenv(config.EnvInsecureDockerInternal, "false")
+
+	ref, err := parseReference("host.docker.internal:5000/acme/repo:tag")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if secureRef.Context().Scheme() != notOptedInRef.Context().Scheme() {
+	if got := ref.Context().Scheme(); got != "https" {
 		t.Fatalf(
-			"expected host.docker.internal ref to be secure like any other registry without %s set, got %q vs %q",
-			config.EnvInsecureDockerInternal,
-			notOptedInRef.Context().Scheme(),
-			secureRef.Context().Scheme(),
+			"expected https with %s=false, got %q", config.EnvInsecureDockerInternal, got,
 		)
 	}
 }
@@ -55,18 +60,11 @@ func TestParseReference_TreatsDockerInternalHostAsSecureByDefault(t *testing.T) 
 func TestParseReference_MarksDockerInternalHostInsecureWhenOptedIn(t *testing.T) {
 	t.Setenv(config.EnvInsecureDockerInternal, "true")
 
-	secureRef, err := parseReference("ghcr.io/acme/repo:tag")
+	ref, err := parseReference("host.docker.internal:5000/acme/repo:tag")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	insecureRef, err := parseReference("host.docker.internal:5000/acme/repo:tag")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if secureRef.Context().Scheme() == insecureRef.Context().Scheme() {
-		t.Fatalf(
-			"expected host.docker.internal ref to use a different scheme than a normal registry, both got %q",
-			secureRef.Context().Scheme(),
-		)
+	if got := ref.Context().Scheme(); got != "http" {
+		t.Fatalf("expected http with %s=true, got %q", config.EnvInsecureDockerInternal, got)
 	}
 }

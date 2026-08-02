@@ -11,7 +11,12 @@ const (
 	ManifestMediaType    = "application/vnd.oci.image.manifest.v1+json"
 	ManifestArtifactType = "application/vnd.devsy.snapshot.manifest.v1+json"
 	emptyConfigMediaType = "application/vnd.oci.empty.v1+json"
-	dockerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	// defaultContainerImageMediaType is used only when
+	// BuildManifestOptions.ContainerImageMediaType is unset. Real callers
+	// (cmd/snapshot/create.go) always pass the media type the registry
+	// actually reported for the pushed image, which may be the OCI or the
+	// Docker v2 manifest format depending on the daemon/registry.
+	defaultContainerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 )
 
 const (
@@ -72,8 +77,9 @@ type BuildManifestOptions struct {
 	RunArgs          []string
 	ContainerEnv     map[string]string
 
-	ContainerImageDigest string
-	ContainerImageSize   int64
+	ContainerImageMediaType string
+	ContainerImageDigest    string
+	ContainerImageSize      int64
 
 	VolumesDigest string
 	VolumesSize   int64
@@ -108,6 +114,11 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 		return nil, err
 	}
 
+	imageMediaType := opts.ContainerImageMediaType
+	if imageMediaType == "" {
+		imageMediaType = defaultContainerImageMediaType
+	}
+
 	return &Manifest{
 		SchemaVersion: 2,
 		MediaType:     ManifestMediaType,
@@ -119,7 +130,7 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 		},
 		Layers: []Descriptor{
 			{
-				MediaType: dockerImageMediaType,
+				MediaType: imageMediaType,
 				Digest:    opts.ContainerImageDigest,
 				Size:      opts.ContainerImageSize,
 			},

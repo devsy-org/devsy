@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testDockerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+
 func newTestRegistry(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(registry.New())
@@ -114,7 +116,7 @@ func TestPushPullManifest_RoundTrip(t *testing.T) {
 	imgDigest, imgSize, err := PushBlob(
 		ctx,
 		host+"/acme/snapshots",
-		dockerImageMediaType,
+		testDockerImageMediaType,
 		bytes.NewReader([]byte("fake-image-blob")),
 	)
 	require.NoError(t, err)
@@ -150,7 +152,9 @@ func TestListRefs_FiltersByWorkspaceID(t *testing.T) {
 	for i, ws := range []string{"my-ws", "my-ws", "other-ws"} {
 		volDigest, volSize, err := PushBlob(ctx, repo, VolumesMediaType, strings.NewReader("v"))
 		require.NoError(t, err)
-		imgDigest, imgSize, err := PushBlob(ctx, repo, dockerImageMediaType, strings.NewReader("i"))
+		imgDigest, imgSize, err := PushBlob(
+			ctx, repo, testDockerImageMediaType, strings.NewReader("i"),
+		)
 		require.NoError(t, err)
 		m, err := BuildManifest(BuildManifestOptions{
 			WorkspaceUID:         ws,
@@ -190,7 +194,7 @@ func TestDeleteManifest_RemovesManifest(t *testing.T) {
 	imgDigest, imgSize, err := PushBlob(
 		ctx,
 		host+"/acme/snapshots",
-		dockerImageMediaType,
+		testDockerImageMediaType,
 		bytes.NewReader([]byte("fake-image-blob")),
 	)
 	require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -30,7 +31,8 @@ const dockerInternalHost = "host.docker.internal"
 // snapshot registry reference, adding name.Insecure for registries that are
 // always local to the calling machine (see config.EnvInsecureDockerInternal).
 func referenceOptions(s string) []name.Option {
-	if os.Getenv(config.EnvInsecureDockerInternal) != "" && isDockerInternalHost(s) {
+	insecure, _ := strconv.ParseBool(os.Getenv(config.EnvInsecureDockerInternal))
+	if insecure && isDockerInternalHost(s) {
 		return []name.Option{name.Insecure}
 	}
 	return nil
