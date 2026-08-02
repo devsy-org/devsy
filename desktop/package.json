@@ -33,7 +33,7 @@
     "@electron/rebuild": "4.2.0",
     "@internationalized/date": "3.12.2",
     "@lucide/svelte": "1.28.0",
-    "@playwright/test": "1.62.0",
+    "@playwright/test": "1.62.1",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tailwindcss/vite": "4.3.3",
     "@testing-library/jest-dom": "7.0.0",
