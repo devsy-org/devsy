@@ -14,6 +14,11 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	platformLinuxAMD64 = "linux/amd64"
+	platformLinuxARM64 = "linux/arm64"
+)
+
 type composeBuildImageNameTestCase struct {
 	name          string
 	composeHelper *compose.ComposeHelper
@@ -180,7 +185,7 @@ func (s *ComposeSuite) TestCreateComposeServiceCarriesPlatform() {
 		composeService: &composetypes.ServiceConfig{
 			Name:     "app",
 			Image:    "ghcr.io/example/shared-base:latest",
-			Platform: "linux/amd64",
+			Platform: platformLinuxAMD64,
 		},
 		buildImageName:          "workspace-app:latest",
 		dockerfilePathInContext: "Dockerfile-with-features",
@@ -191,7 +196,7 @@ func (s *ComposeSuite) TestCreateComposeServiceCarriesPlatform() {
 	})
 
 	s.Require().NotNil(service.Build)
-	s.Equal(composetypes.StringList{"linux/amd64"}, service.Build.Platforms)
+	s.Equal(composetypes.StringList{platformLinuxAMD64}, service.Build.Platforms)
 }
 
 func (s *ComposeSuite) TestCreateComposeServiceOmitsPlatformWhenUnset() {
@@ -219,7 +224,7 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesBuildPlatforms() {
 		composeService: &composetypes.ServiceConfig{
 			Name: "app",
 			Build: &composetypes.BuildConfig{
-				Platforms: composetypes.StringList{"linux/amd64", "linux/arm64"},
+				Platforms: composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
 			},
 		},
 		dockerfilePathInContext: "Dockerfile-with-features",
@@ -228,7 +233,10 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesBuildPlatforms() {
 	})
 
 	s.Require().NotNil(service.Build)
-	s.Equal(composetypes.StringList{"linux/amd64", "linux/arm64"}, service.Build.Platforms)
+	s.Equal(
+		composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
+		service.Build.Platforms,
+	)
 }
 
 func (s *ComposeSuite) TestCreateComposeServiceClonesUnrelatedBuildFields() {

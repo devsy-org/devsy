@@ -377,6 +377,7 @@ func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd 
 	var allArgs []string
 	allArgs = append(allArgs, h.Args...)
 	allArgs = append(allArgs, args...)
+	//nolint:gosec // G204: command and args come from trusted provider config
 	cmd := exec.CommandContext(ctx, h.Command, allArgs...)
 	// Mirrors DockerHelper.buildCmd, else compose ignores the provider's
 	// configured DOCKER_HOST/env and hits the default daemon.
