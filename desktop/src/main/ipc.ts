@@ -383,7 +383,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--result-format",
         "json",
         "--timeout",
-        "5s",
+        "15s",
       ]
       if (args.recovery) cliArgs.push("--recovery")
       return cli.runRaw(cliArgs)
