@@ -88,12 +88,18 @@ func NewCredentialsServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
+	// Own a child of ctx for the lifetime of this call: an early return below
+	// (docker/git setup failing) must stop the port-forwarding goroutine
+	// started by maybeForwardPorts, not leave it running past this Run call.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}
 
-	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
+	if _, err := tunnelClient.Ping(runCtx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
@@ -103,18 +109,18 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 	defer func() { _ = ln.Close() }()
 
-	cmd.maybeForwardPorts(ctx, tunnelClient)
+	cmd.maybeForwardPorts(runCtx, tunnelClient)
 
 	if err := cmd.configureDockerHelper(port); err != nil {
 		return err
 	}
 
-	if err := configureGitUserLocally(ctx, cmd.User, tunnelClient); err != nil {
+	if err := configureGitUserLocally(runCtx, cmd.User, tunnelClient); err != nil {
 		log.Warnf("error configuring git user: %v", err)
 		return err
 	}
 
-	cleanupGitHelper, err := cmd.configureGitCredentialHelper(ctx, port)
+	cleanupGitHelper, err := cmd.configureGitCredentialHelper(runCtx, port)
 	if err != nil {
 		return err
 	}
@@ -123,7 +129,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
-	return credentials.RunCredentialsServerWithListener(ctx, ln, tunnelClient)
+	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient)
 }
 
 // claimPort binds port and returns the listener, holding it exclusively so
