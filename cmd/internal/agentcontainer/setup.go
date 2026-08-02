@@ -440,6 +440,7 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 			sctx.ctx,
 			sctx.workspaceInfo.Source.Snapshot,
 			mounts,
+			sctx.workspaceInfo.CLIOptions.Reset,
 		); err != nil {
 			return fmt.Errorf("restore snapshot volumes: %w", err)
 		}

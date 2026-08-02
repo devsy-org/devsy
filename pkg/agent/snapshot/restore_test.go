@@ -97,10 +97,45 @@ func TestRestoreVolumes_ExtractsIntoMountTargets(t *testing.T) {
 	dest := t.TempDir()
 	mounts := []*config.Mount{{Target: filepath.Join(dest, "workspaces/e2e")}}
 
-	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts))
+	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts, false))
 
 	gotPath := filepath.Join(dest, "workspaces/e2e/hello.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // dest is t.TempDir()
+	require.NoError(t, err)
+	require.Equal(t, "hi", string(got))
+}
+
+func TestRestoreVolumes_ResetRemovesContentNotInSnapshot(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	repo := host + "/acme/snapshots"
+	ctx := context.Background()
+
+	ref := pushTestSnapshot(t, ctx, testSnapshotParams{
+		repo: repo, tarEntryName: "workspaces/e2e/hello.txt", mountPrefix: "workspaces/e2e",
+	})
+
+	dest := t.TempDir()
+	target := filepath.Join(dest, "workspaces/e2e")
+	mounts := []*config.Mount{{Target: target}}
+
+	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts, false))
+
+	// Content added after the first restore, not part of the snapshot at all.
+	stalePath := filepath.Join(target, "stale.txt")
+	require.NoError(t, os.WriteFile(stalePath, []byte("stale"), 0o600))
+
+	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts, true))
+
+	_, err := os.Stat(stalePath)
+	require.True(
+		t, os.IsNotExist(err),
+		"stale.txt should not survive a reset restore, got err=%v", err,
+	)
+
+	//nolint:gosec // dest is t.TempDir()
+	got, err := os.ReadFile(filepath.Join(target, "hello.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "hi", string(got))
 }
@@ -127,7 +162,7 @@ func TestRestoreVolumes_UsesCreateTimePrefixNotRestoreTargetDepth(t *testing.T) 
 	dest := t.TempDir()
 	mounts := []*config.Mount{{Target: filepath.Join(dest, "workspaces/proj")}}
 
-	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts))
+	require.NoError(t, RestoreVolumes(ctx, ref.String(), mounts, false))
 
 	gotPath := filepath.Join(dest, "workspaces/proj/hello.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // dest is t.TempDir()
@@ -154,7 +189,7 @@ func TestRestoreVolumes_ErrorsWhenMountPrefixAnnotationMissing(t *testing.T) {
 	dest := t.TempDir()
 	mounts := []*config.Mount{{Target: filepath.Join(dest, "workspaces/proj")}}
 
-	err := RestoreVolumes(ctx, ref.String(), mounts)
+	err := RestoreVolumes(ctx, ref.String(), mounts, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "mount-prefix")
 }

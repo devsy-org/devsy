@@ -6,6 +6,7 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -31,7 +32,15 @@ import (
 // Multi-mount restore is tracked as follow-up work; snapshot create already
 // rejects multi-mount workspaces up front so this case should not arise
 // from a snapshot this codebase created.
-func RestoreVolumes(ctx context.Context, snapshotRef string, mounts []*config.Mount) error {
+//
+// extract.Extract only ever writes/overwrites entries present in the tar; it
+// never deletes anything already at the target that the tar doesn't mention.
+// So when reset is true, the target's existing contents are removed first,
+// giving --reset its expected meaning: the workspace ends up in exactly the
+// snapshot's state, not the snapshot's state merged with whatever was there.
+func RestoreVolumes(
+	ctx context.Context, snapshotRef string, mounts []*config.Mount, reset bool,
+) error {
 	if len(mounts) == 0 {
 		return fmt.Errorf("restore volumes: no mounts configured")
 	}
@@ -54,9 +63,33 @@ func RestoreVolumes(ctx context.Context, snapshotRef string, mounts []*config.Mo
 	defer func() { _ = rc.Close() }()
 
 	target := mounts[0].Target
+	if reset {
+		if err := clearDir(target); err != nil {
+			return fmt.Errorf("clear %s for --reset: %w", target, err)
+		}
+	}
+
 	levels := len(strings.Split(layer.MountPrefix, "/"))
 	if err := extract.Extract(rc, target, extract.StripLevels(levels)); err != nil {
 		return fmt.Errorf("extract snapshot volumes into %s: %w", target, err)
+	}
+	return nil
+}
+
+// clearDir removes dir's contents (not dir itself, which may be a bind mount
+// that can't be unlinked and recreated).
+func clearDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(dir + "/" + entry.Name()); err != nil {
+			return err
+		}
 	}
 	return nil
 }
