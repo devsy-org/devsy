@@ -91,12 +91,6 @@ func (c *ContainerTunnel) runHostTunnel(
 	stdinReader, stdoutWriter *os.File,
 	timeout time.Duration,
 ) error {
-	// This stderr spans two phases: InjectAgent's own shell script (plain
-	// text) and, once injection succeeds, the actual `devsy internal
-	// ssh-server --stdio` invocation (always structured JSON). Use the
-	// fallback variant so the script's plain-text errors aren't silently
-	// dropped by the JSON-only parser while JSON lines still get re-emitted
-	// at their original level instead of double-wrapped.
 	writer, done := log.PipeJSONStreamWithFallback(log.PassthroughWriter())
 	defer func() {
 		_ = writer.Close()
@@ -241,11 +235,7 @@ type containerTunnelOpts struct {
 
 // runContainerTunnel runs the container tunnel SSH command. It closes
 // stdoutWriter on exit so StdioClient gets EOF when the tunnel dies.
-// Context-cancelled errors are suppressed (expected during normal shutdown).
 func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
-	// Unlike runHostTunnel, this stderr only ever carries the `devsy internal
-	// agent container-tunnel` command's own JSON logs (no injection-script
-	// phase), so the plain PipeJSONStream is correct here.
 	writer, done := log.PipeJSONStream()
 	defer func() {
 		_ = writer.Close()

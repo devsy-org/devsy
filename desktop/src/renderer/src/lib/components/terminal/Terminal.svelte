@@ -178,10 +178,6 @@ onMount(async () => {
       unsubscribeTheme: undefined,
       onGpgForwardFailed,
     }
-    // Register before flushing outputBuffer below: term.write drives the OSC
-    // parser synchronously, so a failure notification buffered during the
-    // async import window above would otherwise be parsed and discarded
-    // before this handler exists to catch it.
     const oscHandler = term.parser.registerOscHandler(
       GPG_FORWARD_FAILED_OSC,
       (data) => {
