@@ -116,16 +116,11 @@ func resolveVolumesLayer(ctx context.Context, snapshotRef string) (*volumesLayer
 		return nil, fmt.Errorf("pull snapshot manifest %s: %w", snapshotRef, err)
 	}
 
-	var digest string
-	for _, l := range manifest.Layers {
-		if l.MediaType == pkgsnapshot.VolumesMediaType {
-			digest = l.Digest
-			break
-		}
+	volumes, err := manifest.Volumes()
+	if err != nil {
+		return nil, fmt.Errorf("snapshot %s: %w", snapshotRef, err)
 	}
-	if digest == "" {
-		return nil, fmt.Errorf("snapshot %s has no volumes layer", snapshotRef)
-	}
+	digest := volumes.Digest
 
 	mountPrefix, ok := manifest.Annotations[pkgsnapshot.AnnotationMountPrefix]
 	if !ok || mountPrefix == "" {

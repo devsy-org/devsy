@@ -178,6 +178,29 @@ func TestManifest_ContainerEnv_NilWhenAbsent(t *testing.T) {
 	require.Nil(t, containerEnv)
 }
 
+func TestManifest_ContainerImageAndVolumes(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         testWorkspaceUID,
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		SourceProvider:       testSourceProvider,
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		ContainerImageSize:   1024,
+		VolumesDigest:        "sha256:" + oneDigest,
+		VolumesSize:          2048,
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+
+	img, err := built.ContainerImage()
+	require.NoError(t, err)
+	require.Equal(t, opts.ContainerImageDigest, img.Digest)
+
+	vols, err := built.Volumes()
+	require.NoError(t, err)
+	require.Equal(t, opts.VolumesDigest, vols.Digest)
+}
+
 func TestParseManifest_RejectsInvalidSchemaVersion(t *testing.T) {
 	invalidManifest := []byte(
 		`{"schemaVersion":1,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`,

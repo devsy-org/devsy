@@ -46,9 +46,9 @@ func NewRestoreCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		),
 		cliflags.String(
 			&cmd.ProviderName,
-			"provider",
+			"target-provider",
 			"",
-			"Provider to restore into (defaults to the current default provider)",
+			"Provider to restore into (defaults to the snapshot's source provider)",
 		),
 	)
 	return restoreCmd

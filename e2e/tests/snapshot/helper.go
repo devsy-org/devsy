@@ -19,6 +19,11 @@ import (
 // registries at once.
 const registryHostPort = "15500"
 
+// registryImage pins registry:2 by digest, matching the busybox@sha256:...
+// pinning convention already used elsewhere in the e2e/CI workflows, so a
+// new tag push upstream can't change this fixture's behavior underfoot.
+const registryImage = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+
 // registryHost is the address e2e specs push/pull snapshots against.
 //
 // host.docker.internal rather than localhost: `snapshot create`'s
@@ -56,7 +61,7 @@ const registryHostPort = "15500"
 //     before running this suite, alongside the /etc/hosts entry above.
 var registryHost = "host.docker.internal:" + registryHostPort
 
-// startLocalRegistry runs a disposable `registry:2` container bound to
+// startLocalRegistry runs a disposable registryImage container bound to
 // registryHostPort, mirroring the manual `docker run` pattern already used
 // for fixture containers in tests/up/provider_docker.go. Returns the
 // "host:port" address to push/pull against and a cleanup func. Deletes are
@@ -64,18 +69,6 @@ var registryHost = "host.docker.internal:" + registryHostPort
 func startLocalRegistry(
 	ctx context.Context, dockerHelper *docker.DockerHelper,
 ) (string, func(), error) {
-	// Best-effort: remove any registry container leaked by a previous
-	// crashed/timed-out run, since it would otherwise permanently hold
-	// registryHostPort and fail every subsequent run with a confusing
-	// port-already-allocated error instead of the real cause.
-	labels := []string{"devsy-e2e-snapshot-registry=true"}
-	if leaked, ferr := dockerHelper.FindContainer(ctx, labels); ferr == nil {
-		for _, id := range leaked {
-			_ = dockerHelper.Stop(ctx, id)
-			_ = dockerHelper.Remove(ctx, id)
-		}
-	}
-
 	id, err := runRegistryContainerWithRetry(ctx, dockerHelper)
 	if err != nil {
 		return "", nil, err
@@ -101,41 +94,84 @@ func startLocalRegistry(
 // can fail with exit 125 moments after the daemon restart succeeds.
 const registryStartAttempts = 3
 
-// runRegistryContainerWithRetry runs the registry:2 container, retrying a
+// runRegistryContainerWithRetry runs registryImage, retrying a
 // handful of times on failure. Returns the started container's ID.
 //
 // The container ID is captured directly off `docker run -d`'s stdout rather
 // than looked up afterwards by a shared static label: a leaked registry
 // container from a previous (e.g. failed) spec would otherwise make a
 // label-based lookup ambiguous or match the wrong container.
+// registryLabels identifies the disposable registry fixture container so a
+// leaked one from a previous crashed/timed-out run can be found and removed.
+var registryLabels = []string{"devsy-e2e-snapshot-registry=true"}
+
+// removeLeakedRegistryContainers is best-effort: a leaked container would
+// otherwise permanently hold registryHostPort and fail every subsequent
+// attempt with a confusing port-already-allocated error instead of the real
+// cause.
+func removeLeakedRegistryContainers(ctx context.Context, dockerHelper *docker.DockerHelper) {
+	leaked, err := dockerHelper.FindContainer(ctx, registryLabels)
+	if err != nil {
+		return
+	}
+	for _, id := range leaked {
+		_ = dockerHelper.Stop(ctx, id)
+		_ = dockerHelper.Remove(ctx, id)
+	}
+}
+
+// startRegistryContainer runs a single attempt at starting registryImage and
+// returns the started container's ID captured directly off `docker run -d`'s
+// stdout, rather than looked up afterwards by registryLabels: a leaked
+// registry container from a previous (e.g. failed) spec would otherwise make
+// a label-based lookup ambiguous or match the wrong container.
+func startRegistryContainer(
+	ctx context.Context, dockerHelper *docker.DockerHelper,
+) (string, error) {
+	var stdout, stderr bytes.Buffer
+	err := dockerHelper.Run(ctx, []string{
+		"run", "-d",
+		"--label", registryLabels[0],
+		"-e", "REGISTRY_STORAGE_DELETE_ENABLED=true",
+		"-p", registryHostPort + ":5000",
+		registryImage,
+	}, docker.Streams{Stdout: &stdout, Stderr: &stderr})
+	if err != nil {
+		return "", fmt.Errorf(
+			"start local registry: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()),
+		)
+	}
+	id := strings.TrimSpace(stdout.String())
+	if id == "" {
+		return "", fmt.Errorf("start local registry: docker run produced no container id")
+	}
+	return id, nil
+}
+
+// runRegistryContainerWithRetry runs registryImage, retrying a handful of
+// times on failure. Between attempts it re-sweeps for containers leaked by
+// the previous attempt, not just the ones from before the loop started.
 func runRegistryContainerWithRetry(
 	ctx context.Context, dockerHelper *docker.DockerHelper,
 ) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= registryStartAttempts; attempt++ {
-		var stdout, stderr bytes.Buffer
-		err := dockerHelper.Run(ctx, []string{
-			"run", "-d",
-			"--label", "devsy-e2e-snapshot-registry=true",
-			"-e", "REGISTRY_STORAGE_DELETE_ENABLED=true",
-			"-p", registryHostPort + ":5000",
-			"registry:2",
-		}, docker.Streams{Stdout: &stdout, Stderr: &stderr})
+		removeLeakedRegistryContainers(ctx, dockerHelper)
+
+		id, err := startRegistryContainer(ctx, dockerHelper)
 		if err == nil {
-			id := strings.TrimSpace(stdout.String())
-			if id == "" {
-				return "", fmt.Errorf("start local registry: docker run produced no container id")
-			}
 			return id, nil
 		}
-		lastErr = fmt.Errorf(
-			"start local registry: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()),
-		)
+		lastErr = err
 		if attempt < registryStartAttempts {
 			ginkgo.GinkgoWriter.Printf(
 				"[retry] start local registry: attempt %d failed, retrying: %v\n", attempt, lastErr,
 			)
-			time.Sleep(3 * time.Second)
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return "", fmt.Errorf("start local registry: %w", ctx.Err())
+			}
 		}
 	}
 	return "", fmt.Errorf("after %d attempts: %w", registryStartAttempts, lastErr)

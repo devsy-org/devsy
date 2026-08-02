@@ -196,6 +196,26 @@ func (m *Manifest) ContainerEnv() (map[string]string, error) {
 	return env, nil
 }
 
+// ContainerImage returns the manifest's committed container filesystem layer.
+func (m *Manifest) ContainerImage() (Descriptor, error) {
+	for _, l := range m.Layers {
+		if l.MediaType != VolumesMediaType {
+			return l, nil
+		}
+	}
+	return Descriptor{}, fmt.Errorf("snapshot manifest has no container image layer")
+}
+
+// Volumes returns the manifest's volumes archive layer.
+func (m *Manifest) Volumes() (Descriptor, error) {
+	for _, l := range m.Layers {
+		if l.MediaType == VolumesMediaType {
+			return l, nil
+		}
+	}
+	return Descriptor{}, fmt.Errorf("snapshot manifest has no volumes layer")
+}
+
 func (m *Manifest) MarshalOCI() ([]byte, error) {
 	raw, err := json.Marshal(m)
 	if err != nil {

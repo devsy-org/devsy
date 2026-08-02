@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -72,6 +73,18 @@ type snapshotTarget struct {
 
 // The manifest is pushed last so a snapshot only becomes visible once every
 // blob it references already exists in the registry.
+//
+// The workspace is not quiesced (stopped/paused) while its filesystem is
+// committed and its volumes are read: the two are captured back-to-back
+// without a consistency window, so a write straddling both (e.g. a build
+// tool that writes to the container filesystem and a bind-mounted volume in
+// the same operation) can be observed half-applied in the resulting
+// snapshot. This is an accepted limitation, not an oversight: volumes are
+// read directly off host bind mount paths rather than through the
+// container (see pushVolumes), so stopping the container would not by
+// itself close this window, and would also interrupt the workspace's
+// running agent/SSH session for a `snapshot create` that today runs
+// against a live workspace.
 func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
 	target, err := cmd.resolveTarget(ctx, devsyConfig, args)
 	if err != nil {
@@ -193,6 +206,14 @@ func (cmd *CreateCmd) commitAndPushImage(
 	if err != nil {
 		return nil, fmt.Errorf("read pushed image digest: %w", err)
 	}
+
+	// Best-effort: the fsTag-tagged image already exists in the registry by
+	// digest, so a failure to remove the local copy only costs disk space,
+	// not correctness.
+	if err := imgDriver.RemoveImage(ctx, fsTag); err != nil {
+		log.Warnf("remove local snapshot image %s: %v", fsTag, err)
+	}
+
 	return img, nil
 }
 
@@ -322,6 +343,14 @@ func (cmd *CreateCmd) pushVolumes(
 	}, nil
 }
 
+// credentialKeyPattern matches containerEnv key names that conventionally
+// carry a secret value, so they're dropped by redactedContainerEnv even if
+// nothing in this codebase injects them today — devcontainer.json's
+// containerEnv is user-authored and this manifest is pushed to a shared
+// registry, so a future entry named e.g. API_TOKEN shouldn't round-trip
+// through restore just because dropping it wasn't specifically taught.
+var credentialKeyPattern = regexp.MustCompile(`(?i)(token|secret|password|passwd|api_?key)`)
+
 // redactedContainerEnv drops entries that carry runtime secrets rather than
 // plain devcontainer.json settings, so replaying them on restore (via the
 // manifest's sh.devsy.snapshot.container-env annotation) can't leak a
@@ -331,15 +360,23 @@ func (cmd *CreateCmd) pushVolumes(
 // restored container gets its own copy of this at container-start time
 // regardless, so dropping it here does not change restore's behavior.
 func redactedContainerEnv(env map[string]string) map[string]string {
-	if _, ok := env[config.EnvWorkspaceDaemonConfig]; !ok {
-		return env
+	if env == nil {
+		return nil
 	}
-	redacted := make(map[string]string, len(env)-1)
+	var dropped []string
+	redacted := make(map[string]string, len(env))
 	for k, v := range env {
-		if k == config.EnvWorkspaceDaemonConfig {
+		if k == config.EnvWorkspaceDaemonConfig || credentialKeyPattern.MatchString(k) {
+			dropped = append(dropped, k)
 			continue
 		}
 		redacted[k] = v
+	}
+	if len(dropped) > 0 {
+		log.Warnf(
+			"dropping credential-like containerEnv keys from snapshot: %s",
+			strings.Join(dropped, ", "),
+		)
 	}
 	return redacted
 }

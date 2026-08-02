@@ -171,6 +171,19 @@ func TestListRefs_FiltersByWorkspaceID(t *testing.T) {
 		require.NoError(t, PushManifest(ctx, ref.String(), m))
 	}
 
+	// An -fs image tag (pushed by snapshot create alongside each manifest
+	// tag) isn't a manifest ref and must not be parsed as one.
+	_, _, err := PushBlob(ctx, repo, testDockerImageMediaType, strings.NewReader("fs"))
+	require.NoError(t, err)
+	fsRef, err := NewRef(repo, "my-ws", now)
+	require.NoError(t, err)
+	require.NoError(t, PushManifest(ctx, fsRef.FSImageRef(), &Manifest{
+		SchemaVersion: 2,
+		MediaType:     ManifestMediaType,
+		ArtifactType:  ManifestArtifactType,
+		Config:        Descriptor{MediaType: emptyConfigMediaType, Digest: emptyConfigDigest},
+	}))
+
 	refs, err := ListRefs(ctx, repo, "my-ws")
 	require.NoError(t, err)
 	require.Len(t, refs, 2)

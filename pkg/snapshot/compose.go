@@ -12,5 +12,5 @@ func RestoreComposition(snapshotRef string) (source string, devContainerSource s
 	if err != nil {
 		return "", "", err
 	}
-	return provider.WorkspaceSourceSnapshot + ref.String(), "image:" + ref.FSImageRef(), nil
+	return provider.WorkspaceSourceSnapshot + ref.String(), provider.WorkspaceSourceImage + ref.FSImageRef(), nil
 }

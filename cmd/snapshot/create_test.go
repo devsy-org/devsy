@@ -14,6 +14,7 @@ const (
 	testBindMountType  = "bind"
 	testNormalEnvVar   = "NORMAL_VAR"
 	testNormalEnvValue = "value"
+	testLeakedValue    = "leaked"
 )
 
 func TestResolveRegistry_FlagWins(t *testing.T) {
@@ -104,6 +105,20 @@ func TestRedactedContainerEnv_LeavesUnaffectedEnvUntouched(t *testing.T) {
 
 func TestRedactedContainerEnv_NilInputStaysNil(t *testing.T) {
 	require.Nil(t, redactedContainerEnv(nil))
+}
+
+func TestRedactedContainerEnv_DropsCredentialLikeKeys(t *testing.T) {
+	env := map[string]string{
+		testNormalEnvVar: testNormalEnvValue,
+		"API_TOKEN":      testLeakedValue,
+		"my_secret":      testLeakedValue,
+		"DB_PASSWORD":    testLeakedValue,
+		"apiKey":         testLeakedValue,
+	}
+
+	got := redactedContainerEnv(env)
+
+	require.Equal(t, map[string]string{testNormalEnvVar: testNormalEnvValue}, got)
 }
 
 func TestResolveRegistry_ErrorsWhenUnset(t *testing.T) {

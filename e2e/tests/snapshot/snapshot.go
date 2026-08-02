@@ -200,39 +200,41 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		gomega.Expect(transferredIDs[0]).ToNot(gomega.Equal(originalIDs[0]))
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
-	ginkgo.It("leaves no manifest visible when the registry is unreachable mid-push", func(
-		ctx context.Context,
-	) {
-		initialDir, err := os.Getwd()
-		framework.ExpectNoError(err)
+	ginkgo.It(
+		"fails create without disturbing the workspace when the registry is unreachable mid-push",
+		func(ctx context.Context) {
+			initialDir, err := os.Getwd()
+			framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
-		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+			tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+			framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
-		registry := registryHost + "/e2e/snapshots"
+			registry := registryHost + "/e2e/snapshots"
 
-		cleanupReg() // kill the registry before create runs, forcing a mid-push failure
-		cleanupReg = func() {}
+			cleanupReg() // kill the registry before create runs, forcing a mid-push failure
+			cleanupReg = func() {}
 
-		_, _, err = f.ExecCommandCapture(ctx, []string{
-			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registry, debugFlag,
-		})
-		gomega.Expect(err).To(gomega.HaveOccurred())
+			_, _, err = f.ExecCommandCapture(ctx, []string{
+				snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registry, debugFlag,
+			})
+			gomega.Expect(err).To(gomega.HaveOccurred())
 
-		// Workspace itself must be unaffected by the failed snapshot attempt.
-		list, err := f.DevsyListParsed(ctx)
-		framework.ExpectNoError(err)
-		gomega.Expect(list).ToNot(gomega.BeEmpty())
+			// Workspace itself must be unaffected by the failed snapshot attempt.
+			list, err := f.DevsyListParsed(ctx)
+			framework.ExpectNoError(err)
+			gomega.Expect(list).ToNot(gomega.BeEmpty())
 
-		_, err = f.DevsySSH(ctx, tempDir, "pwd")
-		framework.ExpectNoError(
-			err,
-			"workspace should still be reachable after failed snapshot create",
-		)
-	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+			_, err = f.DevsySSH(ctx, tempDir, "pwd")
+			framework.ExpectNoError(
+				err,
+				"workspace should still be reachable after failed snapshot create",
+			)
+		},
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+	)
 
 	ginkgo.It("rejects snapshot create for a workspace with more than one mount", func(
 		ctx context.Context,

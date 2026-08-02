@@ -163,7 +163,7 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 	if err != nil {
 		return err
 	} else if container == nil {
-		return fmt.Errorf("container not found")
+		return fmt.Errorf("container not found: workspaceID=%s", workspaceID)
 	}
 
 	writer := log.Writer(log.LevelInfo)
@@ -180,6 +180,17 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 		return fmt.Errorf("commit container %s: %w", container.ID, err)
 	}
 
+	return nil
+}
+
+func (d *dockerDriver) RemoveImage(ctx context.Context, tag string) error {
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+
+	args := []string{"rmi", tag}
+	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
+		return fmt.Errorf("remove image %s: %w", tag, err)
+	}
 	return nil
 }
 

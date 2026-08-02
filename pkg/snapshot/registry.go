@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/log"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/static"
@@ -170,6 +171,8 @@ func (l *fileLayer) Size() (int64, error) { return l.size, nil }
 
 func (l *fileLayer) MediaType() (types.MediaType, error) { return l.mediaType, nil }
 
+// PullBlob returns the blob's content as an io.ReadCloser; the caller owns it
+// and must Close it.
 func PullBlob(ctx context.Context, repository, digest string) (io.ReadCloser, error) {
 	repo, err := parseRepository(repository)
 	if err != nil {
@@ -300,7 +303,9 @@ func DeleteManifest(ctx context.Context, ref string) error {
 // ListRefs lists snapshot tags in repository belonging to workspaceID,
 // newest first. Tags are filtered by the "<workspace-id>-<timestamp>" naming
 // convention rather than by pulling every manifest, since registries expose
-// tag lists cheaply but annotations only after a manifest GET.
+// tag lists cheaply but annotations only after a manifest GET. remote.List
+// fetches every tag in the repository in one call, so cost grows with total
+// snapshot count across all workspaces sharing repository, not just workspaceID's.
 func ListRefs(ctx context.Context, repository, workspaceID string) ([]*Ref, error) {
 	repo, err := parseRepository(repository)
 	if err != nil {
@@ -324,7 +329,8 @@ func ListRefs(ctx context.Context, repository, workspaceID string) ([]*Ref, erro
 	for _, tag := range tags {
 		ref, err := ParseRef(repository + ":" + tag)
 		if err != nil {
-			continue // skip tags that aren't snapshot refs
+			log.Debugf("skipping non-snapshot tag %s: %v", tag, err)
+			continue
 		}
 		if ref.WorkspaceID == workspaceID {
 			refs = append(refs, ref)

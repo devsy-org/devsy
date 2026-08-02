@@ -58,7 +58,7 @@ Shows every snapshot pushed for that workspace, newest first.
 devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
 ```
 
-This creates a new workspace from the snapshot's committed filesystem and volumes, skipping the devcontainer build entirely since the image is already built. By default the new workspace reuses the original workspace ID; pass `--workspace-id` to restore under a different one, or `--provider` to restore using a different provider than the one the snapshot was taken from.
+This creates a new workspace from the snapshot's committed filesystem and volumes, skipping the devcontainer build entirely since the image is already built. By default the new workspace reuses the original workspace ID; pass `--workspace-id` to restore under a different one, or `--target-provider` to restore using a different provider than the one the snapshot was taken from.
 
 Equivalently, you can restore as part of `devsy up`:
 
@@ -70,10 +70,10 @@ devsy up --from-snapshot ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7
 
 ### Transferring Between Providers
 
-Restoring into a different provider than the snapshot was created with **is** the provider-transfer story — it's the same restore command, just pointed at a different `--provider`:
+To move a workspace to a different provider, restore its snapshot with `--target-provider`:
 
 ```sh
-devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk --provider kubernetes
+devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk --target-provider kubernetes
 ```
 
 ## Delete a Snapshot
@@ -82,7 +82,7 @@ devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2
 devsy snapshot delete ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
 ```
 
-Removes the snapshot's manifest from the registry. Deletes only take effect once every workspace source has finished uploading, so a delete never leaves a snapshot partially visible.
+Removes the snapshot's manifest from the registry. The underlying image and volumes blobs are left for the registry's own garbage collection.
 
 ## Export and Import
 
