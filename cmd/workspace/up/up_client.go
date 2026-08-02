@@ -83,6 +83,7 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 	cmd.resolveSSHConfig(devsyConfig)
+	args = cmd.ensureArgsForFromSnapshot(args)
 
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
 	client, err := workspace2.Resolve(
@@ -100,6 +101,22 @@ func (cmd *UpCmd) prepareClient(
 		}
 	}
 	return client, nil
+}
+
+// ensureArgsForFromSnapshot returns args unchanged unless --from-snapshot is
+// set and args is empty, in which case it synthesizes a placeholder arg.
+// resolveWorkspace only takes its create-new-workspace path when args is
+// non-empty (see pkg/workspace.resolveWorkspace); --from-snapshot forbids a
+// positional source (validateFromSnapshot), so without this, a
+// --from-snapshot restore into a workspace id that doesn't exist yet always
+// fails with "doesn't exist" instead of creating it. The synthesized value
+// itself is never read on this path: DesiredID and Source (both already set
+// by resolveExplicitSource) take priority over it.
+func (cmd *UpCmd) ensureArgsForFromSnapshot(args []string) []string {
+	if cmd.FromSnapshot != "" && len(args) == 0 {
+		return []string{cmd.FromSnapshot}
+	}
+	return args
 }
 
 func (cmd *UpCmd) resolveParams(
