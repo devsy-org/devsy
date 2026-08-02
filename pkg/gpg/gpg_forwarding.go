@@ -203,7 +203,11 @@ func (g *GPGConf) claimForwardedSocket(ctx context.Context) error {
 		return true, nil
 	})
 	if err != nil {
-		return fmt.Errorf("forwarded gpg socket %q did not appear as expected: %w", g.SocketPath, err)
+		return fmt.Errorf(
+			"forwarded gpg socket %q did not appear as expected: %w",
+			g.SocketPath,
+			err,
+		)
 	}
 
 	//nolint:gosec // g.SocketPath is the fixed forwarded socket path

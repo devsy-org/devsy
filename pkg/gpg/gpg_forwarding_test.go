@@ -148,7 +148,12 @@ func TestClaimForwardedSocket_RejectsNonSocketPath(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a unix socket")
-	assert.Less(t, elapsed, time.Second, "must fail immediately, not retry against a non-socket path")
+	assert.Less(
+		t,
+		elapsed,
+		time.Second,
+		"must fail immediately, not retry against a non-socket path",
+	)
 }
 
 func TestClaimForwardedSocket_RespectsContextCancellation(t *testing.T) {

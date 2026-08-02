@@ -88,6 +88,10 @@ func TestAcquireGPGSetupLock_ReturnsCancellationErrorWhenCallerCancels(t *testin
 
 	_, err = acquireGPGSetupLock(ctx)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled),
-		"caller cancellation must surface as context.Canceled, not a generic lock-timeout error: got %v", err)
+	assert.True(
+		t,
+		errors.Is(err, context.Canceled),
+		"caller cancellation must surface as context.Canceled, not a generic lock-timeout error: got %v",
+		err,
+	)
 }

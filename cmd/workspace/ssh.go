@@ -458,7 +458,7 @@ func (cmd *SSHCmd) startTunnelServices(
 		return
 	}
 
-	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), startServicesOptions{
+	opts := startServicesOptions{
 		ConfigureDockerCredentials: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectDockerCredentials,
 		) == config.BoolTrue,
@@ -469,7 +469,8 @@ func (cmd *SSHCmd) startTunnelServices(
 			config.ContextOptionGitSSHSignatureForwarding,
 		) == config.BoolTrue,
 		GitSSHSigningKey: cmd.GitSSHSigningKey,
-	})
+	}
+	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), opts)
 }
 
 func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {

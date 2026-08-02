@@ -144,7 +144,10 @@ func checkPortClaimable(port int) error {
 		return fmt.Errorf("check port %d availability: %w", port, err)
 	}
 	if !ok {
-		return fmt.Errorf("port %d not available (another session likely owns the credentials server)", port)
+		return fmt.Errorf(
+			"port %d not available (another session likely owns the credentials server)",
+			port,
+		)
 	}
 	return nil
 }

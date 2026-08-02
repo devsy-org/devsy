@@ -117,7 +117,10 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 		return
 	}
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
-		log.Debugf("GPG tunnel setup failed but tunnel is live (won by a concurrent terminal): %v", err)
+		log.Debugf(
+			"GPG tunnel setup failed but tunnel is live (won by a concurrent terminal): %v",
+			err,
+		)
 		t.failureReported = false
 		return
 	}
@@ -138,15 +141,6 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 // setup forwards the local gpg-agent into the remote container by using
 // cmd/internal/agentworkspace/setup_gpg.
 func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) error {
-	cmd := t.cmd
-
-	log.Debugf("[GPG] exporting gpg owner trust from host")
-	ownerTrustExport, err := gpg.GetHostOwnerTrust()
-	if err != nil {
-		return fmt.Errorf("export local ownertrust from GPG: %w", err)
-	}
-	ownerTrustArgument := base64.StdEncoding.EncodeToString(ownerTrustExport)
-
 	log.Debugf("detecting gpg-agent socket path on host")
 	// Detect local agent extra socket, this will be forwarded to the remote and
 	// symlinked in multiple paths
@@ -156,9 +150,46 @@ func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) erro
 	}
 	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
 
+	command, err := t.buildSetupCommand(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := t.ensureForwardBound(ctx, containerClient, gpgExtraSocketPath); err != nil {
+		return err
+	}
+
+	writer, writerDone := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-writerDone
+	}()
+	if err := devssh.Run(ctx, devssh.RunOptions{
+		Client:  containerClient,
+		Command: command,
+		Stdout:  writer,
+		Stderr:  writer,
+	}); err != nil {
+		return fmt.Errorf("run gpg agent setup command: %w", err)
+	}
+
+	return nil
+}
+
+// buildSetupCommand assembles the remote `setup-gpg` invocation, exporting
+// the host's owner trust and signing key into its arguments.
+func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
+	cmd := t.cmd
+
+	log.Debugf("[GPG] exporting gpg owner trust from host")
+	ownerTrustExport, err := gpg.GetHostOwnerTrust()
+	if err != nil {
+		return "", fmt.Errorf("export local ownertrust from GPG: %w", err)
+	}
+	ownerTrustArgument := base64.StdEncoding.EncodeToString(ownerTrustExport)
+
 	gitKey := gpg.SigningKey(ctx)
 
-	// Now we forward the agent socket to the remote, and setup remote gpg to use it
 	forwardAgent := []string{
 		config.ContainerDevsyHelperLocation,
 		"internal",
@@ -170,54 +201,46 @@ func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) erro
 		names.Flag(names.SocketPath),
 		gpg.ContainerSocketPath,
 	}
-
 	if log.DebugEnabled() {
 		forwardAgent = append(forwardAgent, names.Flag(names.Debug))
 	}
-
 	if gitKey != "" {
-		forwardAgent = append(forwardAgent, names.Flag(names.GitKey))
-		forwardAgent = append(forwardAgent, gitKey)
+		forwardAgent = append(forwardAgent, names.Flag(names.GitKey), gitKey)
 	}
 
 	command := shellescape.QuoteCommand(forwardAgent)
 	if cmd.User != "" && cmd.User != "root" {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
 	}
+	return command, nil
+}
 
-	// Bind the reverse-listen socket at most once per process (see
-	// forwardBound); the remote setup-gpg step below still re-runs every
-	// time to repair remote-side agent state (stopped agent, stale keys).
-	if !t.forwardBound {
-		log.Debugf(
-			"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
-			gpgExtraSocketPath,
-		)
-		reverseForwardPorts := append(
-			[]string{gpg.ContainerSocketPath + ":" + gpgExtraSocketPath},
-			cmd.ReverseForwardPorts...,
-		)
-		if err := cmd.startReverseForwardsAndWait(ctx, containerClient, reverseForwardPorts); err != nil {
-			return fmt.Errorf("start gpg-agent reverse forward: %w", err)
-		}
-		t.forwardBound = true
+// ensureForwardBound binds the reverse-listen socket at most once per
+// process (see forwardBound); setup's remote command still re-runs every
+// time to repair remote-side agent state (stopped agent, stale keys), which
+// doesn't require touching the reverse-forward at all.
+func (t *gpgTunnel) ensureForwardBound(
+	ctx context.Context,
+	containerClient *ssh.Client,
+	gpgExtraSocketPath string,
+) error {
+	if t.forwardBound {
+		return nil
 	}
 
-	writer, writerDone := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-writerDone
-	}()
-	err = devssh.Run(ctx, devssh.RunOptions{
-		Client:  containerClient,
-		Command: command,
-		Stdout:  writer,
-		Stderr:  writer,
-	})
+	log.Debugf(
+		"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
+		gpgExtraSocketPath,
+	)
+	reverseForwardPorts := append(
+		[]string{gpg.ContainerSocketPath + ":" + gpgExtraSocketPath},
+		t.cmd.ReverseForwardPorts...,
+	)
+	err := t.cmd.startReverseForwardsAndWait(ctx, containerClient, reverseForwardPorts)
 	if err != nil {
-		return fmt.Errorf("run gpg agent setup command: %w", err)
+		return fmt.Errorf("start gpg-agent reverse forward: %w", err)
 	}
-
+	t.forwardBound = true
 	return nil
 }
 
