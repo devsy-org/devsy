@@ -318,8 +318,30 @@ func (cmd *CreateCmd) pushVolumes(
 		Size:         size,
 		MountPrefix:  mountPrefix,
 		RunArgs:      result.MergedConfig.RunArgs,
-		ContainerEnv: result.MergedConfig.ContainerEnv,
+		ContainerEnv: redactedContainerEnv(result.MergedConfig.ContainerEnv),
 	}, nil
+}
+
+// redactedContainerEnv drops entries that carry runtime secrets rather than
+// plain devcontainer.json settings, so replaying them on restore (via the
+// manifest's sh.devsy.snapshot.container-env annotation) can't leak a
+// credential into a shared registry. EnvWorkspaceDaemonConfig in particular
+// is injected by injectDaemonEntrypoint (pkg/devcontainer/single.go) and
+// carries the platform access key for platform-managed workspaces; the
+// restored container gets its own copy of this at container-start time
+// regardless, so dropping it here does not change restore's behavior.
+func redactedContainerEnv(env map[string]string) map[string]string {
+	if _, ok := env[config.EnvWorkspaceDaemonConfig]; !ok {
+		return env
+	}
+	redacted := make(map[string]string, len(env)-1)
+	for k, v := range env {
+		if k == config.EnvWorkspaceDaemonConfig {
+			continue
+		}
+		redacted[k] = v
+	}
+	return redacted
 }
 
 // newLocalTunnelClient wires a tunnelServer (serving StreamSnapshotVolumes

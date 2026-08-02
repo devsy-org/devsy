@@ -12,6 +12,8 @@ import (
 const (
 	testDefaultContext = "default"
 	testBindMountType  = "bind"
+	testNormalEnvVar   = "NORMAL_VAR"
+	testNormalEnvValue = "value"
 )
 
 func TestResolveRegistry_FlagWins(t *testing.T) {
@@ -79,6 +81,29 @@ func TestCheckSingleMount_RejectsNoMounts(t *testing.T) {
 	err := checkSingleMount(nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "requires a workspace mount")
+}
+
+func TestRedactedContainerEnv_DropsWorkspaceDaemonConfig(t *testing.T) {
+	env := map[string]string{
+		testNormalEnvVar:                testNormalEnvValue,
+		config.EnvWorkspaceDaemonConfig: "base64-encoded-platform-access-key-payload",
+	}
+
+	got := redactedContainerEnv(env)
+
+	require.Equal(t, map[string]string{testNormalEnvVar: testNormalEnvValue}, got)
+}
+
+func TestRedactedContainerEnv_LeavesUnaffectedEnvUntouched(t *testing.T) {
+	env := map[string]string{testNormalEnvVar: testNormalEnvValue}
+
+	got := redactedContainerEnv(env)
+
+	require.Equal(t, env, got)
+}
+
+func TestRedactedContainerEnv_NilInputStaysNil(t *testing.T) {
+	require.Nil(t, redactedContainerEnv(nil))
 }
 
 func TestResolveRegistry_ErrorsWhenUnset(t *testing.T) {
