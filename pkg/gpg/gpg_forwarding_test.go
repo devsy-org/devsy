@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -115,13 +116,16 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, 2*time.Second, "must return shortly after the socket appears")
-	// claimForwardedSocket's final step (chown to the caller's uid) requires
-	// sudo, which may not be passwordless in this environment; only the
-	// socket-appear wait itself is under test here, so a chown-only failure
-	// is tolerated, but any error about the socket not appearing is not.
+	// claimForwardedSocket's final step runs `sudo chown`, which may not be
+	// passwordless in this environment; only the socket-appear wait itself is
+	// under test here, so that specific failure is tolerated, but nothing
+	// else is: a sudo failure surfaces as *exec.ExitError (ran, non-zero
+	// exit) or *exec.Error (sudo binary missing).
 	if err != nil {
-		assert.NotContains(t, err.Error(), "did not appear")
-		assert.NotContains(t, err.Error(), "not a unix socket")
+		var exitErr *exec.ExitError
+		var execErr *exec.Error
+		assert.True(t, errors.As(err, &exitErr) || errors.As(err, &execErr),
+			"only a sudo chown failure is tolerated here, got: %v", err)
 	}
 }
 
@@ -129,10 +133,11 @@ func TestClaimForwardedSocket_TimesOutWhenSocketNeverAppears(t *testing.T) {
 	g := &GPGConf{SocketPath: filepath.Join(t.TempDir(), "S.gpg-agent")}
 
 	// The backoff's own worst case (15 steps, 200ms*1.5^n capped at 2s, plus
-	// up to 10% jitter per step) is a bit over 20s, so the timeout used to
-	// wait it out must exceed that, not sit just under it, or this assertion
-	// itself becomes flaky on the exact path it verifies.
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	// up to 10% jitter per step) is close to 24.4s, so the timeout used to
+	// wait it out needs real margin above that or scheduler delays can make
+	// ctx expire first, replacing the "did not appear" error this test
+	// checks for with a context-deadline error instead.
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 
 	err := g.claimForwardedSocket(ctx)
