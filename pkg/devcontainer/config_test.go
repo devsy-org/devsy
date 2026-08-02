@@ -493,12 +493,12 @@ func TestGetRawConfig_SourceImageCarriesContainerEnv(t *testing.T) {
 
 	conf, err := r.getRawConfig(provider2.CLIOptions{
 		DevContainerSource: testImgSrc,
-		ContainerEnv:       map[string]string{"DEVSY_INSECURE_DOCKER_INTERNAL": "true"},
+		ContainerEnv:       map[string]string{"DEVSY_INSECURE_DOCKER_INTERNAL": stringTrue},
 	})
 	if err != nil {
 		t.Fatalf("getRawConfig: %v", err)
 	}
-	if conf.ContainerEnv["DEVSY_INSECURE_DOCKER_INTERNAL"] != "true" {
+	if conf.ContainerEnv["DEVSY_INSECURE_DOCKER_INTERNAL"] != stringTrue {
 		t.Errorf(
 			"ContainerEnv = %v, want DEVSY_INSECURE_DOCKER_INTERNAL=true "+
 				"(snapshot restore relies on this to reach an insecure registry from inside the container)",
