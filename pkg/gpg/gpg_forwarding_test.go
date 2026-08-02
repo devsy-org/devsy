@@ -160,6 +160,34 @@ func TestClaimForwardedSocket_RejectsNonSocketPath(t *testing.T) {
 	)
 }
 
+func TestClaimForwardedSocket_FailsFastOnPermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses directory permission checks")
+	}
+
+	parent := t.TempDir()
+	socketPath := filepath.Join(parent, "S.gpg-agent")
+	require.NoError(t, os.Chmod(parent, 0o000))
+	//nolint:gosec // restore the temp dir's own perms so t.TempDir() cleanup can remove it
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	g := &GPGConf{SocketPath: socketPath}
+
+	start := time.Now()
+	err := g.claimForwardedSocket(context.Background())
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "did not appear",
+		"a permission error must not be reported as the socket never appearing")
+	assert.Less(
+		t,
+		elapsed,
+		time.Second,
+		"must fail immediately, not retry against a permission error",
+	)
+}
+
 func TestClaimForwardedSocket_RespectsContextCancellation(t *testing.T) {
 	g := &GPGConf{SocketPath: filepath.Join(t.TempDir(), "S.gpg-agent")}
 

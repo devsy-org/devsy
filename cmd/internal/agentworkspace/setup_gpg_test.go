@@ -21,6 +21,10 @@ func TestAcquireGPGSetupLock_SucceedsWhenFree(t *testing.T) {
 	unlock, err := acquireGPGSetupLock(context.Background())
 	require.NoError(t, err)
 	unlock()
+
+	reacquire, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err, "unlock must actually release the lock")
+	reacquire()
 }
 
 func TestAcquireGPGSetupLock_WaitsForConcurrentHolderThenSucceeds(t *testing.T) {
@@ -34,18 +38,22 @@ func TestAcquireGPGSetupLock_WaitsForConcurrentHolderThenSucceeds(t *testing.T) 
 	require.NoError(t, err)
 	require.True(t, locked)
 
+	const releaseDelay = 200 * time.Millisecond
+	start := time.Now()
+	releasing := make(chan struct{})
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		close(releasing)
+		time.Sleep(releaseDelay)
 		_ = holder.Unlock()
 	}()
+	<-releasing
 
-	start := time.Now()
 	unlock, err := acquireGPGSetupLock(context.Background())
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
 	defer unlock()
-	assert.GreaterOrEqual(t, elapsed, 150*time.Millisecond,
+	assert.GreaterOrEqual(t, elapsed, releaseDelay/2,
 		"second acquirer must wait for the first to release, not run concurrently")
 }
 

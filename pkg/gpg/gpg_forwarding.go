@@ -195,19 +195,25 @@ func (g *GPGConf) claimForwardedSocket(ctx context.Context) error {
 	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
 		info, err := os.Stat(g.SocketPath)
 		if err != nil {
-			return false, nil // Retry
+			if os.IsNotExist(err) {
+				return false, nil // Retry
+			}
+			return false, fmt.Errorf("inspect forwarded gpg socket %q: %w", g.SocketPath, err)
 		}
 		if info.Mode()&os.ModeSocket == 0 {
 			return false, fmt.Errorf("path %q exists but is not a unix socket", g.SocketPath)
 		}
 		return true, nil
 	})
-	if err != nil {
+	if wait.Interrupted(err) {
 		return fmt.Errorf(
 			"forwarded gpg socket %q did not appear as expected: %w",
 			g.SocketPath,
 			err,
 		)
+	}
+	if err != nil {
+		return err
 	}
 
 	//nolint:gosec // g.SocketPath is the fixed forwarded socket path

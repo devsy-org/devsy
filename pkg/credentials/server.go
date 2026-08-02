@@ -45,19 +45,33 @@ func RunCredentialsServer(
 	port int,
 	client CredentialsClient,
 ) error {
-	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
+	ln, err := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("listen on port %d: %w", port, err)
+	}
+	return RunCredentialsServerWithListener(ctx, ln, client)
+}
+
+// RunCredentialsServerWithListener is like RunCredentialsServer, but takes an
+// already-bound listener. Use this when the caller must hold the port
+// exclusively (via net.Listen) from before startup through to serving, so no
+// other process can bind the same port in between.
+func RunCredentialsServerWithListener(
+	ctx context.Context,
+	ln net.Listener,
+	client CredentialsClient,
+) error {
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           newCredentialsHandler(ctx, client),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
 	go func() {
-		log.Debugf("credentials server started: port=%v", port)
+		log.Debugf("credentials server started: addr=%v", ln.Addr())
 
 		// always returns error. ErrServerClosed on graceful close
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != http.ErrServerClosed {
 			errChan <- err
 		} else {
 			errChan <- nil

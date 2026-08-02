@@ -22,7 +22,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
-	portpkg "github.com/devsy-org/devsy/pkg/port"
 	"github.com/spf13/cobra"
 )
 
@@ -100,13 +99,18 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	// Claim the port before starting anything else: on contention this
-	// returns an error so RunServices' retry (pkg/tunnel/services.go) tries
-	// again later, and starting the port watcher beforehand would leak an
+	// Claim the port by binding it before starting anything else, and hold
+	// the listener until it's handed to RunCredentialsServerWithListener
+	// below: a check-then-bind gap here would let two concurrent sessions
+	// both pass the check and race to bind. On contention this returns an
+	// error so RunServices' retry (pkg/tunnel/services.go) tries again
+	// later, and starting the port watcher beforehand would leak an
 	// orphaned goroutine on every failed attempt.
-	if err := checkPortClaimable(port); err != nil {
+	ln, err := claimPort(port)
+	if err != nil {
 		return err
 	}
+	defer func() { _ = ln.Close() }()
 
 	cmd.maybeForwardPorts(ctx, tunnelClient)
 
@@ -134,26 +138,26 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
-	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
+	return credentials.RunCredentialsServerWithListener(ctx, ln, tunnelClient)
 }
 
-// Only one session's credentials-server can hold this port at a time.
-// Returning an error (not nil) on contention matters: RunServices
-// (pkg/tunnel/services.go) wraps this command in retry.OnError, which only
-// retries on a non-nil error.
-func checkPortClaimable(port int) error {
+// claimPort binds port and returns the listener, holding it exclusively so
+// no other session can bind the same port until the caller closes it (or
+// hands it to RunCredentialsServerWithListener). Only one session's
+// credentials-server can hold this port at a time. Returning an error (not
+// nil) on contention matters: RunServices (pkg/tunnel/services.go) wraps
+// this command in retry.OnError, which only retries on a non-nil error.
+func claimPort(port int) (net.Listener, error) {
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
-	ok, err := portpkg.IsAvailable(addr)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("check port %d availability: %w", port, err)
-	}
-	if !ok {
-		return fmt.Errorf(
-			"port %d not available (another session likely owns the credentials server)",
+		return nil, fmt.Errorf(
+			"port %d not available (another session likely owns the credentials server): %w",
 			port,
+			err,
 		)
 	}
-	return nil
+	return ln, nil
 }
 
 func (cmd *CredentialsServerCmd) maybeForwardPorts(
