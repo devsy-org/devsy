@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/onsi/ginkgo/v2"
 )
 
 // registryHostPort is a fixed host port for the local registry fixture,
@@ -75,25 +76,9 @@ func startLocalRegistry(
 		}
 	}
 
-	// Capture the container ID directly off `docker run -d`'s stdout rather
-	// than looking it up afterwards by a shared static label: a leaked
-	// registry container from a previous (e.g. failed) spec would otherwise
-	// make a label-based lookup ambiguous or match the wrong container.
-	var stdout bytes.Buffer
-	err := dockerHelper.Run(ctx, []string{
-		"run", "-d",
-		"--label", "devsy-e2e-snapshot-registry=true",
-		"-e", "REGISTRY_STORAGE_DELETE_ENABLED=true",
-		"-p", registryHostPort + ":5000",
-		"registry:2",
-	}, docker.Streams{Stdout: &stdout})
+	id, err := runRegistryContainerWithRetry(ctx, dockerHelper)
 	if err != nil {
-		return "", nil, fmt.Errorf("start local registry: %w", err)
-	}
-
-	id := strings.TrimSpace(stdout.String())
-	if id == "" {
-		return "", nil, fmt.Errorf("start local registry: docker run produced no container id")
+		return "", nil, err
 	}
 	cleanup := func() {
 		// Deliberately not ctx: cleanup runs from AfterEach/DeferCleanup after
@@ -107,4 +92,51 @@ func startLocalRegistry(
 	}
 
 	return registryHost, cleanup, nil
+}
+
+// registryStartAttempts bounds retries for a transient `docker run` failure
+// immediately after the CI workflow's `systemctl restart docker`: `docker
+// info` reporting the daemon ready doesn't guarantee its container-creation
+// subsystem has finished warming up, so the very first `docker run` in a job
+// can fail with exit 125 moments after the daemon restart succeeds.
+const registryStartAttempts = 3
+
+// runRegistryContainerWithRetry runs the registry:2 container, retrying a
+// handful of times on failure. Returns the started container's ID.
+//
+// The container ID is captured directly off `docker run -d`'s stdout rather
+// than looked up afterwards by a shared static label: a leaked registry
+// container from a previous (e.g. failed) spec would otherwise make a
+// label-based lookup ambiguous or match the wrong container.
+func runRegistryContainerWithRetry(
+	ctx context.Context, dockerHelper *docker.DockerHelper,
+) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= registryStartAttempts; attempt++ {
+		var stdout, stderr bytes.Buffer
+		err := dockerHelper.Run(ctx, []string{
+			"run", "-d",
+			"--label", "devsy-e2e-snapshot-registry=true",
+			"-e", "REGISTRY_STORAGE_DELETE_ENABLED=true",
+			"-p", registryHostPort + ":5000",
+			"registry:2",
+		}, docker.Streams{Stdout: &stdout, Stderr: &stderr})
+		if err == nil {
+			id := strings.TrimSpace(stdout.String())
+			if id == "" {
+				return "", fmt.Errorf("start local registry: docker run produced no container id")
+			}
+			return id, nil
+		}
+		lastErr = fmt.Errorf(
+			"start local registry: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()),
+		)
+		if attempt < registryStartAttempts {
+			ginkgo.GinkgoWriter.Printf(
+				"[retry] start local registry: attempt %d failed, retrying: %v\n", attempt, lastErr,
+			)
+			time.Sleep(3 * time.Second)
+		}
+	}
+	return "", fmt.Errorf("after %d attempts: %w", registryStartAttempts, lastErr)
 }
