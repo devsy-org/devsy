@@ -217,14 +217,14 @@ func TestDeleteManifest_RemovesManifest(t *testing.T) {
 
 	require.NoError(t, DeleteManifest(ctx, ref.String()))
 
-	// DeleteManifest now deletes by digest (real registries reject
-	// DELETE-by-tag), so the fake registry.New() double -- which stores
-	// manifests under both the tag key and the digest key independently and
-	// only clears the key it's asked to delete -- still serves the tag.
-	// A real registry does not: its tags are pointers to the underlying
-	// content, so deleting that content invalidates the tag too (verified
-	// against a real registry:2 in e2e/tests/snapshot/helper_verify_test.go).
-	// Assert directly on the digest key DeleteManifest deletes.
+	// DeleteManifest deletes by digest (real registries reject
+	// DELETE-by-tag). The fake registry.New() double stores manifests under
+	// both the tag key and the digest key independently and only clears the
+	// key it's asked to delete, so it still serves the tag after this call --
+	// unlike a real registry, where the tag is a pointer to the same
+	// content and is invalidated along with it. Assert directly on the
+	// digest key DeleteManifest deletes, since the tag key isn't a reliable
+	// signal against this fake.
 	raw, err := m.MarshalOCI()
 	require.NoError(t, err)
 	digest, _, err := v1.SHA256(bytes.NewReader(raw))

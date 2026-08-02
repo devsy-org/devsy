@@ -15,9 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeStreamSnapshotVolumesServer captures Send calls without a real gRPC
-// connection, mirroring how existing StreamMount/StreamWorkspace tests (if
-// any) exercise server-streaming handlers directly.
+// fakeStreamSnapshotVolumesServer captures Send calls so
+// StreamSnapshotVolumes can be exercised without a real gRPC connection.
 type fakeStreamSnapshotVolumesServer struct {
 	tunnel.Tunnel_StreamSnapshotVolumesServer
 	chunks [][]byte
