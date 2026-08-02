@@ -17,14 +17,20 @@ import {
 } from "$lib/stores/terminal-instances.js"
 import { get } from "svelte/store"
 
+// OSC 9977 is a private-use sequence the devsy CLI emits when GPG-agent
+// forwarding fails but the SSH session continues anyway.
+const GPG_FORWARD_FAILED_OSC = 9977
+
 let {
   sessionId,
   active = true,
   onExit,
+  onGpgForwardFailed,
 }: {
   sessionId: string
   active?: boolean
   onExit?: (exitCode?: number, signal?: number) => void
+  onGpgForwardFailed?: (reason: string) => void
 } = $props()
 
 let containerEl: HTMLDivElement | undefined = $state()
@@ -103,6 +109,7 @@ onMount(async () => {
     // Reattach existing terminal to the new container
     term = existing.term
     fitAddon = existing.fitAddon
+    existing.onGpgForwardFailed = onGpgForwardFailed
     const el = term.element?.parentElement ?? term.element
     if (el) containerEl.appendChild(el)
     requestAnimationFrame(() => {
@@ -179,13 +186,23 @@ onMount(async () => {
       }
     })
 
-    setTerminalInstance(sessionId, {
+    const instance: TerminalInstance = {
       term,
       fitAddon,
       unlistenOutput,
       unlistenExit,
       unsubscribeTheme,
-    })
+      onGpgForwardFailed,
+    }
+    const oscHandler = term.parser.registerOscHandler(
+      GPG_FORWARD_FAILED_OSC,
+      (data) => {
+        instance.onGpgForwardFailed?.(data)
+        return true
+      },
+    )
+    instance.disposeOscHandler = () => oscHandler.dispose()
+    setTerminalInstance(sessionId, instance)
   }
 
   resizeObserver = new ResizeObserver(() => {

@@ -91,8 +91,13 @@ func (c *ContainerTunnel) runHostTunnel(
 	stdinReader, stdoutWriter *os.File,
 	timeout time.Duration,
 ) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	// `devsy internal ...` always logs structured JSON on stderr; PipeJSONStream
+	// re-emits each line at its original level instead of double-wrapping it.
+	writer, done := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-done
+	}()
 	defer log.Debugf("Tunnel to host closed")
 
 	command := fmt.Sprintf("'%s' internal ssh-server --stdio", c.client.AgentPath())
@@ -234,8 +239,14 @@ type containerTunnelOpts struct {
 // stdoutWriter on exit so StdioClient gets EOF when the tunnel dies.
 // Context-cancelled errors are suppressed (expected during normal shutdown).
 func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	// See runHostTunnel: this command is also `devsy internal ...`, which
+	// always logs structured JSON on stderr, so PipeJSONStream (not
+	// log.Writer) is what avoids double-wrapping each already-JSON line.
+	writer, done := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-done
+	}()
 	defer func() { _ = opts.stdoutWriter.Close() }()
 
 	log.Debugf("Run container tunnel")

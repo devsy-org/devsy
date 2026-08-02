@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/credentials"
@@ -12,8 +13,17 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 )
+
+// gpgSetupLockPath serializes concurrent setup-gpg invocations against the
+// same container's gpg-agent/socket. A var so tests can point it at a temp path.
+var gpgSetupLockPath = "/tmp/devsy-gpg-setup.lock"
+
+// gpgSetupLockTimeout bounds how long an invocation waits for a concurrent
+// one to finish. A var so tests can shrink it.
+var gpgSetupLockTimeout = 30 * time.Second
 
 // SetupGPGCmd holds the setupGPG cmd flags.
 type SetupGPGCmd struct {
@@ -63,6 +73,12 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	log.Debugf("Initializing gpg-agent forwarding")
 
+	unlock, err := acquireGPGSetupLock(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	publicKey, ownerTrust, err := fetchAndDecodeKeys(cmd.OwnerTrust)
 	if err != nil {
 		return err
@@ -75,7 +91,7 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 		GitKey:     cmd.GitKey,
 	}
 
-	if err := configureGPGAgent(&gpgConf); err != nil {
+	if err := configureGPGAgent(ctx, &gpgConf); err != nil {
 		return err
 	}
 
@@ -87,6 +103,33 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// acquireGPGSetupLock takes the cross-process lock guarding setup-gpg. On
+// success it returns a func that releases the lock.
+func acquireGPGSetupLock(ctx context.Context) (func(), error) {
+	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
+	defer cancel()
+
+	lock := flock.New(gpgSetupLockPath)
+	locked, err := lock.TryLockContext(lockCtx, 200*time.Millisecond)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if lockCtx.Err() != nil {
+			return nil, fmt.Errorf("timed out waiting for another gpg setup to finish: %w", err)
+		}
+		return nil, fmt.Errorf("acquire gpg setup lock: %w", err)
+	}
+	if !locked {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
+	}
+
+	return func() { _ = lock.Unlock() }, nil
 }
 
 func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
@@ -111,7 +154,7 @@ func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
 	return publicKey, ownerTrust, nil
 }
 
-func configureGPGAgent(gpgConf *gpg.GPGConf) error {
+func configureGPGAgent(ctx context.Context, gpgConf *gpg.GPGConf) error {
 	log.Debugf("Stopping container gpg-agent")
 	if err := gpg.StopGpgAgent(); err != nil {
 		return fmt.Errorf("stop container gpg-agent: %w", err)
@@ -140,7 +183,7 @@ func configureGPGAgent(gpgConf *gpg.GPGConf) error {
 	}
 
 	log.Debugf("Setup local gnupg socket links")
-	if err := gpgConf.SetupRemoteSocketLink(); err != nil {
+	if err := gpgConf.SetupRemoteSocketLink(ctx); err != nil {
 		return fmt.Errorf("setup local gnupg socket links: %w", err)
 	}
 

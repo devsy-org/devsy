@@ -102,10 +102,8 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 
 	cmd.maybeForwardPorts(ctx, tunnelClient)
 
-	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
-	if ok, err := portpkg.IsAvailable(addr); !ok || err != nil {
-		log.Debugf("Port %d not available, exiting", port)
-		return nil
+	if err := checkPortClaimable(port); err != nil {
+		return err
 	}
 
 	// configure docker credential helper
@@ -133,6 +131,22 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	defer cleanupGitSigning()
 
 	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
+}
+
+// checkPortClaimable reports an error if port is not free to bind. Only one
+// session's credentials-server can hold this port at a time. Returning an
+// error (not nil) on contention matters: RunServices (pkg/tunnel/services.go)
+// wraps this command in retry.OnError, which only retries on a non-nil error.
+func checkPortClaimable(port int) error {
+	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
+	ok, err := portpkg.IsAvailable(addr)
+	if err != nil {
+		return fmt.Errorf("check port %d availability: %w", port, err)
+	}
+	if !ok {
+		return fmt.Errorf("port %d not available (another session likely owns the credentials server)", port)
+	}
+	return nil
 }
 
 func (cmd *CredentialsServerCmd) maybeForwardPorts(

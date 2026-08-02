@@ -7,6 +7,8 @@ export interface TerminalInstance {
   unlistenOutput?: () => void
   unlistenExit?: () => void
   unsubscribeTheme?: () => void
+  disposeOscHandler?: () => void
+  onGpgForwardFailed?: (reason: string) => void
 }
 
 const instances = new Map<string, TerminalInstance>()
@@ -30,6 +32,7 @@ export function destroyTerminalInstance(sessionId: string): void {
     instance.unlistenOutput?.()
     instance.unlistenExit?.()
     instance.unsubscribeTheme?.()
+    instance.disposeOscHandler?.()
     instance.term.dispose()
     instances.delete(sessionId)
   }
