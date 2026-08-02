@@ -9,10 +9,9 @@ import (
 )
 
 func TestCheckPortClaimable_SucceedsWhenPortFree(t *testing.T) {
-	// checkPortClaimable itself binds the port to check it, so pass 0 to let
-	// the OS assign a free ephemeral port at call time — this avoids the
-	// close-then-probe race of reserving a port via net.Listen, closing it,
-	// and hoping nothing else claims it before checkPortClaimable runs.
+	// Pass 0 to let the OS assign a free ephemeral port at call time — this
+	// avoids the close-then-probe race of reserving a port via net.Listen,
+	// closing it, and hoping nothing else claims it before this call runs.
 	assert.NoError(t, checkPortClaimable(0))
 }
 

@@ -137,10 +137,10 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
 }
 
-// checkPortClaimable reports an error if port is not free to bind. Only one
-// session's credentials-server can hold this port at a time. Returning an
-// error (not nil) on contention matters: RunServices (pkg/tunnel/services.go)
-// wraps this command in retry.OnError, which only retries on a non-nil error.
+// Only one session's credentials-server can hold this port at a time.
+// Returning an error (not nil) on contention matters: RunServices
+// (pkg/tunnel/services.go) wraps this command in retry.OnError, which only
+// retries on a non-nil error.
 func checkPortClaimable(port int) error {
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
 	ok, err := portpkg.IsAvailable(addr)

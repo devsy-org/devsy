@@ -538,7 +538,6 @@ func resolveMergedWorkspaceFolder(
 	return result.MergedConfig.WorkspaceFolder
 }
 
-// startServicesOptions groups the credential-helper toggles for startServices.
 type startServicesOptions struct {
 	ConfigureDockerCredentials     bool
 	ConfigureGitCredentials        bool

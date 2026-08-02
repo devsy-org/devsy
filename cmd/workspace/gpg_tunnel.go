@@ -19,8 +19,7 @@ import (
 )
 
 // gpgForwardFailedOSC is a private-use OSC identifier the desktop app's
-// terminal (xterm.js) listens for to surface a non-fatal GPG-forwarding
-// failure as a toast; see Terminal.svelte's registerOscHandler.
+// terminal (xterm.js) listens for; see Terminal.svelte's registerOscHandler.
 const gpgForwardFailedOSC = 9977
 
 // gpgForwardFailedReasonMaxLen bounds the OSC payload, since the desktop
@@ -146,8 +145,7 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 // cmd/internal/agentworkspace/setup_gpg.
 func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) error {
 	log.Debugf("detecting gpg-agent socket path on host")
-	// Detect local agent extra socket, this will be forwarded to the remote and
-	// symlinked in multiple paths
+	// this socket gets forwarded to the remote and symlinked in multiple paths
 	gpgExtraSocketPath, err := gpg.DetectAgentSocketPath()
 	if err != nil {
 		return err
