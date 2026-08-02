@@ -13,6 +13,9 @@ func PipeJSONStream() (io.WriteCloser, chan struct{}) {
 	reader, writer := io.Pipe()
 	go func() {
 		ReadJSONStream(reader)
+		// See PipeJSONStreamWithFallback: closing here unblocks a Write on
+		// writer if the scanner stopped early instead of at pipe close.
+		_ = reader.Close()
 		close(done)
 	}()
 
@@ -30,6 +33,11 @@ func PipeJSONStreamWithFallback(fallback io.Writer) (io.WriteCloser, chan struct
 	reader, writer := io.Pipe()
 	go func() {
 		readJSONStreamWithFallback(reader, fallback)
+		// If the scanner stopped early (e.g. an oversized line), reader
+		// otherwise stays open and a later Write on writer blocks forever
+		// with nothing left reading the pipe. Closing it here unblocks the
+		// paired writer with io.ErrClosedPipe instead of deadlocking.
+		_ = reader.Close()
 		close(done)
 	}()
 
