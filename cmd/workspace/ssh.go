@@ -2,11 +2,8 @@ package workspace
 
 import (
 	"context"
-	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path"
 	"strings"
@@ -21,9 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/port"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -232,7 +227,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 	devsyConfig *config.Config,
 	client client2.DaemonClient,
 ) error {
-	log.Debugf("Starting tailscale connection")
+	log.Debugf("starting tailscale connection")
 
 	err := client.CheckWorkspaceReachable(ctx)
 	if err != nil {
@@ -253,10 +248,8 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 
 	cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
 
-	// Handle GPG agent forwarding
-	if err := cmd.maybeSetupGPGAgent(ctx, devsyConfig, toolSSHClient); err != nil {
-		return err
-	}
+	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
+	defer runGPGTunnelInBackground(ctx, gpgTunnel, toolSSHClient)()
 
 	// Handle ssh stdio mode
 	if cmd.Stdio {
@@ -281,21 +274,6 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			Stderr: os.Stderr,
 		},
 	)
-}
-
-// forwardPortsIfRequested handles -L/-R forwarding when requested. The returned
-// bool reports whether forwarding took over (the caller should return err).
-func (cmd *SSHCmd) forwardPortsIfRequested(
-	ctx context.Context,
-	sshClient *ssh.Client,
-) (bool, error) {
-	if len(cmd.ForwardPorts) > 0 {
-		return true, cmd.forwardPorts(ctx, sshClient)
-	}
-	if len(cmd.ReverseForwardPorts) > 0 && !cmd.GPGAgentForwarding {
-		return true, cmd.reverseForwardPorts(ctx, sshClient)
-	}
-	return false, nil
 }
 
 func (cmd *SSHCmd) startServicesDaemon(
@@ -323,22 +301,6 @@ func (cmd *SSHCmd) startServicesDaemon(
 			log.Errorf("Error starting services: %v", err)
 		}
 	}()
-}
-
-func (cmd *SSHCmd) maybeSetupGPGAgent(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	sshClient *ssh.Client,
-) error {
-	if !cmd.GPGAgentForwarding &&
-		!devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding) {
-		return nil
-	}
-	if gpg.IsGpgTunnelRunning(ctx, cmd.User, sshClient) {
-		log.Debugf("[GPG] exporting already running, skipping")
-		return nil
-	}
-	return cmd.setupGPGAgent(ctx, sshClient)
 }
 
 func (cmd *SSHCmd) startProxyTunnel(
@@ -415,222 +377,28 @@ func (cmd *SSHCmd) jumpContainer(
 		}, devsyConfig, envVars)
 }
 
-func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
-	timeout := time.Duration(0)
-	if cmd.ForwardPortsTimeout != "" {
-		timeout, err := time.ParseDuration(cmd.ForwardPortsTimeout)
-		if err != nil {
-			return timeout, fmt.Errorf("parse forward ports timeout: %w", err)
-		}
-
-		log.Infof("Using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
-	}
-
-	return timeout, nil
-}
-
-func (cmd *SSHCmd) reverseForwardPorts(
-	ctx context.Context,
-	containerClient *ssh.Client,
-) error {
-	timeout, err := cmd.forwardTimeout()
-	if err != nil {
-		return fmt.Errorf("parse forward ports timeout: %w", err)
-	}
-
-	errChan := make(chan error, len(cmd.ReverseForwardPorts))
-	for _, portMapping := range cmd.ReverseForwardPorts {
-		mapping, err := port.ParsePortSpec(portMapping)
-		if err != nil {
-			return fmt.Errorf("parse port mapping: %w", err)
-		}
-
-		// start the forwarding
-		log.Infof(
-			"Reverse forwarding local %s/%s to remote %s/%s",
-			mapping.Host.Protocol,
-			mapping.Host.Address,
-			mapping.Container.Protocol,
-			mapping.Container.Address,
-		)
-		go func(portMapping string) {
-			err := devssh.ReversePortForward(
-				ctx,
-				containerClient,
-				mapping.Host.Protocol,
-				mapping.Host.Address,
-				mapping.Container.Protocol,
-				mapping.Container.Address,
-				timeout,
-			)
-			if errors.Is(err, devssh.ErrIdleTimeout) {
-				log.Infof("reverse port-forward %s exited due to idle timeout", portMapping)
-				errChan <- nil
-				return
-			}
-			if !errors.Is(err, io.EOF) {
-				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
-			}
-		}(portMapping)
-	}
-
-	return <-errChan
-}
-
-type boundReverseForward struct {
-	portMapping string
-	mapping     port.Mapping
-	listener    net.Listener
-}
-
-// startReverseForwardsAndWait blocks until every forward's listener is bound,
-// unlike reverseForwardPorts which blocks for the forward's lifetime.
-func (cmd *SSHCmd) startReverseForwardsAndWait(
-	ctx context.Context,
-	containerClient *ssh.Client,
-) error {
-	timeout, err := cmd.forwardTimeout()
-	if err != nil {
-		return err
-	}
-
-	bound, err := bindReverseForwards(containerClient, cmd.ReverseForwardPorts)
-	if err != nil {
-		return err
-	}
-
-	for _, b := range bound {
-		log.Infof(
-			"Reverse forwarding local %s/%s to remote %s/%s",
-			b.mapping.Host.Protocol,
-			b.mapping.Host.Address,
-			b.mapping.Container.Protocol,
-			b.mapping.Container.Address,
-		)
-		go runReverseForwardInBackground(ctx, containerClient, b, timeout)
-	}
-
-	return nil
-}
-
-func bindReverseForwards(
-	containerClient *ssh.Client,
-	portMappings []string,
-) ([]boundReverseForward, error) {
-	var bound []boundReverseForward
-	closeBound := func() {
-		for _, b := range bound {
-			_ = b.listener.Close()
-		}
-	}
-	for _, portMapping := range portMappings {
-		mapping, err := port.ParsePortSpec(portMapping)
-		if err != nil {
-			closeBound()
-			return nil, fmt.Errorf("parse port mapping: %w", err)
-		}
-
-		listener, err := devssh.ReverseListen(
-			containerClient,
-			mapping.Host.Protocol,
-			mapping.Host.Address,
-		)
-		if err != nil {
-			closeBound()
-			return nil, fmt.Errorf("listen for reverse forward %s: %w", portMapping, err)
-		}
-		bound = append(bound, boundReverseForward{portMapping, mapping, listener})
-	}
-	return bound, nil
-}
-
-func runReverseForwardInBackground(
-	ctx context.Context,
-	containerClient *ssh.Client,
-	b boundReverseForward,
-	timeout time.Duration,
-) {
-	err := devssh.RunReverseForward(ctx, containerClient, devssh.ReverseForwardOpts{
-		Listener:         b.listener,
-		RemoteAddr:       b.mapping.Host.Address,
-		LocalNetwork:     b.mapping.Container.Protocol,
-		LocalAddr:        b.mapping.Container.Address,
-		ExitAfterTimeout: timeout,
-	})
-	if err != nil && !errors.Is(err, devssh.ErrIdleTimeout) && !errors.Is(err, io.EOF) {
-		log.Errorf("error forwarding %s: %v", b.portMapping, err)
-	}
-}
-
-func (cmd *SSHCmd) forwardPorts(
-	ctx context.Context,
-	containerClient *ssh.Client,
-) error {
-	timeout, err := cmd.forwardTimeout()
-	if err != nil {
-		return fmt.Errorf("parse forward ports timeout: %w", err)
-	}
-
-	errChan := make(chan error, len(cmd.ForwardPorts))
-	for _, portMapping := range cmd.ForwardPorts {
-		mapping, err := port.ParsePortSpec(portMapping)
-		if err != nil {
-			return fmt.Errorf("parse port mapping: %w", err)
-		}
-
-		// start the forwarding
-		log.Infof(
-			"Forwarding local %s/%s to remote %s/%s",
-			mapping.Host.Protocol,
-			mapping.Host.Address,
-			mapping.Container.Protocol,
-			mapping.Container.Address,
-		)
-		go func(portMapping string) {
-			err := devssh.PortForward(
-				ctx,
-				containerClient,
-				mapping.Host.Protocol,
-				mapping.Host.Address,
-				mapping.Container.Protocol,
-				mapping.Container.Address,
-				timeout,
-			)
-			if errors.Is(err, devssh.ErrIdleTimeout) {
-				log.Infof("port-forward %s exited due to idle timeout", portMapping)
-				errChan <- nil
-				return
-			}
-			if !errors.Is(err, io.EOF) {
-				errChan <- fmt.Errorf("error forwarding %s: %w", portMapping, err)
-			}
-		}(portMapping)
-	}
-
-	return <-errChan
-}
-
 func (cmd *SSHCmd) startTunnel(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspaceClient client2.BaseWorkspaceClient,
 ) error {
-	// check if we should forward ports
 	if handled, err := cmd.forwardPortsIfRequested(ctx, containerClient); handled {
 		return err
 	}
 
 	cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
+	// buildSSHServerCommand runs `devsy internal ssh-server`, which always
+	// logs structured JSON on stderr; PipeJSONStream re-emits each line at
+	// its original level instead of double-wrapping it as another log entry.
+	writer, writerDone := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-writerDone
+	}()
 
-	// start ssh
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
-	// check if we should do gpg agent forwarding
-	if err := cmd.maybeSetupGPGAgent(ctx, devsyConfig, containerClient); err != nil {
-		return err
-	}
+	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
+	defer runGPGTunnelInBackground(ctx, gpgTunnel, containerClient)()
 
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
@@ -689,26 +457,20 @@ func (cmd *SSHCmd) startTunnelServices(
 	if !cmd.StartServices {
 		return
 	}
-	configureDockerCredentials := devsyConfig.ContextOption(
-		config.ContextOptionSSHInjectDockerCredentials,
-	) == config.BoolTrue
-	configureGitCredentials := devsyConfig.ContextOption(
-		config.ContextOptionSSHInjectGitCredentials,
-	) == config.BoolTrue
-	configureGitSSHSignatureHelper := devsyConfig.ContextOption(
-		config.ContextOptionGitSSHSignatureForwarding,
-	) == config.BoolTrue
 
-	go cmd.startServices(
-		ctx,
-		devsyConfig,
-		containerClient,
-		workspaceClient.WorkspaceConfig(),
-		configureDockerCredentials,
-		configureGitCredentials,
-		configureGitSSHSignatureHelper,
-		cmd.GitSSHSigningKey,
-	)
+	opts := startServicesOptions{
+		ConfigureDockerCredentials: devsyConfig.ContextOption(
+			config.ContextOptionSSHInjectDockerCredentials,
+		) == config.BoolTrue,
+		ConfigureGitCredentials: devsyConfig.ContextOption(
+			config.ContextOptionSSHInjectGitCredentials,
+		) == config.BoolTrue,
+		ConfigureGitSSHSignatureHelper: devsyConfig.ContextOption(
+			config.ContextOptionGitSSHSignatureForwarding,
+		) == config.BoolTrue,
+		GitSSHSigningKey: cmd.GitSSHSigningKey,
+	}
+	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), opts)
 }
 
 func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {
@@ -776,13 +538,19 @@ func resolveMergedWorkspaceFolder(
 	return result.MergedConfig.WorkspaceFolder
 }
 
+type startServicesOptions struct {
+	ConfigureDockerCredentials     bool
+	ConfigureGitCredentials        bool
+	ConfigureGitSSHSignatureHelper bool
+	GitSSHSigningKey               string
+}
+
 func (cmd *SSHCmd) startServices(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspace *provider.Workspace,
-	configureDockerCredentials, configureGitCredentials, configureGitSSHSignatureHelper bool,
-	gitSSHSigningKey string,
+	opts startServicesOptions,
 ) {
 	if cmd.User != "" {
 		err := tunnel.RunServices(
@@ -795,96 +563,16 @@ func (cmd *SSHCmd) startServices(
 				ExtraPorts:                     nil,
 				PlatformOptions:                nil,
 				Workspace:                      workspace,
-				ConfigureDockerCredentials:     configureDockerCredentials,
-				ConfigureGitCredentials:        configureGitCredentials,
-				ConfigureGitSSHSignatureHelper: configureGitSSHSignatureHelper,
-				GitSSHSigningKey:               gitSSHSigningKey,
+				ConfigureDockerCredentials:     opts.ConfigureDockerCredentials,
+				ConfigureGitCredentials:        opts.ConfigureGitCredentials,
+				ConfigureGitSSHSignatureHelper: opts.ConfigureGitSSHSignatureHelper,
+				GitSSHSigningKey:               opts.GitSSHSigningKey,
 			},
 		)
 		if err != nil {
 			log.Debugf("Error running credential server: %v", err)
 		}
 	}
-}
-
-// setupGPGAgent will forward a local gpg-agent into the remote container
-// this works by using cmd/internal/agentworkspace/setup_gpg.
-func (cmd *SSHCmd) setupGPGAgent(
-	ctx context.Context,
-	containerClient *ssh.Client,
-) error {
-	log.Debugf("[GPG] exporting gpg owner trust from host")
-	ownerTrustExport, err := gpg.GetHostOwnerTrust()
-	if err != nil {
-		return fmt.Errorf("export local ownertrust from GPG: %w", err)
-	}
-	ownerTrustArgument := base64.StdEncoding.EncodeToString(ownerTrustExport)
-
-	log.Debugf("[GPG] detecting gpg-agent socket path on host")
-	// Detect local agent extra socket, this will be forwarded to the remote and
-	// symlinked in multiple paths
-	gpgExtraSocketPath, err := gpg.DetectAgentSocketPath()
-	if err != nil {
-		return err
-	}
-	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
-
-	gitKey := gpg.SigningKey(ctx)
-
-	cmd.ReverseForwardPorts = append(
-		cmd.ReverseForwardPorts,
-		gpg.ContainerSocketPath+":"+gpgExtraSocketPath,
-	)
-
-	// Now we forward the agent socket to the remote, and setup remote gpg to use it
-	forwardAgent := []string{
-		config.ContainerDevsyHelperLocation,
-		"internal",
-		"agent",
-		"workspace",
-		"setup-gpg",
-		names.Flag(names.OwnerTrust),
-		ownerTrustArgument,
-		names.Flag(names.SocketPath),
-		gpg.ContainerSocketPath,
-	}
-
-	if log.DebugEnabled() {
-		forwardAgent = append(forwardAgent, names.Flag(names.Debug))
-	}
-
-	if gitKey != "" {
-		forwardAgent = append(forwardAgent, names.Flag(names.GitKey))
-		forwardAgent = append(forwardAgent, gitKey)
-	}
-
-	command := shellescape.QuoteCommand(forwardAgent)
-	if cmd.User != "" && cmd.User != "root" {
-		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
-	}
-
-	log.Debugf(
-		"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
-		gpgExtraSocketPath,
-	)
-
-	if err := cmd.startReverseForwardsAndWait(ctx, containerClient); err != nil {
-		return fmt.Errorf("start gpg-agent reverse forward: %w", err)
-	}
-
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-	err = devssh.Run(ctx, devssh.RunOptions{
-		Client:  containerClient,
-		Command: command,
-		Stdout:  writer,
-		Stderr:  writer,
-	})
-	if err != nil {
-		return fmt.Errorf("run gpg agent setup command: %w", err)
-	}
-
-	return nil
 }
 
 func startSSHKeepAlive(

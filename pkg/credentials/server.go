@@ -45,22 +45,36 @@ func RunCredentialsServer(
 	port int,
 	client CredentialsClient,
 ) error {
-	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
+	ln, err := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("listen on port %d: %w", port, err)
+	}
+	return RunCredentialsServerWithListener(ctx, ln, client)
+}
+
+// RunCredentialsServerWithListener is like RunCredentialsServer, but takes an
+// already-bound listener. Use this when the caller must hold the port
+// exclusively (via net.Listen) from before startup through to serving, so no
+// other process can bind the same port in between.
+func RunCredentialsServerWithListener(
+	ctx context.Context,
+	ln net.Listener,
+	client CredentialsClient,
+) error {
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           newCredentialsHandler(ctx, client),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
 	go func() {
-		log.Debugf("credentials server started: port=%v", port)
-
-		// always returns error. ErrServerClosed on graceful close
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			errChan <- err
+		log.Debugf("credentials server started: addr=%v", ln.Addr())
+		if err := srv.Serve(ln); err != http.ErrServerClosed {
+			errChan <- err // unexpected error, not a graceful shutdown
 		} else {
-			errChan <- nil
+			errChan <- nil // graceful shutdown, no error
 		}
 	}()
 
@@ -77,10 +91,14 @@ type credentialsHandlerFunc func(
 	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
 ) error
 
+// newCredentialsHandler returns an http.Handler that routes requests to the
+// appropriate handler function, which calls the CredentialsClient to get the
+// credentials and writes them to the response.
+//
+// Root is a readiness probe (see waitForServer); it must return 200 so the
+// server is detected as up. Unknown paths still 404 below.
 func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
 	routes := map[string]credentialsHandlerFunc{
-		// Root is a readiness probe (see waitForServer); it must return 200 so the
-		// server is detected as up. Unknown paths still 404 below.
 		"/": func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
 			writer.WriteHeader(http.StatusOK)
 			return nil

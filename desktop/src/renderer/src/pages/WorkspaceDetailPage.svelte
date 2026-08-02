@@ -400,6 +400,12 @@ function handleSshExit(exitCode?: number, _signal?: number) {
   }
 }
 
+function handleGpgForwardFailed(reason: string) {
+  toasts.error(
+    `GPG agent forwarding failed for ${id}, continuing without it: ${reason}`,
+  )
+}
+
 function isDebug(): boolean {
   return loadLocalOptions().debugFlag
 }
@@ -989,7 +995,11 @@ async function handleRenameConfirmed() {
                   </div>
                 </div>
               {:else}
-                <TerminalComponent sessionId={sshSessionId} onExit={handleSshExit} />
+                <TerminalComponent
+                  sessionId={sshSessionId}
+                  onExit={handleSshExit}
+                  onGpgForwardFailed={handleGpgForwardFailed}
+                />
               {/if}
             </div>
             {#if sshExited}

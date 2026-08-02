@@ -22,7 +22,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/netstat"
-	portpkg "github.com/devsy-org/devsy/pkg/port"
 	"github.com/spf13/cobra"
 )
 
@@ -89,50 +88,62 @@ func NewCredentialsServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
-	// create a grpc client
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}
 
-	// this message serves as a ping to the client
-	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
+	if _, err := tunnelClient.Ping(runCtx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	cmd.maybeForwardPorts(ctx, tunnelClient)
-
-	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
-	if ok, err := portpkg.IsAvailable(addr); !ok || err != nil {
-		log.Debugf("Port %d not available, exiting", port)
-		return nil
+	ln, err := claimPort(port)
+	if err != nil {
+		return err
 	}
+	defer func() { _ = ln.Close() }()
 
-	// configure docker credential helper
+	cmd.maybeForwardPorts(runCtx, tunnelClient)
+
 	if err := cmd.configureDockerHelper(port); err != nil {
 		return err
 	}
 
-	// configure git user
-	if err := configureGitUserLocally(ctx, cmd.User, tunnelClient); err != nil {
-		log.Debugf("Error configuring git user: %v", err)
+	if err := configureGitUserLocally(runCtx, cmd.User, tunnelClient); err != nil {
+		log.Warnf("error configuring git user: %v", err)
 		return err
 	}
 
-	// configure git credential helper
-	cleanupGitHelper, err := cmd.configureGitCredentialHelper(ctx, port)
+	cleanupGitHelper, err := cmd.configureGitCredentialHelper(runCtx, port)
 	if err != nil {
 		return err
 	}
 	defer cleanupGitHelper()
 
-	// configure git ssh signature helper -- non-fatal so that a signing
-	// setup failure does not take down the entire credentials server
-	// (git/docker credential forwarding, port forwarding, etc.)
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
-	return credentials.RunCredentialsServer(ctx, port, tunnelClient)
+	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient)
+}
+
+// claimPort binds port and returns the listener, holding it exclusively so
+// no other session can bind the same port until the caller closes it (or
+// hands it to RunCredentialsServerWithListener). Only one session's
+// credentials-server can hold this port at a time.
+func claimPort(port int) (net.Listener, error) {
+	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"port %d not available (another session may own the credentials server): %w",
+			port,
+			err,
+		)
+	}
+	return ln, nil
 }
 
 func (cmd *CredentialsServerCmd) maybeForwardPorts(
@@ -143,7 +154,7 @@ func (cmd *CredentialsServerCmd) maybeForwardPorts(
 		return
 	}
 	go func() {
-		log.Debugf("Start watching & forwarding open ports")
+		log.Debugf("start watching & forwarding open ports")
 		if err := forwardPorts(ctx, tunnelClient); err != nil {
 			log.Errorf("error forwarding ports: %v", err)
 		}
@@ -174,9 +185,6 @@ func (cmd *CredentialsServerCmd) configureGitCredentialHelper(
 		return noop, fmt.Errorf("configure git helper: %w", err)
 	}
 
-	// cleanup when we are done. This defer runs after the server loop
-	// returns on shutdown, when ctx is already canceled — use an uncanceled
-	// context so the helper is actually removed instead of aborting early.
 	cleanupCtx := context.WithoutCancel(ctx)
 	userName := cmd.User
 	return func() {
@@ -215,7 +223,6 @@ func configureGitUserLocally(
 	userName string,
 	client tunnel.TunnelClient,
 ) error {
-	// get local credentials
 	localGitUser, err := gitcredentials.GetUser(ctx, userName, "")
 	if err != nil {
 		return err
@@ -224,16 +231,13 @@ func configureGitUserLocally(
 		return nil
 	}
 
-	// set user & email if not found
 	gitUser, err := fetchRemoteGitUser(ctx, client)
 	if err != nil {
 		return err
 	}
 
-	// don't override what is already there
 	clearKnownGitUserFields(localGitUser, gitUser)
 
-	// set git user
 	if err := gitcredentials.SetUser(ctx, userName, gitUser); err != nil {
 		return fmt.Errorf("set git user & email: %w", err)
 	}

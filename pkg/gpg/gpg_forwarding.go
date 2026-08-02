@@ -1,7 +1,6 @@
 package gpg
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type GPGConf struct {
@@ -24,6 +24,10 @@ type GPGConf struct {
 	GitKey     string
 }
 
+// IsGpgTunnelRunning reports whether a live gpg-agent forward already
+// reaches the container by pinging the agent rather than scanning its
+// keyring. gpg-connect-agent always exits 0 even when unreachable, so
+// liveness is read from stdout: a live agent answers with a trailing "OK".
 func IsGpgTunnelRunning(
 	ctx context.Context,
 	user string,
@@ -32,13 +36,12 @@ func IsGpgTunnelRunning(
 	writer := log.PassthroughWriter()
 	defer func() { _ = writer.Close() }()
 
-	command := "gpg -K"
+	command := `echo "GETINFO version" | timeout 5 gpg-connect-agent --no-autostart`
 	if user != "" && user != "root" {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, user})
 	}
 
-	// empty output means the forwarded agent exposes no secret keys
-	var out bytes.Buffer
+	var out strings.Builder
 	err := devssh.Run(ctx, devssh.RunOptions{
 		Client:  client,
 		Command: command,
@@ -46,7 +49,7 @@ func IsGpgTunnelRunning(
 		Stderr:  writer,
 	})
 
-	return err == nil && strings.TrimSpace(out.String()) != ""
+	return err == nil && strings.HasSuffix(strings.TrimSpace(out.String()), "OK")
 }
 
 func GetHostPubKey() ([]byte, error) {
@@ -155,7 +158,7 @@ func (g *GPGConf) SetupRemoteSocketDirTree() error {
 	).Run()
 }
 
-func (g *GPGConf) SetupRemoteSocketLink() error {
+func (g *GPGConf) SetupRemoteSocketLink(ctx context.Context) error {
 	links := []string{
 		filepath.Join(os.Getenv("HOME"), ".gnupg", "S.gpg-agent"),
 		filepath.Join("/run/user", strconv.Itoa(os.Getuid()), "gnupg", "S.gpg-agent"),
@@ -172,22 +175,49 @@ func (g *GPGConf) SetupRemoteSocketLink() error {
 		}
 	}
 
-	return g.claimForwardedSocket()
+	return g.claimForwardedSocket(ctx)
 }
 
 // claimForwardedSocket takes ownership of the socket, which the ssh server
-// binds as root; a non-root user needs write access to connect. It is bound
-// asynchronously, so wait briefly for it to appear.
-func (g *GPGConf) claimForwardedSocket() error {
+// binds as root; a non-root user needs write access to connect. The socket
+// is bound asynchronously by the ssh server, so this waits for it to appear.
+func (g *GPGConf) claimForwardedSocket(ctx context.Context) error {
 	owner := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())
-	for range 30 {
-		if _, err := os.Stat(g.SocketPath); err == nil {
-			//nolint:gosec // g.SocketPath is the fixed forwarded socket path
-			return exec.Command("sudo", "chown", owner, g.SocketPath).Run()
-		}
-		time.Sleep(100 * time.Millisecond)
+
+	backoff := wait.Backoff{
+		Duration: 200 * time.Millisecond,
+		Factor:   1.5,
+		Jitter:   0.1,
+		Steps:    15,
+		Cap:      2 * time.Second,
 	}
-	return fmt.Errorf("forwarded gpg socket %q did not appear", g.SocketPath)
+
+	err := wait.ExponentialBackoffWithContext(ctx, backoff, func(_ context.Context) (bool, error) {
+		info, err := os.Stat(g.SocketPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return false, nil // Retry
+			}
+			return false, fmt.Errorf("inspect forwarded gpg socket %q: %w", g.SocketPath, err)
+		}
+		if info.Mode()&os.ModeSocket == 0 {
+			return false, fmt.Errorf("path %q exists but is not a unix socket", g.SocketPath)
+		}
+		return true, nil
+	})
+	if wait.Interrupted(err) {
+		return fmt.Errorf(
+			"forwarded gpg socket %q did not appear as expected: %w",
+			g.SocketPath,
+			err,
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	//nolint:gosec // g.SocketPath is the fixed forwarded socket path
+	return exec.Command("sudo", "chown", owner, g.SocketPath).Run()
 }
 
 func gpgConfigPath() string {

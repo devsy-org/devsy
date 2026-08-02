@@ -98,11 +98,17 @@ func executeSSHServerHelper(
 ) error {
 	defer log.Debug("done executing SSH server helper command")
 
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	// AgentInject's stderr always carries the ssh-server command's structured
+	// JSON logs, and for some callers (see newAgentInjectFunc) also the
+	// injection script's plain-text preamble first. TunnelLogStreamer handles
+	// both: JSON lines are re-emitted at their own level, plain-text lines
+	// fall back to level-prefix extraction, so neither is silently dropped or
+	// double-wrapped as a single log line.
+	streamer := NewTunnelLogStreamer()
+	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("injecting and running SSH server command: %q", opts.SSHCommand)
-	err := opts.AgentInject(ctx, opts.SSHCommand, stdin, stdout, writer)
+	err := opts.AgentInject(ctx, opts.SSHCommand, stdin, stdout, streamer)
 	if err != nil && !isExpectedError(err) {
 		return fmt.Errorf("executing agent command: %w", err)
 	}
