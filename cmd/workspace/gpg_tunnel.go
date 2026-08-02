@@ -141,8 +141,10 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
 }
 
-// setup forwards the local gpg-agent into the remote container by using
-// cmd/internal/agentworkspace/setup_gpg.
+// setup runs the remote setup-gpg command, which imports the host's owner trust
+// and signing key into the container's gpg-agent. It also ensures the
+// reverse-forward socket is bound at most once per process, so concurrent
+// terminals don't race to bind the same path.
 func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) error {
 	log.Debugf("detecting gpg-agent socket path on host")
 	// this socket gets forwarded to the remote and symlinked in multiple paths
@@ -150,7 +152,7 @@ func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) erro
 	if err != nil {
 		return err
 	}
-	log.Debugf("[GPG] detected gpg-agent socket path %s", gpgExtraSocketPath)
+	log.Debugf("detected gpg-agent socket path %s", gpgExtraSocketPath)
 
 	command, err := t.buildSetupCommand(ctx)
 	if err != nil {
@@ -183,7 +185,7 @@ func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) erro
 func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
 	cmd := t.cmd
 
-	log.Debugf("[GPG] exporting gpg owner trust from host")
+	log.Debugf("exporting gpg owner trust from host")
 	ownerTrustExport, err := gpg.GetHostOwnerTrust()
 	if err != nil {
 		return "", fmt.Errorf("export local ownertrust from GPG: %w", err)
@@ -231,7 +233,7 @@ func (t *gpgTunnel) ensureForwardBound(
 	}
 
 	log.Debugf(
-		"[GPG] start reverse forward of gpg-agent socket %s, keeping connection open",
+		"start reverse forward of gpg-agent socket %s, keeping connection open",
 		gpgExtraSocketPath,
 	)
 	reverseForwardPorts := append(

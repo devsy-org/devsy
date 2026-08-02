@@ -1,3 +1,5 @@
+//go:build linux || darwin || unix
+
 package gpg
 
 import (
@@ -15,20 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// listenUnixSocket creates a real Unix domain socket at path and returns it
-// along with any error. It deliberately avoids require.NoError/t.Cleanup:
-// those call t.FailNow, which the testing package requires to run on the
-// test's own goroutine, but this helper is called from a background
-// goroutine in TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears.
-// The caller must check the returned error and register cleanup itself, on
-// the test goroutine.
 func listenUnixSocket(path string) (net.Listener, error) {
 	return net.Listen("unix", path)
 }
 
-// shortSocketDir returns a short-enough temp dir for a unix socket path:
-// t.TempDir()'s nested path can exceed the ~104-byte sun_path limit on
-// macOS/BSD, so this creates directly under os.TempDir() instead.
 func shortSocketDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "gpgsock")
@@ -116,11 +108,6 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, 2*time.Second, "must return shortly after the socket appears")
-	// claimForwardedSocket's final step runs `sudo chown`, which may not be
-	// passwordless in this environment; only the socket-appear wait itself is
-	// under test here, so that specific failure is tolerated, but nothing
-	// else is: a sudo failure surfaces as *exec.ExitError (ran, non-zero
-	// exit) or *exec.Error (sudo binary missing).
 	if err != nil {
 		var exitErr *exec.ExitError
 		var execErr *exec.Error
@@ -131,12 +118,6 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 
 func TestClaimForwardedSocket_TimesOutWhenSocketNeverAppears(t *testing.T) {
 	g := &GPGConf{SocketPath: filepath.Join(t.TempDir(), "S.gpg-agent")}
-
-	// The backoff's own worst case (15 steps, 200ms*1.5^n capped at 2s, plus
-	// up to 10% jitter per step) is close to 24.4s, so the timeout used to
-	// wait it out needs real margin above that or scheduler delays can make
-	// ctx expire first, replacing the "did not appear" error this test
-	// checks for with a context-deadline error instead.
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 

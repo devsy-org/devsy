@@ -77,8 +77,6 @@ func TestAcquireGPGSetupLock_TimesOutWhenHeldTooLong(t *testing.T) {
 func TestAcquireGPGSetupLock_ReturnsCancellationErrorWhenCallerCancels(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
-	// Longer than the caller's cancellation, so a "timed out waiting"
-	// lock-timeout error is not what triggers here — only ctx cancellation.
 	gpgSetupLockTimeout = 10 * time.Second
 	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
 

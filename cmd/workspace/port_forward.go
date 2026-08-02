@@ -215,7 +215,7 @@ func (cmd *SSHCmd) startReverseForwardsAndWait(
 
 	for _, b := range bound {
 		log.Infof(
-			"Reverse forwarding local %s/%s to remote %s/%s",
+			"reverse forwarding local %s/%s to remote %s/%s",
 			b.mapping.Host.Protocol,
 			b.mapping.Host.Address,
 			b.mapping.Container.Protocol,

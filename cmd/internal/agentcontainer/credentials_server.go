@@ -88,24 +88,15 @@ func NewCredentialsServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
-	// create a grpc client
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}
 
-	// this message serves as a ping to the client
 	if _, err := tunnelClient.Ping(ctx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
 
-	// Claim the port by binding it before starting anything else, and hold
-	// the listener until it's handed to RunCredentialsServerWithListener
-	// below: a check-then-bind gap here would let two concurrent sessions
-	// both pass the check and race to bind. On contention this returns an
-	// error so RunServices' retry (pkg/tunnel/services.go) tries again
-	// later, and starting the port watcher beforehand would leak an
-	// orphaned goroutine on every failed attempt.
 	ln, err := claimPort(port)
 	if err != nil {
 		return err
@@ -114,27 +105,21 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 
 	cmd.maybeForwardPorts(ctx, tunnelClient)
 
-	// configure docker credential helper
 	if err := cmd.configureDockerHelper(port); err != nil {
 		return err
 	}
 
-	// configure git user
 	if err := configureGitUserLocally(ctx, cmd.User, tunnelClient); err != nil {
-		log.Debugf("Error configuring git user: %v", err)
+		log.Warnf("error configuring git user: %v", err)
 		return err
 	}
 
-	// configure git credential helper
 	cleanupGitHelper, err := cmd.configureGitCredentialHelper(ctx, port)
 	if err != nil {
 		return err
 	}
 	defer cleanupGitHelper()
 
-	// configure git ssh signature helper -- non-fatal so that a signing
-	// setup failure does not take down the entire credentials server
-	// (git/docker credential forwarding, port forwarding, etc.)
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
@@ -152,7 +137,7 @@ func claimPort(port int) (net.Listener, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"port %d not available (another session likely owns the credentials server): %w",
+			"port %d not available (another session may own the credentials server): %w",
 			port,
 			err,
 		)
@@ -168,7 +153,7 @@ func (cmd *CredentialsServerCmd) maybeForwardPorts(
 		return
 	}
 	go func() {
-		log.Debugf("Start watching & forwarding open ports")
+		log.Debugf("start watching & forwarding open ports")
 		if err := forwardPorts(ctx, tunnelClient); err != nil {
 			log.Errorf("error forwarding ports: %v", err)
 		}

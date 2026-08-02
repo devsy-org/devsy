@@ -10,9 +10,6 @@ import (
 )
 
 func TestClaimPort_SucceedsWhenPortFree(t *testing.T) {
-	// Pass 0 to let the OS assign a free ephemeral port at call time — this
-	// avoids the close-then-probe race of reserving a port via net.Listen,
-	// closing it, and hoping nothing else claims it before this call runs.
 	ln, err := claimPort(0)
 	require.NoError(t, err)
 	_ = ln.Close()
@@ -51,10 +48,6 @@ func TestClaimPort_BecomesClaimableAfterHolderReleases(t *testing.T) {
 	_ = claimed.Close()
 }
 
-// TestClaimPort_OnlyOneConcurrentCallerWins proves claimPort binds the port
-// as the claim itself, rather than merely probing it: with a check-then-bind
-// gap, two concurrent callers could both observe the port as free before
-// either binds it.
 func TestClaimPort_OnlyOneConcurrentCallerWins(t *testing.T) {
 	ln, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)

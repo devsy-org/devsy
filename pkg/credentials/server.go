@@ -69,12 +69,10 @@ func RunCredentialsServerWithListener(
 	errChan := make(chan error, 1)
 	go func() {
 		log.Debugf("credentials server started: addr=%v", ln.Addr())
-
-		// always returns error. ErrServerClosed on graceful close
 		if err := srv.Serve(ln); err != http.ErrServerClosed {
-			errChan <- err
+			errChan <- err // unexpected error, not a graceful shutdown
 		} else {
-			errChan <- nil
+			errChan <- nil // graceful shutdown, no error
 		}
 	}()
 
@@ -91,10 +89,14 @@ type credentialsHandlerFunc func(
 	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
 ) error
 
+// newCredentialsHandler returns an http.Handler that routes requests to the
+// appropriate handler function, which calls the CredentialsClient to get the
+// credentials and writes them to the response.
+//
+// Root is a readiness probe (see waitForServer); it must return 200 so the
+// server is detected as up. Unknown paths still 404 below.
 func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
 	routes := map[string]credentialsHandlerFunc{
-		// Root is a readiness probe (see waitForServer); it must return 200 so the
-		// server is detected as up. Unknown paths still 404 below.
 		"/": func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
 			writer.WriteHeader(http.StatusOK)
 			return nil

@@ -18,11 +18,11 @@ import (
 )
 
 // gpgSetupLockPath serializes concurrent setup-gpg invocations against the
-// same container's gpg-agent/socket. A var so tests can point it at a temp path.
+// same container's gpg-agent/socket.
 var gpgSetupLockPath = "/tmp/devsy-gpg-setup.lock"
 
 // gpgSetupLockTimeout bounds how long an invocation waits for a concurrent
-// one to finish. A var so tests can shrink it.
+// one to finish.
 var gpgSetupLockTimeout = 30 * time.Second
 
 // SetupGPGCmd holds the setupGPG cmd flags.
@@ -61,17 +61,9 @@ func NewSetupGPGCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return setupGPGCmd
 }
 
-// will forward a local gpg-agent into the remote container
-// this works by
-//
-// - stopping remote gpg-agent and removing the sockets
-// - exporting local public keys and owner trust
-// - importing those into the container
-// - ensuring the gpg-agent is stopped in the container
-// - starting a reverse-tunnel of the local unix socket to remote
-// - ensuring paths and permissions are correctly set in the remote.
+// Run executes the setup-gpg command.
 func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
-	log.Debugf("Initializing gpg-agent forwarding")
+	log.Debugf("initializing gpg-agent forwarding")
 
 	unlock, err := acquireGPGSetupLock(ctx)
 	if err != nil {
@@ -96,9 +88,9 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	}
 
 	if gpgConf.GitKey != "" {
-		log.Debugf("Setup git signing key")
+		log.Debugf("setup git signing key")
 		if err := gitcredentials.SetupGpgGitKey(ctx, gpgConf.GitKey); err != nil {
-			log.Warnf("Setup git signing key failed (non-fatal): %v", err)
+			log.Warnf("setup git signing key failed (non-fatal): %v", err)
 		}
 	}
 
