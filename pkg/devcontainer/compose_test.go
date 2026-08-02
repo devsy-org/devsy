@@ -174,6 +174,86 @@ func (s *ComposeSuite) TestCreateComposeServiceUsesBuildImageName() {
 	s.requireBuildArgValue(service.Build.Args, "BUILDKIT_INLINE_CACHE", "1")
 }
 
+func (s *ComposeSuite) TestCreateComposeServiceCarriesPlatform() {
+	r := &runner{}
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
+			Name:     "app",
+			Image:    "ghcr.io/example/shared-base:latest",
+			Platform: "linux/amd64",
+		},
+		buildImageName:          "workspace-app:latest",
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo: &feature.BuildInfo{
+			OverrideTarget: "dev_containers_target_stage",
+		},
+	})
+
+	s.Require().NotNil(service.Build)
+	s.Equal(composetypes.StringList{"linux/amd64"}, service.Build.Platforms)
+}
+
+func (s *ComposeSuite) TestCreateComposeServiceOmitsPlatformWhenUnset() {
+	r := &runner{}
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
+			Name:  "app",
+			Image: "ghcr.io/example/shared-base:latest",
+		},
+		buildImageName:          "workspace-app:latest",
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo: &feature.BuildInfo{
+			OverrideTarget: "dev_containers_target_stage",
+		},
+	})
+
+	s.Require().NotNil(service.Build)
+	s.Nil(service.Build.Platforms)
+}
+
+func (s *ComposeSuite) TestCreateComposeServiceClonesBuildPlatforms() {
+	r := &runner{}
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
+			Name: "app",
+			Build: &composetypes.BuildConfig{
+				Platforms: composetypes.StringList{"linux/amd64", "linux/arm64"},
+			},
+		},
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo:       &feature.BuildInfo{},
+	})
+
+	s.Require().NotNil(service.Build)
+	s.Equal(composetypes.StringList{"linux/amd64", "linux/arm64"}, service.Build.Platforms)
+}
+
+func (s *ComposeSuite) TestCreateComposeServiceClonesUnrelatedBuildFields() {
+	r := &runner{}
+	service := r.createComposeService(&composeServiceParams{
+		composeService: &composetypes.ServiceConfig{
+			Name: "app",
+			Build: &composetypes.BuildConfig{
+				ShmSize:   64 * 1024 * 1024,
+				CacheFrom: composetypes.StringList{"type=registry,ref=example.com/cache"},
+			},
+		},
+		dockerfilePathInContext: "Dockerfile-with-features",
+		buildContext:            "/tmp/context",
+		featuresBuildInfo:       &feature.BuildInfo{},
+	})
+
+	s.Require().NotNil(service.Build)
+	s.EqualValues(64*1024*1024, service.Build.ShmSize)
+	s.Equal(
+		composetypes.StringList{"type=registry,ref=example.com/cache"},
+		service.Build.CacheFrom,
+	)
+}
+
 func (s *ComposeSuite) requireBuildArgValue(
 	args composetypes.MappingWithEquals,
 	key, want string,

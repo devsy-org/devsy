@@ -545,12 +545,18 @@ func (r *runner) createComposeService(params *composeServiceParams) *composetype
 	composeService := params.composeService
 	featuresBuildInfo := params.featuresBuildInfo
 
+	// Clone Build instead of starting empty, so fields this function doesn't
+	// set explicitly (Platforms, ShmSize, CacheFrom, ...) aren't dropped.
+	var build composetypes.BuildConfig
+	if composeService.Build != nil {
+		build = *composeService.Build
+	}
+	build.Dockerfile = params.dockerfilePathInContext
+	build.Context = params.buildContext
+
 	service := &composetypes.ServiceConfig{
-		Name: composeService.Name,
-		Build: &composetypes.BuildConfig{
-			Dockerfile: params.dockerfilePathInContext,
-			Context:    params.buildContext,
-		},
+		Name:  composeService.Name,
+		Build: &build,
 	}
 	if params.buildImageName != "" {
 		service.Image = stripDigestFromImageRef(params.buildImageName)
@@ -563,6 +569,12 @@ func (r *runner) createComposeService(params *composeServiceParams) *composetype
 	service.Build.Args = composetypes.NewMappingWithEquals([]string{"BUILDKIT_INLINE_CACHE=1"})
 	for k, v := range featuresBuildInfo.BuildArgs {
 		service.Build.Args[k] = &v
+	}
+
+	// Platform and Build.Platforms are independent compose fields; fall back
+	// to Platform only if the clone above didn't already set Build.Platforms.
+	if composeService.Platform != "" && len(service.Build.Platforms) == 0 {
+		service.Build.Platforms = composetypes.StringList{composeService.Platform}
 	}
 
 	return service
