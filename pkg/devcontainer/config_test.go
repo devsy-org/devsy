@@ -467,6 +467,26 @@ func TestGetRawConfig_SourceImageBypassesDiscovery(t *testing.T) {
 	}
 }
 
+func TestGetRawConfig_SourceImageCarriesRunArgs(t *testing.T) {
+	folder := t.TempDir()
+	r := newRunnerAt(folder)
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{
+		DevContainerSource: "image:python",
+		RunArgs:            []string{"--add-host=host.docker.internal:host-gateway"},
+	})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if len(conf.RunArgs) != 1 || conf.RunArgs[0] != "--add-host=host.docker.internal:host-gateway" {
+		t.Errorf(
+			"RunArgs = %v, want [--add-host=host.docker.internal:host-gateway] "+
+				"(snapshot restore relies on this to reach a host.docker.internal-only registry)",
+			conf.RunArgs,
+		)
+	}
+}
+
 func TestGetRawConfig_PersistedSourceImageBypassesDiscovery(t *testing.T) {
 	folder := t.TempDir()
 	seedAmbiguousProfiles(t, folder)

@@ -257,29 +257,35 @@ type CLIOptions struct {
 	GitCloneRecursiveSubmodules bool              `json:"gitCloneRecursive,omitempty"`
 	GitLFSMode                  git.LFSMode       `json:"gitLFSMode,omitempty"`
 	FallbackImage               string            `json:"fallbackImage,omitempty"`
-	GitSSHSigningKey            string            `json:"gitSshSigningKey,omitempty"`
-	SSHAuthSockID               string            `json:"sshAuthSockID,omitempty"` // ID to use when looking for SSH_AUTH_SOCK, defaults to a new random ID if not set (only used for browser IDEs)
-	StrictHostKeyChecking       bool              `json:"strictHostKeyChecking,omitempty"`
-	AdditionalFeatures          string            `json:"additionalFeatures,omitempty"`
-	ExtraDevContainerPath       string            `json:"extraDevContainerPath,omitempty"`
-	User                        string            `json:"user,omitempty"`
-	DefaultUserEnvProbe         string            `json:"defaultUserEnvProbe,omitempty"`
-	Userns                      string            `json:"userns,omitempty"`
-	UidMap                      []string          `json:"uidMap,omitempty"`
-	GidMap                      []string          `json:"gidMap,omitempty"`
-	IDLabels                    []string          `json:"idLabels,omitempty"`
-	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
-	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
-	RunPlatform                 string            `json:"runPlatform,omitempty"`
-	Mounts                      []string          `json:"mounts,omitempty"`
-	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
-	ContainerDataFolder         string            `json:"containerDataFolder,omitempty"`
-	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`
-	TerminalColumns             int               `json:"terminalColumns,omitempty"`
-	TerminalRows                int               `json:"terminalRows,omitempty"`
-	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
-	ContainerUser               string            `json:"containerUser,omitempty"`
-	RemoteUser                  string            `json:"remoteUser,omitempty"`
+	// RunArgs are extra `docker run` arguments applied when a devcontainer
+	// source override (Source: image/none) suppresses discovery of a project
+	// devcontainer.json, so runArgs it would have set (e.g. --add-host) still
+	// take effect. Used by snapshot restore to replay the original
+	// devcontainer.json's runArgs onto the restored, image-sourced container.
+	RunArgs                    []string `json:"runArgs,omitempty"`
+	GitSSHSigningKey           string   `json:"gitSshSigningKey,omitempty"`
+	SSHAuthSockID              string   `json:"sshAuthSockID,omitempty"` // ID to use when looking for SSH_AUTH_SOCK, defaults to a new random ID if not set (only used for browser IDEs)
+	StrictHostKeyChecking      bool     `json:"strictHostKeyChecking,omitempty"`
+	AdditionalFeatures         string   `json:"additionalFeatures,omitempty"`
+	ExtraDevContainerPath      string   `json:"extraDevContainerPath,omitempty"`
+	User                       string   `json:"user,omitempty"`
+	DefaultUserEnvProbe        string   `json:"defaultUserEnvProbe,omitempty"`
+	Userns                     string   `json:"userns,omitempty"`
+	UidMap                     []string `json:"uidMap,omitempty"`
+	GidMap                     []string `json:"gidMap,omitempty"`
+	IDLabels                   []string `json:"idLabels,omitempty"`
+	GPUAvailability            string   `json:"gpuAvailability,omitempty"`
+	WorkspaceMountConsistency  string   `json:"workspaceMountConsistency,omitempty"`
+	RunPlatform                string   `json:"runPlatform,omitempty"`
+	Mounts                     []string `json:"mounts,omitempty"`
+	UpdateRemoteUserUIDDefault string   `json:"updateRemoteUserUIDDefault,omitempty"`
+	ContainerDataFolder        string   `json:"containerDataFolder,omitempty"`
+	MountWorkspaceGitRoot      *bool    `json:"mountWorkspaceGitRoot,omitempty"`
+	TerminalColumns            int      `json:"terminalColumns,omitempty"`
+	TerminalRows               int      `json:"terminalRows,omitempty"`
+	SkipNonBlockingCommands    bool     `json:"skipNonBlockingCommands,omitempty"`
+	ContainerUser              string   `json:"containerUser,omitempty"`
+	RemoteUser                 string   `json:"remoteUser,omitempty"`
 	// nil = auto-detect; true/false = force clone-in-container or bind-mount.
 	PullFromInsideContainerOverride *bool `json:"pullFromInsideContainerOverride,omitempty"`
 

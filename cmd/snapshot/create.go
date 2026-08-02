@@ -105,6 +105,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		SourceProvider:       target.Workspace.Provider.Name,
 		Message:              cmd.Message,
 		MountPrefix:          vols.MountPrefix,
+		RunArgs:              vols.RunArgs,
 		ContainerImageDigest: imgDigest,
 		ContainerImageSize:   imgSize,
 		VolumesDigest:        vols.Digest,
@@ -267,6 +268,7 @@ type pushedVolumes struct {
 	Digest      string
 	Size        int64
 	MountPrefix string
+	RunArgs     []string
 }
 
 // The volumes RPC (StreamSnapshotVolumes) is served by a tunnelServer reading
@@ -301,7 +303,12 @@ func (cmd *CreateCmd) pushVolumes(
 	if err != nil {
 		return nil, fmt.Errorf("push volumes: %w", err)
 	}
-	return &pushedVolumes{Digest: digest, Size: size, MountPrefix: mountPrefix}, nil
+	return &pushedVolumes{
+		Digest:      digest,
+		Size:        size,
+		MountPrefix: mountPrefix,
+		RunArgs:     result.MergedConfig.RunArgs,
+	}, nil
 }
 
 // newLocalTunnelClient wires a tunnelServer (serving StreamSnapshotVolumes

@@ -71,6 +71,43 @@ func TestBuildManifest_MessageAnnotationOnlyWhenNonEmpty(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestBuildManifest_RunArgsRoundTrip(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         "uid-123",
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		VolumesDigest:        "sha256:" + oneDigest,
+		RunArgs:              []string{"--add-host=host.docker.internal:host-gateway"},
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+
+	raw, err := built.MarshalOCI()
+	require.NoError(t, err)
+	parsed, err := ParseManifest(raw)
+	require.NoError(t, err)
+
+	runArgs, err := parsed.RunArgs()
+	require.NoError(t, err)
+	require.Equal(t, opts.RunArgs, runArgs)
+}
+
+func TestManifest_RunArgs_NilWhenAbsent(t *testing.T) {
+	opts := BuildManifestOptions{
+		WorkspaceUID:         "uid-123",
+		CreatedAt:            time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+		ContainerImageDigest: "sha256:" + zeroDigest,
+		VolumesDigest:        "sha256:" + oneDigest,
+	}
+
+	built, err := BuildManifest(opts)
+	require.NoError(t, err)
+	runArgs, err := built.RunArgs()
+	require.NoError(t, err)
+	require.Nil(t, runArgs)
+}
+
 func TestParseManifest_RejectsInvalidSchemaVersion(t *testing.T) {
 	invalidManifest := []byte(
 		`{"schemaVersion":1,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`,

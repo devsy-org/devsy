@@ -27,6 +27,14 @@ const (
 	// mount target's own depth, since the two are not guaranteed to match
 	// (different provider defaults, different workspace-folder conventions).
 	AnnotationMountPrefix = "sh.devsy.snapshot.mount-prefix"
+	// AnnotationRunArgs is the create-time devcontainer.json's runArgs
+	// (JSON-encoded []string), replayed onto the restored container so
+	// runArgs the original devcontainer.json relied on (e.g.
+	// --add-host=host.docker.internal:host-gateway for a registry reachable
+	// only via that hostname) still apply — restore pins DevContainerSource
+	// to the committed image, which bypasses the project devcontainer.json
+	// and would otherwise silently drop them.
+	AnnotationRunArgs = "sh.devsy.snapshot.run-args"
 )
 
 // Descriptor mirrors the OCI content descriptor fields we need; kept minimal
@@ -55,6 +63,7 @@ type BuildManifestOptions struct {
 	SourceProvider   string
 	Message          string
 	MountPrefix      string
+	RunArgs          []string
 
 	ContainerImageDigest string
 	ContainerImageSize   int64
@@ -88,6 +97,13 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 	if opts.Message != "" {
 		annotations[AnnotationMessage] = opts.Message
 	}
+	if len(opts.RunArgs) > 0 {
+		raw, err := json.Marshal(opts.RunArgs)
+		if err != nil {
+			return nil, fmt.Errorf("build snapshot manifest: marshal run args: %w", err)
+		}
+		annotations[AnnotationRunArgs] = string(raw)
+	}
 
 	return &Manifest{
 		SchemaVersion: 2,
@@ -112,6 +128,20 @@ func BuildManifest(opts BuildManifestOptions) (*Manifest, error) {
 		},
 		Annotations: annotations,
 	}, nil
+}
+
+// RunArgs decodes the create-time devcontainer.json's runArgs from the
+// manifest, or returns nil when the snapshot carries none.
+func (m *Manifest) RunArgs() ([]string, error) {
+	raw, ok := m.Annotations[AnnotationRunArgs]
+	if !ok || raw == "" {
+		return nil, nil
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		return nil, fmt.Errorf("parse %s annotation: %w", AnnotationRunArgs, err)
+	}
+	return args, nil
 }
 
 func (m *Manifest) MarshalOCI() ([]byte, error) {

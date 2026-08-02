@@ -522,9 +522,15 @@ func (cmd *UpCmd) validateFromSnapshot(ctx context.Context, args []string) error
 	if cmd.Platform.Enabled {
 		return fmt.Errorf("--from-snapshot is not supported in platform mode")
 	}
-	if _, err := snapshotpkg.PullManifest(ctx, cmd.FromSnapshot); err != nil {
+	manifest, err := snapshotpkg.PullManifest(ctx, cmd.FromSnapshot)
+	if err != nil {
 		return fmt.Errorf("validate --from-snapshot ref: %w", err)
 	}
+	runArgs, err := manifest.RunArgs()
+	if err != nil {
+		return fmt.Errorf("read --from-snapshot run args: %w", err)
+	}
+	cmd.RunArgs = runArgs
 	return nil
 }
 

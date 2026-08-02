@@ -86,6 +86,11 @@ func (cmd *RestoreCmd) Run(
 		return err
 	}
 
+	runArgs, err := manifest.RunArgs()
+	if err != nil {
+		return fmt.Errorf("read snapshot run args: %w", err)
+	}
+
 	log.Infof("restoring snapshot: ref=%s workspaceId=%s", snapshotRef, ws.ID)
 
 	return up.RunFromOptions(ctx, cmd.GlobalFlags, up.Options{
@@ -94,6 +99,7 @@ func (cmd *RestoreCmd) Run(
 		Provider:           ws.Provider.Name,
 		IDE:                "none",
 		DevContainerSource: ws.DevContainerSource,
+		RunArgs:            runArgs,
 	})
 }
 

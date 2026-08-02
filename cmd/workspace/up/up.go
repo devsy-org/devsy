@@ -76,6 +76,11 @@ type Options struct {
 	// DevContainerSource overrides devcontainer discovery (e.g. "image:<ref>"),
 	// used by snapshot restore to run the committed image directly.
 	DevContainerSource string
+	// RunArgs are extra `docker run` arguments to apply when DevContainerSource
+	// suppresses the project devcontainer.json, so runArgs it would have set
+	// (e.g. --add-host) still take effect. Used by snapshot restore to replay
+	// the original devcontainer.json's runArgs.
+	RunArgs []string
 }
 
 type HeadlessOptions struct {
@@ -190,6 +195,7 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	cmd.Source = opts.Source
 	cmd.DevContainerPath = opts.DevcontainerPath
 	cmd.DevContainerSource = opts.DevContainerSource
+	cmd.RunArgs = opts.RunArgs
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}

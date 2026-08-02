@@ -186,6 +186,7 @@ func (r *runner) rawConfigFromSource(
 		log.Infof("ignoring project devcontainer, using image %s", spec.Image)
 		return r.saveSynthesizedConfig(&config.DevContainerConfig{
 			ImageContainer: config.ImageContainer{Image: spec.Image},
+			NonComposeBase: config.NonComposeBase{RunArgs: options.RunArgs},
 		})
 	case SourceNone:
 		log.Infof("ignoring project devcontainer")
@@ -193,6 +194,7 @@ func (r *runner) rawConfigFromSource(
 		if options.FallbackImage != "" {
 			log.Infof("Using fallback image %s", options.FallbackImage)
 			defaultConfig.ImageContainer = config.ImageContainer{Image: options.FallbackImage}
+			defaultConfig.NonComposeBase = config.NonComposeBase{RunArgs: options.RunArgs}
 		} else {
 			log.Infof("Try detecting project programming language")
 			defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
