@@ -17,6 +17,7 @@ import (
 const (
 	registryFlag        = "--registry"
 	debugFlag           = "--debug"
+	workspaceIDFlag     = "--workspace-id"
 	snapshotCmd         = "snapshot"
 	snapshotVerbCreate  = "create"
 	snapshotVerbRestore = "restore"
@@ -92,7 +93,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, restoredID)
 
 		_, _, err = f.ExecCommandCapture(ctx, []string{
-			snapshotCmd, snapshotVerbRestore, snapshotRef, "--workspace-id", restoredID, debugFlag,
+			snapshotCmd, snapshotVerbRestore, snapshotRef, workspaceIDFlag, restoredID, debugFlag,
 		})
 		framework.ExpectNoError(err)
 
@@ -144,7 +145,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 
 		_, _, err = f.ExecCommandCapture(ctx, []string{
 			snapshotCmd, snapshotVerbRestore, snapshotRef,
-			"--workspace-id", transferredID, debugFlag,
+			workspaceIDFlag, transferredID, debugFlag,
 		})
 		framework.ExpectNoError(err)
 
@@ -232,4 +233,214 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 			"workspace should still be reachable after failed snapshot create",
 		)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("rejects snapshot create for a workspace with more than one mount", func(
+		ctx context.Context,
+	) {
+		initialDir, err := os.Getwd()
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-multi-mount")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+		_, stderr, err := f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag,
+			registryHost + "/e2e/snapshots", debugFlag,
+		})
+		gomega.Expect(err).To(gomega.HaveOccurred())
+		gomega.Expect(stderr).To(gomega.ContainSubstring("does not yet support multiple mounts"))
+
+		// The rejected create must not have left the workspace itself broken.
+		_, err = f.DevsySSH(ctx, tempDir, "pwd")
+		framework.ExpectNoError(
+			err,
+			"workspace should still be reachable after a rejected multi-mount snapshot create",
+		)
+	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+	ginkgo.It("re-restoring the same snapshot into an already-populated workspace is a no-op", func(
+		ctx context.Context,
+	) {
+		initialDir, err := os.Getwd()
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+		workspaceFolder, err := f.DevsySSH(ctx, tempDir, "pwd")
+		framework.ExpectNoError(err)
+		workspaceFolder = strings.TrimSpace(workspaceFolder)
+
+		markerCmd := fmt.Sprintf("echo mutated > %s/marker.txt", workspaceFolder)
+		_, err = f.DevsySSH(ctx, tempDir, markerCmd)
+		framework.ExpectNoError(err)
+
+		out, _, err := f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
+		})
+		framework.ExpectNoError(err)
+		snapshotRef := strings.TrimSpace(out)
+
+		restoredID := "rerestore-" + filepath.Base(tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, restoredID)
+
+		restoreArgs := []string{
+			snapshotCmd, snapshotVerbRestore, snapshotRef, workspaceIDFlag, restoredID, debugFlag,
+		}
+		_, _, err = f.ExecCommandCapture(ctx, restoreArgs)
+		framework.ExpectNoError(err)
+
+		restoredWorkspaceFolder, err := f.DevsySSH(ctx, restoredID, "pwd")
+		framework.ExpectNoError(err)
+		restoredWorkspaceFolder = strings.TrimSpace(restoredWorkspaceFolder)
+
+		// Mutate the restored workspace's own copy after the first restore, so
+		// a second restore that (incorrectly) re-extracted the volume would
+		// clobber this and a second restore that (correctly) skips would not.
+		mutateAfterFirstRestore := fmt.Sprintf(
+			"echo mutated-after-first-restore > %s/post-restore.txt", restoredWorkspaceFolder,
+		)
+		_, err = f.DevsySSH(ctx, restoredID, mutateAfterFirstRestore)
+		framework.ExpectNoError(err)
+
+		// Restoring the same ref into the same, now-populated workspace ID must
+		// not touch existing content: it should be treated as already-restored
+		// (skipSnapshotRestore) rather than re-extracting the volumes archive.
+		_, _, err = f.ExecCommandCapture(ctx, restoreArgs)
+		framework.ExpectNoError(err)
+
+		content, err := f.DevsySSH(
+			ctx, restoredID, fmt.Sprintf("cat %s/post-restore.txt", restoredWorkspaceFolder),
+		)
+		framework.ExpectNoError(
+			err, "second restore into the same workspace id must not have wiped existing content",
+		)
+		gomega.Expect(content).To(gomega.ContainSubstring("mutated-after-first-restore"))
+
+		markerContent, err := f.DevsySSH(
+			ctx, restoredID, fmt.Sprintf("cat %s/marker.txt", restoredWorkspaceFolder),
+		)
+		framework.ExpectNoError(err)
+		gomega.Expect(markerContent).To(gomega.ContainSubstring("mutated"))
+	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+	ginkgo.It("--reset forces a real restore over a non-empty target workspace", func(
+		ctx context.Context,
+	) {
+		initialDir, err := os.Getwd()
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+		workspaceFolder, err := f.DevsySSH(ctx, tempDir, "pwd")
+		framework.ExpectNoError(err)
+		workspaceFolder = strings.TrimSpace(workspaceFolder)
+
+		markerCmd := fmt.Sprintf("echo mutated > %s/marker.txt", workspaceFolder)
+		_, err = f.DevsySSH(ctx, tempDir, markerCmd)
+		framework.ExpectNoError(err)
+
+		out, _, err := f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
+		})
+		framework.ExpectNoError(err)
+		snapshotRef := strings.TrimSpace(out)
+
+		resetID := "reset-" + filepath.Base(tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, resetID)
+
+		// devsy up --from-snapshot into a workspace id that doesn't exist yet
+		// creates it fresh, exactly like `snapshot restore` would.
+		_, _, err = f.ExecCommandCapture(ctx, []string{
+			"workspace", "up", "--from-snapshot", snapshotRef,
+			"--id", resetID, "--ide", "none", debugFlag,
+		})
+		framework.ExpectNoError(err)
+
+		resetWorkspaceFolder, err := f.DevsySSH(ctx, resetID, "pwd")
+		framework.ExpectNoError(err)
+		resetWorkspaceFolder = strings.TrimSpace(resetWorkspaceFolder)
+
+		// Add content the snapshot does not know about, then --reset: the
+		// restore must run again and the pre-reset addition must not survive,
+		// proving the volume was genuinely re-extracted rather than skipped.
+		staleCmd := fmt.Sprintf("echo stale > %s/stale.txt", resetWorkspaceFolder)
+		_, err = f.DevsySSH(ctx, resetID, staleCmd)
+		framework.ExpectNoError(err)
+
+		_, _, err = f.ExecCommandCapture(ctx, []string{
+			"workspace", "up", "--from-snapshot", snapshotRef,
+			"--id", resetID, "--ide", "none", "--reset", debugFlag,
+		})
+		framework.ExpectNoError(err)
+
+		_, err = f.DevsySSH(ctx, resetID, fmt.Sprintf("cat %s/stale.txt", resetWorkspaceFolder))
+		gomega.Expect(err).To(
+			gomega.HaveOccurred(), "stale.txt should not survive a --reset restore",
+		)
+
+		markerContent, err := f.DevsySSH(
+			ctx, resetID, fmt.Sprintf("cat %s/marker.txt", resetWorkspaceFolder),
+		)
+		framework.ExpectNoError(err)
+		gomega.Expect(markerContent).To(gomega.ContainSubstring("mutated"))
+	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+	ginkgo.It("preserves a non-add-host runArg from the original devcontainer on restore", func(
+		ctx context.Context,
+	) {
+		initialDir, err := os.Getwd()
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-runargs")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+		out, _, err := f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
+		})
+		framework.ExpectNoError(err)
+		snapshotRef := strings.TrimSpace(out)
+
+		restoredID := "runargs-" + filepath.Base(tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, restoredID)
+
+		_, _, err = f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbRestore, snapshotRef, workspaceIDFlag, restoredID, debugFlag,
+		})
+		framework.ExpectNoError(err)
+
+		restoredWorkspace, err := f.FindWorkspace(ctx, restoredID)
+		framework.ExpectNoError(err)
+
+		// The custom --label runArg only exists in this fixture's
+		// devcontainer.json, not in the base image or --add-host (which the
+		// registry fixture itself already depends on to function at all): its
+		// presence on the restored container proves restore replays the
+		// original runArgs generally, not just the one the test harness needs.
+		containerIDs, err := dockerHelper.FindContainer(ctx, []string{
+			fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, restoredWorkspace.UID),
+			"devsy-e2e-snapshot-runargs=true",
+		})
+		framework.ExpectNoError(err)
+		gomega.Expect(containerIDs).ToNot(
+			gomega.BeEmpty(),
+			"restored container should carry the original devcontainer.json's custom runArg label",
+		)
+	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 })
