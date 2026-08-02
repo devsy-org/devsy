@@ -170,6 +170,29 @@ func (s *HelperTestSuite) TestComposeHelperBuildCmdPodman() {
 	s.Contains(cmd.Args, "-d")
 }
 
+func (s *HelperTestSuite) TestComposeHelperBuildCmdAppliesDockerEnvironment() {
+	helper := &ComposeHelper{
+		Command: testPodmanCmd,
+		Args:    []string{testComposeArg},
+		Docker: &docker.DockerHelper{
+			Environment: []string{"DOCKER_HOST=unix:///custom/docker.sock"},
+		},
+	}
+
+	cmd := helper.buildCmd(context.TODO(), "build")
+	s.Contains(cmd.Env, "DOCKER_HOST=unix:///custom/docker.sock")
+}
+
+func (s *HelperTestSuite) TestComposeHelperBuildCmdWithoutDockerEnvironment() {
+	helper := &ComposeHelper{
+		Command: testPodmanCmd,
+		Args:    []string{testComposeArg},
+	}
+
+	cmd := helper.buildCmd(context.TODO(), "build")
+	s.Nil(cmd.Env)
+}
+
 // stubRuntime implements docker.ContainerRuntime for testing detection order.
 type stubRuntime struct {
 	name docker.RuntimeName
