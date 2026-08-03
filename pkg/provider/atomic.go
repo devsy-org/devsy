@@ -12,13 +12,12 @@ import (
 // which is the guarantee callers of this helper rely on for config files
 // like workspace.json.
 //
-// This helper does NOT guarantee crash durability: it syncs the temp file
-// but not the parent directory, so a power loss between rename(2)
-// returning and the directory entry being flushed could lose the rename.
-// That tradeoff is acceptable for the config files this is used for
-// (callers retry / re-resolve on the next run). If you need crash-safe
-// persistence for a new caller, add a parent-directory fsync here and
-// audit existing callers for the latency cost.
+// On POSIX platforms this also fsyncs the parent directory after the
+// rename, so the rename itself survives a crash immediately after this
+// function returns (see atomic_posix.go). On Windows the directory sync is
+// a no-op (see atomic_windows.go) — Windows callers retain the pre-existing
+// weaker guarantee and should still tolerate re-resolving state on the next
+// run, as they always have.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
@@ -50,6 +49,9 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		cleanup()
 		return fmt.Errorf("rename temp file: %w", err)
+	}
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("sync parent dir: %w", err)
 	}
 	return nil
 }
