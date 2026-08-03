@@ -272,16 +272,21 @@ func validateStandardProvider(config *ProviderConfig) error {
 	return validateExecCommands(config)
 }
 
+var validAgentDrivers = map[string]bool{
+	"":                 true,
+	CustomDriver:       true,
+	DockerDriver:       true,
+	KubernetesDriver:   true,
+	AppleDriver:        true,
+	MicrosandboxDriver: true,
+}
+
 func validateAgentDriver(config *ProviderConfig) error {
 	if templatedValueRegex.MatchString(config.Agent.Driver) {
 		return nil
 	}
 
-	if config.Agent.Driver != "" && config.Agent.Driver != CustomDriver &&
-		config.Agent.Driver != DockerDriver &&
-		config.Agent.Driver != KubernetesDriver &&
-		config.Agent.Driver != AppleDriver &&
-		config.Agent.Driver != MicrosandboxDriver {
+	if !validAgentDrivers[config.Agent.Driver] {
 		return fmt.Errorf(
 			"agent.driver can only be docker, kubernetes, apple, microsandbox or custom",
 		)

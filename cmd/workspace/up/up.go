@@ -20,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -241,16 +242,9 @@ func (cmd *UpCmd) Run(
 	out := cmd.stdout()
 	cmd.statusReporter = newStatusReporter(emitJSON, out)
 
-	t, err := cmd.openTask()
+	t, err := cmd.setUpTask(client, emitJSON, out)
 	if err != nil {
-		return reportErr(err, emitJSON, out)
-	}
-	if t != nil {
-		cmd.statusReporter = status.Tee(cmd.statusReporter, t.Reporter())
-		if err := t.SetWorkspaceID(client.Workspace()); err != nil {
-			failTask(t, err)
-			return reportErr(err, emitJSON, out)
-		}
+		return err
 	}
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
@@ -276,6 +270,27 @@ func (cmd *UpCmd) Run(
 	}
 	succeedTask(t, wctx.result)
 	return nil
+}
+
+// setUpTask opens the run's task (if any), tees the status reporter into it,
+// and records the workspace ID on it.
+func (cmd *UpCmd) setUpTask(
+	client client2.BaseWorkspaceClient,
+	emitJSON bool,
+	out io.Writer,
+) (*task.Task, error) {
+	t, err := cmd.openTask()
+	if err != nil {
+		return nil, reportErr(err, emitJSON, out)
+	}
+	if t != nil {
+		cmd.statusReporter = status.Tee(cmd.statusReporter, t.Reporter())
+		if err := t.SetWorkspaceID(client.Workspace()); err != nil {
+			failTask(t, err)
+			return nil, reportErr(err, emitJSON, out)
+		}
+	}
+	return t, nil
 }
 
 // reporter falls back to a no-op when Run hasn't set one yet.

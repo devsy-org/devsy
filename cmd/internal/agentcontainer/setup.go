@@ -431,20 +431,7 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	// drivers), but a snapshot-sourced workspace needs its volumes restored
 	// on every driver, docker included.
 	if sctx.workspaceInfo.Source.Snapshot != "" {
-		if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
-			skipSnapshotRestore(mounts[0].Target) {
-			return nil
-		}
-		log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
-		if err := agentsnapshot.RestoreVolumes(
-			sctx.ctx,
-			sctx.workspaceInfo.Source.Snapshot,
-			mounts,
-			sctx.workspaceInfo.CLIOptions.Reset,
-		); err != nil {
-			return fmt.Errorf("restore snapshot volumes: %w", err)
-		}
-		return nil
+		return restoreSnapshotMounts(sctx, mounts)
 	}
 
 	if !cmd.StreamMounts {
@@ -471,6 +458,25 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 		}
 	}
 
+	return nil
+}
+
+// restoreSnapshotMounts restores a snapshot-sourced workspace's volumes,
+// skipping the restore if the sole mount target already has real content.
+func restoreSnapshotMounts(sctx *setupContext, mounts []*config.Mount) error {
+	if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
+		skipSnapshotRestore(mounts[0].Target) {
+		return nil
+	}
+	log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
+	if err := agentsnapshot.RestoreVolumes(
+		sctx.ctx,
+		sctx.workspaceInfo.Source.Snapshot,
+		mounts,
+		sctx.workspaceInfo.CLIOptions.Reset,
+	); err != nil {
+		return fmt.Errorf("restore snapshot volumes: %w", err)
+	}
 	return nil
 }
 
