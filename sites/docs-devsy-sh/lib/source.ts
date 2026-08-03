@@ -6,6 +6,11 @@ import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 const docs = defineDocs({
   dir: 'content/docs',
   docs: {
+    // `fragments/**` holds MDX partials (imported by other docs via relative
+    // `import`) rather than standalone pages, so they lack page frontmatter
+    // (e.g. `title`) and must be excluded from the page collection glob or
+    // schema validation fails at build time.
+    files: ['!(fragments)/**/*.{md,mdx}', '*.{md,mdx}'],
     schema: pageSchema,
     postprocess: {
       includeProcessedMarkdown: true,

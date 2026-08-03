@@ -1,0 +1,4 @@
+{
+  "title": "Architecture",
+  "pages": ["overview", "deploy-machines", "deploy-k8s", "building-workspaces", "deploying-workspaces"]
+}

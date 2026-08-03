@@ -1,0 +1,105 @@
+---
+title: devcontainer.json
+sidebar_label: devcontainer.json
+---
+
+Devsy uses the [open `devcontainer.json` standard](https://containers.dev/) to allow users to customize their development containers.
+Development containers are Docker containers that provide a user with a fully featured development environment.
+Within Devsy, this container is created based on the underlying provider either locally, in a remote virtual machine or even in a Kubernetes cluster.
+Devsy makes sure that no matter where you use this configuration the developer experience stays the same.
+
+You can configure this development container for a certain Git repository so that each workspace gives you a custom development environment
+completely configured with the tooling and runtimes you need for working on that specific project.
+If Devsy doesn't find any configuration for the project it will automatically detect the programming language and provide a sane default configuration.
+
+<Callout title="Compatibility with VS Code & Codespaces">
+The same format is used by VS Code for their development containers and by GitHub for their Codespaces.
+This makes it easy to reuse existing configurations and tooling around this standard within Devsy.
+</Callout>
+
+<Callout title="Additional References">
+This page introduces working with devcontainers. For more detail, see:
+* [DevContainer Reference](https://containers.dev/implementors/json_reference/)
+* [VS Code DevContainer Documentation](https://code.visualstudio.com/docs/devcontainers/create-dev-container)
+* [GitHub Codespaces Documentation](https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers#devcontainerjson)
+</Callout>
+
+## devcontainer.json
+
+The primary file to configure your workspace is the `devcontainer.json`, that lives in the `.devcontainer` sub-folder of your project.
+This file includes information on what frameworks, tools, VS Code extensions and port-forwarding should be used during development.
+The file also usually references a Dockerfile or a Docker image to use as the base for the development environment.
+If Devsy doesn't find any configuration for the project, it will automatically detect the programming language and provide a sane default configuration.
+
+The `devcontainer.json` can be located at the following places within your project:
+* `.devcontainer/devcontainer.json`
+* `.devcontainer.json`
+* `.devcontainer/my-other-folder/devcontainer.json`
+
+You can specify a specific file to use via the `--devcontainer-path` CLI flag:
+```
+devsy workspace up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
+```
+
+A `devcontainer.json` is not able to import or inherit any settings from other `devcontainer.json` files, so make sure all dependent files and folders are available within the configuration subdirectory.
+
+### Using a Dockerfile
+
+In order to use a Dockerfile for your configuration, you can specify the following within your `devcontainer.json`:
+```
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  ...
+}
+```
+
+And the Dockerfile could look like this:
+```
+FROM mcr.microsoft.com/vscode/devcontainers/javascript-node:0-16-buster
+
+# Install extra tooling into the environment via the following command
+RUN apt-get update && apt-get install vim
+```
+
+For more information about how to write Dockerfiles, please visit the [official documentation](https://docs.docker.com/engine/reference/builder/)
+
+### Add Additional DevContainer Features
+
+`devcontainer.json` allows you to reuse certain predefined features within your configuration.
+You can think of features as reusable Dockerfile parts that will be merged into your Dockerfile upon creation.
+This makes it easy to reuse functionality such as `docker-in-docker` or install extra tooling such as `node` or `kubectl` without having to look up the exact Dockerfile commands.
+A list of available features can be found [here](https://containers.dev/features).
+
+Devsy is able to add HTTP headers when downloading
+feature archives as tar.gz files. To do so, add the needed headers in the `customizations`
+field of the `devcontainer.json` file as follows:
+
+```
+{
+  ...
+  "features": {
+    "https://example.com/foo_feature.tar.gz": []
+  },
+  "customizations": {
+    "devsy": {
+      "featureDownloadHTTPHeaders": {
+        "FOO_HEADER": "${localEnv:FOO_ENV_VAR}"
+        "BAR_HEADER": "bar"
+      }
+    }
+  }
+}
+```
+
+## devcontainer.json Development Flow
+
+When working on the `devcontainer.json` itself, it's important to understand when Devsy will apply new configuration.
+
+A naive approach would be to delete and recreate a workspace after each `devcontainer.json` change (which obviously works), but Devsy allows you to make changes to the configuration on the fly and reapply them via `devsy workspace up my-workspace --recreate`.
+This will apply **ALL** new configurations including Dockerfile changes as well as new mounts, new features or any other configuration that is not included in the above command. Devsy will only replace the existing running container if the command has succeeded, so if there is a mistake in the new configuration, the existing workspace should not be impacted.
+
+<Callout type="warn" title="Recreating / Rebuilding">
+Changes in the overlay layer of the container, which means all changes to non-volumes will be lost. Changes within the project path and all other mounted paths will be preserved.
+</Callout>
