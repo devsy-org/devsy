@@ -1,12 +1,13 @@
 {
   "name": "devsy-docs",
   "version": "0.0.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check-links": "tsx scripts/check-links.ts"
+    "check-links": "tsx scripts/check-links.mts"
   },
   "dependencies": {
     "fumadocs-core": "16.14.0",
@@ -22,8 +23,10 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "next-validate-link": "^1.6.6",
     "postcss": "^8.5.24",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3"
   }
 }
