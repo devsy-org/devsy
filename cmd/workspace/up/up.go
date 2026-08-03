@@ -35,6 +35,8 @@ type UpCmd struct {
 
 	ProviderOptions []string
 
+	FromSnapshot string // snapshot ref to restore from, e.g. ghcr.io/acme/s:my-ws-20260731150405-abcxyz
+
 	ConfigureSSH       bool
 	GPGAgentForwarding bool
 	SSHTunnelMode      bool
@@ -71,6 +73,18 @@ type Options struct {
 	Provider         string // provider name override
 	IDE              string // ide name; "none" to skip launching
 	DevcontainerPath string // path to devcontainer.json, relative to project
+	// DevContainerSource overrides devcontainer discovery (e.g. "image:<ref>"),
+	// used by snapshot restore to run the committed image directly.
+	DevContainerSource string
+	// RunArgs are extra `docker run` arguments to apply when DevContainerSource
+	// suppresses the project devcontainer.json, so runArgs it would have set
+	// (e.g. --add-host) still take effect. Used by snapshot restore to replay
+	// the original devcontainer.json's runArgs.
+	RunArgs []string
+	// ContainerEnv are extra container environment variables to apply under
+	// the same suppressed-discovery circumstances as RunArgs. Used by
+	// snapshot restore to replay the original devcontainer.json's containerEnv.
+	ContainerEnv map[string]string
 }
 
 type HeadlessOptions struct {
@@ -182,7 +196,11 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 		Out:         io.Discard, // any callers wanting envelopes can set this themselves.
 	}
 	cmd.IDE = ide
+	cmd.Source = opts.Source
 	cmd.DevContainerPath = opts.DevcontainerPath
+	cmd.DevContainerSource = opts.DevContainerSource
+	cmd.RunArgs = opts.RunArgs
+	cmd.ContainerEnv = opts.ContainerEnv
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}

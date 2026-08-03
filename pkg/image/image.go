@@ -71,7 +71,15 @@ func CheckPushPermissions(ctx context.Context, image string) error {
 	if err != nil {
 		return fmt.Errorf("parse image reference %q: %w", image, err)
 	}
+	return CheckPushPermissionsRef(ctx, ref)
+}
 
+// CheckPushPermissionsRef is CheckPushPermissions for a pre-parsed
+// name.Reference, letting callers that need non-default parsing options
+// (e.g. pkg/snapshot's insecure-registry override for local test fixtures)
+// supply their own reference instead of going through this package's
+// secure-by-default name.ParseReference.
+func CheckPushPermissionsRef(ctx context.Context, ref name.Reference) error {
 	keychain, err := GetKeychain(ctx)
 	if err != nil {
 		return fmt.Errorf("create authentication keychain: %w", err)

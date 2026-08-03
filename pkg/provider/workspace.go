@@ -18,6 +18,7 @@ var (
 	WorkspaceSourceLocal     = "local:"
 	WorkspaceSourceImage     = "image:"
 	WorkspaceSourceContainer = "container:"
+	WorkspaceSourceSnapshot  = "snapshot:"
 	WorkspaceSourceUnknown   = "unknown:"
 )
 
@@ -142,6 +143,9 @@ type WorkspaceSource struct {
 
 	// Container is the container to use
 	Container string `json:"container,omitempty"`
+
+	// Snapshot is the snapshot ref to restore from (registry/repo:tag)
+	Snapshot string `json:"snapshot,omitempty"`
 }
 
 type ContainerWorkspaceInfo struct {
@@ -253,29 +257,42 @@ type CLIOptions struct {
 	GitCloneRecursiveSubmodules bool              `json:"gitCloneRecursive,omitempty"`
 	GitLFSMode                  git.LFSMode       `json:"gitLFSMode,omitempty"`
 	FallbackImage               string            `json:"fallbackImage,omitempty"`
-	GitSSHSigningKey            string            `json:"gitSshSigningKey,omitempty"`
-	SSHAuthSockID               string            `json:"sshAuthSockID,omitempty"` // ID to use when looking for SSH_AUTH_SOCK, defaults to a new random ID if not set (only used for browser IDEs)
-	StrictHostKeyChecking       bool              `json:"strictHostKeyChecking,omitempty"`
-	AdditionalFeatures          string            `json:"additionalFeatures,omitempty"`
-	ExtraDevContainerPath       string            `json:"extraDevContainerPath,omitempty"`
-	User                        string            `json:"user,omitempty"`
-	DefaultUserEnvProbe         string            `json:"defaultUserEnvProbe,omitempty"`
-	Userns                      string            `json:"userns,omitempty"`
-	UidMap                      []string          `json:"uidMap,omitempty"`
-	GidMap                      []string          `json:"gidMap,omitempty"`
-	IDLabels                    []string          `json:"idLabels,omitempty"`
-	GPUAvailability             string            `json:"gpuAvailability,omitempty"`
-	WorkspaceMountConsistency   string            `json:"workspaceMountConsistency,omitempty"`
-	RunPlatform                 string            `json:"runPlatform,omitempty"`
-	Mounts                      []string          `json:"mounts,omitempty"`
-	UpdateRemoteUserUIDDefault  string            `json:"updateRemoteUserUIDDefault,omitempty"`
-	ContainerDataFolder         string            `json:"containerDataFolder,omitempty"`
-	MountWorkspaceGitRoot       *bool             `json:"mountWorkspaceGitRoot,omitempty"`
-	TerminalColumns             int               `json:"terminalColumns,omitempty"`
-	TerminalRows                int               `json:"terminalRows,omitempty"`
-	SkipNonBlockingCommands     bool              `json:"skipNonBlockingCommands,omitempty"`
-	ContainerUser               string            `json:"containerUser,omitempty"`
-	RemoteUser                  string            `json:"remoteUser,omitempty"`
+	// RunArgs are extra `docker run` arguments applied when a devcontainer
+	// source override (Source: image/none) suppresses discovery of a project
+	// devcontainer.json, so runArgs it would have set (e.g. --add-host) still
+	// take effect. Used by snapshot restore to replay the original
+	// devcontainer.json's runArgs onto the restored, image-sourced container.
+	RunArgs []string `json:"runArgs,omitempty"`
+	// ContainerEnv are extra container environment variables applied under
+	// the same suppressed-discovery circumstances as RunArgs, for the same
+	// reason: snapshot restore replaying the original devcontainer.json's
+	// containerEnv onto the restored, image-sourced container.
+	ContainerEnv     map[string]string `json:"containerEnv,omitempty"`
+	GitSSHSigningKey string            `json:"gitSshSigningKey,omitempty"`
+	// SSHAuthSockID is used when looking for SSH_AUTH_SOCK, defaults to a new
+	// random ID if not set (only used for browser IDEs).
+	SSHAuthSockID              string   `json:"sshAuthSockID,omitempty"`
+	StrictHostKeyChecking      bool     `json:"strictHostKeyChecking,omitempty"`
+	AdditionalFeatures         string   `json:"additionalFeatures,omitempty"`
+	ExtraDevContainerPath      string   `json:"extraDevContainerPath,omitempty"`
+	User                       string   `json:"user,omitempty"`
+	DefaultUserEnvProbe        string   `json:"defaultUserEnvProbe,omitempty"`
+	Userns                     string   `json:"userns,omitempty"`
+	UidMap                     []string `json:"uidMap,omitempty"`
+	GidMap                     []string `json:"gidMap,omitempty"`
+	IDLabels                   []string `json:"idLabels,omitempty"`
+	GPUAvailability            string   `json:"gpuAvailability,omitempty"`
+	WorkspaceMountConsistency  string   `json:"workspaceMountConsistency,omitempty"`
+	RunPlatform                string   `json:"runPlatform,omitempty"`
+	Mounts                     []string `json:"mounts,omitempty"`
+	UpdateRemoteUserUIDDefault string   `json:"updateRemoteUserUIDDefault,omitempty"`
+	ContainerDataFolder        string   `json:"containerDataFolder,omitempty"`
+	MountWorkspaceGitRoot      *bool    `json:"mountWorkspaceGitRoot,omitempty"`
+	TerminalColumns            int      `json:"terminalColumns,omitempty"`
+	TerminalRows               int      `json:"terminalRows,omitempty"`
+	SkipNonBlockingCommands    bool     `json:"skipNonBlockingCommands,omitempty"`
+	ContainerUser              string   `json:"containerUser,omitempty"`
+	RemoteUser                 string   `json:"remoteUser,omitempty"`
 	// nil = auto-detect; true/false = force clone-in-container or bind-mount.
 	PullFromInsideContainerOverride *bool `json:"pullFromInsideContainerOverride,omitempty"`
 
@@ -362,52 +379,94 @@ type BuildOptions struct {
 	PushDuringBuild bool
 }
 
+// workspaceSourceKind identifies which of WorkspaceSource's mutually-exclusive
+// fields is populated. It is the single place that defines field precedence,
+// so String() and Type() (and any future consumer) can never disagree about
+// which kind a WorkspaceSource represents.
+type workspaceSourceKind int
+
+const (
+	workspaceSourceKindNone workspaceSourceKind = iota
+	workspaceSourceKindGit
+	workspaceSourceKindLocal
+	workspaceSourceKindImage
+	workspaceSourceKindContainer
+	workspaceSourceKindSnapshot
+)
+
 func (w WorkspaceSource) String() string {
-	switch {
-	case w.GitRepository != "":
-		switch {
-		case w.GitPRReference != "":
-			return WorkspaceSourceGit + w.GitRepository + "@" + w.GitPRReference
-		case w.GitBranch != "":
-			return WorkspaceSourceGit + w.GitRepository + "@" + w.GitBranch
-		case w.GitCommit != "":
-			return WorkspaceSourceGit + w.GitRepository + git.CommitDelimiter + w.GitCommit
-		}
-
-		return WorkspaceSourceGit + w.GitRepository
-	case w.LocalFolder != "":
+	switch w.kind() {
+	case workspaceSourceKindGit:
+		return w.gitSourceString()
+	case workspaceSourceKindLocal:
 		return WorkspaceSourceLocal + w.LocalFolder
-	case w.Image != "":
+	case workspaceSourceKindImage:
 		return WorkspaceSourceImage + w.Image
-	case w.Container != "":
+	case workspaceSourceKindContainer:
 		return WorkspaceSourceContainer + w.Container
+	case workspaceSourceKindSnapshot:
+		return WorkspaceSourceSnapshot + w.Snapshot
 	}
-
 	return ""
 }
 
 func (w WorkspaceSource) Type() string {
+	switch w.kind() {
+	case workspaceSourceKindGit:
+		return w.gitSourceType()
+	case workspaceSourceKindLocal:
+		return WorkspaceSourceLocal
+	case workspaceSourceKindImage:
+		return WorkspaceSourceImage
+	case workspaceSourceKindContainer:
+		return WorkspaceSourceContainer
+	case workspaceSourceKindSnapshot:
+		return WorkspaceSourceSnapshot
+	}
+	return WorkspaceSourceUnknown
+}
+
+func (w WorkspaceSource) kind() workspaceSourceKind {
 	switch {
 	case w.GitRepository != "":
-		switch {
-		case w.GitPRReference != "":
-			return WorkspaceSourceGit + "pr"
-		case w.GitBranch != "":
-			return WorkspaceSourceGit + "branch"
-		case w.GitCommit != "":
-			return WorkspaceSourceGit + "commit"
-		}
-
-		return WorkspaceSourceGit
+		return workspaceSourceKindGit
 	case w.LocalFolder != "":
-		return WorkspaceSourceLocal
+		return workspaceSourceKindLocal
 	case w.Image != "":
-		return WorkspaceSourceImage
+		return workspaceSourceKindImage
 	case w.Container != "":
-		return WorkspaceSourceContainer
+		return workspaceSourceKindContainer
+	case w.Snapshot != "":
+		return workspaceSourceKindSnapshot
 	}
+	return workspaceSourceKindNone
+}
 
-	return WorkspaceSourceUnknown
+// gitSourceString renders the git variant of String(): the most specific ref
+// (PR, then branch, then commit) appended to the repository.
+func (w WorkspaceSource) gitSourceString() string {
+	switch {
+	case w.GitPRReference != "":
+		return WorkspaceSourceGit + w.GitRepository + "@" + w.GitPRReference
+	case w.GitBranch != "":
+		return WorkspaceSourceGit + w.GitRepository + "@" + w.GitBranch
+	case w.GitCommit != "":
+		return WorkspaceSourceGit + w.GitRepository + git.CommitDelimiter + w.GitCommit
+	}
+	return WorkspaceSourceGit + w.GitRepository
+}
+
+// gitSourceType renders the git variant of Type(): which ref kind is pinned.
+func (w WorkspaceSource) gitSourceType() string {
+	switch {
+	case w.GitPRReference != "":
+		return WorkspaceSourceGit + "pr"
+	case w.GitBranch != "":
+		return WorkspaceSourceGit + "branch"
+	case w.GitCommit != "":
+		return WorkspaceSourceGit + "commit"
+	}
+	return WorkspaceSourceGit
 }
 
 func ParseWorkspaceSource(source string) *WorkspaceSource {
@@ -435,6 +494,10 @@ func ParseWorkspaceSource(source string) *WorkspaceSource {
 	} else if after, ok := strings.CutPrefix(source, WorkspaceSourceContainer); ok {
 		return &WorkspaceSource{
 			Container: after,
+		}
+	} else if after, ok := strings.CutPrefix(source, WorkspaceSourceSnapshot); ok {
+		return &WorkspaceSource{
+			Snapshot: after,
 		}
 	}
 

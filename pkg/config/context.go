@@ -25,6 +25,7 @@ const (
 	ContextOptionSSHStrictHostKeyChecking   = "SSH_STRICT_HOST_KEY_CHECKING"
 	ContextOptionSSHTunnelMode              = "SSH_TUNNEL_MODE"
 	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
+	ContextOptionSnapshotRegistry           = "SNAPSHOT_REGISTRY"
 )
 
 var ContextOptions = []ContextOption{
@@ -124,6 +125,11 @@ var ContextOptions = []ContextOption{
 			"'file' (age-encrypted file), or 'auto' (keyring when available, else file)",
 		Default: "auto",
 		Enum:    []string{"auto", "keyring", "file"},
+	},
+	{
+		Name:        ContextOptionSnapshotRegistry,
+		Description: "Specifies the default registry to push/pull workspace snapshots to, e.g. ghcr.io/acme/snapshots",
+		Default:     "",
 	},
 }
 

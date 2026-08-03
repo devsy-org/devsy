@@ -15,6 +15,14 @@ import (
 
 const containerRestartAttempts = 3
 
+// snapshotImageLabel marks a committed image as a devsy workspace snapshot,
+// so it's identifiable via `docker inspect`/`docker images --filter` by
+// anyone who pulls or lists it outside `devsy snapshot` tooling — the
+// snapshot manifest (pkg/snapshot) already carries richer sh.devsy.snapshot.*
+// metadata, but that lives in a separate OCI artifact a raw image pull won't
+// see.
+const snapshotImageLabel = "sh.devsy.snapshot=true"
+
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
@@ -145,6 +153,31 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
 	if err != nil {
 		return fmt.Errorf("tag image: %w", err)
+	}
+
+	return nil
+}
+
+func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag string) error {
+	container, err := d.FindDevContainer(ctx, workspaceID)
+	if err != nil {
+		return err
+	} else if container == nil {
+		return fmt.Errorf("container not found: workspaceID=%s", workspaceID)
+	}
+
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+
+	args := []string{"commit", "--change", "LABEL " + snapshotImageLabel, container.ID, tag}
+
+	log.Debugf(
+		"running docker commit command: command=%s, args=%s",
+		d.Docker.DockerCommand,
+		strings.Join(args, " "),
+	)
+	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
+		return fmt.Errorf("commit container %s: %w", container.ID, err)
 	}
 
 	return nil

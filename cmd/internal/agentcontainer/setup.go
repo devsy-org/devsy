@@ -20,6 +20,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	agentsnapshot "github.com/devsy-org/devsy/pkg/agent/snapshot"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -423,11 +424,33 @@ func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.Container
 }
 
 func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
+	mounts := config.GetMounts(sctx.setupInfo)
+
+	// Snapshot restore runs regardless of the StreamMounts flag: StreamMounts
+	// only gates the legacy host-streaming path (forced true for non-docker
+	// drivers), but a snapshot-sourced workspace needs its volumes restored
+	// on every driver, docker included.
+	if sctx.workspaceInfo.Source.Snapshot != "" {
+		if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
+			skipSnapshotRestore(mounts[0].Target) {
+			return nil
+		}
+		log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
+		if err := agentsnapshot.RestoreVolumes(
+			sctx.ctx,
+			sctx.workspaceInfo.Source.Snapshot,
+			mounts,
+			sctx.workspaceInfo.CLIOptions.Reset,
+		); err != nil {
+			return fmt.Errorf("restore snapshot volumes: %w", err)
+		}
+		return nil
+	}
+
 	if !cmd.StreamMounts {
 		return nil
 	}
 
-	mounts := config.GetMounts(sctx.setupInfo)
 	log.Debugf("syncing mounts: %v", mounts)
 	for _, m := range mounts {
 		if !sctx.workspaceInfo.CLIOptions.Reset {
@@ -449,6 +472,33 @@ func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	}
 
 	return nil
+}
+
+// synthesizedDevContainerName is the devcontainer.json devsy synthesizes for
+// image/none-sourced workspaces (pkg/devcontainer's saveSynthesizedConfig). A
+// snapshot-sourced restore gets one too, written into the mount target before
+// syncMounts ever runs, so it must not count as "already has content" below.
+var synthesizedDevContainerName = ".devcontainer." + config2.BinaryName + ".json"
+
+// skipSnapshotRestore reports whether target already has real content, in
+// which case a snapshot restore into it would be destructive and is skipped.
+func skipSnapshotRestore(target string) bool {
+	files, err := os.ReadDir(target)
+	if err != nil {
+		return false
+	}
+	var names []string
+	for _, f := range files {
+		if f.Name() == synthesizedDevContainerName {
+			continue
+		}
+		names = append(names, f.Name())
+	}
+	if len(names) == 0 {
+		return false
+	}
+	log.Debugf("skip snapshot restore because %s is not empty: entries=%v", target, names)
+	return true
 }
 
 func (cmd *SetupContainerCmd) setupGitCredentials(

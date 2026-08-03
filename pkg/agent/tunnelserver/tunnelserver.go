@@ -1,13 +1,16 @@
 package tunnelserver
 
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -515,6 +518,69 @@ func (t *tunnelServer) StreamMount(
 
 	// make sure buffer is flushed
 	return buf.Flush()
+}
+
+func (t *tunnelServer) StreamSnapshotVolumes(
+	message *tunnel.Empty,
+	stream tunnel.Tunnel_StreamSnapshotVolumesServer,
+) error {
+	if t.platformStreamBlocked() {
+		return fmt.Errorf(
+			"streaming snapshot volumes from a platform workspace is not supported",
+		)
+	}
+
+	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
+	tw := tar.NewWriter(buf)
+
+	excludes := append(t.workspaceIgnoreExcludes(), config.BuildArtifactExcludes()...)
+	for _, m := range t.mounts {
+		prefix := strings.TrimPrefix(m.Target, "/")
+		if err := appendDirToTar(tw, m.Source, prefix, excludes); err != nil {
+			return fmt.Errorf("tar mount %s: %w", m.Target, err)
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("close snapshot volumes tar: %w", err)
+	}
+	return buf.Flush()
+}
+
+// appendDirToTar writes localDir's contents under prefix inside an
+// already-open tar.Writer, reusing extract.WriteTarExclude's on-disk walk by
+// tarring into a pipe and re-prefixing entries; kept simple since snapshot
+// volume archives combine multiple mount roots into one stream.
+func appendDirToTar(tw *tar.Writer, localDir, prefix string, excludes []string) error {
+	pr, pw := io.Pipe()
+	defer func() { _ = pr.Close() }()
+
+	errCh := make(chan error, 1)
+	go func() {
+		err := extract.WriteTarExclude(pw, localDir, false, excludes)
+		errCh <- err
+		_ = pw.CloseWithError(err)
+	}()
+
+	tr := tar.NewReader(pr)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		//nolint:gosec // re-prefixing our own just-built tar, not an untrusted archive
+		hdr.Name = path.Join(prefix, hdr.Name)
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if _, err := io.Copy(tw, tr); err != nil { //nolint:gosec // bounded by source tar entries
+			return err
+		}
+	}
+	return <-errCh
 }
 
 func (t *tunnelServer) gitTokenCredentials(

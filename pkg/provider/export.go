@@ -29,6 +29,11 @@ type ExportConfig struct {
 
 	// Provider is the provider that was exported
 	Provider *ExportProviderConfig `json:"provider,omitempty"`
+
+	// SnapshotRef, if set, is a snapshot the exported workspace's state should
+	// be restored from on import, carrying container/volume state rather than
+	// just metadata.
+	SnapshotRef string `json:"snapshotRef,omitempty"`
 }
 
 type ExportWorkspaceConfig struct {

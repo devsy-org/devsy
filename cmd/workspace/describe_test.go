@@ -72,6 +72,11 @@ func TestDescribeSource(t *testing.T) { //nolint:funlen // table-driven test
 			want: "my-container",
 		},
 		{
+			name: "snapshot",
+			src:  provider.WorkspaceSource{Snapshot: "ghcr.io/acme/s:my-ws-20260731150405"},
+			want: "snapshot:ghcr.io/acme/s:my-ws-20260731150405",
+		},
+		{
 			name: "empty",
 			src:  provider.WorkspaceSource{},
 			want: "",

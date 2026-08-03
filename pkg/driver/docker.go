@@ -85,3 +85,18 @@ type DockerHelperProvider interface {
 	// DockerHelper returns the docker helper
 	DockerHelper() (*docker.DockerHelper, error)
 }
+
+// SnapshotCapableDriver is a capability interface implemented by drivers that
+// can commit a running container's filesystem to a new image. Not every
+// ImageDriver can do this (e.g. Apple's `container`), so callers detect
+// support via a type assertion rather than forcing every ImageDriver to stub
+// the method — the same pattern ComposeDriver and DockerHelperProvider
+// already establish in this file.
+type SnapshotCapableDriver interface {
+	Driver
+
+	// CommitContainer commits the running devcontainer's filesystem to a new
+	// image, tagged as tag, to capture apt installs, global packages, and
+	// other filesystem drift for workspace snapshots.
+	CommitContainer(ctx context.Context, workspaceID, tag string) error
+}

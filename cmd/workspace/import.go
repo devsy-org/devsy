@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -160,6 +161,24 @@ func (cmd *ImportCmd) importWorkspace(
 	workspaceConfig.Context = devsyConfig.DefaultContext
 	workspaceConfig.Machine.ID = cmd.MachineID
 	workspaceConfig.Provider.Name = cmd.ProviderID
+
+	if exportConfig.SnapshotRef != "" {
+		sourceStr, devContainerSource, err := snapshotpkg.RestoreComposition(
+			exportConfig.SnapshotRef,
+		)
+		if err != nil {
+			return fmt.Errorf("parse snapshot ref: %w", err)
+		}
+		parsedSource := provider.ParseWorkspaceSource(sourceStr)
+		if parsedSource == nil {
+			return fmt.Errorf(
+				"compose workspace source from snapshot ref: unexpected source %q",
+				sourceStr,
+			)
+		}
+		workspaceConfig.Source = *parsedSource
+		workspaceConfig.DevContainerSource = devContainerSource
+	}
 
 	// save machine config
 	err = provider.SaveWorkspaceConfig(workspaceConfig)

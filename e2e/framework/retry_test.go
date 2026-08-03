@@ -71,6 +71,26 @@ func TestIsRetryableSSHError_WorkspaceNotFound(t *testing.T) {
 	)
 }
 
+func TestIsRetryableSSHError_ForkExecPermissionDenied(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"start command: fork/exec /usr/bin/bash: permission denied",
+		),
+	)
+}
+
+func TestIsRetryableSSHError_ForkExecWithoutPermissionDenied_NotRetryable(t *testing.T) {
+	assert.False(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"start command: fork/exec /usr/bin/bash: no such file or directory",
+		),
+	)
+}
+
 func TestIsRetryableSSHError_ExitCode1_NoSSHPattern(t *testing.T) {
 	// Remote command failure (e.g. cat on missing file) — should NOT be retried.
 	assert.False(

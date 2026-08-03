@@ -668,7 +668,7 @@ const file_tunnel_proto_rawDesc = "" +
 	"\x04INFO\x10\x01\x12\b\n" +
 	"\x04DONE\x10\x02\x12\v\n" +
 	"\aWARNING\x10\x03\x12\t\n" +
-	"\x05ERROR\x10\x042\xf2\x06\n" +
+	"\x05ERROR\x10\x042\xad\a\n" +
 	"\x06Tunnel\x12&\n" +
 	"\x04Ping\x12\r.tunnel.Empty\x1a\r.tunnel.Empty\"\x00\x12*\n" +
 	"\x03Log\x12\x12.tunnel.LogMessage\x1a\r.tunnel.Empty\"\x00\x12/\n" +
@@ -687,7 +687,8 @@ const file_tunnel_proto_rawDesc = "" +
 	"\vForwardPort\x12\x1a.tunnel.ForwardPortRequest\x1a\x1b.tunnel.ForwardPortResponse\"\x00\x12T\n" +
 	"\x0fStopForwardPort\x12\x1e.tunnel.StopForwardPortRequest\x1a\x1f.tunnel.StopForwardPortResponse\"\x00\x123\n" +
 	"\x0fStreamWorkspace\x12\r.tunnel.Empty\x1a\r.tunnel.Chunk\"\x000\x01\x12<\n" +
-	"\vStreamMount\x12\x1a.tunnel.StreamMountRequest\x1a\r.tunnel.Chunk\"\x000\x01B-Z+github.com/devsy-org/devsy/pkg/agent/tunnelb\x06proto3"
+	"\vStreamMount\x12\x1a.tunnel.StreamMountRequest\x1a\r.tunnel.Chunk\"\x000\x01\x129\n" +
+	"\x15StreamSnapshotVolumes\x12\r.tunnel.Empty\x1a\r.tunnel.Chunk\"\x000\x01B-Z+github.com/devsy-org/devsy/pkg/agent/tunnelb\x06proto3"
 
 var (
 	file_tunnel_proto_rawDescOnce sync.Once
@@ -737,24 +738,26 @@ var file_tunnel_proto_depIdxs = []int32{
 	2,  // 15: tunnel.Tunnel.StopForwardPort:input_type -> tunnel.StopForwardPortRequest
 	12, // 16: tunnel.Tunnel.StreamWorkspace:input_type -> tunnel.Empty
 	1,  // 17: tunnel.Tunnel.StreamMount:input_type -> tunnel.StreamMountRequest
-	12, // 18: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
-	12, // 19: tunnel.Tunnel.Log:output_type -> tunnel.Empty
-	12, // 20: tunnel.Tunnel.Status:output_type -> tunnel.Empty
-	12, // 21: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
-	6,  // 22: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
-	6,  // 23: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
-	6,  // 24: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
-	6,  // 25: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
-	6,  // 26: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
-	6,  // 27: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
-	6,  // 28: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
-	8,  // 29: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
-	5,  // 30: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
-	3,  // 31: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
-	9,  // 32: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
-	9,  // 33: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
-	18, // [18:34] is the sub-list for method output_type
-	2,  // [2:18] is the sub-list for method input_type
+	12, // 18: tunnel.Tunnel.StreamSnapshotVolumes:input_type -> tunnel.Empty
+	12, // 19: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
+	12, // 20: tunnel.Tunnel.Log:output_type -> tunnel.Empty
+	12, // 21: tunnel.Tunnel.Status:output_type -> tunnel.Empty
+	12, // 22: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
+	6,  // 23: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
+	6,  // 24: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
+	6,  // 25: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
+	6,  // 26: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
+	6,  // 27: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
+	6,  // 28: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
+	6,  // 29: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
+	8,  // 30: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
+	5,  // 31: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
+	3,  // 32: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
+	9,  // 33: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
+	9,  // 34: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
+	9,  // 35: tunnel.Tunnel.StreamSnapshotVolumes:output_type -> tunnel.Chunk
+	19, // [19:36] is the sub-list for method output_type
+	2,  // [2:19] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name

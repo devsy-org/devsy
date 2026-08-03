@@ -95,13 +95,14 @@ type dockerDriver struct {
 	UpdateRemoteUserUIDDefault string
 }
 
-// The docker driver supports the full image, compose, and docker-helper
-// capabilities.
+// The docker driver supports the full image, compose, docker-helper, and
+// snapshot-commit capabilities.
 var (
-	_ driver.ImageDriver          = (*dockerDriver)(nil)
-	_ driver.ComposeDriver        = (*dockerDriver)(nil)
-	_ driver.DockerHelperProvider = (*dockerDriver)(nil)
-	_ driver.Preflighter          = (*dockerDriver)(nil)
+	_ driver.ImageDriver           = (*dockerDriver)(nil)
+	_ driver.ComposeDriver         = (*dockerDriver)(nil)
+	_ driver.DockerHelperProvider  = (*dockerDriver)(nil)
+	_ driver.SnapshotCapableDriver = (*dockerDriver)(nil)
+	_ driver.Preflighter           = (*dockerDriver)(nil)
 )
 
 // Preflight checks the runtime binary is installed and its daemon reachable,

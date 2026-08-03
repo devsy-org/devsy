@@ -1,7 +1,8 @@
 // Package apple implements a Devsy driver for Apple's `container` CLI, which runs
 // Linux containers as lightweight VMs on Apple silicon (macOS 26+). It implements
-// driver.ImageDriver; compose and docker-helper capabilities are intentionally
-// not implemented (callers detect their absence by type assertion).
+// driver.ImageDriver; compose, docker-helper, and snapshot-commit capabilities
+// are intentionally not implemented (callers detect their absence by type
+// assertion).
 package apple
 
 import (

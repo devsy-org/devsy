@@ -29,6 +29,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/rename"
 	_ "github.com/devsy-org/devsy/e2e/tests/runusercommands"
 	_ "github.com/devsy-org/devsy/e2e/tests/self"
+	_ "github.com/devsy-org/devsy/e2e/tests/snapshot"
 	_ "github.com/devsy-org/devsy/e2e/tests/ssh"
 	_ "github.com/devsy-org/devsy/e2e/tests/template"
 	_ "github.com/devsy-org/devsy/e2e/tests/tunnel"

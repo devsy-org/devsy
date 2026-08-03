@@ -16,6 +16,7 @@ import (
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/secrets"
+	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
@@ -74,11 +75,15 @@ func (cmd *UpCmd) prepareClient(
 	if err := cmd.prepareSecrets(devsyConfig); err != nil {
 		return nil, err
 	}
+	if err := cmd.validateFromSnapshot(ctx, args); err != nil {
+		return nil, err
+	}
 	source, err := cmd.parseWorkspaceSource()
 	if err != nil {
 		return nil, err
 	}
 	cmd.resolveSSHConfig(devsyConfig)
+	args = cmd.ensureArgsForFromSnapshot(args)
 
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
 	client, err := workspace2.Resolve(
@@ -96,6 +101,22 @@ func (cmd *UpCmd) prepareClient(
 		}
 	}
 	return client, nil
+}
+
+// ensureArgsForFromSnapshot returns args unchanged unless --from-snapshot is
+// set and args is empty, in which case it synthesizes a placeholder arg.
+// resolveWorkspace only takes its create-new-workspace path when args is
+// non-empty (see pkg/workspace.resolveWorkspace); --from-snapshot forbids a
+// positional source (validateFromSnapshot), so without this, a
+// --from-snapshot restore into a workspace id that doesn't exist yet always
+// fails with "doesn't exist" instead of creating it. The synthesized value
+// itself is never read on this path: DesiredID and Source (both already set
+// by resolveExplicitSource) take priority over it.
+func (cmd *UpCmd) ensureArgsForFromSnapshot(args []string) []string {
+	if cmd.FromSnapshot != "" && len(args) == 0 {
+		return []string{cmd.FromSnapshot}
+	}
+	return args
 }
 
 func (cmd *UpCmd) resolveParams(
@@ -433,11 +454,19 @@ func (req *secretRequest) applyOption(key, value string) error {
 }
 
 func (cmd *UpCmd) parseWorkspaceSource() (*provider2.WorkspaceSource, error) {
+	source, err := cmd.resolveExplicitSource()
+	if err != nil {
+		return nil, err
+	}
+	if source != nil {
+		return source, nil
+	}
+
 	if cmd.Source == "" {
 		return nil, nil
 	}
 
-	source := provider2.ParseWorkspaceSource(cmd.Source)
+	source = provider2.ParseWorkspaceSource(cmd.Source)
 	if source == nil {
 		return nil, fmt.Errorf("workspace source is missing")
 	}
@@ -447,6 +476,92 @@ func (cmd *UpCmd) parseWorkspaceSource() (*provider2.WorkspaceSource, error) {
 	}
 
 	return source, nil
+}
+
+// resolveExplicitSource returns an explicit WorkspaceSource when --from-snapshot
+// is set, composed identically to `devsy snapshot restore` via
+// snapshot.RestoreComposition ("snapshot:<ref>" source, "image:<repo>:<tag>-fs"
+// DevContainerSource), taking priority over positional-arg source resolution.
+// It also sets cmd.DevContainerSource so the workspace runs the snapshot's
+// committed filesystem image instead of rebuilding, matching restore's
+// behavior exactly.
+//
+// Since --from-snapshot forbids a positional source (validateFromSnapshot),
+// there is no other way for the workspace ID to reach ResolveParams.DesiredID
+// on this path; without defaulting it here, workspace resolution falls back
+// to selecting an unrelated existing workspace (or fails confusingly in
+// non-TTY contexts). So when --id wasn't given explicitly, default it from
+// the snapshot ref's workspace id, mirroring `devsy snapshot restore`'s
+// buildWorkspace.
+func (cmd *UpCmd) resolveExplicitSource() (*provider2.WorkspaceSource, error) {
+	if cmd.FromSnapshot == "" {
+		return nil, nil
+	}
+	sourceStr, devContainerSource, err := snapshotpkg.RestoreComposition(cmd.FromSnapshot)
+	if err != nil {
+		return nil, fmt.Errorf("parse --from-snapshot ref: %w", err)
+	}
+	cmd.DevContainerSource = devContainerSource
+
+	if cmd.ID == "" {
+		ref, err := snapshotpkg.ParseRef(cmd.FromSnapshot)
+		if err != nil {
+			return nil, fmt.Errorf("parse --from-snapshot ref: %w", err)
+		}
+		cmd.ID = ref.WorkspaceID
+	}
+
+	source := provider2.ParseWorkspaceSource(sourceStr)
+	if source == nil {
+		return nil, fmt.Errorf(
+			"compose workspace source from --from-snapshot: unexpected source %q",
+			sourceStr,
+		)
+	}
+	return source, nil
+}
+
+// validateFromSnapshot enforces --from-snapshot's invariants before workspace
+// resolution: it cannot be combined with an explicit source (positional arg
+// or --source) or used in platform mode (snapshots are local-only — `devsy
+// snapshot create` rejects machine-provider workspaces up front, and restore
+// has no remote-registry-backed equivalent of a platform-managed container),
+// and the referenced snapshot must actually exist. Mirrors `devsy snapshot
+// restore`'s upfront PullManifest check so a bad or missing ref fails fast
+// with a clear error instead of partway through workspace creation.
+func (cmd *UpCmd) validateFromSnapshot(ctx context.Context, args []string) error {
+	if cmd.FromSnapshot == "" {
+		return nil
+	}
+	if cmd.Source != "" || (len(args) > 0 && args[0] != "") {
+		return fmt.Errorf("cannot combine --from-snapshot with an explicit source")
+	}
+	if cmd.Platform.Enabled {
+		return fmt.Errorf("--from-snapshot is not supported in platform mode")
+	}
+	manifest, err := snapshotpkg.PullManifest(ctx, cmd.FromSnapshot)
+	if err != nil {
+		return fmt.Errorf("validate --from-snapshot ref: %w", err)
+	}
+	return cmd.applyFromSnapshotOverrides(manifest)
+}
+
+// applyFromSnapshotOverrides replays the create-time devcontainer.json
+// settings the snapshot's manifest carries (runArgs, containerEnv) onto cmd,
+// so the image-sourced restored container behaves like the original did.
+func (cmd *UpCmd) applyFromSnapshotOverrides(manifest *snapshotpkg.Manifest) error {
+	runArgs, err := manifest.RunArgs()
+	if err != nil {
+		return fmt.Errorf("read --from-snapshot run args: %w", err)
+	}
+	cmd.RunArgs = runArgs
+
+	containerEnv, err := manifest.ContainerEnv()
+	if err != nil {
+		return fmt.Errorf("read --from-snapshot container env: %w", err)
+	}
+	cmd.ContainerEnv = containerEnv
+	return nil
 }
 
 func (cmd *UpCmd) resolveSSHConfig(devsyConfig *config.Config) {
