@@ -16,3 +16,4 @@ desktop/dist/
 desktop/release/
 desktop/playwright-report/
 desktop/test-results/
+.superpowers/
