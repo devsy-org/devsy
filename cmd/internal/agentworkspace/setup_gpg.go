@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -103,7 +104,11 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	lock := flock.New(gpgSetupLockPath)
+	// 0666: setup-gpg can run as root (SSH tunnel) or as the workspace's
+	// remoteUser (GPG-forwarding tunnel), sometimes concurrently. flock's
+	// default 0600 mode lets whichever process creates the file first lock
+	// every other user out with EACCES on the second process's TryLockContext.
+	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(0o666))
 	locked, err := lock.TryLockContext(lockCtx, 200*time.Millisecond)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -119,6 +124,14 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 			return nil, ctx.Err()
 		}
 		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
+	}
+
+	// os.Chmod bypasses the umask to ensure the file has world-readable/writable
+	// permissions, which is essential when setup-gpg runs under different users
+	// in the same container.
+	if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
+		_ = lock.Unlock()
+		return nil, fmt.Errorf("set lock file permissions: %w", err)
 	}
 
 	return func() { _ = lock.Unlock() }, nil

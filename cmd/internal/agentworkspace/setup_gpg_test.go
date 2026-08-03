@@ -3,6 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -100,4 +101,23 @@ func TestAcquireGPGSetupLock_ReturnsCancellationErrorWhenCallerCancels(t *testin
 		"caller cancellation must surface as context.Canceled, not a generic lock-timeout error: got %v",
 		err,
 	)
+}
+
+func TestAcquireGPGSetupLock_FileIsWorldLockable(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"lock file must be 0666 so any container user (root or the workspace's "+
+			"remoteUser) can create/open it; the default flock mode of 0600 lets "+
+			"whichever user runs setup-gpg first lock out every other user "+
+			"with EACCES")
 }
