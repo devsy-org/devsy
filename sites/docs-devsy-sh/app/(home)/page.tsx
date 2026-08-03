@@ -458,7 +458,7 @@ export default function HomePage() {
                 </div>
                 <h3>Support and migration</h3>
                 <p>
-                  Migrating off an abandoned tool like DevPod, or want a maintained platform you can rely on? Get
+                  Migrating off an abandoned tool, or want a maintained platform you can rely on? Get
                   ongoing support, upgrades, and hands-on migration help.
                 </p>
               </div>
