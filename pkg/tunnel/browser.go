@@ -258,29 +258,31 @@ func CreateSSHCommand(
 		return nil, err
 	}
 
-	args := buildSSHCommandArgs(
-		client.Context(),
-		client.Workspace(),
-		user,
-		log.DebugEnabled(),
-		extraArgs,
-	)
+	args := buildSSHCommandArgs(sshCommandArgsParams{
+		clientContext: client.Context(),
+		workspace:     client.Workspace(),
+		user:          user,
+		debug:         log.DebugEnabled(),
+		extraArgs:     extraArgs,
+	})
 
 	//nolint:gosec // execPath is the current binary, arguments are controlled
 	return exec.CommandContext(ctx, execPath, args...), nil
 }
 
-// buildSSHCommandArgs constructs the argument list for `devsy ssh`. Kept as
-// plain args rather than a params struct: it's an internal, unexported
-// helper with a small stable signature, and a struct would only add
-// indirection for CreateSSHCommand's one caller and its existing tests.
-//
-//nolint:revive // argument-limit
-func buildSSHCommandArgs(
-	clientContext, workspace, user string,
-	debug bool,
-	extraArgs []string,
-) []string {
+// sshCommandArgsParams bundles buildSSHCommandArgs' inputs so the function
+// takes one argument instead of five.
+type sshCommandArgsParams struct {
+	clientContext string
+	workspace     string
+	user          string
+	debug         bool
+	extraArgs     []string
+}
+
+// buildSSHCommandArgs constructs the argument list for `devsy ssh`.
+func buildSSHCommandArgs(p sshCommandArgsParams) []string {
+	user := p.user
 	if user == "" {
 		user = "root"
 	}
@@ -291,12 +293,12 @@ func buildSSHCommandArgs(
 		names.FlagFalse(names.AgentForwarding),
 		names.FlagFalse(names.StartServices),
 		names.Flag(names.Context),
-		clientContext,
-		workspace,
+		p.clientContext,
+		p.workspace,
 	}
-	if debug {
+	if p.debug {
 		args = append(args, names.Flag(names.Debug))
 	}
-	args = append(args, extraArgs...)
+	args = append(args, p.extraArgs...)
 	return args
 }

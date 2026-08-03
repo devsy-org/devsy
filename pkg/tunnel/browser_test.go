@@ -70,54 +70,59 @@ func baseSSHArgs(ctx, user, ws string) []string {
 	}
 }
 
+func baseParams(user string) sshCommandArgsParams {
+	return sshCommandArgsParams{
+		clientContext: testCtxName, workspace: testWorkspaceName, user: user,
+	}
+}
+
 func TestBuildSSHCommandArgs(t *testing.T) {
 	tests := []struct {
-		name      string
-		context   string
-		workspace string
-		user      string
-		debug     bool
-		extraArgs []string
-		expected  []string
+		name     string
+		params   sshCommandArgsParams
+		expected []string
 	}{
 		{
-			name: "basic root user", context: testCtxName, workspace: testWorkspaceName,
-			user:     testUserRoot,
+			name:     "basic root user",
+			params:   baseParams(testUserRoot),
 			expected: baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
 		},
 		{
-			name: "non-root workspace user", context: testCtxName, workspace: testWorkspaceName,
-			user:     testUserVSCode,
+			name:     "non-root workspace user",
+			params:   baseParams(testUserVSCode),
 			expected: baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName),
 		},
 		{
-			name:      "empty user falls back to root",
-			context:   testCtxName,
-			workspace: testWorkspaceName,
-			user:      "",
-			expected:  baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
+			name:     "empty user falls back to root",
+			params:   baseParams(""),
+			expected: baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
 		},
 		{
-			name:      "with debug",
-			context:   testCtxName,
-			workspace: testWorkspaceName,
-			user:      testUserVSCode,
-			debug:     true,
+			name: "with debug",
+			params: sshCommandArgsParams{
+				clientContext: testCtxName, workspace: testWorkspaceName,
+				user: testUserVSCode, debug: true,
+			},
 			expected: append(
 				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug",
 			),
 		},
 		{
-			name: "with extra args", context: "prod", workspace: "ws",
-			user:      testUserVSCode,
-			extraArgs: []string{"--stdio", "--log-output=raw"},
+			name: "with extra args",
+			params: sshCommandArgsParams{
+				clientContext: "prod", workspace: "ws", user: testUserVSCode,
+				extraArgs: []string{"--stdio", "--log-output=raw"},
+			},
 			expected: append(
 				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-output=raw",
 			),
 		},
 		{
-			name: "with debug and extra args", context: testCtxName, workspace: testWorkspaceName,
-			user: testUserVSCode, debug: true, extraArgs: []string{"--stdio"},
+			name: "with debug and extra args",
+			params: sshCommandArgsParams{
+				clientContext: testCtxName, workspace: testWorkspaceName, user: testUserVSCode,
+				debug: true, extraArgs: []string{"--stdio"},
+			},
 			expected: append(
 				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug", "--stdio",
 			),
@@ -126,7 +131,7 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildSSHCommandArgs(tt.context, tt.workspace, tt.user, tt.debug, tt.extraArgs)
+			got := buildSSHCommandArgs(tt.params)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
