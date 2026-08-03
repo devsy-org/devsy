@@ -22,7 +22,7 @@ func ToID(str string) string {
 	if len(splitted) == 2 {
 		str = idFromPROrBranch(str, splitted)
 	} else {
-		str = idFromRepoPath(str, splitted)
+		str = idFromRepoPath(str)
 	}
 
 	str = workspaceIDRegEx2.ReplaceAllString(workspaceIDRegEx1.ReplaceAllString(str, "-"), "")
@@ -52,7 +52,7 @@ func idFromPROrBranch(str string, splitted []string) string {
 
 // idFromRepoPath derives the ID from the final path segment of a repo URL
 // with no recognized "@ref" suffix, stripping any trailing ".git".
-func idFromRepoPath(str string, splitted []string) string {
+func idFromRepoPath(str string) string {
 	// Ensure we don't have a single trailing slash
 	str = strings.TrimSuffix(str, "/")
 	// 3. If not, then parse the repo name as ID
@@ -61,11 +61,6 @@ func idFromRepoPath(str string, splitted []string) string {
 		return str
 	}
 	str = str[index+1:]
-
-	// remove a potential tag / branch name
-	if len(splitted) == 2 && !branchRegEx.MatchString(splitted[1]) {
-		str = splitted[0]
-	}
 
 	// remove .git if there is it
 	return strings.TrimSuffix(str, ".git")
