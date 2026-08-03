@@ -32,16 +32,16 @@ type Time struct {
 	time.Time `protobuf:"-"`
 }
 
+// NewTime returns a wrapped instance of the provided time.
+func NewTime(time time.Time) Time {
+	return Time{time}
+}
+
 // DeepCopyInto creates a deep-copy of the Time value.  The underlying time.Time
 // type is effectively immutable in the time API, so it is safe to
 // copy-by-assign, despite the presence of (unexported) Pointer fields.
 func (t *Time) DeepCopyInto(out *Time) {
 	*out = *t
-}
-
-// NewTime returns a wrapped instance of the provided time.
-func NewTime(time time.Time) Time {
-	return Time{time}
 }
 
 // Date returns the Time corresponding to the supplied parameters

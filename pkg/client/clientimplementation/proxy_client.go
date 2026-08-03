@@ -159,28 +159,6 @@ func tryLock(ctx context.Context, lock *flock.Flock, name string) error {
 	)
 }
 
-func (s *proxyClient) initLock() {
-	s.workspaceLockOnce.Do(func() {
-		s.m.Lock()
-		defer s.m.Unlock()
-
-		// get locks dir
-		workspaceLocksDir, err := provider.GetLocksDir(s.workspace.Context)
-		if err != nil {
-			panic(fmt.Errorf("get workspaces dir: %w", err))
-		}
-		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-		if err = os.MkdirAll(workspaceLocksDir, 0o755); err != nil {
-			panic(fmt.Errorf("create workspace locks dir: %w", err))
-		}
-
-		// create workspace lock
-		s.workspaceLock = flock.New(
-			filepath.Join(workspaceLocksDir, s.workspace.ID+".workspace.lock"),
-		)
-	})
-}
-
 func (s *proxyClient) Provider() string {
 	return s.config.Name
 }
@@ -295,41 +273,6 @@ func (s *proxyClient) Up(ctx context.Context, opt client.UpOptions) error {
 	})
 }
 
-// checkPlatformVersion validates the platform provider version compatibility.
-func (s *proxyClient) checkPlatformVersion(
-	ctx context.Context,
-	providerOptions map[string]config.OptionValue,
-) error {
-	devsyConfigPath := providerOptions["DEVSY_CONFIG"].Value
-	if devsyConfigPath == "" {
-		return nil
-	}
-
-	baseClient, err := platformclient.InitClientFromPath(ctx, devsyConfigPath)
-	if err != nil {
-		return fmt.Errorf("error initializing platform client: %w", err)
-	}
-
-	version, err := baseClient.Version()
-	if err != nil {
-		return fmt.Errorf("error retrieving platform version: %w", err)
-	}
-
-	parsedVersion, err := semver.Parse(strings.TrimPrefix(version.DevsyVersion, "v"))
-	if err != nil {
-		return fmt.Errorf("error parsing platform version: %w", err)
-	}
-
-	if parsedVersion.GE(semver.MustParse("0.6.99")) {
-		return fmt.Errorf(
-			"you are using an outdated provider version for this platform. " +
-				"Disconnect and reconnect the platform to update the provider",
-		)
-	}
-
-	return nil
-}
-
 func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) error {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -405,6 +348,63 @@ func (s *proxyClient) Status(
 
 	// parse status
 	return client.ParseStatus(status.State)
+}
+
+func (s *proxyClient) initLock() {
+	s.workspaceLockOnce.Do(func() {
+		s.m.Lock()
+		defer s.m.Unlock()
+
+		// get locks dir
+		workspaceLocksDir, err := provider.GetLocksDir(s.workspace.Context)
+		if err != nil {
+			panic(fmt.Errorf("get workspaces dir: %w", err))
+		}
+		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+		if err = os.MkdirAll(workspaceLocksDir, 0o755); err != nil {
+			panic(fmt.Errorf("create workspace locks dir: %w", err))
+		}
+
+		// create workspace lock
+		s.workspaceLock = flock.New(
+			filepath.Join(workspaceLocksDir, s.workspace.ID+".workspace.lock"),
+		)
+	})
+}
+
+// checkPlatformVersion validates the platform provider version compatibility.
+func (s *proxyClient) checkPlatformVersion(
+	ctx context.Context,
+	providerOptions map[string]config.OptionValue,
+) error {
+	devsyConfigPath := providerOptions["DEVSY_CONFIG"].Value
+	if devsyConfigPath == "" {
+		return nil
+	}
+
+	baseClient, err := platformclient.InitClientFromPath(ctx, devsyConfigPath)
+	if err != nil {
+		return fmt.Errorf("error initializing platform client: %w", err)
+	}
+
+	version, err := baseClient.Version()
+	if err != nil {
+		return fmt.Errorf("error retrieving platform version: %w", err)
+	}
+
+	parsedVersion, err := semver.Parse(strings.TrimPrefix(version.DevsyVersion, "v"))
+	if err != nil {
+		return fmt.Errorf("error parsing platform version: %w", err)
+	}
+
+	if parsedVersion.GE(semver.MustParse("0.6.99")) {
+		return fmt.Errorf(
+			"you are using an outdated provider version for this platform. " +
+				"Disconnect and reconnect the platform to update the provider",
+		)
+	}
+
+	return nil
 }
 
 func (s *proxyClient) updateInstance(ctx context.Context) error {

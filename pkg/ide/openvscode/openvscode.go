@@ -64,6 +64,15 @@ var Options = ide.Options{
 
 const DefaultVSCodePort = 10800
 
+type OpenVSCodeServer struct {
+	values     map[string]config.OptionValue
+	extensions []string
+	settings   string
+	userName   string
+	host       string
+	port       string
+}
+
 func NewOpenVSCodeServer(
 	extensions []string,
 	settings string,
@@ -79,15 +88,6 @@ func NewOpenVSCodeServer(
 		host:       host,
 		port:       port,
 	}
-}
-
-type OpenVSCodeServer struct {
-	values     map[string]config.OptionValue
-	extensions []string
-	settings   string
-	userName   string
-	host       string
-	port       string
 }
 
 func (o *OpenVSCodeServer) InstallExtensions() error {
@@ -142,6 +142,45 @@ func chownIfNeeded(userName, location string) error {
 		return fmt.Errorf("chown: %w", err)
 	}
 	return nil
+}
+
+func (o *OpenVSCodeServer) Start() error {
+	location, err := prepareOpenVSCodeServerLocation(o.userName)
+	if err != nil {
+		return err
+	}
+
+	if o.host == "" {
+		o.host = "0.0.0.0"
+	}
+	if o.port == "" {
+		o.port = strconv.Itoa(DefaultVSCodePort)
+	}
+
+	binaryPath := filepath.Join(location, "bin", "openvscode-server")
+	_, err = os.Stat(binaryPath)
+	if err != nil {
+		return fmt.Errorf("find binary: %w", err)
+	}
+
+	return command.StartBackgroundOnce("openvscode", func() (*exec.Cmd, error) {
+		log.Infof("Starting openvscode in background")
+		runCommand := fmt.Sprintf(
+			"%s server-local --without-connection-token --host '%s' --port '%s'",
+			binaryPath,
+			o.host,
+			o.port,
+		)
+		args := []string{}
+		if o.userName != "" {
+			args = append(args, "su", o.userName, "-c", runCommand)
+		} else {
+			args = append(args, "sh", "-c", runCommand)
+		}
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = location
+		return cmd, nil
+	})
 }
 
 func (o *OpenVSCodeServer) getReleaseUrl() string {
@@ -228,45 +267,6 @@ func (o *OpenVSCodeServer) installSettings() error {
 	}
 
 	return nil
-}
-
-func (o *OpenVSCodeServer) Start() error {
-	location, err := prepareOpenVSCodeServerLocation(o.userName)
-	if err != nil {
-		return err
-	}
-
-	if o.host == "" {
-		o.host = "0.0.0.0"
-	}
-	if o.port == "" {
-		o.port = strconv.Itoa(DefaultVSCodePort)
-	}
-
-	binaryPath := filepath.Join(location, "bin", "openvscode-server")
-	_, err = os.Stat(binaryPath)
-	if err != nil {
-		return fmt.Errorf("find binary: %w", err)
-	}
-
-	return command.StartBackgroundOnce("openvscode", func() (*exec.Cmd, error) {
-		log.Infof("Starting openvscode in background")
-		runCommand := fmt.Sprintf(
-			"%s server-local --without-connection-token --host '%s' --port '%s'",
-			binaryPath,
-			o.host,
-			o.port,
-		)
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-c", runCommand)
-		}
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = location
-		return cmd, nil
-	})
 }
 
 func prepareOpenVSCodeServerLocation(userName string) (string, error) {

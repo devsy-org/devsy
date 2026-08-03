@@ -86,35 +86,6 @@ func (k *KubernetesDriver) SupportsMountType(mountType string) bool {
 	}
 }
 
-func (k *KubernetesDriver) getDevContainerPvc(
-	ctx context.Context,
-	id string,
-) (*corev1.PersistentVolumeClaim, *DevContainerInfo, error) {
-	// try to find pvc
-	pvc, err := k.client.Client().
-		CoreV1().
-		PersistentVolumeClaims(k.namespace).
-		Get(ctx, id, metav1.GetOptions{})
-	if err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, nil, nil
-		}
-
-		return nil, nil, err
-	} else if pvc.Annotations == nil || pvc.Annotations[DevsyInfoAnnotation] == "" {
-		return nil, nil, fmt.Errorf("pvc is missing dev container info annotation")
-	}
-
-	// get container info
-	containerInfo := &DevContainerInfo{}
-	err = json.Unmarshal([]byte(pvc.GetAnnotations()[DevsyInfoAnnotation]), containerInfo)
-	if err != nil {
-		return nil, nil, fmt.Errorf("decode dev container info: %w", err)
-	}
-
-	return pvc, containerInfo, nil
-}
-
 func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
 	log.Debugf("Stopping devcontainer for workspace %q", workspaceId)
 	defer log.Debugf("Done stopping devcontainer for workspace %q", workspaceId)
@@ -217,6 +188,35 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 	}
 
 	return nil
+}
+
+func (k *KubernetesDriver) getDevContainerPvc(
+	ctx context.Context,
+	id string,
+) (*corev1.PersistentVolumeClaim, *DevContainerInfo, error) {
+	// try to find pvc
+	pvc, err := k.client.Client().
+		CoreV1().
+		PersistentVolumeClaims(k.namespace).
+		Get(ctx, id, metav1.GetOptions{})
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, nil, nil
+		}
+
+		return nil, nil, err
+	} else if pvc.Annotations == nil || pvc.Annotations[DevsyInfoAnnotation] == "" {
+		return nil, nil, fmt.Errorf("pvc is missing dev container info annotation")
+	}
+
+	// get container info
+	containerInfo := &DevContainerInfo{}
+	err = json.Unmarshal([]byte(pvc.GetAnnotations()[DevsyInfoAnnotation]), containerInfo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode dev container info: %w", err)
+	}
+
+	return pvc, containerInfo, nil
 }
 
 func (k *KubernetesDriver) deletePersistentVolumeClaim(

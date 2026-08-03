@@ -50,6 +50,12 @@ type preferences struct {
 	InitialWorkingDirectory string `json:"initial_working_directory,omitempty"` // RStudio expects snake_case
 }
 
+type RStudioServer struct {
+	values          map[string]config.OptionValue
+	workspaceFolder string
+	userName        string
+}
+
 func NewRStudioServer(
 	workspaceFolder string,
 	userName string,
@@ -60,12 +66,6 @@ func NewRStudioServer(
 		workspaceFolder: workspaceFolder,
 		userName:        userName,
 	}
-}
-
-type RStudioServer struct {
-	values          map[string]config.OptionValue
-	workspaceFolder string
-	userName        string
 }
 
 var codenameRegEx = regexp.MustCompile(`\nUBUNTU_CODENAME=(.*)\n`)

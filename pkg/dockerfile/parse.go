@@ -102,22 +102,6 @@ func (d *Dockerfile) BuildContextFiles() []string {
 
 var defaultShellLexer = shell.NewLex('\\')
 
-func (d *Dockerfile) expandVariables(
-	val string,
-	buildArgs, baseImageEnv map[string]string,
-	stage *BaseStage,
-	_ int,
-) string {
-	result, _, err := defaultShellLexer.ProcessWord(
-		val,
-		&environmentResolver{d, buildArgs, baseImageEnv, stage, 0},
-	)
-	if err != nil {
-		return val
-	}
-	return result
-}
-
 type environmentResolver struct {
 	dockerfile   *Dockerfile
 	buildArgs    map[string]string
@@ -140,6 +124,118 @@ func (e *environmentResolver) Keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func RemoveSyntaxVersion(dockerfileContent string) string {
+	return syntaxDirectiveRegex.ReplaceAllString(dockerfileContent, "")
+}
+
+func EnsureFinalStageName(dockerfileContent, defaultLastStageName string) (string, string, error) {
+	result, err := parser.Parse(strings.NewReader(dockerfileContent))
+	if err != nil {
+		return "", "", err
+	}
+
+	lastChild := lastFromNode(result.AST.Children)
+	if lastChild == nil {
+		return "", "", fmt.Errorf("no FROM statement in dockerfile")
+	}
+	if lastChild.Next == nil {
+		return "", "", fmt.Errorf("cannot parse FROM statement in dockerfile")
+	}
+
+	if hasStageAlias(lastChild) {
+		return lastChild.Next.Next.Next.Value, "", nil
+	}
+
+	lastChild.Next.Next = &parser.Node{
+		Value: "AS",
+		Next:  &parser.Node{Value: defaultLastStageName},
+	}
+	return defaultLastStageName, ReplaceInDockerfile(dockerfileContent, lastChild), nil
+}
+
+func lastFromNode(children []*parser.Node) *parser.Node {
+	var lastChild *parser.Node
+	for _, child := range children {
+		if strings.ToLower(child.Value) == command.From {
+			lastChild = child
+		}
+	}
+	return lastChild
+}
+
+func hasStageAlias(node *parser.Node) bool {
+	return node.Next.Next != nil && node.Next.Next.Next != nil &&
+		strings.EqualFold(node.Next.Next.Value, "as")
+}
+
+func ReplaceInDockerfile(dockerfileContent string, node *parser.Node) string {
+	scan := scanner.NewScanner(strings.NewReader(dockerfileContent))
+	var lines []string
+	for lineNumber := 1; scan.Scan(); lineNumber++ {
+		if lineNumber >= node.StartLine && lineNumber <= node.EndLine {
+			lines = append(lines, FormatNode(node))
+		} else {
+			lines = append(lines, scan.Text())
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+type Dockerfile struct {
+	Raw string
+
+	Directives []*parser.Directive
+	Preamble   *Preamble
+	Syntax     string // https://docs.docker.com/build/concepts/dockerfile/#dockerfile-syntax
+
+	Stages         []*Stage
+	StagesByTarget map[string]*Stage
+}
+
+type Preamble struct {
+	BaseStage
+}
+
+type Stage struct {
+	BaseStage
+	Users []instructions.KeyValuePair
+}
+
+type BaseStage struct {
+	Image  string
+	Target string
+
+	Envs         []instructions.KeyValuePair
+	Args         []instructions.KeyValuePairOptional
+	Instructions []*parser.Node
+}
+
+func (d *Dockerfile) Dump() string {
+	result := make([]string, 0, len(d.Stages))
+	for _, stage := range d.Stages {
+		if dump := FormatNodes(stage.Instructions); dump != "" {
+			result = append(result, dump)
+		}
+	}
+	return strings.Join(result, "\n")
+}
+
+func (d *Dockerfile) expandVariables(
+	val string,
+	buildArgs, baseImageEnv map[string]string,
+	stage *BaseStage,
+	_ int,
+) string {
+	result, _, err := defaultShellLexer.ProcessWord(
+		val,
+		&environmentResolver{d, buildArgs, baseImageEnv, stage, 0},
+	)
+	if err != nil {
+		return val
+	}
+	return result
 }
 
 func (d *Dockerfile) resolveVariable(
@@ -247,102 +343,6 @@ func (d *Dockerfile) getParentStage(
 		return &foundStage.BaseStage
 	}
 	return &d.Preamble.BaseStage
-}
-
-func RemoveSyntaxVersion(dockerfileContent string) string {
-	return syntaxDirectiveRegex.ReplaceAllString(dockerfileContent, "")
-}
-
-func EnsureFinalStageName(dockerfileContent, defaultLastStageName string) (string, string, error) {
-	result, err := parser.Parse(strings.NewReader(dockerfileContent))
-	if err != nil {
-		return "", "", err
-	}
-
-	lastChild := lastFromNode(result.AST.Children)
-	if lastChild == nil {
-		return "", "", fmt.Errorf("no FROM statement in dockerfile")
-	}
-	if lastChild.Next == nil {
-		return "", "", fmt.Errorf("cannot parse FROM statement in dockerfile")
-	}
-
-	if hasStageAlias(lastChild) {
-		return lastChild.Next.Next.Next.Value, "", nil
-	}
-
-	lastChild.Next.Next = &parser.Node{
-		Value: "AS",
-		Next:  &parser.Node{Value: defaultLastStageName},
-	}
-	return defaultLastStageName, ReplaceInDockerfile(dockerfileContent, lastChild), nil
-}
-
-func lastFromNode(children []*parser.Node) *parser.Node {
-	var lastChild *parser.Node
-	for _, child := range children {
-		if strings.ToLower(child.Value) == command.From {
-			lastChild = child
-		}
-	}
-	return lastChild
-}
-
-func hasStageAlias(node *parser.Node) bool {
-	return node.Next.Next != nil && node.Next.Next.Next != nil &&
-		strings.EqualFold(node.Next.Next.Value, "as")
-}
-
-func ReplaceInDockerfile(dockerfileContent string, node *parser.Node) string {
-	scan := scanner.NewScanner(strings.NewReader(dockerfileContent))
-	var lines []string
-	for lineNumber := 1; scan.Scan(); lineNumber++ {
-		if lineNumber >= node.StartLine && lineNumber <= node.EndLine {
-			lines = append(lines, FormatNode(node))
-		} else {
-			lines = append(lines, scan.Text())
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-type Dockerfile struct {
-	Raw string
-
-	Directives []*parser.Directive
-	Preamble   *Preamble
-	Syntax     string // https://docs.docker.com/build/concepts/dockerfile/#dockerfile-syntax
-
-	Stages         []*Stage
-	StagesByTarget map[string]*Stage
-}
-
-type Preamble struct {
-	BaseStage
-}
-
-type Stage struct {
-	BaseStage
-	Users []instructions.KeyValuePair
-}
-
-type BaseStage struct {
-	Image  string
-	Target string
-
-	Envs         []instructions.KeyValuePair
-	Args         []instructions.KeyValuePairOptional
-	Instructions []*parser.Node
-}
-
-func (d *Dockerfile) Dump() string {
-	result := make([]string, 0, len(d.Stages))
-	for _, stage := range d.Stages {
-		if dump := FormatNodes(stage.Instructions); dump != "" {
-			result = append(result, dump)
-		}
-	}
-	return strings.Join(result, "\n")
 }
 
 func Parse(dockerfileContent string) (*Dockerfile, error) {

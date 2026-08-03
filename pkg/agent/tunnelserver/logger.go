@@ -51,20 +51,6 @@ type tunnelLogger struct {
 	logChan chan *tunnel.LogMessage
 }
 
-func (s *tunnelLogger) worker() {
-	for {
-		select {
-		case msg := <-s.logChan:
-			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
-			_, _ = s.client.Log(ctx, msg)
-			// ignore error since we can't use the logger itself
-			cancel()
-		case <-s.ctx.Done():
-			return
-		}
-	}
-}
-
 func (s *tunnelLogger) Debugf(format string, args ...any) {
 	if s.level < levelDebug {
 		return
@@ -106,5 +92,19 @@ func (s *tunnelLogger) Warnf(format string, args ...any) {
 	s.logChan <- &tunnel.LogMessage{
 		LogLevel: tunnel.LogLevel_WARNING,
 		Message:  fmt.Sprintf(format, args...) + "\n",
+	}
+}
+
+func (s *tunnelLogger) worker() {
+	for {
+		select {
+		case msg := <-s.logChan:
+			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+			_, _ = s.client.Log(ctx, msg)
+			// ignore error since we can't use the logger itself
+			cancel()
+		case <-s.ctx.Done():
+			return
+		}
 	}
 }
