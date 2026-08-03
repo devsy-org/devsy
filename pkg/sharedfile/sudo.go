@@ -7,19 +7,16 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 // WidenWithSudoFallback behaves like WidenIfNeeded, but on EPERM (path
 // exists at the wrong mode and this process doesn't own it) falls back to a
-// non-interactive `sudo chmod`. The fallback's failure is logged via logFn,
-// not returned: this is a best-effort repair, and the caller's own lock
+// non-interactive `sudo chmod`. The fallback's failure is logged, not
+// returned: this is a best-effort repair, and the caller's own lock
 // acquisition will surface the real permission error if the repair fails.
-func WidenWithSudoFallback(
-	ctx context.Context,
-	path string,
-	mode os.FileMode,
-	logFn func(format string, args ...any),
-) error {
+func WidenWithSudoFallback(ctx context.Context, path string, mode os.FileMode) error {
 	err := WidenIfNeeded(path, mode)
 	if err == nil {
 		return nil
@@ -36,7 +33,7 @@ func WidenWithSudoFallback(
 	//nolint:gosec // path is a fixed coordination-file path, not user input
 	cmd := exec.CommandContext(ctx, "sudo", "-n", "chmod", fmt.Sprintf("%04o", mode.Perm()), path)
 	if sudoErr := cmd.Run(); sudoErr != nil {
-		logFn("sudo chmod %s (non-fatal): %v", path, sudoErr)
+		log.Debugf("sudo chmod %s (non-fatal): %v", path, sudoErr)
 	}
 	return nil
 }

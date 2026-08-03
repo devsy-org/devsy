@@ -13,7 +13,7 @@ import (
 func TestWidenWithSudoFallback_NoOpsWhenFileMissing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "does-not-exist")
 
-	err := WidenWithSudoFallback(context.Background(), path, 0o666, t.Logf)
+	err := WidenWithSudoFallback(context.Background(), path, 0o666)
 	require.NoError(t, err, "a missing file is the caller's job to create, not this")
 }
 
@@ -23,7 +23,7 @@ func TestWidenWithSudoFallback_NoOpsWhenModeAlreadyCorrect(t *testing.T) {
 	//nolint:gosec // test fixture, intentional
 	require.NoError(t, os.Chmod(path, 0o666))
 
-	err := WidenWithSudoFallback(context.Background(), path, 0o666, t.Logf)
+	err := WidenWithSudoFallback(context.Background(), path, 0o666)
 	require.NoError(t, err)
 }
 
@@ -31,7 +31,7 @@ func TestWidenWithSudoFallback_WidensOwnedFileWithoutSudo(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
 	require.NoError(t, os.WriteFile(path, nil, 0o600))
 
-	require.NoError(t, WidenWithSudoFallback(context.Background(), path, 0o666, t.Logf))
+	require.NoError(t, WidenWithSudoFallback(context.Background(), path, 0o666))
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)

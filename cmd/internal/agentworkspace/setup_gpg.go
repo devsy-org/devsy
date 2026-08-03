@@ -112,7 +112,7 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	// which this process (running as whichever user didn't create it) can't
 	// fix itself once flock.TryLockContext below fails with EACCES.
 	if err := sharedfile.WidenWithSudoFallback(
-		lockCtx, gpgSetupLockPath, gpgSetupLockMode, log.Debugf,
+		lockCtx, gpgSetupLockPath, gpgSetupLockMode,
 	); err != nil {
 		return nil, fmt.Errorf("widen stale lock file: %w", err)
 	}
