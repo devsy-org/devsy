@@ -44,9 +44,18 @@ linters:
   settings:
     cyclop:
       max-complexity: 8
+    funcorder:
+      function: true
     revive:
+      enable-all-rules: true
       rules:
         - name: argument-limit
           arguments: [4]
         - name: function-result-limit
           arguments: [3]
+        - name: line-length-limit
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+        - name: function-length
+          disabled: true
