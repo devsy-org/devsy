@@ -1,6 +1,6 @@
 ---
-title: Stop a Workspace
-sidebar_label: Stop a Workspace
+title: Stop or Delete a Workspace
+sidebar_label: Stop or Delete a Workspace
 ---
 
 ## Stop a Workspace
@@ -26,8 +26,32 @@ Afterwards, you can start the workspace via:
 devsy workspace up my-workspace
 ```
 
-## Automatic stop
+### Automatic stop
 
 Some providers allow automatic stop of a workspace, usually to save costs when a workspace is not used.
 For example, the Google Cloud provider will shutdown the virtual machine where the workspace is running after it's unused for 10 minutes, by default.
 This means you need to start the workspace after it has been stopped when you want to reconnect.
+
+## Delete a Workspace
+
+Deleting a workspace means to erase all state of an existing workspace and remove all traces of it within Devsy.
+Depending on the Devsy provider, this means either removing a Docker container or deleting a whole virtual machine.
+Devsy will automatically determine what specific action to take when a workspace is deleted.
+
+### Devsy Desktop
+
+In the 'Workspaces' view, open the actions menu for the workspace and choose 'Delete', then confirm the deletion dialog.
+
+### Devsy CLI
+
+Run the following command to delete a workspace:
+```
+devsy workspace delete my-workspace
+```
+
+If deletion fails because the Provider is not reachable anymore or another error has occurred, you can also force delete a workspace via:
+```
+devsy workspace delete my-workspace --force
+```
+
+However, this means the workspace will only be deleted on the Devsy side locally, and any error raised by the used provider will be ignored. Only use this option with caution as this might leave previously created resources behind.
