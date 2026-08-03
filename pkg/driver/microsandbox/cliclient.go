@@ -77,13 +77,14 @@ func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error)
 		}
 		return nil, fmt.Errorf("inspect microsandbox VM %q: %w", sandbox, err)
 	}
+	type activeConfig struct {
+		Labels map[string]string `json:"labels"`
+	}
 	var raw struct {
-		Name         string `json:"name"`
-		Status       string `json:"status"`
-		CreatedAt    string `json:"created_at"`
-		ActiveConfig struct {
-			Labels map[string]string `json:"labels"`
-		} `json:"active_config"`
+		Name         string       `json:"name"`
+		Status       string       `json:"status"`
+		CreatedAt    string       `json:"created_at"`
+		ActiveConfig activeConfig `json:"active_config"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("parse microsandbox inspect output: %w", err)
