@@ -236,10 +236,8 @@ func ensureActivityFile(path string) error {
 	return sharedfile.EnsureMode(path, activityFileMode)
 }
 
-// touchActivityFile records liveness by creating path at activityFileMode
-// if absent, then updating its mtime. Used by callers (e.g. the
-// fleet-server monitor) that report activity on discrete events rather
-// than a fixed heartbeat interval.
+// touchActivityFile is for callers reporting activity on discrete events
+// rather than runActivityHeartbeat's fixed interval (e.g. fleet-server).
 func touchActivityFile(path string) {
 	if err := ensureActivityFile(path); err != nil {
 		log.Errorf("touch activity file: ensure file: %v", err)

@@ -98,10 +98,8 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-// gpgSetupLockMode is 0666: setup-gpg can run as root or the workspace's
-// remoteUser, and flock's default 0600 mode would lock the second one out
-// with EACCES. See pkg/sharedfile for why a world-writable coordination
-// file needs this and how it's kept safe.
+// gpgSetupLockMode is 0666 — flock's default 0600 would lock out whichever
+// of root/remoteUser didn't create the file. See pkg/sharedfile.
 const gpgSetupLockMode = 0o666
 
 // acquireGPGSetupLock takes the cross-process lock guarding setup-gpg. On

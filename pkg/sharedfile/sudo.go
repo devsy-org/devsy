@@ -9,15 +9,11 @@ import (
 	"os/exec"
 )
 
-// WidenWithSudoFallback behaves like WidenIfNeeded, but on EPERM (the file
-// exists at the wrong mode and this process doesn't own it — e.g. a stale
-// file a prior root process created before this package's fix, or a
-// same-container root/remoteUser pair racing setup) falls back to a
-// non-interactive `sudo chmod`. The fallback's failure is logged via logFn
-// rather than returned: callers hold a lock/flock that will itself
-// surface the real permission error to whichever caller actually needs to
-// read or write the file next, so this is a best-effort repair, not a hard
-// requirement for the caller's own success.
+// WidenWithSudoFallback behaves like WidenIfNeeded, but on EPERM (path
+// exists at the wrong mode and this process doesn't own it) falls back to a
+// non-interactive `sudo chmod`. The fallback's failure is logged via logFn,
+// not returned: this is a best-effort repair, and the caller's own lock
+// acquisition will surface the real permission error if the repair fails.
 func WidenWithSudoFallback(
 	ctx context.Context,
 	path string,

@@ -23,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -215,12 +216,9 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 	}
 }
 
-// writeResultFileTo writes rawBytes to path at mode 0644: readable by any
-// container user, not just root. Callers that read this file
-// (getContainerResult, portOptionsFromResult) run over SSH sessions
-// authenticated as either root or the workspace's remoteUser, and the file
-// holds no secrets — just devcontainer.json's merged config, mounts, and
-// port attributes. Skips the write entirely if content is unchanged.
+// writeResultFileTo writes rawBytes to path at 0644: readable by any
+// container user, not just root, since getContainerResult and
+// portOptionsFromResult read it over sessions authenticated as either.
 func writeResultFileTo(path string, rawBytes []byte) error {
 	// #nosec G304 -- callers pass a fixed const path; parameterized only for tests
 	existing, _ := os.ReadFile(path)
@@ -231,16 +229,10 @@ func writeResultFileTo(path string, rawBytes []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-
 	if err := os.WriteFile(path, rawBytes, 0o644); err != nil { //nolint:gosec // see doc comment
 		return fmt.Errorf("write: %w", err)
 	}
-	// os.WriteFile's mode is subject to umask; chmod to guarantee 0644
-	// regardless of what wrote/created the file first.
-	if err := os.Chmod(path, 0o644); err != nil { //nolint:gosec // see doc comment
-		return fmt.Errorf("chmod: %w", err)
-	}
-	return nil
+	return sharedfile.WidenIfNeeded(path, 0o644)
 }
 
 func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {

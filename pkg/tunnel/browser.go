@@ -243,12 +243,10 @@ func isTransientBackhaulErr(err error) bool {
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given
-// arguments. The container's SSH server has one identity per session: user
-// both authenticates the connection and is who every command on it runs as
-// (pkg/ssh/server/ssh_container.go's getCommand calls PrepareCmdUser with the
-// authenticated user, no separate privilege-drop step). Callers whose later
-// traffic on this same session needs specific file access must pick user
-// accordingly — empty defaults to root.
+// arguments. user both authenticates the session and is who every command
+// on it runs as — there's no separate privilege-drop step — so callers
+// whose later traffic needs specific file access must pick user
+// accordingly. Empty defaults to root.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,

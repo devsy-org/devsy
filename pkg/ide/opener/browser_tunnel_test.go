@@ -16,9 +16,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func containsAdjacent(args []string, needle, value string) bool {
+// containsAdjacent reports whether flag appears immediately followed by
+// value in args, e.g. ["--user", "vscode"].
+func containsAdjacent(args []string, flag, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == needle && args[i+1] == value {
+		if args[i] == flag && args[i+1] == value {
 			return true
 		}
 	}
