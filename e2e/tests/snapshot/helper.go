@@ -15,7 +15,7 @@ import (
 
 const (
 	registryHostPort = "15500"
-	registryImage = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+	registryImage    = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 )
 
 // registryHost is the address e2e specs push/pull snapshots against.
