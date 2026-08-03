@@ -1,6 +1,6 @@
 ---
-title: Add a Provider
-sidebar_label: Add a Provider
+title: Manage Providers
+sidebar_label: Manage Providers
 ---
 
 The Devsy team maintains providers for popular services such as:
@@ -29,7 +29,9 @@ You can get a list of available 1st party providers by using the command:
 devsy provider list --available
 ```
 
-## Devsy Desktop
+## Adding a Provider
+
+### Devsy Desktop
 
 Open the Providers view and click **Add**. The provider wizard has four steps:
 
@@ -44,7 +46,7 @@ The ProviderSheet (click any provider in the list) exposes edit settings, switch
 The Desktop Application calls `devsy provider add PROVIDER` under the hood.
 </Callout>
 
-### Custom Providers
+#### Custom Providers
 
 In the Select step, type one of the following into the **Provider Source** field below the preset grid:
 
@@ -52,7 +54,7 @@ In the Select step, type one of the following into the **Provider Source** field
 - A URL to a `provider.yaml`
 - A file path to a `provider.yaml`
 
-## Devsy CLI
+### Devsy CLI
 Install any provider from the list with:
 
 ```sh
@@ -74,7 +76,7 @@ devsy provider add digitalocean
 You can use the `--name` flag to add multiple providers of the same type with different options, for example `devsy provider add aws --name aws-gpu -o AWS_INSTANCE_TYPE=p3.8xlarge`
 </Callout>
 
-### From GitHub
+#### From GitHub
 
 You can specify a custom provider, directly from GitHub, by using the format
 `my-username/repo`, so for example:
@@ -90,7 +92,7 @@ If you want to install the provider from a different release, you can do the fol
 devsy provider add my-org/my-repo@v0.0.1
 ```
 
-### From Local Path
+#### From Local Path
 
 If you have locally downloaded providers, you can also add them directly to
 Devsy, by pointing to the file path of `provider.yaml` manifest:
@@ -99,7 +101,7 @@ Devsy, by pointing to the file path of `provider.yaml` manifest:
 devsy provider add ../devsy-provider-mock/provider.yaml
 ```
 
-### From URL
+#### From URL
 
 You can also specify the URL to the `provider.yaml` file, for example:
 
@@ -203,6 +205,120 @@ In **the CLI** you can set this option using:
 ```sh
 devsy provider use <provider-name>
 ```
+
+## Updating a Provider's Version or Source
+
+### List available versions
+
+```sh
+devsy provider versions <name>
+```
+
+The table shows the published tag, date, and whether it's the currently-installed version. Pass `--prerelease` to include pre-releases and `--no-cache` to bypass the version cache.
+
+### Re-fetch the current source
+
+```sh
+devsy provider set-source <name>
+```
+
+Re-resolves the provider's existing source. If the source is a registry entry or a GitHub repo without a pinned tag, this pulls the latest release. If the source is already pinned (e.g. `github.com/org/repo@v0.1.0`), it re-fetches that same version — use `--version` to move to a different one.
+
+### Pin to a specific version
+
+```sh
+devsy provider set-source <name> --version v0.2.0
+```
+
+Equivalent inline form (works for GitHub-hosted providers):
+
+```sh
+devsy provider set-source <name> github.com/my-org/my-repo@v0.2.0
+```
+
+### Point at a different source
+
+The `set-source` command also replaces the provider's source entirely — registry name, GitHub repo, URL, or local path:
+
+```sh
+devsy provider set-source <name> my-org/my-repo
+devsy provider set-source <name> https://path/to/provider.yaml
+devsy provider set-source <name> ../path-to/provider.yaml
+```
+
+### Desktop
+
+Open the Providers sidebar, select a provider, and use the ProviderSheet:
+
+- **Select version** — pick a tag from the versions dropdown to switch versions.
+- **Update** — jump to the latest release. The button surfaces an "Update available" banner when one is detected.
+- **Initialize** — re-run provider init (handy after upgrades).
+
+Existing workspaces continue to use the version they were created with. Rebuild a workspace (`devsy workspace up <name> --recreate`) to pick up the new provider.
+
+## Removing a Provider
+
+### Devsy Desktop
+
+Navigate to the 'Providers' view and click on the trash icon of the provider
+you want to remove.
+
+If a workspace is currently using the provider, you'll be prompted to first
+remove that workspace, in order to then remove the provider.
+
+### Devsy CLI
+
+Remove an installed provider with:
+
+```sh
+devsy provider delete <provider name>
+```
+
+<Callout type="warn">
+⚠️ **BE CAREFUL**:⚠️
+Remember first to delete any workspace related to this provider first, or move
+them to another provider, else you'll not be able to interact with the workspace
+until you re-install the provider used.
+</Callout>
+
+## Renaming a Provider
+
+You can rename a provider using the `devsy provider rename` command. All workspaces and machines using the provider continue to work under the new name. Provider configuration, options, and state are fully preserved.
+
+### CLI
+
+```bash
+devsy provider rename <current-name> <new-name>
+```
+
+#### Example
+
+```bash
+devsy provider rename my-docker local-docker
+```
+
+### Constraints
+
+- The new name must be unique — it cannot match an existing provider.
+- Provider names can only contain lowercase letters, numbers, and dashes, up to 32 characters.
+- Pro providers (proxy/daemon) cannot be renamed. They are managed by the platform.
+- Workspaces bound to the provider must be stopped before renaming.
+
+### What happens
+
+- The provider is moved to the new name with all options and settings intact.
+- All workspaces and machines associated with the provider are updated to reference the new name.
+- If the provider was the default, the default is updated to the new name.
+- If any step fails, the entire operation is rolled back to the original state.
+
+### GUI
+
+1. Navigate to the **Providers** section.
+2. Select the provider you want to rename.
+3. In the provider's configuration page, edit the **Provider Name** field.
+4. Click **Update Options** to save.
+
+Devsy will update the provider and all associated workspaces automatically.
 
 ## Community Providers
 
