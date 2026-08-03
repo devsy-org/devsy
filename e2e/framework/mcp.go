@@ -13,15 +13,18 @@ import (
 const jsonRPCVersion = "2.0"
 
 // MCPClient drives a real `devsy mcp serve` subprocess over stdio JSON-RPC.
-// Not safe for concurrent CallTool calls: mu serializes the send+read
-// round trip so one call can't read another's response off the shared stream.
+// Not safe for concurrent CallTool calls: mu serializes the send+read round
+// trip so one call can't read another's response off the shared stream. If a
+// call's ctx is cancelled while its read is in flight, the client is
+// poisoned (see readResponseForCtx) and every later call fails fast.
 type MCPClient struct {
-	cmd     *exec.Cmd
-	stdin   *bufio.Writer
-	stdout  *bufio.Reader
-	mu      sync.Mutex
-	nextID  int64
-	closeFn func() error
+	cmd      *exec.Cmd
+	stdin    *bufio.Writer
+	stdout   *bufio.Reader
+	mu       sync.Mutex
+	nextID   int64
+	poisoned bool
+	closeFn  func() error
 }
 
 type jsonRPCRequest struct {
@@ -109,6 +112,12 @@ func (c *MCPClient) CallTool(
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.poisoned {
+		return nil, false, fmt.Errorf(
+			"mcp client unusable after a prior call's context was cancelled mid-read",
+		)
+	}
+
 	id := c.nextRequestID()
 	if err := c.send(jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
@@ -118,7 +127,7 @@ func (c *MCPClient) CallTool(
 	}); err != nil {
 		return nil, false, err
 	}
-	resp, err := c.readResponseFor(id)
+	resp, err := c.readResponseForCtx(ctx, id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -178,5 +187,31 @@ func (c *MCPClient) readResponseFor(id int64) (*jsonRPCResponse, error) {
 			continue
 		}
 		return &resp, nil
+	}
+}
+
+// readResponseForCtx races readResponseFor against ctx so a hung server
+// can't block the caller past its deadline. bufio.Reader isn't safe for
+// concurrent use, so a cancellation that fires while the read is still in
+// flight leaves that goroutine's read outstanding on c.stdout — the client
+// is marked poisoned and every later call on it fails fast instead of
+// risking a second concurrent read.
+func (c *MCPClient) readResponseForCtx(ctx context.Context, id int64) (*jsonRPCResponse, error) {
+	type result struct {
+		resp *jsonRPCResponse
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := c.readResponseFor(id)
+		done <- result{resp, err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.resp, r.err
+	case <-ctx.Done():
+		c.poisoned = true
+		return nil, fmt.Errorf("waiting for response to request %d: %w", id, ctx.Err())
 	}
 }
