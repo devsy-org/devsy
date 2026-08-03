@@ -71,7 +71,7 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
 
-			sshCmd, err := CreateSSHCommand(ctx, p.Client, []string{
+			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
 				names.FlagValue(names.LogOutput, "raw"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
@@ -243,9 +243,14 @@ func isTransientBackhaulErr(err error) bool {
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
+// user is the workspace's remote user (e.g. from GetRemoteUser); it must match
+// the user the container's ssh-server/gpg-setup sessions run as, or the two
+// sessions collide on the shared /tmp coordination files (devsy-gpg-setup.lock,
+// devsy.activity), which are owned by whichever session created them first.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
+	user string,
 	extraArgs []string,
 ) (*exec.Cmd, error) {
 	execPath, err := os.Executable()
@@ -256,6 +261,7 @@ func CreateSSHCommand(
 	args := buildSSHCommandArgs(
 		client.Context(),
 		client.Workspace(),
+		user,
 		log.DebugEnabled(),
 		extraArgs,
 	)
@@ -265,11 +271,18 @@ func CreateSSHCommand(
 }
 
 // buildSSHCommandArgs constructs the argument list for `devsy ssh`.
-func buildSSHCommandArgs(clientContext, workspace string, debug bool, extraArgs []string) []string {
+func buildSSHCommandArgs(
+	clientContext, workspace, user string,
+	debug bool,
+	extraArgs []string,
+) []string {
+	if user == "" {
+		user = "root"
+	}
 	args := []string{
 		"workspace",
 		"ssh",
-		names.FlagValue(names.User, "root"),
+		names.FlagValue(names.User, user),
 		names.FlagFalse(names.AgentForwarding),
 		names.FlagFalse(names.StartServices),
 		names.Flag(names.Context),

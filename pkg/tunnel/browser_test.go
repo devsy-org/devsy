@@ -21,9 +21,9 @@ func exitError(t *testing.T, code int) error {
 	return err
 }
 
-func baseSSHArgs(ctx, ws string) []string {
+func baseSSHArgs(ctx, user, ws string) []string {
 	return []string{
-		"workspace", "ssh", "--user=root", "--agent-forwarding=false",
+		"workspace", "ssh", "--user=" + user, "--agent-forwarding=false",
 		"--start-services=false", "--context", ctx, ws,
 	}
 }
@@ -33,34 +33,47 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 		name      string
 		context   string
 		workspace string
+		user      string
 		debug     bool
 		extraArgs []string
 		expected  []string
 	}{
 		{
-			name: "basic", context: "default", workspace: "my-workspace",
-			expected: baseSSHArgs("default", "my-workspace"),
+			name: "basic root user", context: "default", workspace: "my-workspace",
+			user:     "root",
+			expected: baseSSHArgs("default", "root", "my-workspace"),
+		},
+		{
+			name: "non-root workspace user", context: "default", workspace: "my-workspace",
+			user:     "vscode",
+			expected: baseSSHArgs("default", "vscode", "my-workspace"),
+		},
+		{
+			name: "empty user falls back to root", context: "default", workspace: "my-workspace",
+			user:     "",
+			expected: baseSSHArgs("default", "root", "my-workspace"),
 		},
 		{
 			name: "with debug", context: "default", workspace: "my-workspace",
-			debug:    true,
-			expected: append(baseSSHArgs("default", "my-workspace"), "--debug"),
+			user: "vscode", debug: true,
+			expected: append(baseSSHArgs("default", "vscode", "my-workspace"), "--debug"),
 		},
 		{
 			name: "with extra args", context: "prod", workspace: "ws",
+			user:      "vscode",
 			extraArgs: []string{"--stdio", "--log-output=raw"},
-			expected:  append(baseSSHArgs("prod", "ws"), "--stdio", "--log-output=raw"),
+			expected:  append(baseSSHArgs("prod", "vscode", "ws"), "--stdio", "--log-output=raw"),
 		},
 		{
 			name: "with debug and extra args", context: "default", workspace: "my-workspace",
-			debug: true, extraArgs: []string{"--stdio"},
-			expected: append(baseSSHArgs("default", "my-workspace"), "--debug", "--stdio"),
+			user: "vscode", debug: true, extraArgs: []string{"--stdio"},
+			expected: append(baseSSHArgs("default", "vscode", "my-workspace"), "--debug", "--stdio"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildSSHCommandArgs(tt.context, tt.workspace, tt.debug, tt.extraArgs)
+			got := buildSSHCommandArgs(tt.context, tt.workspace, tt.user, tt.debug, tt.extraArgs)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
