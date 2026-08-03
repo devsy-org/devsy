@@ -104,10 +104,8 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	// 0666: setup-gpg can run as root (SSH tunnel) or as the workspace's
-	// remoteUser (GPG-forwarding tunnel), sometimes concurrently. flock's
-	// default 0600 mode lets whichever process creates the file first lock
-	// every other user out with EACCES on the second process's TryLockContext.
+	// 0666: setup-gpg can run as root or the workspace's remoteUser, and
+	// flock's default 0600 mode would lock the second one out with EACCES.
 	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(0o666))
 	locked, err := lock.TryLockContext(lockCtx, 200*time.Millisecond)
 	if err != nil {
@@ -126,20 +124,14 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
 	}
 
-	// os.Chmod bypasses the umask to ensure the file has world-readable/writable
-	// permissions, which is essential when setup-gpg runs under different users
-	// in the same container. Only attempted when the mode isn't already 0666:
-	// chmod requires ownership (or root) regardless of whether it would
-	// actually change anything, so a non-owning second acquirer (e.g. a
-	// non-root user acquiring a lock file root already fixed to 0666) would
-	// get EPERM on a redundant chmod call.
+	// os.Chmod bypasses the umask flock.SetPermissions is subject to. Skipped
+	// when already 0666, since chmod needs ownership even when mode wouldn't change.
 	if needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666); err != nil {
 		_ = lock.Unlock()
 		return nil, fmt.Errorf("stat lock file: %w", err)
 	} else if needsChmod {
-		// #nosec G302 -- 0666 is intentional: setup-gpg can run as root (SSH
-		// tunnel) and as the workspace's remoteUser (GPG-forwarding tunnel),
-		// sometimes concurrently, and both need to acquire this lock.
+		// #nosec G302 -- 0666 is intentional: both root and the workspace's
+		// remoteUser must be able to acquire this lock.
 		if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
 			_ = lock.Unlock()
 			return nil, fmt.Errorf("set lock file permissions: %w", err)
@@ -149,11 +141,8 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	return func() { _ = lock.Unlock() }, nil
 }
 
-// lockFileNeedsChmod reports whether path's current permission bits differ
-// from want. Callers use this to skip a redundant os.Chmod: chmod requires
-// file ownership (or root) even when the requested mode already matches,
-// so skipping it when unnecessary avoids EPERM for a non-owning acquirer of
-// an already-correctly-mode'd lock file.
+// lockFileNeedsChmod reports whether path's mode differs from want, so
+// callers can skip a chmod that would EPERM a non-owning acquirer.
 func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {

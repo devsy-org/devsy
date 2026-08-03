@@ -122,12 +122,8 @@ func TestAcquireGPGSetupLock_FileIsWorldLockable(t *testing.T) {
 			"with EACCES")
 }
 
-// TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod
-// reproduces the multi-user scenario the lock file's world-writable mode
-// exists for: one session creates the lock (mode becomes 0666), a later
-// session on a different, non-owning user re-acquires it. That second
-// acquire must not attempt a redundant chmod, since a non-owning chmod
-// would fail with EPERM even though the mode is already correct.
+// TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod covers
+// a non-owning second acquirer of an already-0666 lock, whose chmod would EPERM.
 func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
@@ -153,11 +149,8 @@ func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testi
 	reacquire()
 }
 
-// TestAcquireGPGSetupLock_FixesWrongMode ensures the "skip chmod when
-// already 0666" optimization doesn't accidentally skip fixing a genuinely
-// wrong mode: if the lock file was somehow created with a different mode,
-// acquireGPGSetupLock must still attempt (and here, succeed at, since the
-// test process owns the file) the chmod back to 0666.
+// TestAcquireGPGSetupLock_FixesWrongMode ensures the skip-chmod-if-0666
+// optimization doesn't skip fixing a genuinely wrong mode.
 func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")

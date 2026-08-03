@@ -243,10 +243,8 @@ func isTransientBackhaulErr(err error) bool {
 }
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
-// user is the workspace's remote user (e.g. from GetRemoteUser); it must match
-// the user the container's ssh-server/gpg-setup sessions run as, or the two
-// sessions collide on the shared /tmp coordination files (devsy-gpg-setup.lock,
-// devsy.activity), which are owned by whichever session created them first.
+// user must match the ssh-server/gpg-setup sessions' user, or they collide on
+// shared /tmp coordination files (devsy-gpg-setup.lock, devsy.activity).
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
