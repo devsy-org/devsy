@@ -171,7 +171,7 @@ func extractWorkspaceData(devsyConfig *config.Config, workspaceID, data string) 
 		return fmt.Errorf("get workspace dir: %w", err)
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+	// #nosec G301
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
 		return fmt.Errorf("create workspace dir: %w", err)
 	}

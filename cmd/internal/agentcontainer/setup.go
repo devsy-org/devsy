@@ -425,11 +425,6 @@ func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.Container
 
 func (cmd *SetupContainerCmd) syncMounts(sctx *setupContext) error {
 	mounts := config.GetMounts(sctx.setupInfo)
-
-	// Snapshot restore runs regardless of the StreamMounts flag: StreamMounts
-	// only gates the legacy host-streaming path (forced true for non-docker
-	// drivers), but a snapshot-sourced workspace needs its volumes restored
-	// on every driver, docker included.
 	if sctx.workspaceInfo.Source.Snapshot != "" {
 		return restoreSnapshotMounts(sctx, mounts)
 	}
