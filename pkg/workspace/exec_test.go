@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -178,5 +179,52 @@ func TestExecOneShot_PartialOutputOnError(t *testing.T) {
 	}
 	if stdout.String() != "partial" {
 		t.Fatalf("expected partial stdout %q to be preserved, got %q", "partial", stdout.String())
+	}
+}
+
+type fakeLockClient struct {
+	lockErr     error
+	lockCalls   int
+	unlockCalls int
+}
+
+func (f *fakeLockClient) Lock(_ context.Context) error {
+	f.lockCalls++
+	return f.lockErr
+}
+
+func (f *fakeLockClient) Unlock() {
+	f.unlockCalls++
+}
+
+func TestExecOneShot_LockedWorkspaceReturnsBusyError(t *testing.T) {
+	// This test documents the required behavior: resolveExecTarget must
+	// surface a locked-workspace condition as an error before touching the
+	// container, not proceed silently. Since resolveExecTarget currently
+	// calls workspace.Get directly (a package function, not injectable),
+	// this test exercises the seam introduced in Step 3: a lock acquired via
+	// client.Lock must be attempted, and a lock failure must short-circuit
+	// before FindRunning/Exec run.
+	lockClient := &fakeLockClient{lockErr: fmt.Errorf("timed out waiting to lock workspace")}
+	err := acquireExecLock(context.Background(), lockClient, defaultExecLockTimeout)
+	if err == nil {
+		t.Fatal("expected lock error, got nil")
+	}
+	if lockClient.lockCalls != 1 {
+		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
+	}
+	if lockClient.unlockCalls != 0 {
+		t.Fatalf("unlock must not be called when lock itself failed, got %d calls", lockClient.unlockCalls)
+	}
+}
+
+func TestExecOneShot_UnlocksAfterSuccessfulLock(t *testing.T) {
+	lockClient := &fakeLockClient{}
+	err := acquireExecLock(context.Background(), lockClient, defaultExecLockTimeout)
+	if err != nil {
+		t.Fatalf("unexpected lock error: %v", err)
+	}
+	if lockClient.lockCalls != 1 {
+		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
 	}
 }

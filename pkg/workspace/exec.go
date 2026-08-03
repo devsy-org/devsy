@@ -31,6 +31,32 @@ const (
 // applies. Long enough for typical build/test, short enough to surface hangs.
 const defaultExecTimeoutSeconds = 300
 
+// execLocker is the subset of client.BaseWorkspaceClient needed to guard an
+// exec against a concurrent delete/create/rename on the same workspace.
+type execLocker interface {
+	Lock(ctx context.Context) error
+	Unlock()
+}
+
+// defaultExecLockTimeout bounds how long ExecOneShot waits for the workspace
+// lock before giving up. Kept short (unlike the 5-minute lockTimeout used by
+// delete/create) because a caller already has its own exec timeout budget
+// (see ExecOneShotOptions.ResolveTimeout) and a long lock wait would starve it.
+const defaultExecLockTimeout = 15 * time.Second
+
+// acquireExecLock attempts to lock the workspace within timeout. On success
+// it returns nil and the caller must call client.Unlock() when done. On
+// failure it returns an error and the caller must NOT call Unlock (nothing
+// was acquired).
+func acquireExecLock(ctx context.Context, client execLocker, timeout time.Duration) error {
+	lockCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := client.Lock(lockCtx); err != nil {
+		return fmt.Errorf("workspace busy (locked by a concurrent operation): %w", err)
+	}
+	return nil
+}
+
 // ResolveDockerCommand returns the docker binary to invoke. Precedence:
 // override → provider config (agent.docker.path) → default. The override is
 // honored even when workspace is nil.
@@ -451,6 +477,7 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	if err != nil {
 		return nil, err
 	}
+	defer resolved.unlock()
 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -502,6 +529,7 @@ type resolvedExecTarget struct {
 	target  ContainerTarget
 	workdir string
 	envMap  map[string]string
+	unlock  func()
 }
 
 func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedExecTarget, error) {
@@ -519,9 +547,15 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		return resolvedExecTarget{}, fmt.Errorf("resolve workspace: %w", err)
 	}
 
+	if err := acquireExecLock(ctx, client, defaultExecLockTimeout); err != nil {
+		return resolvedExecTarget{}, err
+	}
+	unlock := client.Unlock
+
 	workspaceConfig := client.WorkspaceConfig()
 	runtime, err := NewContainerRuntime(workspaceConfig, "")
 	if err != nil {
+		unlock()
 		return resolvedExecTarget{}, err
 	}
 
@@ -529,6 +563,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,
 	)
 	if err != nil {
+		unlock()
 		return resolvedExecTarget{}, err
 	}
 
@@ -546,6 +581,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		target:  target,
 		workdir: workdir,
 		envMap:  envMap,
+		unlock:  unlock,
 	}, nil
 }
 
