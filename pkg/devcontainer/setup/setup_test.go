@@ -180,3 +180,28 @@ func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
 		t.Errorf("mode = %o, want 0644 (a stale 0600 file must be widened)", got)
 	}
 }
+
+// TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged guards
+// against the unchanged-content early return skipping the widen step: a
+// file at a stale restrictive mode must get corrected on the next call
+// even if the content it's writing happens to already match.
+func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "result.json")
+	content := []byte(`{"ok":true}`)
+	// #nosec G306 -- intentional: simulating a pre-fix file left at 0600
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if err := writeResultFileTo(path, content); err != nil {
+		t.Fatalf("writeResultFileTo: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("mode = %o, want 0644 even though content was already up to date", got)
+	}
+}

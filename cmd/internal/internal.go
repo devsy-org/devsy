@@ -46,6 +46,7 @@ func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd.AddCommand(withPreRun(NewGetImageCmd(globalFlags)))
 	cmd.AddCommand(withPreRun(NewGetImagePlatformsCmd(globalFlags)))
 	cmd.AddCommand(withPreRun(NewBrowserTunnelCmd(globalFlags)))
+	cmd.AddCommand(withPreRun(NewWidenSharedFileCmd(globalFlags)))
 
 	return cmd
 }

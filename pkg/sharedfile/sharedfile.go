@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 )
 
 // EnsureMode ensures path exists with exactly mode permissions, creating it
@@ -37,18 +38,27 @@ func EnsureMode(path string, mode os.FileMode) error {
 }
 
 // WidenIfNeeded chmods path to mode if its current mode differs, skipping
-// the chmod entirely when it's already correct. Rejects a path that
-// resolves to a symlink rather than following it.
+// the chmod entirely when it's already correct. Opens path with O_NOFOLLOW
+// and chmods the resulting descriptor rather than the path, so a symlink
+// swapped in after a check-then-chmod by path couldn't redirect the chmod
+// onto an arbitrary target — path is a fixed, world-writable coordination
+// file any container user could otherwise race.
 func WidenIfNeeded(path string, mode os.FileMode) error {
-	needsChmod, err := needsChmod(path, mode)
+	//nolint:gosec // callers intentionally widen a fixed coordination-file path
+	f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return err
+		return fmt.Errorf("open %s: %w", path, err)
 	}
-	if !needsChmod {
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.Mode().Perm() == mode.Perm() {
 		return nil
 	}
-	//nolint:gosec // callers intentionally widen a fixed coordination-file path
-	if err := os.Chmod(path, mode); err != nil {
+	if err := f.Chmod(mode); err != nil {
 		return fmt.Errorf("chmod %s: %w", path, err)
 	}
 	return nil
@@ -67,19 +77,4 @@ func createIfMissing(path string, mode os.FileMode) error {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
 	return f.Close()
-}
-
-// needsChmod reports whether path's current permission bits differ from
-// want. Uses Lstat and rejects symlinks: os.Chmod follows them, so a
-// coordination-file path replaced with a symlink could redirect a chmod
-// onto an arbitrary file.
-func needsChmod(path string, want os.FileMode) (bool, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return false, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return false, fmt.Errorf("refusing to chmod %s: path is a symlink", path)
-	}
-	return info.Mode().Perm() != want.Perm(), nil
 }

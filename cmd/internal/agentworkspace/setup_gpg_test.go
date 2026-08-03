@@ -193,8 +193,8 @@ func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
 	require.NoError(t, os.Symlink(target, gpgSetupLockPath))
 
 	_, err := acquireGPGSetupLock(context.Background())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "symlink")
+	require.Error(t, err,
+		"opening the symlinked lock path with O_NOFOLLOW must fail, not follow it")
 
 	info, err := os.Stat(target)
 	require.NoError(t, err)

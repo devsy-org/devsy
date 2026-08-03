@@ -223,7 +223,10 @@ func writeResultFileTo(path string, rawBytes []byte) error {
 	// #nosec G304 -- callers pass a fixed const path; parameterized only for tests
 	existing, _ := os.ReadFile(path)
 	if string(rawBytes) == string(existing) {
-		return nil
+		// Widen even when skipping the write: a stale file left at a
+		// restrictive mode by a pre-fix binary must still get readable by
+		// the other session's user, not just on the next content change.
+		return sharedfile.WidenWithSudoFallback(context.Background(), path, 0o644)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
