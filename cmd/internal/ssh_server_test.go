@@ -194,7 +194,7 @@ func TestEnsureActivityFile_CreatesWorldWritableFile(t *testing.T) {
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(activityFileMode), info.Mode().Perm(),
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
 		"the activity file must be 0666 so both the root browser-IDE tunnel and "+
 			"a non-root GPG-forwarding tunnel can touch it")
 }

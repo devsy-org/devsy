@@ -206,3 +206,28 @@ func TestLockFileNeedsChmod_StatErrorPropagates(t *testing.T) {
 	_, err := lockFileNeedsChmod(filepath.Join(t.TempDir(), "does-not-exist"), 0o666)
 	require.Error(t, err)
 }
+
+// TestAcquireGPGSetupLock_RejectsSymlink guards against a symlink planted at
+// the lock path redirecting os.Chmod onto an arbitrary target file, since
+// os.Chmod follows symlinks and this lock path is a fixed, predictable
+// world-writable /tmp path any container user can pre-create.
+func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	dir := t.TempDir()
+	gpgSetupLockPath = filepath.Join(dir, "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	target := filepath.Join(dir, "target")
+	require.NoError(t, os.WriteFile(target, nil, 0o600))
+	require.NoError(t, os.Symlink(target, gpgSetupLockPath))
+
+	_, err := acquireGPGSetupLock(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+
+	info, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
+		"the symlink target's mode must be untouched, not widened to 0666")
+}

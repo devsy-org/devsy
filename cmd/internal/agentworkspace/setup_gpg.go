@@ -142,11 +142,16 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 }
 
 // lockFileNeedsChmod reports whether path's mode differs from want, so
-// callers can skip a chmod that would EPERM a non-owning acquirer.
+// callers can skip a chmod that would EPERM a non-owning acquirer. Uses
+// Lstat and rejects symlinks: os.Chmod follows them, so a lock path
+// replaced with a symlink could redirect the chmod onto an arbitrary file.
 func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return false, fmt.Errorf("refusing to chmod %s: path is a symlink", path)
 	}
 	return info.Mode().Perm() != want.Perm(), nil
 }
