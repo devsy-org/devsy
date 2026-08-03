@@ -15,6 +15,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/token"
 	"github.com/devsy-org/ssh"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func encodeTestToken(t *testing.T, tok token.Token) string {
@@ -183,4 +185,28 @@ func TestRunActivityHeartbeatExitsOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("heartbeat did not exit within 2s of context cancel")
 	}
+}
+
+func TestEnsureActivityFile_CreatesWorldWritableFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+
+	require.NoError(t, ensureActivityFile(path))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(activityFileMode), info.Mode().Perm(),
+		"the activity file must be 0666 so both the root browser-IDE tunnel and "+
+			"a non-root GPG-forwarding tunnel can touch it")
+}
+
+func TestEnsureActivityFile_NoOpsWhenFileAlreadyExists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+	require.NoError(t, os.WriteFile(path, []byte("existing"), 0o600))
+
+	require.NoError(t, ensureActivityFile(path))
+
+	data, err := os.ReadFile(path) //nolint:gosec // test-owned temp path
+	require.NoError(t, err)
+	assert.Equal(t, "existing", string(data),
+		"ensureActivityFile must not truncate a file that already exists")
 }
