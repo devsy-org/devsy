@@ -67,10 +67,10 @@ systemctl --user status podman.socket
 ls -la $XDG_RUNTIME_DIR/podman/podman.sock
 ```
 
-If your WSL distro does not have systemd available, start the API service manually instead (run it in the background or under a process manager so it survives after you close the terminal):
+If your WSL distro does not have systemd available, start the API service manually instead. A trailing `&` alone won't survive terminal closure — use `setsid`/`nohup` or a process manager instead. `--time=0` disables the API's own inactivity shutdown timeout:
 
 ```bash
-podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock &
+setsid nohup podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock >/tmp/podman-service.log 2>&1 &
 ```
 
 Note the socket path — you will need it for the `PODMAN_HOST` option:
@@ -188,7 +188,7 @@ systemctl --user status podman.socket
 ls -la $XDG_RUNTIME_DIR/podman/podman.sock
 ```
 
-If it does not exist or is inactive, start it with `systemctl --user enable --now podman.socket`. On systemd-less environments (some WSL distros), run `podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock &` instead.
+If it does not exist or is inactive, start it with `systemctl --user enable --now podman.socket`. On systemd-less environments (some WSL distros), run `setsid nohup podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock >/tmp/podman-service.log 2>&1 &` instead — a trailing `&` alone won't survive terminal closure.
 
 If the socket path differs from the default, set `PODMAN_HOST` to the correct path:
 
@@ -202,15 +202,13 @@ Podman uses Buildah for image builds, not Docker BuildKit. Most Dockerfiles are 
 
 ### `podman compose` vs `docker-compose`
 
-`podman compose` is not a built-in implementation — Podman delegates to an externally installed Compose provider, either the `docker-compose` binary/plugin or the `podman-compose` Python package. Install one before relying on `podman compose`:
+`podman compose` is not a built-in implementation — Podman delegates to an externally installed Compose provider, either the `podman-compose` Python package or a standalone `docker-compose` binary. Install one before relying on `podman compose`:
 
 ```bash
-# Option 1: podman-compose
 sudo apt-get install -y podman-compose
-
-# Option 2: docker-compose
-sudo apt-get install -y docker-compose-plugin
 ```
+
+`docker-compose-plugin` is not a substitute here — it installs the `docker compose` subcommand of the Docker CLI, not a standalone `docker-compose` executable, and it pulls in Docker as a dependency, which defeats the point of a Docker-free Podman setup.
 
 Verify a provider is available:
 

@@ -24,7 +24,7 @@ That will explain how this is done and what can be configured.
 
 ### Non-Machine Providers
 
-For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if its not needed. If configured on the provider, Devsy will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will restart the container again.
+For non-machine providers, Devsy can automatically kill the container it's running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if it's not needed. If configured on the provider, Devsy will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will restart the container.
 
 <Callout type="warn" title="Apple provider deletes rather than stops">
 The Apple provider is the exception: its `INACTIVITY_TIMEOUT` option description states that it deletes the container after the idle period, rather than just stopping it like Docker, Podman and Microsandbox. As with any deleted (non-machine) container, only data on mounted volumes survives; anything in the writable layer is lost.

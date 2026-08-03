@@ -142,10 +142,10 @@ For example on Debian Linux:
 systemctl restart ssh.service
 ```
 
-5. Run a `devsy workspace up` command:
+5. Run a `devsy workspace up` command, specifying the SSH provider:
 
 ```console
-devsy workspace up <GITHUB-REPOSITORY-URL> --ide=none
+devsy workspace up <GITHUB-REPOSITORY-URL> --provider ssh --ide=none
 ```
 
 <Callout title="DOCKER_HOST and compose-based devcontainers">

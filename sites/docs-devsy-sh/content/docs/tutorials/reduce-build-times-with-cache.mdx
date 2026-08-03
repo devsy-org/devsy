@@ -35,7 +35,7 @@ sudo systemctl restart docker
 Verify the active storage driver is now `containerd`:
 
 ```
-docker info | grep -i "storage driver"
+docker info --format '{{.DriverStatus}}'
 ```
 
 **Warning:** switching the storage backend does not delete any existing images or containers, but images/containers stored under the previous backend will not be visible while the new backend is active. If you don't see an image you expect after switching, it likely still exists under the previous storage driver rather than having been removed.

@@ -152,16 +152,6 @@
   color: var(--ink);
 }
 
-.home-page .nav-link-single {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--slate);
-}
-
-.home-page .nav-link-single:hover {
-  color: var(--ink);
-}
-
 .home-page .nav-cta {
   display: flex;
   align-items: center;
@@ -257,8 +247,7 @@
     display: none;
   }
 
-  .home-page .nav-cta .btn,
-  .home-page .nav-cta .nav-link-single {
+  .home-page .nav-cta .btn {
     width: 100%;
     justify-content: center;
     text-align: center;

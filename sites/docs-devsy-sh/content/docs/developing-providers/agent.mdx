@@ -46,7 +46,7 @@ agent: # You can also use options within this section (see injectGitCredentials 
 
 Breaking down the options:
 
-- **path**: where to place the agent on the remote machine. Use `${DEVSY}` here if you want to use the local machine instead.
+- **path**: where to place the agent on the remote machine. This controls the agent's location; running on the local machine instead is controlled by the separate **local** field below, not by the value of `path`.
 - **local**: if true, signals that Devsy is running directly on the current machine (as opposed to a remote VM or container reached over SSH). All of Devsy's built-in providers (`docker`, `podman`, `kubernetes`, `apple`, `microsandbox`) set this to `true`.
 - **driver**: which driver to use to run the container, [check the Drivers section for more information](./driver.mdx)
 - **inactivityTimeout**: after how much time to shut down the machine. Use for machine providers
