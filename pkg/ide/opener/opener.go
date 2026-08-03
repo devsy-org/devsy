@@ -470,6 +470,7 @@ func startFleet(ctx context.Context, params IDEParams) (string, error) {
 	sshCmd, err := tunnel.CreateSSHCommand(
 		ctx,
 		params.Client,
+		params.User,
 		[]string{names.Flag(names.Command), "cat " + fleet.FleetURLFileName},
 	)
 	if err != nil {
