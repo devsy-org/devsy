@@ -1,15 +1,51 @@
 package tunnel
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"testing"
 
+	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeWorkspaceClient struct{}
+
+func (fakeWorkspaceClient) Provider() string { return "" }
+func (fakeWorkspaceClient) Context() string  { return "" }
+
+func (fakeWorkspaceClient) RefreshOptions(
+	ctx context.Context, userOptions []string, reconfigure bool,
+) error {
+	return nil
+}
+
+func (fakeWorkspaceClient) Status(
+	ctx context.Context, options client2.StatusOptions,
+) (client2.Status, error) {
+	return "", nil
+}
+
+func (fakeWorkspaceClient) Stop(ctx context.Context, options client2.StopOptions) error {
+	return nil
+}
+
+func (fakeWorkspaceClient) Delete(ctx context.Context, options client2.DeleteOptions) error {
+	return nil
+}
+func (fakeWorkspaceClient) Workspace() string                    { return "" }
+func (fakeWorkspaceClient) WorkspaceConfig() *provider.Workspace { return nil }
+func (fakeWorkspaceClient) Lock(ctx context.Context) error       { return nil }
+func (fakeWorkspaceClient) Unlock()                              {}
+
+var _ client2.BaseWorkspaceClient = fakeWorkspaceClient{}
 
 // exitError runs a shell command that exits with the given code and returns
 // the resulting error (which wraps *exec.ExitError).
@@ -77,6 +113,23 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+func TestBuildBackhaulCmd_UsesResolvedRemoteUser(t *testing.T) {
+	writer := &bytes.Buffer{}
+	cmd := buildBackhaulCmd(context.Background(), backhaulCmdParams{
+		execPath:   "/usr/bin/true",
+		remoteUser: "vscode",
+		client:     fakeWorkspaceClient{},
+		authSockID: "sock123",
+		writer:     writer,
+	})
+
+	joined := strings.Join(cmd.Args, " ")
+	assert.Contains(t, joined, "--user vscode",
+		"backhaul connection must use the resolved workspace user, not root, "+
+			"so it doesn't fight the primary tunnel's ssh-server/setup-gpg sessions "+
+			"over the shared /tmp coordination files")
 }
 
 func TestIsTransientBackhaulErr(t *testing.T) {
