@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -20,6 +21,8 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
+
+const gpgTestKeyFingerprint = "07F681B9FD6C3411F679BFD1F51769DB572DDD3F"
 
 // setupBrowserIDE prepares a docker provider + workspace tempdir and registers
 // the standard cleanup deferred to DeferCleanup. It returns the framework and
@@ -304,6 +307,61 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("ok"),
 					"remote user should be able to create ~/.local/lib")
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+			},
+		)
+
+		ginkgo.It(
+			"does not collide on shared /tmp coordination files when GPG forwarding "+
+				"races the browser-IDE tunnel under a non-root remoteUser",
+			ginkgo.Label("gpg"),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				if runtime.GOOS == "windows" {
+					ginkgo.Skip("skipping on windows")
+				}
+
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-gpg-nonroot")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+				err = f.DevsyProviderAdd(ctx, "docker")
+				framework.ExpectNoError(err)
+				err = f.DevsyProviderUse(ctx, "docker")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
+				framework.ExpectNoError(
+					framework.ImportGpgKey(
+						filepath.Join(initialDir, "tests/ssh/testdata/gpg-forwarding/gpg-private.key"),
+					),
+				)
+
+				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
+					"--ide=openvscode", "--ide-launch=headless",
+					names.Flag(names.SSHGPGForwarding), "--debug")
+				framework.ExpectNoError(err)
+				combined := stdout + stderr
+
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring("permission denied"),
+					"root and vscode sessions must not collide on /tmp/devsy-gpg-setup.lock; "+
+						"got:\n%s", combined)
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring("operation not permitted"),
+					"root and vscode sessions must not collide on /tmp/devsy.activity; "+
+						"got:\n%s", combined)
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring("continuing without it"),
+					"GPG agent forwarding must succeed end-to-end for a non-root remoteUser "+
+						"browser IDE; got:\n%s", combined)
+
+				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
+				defer cancelSSH()
+				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
+				framework.ExpectNoError(err)
 
 				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
 			},
