@@ -4,7 +4,6 @@
     "create-a-workspace",
     "connect-to-a-workspace",
     "devcontainer-json",
-    "environment-variables-in-devcontainer-json",
     "prebuild-a-workspace",
     "workspace-snapshots",
     "continuous-integration",

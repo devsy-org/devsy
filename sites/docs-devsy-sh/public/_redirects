@@ -16,3 +16,4 @@
 /docs/developing-in-workspaces/what-are-workspaces  /docs/developing-in-workspaces/create-a-workspace  301!
 /docs/developing-in-workspaces/stop-a-workspace     /docs/developing-in-workspaces/stop-and-delete-a-workspace#stop-a-workspace    301!
 /docs/developing-in-workspaces/delete-a-workspace   /docs/developing-in-workspaces/stop-and-delete-a-workspace#delete-a-workspace  301!
+/docs/developing-in-workspaces/environment-variables-in-devcontainer-json  /docs/developing-in-workspaces/devcontainer-json#environment-variables-in-devcontainerjson  301!
