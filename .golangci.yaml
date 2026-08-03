@@ -50,3 +50,4 @@ linters:
           arguments: [4]
         - name: function-result-limit
           arguments: [3]
+        - name: blank-imports
