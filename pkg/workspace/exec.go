@@ -51,9 +51,7 @@ func acquireExecLock(ctx context.Context, client execLocker, timeout time.Durati
 	return nil
 }
 
-// ResolveDockerCommand returns the docker binary to invoke. Precedence:
-// override → provider config (agent.docker.path) → default. The override is
-// honored even when workspace is nil.
+// ResolveDockerCommand precedence: override → provider config → default.
 func ResolveDockerCommand(
 	workspace *provider2.Workspace,
 	override string,
