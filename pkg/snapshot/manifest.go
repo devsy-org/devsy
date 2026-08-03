@@ -271,6 +271,13 @@ func ParseManifest(raw []byte) (*Manifest, error) {
 			ManifestArtifactType,
 		)
 	}
+	if m.MediaType != ManifestMediaType {
+		return nil, fmt.Errorf(
+			"parse snapshot manifest: unsupported mediaType %q, expected %q",
+			m.MediaType,
+			ManifestMediaType,
+		)
+	}
 	if _, _, err := validateLayers(m.Layers); err != nil {
 		return nil, fmt.Errorf("parse snapshot manifest: %w", err)
 	}

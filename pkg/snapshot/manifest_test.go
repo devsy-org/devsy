@@ -280,6 +280,24 @@ func TestParseManifest_RejectsDuplicateContainerImageLayers(t *testing.T) {
 	require.Contains(t, err.Error(), "more than one container image layer")
 }
 
+func TestParseManifest_RejectsWrongMediaType(t *testing.T) {
+	m := &Manifest{
+		SchemaVersion: 2,
+		MediaType:     "application/vnd.oci.image.index.v1+json",
+		ArtifactType:  ManifestArtifactType,
+		Layers: []Descriptor{
+			{MediaType: defaultContainerImageMediaType, Digest: "sha256:" + zeroDigest},
+			{MediaType: VolumesMediaType, Digest: "sha256:" + oneDigest},
+		},
+	}
+	raw, err := m.MarshalOCI()
+	require.NoError(t, err)
+
+	_, err = ParseManifest(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported mediaType")
+}
+
 func TestParseManifest_RejectsNonSnapshotArtifactType(t *testing.T) {
 	// A plain OCI/Docker image manifest also has schemaVersion 2, so it must
 	// be rejected by artifactType instead, or a tag pointing at an ordinary

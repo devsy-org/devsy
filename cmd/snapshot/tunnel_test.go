@@ -2,9 +2,11 @@ package snapshot
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -24,17 +26,21 @@ func TestNewLocalTunnelClient_StreamsMountContents(t *testing.T) {
 		{Type: testBindMountType, Source: dir, Target: "/workspaces/proj"},
 	}
 
-	client, cleanup, err := newLocalTunnelClient(context.Background(), mounts)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, cleanup, err := newLocalTunnelClient(ctx, mounts)
 	require.NoError(t, err)
 	defer cleanup()
 
-	stream, err := client.StreamSnapshotVolumes(context.Background(), &tunnel.Empty{})
+	stream, err := client.StreamSnapshotVolumes(ctx, &tunnel.Empty{})
 	require.NoError(t, err)
 
 	var total int
 	for {
 		chunk, recvErr := stream.Recv()
 		if recvErr != nil {
+			require.ErrorIs(t, recvErr, io.EOF)
 			break
 		}
 		total += len(chunk.Content)

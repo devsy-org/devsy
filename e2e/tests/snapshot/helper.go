@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -84,7 +85,35 @@ func startLocalRegistry(
 		_ = dockerHelper.Remove(cleanupCtx, id)
 	}
 
+	if err := waitForRegistryReady(ctx); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+
 	return registryHost, cleanup, nil
+}
+
+// waitForRegistryReady polls the registry's /v2/ endpoint until it responds,
+// since `docker run -d` returning only means the container was created, not
+// that its HTTP server is accepting connections yet — a push immediately
+// after startLocalRegistry returns can otherwise race a "connection refused".
+func waitForRegistryReady(ctx context.Context) error {
+	url := "http://" + registryHost + "/v2/"
+	client := &http.Client{Timeout: 2 * time.Second}
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err == nil {
+			if resp, err := client.Do(req); err == nil {
+				_ = resp.Body.Close()
+				return nil
+			}
+		}
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return fmt.Errorf("wait for local registry to become ready: %w", ctx.Err())
+		}
+	}
 }
 
 // registryStartAttempts bounds retries for a transient `docker run` failure
