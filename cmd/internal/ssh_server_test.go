@@ -210,3 +210,29 @@ func TestEnsureActivityFile_NoOpsWhenFileAlreadyExists(t *testing.T) {
 	assert.Equal(t, "existing", string(data),
 		"ensureActivityFile must not truncate a file that already exists")
 }
+
+func TestTouchActivityFile_CreatesFileAndUpdatesMtime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+
+	touchActivityFile(path)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second)
+}
+
+func TestTouchActivityFile_UpdatesMtimeOfExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+	old := time.Now().Add(-time.Hour)
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.WriteFile(path, nil, 0o666))
+	require.NoError(t, os.Chtimes(path, old, old))
+
+	touchActivityFile(path)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second,
+		"touchActivityFile must advance mtime on an already-existing file")
+}

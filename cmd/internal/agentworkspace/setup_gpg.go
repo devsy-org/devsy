@@ -3,11 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -17,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 )
@@ -101,19 +98,28 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+// gpgSetupLockMode is 0666: setup-gpg can run as root or the workspace's
+// remoteUser, and flock's default 0600 mode would lock the second one out
+// with EACCES. See pkg/sharedfile for why a world-writable coordination
+// file needs this and how it's kept safe.
+const gpgSetupLockMode = 0o666
+
 // acquireGPGSetupLock takes the cross-process lock guarding setup-gpg. On
 // success it returns a func that releases the lock.
 func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	if err := widenStaleLockFile(lockCtx); err != nil {
-		return nil, err
+	// Repairs a lock file a pre-existing binary left at a restrictive mode,
+	// which this process (running as whichever user didn't create it) can't
+	// fix itself once flock.TryLockContext below fails with EACCES.
+	if err := sharedfile.WidenWithSudoFallback(
+		lockCtx, gpgSetupLockPath, gpgSetupLockMode, log.Debugf,
+	); err != nil {
+		return nil, fmt.Errorf("widen stale lock file: %w", err)
 	}
 
-	// 0666: setup-gpg can run as root or the workspace's remoteUser, and
-	// flock's default 0600 mode would lock the second one out with EACCES.
-	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(0o666))
+	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(gpgSetupLockMode))
 	locked, err := lock.TryLockContext(lockCtx, 200*time.Millisecond)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -131,64 +137,14 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
 	}
 
-	if needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666); err != nil {
+	// flock.SetPermissions is subject to the process umask on create;
+	// widen again to guarantee the mode regardless of who created it.
+	if err := sharedfile.WidenIfNeeded(gpgSetupLockPath, gpgSetupLockMode); err != nil {
 		_ = lock.Unlock()
-		return nil, fmt.Errorf("stat lock file: %w", err)
-	} else if needsChmod {
-		// #nosec G302 -- both root and the workspace's remoteUser must
-		// be able to acquire this lock.
-		if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
-			_ = lock.Unlock()
-			return nil, fmt.Errorf("set lock file permissions: %w", err)
-		}
+		return nil, fmt.Errorf("set lock file permissions: %w", err)
 	}
 
 	return func() { _ = lock.Unlock() }, nil
-}
-
-// lockFileNeedsChmod reports whether path's mode differs from want, so
-// callers can skip a chmod that would EPERM a non-owning acquirer.
-func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return false, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return false, fmt.Errorf("refusing to chmod %s: path is a symlink", path)
-	}
-	return info.Mode().Perm() != want.Perm(), nil
-}
-
-func widenStaleLockFile(ctx context.Context) error {
-	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("stat lock file: %w", err)
-	}
-	if !needsChmod {
-		return nil
-	}
-
-	// #nosec G302 -- 0666 is intentional; see acquireGPGSetupLock.
-	if err := os.Chmod(gpgSetupLockPath, 0o666); err == nil {
-		return nil
-	} else if !errors.Is(err, fs.ErrPermission) {
-		return fmt.Errorf("widen stale lock file: %w", err)
-	}
-
-	// -n: fail immediately instead of prompting if sudo needs a password,
-	// so a misconfigured container can't hang acquireGPGSetupLock forever.
-	//nolint:gosec // gpgSetupLockPath is a fixed path, not user input
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "chmod", "0666", gpgSetupLockPath)
-	if err := cmd.Run(); err != nil {
-		log.Debugf(
-			"sudo chmod stale gpg setup lock (non-fatal, flock will surface the real error): %v",
-			err,
-		)
-	}
-	return nil
 }
 
 func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {

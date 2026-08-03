@@ -136,12 +136,6 @@ func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testi
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o666), info.Mode().Perm())
 
-	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
-	require.NoError(t, err)
-	assert.False(t, needsChmod,
-		"a lock file already at 0666 must not need a chmod, since a "+
-			"non-owning second acquirer's chmod would fail with EPERM")
-
 	reacquire, err := acquireGPGSetupLock(context.Background())
 	require.NoError(t, err, "second acquisition of an already-0666 lock file must succeed")
 	reacquire()
@@ -160,10 +154,6 @@ func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
 	// #nosec G302 -- intentional: simulating a wrong pre-existing mode
 	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o644))
 
-	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
-	require.NoError(t, err)
-	assert.True(t, needsChmod, "a lock file at 0644 must be reported as needing a chmod to 0666")
-
 	reacquire, err := acquireGPGSetupLock(context.Background())
 	require.NoError(t, err)
 	defer reacquire()
@@ -172,35 +162,6 @@ func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
 		"acquireGPGSetupLock must fix a wrong mode back to 0666")
-}
-
-func TestLockFileNeedsChmod(t *testing.T) {
-	tests := []struct {
-		name   string
-		mode   os.FileMode
-		want   os.FileMode
-		expect bool
-	}{
-		{name: "already matches", mode: 0o666, want: 0o666, expect: false},
-		{name: "narrower mode needs widening", mode: 0o644, want: 0o666, expect: true},
-		{name: "wider mode needs narrowing", mode: 0o777, want: 0o666, expect: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "lock")
-			require.NoError(t, os.WriteFile(path, nil, tc.mode))
-			require.NoError(t, os.Chmod(path, tc.mode))
-
-			got, err := lockFileNeedsChmod(path, tc.want)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expect, got)
-		})
-	}
-}
-
-func TestLockFileNeedsChmod_StatErrorPropagates(t *testing.T) {
-	_, err := lockFileNeedsChmod(filepath.Join(t.TempDir(), "does-not-exist"), 0o666)
-	require.Error(t, err)
 }
 
 func TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile(t *testing.T) {
@@ -239,33 +200,4 @@ func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
 		"the symlink target's mode must be untouched, not widened to 0666")
-}
-
-func TestWidenStaleLockFile_NoOpsWhenFileMissingOrAlreadyCorrect(t *testing.T) {
-	origPath := gpgSetupLockPath
-	defer func() { gpgSetupLockPath = origPath }()
-
-	gpgSetupLockPath = filepath.Join(t.TempDir(), "does-not-exist")
-	err := widenStaleLockFile(context.Background())
-	require.NoError(t, err, "a missing lock file is flock's job to create, not this")
-
-	gpgSetupLockPath = filepath.Join(t.TempDir(), "already-0666")
-	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
-	//nolint:gosec // test fixture, intentional
-	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o666))
-	require.NoError(t, widenStaleLockFile(context.Background()))
-}
-
-func TestWidenStaleLockFile_WidensRestrictiveMode(t *testing.T) {
-	origPath := gpgSetupLockPath
-	defer func() { gpgSetupLockPath = origPath }()
-
-	gpgSetupLockPath = filepath.Join(t.TempDir(), "restrictive")
-	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
-
-	require.NoError(t, widenStaleLockFile(context.Background()))
-
-	info, err := os.Stat(gpgSetupLockPath)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
 }
