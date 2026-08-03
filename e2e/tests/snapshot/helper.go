@@ -10,6 +10,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // registryHostPort is a fixed host port for the local registry fixture,
@@ -93,6 +94,11 @@ func startLocalRegistry(
 	return registryHost, cleanup, nil
 }
 
+// registryReadyTimeout bounds waitForRegistryReady on its own, in addition
+// to whatever's left on the caller's ctx: registry startup is normally
+// sub-second, so this is generous headroom, not a realistic wait.
+const registryReadyTimeout = 30 * time.Second
+
 // waitForRegistryReady polls the registry's /v2/ endpoint until it responds,
 // since `docker run -d` returning only means the container was created, not
 // that its HTTP server is accepting connections yet — a push immediately
@@ -100,20 +106,26 @@ func startLocalRegistry(
 func waitForRegistryReady(ctx context.Context) error {
 	url := "http://" + registryHost + "/v2/"
 	client := &http.Client{Timeout: 2 * time.Second}
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err == nil {
-			if resp, err := client.Do(req); err == nil {
-				_ = resp.Body.Close()
-				return nil
+
+	err := wait.PollUntilContextTimeout(
+		ctx, 500*time.Millisecond, registryReadyTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return false, nil
 			}
-		}
-		select {
-		case <-time.After(500 * time.Millisecond):
-		case <-ctx.Done():
-			return fmt.Errorf("wait for local registry to become ready: %w", ctx.Err())
-		}
+			resp, err := client.Do(req)
+			if err != nil {
+				return false, nil
+			}
+			_ = resp.Body.Close()
+			return true, nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("wait for local registry to become ready: %w", err)
 	}
+	return nil
 }
 
 // registryStartAttempts bounds retries for a transient `docker run` failure
