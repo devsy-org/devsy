@@ -51,7 +51,7 @@ func acquireExecLock(ctx context.Context, client execLocker, timeout time.Durati
 	return nil
 }
 
-// ResolveDockerCommand precedence: override → provider config → default.
+// ResolveDockerCommand precedence: override -> provider config -> default.
 func ResolveDockerCommand(
 	workspace *provider2.Workspace,
 	override string,
