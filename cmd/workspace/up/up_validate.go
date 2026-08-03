@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 )
 
 const (
@@ -21,6 +23,8 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
+	cmd.applySkipLaunchIDEDefault()
+
 	if err := devcontainer.ResolveSourceSpec(&cmd.CLIOptions); err != nil {
 		return err
 	}
@@ -44,6 +48,20 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+// applySkipLaunchIDEDefault mirrors the pairing RunHeadless already applies
+// deliberately (up.go's RunHeadless sets IDELaunch=LaunchSkip and
+// IDE=config.IDENone together): if the caller asked to skip IDE launch and
+// did not explicitly choose an IDE, also skip the IDE server install by
+// defaulting IDE to none. Without this, --ide-launch=skip only suppresses
+// the host-side open, while the container still downloads and installs an
+// IDE server binary nobody asked for (see cmd/internal/agentcontainer/setup.go
+// installIDE, which is gated purely on IDE name, not IDELaunch).
+func (cmd *UpCmd) applySkipLaunchIDEDefault() {
+	if cmd.IDELaunch == opener.LaunchSkip && cmd.IDE == "" {
+		cmd.IDE = string(config.IDENone)
+	}
 }
 
 func (cmd *UpCmd) validateUserEnvProbe() error {
