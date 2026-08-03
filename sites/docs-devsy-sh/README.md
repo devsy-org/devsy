@@ -1,39 +1,33 @@
 # Documentation
 
-This website is built using [Docusaurus 2](https://v2.docusaurus.io/), a modern static website generator.
+This website is built using [Fumadocs](https://fumadocs.dev/), a Next.js-based documentation framework.
 
 ### Installation
 
 ```
-$ yarn
+$ npm install
 ```
 
 ### Local Development
 
 ```
-$ yarn start
+$ npm run dev
 ```
 
-This command starts a local development server and open up a browser window. Most changes are reflected live without having to restart the server.
+This command starts a local development server. Most changes are reflected live without having to restart the server.
 
 ### Build
 
 ```
-$ yarn build
+$ npm run build
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+This command generates a static export into the `out` directory and can be served using any static content hosting service.
 
+### Check Links
 
-## Creating New Versions
-
-### 1. Generate Command Docs
-```bash
-cd ../ # main project directory
-go run -mod=vendor ./hack/gen-docs.go
+```
+$ npm run check-links
 ```
 
-### 2. Create Version
-```bash
-yarn run docusaurus docs:version 0.1
-```
+This command validates internal links across the docs content.
