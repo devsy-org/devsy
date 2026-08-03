@@ -38,10 +38,12 @@ type jsonRPCResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      *int64          `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
+}
+
+type jsonRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 // StartMCPServer launches `devsy mcp serve` and completes the MCP initialize
