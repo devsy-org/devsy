@@ -22,25 +22,22 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 
 	log.Infof("deleting devcontainer: devcontainerID=%s", containerDetails.ID)
 	if isDockerCompose, projectName := getDockerComposeProject(containerDetails); isDockerCompose {
-		err = r.deleteDockerCompose(ctx, projectName, options.RemoveVolumes)
-		if err != nil {
-			return err
-		}
-	} else {
-		if strings.ToLower(containerDetails.State.Status) == "running" {
-			err = r.driver.StopDevContainer(ctx, r.id)
-			if err != nil {
-				return err
-			}
-		}
+		return r.deleteDockerCompose(ctx, projectName, options.RemoveVolumes)
+	}
+	return r.stopAndDeleteContainer(ctx, containerDetails)
+}
 
-		err = r.driver.DeleteDevContainer(ctx, r.id)
-		if err != nil {
+// stopAndDeleteContainer stops containerDetails' devcontainer if it
+// is running, then deletes it.
+func (r *runner) stopAndDeleteContainer(
+	ctx context.Context, containerDetails *config.ContainerDetails,
+) error {
+	if strings.ToLower(containerDetails.State.Status) == "running" {
+		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 			return err
 		}
 	}
-
-	return nil
+	return r.driver.DeleteDevContainer(ctx, r.id)
 }
 
 func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
