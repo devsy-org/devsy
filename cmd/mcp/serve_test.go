@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,21 +63,70 @@ func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("DEVSY_HOME", home)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "devsy-test", Version: "test"}, nil)
-	serveCmd := &ServeCmd{GlobalFlags: &flags.GlobalFlags{}, MaxConcurrentOps: 1}
+	g := &flags.GlobalFlags{}
+	serveCmd := &ServeCmd{GlobalFlags: g, ExecOutputCap: 1024, MaxConcurrentOps: 1}
 	sem := newOpSemaphore(serveCmd.MaxConcurrentOps)
 	serveCmd.registerTools(server, sem)
+
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- server.Run(ctx, serverTransport)
+	}()
+
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "test-client", Version: "0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	execArgs := map[string]any{
+		"name":    "some-workspace",
+		"command": []string{"echo", "hi"},
+	}
 
 	release, err := sem.acquire(context.Background())
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	_, acquireErr := sem.acquire(ctx)
-	if acquireErr == nil {
-		t.Fatal("expected second acquire to block/fail while the only slot is held")
+	blockedCtx, blockedCancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer blockedCancel()
+	_, callErr := session.CallTool(blockedCtx, &sdkmcp.CallToolParams{
+		Name:      "workspace_exec",
+		Arguments: execArgs,
+	})
+	if callErr == nil {
+		t.Fatal("expected workspace_exec call to fail while the only semaphore slot is held")
 	}
+
 	release()
+
+	res, callErr := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name:      "workspace_exec",
+		Arguments: execArgs,
+	})
+	if callErr != nil {
+		t.Fatalf(
+			"expected workspace_exec call to reach the handler after release, got transport error: %v",
+			callErr,
+		)
+	}
+	if res.IsError {
+		var msg string
+		for _, c := range res.Content {
+			if tc, ok := c.(*sdkmcp.TextContent); ok {
+				msg = tc.Text
+			}
+		}
+		if strings.Contains(msg, "waiting for a free operation slot") {
+			t.Fatalf("workspace_exec failed due to the semaphore even after release: %s", msg)
+		}
+	}
 }

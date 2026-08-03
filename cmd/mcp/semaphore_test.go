@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,7 +90,7 @@ func TestOpSemaphore_AcquireRespectsContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	_, err = sem.acquire(ctx)
-	if err == nil {
-		t.Fatal("expected acquire to fail when context is cancelled while waiting")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("acquire error = %v, want context deadline exceeded", err)
 	}
 }

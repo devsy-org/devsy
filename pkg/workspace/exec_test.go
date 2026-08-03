@@ -230,4 +230,14 @@ func TestExecOneShot_UnlocksAfterSuccessfulLock(t *testing.T) {
 	if lockClient.lockCalls != 1 {
 		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
 	}
+
+	// acquireExecLock itself never calls Unlock; that's the caller's
+	// responsibility (resolveExecTarget returns client.Unlock as
+	// resolvedExecTarget.unlock, and ExecOneShot defers it). Simulate that
+	// caller-side unlock to prove the successful-lock path is actually
+	// unlockable, not just lockable.
+	lockClient.Unlock()
+	if lockClient.unlockCalls != 1 {
+		t.Fatalf("expected 1 unlock call, got %d", lockClient.unlockCalls)
+	}
 }

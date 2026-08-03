@@ -215,6 +215,9 @@ func registerWorkspaceCreateTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *op
 	}, safeHandler(func(
 		ctx context.Context, req *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {
+		if in.Source == "" {
+			return errorResult(fmt.Errorf("source is required")), nil, nil
+		}
 		release, err := sem.acquire(ctx)
 		if err != nil {
 			return errorResult(err), nil, nil
