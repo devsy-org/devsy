@@ -118,15 +118,24 @@ func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
 			callErr,
 		)
 	}
-	if res.IsError {
-		var msg string
-		for _, c := range res.Content {
-			if tc, ok := c.(*sdkmcp.TextContent); ok {
-				msg = tc.Text
-			}
+	assertNotSemaphoreError(t, res)
+}
+
+// assertNotSemaphoreError fails the test if res failed due to the semaphore
+// wait itself, as opposed to some other (expected, in this unit test) error
+// like the workspace not existing.
+func assertNotSemaphoreError(t *testing.T, res *sdkmcp.CallToolResult) {
+	t.Helper()
+	if !res.IsError {
+		return
+	}
+	var msg string
+	for _, c := range res.Content {
+		if tc, ok := c.(*sdkmcp.TextContent); ok {
+			msg = tc.Text
 		}
-		if strings.Contains(msg, "waiting for a free operation slot") {
-			t.Fatalf("workspace_exec failed due to the semaphore even after release: %s", msg)
-		}
+	}
+	if strings.Contains(msg, "waiting for a free operation slot") {
+		t.Fatalf("workspace_exec failed due to the semaphore even after release: %s", msg)
 	}
 }
