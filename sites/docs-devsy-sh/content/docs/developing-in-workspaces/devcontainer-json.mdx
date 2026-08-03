@@ -76,16 +76,15 @@ Devsy is able to add HTTP headers when downloading
 feature archives as tar.gz files. To do so, add the needed headers in the `customizations`
 field of the `devcontainer.json` file as follows:
 
-```
+```json
 {
-  ...
   "features": {
-    "https://example.com/foo_feature.tar.gz": []
+    "https://example.com/foo_feature.tar.gz": {}
   },
   "customizations": {
     "devsy": {
       "featureDownloadHTTPHeaders": {
-        "FOO_HEADER": "${localEnv:FOO_ENV_VAR}"
+        "FOO_HEADER": "${localEnv:FOO_ENV_VAR}",
         "BAR_HEADER": "bar"
       }
     }

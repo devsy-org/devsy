@@ -143,7 +143,7 @@ for example:
     command: printf "%s" "${AWS_SECRET_ACCESS_KEY:-}"
 ```
 
-Or running an helper command (defined in the binaries section), and forwarding the result as the option's value:
+Or running a helper command (defined in the binaries section), and forwarding the result as the option's value:
 
 ```yaml
   AWS_TOKEN:
@@ -207,5 +207,5 @@ optionGroups:
 
 Options are easily grouped by listing them, each group has a `name` and a
 `defaultVisible` property, which is **false by default**.
-If `defaultVisible` is false, then an user will need to manually expand the option
+If `defaultVisible` is false, then a user will need to manually expand the option
 group in the Desktop App.

@@ -56,7 +56,7 @@ minikube start --vm-driver=docker --cni=calico
 Now to start minikube from home:
 
 ```sh
-~./minikube-start.sh
+~/minikube-start.sh
 ```
 
 Note: you need to start minikube between vm shutdown/reboots
@@ -125,13 +125,13 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/home/dev/devsys/share"
+    path: "/mnt/data/devsy"
 ```
 
-Create a directory for the persistent volume
+A `hostPath` volume must exist inside the Minikube node itself (the VM or container that runs Kubernetes), not on your tutorial host machine. Create the directory inside the node using `minikube ssh`:
 
 ```sh
-mkdir /home/dev/devsys/share
+minikube ssh -- sudo mkdir -p /mnt/data/devsy
 ```
 
 Create the persisent volume for the Kubernetes Provider.

@@ -86,7 +86,7 @@ Removes the snapshot's manifest from the registry. The underlying image and volu
 
 ## Export and Import
 
-`devsy workspace export`/`devsy workspace import` automatically carry a workspace's snapshot ref when the workspace was itself restored from one, so exporting and re-importing a snapshot-sourced workspace preserves its actual filesystem and volume state, not just its metadata.
+`devsy workspace export`/`devsy workspace import` automatically carry a workspace's snapshot ref when the workspace was itself restored from one, so exporting and re-importing a snapshot-sourced workspace preserves its actual filesystem and volume state, not just its metadata — provided the snapshot manifest is still present in the registry and the environment doing the import has access to pull that registry artifact. If the manifest has been deleted or the import environment can't reach or authenticate to the registry, only the workspace's metadata carries over, not its filesystem/volume state.
 
 ## Identifying Snapshot Images
 

@@ -9,7 +9,7 @@ This purpose of this page is to outline any known issues with using devsy on Lin
 
 When up'ing a workspace using a local directory, that also specifies a remote container user (via devcontainer.json), the ownership of the directory will change
 to the remote user. Since this remote user is in a different user namespace, the ownership will appear as a unknown user. To fix this, simply chown the directory
-back to the local user, such as `sudo chown -R $USER:$GROUP .`. The reason this is neccesary is by default, when a new user is created by the container runtime,
+back to the local user, such as `sudo chown -R $(id -un):$(id -gn) .`. The reason this is neccesary is by default, when a new user is created by the container runtime,
 such as docker, all files from the host file system will be owned by root during the overlay. For your dev environment to be useful remotely, Devsy needs to
 chown the workspace to the remote user. Once the workspace has stopped, you need to change the ownership back. In general local direcotories are typically used
 for development, once the devcontainer is working it is better to push the workspace to a git repo and use this.
@@ -93,7 +93,24 @@ devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/
 
 #### `podman compose` vs `docker-compose`
 
-Podman v4+ ships `podman compose` as a built-in subcommand. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, they will fail. Update references to `podman compose`, or add a shell alias as a stopgap:
+`podman compose` is not a built-in implementation — Podman looks for an externally installed Compose provider (`docker-compose` or `podman-compose`) and delegates to it. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, they will fail once `docker-compose` itself is not installed. Install a provider first, for example:
+
+```bash
+# Option 1: podman-compose (Python-based)
+sudo apt-get install -y podman-compose
+
+# Option 2: docker-compose (standalone binary/plugin)
+sudo apt-get install -y docker-compose-plugin
+```
+
+Verify a provider is available before relying on `podman compose`:
+
+```bash
+podman compose version
+which docker-compose podman-compose
+```
+
+Once a provider is installed, update references to `docker-compose` to use `podman compose`, or add a shell alias as a stopgap:
 
 ```bash
 alias docker-compose='podman compose'

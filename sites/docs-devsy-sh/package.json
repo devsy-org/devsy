@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
     "check-links": "tsx scripts/check-links.mts"
   },
   "dependencies": {

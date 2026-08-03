@@ -32,7 +32,7 @@ Example config:
 
 ```yaml
 agent:
-  containerInactivityTimeout: 300
+  containerInactivityTimeout: 10m
   docker:
     path: /usr/bin/docker
     install: false
@@ -41,7 +41,7 @@ agent:
 ## Kubernetes Driver
 
 Instead of Docker, Devsy is also able to use Kubernetes as a Driver, which allows you to deploy the workspace to a Kubernetes cluster instead.
-For example, this makes it possible to create a provider that spins up a remote Kubernetes cluster (or just a namespace), connect to it, and create a workspace there.
+For example, this makes it possible to create a provider that spins up a remote Kubernetes cluster (or just a namespace), connects to it, and creates a workspace there.
 Devsy also has a default Kubernetes provider that uses the local Kubernetes config file to deploy the workspace.
 
 Devsy also allows building an image through Kubernetes with [buildkit](https://github.com/moby/buildkit).
@@ -69,7 +69,7 @@ Example Kubernetes provider that uses local kubectl to run a workspace in the cu
 name: simple-kubernetes
 version: v0.0.1
 agent:
-  containerInactivityTimeout: 300 # Pod will automatically kill itself after timeout
+  containerInactivityTimeout: 10m # Pod will automatically kill itself after timeout
   path: ${DEVSY}
   driver: kubernetes
   kubernetes:

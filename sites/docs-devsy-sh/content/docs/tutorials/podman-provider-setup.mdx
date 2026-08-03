@@ -5,7 +5,7 @@ sidebar_label: Podman Provider Setup
 
 ## Purpose
 
-Podman is a first-class provider in Devsy. It runs containers without a background daemon — each container is a direct child of the calling process — which eliminates the single-point-of-failure that a persistent Docker daemon introduces. Podman is OCI-compatible, so existing `devcontainer.json` configurations work without changes.
+Podman is a first-class provider in Devsy. It runs containers without a background daemon — each container is a direct child of the calling process — which eliminates the single-point-of-failure that a persistent Docker daemon introduces. Podman is OCI-compatible, so most existing `devcontainer.json` configurations work without changes — see [Dockerfile features not supported during image build](#dockerfile-features-not-supported-during-image-build) and [`podman compose` vs `docker-compose`](#podman-compose-vs-docker-compose) below for the documented exceptions and required adjustments.
 
 This tutorial walks through installing Podman on your platform, registering it as a Devsy provider, and starting a workspace.
 
@@ -54,7 +54,26 @@ wsl --install
 sudo apt-get update && sudo apt-get install -y podman
 ```
 
-**Step 3 — Verify the socket is reachable from Windows.** Note the socket path — you will need it for the `PODMAN_HOST` option:
+**Step 3 — Start the rootless API socket.** On WSL distros with systemd enabled (Ubuntu 22.04+ on WSL2 supports this by default), enable and start the user socket:
+
+```bash
+systemctl --user enable --now podman.socket
+```
+
+Verify the socket was created before using its path:
+
+```bash
+systemctl --user status podman.socket
+ls -la $XDG_RUNTIME_DIR/podman/podman.sock
+```
+
+If your WSL distro does not have systemd available, start the API service manually instead (run it in the background or under a process manager so it survives after you close the terminal):
+
+```bash
+podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock &
+```
+
+Note the socket path — you will need it for the `PODMAN_HOST` option:
 
 ```bash
 echo $XDG_RUNTIME_DIR/podman/podman.sock
@@ -114,18 +133,20 @@ Podman can run in two modes:
 **macOS / Windows — switching machine mode:**
 
 ```bash
-# Initialize a new rootful machine (replaces the default rootless one)
-podman machine init --rootful
+# Create a new, separate machine that runs rootful
+podman machine init --rootful my-rootful-machine
 
-# Or upgrade an existing machine in-place
+# Or switch an existing machine to rootful mode in-place
 podman machine set --rootful
 podman machine stop && podman machine start
 ```
 
+`podman machine init` always creates a new machine — it does not replace or remove any existing rootless machine. `podman machine set --rootful` changes the mode of an existing machine in place. Switching a machine's mode does not delete its images, containers, or volumes; they belong to whichever mode created them and are simply hidden while the machine is running in the other mode. They reappear once you switch back.
+
 **Linux — rootless is the system default.** To run rootful containers, prefix commands with `sudo` or add your user to the `wheel` / `sudo` group and run `podman system service` as root.
 
 <Callout>
-After switching to rootful mode on macOS or Windows, update the `PODMAN_HOST` option in Devsy to point to the rootful socket. The rootful socket path is typically `/run/podman/podman.sock` (inside the VM).
+After switching to rootful mode on macOS or Windows, update the `PODMAN_HOST` option in Devsy to point to the rootful socket. The rootful socket lives inside the Podman machine VM and is not directly reachable from the host — run `podman machine inspect` and read the forwarded socket path from `.ConnectionInfo.PodmanSocket.Path` in the output, then set `PODMAN_HOST` to that path.
 </Callout>
 
 ## Creating a Workspace with Podman
@@ -162,8 +183,11 @@ podman machine start   # if the machine is stopped
 On Linux, confirm the user socket exists:
 
 ```bash
+systemctl --user status podman.socket
 ls -la $XDG_RUNTIME_DIR/podman/podman.sock
 ```
+
+If it does not exist or is inactive, start it with `systemctl --user enable --now podman.socket`. On systemd-less environments (some WSL distros), run `podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock &` instead.
 
 If the socket path differs from the default, set `PODMAN_HOST` to the correct path:
 
@@ -177,8 +201,21 @@ Podman uses Buildah for image builds, not Docker BuildKit. Most Dockerfiles are 
 
 ### `podman compose` vs `docker-compose`
 
-Podman v4+ ships `podman compose` as a built-in subcommand backed by the `podman-compose` Python library. It is compatible with `docker-compose` v2 syntax for most workloads. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, replace those calls with `podman compose` or create a shell alias:
+`podman compose` is not a built-in implementation — Podman delegates to an externally installed Compose provider, either the `docker-compose` binary/plugin or the `podman-compose` Python package. Install one before relying on `podman compose`:
 
 ```bash
-alias docker-compose='podman compose'
+# Option 1: podman-compose
+sudo apt-get install -y podman-compose
+
+# Option 2: docker-compose
+sudo apt-get install -y docker-compose-plugin
 ```
+
+Verify a provider is available:
+
+```bash
+podman compose version
+which docker-compose podman-compose
+```
+
+Once a provider is installed, `podman compose` is compatible with `docker-compose` v2 syntax for most workloads. Update your `devcontainer.json` or workspace scripts to call `podman compose` instead of `docker-compose` directly.

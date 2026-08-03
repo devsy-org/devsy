@@ -13,7 +13,7 @@ This counterpart is called the Devsy agent, which is available in the same Devsy
 Within the `provider.yaml` you can configure certain parts of how local Devsy should interact with its agent counterpart.
 
 <Callout>
-Agent's **Driver** specifies how the whole container workloads is deployed inside
+Agent's **Driver** specifies how the whole container workload is deployed inside
 the provider's resources.
 
 Head over to the [drivers section](./driver.mdx) to understand how this impacts
@@ -26,7 +26,7 @@ The following options are available in the `agent` section
 
 ```yaml
 agent: # You can also use options within this section (see injectGitCredentials as an example)
-  path: $\{DEVSY\}
+  path: ${DEVSY}
   driver: docker # Optional, default: docker
   inactivityTimeout: 10m
   containerInactivityTimeout: 10m
@@ -45,7 +45,7 @@ agent: # You can also use options within this section (see injectGitCredentials 
 
 Breaking down the options:
 
-- **path**: where to place the agent on the remote machine. Use $\{DEVSY\} here if you want to use the local machine instead.
+- **path**: where to place the agent on the remote machine. Use `${DEVSY}` here if you want to use the local machine instead.
 - **driver**: which driver to use to run container, [check the Drivers section for more information](./driver.mdx)
 - **inactivityTimeout**: after how much time to shut down the machine. Use for machine providers
 - **containerInactivityTimeout**: after how much time to shut down the container. Use for non-machine providers
@@ -69,7 +69,7 @@ One of the most important features of Devsy is to make sure that developer envir
 
 ### Non-Machine Providers
 
-For non-machine providers, Devsy can automatically kill the container its running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if its not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
+For non-machine providers, Devsy can automatically kill the container it's running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if it's not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
 
 ### Machine Providers
 

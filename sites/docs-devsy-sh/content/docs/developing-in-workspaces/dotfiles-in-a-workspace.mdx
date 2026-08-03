@@ -28,7 +28,7 @@ a script to setup the environment.
 - setup
 - script/setup
 
-If none of the previous location are found, Devsy will just link every hidden file (files starting with `.`)
+If none of the previous locations are found, Devsy will just link every hidden file (files starting with `.`)
 in the `$HOME` directory of the container.
 
 It is possible to specify **custom install script locations** for your special setup.
@@ -51,7 +51,7 @@ devsy workspace up https://github.com/example/repo --dotfiles https://github.com
 #### For all Workspaces
 
 You can setup these options on a **context wide scope** so that you won't have to specify
-dotfiles ad dotfiles-script for each single workspace:
+`dotfiles` and `dotfiles-script` for each single workspace:
 
 Example with a real repository:
 

@@ -11,7 +11,7 @@ still builds.
 
 ### How it works
 
-1. Resolves an workspace from the current directory (or a given source).
+1. Resolves a workspace from the current directory (or a given source).
 2. Builds and starts the devcontainer (equivalent to `devsy up`, without
    launching an IDE or touching your SSH config).
 3. Runs the given command inside the running container.
@@ -104,8 +104,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Devsy
         run: |
-          curl -fsSL https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64 -o /usr/local/bin/devsy
-          chmod +x /usr/local/bin/devsy
+          sudo curl -fsSL https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64 -o /usr/local/bin/devsy
+          sudo chmod +x /usr/local/bin/devsy
       - name: Run CI in devcontainer
         run: |
           devsy provider add docker && devsy provider use docker

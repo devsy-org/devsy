@@ -89,17 +89,21 @@ sudo systemctl restart docker.service
 sudo systemctl restart containerd.service
 ```
 
-### 5. Expose docker daemon to windows via port 2375
+### 5. Install and enable OpenSSH server in WSL for secure remote access
 
-This command allows the Docker daemon to receive instructions from port `2375`. This also means that we can access port `2375` from Windows.
+Rather than exposing the Docker daemon on an unauthenticated TCP port, the Windows Docker client will reach the Docker daemon in WSL securely over SSH. Install and start an SSH server inside your WSL distro:
 
 ```
 #!/bin/bash
-sudo cp /lib/systemd/system/docker.service /etc/systemd/system/
-sudo sed -i 's/\ -H\ fd:\/\//\ -H\ fd:\/\/\ -H\ tcp:\/\/127.0.0.1:2375/g' /etc/systemd/system/docker.service
-sudo systemctl daemon-reload
-sudo systemctl restart docker.service
+sudo apt-get update
+sudo apt-get install -y openssh-server
+sudo systemctl enable ssh.service
+sudo systemctl start ssh.service
 ```
+
+WSL2 automatically forwards `localhost` ports from Windows into the WSL VM for listening sockets, so the SSH server will be reachable from Windows at `localhost` once it is running.
+
+To avoid a password prompt every time the Docker CLI connects, set up SSH key-based authentication: generate a key pair on Windows with `ssh-keygen`, then append the resulting public key to `~/.ssh/authorized_keys` inside WSL.
 
 ## Integrate Docker client (for Windows) with Docker daemon in WSL
 
@@ -112,20 +116,24 @@ Verify that everything works by typing `docker` in a new Powershell.
 
 ### 7. Integrate Docker Windows client with Docker installed in WSL
 
+Create a Docker context that connects to the WSL Docker daemon over SSH. Replace `<wsl-username>` with the username you set up in Step 2:
+
 ```
 # run this command in Powershell
 
 docker --version
-docker context create lin --docker host=tcp://127.0.0.1:2375
+docker context create lin --docker "host=ssh://<wsl-username>@localhost"
 docker context use lin
 docker run hello-world
 ```
+
+The first connection will prompt you to accept the SSH host key. If you did not set up key-based authentication in Step 5, you will also be prompted for the WSL user's password.
 
 ## Integrate Devsy with Docker in WSL
 
 ### 8. Setup Devsy Docker provider to use Docker installed in WSL
 
-Set `Docker Host` as `tcp://127.0.0.1:2375` and `Docker Path` as `docker`.
+Set `Docker Host` as `ssh://<wsl-username>@localhost` (replace `<wsl-username>` with your WSL username) and `Docker Path` as `docker`.
 
 ## Summary
 

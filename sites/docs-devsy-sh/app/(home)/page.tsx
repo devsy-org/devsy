@@ -45,7 +45,7 @@ export default function HomePage() {
             type="button"
             aria-expanded={navOpen}
             aria-controls="navMenu"
-            aria-label="Open menu"
+            aria-label={navOpen ? 'Close menu' : 'Open menu'}
             onClick={() => setNavOpen((open) => !open)}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

@@ -55,6 +55,9 @@ Install any provider from the list with:
 
 ```sh
 devsy provider add docker
+devsy provider add podman
+devsy provider add lima
+devsy provider add orbstack
 devsy provider add kubernetes
 devsy provider add ssh
 devsy provider add aws
@@ -111,7 +114,7 @@ To manage options from the app, head over the `Providers` section, and click
 
 ### CLI Options
 
-Set options during the `add` or `configure` phase:
+Set options during the `add` or `init` phase:
 
 ```sh
 devsy provider add <provider-name> -o KEY=value
