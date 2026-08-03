@@ -27,8 +27,8 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 	return r.stopAndDeleteContainer(ctx, containerDetails)
 }
 
-// stopAndDeleteContainer stops containerDetails' devcontainer if it's
-// running, then deletes it.
+// stopAndDeleteContainer stops containerDetails' devcontainer if it
+// is running, then deletes it.
 func (r *runner) stopAndDeleteContainer(
 	ctx context.Context, containerDetails *config.ContainerDetails,
 ) error {

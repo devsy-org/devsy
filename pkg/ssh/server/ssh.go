@@ -364,7 +364,6 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 		user = ""
 	}
 
-	// has user set?
 	if user != "" {
 		//nolint:gosec // G204: args built from session request in the ssh server
 		cmd = exec.Command("su", buildSuArgs(sess, isPty)...)

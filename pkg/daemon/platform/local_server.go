@@ -198,8 +198,6 @@ func (l *localServer) updatePlatformAuthStatus(err error) {
 	defer l.platformStatus.mu.Unlock()
 
 	if err == nil {
-		// We don't want to be too restrictive in case the error
-		// is transient and doesn't impact existing connections
 		l.platformStatus.authenticated = true
 		return
 	}
