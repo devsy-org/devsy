@@ -102,7 +102,7 @@ func waitForRegistryReady(ctx context.Context) error {
 				return false, nil
 			}
 			_ = resp.Body.Close()
-			return true, nil
+			return resp.StatusCode == http.StatusOK, nil
 		},
 	)
 	if err != nil {
