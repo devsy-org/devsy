@@ -7,17 +7,20 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"sync/atomic"
+	"sync"
 )
 
 const jsonRPCVersion = "2.0"
 
 // MCPClient drives a real `devsy mcp serve` subprocess over stdio JSON-RPC.
+// Not safe for concurrent CallTool calls: mu serializes the send+read
+// round trip so one call can't read another's response off the shared stream.
 type MCPClient struct {
 	cmd     *exec.Cmd
 	stdin   *bufio.Writer
 	stdout  *bufio.Reader
-	nextID  atomic.Int64
+	mu      sync.Mutex
+	nextID  int64
 	closeFn func() error
 }
 
@@ -30,7 +33,7 @@ type jsonRPCRequest struct {
 
 type jsonRPCResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
+	ID      *int64          `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *struct {
 		Code    int    `json:"code"`
@@ -55,6 +58,12 @@ func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 		return nil, fmt.Errorf("start devsy mcp serve: %w", err)
 	}
 
+	cleanup := func() {
+		_ = stdinPipe.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+
 	c := &MCPClient{
 		cmd:    cmd,
 		stdin:  bufio.NewWriter(stdinPipe),
@@ -65,9 +74,10 @@ func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 		},
 	}
 
+	initID := c.nextRequestID()
 	if err := c.send(jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
-		ID:      c.nextID.Add(1),
+		ID:      initID,
 		Method:  "initialize",
 		Params: map[string]any{
 			"protocolVersion": "2024-11-05",
@@ -75,15 +85,18 @@ func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 			"clientInfo":      map[string]any{"name": "devsy-e2e", "version": "0.1"},
 		},
 	}); err != nil {
+		cleanup()
 		return nil, err
 	}
-	if _, err := c.readResponse(); err != nil {
+	if _, err := c.readResponseFor(initID); err != nil {
+		cleanup()
 		return nil, fmt.Errorf("initialize handshake: %w", err)
 	}
 	if err := c.send(jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		Method:  "notifications/initialized",
 	}); err != nil {
+		cleanup()
 		return nil, err
 	}
 
@@ -93,15 +106,19 @@ func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 func (c *MCPClient) CallTool(
 	ctx context.Context, name string, args map[string]any,
 ) (map[string]any, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	id := c.nextRequestID()
 	if err := c.send(jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
-		ID:      c.nextID.Add(1),
+		ID:      id,
 		Method:  "tools/call",
 		Params:  map[string]any{"name": name, "arguments": args},
 	}); err != nil {
 		return nil, false, err
 	}
-	resp, err := c.readResponse()
+	resp, err := c.readResponseFor(id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -123,6 +140,13 @@ func (c *MCPClient) Close() error {
 	return c.closeFn()
 }
 
+// nextRequestID must only be called while holding c.mu, except during
+// StartMCPServer's handshake before the client is returned to any caller.
+func (c *MCPClient) nextRequestID() int64 {
+	c.nextID++
+	return c.nextID
+}
+
 func (c *MCPClient) send(req jsonRPCRequest) error {
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -137,14 +161,22 @@ func (c *MCPClient) send(req jsonRPCRequest) error {
 	return c.stdin.Flush()
 }
 
-func (c *MCPClient) readResponse() (*jsonRPCResponse, error) {
-	line, err := c.stdout.ReadBytes('\n')
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+// readResponseFor reads and discards notifications (no id) until it finds
+// the response matching id — tool calls that stream log progress interleave
+// notifications with the eventual response on the same stream.
+func (c *MCPClient) readResponseFor(id int64) (*jsonRPCResponse, error) {
+	for {
+		line, err := c.stdout.ReadBytes('\n')
+		if err != nil {
+			return nil, fmt.Errorf("read response: %w", err)
+		}
+		var resp jsonRPCResponse
+		if err := json.Unmarshal(line, &resp); err != nil {
+			return nil, fmt.Errorf("unmarshal response %q: %w", line, err)
+		}
+		if resp.ID == nil || *resp.ID != id {
+			continue
+		}
+		return &resp, nil
 	}
-	var resp jsonRPCResponse
-	if err := json.Unmarshal(line, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal response %q: %w", line, err)
-	}
-	return &resp, nil
 }
