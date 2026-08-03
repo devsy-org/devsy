@@ -3,31 +3,27 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "docusaurus start",
-    "build": "docusaurus build",
-    "swizzle": "docusaurus swizzle",
-    "deploy": "docusaurus deploy"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "check-links": "tsx scripts/check-links.ts"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.10.2",
-    "@docusaurus/preset-classic": "^3.10.2",
-    "classnames": "^2.2.6",
-    "docusaurus": "^1.14.7",
-    "docusaurus-gtm-plugin": "^0.0.2",
-    "mdx-link-checker": "^0.1.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "fumadocs-core": "16.14.0",
+    "fumadocs-mdx": "15.2.2",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.14.0",
+    "next": "16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.24",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3"
   }
 }
