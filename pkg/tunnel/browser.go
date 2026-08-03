@@ -71,7 +71,13 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
 
-			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
+			// Stays root: runBrowserTunnelServices/RunServices reads
+			// root-owned files (e.g. DevContainerResultPath) over this same
+			// connection. GPG's shared /tmp lock/activity files are already
+			// safe for a mixed root+remoteUser pair (see acquireGPGSetupLock,
+			// ensureActivityFile) — this session doesn't need to match
+			// remoteUser to avoid that collision.
+			sshCmd, err := CreateSSHCommand(ctx, p.Client, "", []string{
 				names.FlagValue(names.LogOutput, "raw"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
