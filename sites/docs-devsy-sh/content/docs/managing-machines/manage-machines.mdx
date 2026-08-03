@@ -45,6 +45,22 @@ Open an SSH session directly to the machine:
 devsy machine ssh <name-of-machine>
 ```
 
+## Describe a machine
+
+Retrieve the provider-generated description of a machine (the same text-based summary the provider itself reports):
+
+```sh
+devsy machine describe <name-of-machine>
+```
+
+## Inspect a machine
+
+Print the machine's full configuration as JSON, including its provider and provider options. Sensitive options are redacted and hidden options are omitted:
+
+```sh
+devsy machine inspect <name-of-machine>
+```
+
 ## Stop a machine
 
 Stop a machine with:
@@ -63,6 +79,14 @@ Example output:
 
 ```
 08:58:58 info Machine '<name-of-machine>' is 'Stopped, you can start it via 'devsy machine start <name-of-machine>''
+```
+
+## Start a machine
+
+Restart a stopped machine with:
+
+```sh
+devsy machine start <name-of-machine>
 ```
 
 ## Delete a machine

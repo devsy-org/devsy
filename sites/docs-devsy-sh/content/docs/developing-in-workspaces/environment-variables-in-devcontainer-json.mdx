@@ -41,3 +41,7 @@ systemctl restart ssh.service
 ```console
 devsy workspace up <GITHUB-REPOSITORY-URL> --ide=none
 ```
+
+<Callout title="DOCKER_HOST and compose-based devcontainers">
+If your Docker provider is configured with a custom `DOCKER_HOST` (or other Docker environment variables), that environment is forwarded into the `docker compose` commands Devsy runs for a `dockerComposeFile`-based `devcontainer.json`, so the build and run steps consistently hit the same daemon as your other Docker commands.
+</Callout>

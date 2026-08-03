@@ -23,10 +23,20 @@ binaries:
       path: # Remote (URL) or local path to binary
       checksum:  # sha sum of the binary
       archivePath: # If it's an archive, the relative path to the binary. Supported archives are .tgz, .tar, .tar.gz, .zip
+      name: # Optional name to store the binary as locally. Defaults to the file name derived from path.
 ```
 
 When [Adding a provider](../managing-providers/add-provider.mdx), Devsy will
 match the binary for your OS and Arch and download the specific one for it.
+
+<Callout>
+Not every provider needs a `binaries` section. Built-in providers that wrap an
+already-installed local CLI — such as `docker`, `apple` (the `container` CLI) or
+`microsandbox` — instead expose an option (e.g. `DOCKER_PATH`, `CONTAINER_PATH`)
+pointing to the binary the user already has on their machine, rather than
+downloading one. Use `binaries` when your provider needs to fetch and manage its
+own helper binary.
+</Callout>
 
 Example of the binary section in a `provider.yaml`:
 

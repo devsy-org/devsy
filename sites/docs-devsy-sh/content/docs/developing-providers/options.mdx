@@ -59,16 +59,23 @@ Options will also be passed to the agent and can be used in the `agent.exec` sec
 Each option has a set of attributes that can modify how Devsy interprets it when
 configuring or adding the provider:
 
+- `displayName`: Display name of the option, preferred over the option name by a supporting tool such as the Desktop App.
 - `description`: Description shown in `devsy provider get` and in the Desktop App
 - `default`: Default value of the option provided as a string. Can also reference other variables, e.g. `${MY_OTHER_VAR}-suffix`
 - `required`: Boolean if this option needs to be non-empty before using the provider. Devsy will ask in the CLI and make sure that this option is filled in the Desktop application.
 - `password`: Boolean to indicate this is a sensitive value. Prevents this value from showing up in the `devsy provider get` command and will be a password field in the Desktop application.
+- `type`: The option type. One of `string`, `multiline`, `duration`, `number` or `boolean`. Defaults to `string`. Devsy validates the value against the given type.
+- `enum`: A list of allowed values for this option. Unlike `suggestions`, this is enforced - Devsy will reject any value that isn't in the list.
+- `validationPattern`: A regex pattern the value must match.
+- `validationMessage`: The error message shown when `validationPattern` doesn't match. If not specified, Devsy shows a generic message including the pattern.
 - `suggestions`: An array of suggestions for this option. Will be shown as auto complete options in the Devsy desktop application
 - `command`: A command to retrieve the option value automatically. Can also reference other variables in the command, e.g. `echo ${MY_OTHER_VAR}-suffix`. For compatibility reasons, this command will be executed in an emulated shell on Windows.
+- `subOptionsCommand`: A command that outputs additional `options` (in the same YAML shape as the top-level `options` section) to dynamically extend the provider's option set based on other option values.
 - `local`: If true, the option will be filled individually for each machine / workspace
-- `global`: If true, the option will be reused for each machine / workspace
+- `global`: If true, the option will be reused for each machine / workspace. Cannot be combined with `cache` or `mutable`.
 - `cache`: If non-empty, Devsy will re-execute the command after the given timeout, e.g. if this is 5m, Devsy will re-execute the command after 5 minutes to re-fill this value. This is useful if you want to store a token or something that expires locally in a variable.
 - `hidden`: If true, Devsy will not show this option in the Desktop application or through `devsy provider get`. Can be used to calculate variables internally or save tokens or other things internally.
+- `mutable`: If true, the option's value can be changed on an existing workspace or machine after creation. Cannot be combined with `global`.
 
 ### Default values
 

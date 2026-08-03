@@ -22,33 +22,27 @@ an active SSH session needs to be open using `devsy workspace ssh {workspace}` (
 
 ### Structured CLI errors
 
-Devsy classifies common failures and prints a stable error `code` alongside a hint and documentation link. When running with `--result-format json` (or when invoked by Devsy Desktop), errors are emitted as a JSON object matching:
+Devsy classifies common failures and prints a stable error `code` alongside a `message`. Errors are emitted as a JSON object matching:
 
 ```json
 {
-  "code": "DOCKER_NOT_RUNNING",
-  "message": "Docker is not running.",
-  "hint": "Start Docker Desktop or run `sudo systemctl start docker`.",
-  "docUrl": "https://docs.docker.com/config/daemon/start/",
-  "provider": "docker",
-  "cause": "exit status 1: Cannot connect to the Docker daemon"
+  "code": "UNKNOWN",
+  "message": "exit status 1: Cannot connect to the Docker daemon"
 }
 ```
 
-Common error codes you may see:
+This happens automatically whenever Devsy detects a non-interactive/machine consumer (for example, stderr is not a TTY, `--log-output json` or `logfmt` is set, or Devsy Desktop invokes the CLI) — human-readable output is used otherwise. Pass `--log-output json` (or `logfmt`) explicitly to force structured errors, or `--log-output text` to force human-readable ones.
+
+There are only four stable codes:
 
 | Code | Meaning |
 |---|---|
-| `DOCKER_NOT_RUNNING` | Docker daemon is not reachable. |
-| `DOCKER_PERMISSION_DENIED` | Your user cannot access `docker.sock`. Add yourself to the `docker` group. |
-| `PODMAN_SOCKET_UNAVAILABLE` | Podman user socket is not running. Run `systemctl --user start podman.socket`. |
-| `KUBE_CONFIG_MISSING` | Devsy could not find a kubeconfig. Set `KUBECONFIG` or create `~/.kube/config`. |
-| `KUBE_UNREACHABLE` | Devsy cannot connect to the Kubernetes API server on port `6443`. |
-| `AWS_PROFILE_MISSING` / `AWS_CREDS_INVALID` / `AWS_REGION_MISSING` | AWS configuration problems — refresh credentials or set `AWS_REGION`. |
-| `PROVIDER_INIT_FAILED` | Generic provider init failure. Re-run with `--debug` for the original error. |
-| `UNKNOWN` | Devsy could not classify the error; the raw error text is preserved in `message`. |
+| `RATE_LIMITED` | An upstream API rate-limited the request. Wait and retry, or authenticate for a higher limit. |
+| `PANIC` | Devsy recovered from an internal panic; the message contains the recovered value. |
+| `BUILD_FAILED_RECOVERABLE` | The devcontainer build failed in a way that can be retried (e.g. with `--recovery`). |
+| `UNKNOWN` | Devsy could not classify the error into one of the above; the raw underlying error text is preserved verbatim in `message`. |
 
-Re-run with `--debug` to see the original error chain, and pass `--result-format json` (or `plain` to force human-readable output) to control rendering — the default `auto` chooses JSON when stdout is not a TTY.
+In practice, most environment-level failures — such as "Docker is not running," "permission denied connecting to docker.sock," or "Podman user socket unavailable" — do not have a dedicated code today. They surface as `code: "UNKNOWN"` with the original OS or daemon error text preserved in `message`. Re-run with `--debug` to see the full original error chain.
 
 ### Windows: `line 2: $'\r': command not found`
 

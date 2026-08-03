@@ -65,6 +65,10 @@ RUN apt-get update && apt-get install vim
 
 For more information about how to write Dockerfiles, please visit the [official documentation](https://docs.docker.com/engine/reference/builder/)
 
+<Callout title="Multi-arch builds in compose-based devcontainers">
+When using a `docker-compose.yml`-based `devcontainer.json` (via `dockerComposeFile`), a `platform` pin set on the compose service (or under `build.platforms`) is correctly honored during the build, including on arch-restricted base images.
+</Callout>
+
 ### Add Additional DevContainer Features
 
 `devcontainer.json` allows you to reuse certain predefined features within your configuration.

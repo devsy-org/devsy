@@ -67,25 +67,25 @@ the SSH binary explicitly in vscode.
 
 ### Docker socket permission denied
 
-If `devsy workspace up` exits with the structured error code `DOCKER_PERMISSION_DENIED`, your user is not a member of the `docker` group. Add yourself and re-login:
+If `devsy workspace up` fails with a permission denied error connecting to `docker.sock`, your user is not a member of the `docker` group. Add yourself and re-login:
 
 ```bash
 sudo usermod -aG docker $USER
 ```
 
-If Devsy reports `DOCKER_NOT_RUNNING`, start the daemon:
+If Devsy reports that the Docker daemon is unreachable, start the daemon:
 
 ```bash
 sudo systemctl start docker
 ```
 
-See the [Structured CLI errors](./troubleshooting.mdx) reference for the full list of codes.
+These failures surface as `code: "UNKNOWN"` with the underlying OS/daemon error text preserved in `message` — see the [Structured CLI errors](./troubleshooting.mdx) reference for details.
 
 ### Podman
 
 #### Rootless socket path
 
-Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, you will see the structured error code `PODMAN_SOCKET_UNAVAILABLE`. Either start the user socket with `systemctl --user start podman.socket`, or set `PODMAN_HOST` explicitly:
+Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, it will fail with a "connection refused" or "no such file" style error against that socket path (surfaced as `code: "UNKNOWN"` with the real error text in `message`). Either start the user socket with `systemctl --user start podman.socket`, or set `PODMAN_HOST` explicitly:
 
 ```bash
 devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock

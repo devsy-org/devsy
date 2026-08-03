@@ -27,7 +27,8 @@ The following options are available in the `agent` section
 ```yaml
 agent: # You can also use options within this section (see injectGitCredentials as an example)
   path: ${DEVSY}
-  driver: docker # Optional, default: docker
+  local: true # Optional, whether Devsy runs directly on this machine (no remote agent injection)
+  driver: docker # Optional, default: docker. One of: docker, kubernetes, apple, microsandbox, custom
   inactivityTimeout: 10m
   containerInactivityTimeout: 10m
   injectGitCredentials: ${INJECT_GIT_CREDENTIALS}
@@ -46,7 +47,8 @@ agent: # You can also use options within this section (see injectGitCredentials 
 Breaking down the options:
 
 - **path**: where to place the agent on the remote machine. Use `${DEVSY}` here if you want to use the local machine instead.
-- **driver**: which driver to use to run container, [check the Drivers section for more information](./driver.mdx)
+- **local**: if true, signals that Devsy is running directly on the current machine (as opposed to a remote VM or container reached over SSH). All of Devsy's built-in providers (`docker`, `podman`, `kubernetes`, `apple`, `microsandbox`) set this to `true`.
+- **driver**: which driver to use to run the container, [check the Drivers section for more information](./driver.mdx)
 - **inactivityTimeout**: after how much time to shut down the machine. Use for machine providers
 - **containerInactivityTimeout**: after how much time to shut down the container. Use for non-machine providers
 - **injectGitCredentials**: whether to inject git credentials into the machine.
