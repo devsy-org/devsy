@@ -28,6 +28,10 @@
   --shadow: rgba(0, 0, 0, 0.55);
 }
 
+html:has(.home-page) {
+  scroll-behavior: smooth;
+}
+
 .home-page {
   color: var(--ink);
   background: var(--bg);
