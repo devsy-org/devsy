@@ -214,7 +214,10 @@ func TestExecOneShot_LockedWorkspaceReturnsBusyError(t *testing.T) {
 		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
 	}
 	if lockClient.unlockCalls != 0 {
-		t.Fatalf("unlock must not be called when lock itself failed, got %d calls", lockClient.unlockCalls)
+		t.Fatalf(
+			"unlock must not be called when lock itself failed, got %d calls",
+			lockClient.unlockCalls,
+		)
 	}
 }
 
