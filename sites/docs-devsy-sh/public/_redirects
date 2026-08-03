@@ -3,3 +3,7 @@
 
 # New redirect for the quickstart move (Task 3, Step 3)
 /docs/quickstart/quickstart                     /docs/getting-started/quickstart      301!
+
+/docs/how-it-works/deploy-machines               /docs/how-it-works/deploying-workspaces#connecting-to-machines   301!
+/docs/how-it-works/deploy-k8s                    /docs/how-it-works/deploying-workspaces#connecting-to-kubernetes  301!
+/docs/how-it-works/building-workspaces           /docs/how-it-works/deploying-workspaces#building-workspaces      301!
