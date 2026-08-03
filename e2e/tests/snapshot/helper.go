@@ -13,18 +13,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// registryHostPort is a fixed host port for the local registry fixture,
-// rather than an ephemeral one (`-p 0:5000`): the Docker daemon's
-// "insecure-registries" allowlist (see below) must name an exact host:port,
-// with no wildcard/range syntax, so the port has to be known ahead of time.
-// Fixed is safe here because specs in this file run serially, never two
-// registries at once.
-const registryHostPort = "15500"
-
-// registryImage pins registry:2 by digest, matching the busybox@sha256:...
-// pinning convention already used elsewhere in the e2e/CI workflows, so a
-// new tag push upstream can't change this fixture's behavior underfoot.
-const registryImage = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+const (
+	registryHostPort = "15500"
+	registryImage = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+)
 
 // registryHost is the address e2e specs push/pull snapshots against.
 //
@@ -63,11 +55,6 @@ const registryImage = "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a
 //     before running this suite, alongside the /etc/hosts entry above.
 var registryHost = "host.docker.internal:" + registryHostPort
 
-// startLocalRegistry runs a disposable registryImage container bound to
-// registryHostPort, mirroring the manual `docker run` pattern already used
-// for fixture containers in tests/up/provider_docker.go. Returns the
-// "host:port" address to push/pull against and a cleanup func. Deletes are
-// enabled so e2e specs can exercise DeleteManifest against a real registry.
 func startLocalRegistry(
 	ctx context.Context, dockerHelper *docker.DockerHelper,
 ) (string, func(), error) {
@@ -76,10 +63,6 @@ func startLocalRegistry(
 		return "", nil, err
 	}
 	cleanup := func() {
-		// Deliberately not ctx: cleanup runs from AfterEach/DeferCleanup after
-		// the spec's own context may already be cancelled (e.g. on failure),
-		// and a leaked registry container would block the next spec from
-		// binding the same fixed host port.
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = dockerHelper.Stop(cleanupCtx, id)
@@ -101,7 +84,7 @@ const registryReadyTimeout = 30 * time.Second
 
 // waitForRegistryReady polls the registry's /v2/ endpoint until it responds,
 // since `docker run -d` returning only means the container was created, not
-// that its HTTP server is accepting connections yet — a push immediately
+// that its HTTP server is accepting connections yet. A push immediately
 // after startLocalRegistry returns can otherwise race a "connection refused".
 func waitForRegistryReady(ctx context.Context) error {
 	url := "http://" + registryHost + "/v2/"

@@ -72,11 +72,6 @@ func isRetryableSSHError(err error, stderr string) bool {
 			return true
 		}
 	}
-	// A stale chownWorkspace marker baked into a committed snapshot image
-	// used to make a restored container's workspace folder unreadable to the
-	// remote user (fixed at the source; see pkg/devcontainer/setup.go's
-	// chownWorkspace). Kept as a defensive retry in case another cause
-	// produces the same symptom.
 	if strings.Contains(lower, "fork/exec") && strings.Contains(lower, "permission denied") {
 		return true
 	}
