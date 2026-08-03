@@ -270,7 +270,12 @@ func CreateSSHCommand(
 	return exec.CommandContext(ctx, execPath, args...), nil
 }
 
-// buildSSHCommandArgs constructs the argument list for `devsy ssh`.
+// buildSSHCommandArgs constructs the argument list for `devsy ssh`. Kept as
+// plain args rather than a params struct: it's an internal, unexported
+// helper with a small stable signature, and a struct would only add
+// indirection for CreateSSHCommand's one caller and its existing tests.
+//
+//nolint:revive // argument-limit
 func buildSSHCommandArgs(
 	clientContext, workspace, user string,
 	debug bool,

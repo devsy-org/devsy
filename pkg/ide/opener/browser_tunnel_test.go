@@ -11,10 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/tunnel"
+	"github.com/stretchr/testify/assert"
 )
 
 // containsAdjacent returns true if args contains needle followed immediately

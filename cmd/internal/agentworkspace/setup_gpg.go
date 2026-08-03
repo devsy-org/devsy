@@ -128,13 +128,38 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 
 	// os.Chmod bypasses the umask to ensure the file has world-readable/writable
 	// permissions, which is essential when setup-gpg runs under different users
-	// in the same container.
-	if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
+	// in the same container. Only attempted when the mode isn't already 0666:
+	// chmod requires ownership (or root) regardless of whether it would
+	// actually change anything, so a non-owning second acquirer (e.g. a
+	// non-root user acquiring a lock file root already fixed to 0666) would
+	// get EPERM on a redundant chmod call.
+	if needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666); err != nil {
 		_ = lock.Unlock()
-		return nil, fmt.Errorf("set lock file permissions: %w", err)
+		return nil, fmt.Errorf("stat lock file: %w", err)
+	} else if needsChmod {
+		// #nosec G302 -- 0666 is intentional: setup-gpg can run as root (SSH
+		// tunnel) and as the workspace's remoteUser (GPG-forwarding tunnel),
+		// sometimes concurrently, and both need to acquire this lock.
+		if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
+			_ = lock.Unlock()
+			return nil, fmt.Errorf("set lock file permissions: %w", err)
+		}
 	}
 
 	return func() { _ = lock.Unlock() }, nil
+}
+
+// lockFileNeedsChmod reports whether path's current permission bits differ
+// from want. Callers use this to skip a redundant os.Chmod: chmod requires
+// file ownership (or root) even when the requested mode already matches,
+// so skipping it when unnecessary avoids EPERM for a non-owning acquirer of
+// an already-correctly-mode'd lock file.
+func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return info.Mode().Perm() != want.Perm(), nil
 }
 
 func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {

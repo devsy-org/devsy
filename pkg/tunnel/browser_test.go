@@ -16,6 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testUserRoot      = "root"
+	testUserVSCode    = "vscode"
+	testWorkspaceName = "my-workspace"
+)
+
 type fakeWorkspaceClient struct{}
 
 func (fakeWorkspaceClient) Provider() string { return "" }
@@ -75,35 +81,46 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 		expected  []string
 	}{
 		{
-			name: "basic root user", context: "default", workspace: "my-workspace",
-			user:     "root",
-			expected: baseSSHArgs("default", "root", "my-workspace"),
+			name: "basic root user", context: testCtxName, workspace: testWorkspaceName,
+			user:     testUserRoot,
+			expected: baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
 		},
 		{
-			name: "non-root workspace user", context: "default", workspace: "my-workspace",
-			user:     "vscode",
-			expected: baseSSHArgs("default", "vscode", "my-workspace"),
+			name: "non-root workspace user", context: testCtxName, workspace: testWorkspaceName,
+			user:     testUserVSCode,
+			expected: baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName),
 		},
 		{
-			name: "empty user falls back to root", context: "default", workspace: "my-workspace",
-			user:     "",
-			expected: baseSSHArgs("default", "root", "my-workspace"),
+			name:      "empty user falls back to root",
+			context:   testCtxName,
+			workspace: testWorkspaceName,
+			user:      "",
+			expected:  baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
 		},
 		{
-			name: "with debug", context: "default", workspace: "my-workspace",
-			user: "vscode", debug: true,
-			expected: append(baseSSHArgs("default", "vscode", "my-workspace"), "--debug"),
+			name:      "with debug",
+			context:   testCtxName,
+			workspace: testWorkspaceName,
+			user:      testUserVSCode,
+			debug:     true,
+			expected: append(
+				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug",
+			),
 		},
 		{
 			name: "with extra args", context: "prod", workspace: "ws",
-			user:      "vscode",
+			user:      testUserVSCode,
 			extraArgs: []string{"--stdio", "--log-output=raw"},
-			expected:  append(baseSSHArgs("prod", "vscode", "ws"), "--stdio", "--log-output=raw"),
+			expected: append(
+				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-output=raw",
+			),
 		},
 		{
-			name: "with debug and extra args", context: "default", workspace: "my-workspace",
-			user: "vscode", debug: true, extraArgs: []string{"--stdio"},
-			expected: append(baseSSHArgs("default", "vscode", "my-workspace"), "--debug", "--stdio"),
+			name: "with debug and extra args", context: testCtxName, workspace: testWorkspaceName,
+			user: testUserVSCode, debug: true, extraArgs: []string{"--stdio"},
+			expected: append(
+				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug", "--stdio",
+			),
 		},
 	}
 
@@ -119,7 +136,7 @@ func TestBuildBackhaulCmd_UsesResolvedRemoteUser(t *testing.T) {
 	writer := &bytes.Buffer{}
 	cmd := buildBackhaulCmd(context.Background(), backhaulCmdParams{
 		execPath:   "/usr/bin/true",
-		remoteUser: "vscode",
+		remoteUser: testUserVSCode,
 		client:     fakeWorkspaceClient{},
 		authSockID: "sock123",
 		writer:     writer,

@@ -121,3 +121,95 @@ func TestAcquireGPGSetupLock_FileIsWorldLockable(t *testing.T) {
 			"whichever user runs setup-gpg first lock out every other user "+
 			"with EACCES")
 }
+
+// TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod
+// reproduces the multi-user scenario the lock file's world-writable mode
+// exists for: one session creates the lock (mode becomes 0666), a later
+// session on a different, non-owning user re-acquires it. That second
+// acquire must not attempt a redundant chmod, since a non-owning chmod
+// would fail with EPERM even though the mode is already correct.
+func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+
+	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
+	require.NoError(t, err)
+	assert.False(t, needsChmod,
+		"a lock file already at 0666 must not need a chmod, since a "+
+			"non-owning second acquirer's chmod would fail with EPERM")
+
+	reacquire, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err, "second acquisition of an already-0666 lock file must succeed")
+	reacquire()
+}
+
+// TestAcquireGPGSetupLock_FixesWrongMode ensures the "skip chmod when
+// already 0666" optimization doesn't accidentally skip fixing a genuinely
+// wrong mode: if the lock file was somehow created with a different mode,
+// acquireGPGSetupLock must still attempt (and here, succeed at, since the
+// test process owns the file) the chmod back to 0666.
+func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	// #nosec G302 -- intentional: simulating a wrong pre-existing mode
+	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o644))
+
+	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
+	require.NoError(t, err)
+	assert.True(t, needsChmod, "a lock file at 0644 must be reported as needing a chmod to 0666")
+
+	reacquire, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	defer reacquire()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"acquireGPGSetupLock must fix a wrong mode back to 0666")
+}
+
+func TestLockFileNeedsChmod(t *testing.T) {
+	tests := []struct {
+		name   string
+		mode   os.FileMode
+		want   os.FileMode
+		expect bool
+	}{
+		{name: "already matches", mode: 0o666, want: 0o666, expect: false},
+		{name: "narrower mode needs widening", mode: 0o644, want: 0o666, expect: true},
+		{name: "wider mode needs narrowing", mode: 0o777, want: 0o666, expect: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "lock")
+			require.NoError(t, os.WriteFile(path, nil, tc.mode))
+			require.NoError(t, os.Chmod(path, tc.mode))
+
+			got, err := lockFileNeedsChmod(path, tc.want)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expect, got)
+		})
+	}
+}
+
+func TestLockFileNeedsChmod_StatErrorPropagates(t *testing.T) {
+	_, err := lockFileNeedsChmod(filepath.Join(t.TempDir(), "does-not-exist"), 0o666)
+	require.Error(t, err)
+}
