@@ -180,20 +180,7 @@ func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
 				ManagementV1().
 				Selves().
 				Create(context.Background(), &managementv1.Self{}, metav1.CreateOptions{})
-			l.platformStatus.mu.Lock()
-			if err != nil {
-				if IsAccessKeyNotFound(err) {
-					log.Warnf("client not authenticated: %s", err)
-					l.platformStatus.authenticated = false
-				} else {
-					log.Errorf("failed to create self: %v", err)
-				}
-			} else {
-				// We don't want to be too restrictive in case the error
-				// is transient and doesn't impact existing connections
-				l.platformStatus.authenticated = true
-			}
-			l.platformStatus.mu.Unlock()
+			l.updatePlatformAuthStatus(err)
 		}
 
 		select {
@@ -202,6 +189,26 @@ func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
 		case <-time.After(platformStatusCheckInterval):
 		}
 	}
+}
+
+// updatePlatformAuthStatus records the platform authentication status from a
+// self-creation attempt's result.
+func (l *localServer) updatePlatformAuthStatus(err error) {
+	l.platformStatus.mu.Lock()
+	defer l.platformStatus.mu.Unlock()
+
+	if err == nil {
+		// We don't want to be too restrictive in case the error
+		// is transient and doesn't impact existing connections
+		l.platformStatus.authenticated = true
+		return
+	}
+	if IsAccessKeyNotFound(err) {
+		log.Warnf("client not authenticated: %s", err)
+		l.platformStatus.authenticated = false
+		return
+	}
+	log.Errorf("failed to create self: %v", err)
 }
 
 func (l *localServer) health(w http.ResponseWriter, r *http.Request) {
