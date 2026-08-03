@@ -10,19 +10,19 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type Stream struct {
+	ws *WebsocketConn
+
+	dataType  MessageType
+	closeType MessageType
+}
+
 func NewStream(ws *WebsocketConn, dataType, closeType MessageType) *Stream {
 	return &Stream{
 		ws:        ws,
 		dataType:  dataType,
 		closeType: closeType,
 	}
-}
-
-type Stream struct {
-	ws *WebsocketConn
-
-	dataType  MessageType
-	closeType MessageType
 }
 
 func (s *Stream) Write(ctx context.Context, writer io.WriteCloser) error {

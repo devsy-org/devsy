@@ -38,7 +38,6 @@ func (d *Dockerfile) FindUserStatement(
 				buildArgs,
 				baseImageEnv,
 				&stage.BaseStage,
-				0,
 			)
 		}
 
@@ -51,7 +50,6 @@ func (d *Dockerfile) FindUserStatement(
 			buildArgs,
 			baseImageEnv,
 			&d.Preamble.BaseStage,
-			d.Stages[0].Instructions[0].StartLine,
 		)
 		stage, ok = d.StagesByTarget[image]
 		if !ok {
@@ -74,7 +72,7 @@ func (d *Dockerfile) FindBaseImage(buildArgs map[string]string, target string) s
 		return ""
 	}
 
-	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage, 0)
+	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage)
 
 	// If image is a stage reference, resolve it recursively
 	if _, ok := d.StagesByTarget[image]; ok {
@@ -102,22 +100,6 @@ func (d *Dockerfile) BuildContextFiles() []string {
 
 var defaultShellLexer = shell.NewLex('\\')
 
-func (d *Dockerfile) expandVariables(
-	val string,
-	buildArgs, baseImageEnv map[string]string,
-	stage *BaseStage,
-	_ int,
-) string {
-	result, _, err := defaultShellLexer.ProcessWord(
-		val,
-		&environmentResolver{d, buildArgs, baseImageEnv, stage, 0},
-	)
-	if err != nil {
-		return val
-	}
-	return result
-}
-
 type environmentResolver struct {
 	dockerfile   *Dockerfile
 	buildArgs    map[string]string
@@ -127,7 +109,7 @@ type environmentResolver struct {
 }
 
 func (e *environmentResolver) Get(key string) (string, bool) {
-	val, ok := e.dockerfile.resolveVariable(e.buildArgs, e.baseImageEnv, key, e.stage, 0)
+	val, ok := e.dockerfile.resolveVariable(e.buildArgs, e.baseImageEnv, key, e.stage)
 	return val, ok
 }
 
@@ -140,113 +122,6 @@ func (e *environmentResolver) Keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-func (d *Dockerfile) resolveVariable(
-	buildArgs, baseImageEnv map[string]string,
-	variable string,
-	stage *BaseStage,
-	_ int,
-) (string, bool) {
-	if buildArgs == nil {
-		buildArgs = make(map[string]string)
-	}
-
-	startedFromPreamble := (stage == &d.Preamble.BaseStage)
-	seenStages := make(map[string]bool, 4)
-
-	for {
-		if seenStages[getStageIdentifier(stage)] {
-			return "", false
-		}
-		seenStages[getStageIdentifier(stage)] = true
-
-		if value, found := d.resolveFromArgs(buildArgs, variable, stage); found {
-			return value, true
-		}
-
-		if value, found := d.resolveFromEnvs(buildArgs, baseImageEnv, variable, stage); found {
-			return value, true
-		}
-
-		if stage == &d.Preamble.BaseStage {
-			return d.resolveFromBaseImageEnv(baseImageEnv, variable)
-		}
-
-		if !startedFromPreamble {
-			return d.resolveFromBaseImageEnv(baseImageEnv, variable)
-		}
-
-		stage = d.getParentStage(buildArgs, baseImageEnv, stage)
-	}
-}
-
-func (d *Dockerfile) resolveFromArgs(
-	buildArgs map[string]string,
-	variable string,
-	stage *BaseStage,
-) (string, bool) {
-	for _, v := range slices.Backward(stage.Args) {
-		arg := &v
-		if arg.Key != variable {
-			continue
-		}
-		if val := buildArgs[arg.Key]; val != "" {
-			return strings.Trim(val, "\"'"), true
-		}
-		if arg.Value != nil && *arg.Value != "" {
-			return strings.Trim(*arg.Value, "\"'"), true
-		}
-		return "", true
-	}
-	return "", false
-}
-
-func (d *Dockerfile) resolveFromEnvs(
-	buildArgs, baseImageEnv map[string]string,
-	variable string,
-	stage *BaseStage,
-) (string, bool) {
-	for _, v := range slices.Backward(stage.Envs) {
-		env := &v
-		if env.Key != variable {
-			continue
-		}
-		if env.Value != "" {
-			return d.expandVariables(env.Value, buildArgs, baseImageEnv, stage, 0), true
-		}
-		return "", true
-	}
-	return "", false
-}
-
-func (d *Dockerfile) resolveFromBaseImageEnv(
-	baseImageEnv map[string]string,
-	variable string,
-) (string, bool) {
-	if baseImageEnv != nil {
-		if value, exists := baseImageEnv[variable]; exists {
-			return value, true
-		}
-	}
-	return "", false
-}
-
-func (d *Dockerfile) getParentStage(
-	buildArgs, baseImageEnv map[string]string,
-	stage *BaseStage,
-) *BaseStage {
-	image := d.expandVariables(
-		stage.Image,
-		buildArgs,
-		baseImageEnv,
-		&d.Preamble.BaseStage,
-		d.Stages[0].Instructions[0].StartLine,
-	)
-	if foundStage, ok := d.StagesByTarget[image]; ok {
-		return &foundStage.BaseStage
-	}
-	return &d.Preamble.BaseStage
 }
 
 func RemoveSyntaxVersion(dockerfileContent string) string {
@@ -343,6 +218,126 @@ func (d *Dockerfile) Dump() string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+func (d *Dockerfile) expandVariables(
+	val string,
+	buildArgs, baseImageEnv map[string]string,
+	stage *BaseStage,
+) string {
+	result, _, err := defaultShellLexer.ProcessWord(
+		val,
+		&environmentResolver{d, buildArgs, baseImageEnv, stage, 0},
+	)
+	if err != nil {
+		return val
+	}
+	return result
+}
+
+func (d *Dockerfile) resolveVariable(
+	buildArgs, baseImageEnv map[string]string,
+	variable string,
+	stage *BaseStage,
+) (string, bool) {
+	if buildArgs == nil {
+		buildArgs = make(map[string]string)
+	}
+
+	startedFromPreamble := (stage == &d.Preamble.BaseStage)
+	seenStages := make(map[string]bool, 4)
+
+	for {
+		if seenStages[getStageIdentifier(stage)] {
+			return "", false
+		}
+		seenStages[getStageIdentifier(stage)] = true
+
+		if value, found := d.resolveFromArgs(buildArgs, variable, stage); found {
+			return value, true
+		}
+
+		if value, found := d.resolveFromEnvs(buildArgs, baseImageEnv, variable, stage); found {
+			return value, true
+		}
+
+		if stage == &d.Preamble.BaseStage {
+			return d.resolveFromBaseImageEnv(baseImageEnv, variable)
+		}
+
+		if !startedFromPreamble {
+			return d.resolveFromBaseImageEnv(baseImageEnv, variable)
+		}
+
+		stage = d.getParentStage(buildArgs, baseImageEnv, stage)
+	}
+}
+
+func (d *Dockerfile) resolveFromArgs(
+	buildArgs map[string]string,
+	variable string,
+	stage *BaseStage,
+) (string, bool) {
+	for _, v := range slices.Backward(stage.Args) {
+		arg := &v
+		if arg.Key != variable {
+			continue
+		}
+		if val := buildArgs[arg.Key]; val != "" {
+			return strings.Trim(val, "\"'"), true
+		}
+		if arg.Value != nil && *arg.Value != "" {
+			return strings.Trim(*arg.Value, "\"'"), true
+		}
+		return "", true
+	}
+	return "", false
+}
+
+func (d *Dockerfile) resolveFromEnvs(
+	buildArgs, baseImageEnv map[string]string,
+	variable string,
+	stage *BaseStage,
+) (string, bool) {
+	for _, v := range slices.Backward(stage.Envs) {
+		env := &v
+		if env.Key != variable {
+			continue
+		}
+		if env.Value != "" {
+			return d.expandVariables(env.Value, buildArgs, baseImageEnv, stage), true
+		}
+		return "", true
+	}
+	return "", false
+}
+
+func (d *Dockerfile) resolveFromBaseImageEnv(
+	baseImageEnv map[string]string,
+	variable string,
+) (string, bool) {
+	if baseImageEnv != nil {
+		if value, exists := baseImageEnv[variable]; exists {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func (d *Dockerfile) getParentStage(
+	buildArgs, baseImageEnv map[string]string,
+	stage *BaseStage,
+) *BaseStage {
+	image := d.expandVariables(
+		stage.Image,
+		buildArgs,
+		baseImageEnv,
+		&d.Preamble.BaseStage,
+	)
+	if foundStage, ok := d.StagesByTarget[image]; ok {
+		return &foundStage.BaseStage
+	}
+	return &d.Preamble.BaseStage
 }
 
 func Parse(dockerfileContent string) (*Dockerfile, error) {

@@ -193,10 +193,6 @@ func newStore(
 	}
 }
 
-func (s *instanceStore) key(meta metav1.ObjectMeta) string {
-	return fmt.Sprintf("%s/%s", meta.Namespace, meta.Name)
-}
-
 func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 	if s.filterByOwner && !platform.IsOwner(s.self, instance.Spec.Owner) {
 		return
@@ -251,6 +247,10 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	s.m.Unlock()
 
 	return instanceList
+}
+
+func (s *instanceStore) key(meta metav1.ObjectMeta) string {
+	return fmt.Sprintf("%s/%s", meta.Namespace, meta.Name)
 }
 
 func (s *instanceStore) buildProInstance(

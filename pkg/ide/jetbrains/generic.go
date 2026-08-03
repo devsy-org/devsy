@@ -108,10 +108,6 @@ func (o *GenericJetBrainsServer) GetVolume() string {
 	return fmt.Sprintf("type=volume,src=devsy-%s,dst=%s", o.options.ID, o.getDownloadFolder())
 }
 
-func (o *GenericJetBrainsServer) getDownloadFolder() string {
-	return filepath.Join(config2.ContainerDataDir, o.options.ID)
-}
-
 func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	log.Infof("setup backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 	baseFolder, err := getBaseFolder(o.userName)
@@ -149,6 +145,10 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	log.Infof("installed backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 
 	return o.installPlugins(setupInfo, targetLocation, baseFolder)
+}
+
+func (o *GenericJetBrainsServer) getDownloadFolder() string {
+	return filepath.Join(config2.ContainerDataDir, o.options.ID)
 }
 
 func (o *GenericJetBrainsServer) installPlugins(

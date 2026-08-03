@@ -5,6 +5,11 @@ import (
 	"net"
 )
 
+// StdioListener implements the listener interface.
+type StdioListener struct {
+	connChan chan net.Conn
+}
+
 // NewStdioListener creates a new stdio listener.
 func NewStdioListener(reader io.Reader, writer io.WriteCloser, exitOnClose bool) *StdioListener {
 	conn := NewStdioStream(reader, writer, exitOnClose, 0)
@@ -16,11 +21,6 @@ func NewStdioListener(reader io.Reader, writer io.WriteCloser, exitOnClose bool)
 	return &StdioListener{
 		connChan: connChan,
 	}
-}
-
-// StdioListener implements the listener interface.
-type StdioListener struct {
-	connChan chan net.Conn
 }
 
 // Ready implements interface.

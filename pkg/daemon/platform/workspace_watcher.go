@@ -215,10 +215,6 @@ func newStore(
 	}
 }
 
-func (s *instanceStore) key(namespace, name string) string {
-	return fmt.Sprintf("%s/%s", namespace, name)
-}
-
 func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 	if s.ownerFilter == platform.SelfOwnerFilter && !platform.IsOwner(s.self, instance.GetOwner()) {
 		return
@@ -293,6 +289,10 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	}
 
 	return instanceList
+}
+
+func (s *instanceStore) key(namespace, name string) string {
+	return fmt.Sprintf("%s/%s", namespace, name)
 }
 
 func (s *instanceStore) convert(instance *ProWorkspaceInstance) *ProWorkspaceInstance {

@@ -14,14 +14,6 @@ const (
 	PingWaitDuration = 60 * time.Second
 )
 
-func NewWebsocketConn(ws *websocket.Conn) *WebsocketConn {
-	conn := &WebsocketConn{
-		ws: ws,
-	}
-	conn.setupDeadline()
-	return conn
-}
-
 type WebsocketConn struct {
 	m sync.Mutex
 
@@ -31,30 +23,12 @@ type WebsocketConn struct {
 	closeError error
 }
 
-func (w *WebsocketConn) setupDeadline() {
-	_ = w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration))
-	w.ws.SetPingHandler(func(string) error {
-		w.m.Lock()
-		err := w.ws.WriteControl(
-			websocket.PongMessage,
-			[]byte(""),
-			time.Now().Add(PingWaitDuration),
-		)
-		w.m.Unlock()
-		if err != nil {
-			return err
-		}
-		if err := w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration)); err != nil {
-			return err
-		}
-		return w.ws.SetWriteDeadline(time.Now().Add(PingWaitDuration))
-	})
-	w.ws.SetPongHandler(func(string) error {
-		if err := w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration)); err != nil {
-			return err
-		}
-		return w.ws.SetWriteDeadline(time.Now().Add(PingWaitDuration))
-	})
+func NewWebsocketConn(ws *websocket.Conn) *WebsocketConn {
+	conn := &WebsocketConn{
+		ws: ws,
+	}
+	conn.setupDeadline()
+	return conn
 }
 
 func (w *WebsocketConn) ReadMessage() (messageType int, p []byte, err error) {
@@ -83,4 +57,30 @@ func (w *WebsocketConn) Close() error {
 	})
 
 	return w.closeError
+}
+
+func (w *WebsocketConn) setupDeadline() {
+	_ = w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration))
+	w.ws.SetPingHandler(func(string) error {
+		w.m.Lock()
+		err := w.ws.WriteControl(
+			websocket.PongMessage,
+			[]byte(""),
+			time.Now().Add(PingWaitDuration),
+		)
+		w.m.Unlock()
+		if err != nil {
+			return err
+		}
+		if err := w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration)); err != nil {
+			return err
+		}
+		return w.ws.SetWriteDeadline(time.Now().Add(PingWaitDuration))
+	})
+	w.ws.SetPongHandler(func(string) error {
+		if err := w.ws.SetReadDeadline(time.Now().Add(PingWaitDuration)); err != nil {
+			return err
+		}
+		return w.ws.SetWriteDeadline(time.Now().Add(PingWaitDuration))
+	})
 }
