@@ -318,10 +318,6 @@ var _ = ginkgo.Describe(
 			ginkgo.Label("gpg"),
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				if runtime.GOOS == "windows" {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-gpg-nonroot")
 				framework.ExpectNoError(err)
@@ -338,7 +334,10 @@ var _ = ginkgo.Describe(
 				ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
 				framework.ExpectNoError(
 					framework.ImportGpgKey(
-						filepath.Join(initialDir, "tests/ssh/testdata/gpg-forwarding/gpg-private.key"),
+						filepath.Join(
+							initialDir,
+							"tests/ssh/testdata/gpg-forwarding/gpg-private.key",
+						),
 					),
 				)
 
