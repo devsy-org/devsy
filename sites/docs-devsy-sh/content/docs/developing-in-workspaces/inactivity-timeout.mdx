@@ -1,0 +1,39 @@
+---
+title: Auto-Inactivity Timeout
+sidebar_label: Auto-Inactivity Timeout
+---
+
+By default, most providers are able to automatically shutdown unused workspaces to save costs. For example, for cloud providers such as AWS, Azure and Google Cloud, Devsy will automatically stop the machine to save costs when workspaces are not used.
+
+Machines stopped this way preserve the data and state, so when a workspace [is started again](./connect-to-a-workspace.mdx), Devsy will simply restart the machine and the workspace.
+
+<Callout>
+All official Devsy providers offer this pre-configured to 5-10 minutes. Check the provider options to see how to change the timeout.
+</Callout>
+
+## Configuring the timeout
+
+Changing the default setting for inactivity timeout can be done by [configuring the provider options](../managing-providers/manage-providers.mdx#set-provider-options). Typically there is an option called `INACTIVITY_TIMEOUT` that controls this behaviour.
+
+<Callout>
+More info about the provider's auto-shutdown can be found in the [agent's development guide](../developing-providers/agent.mdx#machine-providers)
+That will explain how this is done and what can be configured.
+</Callout>
+
+## How does it work?
+
+### Non-Machine Providers
+
+For non-machine providers, Devsy can automatically kill the container it's running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if it's not needed. If configured on the provider, Devsy will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will restart the container.
+
+<Callout type="warn" title="Apple provider deletes rather than stops">
+The Apple provider is the exception: its `INACTIVITY_TIMEOUT` option description states that it deletes the container after the idle period, rather than just stopping it like Docker, Podman and Microsandbox. As with any deleted (non-machine) container, only data on mounted volumes survives; anything in the writable layer is lost.
+</Callout>
+
+### Machine Providers
+
+For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused. Instead, Devsy will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, Devsy will automatically shutdown the machine or even delete it, based on whichever is more cost-effective for the given cloud provider. Then when the developer wants to resume development, Devsy restarts or recreates the virtual machine.
+
+<Callout>
+See [agent's development guide](../developing-providers/agent.mdx#machine-providers) to learn more about how inactivity-timeout works on the provider side.
+</Callout>
