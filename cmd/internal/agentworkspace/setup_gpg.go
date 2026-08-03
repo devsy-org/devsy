@@ -107,8 +107,6 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	// A stale lock file (pre-fix binary, or created by another user) may
-	// still be restrictively-moded; flock's own open() would EACCES on it.
 	if err := widenStaleLockFile(); err != nil {
 		return nil, err
 	}
@@ -133,14 +131,12 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
 	}
 
-	// os.Chmod bypasses the umask flock.SetPermissions is subject to. Skipped
-	// when already 0666, since chmod needs ownership even when mode wouldn't change.
 	if needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666); err != nil {
 		_ = lock.Unlock()
 		return nil, fmt.Errorf("stat lock file: %w", err)
 	} else if needsChmod {
-		// #nosec G302 -- 0666 is intentional: both root and the workspace's
-		// remoteUser must be able to acquire this lock.
+		// #nosec G302 -- both root and the workspace's remoteUser must
+		// be able to acquire this lock.
 		if err := os.Chmod(gpgSetupLockPath, 0o666); err != nil {
 			_ = lock.Unlock()
 			return nil, fmt.Errorf("set lock file permissions: %w", err)
@@ -151,9 +147,7 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 }
 
 // lockFileNeedsChmod reports whether path's mode differs from want, so
-// callers can skip a chmod that would EPERM a non-owning acquirer. Uses
-// Lstat and rejects symlinks: os.Chmod follows them, so a lock path
-// replaced with a symlink could redirect the chmod onto an arbitrary file.
+// callers can skip a chmod that would EPERM a non-owning acquirer.
 func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -165,8 +159,6 @@ func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
 	return info.Mode().Perm() != want.Perm(), nil
 }
 
-// widenStaleLockFile chmods a stale, restrictively-moded lock file to 0666
-// (escalating to sudo if we don't own it) before flock's open() can EACCES on it.
 func widenStaleLockFile() error {
 	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
 	if err != nil {

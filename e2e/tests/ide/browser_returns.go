@@ -24,9 +24,8 @@ import (
 
 const gpgTestKeyFingerprint = "07F681B9FD6C3411F679BFD1F51769DB572DDD3F"
 
-// setupBrowserIDE prepares a docker provider + workspace tempdir and registers
-// the standard cleanup deferred to DeferCleanup. It returns the framework and
-// the workspace tempDir path.
+// setupBrowserIDE prepares a docker provider and workspace tempdir and registers
+// the standard cleanup deferred to DeferCleanup.
 func setupBrowserIDE(ctx context.Context, initialDir string) (*framework.Framework, string) {
 	f := framework.NewDefaultFramework(initialDir + "/bin")
 	tempDir, err := framework.CopyToTempDir("tests/ide/testdata")

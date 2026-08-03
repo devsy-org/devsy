@@ -122,8 +122,6 @@ func TestAcquireGPGSetupLock_FileIsWorldLockable(t *testing.T) {
 			"with EACCES")
 }
 
-// TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod covers
-// a non-owning second acquirer of an already-0666 lock, whose chmod would EPERM.
 func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
@@ -149,8 +147,6 @@ func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testi
 	reacquire()
 }
 
-// TestAcquireGPGSetupLock_FixesWrongMode ensures the skip-chmod-if-0666
-// optimization doesn't skip fixing a genuinely wrong mode.
 func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
@@ -207,13 +203,6 @@ func TestLockFileNeedsChmod_StatErrorPropagates(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile covers a lock file
-// left behind at a restrictive mode (e.g. by a pre-fix binary): flock's own
-// open() would EACCES on a 0600 file owned by someone else before ever
-// reaching acquireGPGSetupLock's post-lock chmod, so the fix must widen it
-// beforehand. This test only exercises the plain-chmod branch (the file is
-// owned by the test process); the sudo-escalation branch requires a real
-// cross-user setup and isn't reproducible in a unit test.
 func TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
@@ -231,10 +220,6 @@ func TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
 }
 
-// TestAcquireGPGSetupLock_RejectsSymlink guards against a symlink planted at
-// the lock path redirecting os.Chmod onto an arbitrary target file, since
-// os.Chmod follows symlinks and this lock path is a fixed, predictable
-// world-writable /tmp path any container user can pre-create.
 func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
 	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
 	dir := t.TempDir()

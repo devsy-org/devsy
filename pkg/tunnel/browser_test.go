@@ -54,7 +54,7 @@ func (fakeWorkspaceClient) Unlock()                              {}
 var _ client2.BaseWorkspaceClient = fakeWorkspaceClient{}
 
 // exitError runs a shell command that exits with the given code and returns
-// the resulting error (which wraps *exec.ExitError).
+// the resulting error.
 func exitError(t *testing.T, code int) error {
 	t.Helper()
 	// #nosec G204 -- test helper with controlled exit code argument

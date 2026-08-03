@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// containsAdjacent returns true if args contains needle followed immediately
-// by value.
 func containsAdjacent(args []string, needle, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == needle && args[i+1] == value {
@@ -106,9 +104,6 @@ func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 	}
 }
 
-// TestBuildHelperArgs_IncludesResolvedUser guards against the fleet/openBrowserIDE
-// user-propagation regression: the detached helper must run as the resolved
-// workspace user, never empty/root.
 func TestBuildHelperArgs_IncludesResolvedUser(t *testing.T) {
 	args := buildHelperArgs("default", "my-workspace", tunnel.BrowserTunnelParams{
 		User:      "vscode",
