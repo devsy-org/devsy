@@ -19,7 +19,7 @@ func TestServer_ListsAllTools(t *testing.T) {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "devsy-test", Version: "test"}, nil)
 	g := &flags.GlobalFlags{}
 	serveCmd := &ServeCmd{GlobalFlags: g, ExecOutputCap: 1024}
-	serveCmd.registerTools(server)
+	serveCmd.registerTools(server, newOpSemaphore(8))
 
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
 
@@ -56,4 +56,27 @@ func TestServer_ListsAllTools(t *testing.T) {
 	if len(tools.Tools) != len(wantNames) {
 		t.Errorf("expected %d tools, got %d: %+v", len(wantNames), len(tools.Tools), have)
 	}
+}
+
+func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DEVSY_HOME", home)
+
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "devsy-test", Version: "test"}, nil)
+	serveCmd := &ServeCmd{GlobalFlags: &flags.GlobalFlags{}, MaxConcurrentOps: 1}
+	sem := newOpSemaphore(serveCmd.MaxConcurrentOps)
+	serveCmd.registerTools(server, sem)
+
+	release, err := sem.acquire(context.Background())
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, acquireErr := sem.acquire(ctx)
+	if acquireErr == nil {
+		t.Fatal("expected second acquire to block/fail while the only slot is held")
+	}
+	release()
 }
