@@ -9,10 +9,9 @@ const config = {
   images: {
     unoptimized: true, // required for static export
   },
-  // Keep the legacy Docusaurus `pages/` directory (still present until Task 3
-  // migrates its content into `content/docs`) from being picked up by the
-  // Next.js Pages Router, which would otherwise try to compile its
-  // Docusaurus-only MDX (e.g. `@theme/Tabs`) as app pages.
+  // Restrict page extensions to app-router file types only, so the Next.js
+  // Pages Router never picks up stray `.md`/`.mdx` files (e.g. content under
+  // `content/docs`) as pages.
   pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
 };
 

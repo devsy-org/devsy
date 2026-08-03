@@ -1,10 +1,15 @@
 import { Inter } from 'next/font/google';
 import { Provider } from '@/components/provider';
 import './global.css';
+import type { Metadata } from 'next';
 
 const inter = Inter({
   subsets: ['latin'],
 });
+
+export const metadata: Metadata = {
+  metadataBase: new URL('https://www.devsy.sh'),
+};
 
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
