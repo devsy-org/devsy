@@ -71,13 +71,7 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
 
-			// Stays root: runBrowserTunnelServices/RunServices reads
-			// root-owned files (e.g. DevContainerResultPath) over this same
-			// connection. GPG's shared /tmp lock/activity files are already
-			// safe for a mixed root+remoteUser pair (see acquireGPGSetupLock,
-			// ensureActivityFile) — this session doesn't need to match
-			// remoteUser to avoid that collision.
-			sshCmd, err := CreateSSHCommand(ctx, p.Client, "", []string{
+			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
 				names.FlagValue(names.LogOutput, "raw"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
@@ -248,9 +242,13 @@ func isTransientBackhaulErr(err error) bool {
 	return exitErr.ExitCode() == exitcode.Retryable
 }
 
-// CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
-// user must match the ssh-server/gpg-setup sessions' user, or they collide on
-// shared /tmp coordination files (devsy-gpg-setup.lock, devsy.activity).
+// CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given
+// arguments. The container's SSH server has one identity per session: user
+// both authenticates the connection and is who every command on it runs as
+// (pkg/ssh/server/ssh_container.go's getCommand calls PrepareCmdUser with the
+// authenticated user, no separate privilege-drop step). Callers whose later
+// traffic on this same session needs specific file access must pick user
+// accordingly — empty defaults to root.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,

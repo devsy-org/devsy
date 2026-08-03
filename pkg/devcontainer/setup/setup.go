@@ -210,21 +210,37 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 		return
 	}
 
-	existing, _ := os.ReadFile(pkgconfig.DevContainerResultPath)
-	if string(rawBytes) == string(existing) {
-		return
-	}
-
-	if err := os.MkdirAll( // #nosec G301
-		filepath.Dir(pkgconfig.DevContainerResultPath),
-		0o755,
-	); err != nil {
-		log.Warnf("error create %s: %v", filepath.Dir(pkgconfig.DevContainerResultPath), err)
-	}
-
-	if err := os.WriteFile(pkgconfig.DevContainerResultPath, rawBytes, 0o600); err != nil {
+	if err := writeResultFileTo(pkgconfig.DevContainerResultPath, rawBytes); err != nil {
 		log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
 	}
+}
+
+// writeResultFileTo writes rawBytes to path at mode 0644: readable by any
+// container user, not just root. Callers that read this file
+// (getContainerResult, portOptionsFromResult) run over SSH sessions
+// authenticated as either root or the workspace's remoteUser, and the file
+// holds no secrets — just devcontainer.json's merged config, mounts, and
+// port attributes. Skips the write entirely if content is unchanged.
+func writeResultFileTo(path string, rawBytes []byte) error {
+	// #nosec G304 -- callers pass a fixed const path; parameterized only for tests
+	existing, _ := os.ReadFile(path)
+	if string(rawBytes) == string(existing) {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+
+	if err := os.WriteFile(path, rawBytes, 0o644); err != nil { //nolint:gosec // see doc comment
+		return fmt.Errorf("write: %w", err)
+	}
+	// os.WriteFile's mode is subject to umask; chmod to guarantee 0644
+	// regardless of what wrote/created the file first.
+	if err := os.Chmod(path, 0o644); err != nil { //nolint:gosec // see doc comment
+		return fmt.Errorf("chmod: %w", err)
+	}
+	return nil
 }
 
 func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
