@@ -19,15 +19,15 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
-    "@types/mdx": "^2.0.14",
-    "@types/node": "^26.1.2",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdx": "2.0.14",
+    "@types/node": "26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "next-validate-link": "^1.6.6",
-    "postcss": "^8.5.24",
-    "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.5",
-    "typescript": "^6.0.3"
+    "next-validate-link": "1.6.6",
+    "postcss": "8.5.25",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.5",
+    "typescript": "6.0.3"
   }
 }
