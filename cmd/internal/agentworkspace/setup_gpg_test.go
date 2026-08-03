@@ -207,6 +207,30 @@ func TestLockFileNeedsChmod_StatErrorPropagates(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile covers a lock file
+// left behind at a restrictive mode (e.g. by a pre-fix binary): flock's own
+// open() would EACCES on a 0600 file owned by someone else before ever
+// reaching acquireGPGSetupLock's post-lock chmod, so the fix must widen it
+// beforehand. This test only exercises the plain-chmod branch (the file is
+// owned by the test process); the sudo-escalation branch requires a real
+// cross-user setup and isn't reproducible in a unit test.
+func TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err, "a stale restrictively-moded lock file must not block acquisition")
+	defer unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+}
+
 // TestAcquireGPGSetupLock_RejectsSymlink guards against a symlink planted at
 // the lock path redirecting os.Chmod onto an arbitrary target file, since
 // os.Chmod follows symlinks and this lock path is a fixed, predictable
@@ -230,4 +254,33 @@ func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
 		"the symlink target's mode must be untouched, not widened to 0666")
+}
+
+func TestWidenStaleLockFile_NoOpsWhenFileMissingOrAlreadyCorrect(t *testing.T) {
+	origPath := gpgSetupLockPath
+	defer func() { gpgSetupLockPath = origPath }()
+
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "does-not-exist")
+	err := widenStaleLockFile()
+	require.NoError(t, err, "a missing lock file is flock's job to create, not this")
+
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "already-0666")
+	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o666))
+	require.NoError(t, widenStaleLockFile())
+}
+
+func TestWidenStaleLockFile_WidensRestrictiveMode(t *testing.T) {
+	origPath := gpgSetupLockPath
+	defer func() { gpgSetupLockPath = origPath }()
+
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "restrictive")
+	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
+
+	require.NoError(t, widenStaleLockFile())
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
 }

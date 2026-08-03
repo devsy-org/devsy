@@ -3,8 +3,11 @@ package agentworkspace
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -104,6 +107,12 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
+	// A stale lock file (pre-fix binary, or created by another user) may
+	// still be restrictively-moded; flock's own open() would EACCES on it.
+	if err := widenStaleLockFile(); err != nil {
+		return nil, err
+	}
+
 	// 0666: setup-gpg can run as root or the workspace's remoteUser, and
 	// flock's default 0600 mode would lock the second one out with EACCES.
 	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(0o666))
@@ -154,6 +163,37 @@ func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
 		return false, fmt.Errorf("refusing to chmod %s: path is a symlink", path)
 	}
 	return info.Mode().Perm() != want.Perm(), nil
+}
+
+// widenStaleLockFile chmods a stale, restrictively-moded lock file to 0666
+// (escalating to sudo if we don't own it) before flock's open() can EACCES on it.
+func widenStaleLockFile() error {
+	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat lock file: %w", err)
+	}
+	if !needsChmod {
+		return nil
+	}
+
+	// #nosec G302 -- 0666 is intentional; see acquireGPGSetupLock.
+	if err := os.Chmod(gpgSetupLockPath, 0o666); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrPermission) {
+		return fmt.Errorf("widen stale lock file: %w", err)
+	}
+
+	//nolint:gosec // gpgSetupLockPath is a fixed path, not user input
+	if err := exec.Command("sudo", "chmod", "0666", gpgSetupLockPath).Run(); err != nil {
+		log.Debugf(
+			"sudo chmod stale gpg setup lock (non-fatal, flock will surface the real error): %v",
+			err,
+		)
+	}
+	return nil
 }
 
 func fetchAndDecodeKeys(ownerTrustB64 string) ([]byte, []byte, error) {
