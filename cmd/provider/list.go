@@ -177,6 +177,21 @@ func (cmd *ListCmd) runAvailable(ctx context.Context) error {
 		return err
 	}
 
+	providers := availableProviderNames(jsonResult)
+
+	switch mode {
+	case output.ModePlain:
+		return cmd.renderAvailablePlain(providers)
+	case output.ModeJSON:
+		return cmd.renderAvailableJSON(providers)
+	}
+
+	return nil
+}
+
+// availableProviderNames extracts provider names from repo JSON entries,
+// stripping the config.ProviderPrefix and skipping non-matching repos.
+func availableProviderNames(jsonResult []map[string]any) []string {
 	var providers []string
 	for _, v := range jsonResult {
 		name, ok := v["name"].(string)
@@ -187,15 +202,7 @@ func (cmd *ListCmd) runAvailable(ctx context.Context) error {
 			providers = append(providers, after)
 		}
 	}
-
-	switch mode {
-	case output.ModePlain:
-		return cmd.renderAvailablePlain(providers)
-	case output.ModeJSON:
-		return cmd.renderAvailableJSON(providers)
-	}
-
-	return nil
+	return providers
 }
 
 // renderAvailablePlain renders available providers in plain text format.

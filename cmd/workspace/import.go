@@ -128,25 +128,10 @@ func (cmd *ImportCmd) importWorkspace(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
 ) error {
-	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, cmd.WorkspaceID)
-	if err != nil {
-		return fmt.Errorf("get workspace dir: %w", err)
-	}
-
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(workspaceDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("create workspace dir: %w", err)
-	}
-
-	decoded, err := base64.RawStdEncoding.DecodeString(exportConfig.Workspace.Data)
-	if err != nil {
-		return fmt.Errorf("decode workspace data: %w", err)
-	}
-
-	err = extract.Extract(bytes.NewReader(decoded), workspaceDir)
-	if err != nil {
-		return fmt.Errorf("extract workspace data: %w", err)
+	if err := extractWorkspaceData(
+		devsyConfig, cmd.WorkspaceID, exportConfig.Workspace.Data,
+	); err != nil {
+		return err
 	}
 
 	// exchange config
@@ -163,21 +148,9 @@ func (cmd *ImportCmd) importWorkspace(
 	workspaceConfig.Provider.Name = cmd.ProviderID
 
 	if exportConfig.SnapshotRef != "" {
-		sourceStr, devContainerSource, err := snapshotpkg.RestoreComposition(
-			exportConfig.SnapshotRef,
-		)
-		if err != nil {
-			return fmt.Errorf("parse snapshot ref: %w", err)
+		if err := applySnapshotSource(workspaceConfig, exportConfig.SnapshotRef); err != nil {
+			return err
 		}
-		parsedSource := provider.ParseWorkspaceSource(sourceStr)
-		if parsedSource == nil {
-			return fmt.Errorf(
-				"compose workspace source from snapshot ref: unexpected source %q",
-				sourceStr,
-			)
-		}
-		workspaceConfig.Source = *parsedSource
-		workspaceConfig.DevContainerSource = devContainerSource
 	}
 
 	// save machine config
@@ -187,6 +160,49 @@ func (cmd *ImportCmd) importWorkspace(
 	}
 
 	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
+	return nil
+}
+
+// extractWorkspaceData creates workspaceID's workspace dir and extracts the
+// base64-encoded, archived workspace data into it.
+func extractWorkspaceData(devsyConfig *config.Config, workspaceID, data string) error {
+	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, workspaceID)
+	if err != nil {
+		return fmt.Errorf("get workspace dir: %w", err)
+	}
+
+	// #nosec G301
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		return fmt.Errorf("create workspace dir: %w", err)
+	}
+
+	decoded, err := base64.RawStdEncoding.DecodeString(data)
+	if err != nil {
+		return fmt.Errorf("decode workspace data: %w", err)
+	}
+
+	if err := extract.Extract(bytes.NewReader(decoded), workspaceDir); err != nil {
+		return fmt.Errorf("extract workspace data: %w", err)
+	}
+	return nil
+}
+
+// applySnapshotSource resolves snapshotRef into a workspace source and dev
+// container source, applying both to workspaceConfig.
+func applySnapshotSource(workspaceConfig *provider.Workspace, snapshotRef string) error {
+	sourceStr, devContainerSource, err := snapshotpkg.RestoreComposition(snapshotRef)
+	if err != nil {
+		return fmt.Errorf("parse snapshot ref: %w", err)
+	}
+	parsedSource := provider.ParseWorkspaceSource(sourceStr)
+	if parsedSource == nil {
+		return fmt.Errorf(
+			"compose workspace source from snapshot ref: unexpected source %q",
+			sourceStr,
+		)
+	}
+	workspaceConfig.Source = *parsedSource
+	workspaceConfig.DevContainerSource = devContainerSource
 	return nil
 }
 
