@@ -107,7 +107,7 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	if err := widenStaleLockFile(); err != nil {
+	if err := widenStaleLockFile(lockCtx); err != nil {
 		return nil, err
 	}
 
@@ -159,7 +159,7 @@ func lockFileNeedsChmod(path string, want os.FileMode) (bool, error) {
 	return info.Mode().Perm() != want.Perm(), nil
 }
 
-func widenStaleLockFile() error {
+func widenStaleLockFile(ctx context.Context) error {
 	needsChmod, err := lockFileNeedsChmod(gpgSetupLockPath, 0o666)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -178,8 +178,11 @@ func widenStaleLockFile() error {
 		return fmt.Errorf("widen stale lock file: %w", err)
 	}
 
+	// -n: fail immediately instead of prompting if sudo needs a password,
+	// so a misconfigured container can't hang acquireGPGSetupLock forever.
 	//nolint:gosec // gpgSetupLockPath is a fixed path, not user input
-	if err := exec.Command("sudo", "chmod", "0666", gpgSetupLockPath).Run(); err != nil {
+	cmd := exec.CommandContext(ctx, "sudo", "-n", "chmod", "0666", gpgSetupLockPath)
+	if err := cmd.Run(); err != nil {
 		log.Debugf(
 			"sudo chmod stale gpg setup lock (non-fatal, flock will surface the real error): %v",
 			err,

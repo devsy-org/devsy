@@ -246,14 +246,14 @@ func TestWidenStaleLockFile_NoOpsWhenFileMissingOrAlreadyCorrect(t *testing.T) {
 	defer func() { gpgSetupLockPath = origPath }()
 
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "does-not-exist")
-	err := widenStaleLockFile()
+	err := widenStaleLockFile(context.Background())
 	require.NoError(t, err, "a missing lock file is flock's job to create, not this")
 
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "already-0666")
 	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
 	//nolint:gosec // test fixture, intentional
 	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o666))
-	require.NoError(t, widenStaleLockFile())
+	require.NoError(t, widenStaleLockFile(context.Background()))
 }
 
 func TestWidenStaleLockFile_WidensRestrictiveMode(t *testing.T) {
@@ -263,7 +263,7 @@ func TestWidenStaleLockFile_WidensRestrictiveMode(t *testing.T) {
 	gpgSetupLockPath = filepath.Join(t.TempDir(), "restrictive")
 	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
 
-	require.NoError(t, widenStaleLockFile())
+	require.NoError(t, widenStaleLockFile(context.Background()))
 
 	info, err := os.Stat(gpgSetupLockPath)
 	require.NoError(t, err)
