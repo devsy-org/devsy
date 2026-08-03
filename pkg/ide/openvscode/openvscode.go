@@ -177,6 +177,7 @@ func (o *OpenVSCodeServer) Start() error {
 		} else {
 			args = append(args, "sh", "-c", runCommand)
 		}
+		//nolint:gosec // G204: shell/su fixed above, runCommand built from internal binaryPath and config, not external input
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = location
 		return cmd, nil
@@ -225,6 +226,7 @@ func (o *OpenVSCodeServer) installExtensions() error {
 		} else {
 			args = append(args, "sh", "-c", runCommand)
 		}
+		//nolint:gosec // G204: shell/su fixed above, runCommand built from internal binaryPath and config, not external input
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Stdout = out
 		cmd.Stderr = out

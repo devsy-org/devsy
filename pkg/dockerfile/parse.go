@@ -38,7 +38,6 @@ func (d *Dockerfile) FindUserStatement(
 				buildArgs,
 				baseImageEnv,
 				&stage.BaseStage,
-				0,
 			)
 		}
 
@@ -51,7 +50,6 @@ func (d *Dockerfile) FindUserStatement(
 			buildArgs,
 			baseImageEnv,
 			&d.Preamble.BaseStage,
-			d.Stages[0].Instructions[0].StartLine,
 		)
 		stage, ok = d.StagesByTarget[image]
 		if !ok {
@@ -74,7 +72,7 @@ func (d *Dockerfile) FindBaseImage(buildArgs map[string]string, target string) s
 		return ""
 	}
 
-	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage, 0)
+	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage)
 
 	// If image is a stage reference, resolve it recursively
 	if _, ok := d.StagesByTarget[image]; ok {
@@ -111,7 +109,7 @@ type environmentResolver struct {
 }
 
 func (e *environmentResolver) Get(key string) (string, bool) {
-	val, ok := e.dockerfile.resolveVariable(e.buildArgs, e.baseImageEnv, key, e.stage, 0)
+	val, ok := e.dockerfile.resolveVariable(e.buildArgs, e.baseImageEnv, key, e.stage)
 	return val, ok
 }
 
@@ -226,7 +224,6 @@ func (d *Dockerfile) expandVariables(
 	val string,
 	buildArgs, baseImageEnv map[string]string,
 	stage *BaseStage,
-	_ int,
 ) string {
 	result, _, err := defaultShellLexer.ProcessWord(
 		val,
@@ -242,7 +239,6 @@ func (d *Dockerfile) resolveVariable(
 	buildArgs, baseImageEnv map[string]string,
 	variable string,
 	stage *BaseStage,
-	_ int,
 ) (string, bool) {
 	if buildArgs == nil {
 		buildArgs = make(map[string]string)
@@ -309,7 +305,7 @@ func (d *Dockerfile) resolveFromEnvs(
 			continue
 		}
 		if env.Value != "" {
-			return d.expandVariables(env.Value, buildArgs, baseImageEnv, stage, 0), true
+			return d.expandVariables(env.Value, buildArgs, baseImageEnv, stage), true
 		}
 		return "", true
 	}
@@ -337,7 +333,6 @@ func (d *Dockerfile) getParentStage(
 		buildArgs,
 		baseImageEnv,
 		&d.Preamble.BaseStage,
-		d.Stages[0].Instructions[0].StartLine,
 	)
 	if foundStage, ok := d.StagesByTarget[image]; ok {
 		return &foundStage.BaseStage
