@@ -1,2 +1,5 @@
 # Home Routes
 /docs                                           /docs/what-is-devsy                   301!
+
+# New redirect for the quickstart move (Task 3, Step 3)
+/docs/quickstart/quickstart                     /docs/getting-started/quickstart      301!
