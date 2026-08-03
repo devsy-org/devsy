@@ -12,9 +12,7 @@ import (
 
 const jsonRPCVersion = "2.0"
 
-// MCPClient drives a real `devsy mcp serve` subprocess over stdio JSON-RPC,
-// for e2e tests that need to exercise the actual MCP transport rather than
-// the in-process SDK transport used by cmd/mcp's unit tests.
+// MCPClient drives a real `devsy mcp serve` subprocess over stdio JSON-RPC.
 type MCPClient struct {
 	cmd     *exec.Cmd
 	stdin   *bufio.Writer
@@ -40,8 +38,8 @@ type jsonRPCResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// StartMCPServer launches `devsy mcp serve` as a subprocess and completes the
-// MCP initialize handshake. Callers must call Close when done.
+// StartMCPServer launches `devsy mcp serve` and completes the MCP initialize
+// handshake. Callers must call Close when done.
 func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 	// #nosec G204 -- fixed subcommand args against the compiled test binary, not user input
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), "mcp", "serve")
@@ -92,8 +90,6 @@ func (f *Framework) StartMCPServer(ctx context.Context) (*MCPClient, error) {
 	return c, nil
 }
 
-// CallTool invokes an MCP tool and returns its decoded structuredContent,
-// whether the tool reported isError, and any transport-level error.
 func (c *MCPClient) CallTool(
 	ctx context.Context, name string, args map[string]any,
 ) (map[string]any, bool, error) {
@@ -123,7 +119,6 @@ func (c *MCPClient) CallTool(
 	return result.StructuredContent, result.IsError, nil
 }
 
-// Close terminates the subprocess and releases its pipes.
 func (c *MCPClient) Close() error {
 	return c.closeFn()
 }

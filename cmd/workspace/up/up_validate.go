@@ -50,14 +50,9 @@ func (cmd *UpCmd) validate() error {
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
 }
 
-// applySkipLaunchIDEDefault mirrors the pairing RunHeadless already applies
-// deliberately (up.go's RunHeadless sets IDELaunch=LaunchSkip and
-// IDE=config.IDENone together): if the caller asked to skip IDE launch and
-// did not explicitly choose an IDE, also skip the IDE server install by
-// defaulting IDE to none. Without this, --ide-launch=skip only suppresses
-// the host-side open, while the container still downloads and installs an
-// IDE server binary nobody asked for (see cmd/internal/agentcontainer/setup.go
-// installIDE, which is gated purely on IDE name, not IDELaunch).
+// installIDE (cmd/internal/agentcontainer/setup.go) gates the container-side
+// IDE server download on IDE name alone, not IDELaunch, so skipping launch
+// without also defaulting IDE to none still downloads an unwanted binary.
 func (cmd *UpCmd) applySkipLaunchIDEDefault() {
 	if cmd.IDELaunch == opener.LaunchSkip && cmd.IDE == "" {
 		cmd.IDE = string(config.IDENone)

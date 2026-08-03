@@ -31,23 +31,17 @@ const (
 // applies. Long enough for typical build/test, short enough to surface hangs.
 const defaultExecTimeoutSeconds = 300
 
-// execLocker is the subset of client.BaseWorkspaceClient needed to guard an
-// exec against a concurrent delete/create/rename on the same workspace.
 type execLocker interface {
 	Lock(ctx context.Context) error
 	Unlock()
 }
 
-// defaultExecLockTimeout bounds how long ExecOneShot waits for the workspace
-// lock before giving up. Kept short (unlike the 5-minute lockTimeout used by
-// delete/create) because a caller already has its own exec timeout budget
-// (see ExecOneShotOptions.ResolveTimeout) and a long lock wait would starve it.
+// defaultExecLockTimeout is short relative to delete/create's 5-minute
+// lockTimeout, since an exec caller has its own exec timeout budget.
 const defaultExecLockTimeout = 15 * time.Second
 
-// acquireExecLock attempts to lock the workspace within timeout. On success
-// it returns nil and the caller must call client.Unlock() when done. On
-// failure it returns an error and the caller must NOT call Unlock (nothing
-// was acquired).
+// acquireExecLock returns nil on success (caller must Unlock) or an error
+// (caller must not Unlock — nothing was acquired).
 func acquireExecLock(ctx context.Context, client execLocker, timeout time.Duration) error {
 	lockCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

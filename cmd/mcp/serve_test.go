@@ -121,9 +121,7 @@ func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
 	assertNotSemaphoreError(t, res)
 }
 
-// assertNotSemaphoreError fails the test if res failed due to the semaphore
-// wait itself, as opposed to some other (expected, in this unit test) error
-// like the workspace not existing.
+// A non-semaphore error (e.g. workspace not found) is expected here.
 func assertNotSemaphoreError(t *testing.T, res *sdkmcp.CallToolResult) {
 	t.Helper()
 	if !res.IsError {

@@ -198,13 +198,6 @@ func (f *fakeLockClient) Unlock() {
 }
 
 func TestExecOneShot_LockedWorkspaceReturnsBusyError(t *testing.T) {
-	// This test documents the required behavior: resolveExecTarget must
-	// surface a locked-workspace condition as an error before touching the
-	// container, not proceed silently. Since resolveExecTarget currently
-	// calls workspace.Get directly (a package function, not injectable),
-	// this test exercises the seam introduced in Step 3: a lock acquired via
-	// client.Lock must be attempted, and a lock failure must short-circuit
-	// before FindRunning/Exec run.
 	lockClient := &fakeLockClient{lockErr: fmt.Errorf("timed out waiting to lock workspace")}
 	err := acquireExecLock(context.Background(), lockClient, defaultExecLockTimeout)
 	if err == nil {
@@ -231,11 +224,8 @@ func TestExecOneShot_UnlocksAfterSuccessfulLock(t *testing.T) {
 		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
 	}
 
-	// acquireExecLock itself never calls Unlock; that's the caller's
-	// responsibility (resolveExecTarget returns client.Unlock as
-	// resolvedExecTarget.unlock, and ExecOneShot defers it). Simulate that
-	// caller-side unlock to prove the successful-lock path is actually
-	// unlockable, not just lockable.
+	// acquireExecLock never calls Unlock itself; the caller does (see
+	// resolveExecTarget/ExecOneShot), simulated here.
 	lockClient.Unlock()
 	if lockClient.unlockCalls != 1 {
 		t.Fatalf("expected 1 unlock call, got %d", lockClient.unlockCalls)

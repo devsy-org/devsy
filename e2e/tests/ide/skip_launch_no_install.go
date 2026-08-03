@@ -21,15 +21,6 @@ var _ = ginkgo.Describe("devsy up --ide-launch=skip", ginkgo.Label("ide"), ginkg
 		framework.ExpectNoError(err)
 	})
 
-	// This asserts on the host-side resolved workspace config rather than a
-	// container filesystem path: ws.IDE.Name is exactly the value
-	// applySkipLaunchIDEDefault (up_validate.go) is responsible for defaulting
-	// to "none", and it is also exactly the value installIDE
-	// (cmd/internal/agentcontainer/setup.go) gates the container-side IDE
-	// server download on. Asserting on a container path like
-	// ~/.openvscode-server is brittle to remoteUser/image changes (it varies
-	// per devcontainer) and would not actually discriminate a reverted fix
-	// here, since --ide=openvscode is never requested either way.
 	ginkgo.It("defaults the resolved IDE to none when --ide is omitted",
 		func(ctx context.Context) {
 			f, tempDir := setupBrowserIDE(ctx, initialDir)
