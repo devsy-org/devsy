@@ -12,3 +12,5 @@
 /docs/managing-providers/set-source               /docs/managing-providers/manage-providers#updating-a-providers-version-or-source  301!
 /docs/managing-providers/remove-provider          /docs/managing-providers/manage-providers#removing-a-provider    301!
 /docs/managing-providers/rename-provider          /docs/managing-providers/manage-providers#renaming-a-provider    301!
+
+/docs/developing-in-workspaces/what-are-workspaces  /docs/developing-in-workspaces/create-a-workspace  301!

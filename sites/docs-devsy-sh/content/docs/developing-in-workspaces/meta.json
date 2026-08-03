@@ -1,7 +1,6 @@
 {
   "title": "Developing in a Workspace",
   "pages": [
-    "what-are-workspaces",
     "create-a-workspace",
     "connect-to-a-workspace",
     "devcontainer-json",
