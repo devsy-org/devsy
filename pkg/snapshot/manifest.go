@@ -196,24 +196,53 @@ func (m *Manifest) ContainerEnv() (map[string]string, error) {
 	return env, nil
 }
 
-// ContainerImage returns the manifest's committed container filesystem layer.
+// ContainerImage returns the manifest's committed container filesystem
+// layer, or an error if the manifest's layer contract isn't satisfied (see
+// validateLayers).
 func (m *Manifest) ContainerImage() (Descriptor, error) {
-	for _, l := range m.Layers {
-		if l.MediaType != VolumesMediaType {
-			return l, nil
-		}
+	imgIdx, _, err := validateLayers(m.Layers)
+	if err != nil {
+		return Descriptor{}, err
 	}
-	return Descriptor{}, fmt.Errorf("snapshot manifest has no container image layer")
+	return m.Layers[imgIdx], nil
 }
 
-// Volumes returns the manifest's volumes archive layer.
+// Volumes returns the manifest's volumes archive layer, or an error if the
+// manifest's layer contract isn't satisfied (see validateLayers).
 func (m *Manifest) Volumes() (Descriptor, error) {
-	for _, l := range m.Layers {
-		if l.MediaType == VolumesMediaType {
-			return l, nil
-		}
+	_, volIdx, err := validateLayers(m.Layers)
+	if err != nil {
+		return Descriptor{}, err
 	}
-	return Descriptor{}, fmt.Errorf("snapshot manifest has no volumes layer")
+	return m.Layers[volIdx], nil
+}
+
+// validateLayers enforces the snapshot manifest layer contract: exactly one
+// container image layer (any media type other than VolumesMediaType) and
+// exactly one VolumesMediaType layer, no duplicates of either, and no other
+// layers. Returns their indices into layers.
+func validateLayers(layers []Descriptor) (imgIdx, volIdx int, err error) {
+	imgIdx, volIdx = -1, -1
+	for i, l := range layers {
+		if l.MediaType == VolumesMediaType {
+			if volIdx != -1 {
+				return -1, -1, fmt.Errorf("snapshot manifest has more than one volumes layer")
+			}
+			volIdx = i
+			continue
+		}
+		if imgIdx != -1 {
+			return -1, -1, fmt.Errorf("snapshot manifest has more than one container image layer")
+		}
+		imgIdx = i
+	}
+	if imgIdx == -1 {
+		return -1, -1, fmt.Errorf("snapshot manifest has no container image layer")
+	}
+	if volIdx == -1 {
+		return -1, -1, fmt.Errorf("snapshot manifest has no volumes layer")
+	}
+	return imgIdx, volIdx, nil
 }
 
 func (m *Manifest) MarshalOCI() ([]byte, error) {
@@ -241,6 +270,9 @@ func ParseManifest(raw []byte) (*Manifest, error) {
 			m.ArtifactType,
 			ManifestArtifactType,
 		)
+	}
+	if _, _, err := validateLayers(m.Layers); err != nil {
+		return nil, fmt.Errorf("parse snapshot manifest: %w", err)
 	}
 	return m, nil
 }

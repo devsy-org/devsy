@@ -109,16 +109,33 @@ func TestRedactedContainerEnv_NilInputStaysNil(t *testing.T) {
 
 func TestRedactedContainerEnv_DropsCredentialLikeKeys(t *testing.T) {
 	env := map[string]string{
-		testNormalEnvVar: testNormalEnvValue,
-		"API_TOKEN":      testLeakedValue,
-		"my_secret":      testLeakedValue,
-		"DB_PASSWORD":    testLeakedValue,
-		"apiKey":         testLeakedValue,
+		testNormalEnvVar:    testNormalEnvValue,
+		"API_TOKEN":         testLeakedValue,
+		"my_secret":         testLeakedValue,
+		"DB_PASSWORD":       testLeakedValue,
+		"apiKey":            testLeakedValue,
+		"SSH_PRIVATE_KEY":   testLeakedValue,
+		"AWS_ACCESS_KEY_ID": testLeakedValue,
+		"GITHUB_PAT":        testLeakedValue,
+		"CREDENTIAL":        testLeakedValue,
+		"AUTHORIZATION":     testLeakedValue,
 	}
 
 	got := redactedContainerEnv(env)
 
 	require.Equal(t, map[string]string{testNormalEnvVar: testNormalEnvValue}, got)
+}
+
+func TestRedactedContainerEnv_DoesNotDropUnrelatedKeys(t *testing.T) {
+	env := map[string]string{
+		testNormalEnvVar: testNormalEnvValue,
+		"PATH":           "/usr/bin",
+		"UPDATE_CHANNEL": "stable",
+	}
+
+	got := redactedContainerEnv(env)
+
+	require.Equal(t, env, got)
 }
 
 func TestResolveRegistry_ErrorsWhenUnset(t *testing.T) {

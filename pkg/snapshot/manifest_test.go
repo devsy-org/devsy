@@ -210,6 +210,76 @@ func TestParseManifest_RejectsInvalidSchemaVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "unsupported schemaVersion")
 }
 
+func TestParseManifest_RejectsMissingContainerImageLayer(t *testing.T) {
+	m := &Manifest{
+		SchemaVersion: 2,
+		MediaType:     ManifestMediaType,
+		ArtifactType:  ManifestArtifactType,
+		Layers:        []Descriptor{{MediaType: VolumesMediaType, Digest: "sha256:" + oneDigest}},
+	}
+	raw, err := m.MarshalOCI()
+	require.NoError(t, err)
+
+	_, err = ParseManifest(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no container image layer")
+}
+
+func TestParseManifest_RejectsMissingVolumesLayer(t *testing.T) {
+	m := &Manifest{
+		SchemaVersion: 2,
+		MediaType:     ManifestMediaType,
+		ArtifactType:  ManifestArtifactType,
+		Layers: []Descriptor{
+			{MediaType: defaultContainerImageMediaType, Digest: "sha256:" + zeroDigest},
+		},
+	}
+	raw, err := m.MarshalOCI()
+	require.NoError(t, err)
+
+	_, err = ParseManifest(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no volumes layer")
+}
+
+func TestParseManifest_RejectsDuplicateVolumesLayers(t *testing.T) {
+	m := &Manifest{
+		SchemaVersion: 2,
+		MediaType:     ManifestMediaType,
+		ArtifactType:  ManifestArtifactType,
+		Layers: []Descriptor{
+			{MediaType: defaultContainerImageMediaType, Digest: "sha256:" + zeroDigest},
+			{MediaType: VolumesMediaType, Digest: "sha256:" + oneDigest},
+			{MediaType: VolumesMediaType, Digest: "sha256:" + oneDigest},
+		},
+	}
+	raw, err := m.MarshalOCI()
+	require.NoError(t, err)
+
+	_, err = ParseManifest(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "more than one volumes layer")
+}
+
+func TestParseManifest_RejectsDuplicateContainerImageLayers(t *testing.T) {
+	m := &Manifest{
+		SchemaVersion: 2,
+		MediaType:     ManifestMediaType,
+		ArtifactType:  ManifestArtifactType,
+		Layers: []Descriptor{
+			{MediaType: defaultContainerImageMediaType, Digest: "sha256:" + zeroDigest},
+			{MediaType: testDockerImageMediaType, Digest: "sha256:" + oneDigest},
+			{MediaType: VolumesMediaType, Digest: "sha256:" + oneDigest},
+		},
+	}
+	raw, err := m.MarshalOCI()
+	require.NoError(t, err)
+
+	_, err = ParseManifest(raw)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "more than one container image layer")
+}
+
 func TestParseManifest_RejectsNonSnapshotArtifactType(t *testing.T) {
 	// A plain OCI/Docker image manifest also has schemaVersion 2, so it must
 	// be rejected by artifactType instead, or a tag pointing at an ordinary

@@ -350,7 +350,9 @@ func (cmd *CreateCmd) pushVolumes(
 // containerEnv is user-authored and this manifest is pushed to a shared
 // registry, so a future entry named e.g. API_TOKEN shouldn't round-trip
 // through restore just because dropping it wasn't specifically taught.
-var credentialKeyPattern = regexp.MustCompile(`(?i)(token|secret|password|passwd|api_?key)`)
+var credentialKeyPattern = regexp.MustCompile(
+	`(?i)(token|secret|password|passwd|api_?key|private_?key|access_?key|credential|authorization|(^|_)pat($|_))`,
+)
 
 // redactedContainerEnv drops entries that carry runtime secrets rather than
 // plain devcontainer.json settings, so replaying them on restore (via the
