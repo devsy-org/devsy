@@ -1,0 +1,135 @@
+---
+title: Linux Troubleshooting
+sidebar_label: Linux Troubleshooting
+---
+
+This purpose of this page is to outline any known issues with using devsy on Linux and provide known workarounds / fixes.
+
+### File permission issues when using a local directory and a remoteUser (or containerUser)
+
+When up'ing a workspace using a local directory, that also specifies a remote container user (via devcontainer.json), the ownership of the directory will change
+to the remote user. Since this remote user is in a different user namespace, the ownership will appear as a unknown user. To fix this, simply chown the directory
+back to the local user, such as `sudo chown -R $(id -un):$(id -gn) .`. The reason this is necessary is by default, when a new user is created by the container runtime,
+such as docker, all files from the host file system will be owned by root during the overlay. For your dev environment to be useful remotely, Devsy needs to
+chown the workspace to the remote user. Once the workspace has stopped, you need to change the ownership back. In general local direcotories are typically used
+for development, once the devcontainer is working it is better to push the workspace to a git repo and use this.
+
+### Using FISH shell
+
+Custom configurations in config.fish file run every time a fish -c command is called, so this processes somewhat get on the way of devsy agent workspace up.
+
+The solution is to move the customizations inside the if status is-interactive case.
+
+From this
+
+```
+if status is-interactive
+    # Commands to run in interactive sessions can go here
+end
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+# customizations
+```
+
+to this
+
+```
+if status is-interactive
+    # Commands to run in interactive sessions can go here
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+    # customizations
+end
+```
+
+### Using SELinux
+
+If you are running SELinux and try to start a workspace with a mounted volume, you may recieve a "Permission Denied" even if the ownership of the files are correct. To resolve
+append `:Z` to your volume definitions, like so
+
+```
+{
+    // some fields
+
+    "workspaceMount": "",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "runArgs": [
+        // other args
+        "--volume=${localWorkspaceFolder}:/workspaces/${localWorkspaceFolderBasename}:Z"
+    ]
+}
+```
+
+### ENAMETOOLONG error when opening a workspace in vscode
+
+There is a [known issue](https://github.com/devsy-org/devsy/issues/1045) where some linux distros use a large PATH to find SSH and causes the connection string to be too long. The workaround is to specify
+the SSH binary explicitly in vscode.
+
+### Docker socket permission denied
+
+If `devsy workspace up` fails with a permission denied error connecting to `docker.sock`, your user is not a member of the `docker` group. Add yourself and re-login:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+If Devsy reports that the Docker daemon is unreachable, start the daemon:
+
+```bash
+sudo systemctl start docker
+```
+
+These failures surface as `code: "UNKNOWN"` with the underlying OS/daemon error text preserved in `message` — see the [Structured CLI errors](./troubleshooting.mdx) reference for details.
+
+### Podman
+
+#### Rootless socket path
+
+Rootless Podman places its socket at `$XDG_RUNTIME_DIR/podman/podman.sock`. If Devsy cannot connect, it will fail with a "connection refused" or "no such file" style error against that socket path (surfaced as `code: "UNKNOWN"` with the real error text in `message`). Either start the user socket with `systemctl --user start podman.socket`, or set `PODMAN_HOST` explicitly:
+
+```bash
+devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+```
+
+#### `podman compose` vs `docker-compose`
+
+`podman compose` is not a built-in implementation — Podman looks for an externally installed Compose provider (`podman-compose`, or a standalone `docker-compose` binary) and delegates to it. If your `devcontainer.json` or workspace scripts call `docker-compose` directly, they will fail once `docker-compose` itself is not installed. Install a provider first, for example:
+
+```bash
+sudo apt-get install -y podman-compose
+```
+
+`docker-compose-plugin` is not a substitute here — it installs the `docker compose` subcommand of the Docker CLI, not a standalone `docker-compose` executable, and it pulls in Docker as a dependency, which defeats the point of a Docker-free Podman setup.
+
+Verify a provider is available before relying on `podman compose`:
+
+```bash
+podman compose version
+which docker-compose podman-compose
+```
+
+Once a provider is installed, update references to `docker-compose` to use `podman compose`, or add a shell alias as a stopgap:
+
+```bash
+alias docker-compose='podman compose'
+```
+
+`devsy workspace up` handles this automatically — Devsy's compose helper detects Podman via the `ContainerRuntime` interface. The alias is only needed for scripts that run inside the workspace itself.
+
+#### BuildKit not available
+
+Podman uses buildah internally for `podman build`. Dockerfiles with the `# syntax=docker/dockerfile:1` pragma or BuildKit-specific `RUN --mount` syntax will fail. Remove the syntax pragma and restructure affected `RUN` steps to avoid BuildKit mounts. Most standard Dockerfiles build without changes.
+
+#### Volume mount permissions in rootless mode
+
+Rootless Podman maps UIDs through user namespaces. Files created inside the container appear owned by `nobody` on the host.
+
+**With SELinux**: append `:Z` to volume mounts (see [Using SELinux](#using-selinux) above).
+
+**Without SELinux**: fix ownership with `podman unshare`:
+
+```bash
+podman unshare chown -R $(id -u):$(id -g) /path/to/volume
+```
+
+If rootless UID mapping is too restrictive for your workflow, run the container as root using `sudo podman` instead.

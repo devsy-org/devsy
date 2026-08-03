@@ -1,0 +1,61 @@
+---
+title: Troubleshooting
+sidebar_label: Troubleshooting
+---
+
+This purpose of this page is to outline any known issues with using devsy and provide known workarounds / fixes.
+
+### Utilities not found in PATH
+
+If Devsy Desktop reports that it cannot find utilities in the PATH, you may need to wrap the call in a shell. Something like
+
+```
+#! /usr/bin/env sh
+
+exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
+```
+
+### Port forwarding not working when NOT using an ide
+
+Devsy relies on an active SSH session to perform port forwarding to the local host. When running Devsy without an IDE, such as `--ide none`,
+an active SSH session needs to be open using `devsy workspace ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
+
+### Structured CLI errors
+
+Devsy classifies common failures and prints a stable error `code` alongside a `message`. Errors are emitted as a JSON object matching:
+
+```json
+{
+  "code": "UNKNOWN",
+  "message": "exit status 1: Cannot connect to the Docker daemon"
+}
+```
+
+This happens automatically whenever Devsy detects a non-interactive/machine consumer (for example, stderr is not a TTY, `--log-output json` or `logfmt` is set, or Devsy Desktop invokes the CLI) — human-readable output is used otherwise. Pass `--log-output json` (or `logfmt`) explicitly to force structured errors, or `--log-output text` to force human-readable ones.
+
+There are only four stable codes:
+
+| Code | Meaning |
+|---|---|
+| `RATE_LIMITED` | An upstream API rate-limited the request. Wait and retry, or authenticate for a higher limit. |
+| `PANIC` | Devsy recovered from an internal panic; the message contains the recovered value. |
+| `BUILD_FAILED_RECOVERABLE` | The devcontainer build failed in a way that can be retried (e.g. with `--recovery`). |
+| `UNKNOWN` | Devsy could not classify the error into one of the above; the raw underlying error text is preserved verbatim in `message`. |
+
+In practice, most environment-level failures — such as "Docker is not running," "permission denied connecting to docker.sock," or "Podman user socket unavailable" — do not have a dedicated code today. They surface as `code: "UNKNOWN"` with the original OS or daemon error text preserved in `message`. Re-run with `--debug` to see the full original error chain.
+
+### Windows: `line 2: $'\r': command not found`
+
+Windows line endings break shell scripts inside the container. Add the following to `.gitattributes`:
+
+```
+*.sh eol=lf
+```
+
+### NeoVim: `$TERM` issues over SSH
+
+NeoVim can misbehave when `$TERM` isn't set correctly over the SSH provider. A workaround is documented in [issue #1187](https://github.com/devsy-org/devsy/issues/1187).
+
+### VS Code Browser workspace fails to open on first create
+
+Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail right after `devsy workspace up --ide openvscode`. This is fixed — if you previously hit this, re-run `devsy workspace up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry.

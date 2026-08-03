@@ -2,8 +2,8 @@
 <p align="center">
   <a href="https://www.devsy.sh">
     <picture width="500">
-      <source media="(prefers-color-scheme: dark)" srcset="sites/docs-devsy-sh/static/media/devsy-dark.png">
-      <img alt="Devsy wordmark" width="500" src="sites/docs-devsy-sh/static/media/devsy.png">
+      <source media="(prefers-color-scheme: dark)" srcset="sites/docs-devsy-sh/public/docs/media/devsy-dark.png">
+      <img alt="Devsy wordmark" width="500" src="sites/docs-devsy-sh/public/docs/media/devsy.png">
     </picture>
   </a>
 </p>
@@ -29,7 +29,7 @@ Devsy enables teams and their AI coding agents to scale development using standa
 </tr>
 </table>
 
-![Devsy Flow](sites/docs-devsy-sh/static/media/devsy-flow.gif)
+![Devsy Flow](sites/docs-devsy-sh/public/docs/media/devsy-flow.gif)
 
 <h2 align="center">Downloads</h2>
 
