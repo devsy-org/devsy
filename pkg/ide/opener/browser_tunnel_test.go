@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
@@ -103,6 +105,21 @@ func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 	if containsArg(withoutFlag, "--open-browser") {
 		t.Errorf("did not expect --open-browser in %v", withoutFlag)
 	}
+}
+
+// TestBuildHelperArgs_IncludesResolvedUser guards against the fleet/openBrowserIDE
+// user-propagation regression: the detached helper must run as the resolved
+// workspace user, never empty/root.
+func TestBuildHelperArgs_IncludesResolvedUser(t *testing.T) {
+	args := buildHelperArgs("default", "my-workspace", tunnel.BrowserTunnelParams{
+		User:      "vscode",
+		TargetURL: "http://localhost:1234",
+	}, false)
+
+	joined := strings.Join(args, " ")
+	assert.Contains(t, joined, "--user vscode",
+		"the detached browser-tunnel helper must run its RunServices/backhaul "+
+			"connections as the resolved workspace user, not be left empty/root")
 }
 
 // setupTempHome redirects the path manager to a temp HOME so the workspace
