@@ -1,0 +1,26 @@
+---
+title: What are Providers?
+sidebar_label: What are Providers?
+---
+
+A provider is the CLI program Devsy uses to create, manage, and run workspaces on a given backend. This model is what lets Devsy target any infrastructure — local, cloud, Kubernetes, or remote SSH — without changing how you work.
+
+Each provider is defined by a `provider.yaml` that declares the options, configuration, binaries, and commands Devsy needs to create workspaces on that backend.
+
+To get started, see [Manage providers](./manage-providers.mdx). To build your own, see [How to develop a provider](../developing-providers/quickstart.mdx).
+
+## Provider Types
+
+Devsy supports two kinds of providers:
+
+### Machine providers
+
+Machine providers create and manage a VM for the workspace, then run the container on it. They also handle the VM lifecycle — starting, stopping, and deleting it as needed. The AWS provider is one example, using EC2 instances to run the environment.
+
+### Non-machine providers
+
+Non-machine providers run the workspace container directly on the target, with no VM to manage. Docker, Podman, Kubernetes, and SSH are examples.
+
+## Manage Providers
+
+See [Manage Providers](./manage-providers.mdx) for how to add, configure, update, remove, and rename Devsy providers.

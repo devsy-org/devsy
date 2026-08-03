@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "what-is-devsy",
+    "getting-started",
+    "developing-in-workspaces",
+    "managing-machines",
+    "managing-providers",
+    "how-it-works",
+    "tutorials",
+    "developing-providers",
+    "troubleshooting"
+  ]
+}

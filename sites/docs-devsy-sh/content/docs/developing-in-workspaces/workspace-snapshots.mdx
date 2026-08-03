@@ -1,0 +1,93 @@
+---
+title: Workspace Snapshots
+sidebar_label: Workspace Snapshots
+---
+
+## Workspace Snapshots
+
+A snapshot captures a workspace's full working state at a point in time: the running container's filesystem (installed packages, config changes) and the contents of its bind-mounted volumes (your code, including uncommitted changes). Snapshots are stored as OCI artifacts in a registry you control, so you can restore them later, or use them to transfer a workspace to a different provider.
+
+<Callout title="Registry required">
+Snapshots are pushed to and pulled from an OCI registry (Docker Hub, GHCR, ECR, or a self-hosted `registry:2`), not stored locally. You need push/pull access to a registry before creating one.
+</Callout>
+
+## Create a Snapshot
+
+The workspace must already be running (`devsy up` must have created it, so its mount information is available):
+
+```sh
+devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots
+```
+
+On success, the command prints the snapshot ref, which you'll use to restore it later:
+
+```
+ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+```
+
+Add `--message` to describe the snapshot:
+
+```sh
+devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots --message "before the auth refactor"
+```
+
+### Default Registry
+
+Rather than passing `--registry` every time, set a default for the current context:
+
+```sh
+devsy context set -o SNAPSHOT_REGISTRY=ghcr.io/my-org/snapshots
+```
+
+### Limitations
+
+- Only workspaces with exactly one bind mount are supported today. Workspaces with multiple mounts (e.g. an extra `mounts` entry in `devcontainer.json`) aren't yet supported.
+- Only local providers (Docker, Podman) can create snapshots. Machine-provider workspaces aren't supported.
+
+## List Snapshots
+
+```sh
+devsy snapshot list my-workspace --registry ghcr.io/my-org/snapshots
+```
+
+Shows every snapshot pushed for that workspace, newest first.
+
+## Restore a Snapshot
+
+```sh
+devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+```
+
+This creates a new workspace from the snapshot's committed filesystem and volumes, skipping the devcontainer build entirely since the image is already built. By default the new workspace reuses the original workspace ID; pass `--workspace-id` to restore under a different one, or `--target-provider` to restore using a different provider than the one the snapshot was taken from.
+
+Equivalently, you can restore as part of `devsy up`:
+
+```sh
+devsy up --from-snapshot ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+```
+
+`--from-snapshot` can't be combined with a positional source or `--source`.
+
+### Transferring Between Providers
+
+To move a workspace to a different provider, restore its snapshot with `--target-provider`:
+
+```sh
+devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk --target-provider kubernetes
+```
+
+## Delete a Snapshot
+
+```sh
+devsy snapshot delete ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+```
+
+Removes the snapshot's manifest from the registry. The underlying image and volumes blobs are left for the registry's own garbage collection.
+
+## Export and Import
+
+`devsy workspace export`/`devsy workspace import` automatically carry a workspace's snapshot ref when the workspace was itself restored from one, so exporting and re-importing a snapshot-sourced workspace preserves its actual filesystem and volume state, not just its metadata — provided the snapshot manifest is still present in the registry and the environment doing the import has access to pull that registry artifact. If the manifest has been deleted or the import environment can't reach or authenticate to the registry, only the workspace's metadata carries over, not its filesystem/volume state.
+
+## Identifying Snapshot Images
+
+The container image a snapshot commits is tagged `LABEL sh.devsy.snapshot=true`, so it can be identified with `docker inspect` or filtered with `docker images --filter label=sh.devsy.snapshot` even outside `devsy snapshot` tooling.

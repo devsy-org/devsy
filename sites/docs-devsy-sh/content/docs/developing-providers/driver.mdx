@@ -1,0 +1,174 @@
+---
+title: Drivers
+sidebar_label: Drivers
+---
+
+In Devsy you can specify a **Driver** in the [Agent's configuration](./agent.mdx).
+
+A Driver indicates how Devsy deploys the workspace container.
+
+There are five types of drivers:
+
+- Docker driver
+- Kubernetes driver
+- Apple driver
+- Microsandbox driver
+- Custom driver
+
+<Callout>
+If no driver is specified, the default is **Docker**
+</Callout>
+
+## Docker Driver
+
+The Docker driver is the default driver that Devsy uses to deploy the workspace container.
+
+This container (specified through a [devcontainer.json](../developing-in-workspaces/devcontainer-json.mdx)),
+is executed through Docker inside the provider environment, for example in a VM [in case of Machine Providers](../managing-providers/what-are-providers.mdx).
+
+Some optional configs are available:
+
+- **path**: where to find the Docker CLI or a replacement, such as Podman. Defaults to `docker`.
+- **install**: whether to install Docker or not in the target environment
+- **builder**: which docker builder to use
+- **runtime**: explicitly select the container runtime (`docker`, `podman`, or `nerdctl`). When empty, the runtime is auto-detected from the binary at `path`.
+- **elevation**: optionally run docker commands through a privilege-elevation helper for rootful daemons whose socket the current user can't access. One of `pkexec`, `sudo`, `doas`, or `none` (default).
+- **helperImage**: overrides the helper image used for volume operations. Empty falls back to the `DEVSY_HELPER_IMAGE` environment variable, then a built-in default.
+- **env**: a map of environment variables to set when running docker commands, e.g. `DOCKER_HOST`
+
+Example config:
+
+```yaml
+agent:
+  containerInactivityTimeout: 10m
+  docker:
+    path: /usr/bin/docker
+    install: false
+    elevation: none
+    env:
+      DOCKER_HOST: ""
+```
+
+## Kubernetes Driver
+
+Instead of Docker, Devsy is also able to use Kubernetes as a Driver, which allows you to deploy the workspace to a Kubernetes cluster instead.
+For example, this makes it possible to create a provider that spins up a remote Kubernetes cluster (or just a namespace), connects to it, and creates a workspace there.
+Devsy also has a default Kubernetes provider that uses the local Kubernetes config file to deploy the workspace.
+
+The allowed options for the Kubernetes driver are:
+- **kubernetesContext**: which kube context to use (if empty will use current kube context)
+- **kubernetesConfig**: path to which kube config to use (if empty will use default kube config, or `$KUBECONFIG`)
+- **kubernetesNamespace**: which namespace to use (if empty will use current namespace or default)
+- **kubernetesPullSecretsEnabled**: if true, Devsy will create Kubernetes pull secrets from injected Docker credentials for private registries
+- **podTimeout**: how long the provider waits for the workspace pod to come up, e.g. `10m`
+- **createNamespace**: if true, Devsy will try to create the namespace
+- **clusterRole**: if defined, Devsy will create a role binding for the given cluster role for the workspace container. This is useful if you need Kubernetes access within the workspace container
+- **serviceAccount**: if defined, Devsy will use the given service account for the dev container
+- **architecture**: the CPU architecture to use for the workspace pod, e.g. `amd64`, `arm64`. If empty, Devsy inspects the cluster's nodes to auto-detect it (and errors out if the cluster has mixed architectures).
+- **inactivityTimeout**: after how much time to automatically stop the pod due to inactivity
+- **storageClass**: the storage class to use to create the persistent volume claim
+- **diskSize**: the default size for the persistent volume to use, e.g. `10Gi`
+- **pvcAccessMode**: the access mode to use for the persistent volume claim, e.g. `RWO`, `ROX`, `RWX` or `RWOP`
+- **pvcAnnotations**: annotations to add to the main workspace PVC
+- **nodeSelector**: the node selector to use for the workspace pod, e.g. `my-label=value,my-label-2=value-2`
+- **resources**: resource requests/limits for the workspace container, e.g. `requests.cpu=500m,limits.memory=5Gi`
+- **workspaceVolumeMount**: overrides the path where the workspace volume is mounted. Defaults to the root of your workspace source code.
+- **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
+- **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
+- **strictSecurity**: *Experimental.* Removes the default security context and merges the one from `podManifestTemplate` if specified.
+
+<Callout>
+Devsy also supports building images inside Kubernetes without Docker, via a
+`dockerless` build path (`agent.dockerless.disabled` / `agent.dockerless.image`).
+This replaces the previous buildkit-based building approach.
+</Callout>
+
+### Example Kubernetes Provider
+
+Example Kubernetes provider that uses local kubectl to run a workspace in the current kube context:
+
+```yaml
+name: simple-kubernetes
+version: v0.0.1
+agent:
+  containerInactivityTimeout: 10m # Pod will automatically kill itself after timeout
+  path: ${DEVSY}
+  driver: kubernetes
+  kubernetes:
+    # kubernetesContext: default
+    # kubernetesNamespace: my-namespace-for-devsy
+    # clusterRole: ""
+    # serviceAccount: ""
+    diskSize: 20Gi
+    createNamespace: true
+exec:
+  command: |-
+    ${DEVSY} helper sh -c "${COMMAND}"
+```
+
+Then add the provider via `devsy provider add ./simple-kubernetes.yaml`
+
+## Apple Driver
+
+The Apple driver runs the workspace as a Linux container using Apple's native
+`container` runtime (macOS 26+, Apple silicon). This is the driver used by the
+built-in `apple` provider.
+
+Available options:
+- **path**: where to find the `container` binary. Defaults to `container`.
+- **rosetta**: enable Rosetta for x86_64 emulation inside the Linux guest.
+- **env**: a map of environment variables to set when running `container` commands
+
+```yaml
+agent:
+  containerInactivityTimeout: 10m
+  driver: apple
+  apple:
+    path: container
+    rosetta: "false"
+```
+
+## Microsandbox Driver
+
+The Microsandbox driver boots the devcontainer image as a hardware-isolated
+microVM (via [libkrun](https://github.com/containers/libkrun)) using the
+[microsandbox](https://github.com/microsandbox/microsandbox) runtime. This is
+the driver used by the built-in `microsandbox` provider.
+
+Available options:
+- **memory**: guest memory limit in MiB. Empty uses the runtime default.
+- **cpus**: number of virtual CPUs. Empty uses the runtime default.
+- **maxMemory**: hotplug memory ceiling in MiB. Empty uses the runtime default.
+- **maxCpus**: hotplug CPU ceiling. Empty uses the runtime default.
+- **blockEgress**: if true, deny the microVM outbound public network access (sandbox hardening).
+- **ephemeral**: if true, the microVM's disk state is discarded when it stops.
+
+```yaml
+agent:
+  containerInactivityTimeout: 10m
+  driver: microsandbox
+  microsandbox:
+    memory: "2048"
+    blockEgress: "false"
+    ephemeral: "false"
+```
+
+## Custom Driver
+
+The custom driver lets a provider fully own how the devcontainer lifecycle is
+implemented, by supplying its own shell commands instead of relying on
+Devsy's built-in Docker, Kubernetes, Apple or Microsandbox integration.
+
+When `driver: custom` is set, the following commands become required under
+`agent.custom`:
+- **findDevContainer**: locate an existing devcontainer
+- **commandDevContainer**: execute a command inside the devcontainer
+- **targetArchitecture**: determine the target architecture
+- **runDevContainer**: run the devcontainer
+- **startDevContainer**: start the devcontainer
+- **stopDevContainer**: stop the devcontainer
+- **deleteDevContainer**: delete the devcontainer
+
+The optional **getDevContainerLogs** command retrieves devcontainer logs, and
+**canReprovision** signals whether the driver supports reprovisioning the
+devcontainer in place.

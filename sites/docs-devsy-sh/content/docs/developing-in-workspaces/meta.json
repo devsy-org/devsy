@@ -1,0 +1,17 @@
+{
+  "title": "Developing in a Workspace",
+  "pages": [
+    "create-a-workspace",
+    "connect-to-a-workspace",
+    "devcontainer-json",
+    "prebuild-a-workspace",
+    "workspace-snapshots",
+    "continuous-integration",
+    "dotfiles-in-a-workspace",
+    "credentials",
+    "secrets",
+    "inactivity-timeout",
+    "stop-and-delete-a-workspace",
+    "mcp-server"
+  ]
+}
