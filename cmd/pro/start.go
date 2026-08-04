@@ -2174,6 +2174,7 @@ func getHelmWorkdir(chartName string) (string, error) {
 
 var (
 	ErrMissingContainer = errors.New("missing container")
+	//nolint:staticcheck // ST1005: "Devsy Pro" is a proper noun
 	ErrLoftNotReachable = errors.New("Devsy Pro is not reachable")
 )
 
