@@ -78,16 +78,25 @@ func ReadFile(path string) ([]byte, error) {
 // FIFO already at path. O_NOFOLLOW still applies when O_CREATE is also
 // set: an existing symlink is rejected rather than followed, while a
 // genuinely missing path is created as a fresh regular file.
-func WriteFile(path string, data []byte, mode os.FileMode) error {
+func WriteFile(path string, data []byte, mode os.FileMode) (err error) {
 	f, err := openNoFollowRegular(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close %s: %w", path, closeErr)
+		}
+	}()
+
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if info, statErr := f.Stat(); statErr == nil && info.Mode().Perm() != mode.Perm() {
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.Mode().Perm() != mode.Perm() {
 		if err := f.Chmod(mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", path, err)
 		}
