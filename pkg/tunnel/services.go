@@ -258,10 +258,7 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 		Factor:   retryFactor,
 		Jitter:   retryJitter,
 	}, func(err error) bool {
-		if ctx.Err() != nil {
-			return false
-		}
-		return true
+		return ctx.Err() == nil
 	}, func() error {
 		return runServicesIteration(ctx, opts, forwardedPorts, resolver)
 	})
