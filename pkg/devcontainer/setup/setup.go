@@ -219,9 +219,12 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 // writeResultFileTo writes rawBytes to path at 0644: readable by any
 // container user, not just root, since getContainerResult and
 // portOptionsFromResult read it over sessions authenticated as either.
+// Goes through sharedfile rather than raw os.ReadFile/os.WriteFile so a
+// symlink or FIFO planted at this fixed, predictable path is rejected
+// rather than followed or hung on, matching the coordination files this
+// package's other callers protect the same way.
 func writeResultFileTo(path string, rawBytes []byte) error {
-	// #nosec G304 -- callers pass a fixed const path; parameterized only for tests
-	existing, _ := os.ReadFile(path)
+	existing, _ := sharedfile.ReadFile(path)
 	if string(rawBytes) == string(existing) {
 		// Widen even when skipping the write: a stale file left at a
 		// restrictive mode by a pre-fix binary must still get readable by
@@ -232,10 +235,7 @@ func writeResultFileTo(path string, rawBytes []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, rawBytes, 0o644); err != nil { //nolint:gosec // see doc comment
-		return fmt.Errorf("write: %w", err)
-	}
-	return sharedfile.WidenIfNeeded(path, 0o644)
+	return sharedfile.WriteFile(path, rawBytes, 0o644)
 }
 
 func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {

@@ -209,6 +209,11 @@ func TestEnsureActivityFile_NoOpsWhenFileAlreadyExists(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "existing", string(data),
 		"ensureActivityFile must not truncate a file that already exists")
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"a stale restrictive mode left by an existing file must still get widened")
 }
 
 func TestTouchActivityFile_CreatesFileAndUpdatesMtime(t *testing.T) {

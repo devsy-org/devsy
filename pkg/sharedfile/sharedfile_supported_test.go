@@ -33,3 +33,36 @@ func TestWidenIfNeeded_RejectsFIFOWithoutBlocking(t *testing.T) {
 		t.Fatal("WidenIfNeeded blocked for 2s+ opening a FIFO with no writer")
 	}
 }
+
+func TestReadFile_RejectsFIFOWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+	require.NoError(t, syscall.Mkfifo(path, 0o666))
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ReadFile(path)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadFile blocked for 2s+ opening a FIFO with no writer")
+	}
+}
+
+func TestWriteFile_RejectsFIFOWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+	require.NoError(t, syscall.Mkfifo(path, 0o666))
+
+	done := make(chan error, 1)
+	go func() { done <- WriteFile(path, []byte("x"), 0o644) }()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("WriteFile blocked for 2s+ opening a FIFO with no reader")
+	}
+}

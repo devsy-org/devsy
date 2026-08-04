@@ -8,15 +8,15 @@ import (
 )
 
 // openNoFollow opens path without following a trailing symlink, so the
-// caller can chmod the resulting descriptor's inode regardless of what
-// path later resolves to. Opens O_RDONLY, not O_WRONLY: fchmod only cares
-// about ownership, not how the fd was opened, and a coordination-file mode
-// (e.g. 0644, 0666) always grants read to the "already correct, skip the
-// chmod" caller even when it doesn't grant that caller write. Also passes
-// O_NONBLOCK: opening a FIFO planted at path would otherwise block forever
-// waiting for a writer — the caller must still reject non-regular files
-// after Stat, since O_NONBLOCK only prevents the open itself from hanging.
-func openNoFollow(path string) (*os.File, error) {
-	//nolint:gosec // callers intentionally widen a fixed coordination-file path
-	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+// caller can chmod/read/write the resulting descriptor's inode regardless
+// of what path later resolves to. createMode is used only when flag
+// includes os.O_CREATE. This always adds O_NOFOLLOW and O_NONBLOCK — the
+// latter so a FIFO planted at path fails the open immediately
+// (ENXIO/EAGAIN) instead of blocking forever waiting for a peer. The
+// caller must still reject non-regular files after Stat: O_NONBLOCK only
+// keeps the open from hanging, it does not stop a FIFO fd from being
+// returned.
+func openNoFollow(path string, flag int, createMode os.FileMode) (*os.File, error) {
+	//nolint:gosec // callers intentionally open a fixed coordination-file path
+	return os.OpenFile(path, flag|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, createMode)
 }

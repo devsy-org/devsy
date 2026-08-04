@@ -118,3 +118,70 @@ func TestWidenIfNeeded_SymlinkSwappedAfterOpenCannotRedirectChmod(t *testing.T) 
 	assert.Equal(t, os.FileMode(0o600), decoyInfo.Mode().Perm(),
 		"the symlink planted after open must not have been affected")
 }
+
+func TestReadFile_ReadsExistingContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.WriteFile(path, []byte("hello"), 0o644))
+
+	got, err := ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(got))
+}
+
+func TestReadFile_RejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "link")
+	require.NoError(t, os.WriteFile(target, []byte("secret"), 0o600))
+	require.NoError(t, os.Symlink(target, link))
+
+	_, err := ReadFile(link)
+	require.Error(t, err)
+}
+
+func TestWriteFile_CreatesNewFileAtMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+
+	require.NoError(t, WriteFile(path, []byte("hello"), 0o644))
+
+	//nolint:gosec // test-owned temp path
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+}
+
+func TestWriteFile_OverwritesExistingContentAndWidensMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+	// #nosec G306 -- test fixture, intentional
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o600))
+
+	require.NoError(t, WriteFile(path, []byte("new"), 0o644))
+
+	//nolint:gosec // test-owned temp path
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "new", string(content))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+}
+
+func TestWriteFile_RejectsSymlinkWithoutTouchingTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "link")
+	require.NoError(t, os.WriteFile(target, []byte("untouched"), 0o600))
+	require.NoError(t, os.Symlink(target, link))
+
+	err := WriteFile(link, []byte("attacker-controlled"), 0o644)
+	require.Error(t, err)
+
+	//nolint:gosec // test-owned temp path
+	content, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "untouched", string(content))
+}
