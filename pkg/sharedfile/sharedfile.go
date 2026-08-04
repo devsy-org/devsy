@@ -42,6 +42,8 @@ func EnsureMode(path string, mode os.FileMode) error {
 // path, so a symlink swapped in after a check-then-chmod by path couldn't
 // redirect the chmod onto an arbitrary target — path is a fixed,
 // world-writable coordination file any container user could otherwise race.
+// Also rejects a FIFO or other non-regular file at path: opening a FIFO
+// with no writer would otherwise block this call forever.
 func WidenIfNeeded(path string, mode os.FileMode) error {
 	f, err := openNoFollow(path)
 	if err != nil {
@@ -52,6 +54,9 @@ func WidenIfNeeded(path string, mode os.FileMode) error {
 	info, err := f.Stat()
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to chmod %s: not a regular file (mode %s)", path, info.Mode())
 	}
 	if info.Mode().Perm() == mode.Perm() {
 		return nil
