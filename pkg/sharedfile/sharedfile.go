@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"syscall"
 )
 
 // EnsureMode ensures path exists with exactly mode permissions, creating it
@@ -38,14 +37,13 @@ func EnsureMode(path string, mode os.FileMode) error {
 }
 
 // WidenIfNeeded chmods path to mode if its current mode differs, skipping
-// the chmod entirely when it's already correct. Opens path with O_NOFOLLOW
-// and chmods the resulting descriptor rather than the path, so a symlink
-// swapped in after a check-then-chmod by path couldn't redirect the chmod
-// onto an arbitrary target — path is a fixed, world-writable coordination
-// file any container user could otherwise race.
+// the chmod entirely when it's already correct. Opens path without
+// following a symlink and chmods the resulting descriptor rather than the
+// path, so a symlink swapped in after a check-then-chmod by path couldn't
+// redirect the chmod onto an arbitrary target — path is a fixed,
+// world-writable coordination file any container user could otherwise race.
 func WidenIfNeeded(path string, mode os.FileMode) error {
-	//nolint:gosec // callers intentionally widen a fixed coordination-file path
-	f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NOFOLLOW, 0)
+	f, err := openNoFollow(path)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
