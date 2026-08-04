@@ -48,8 +48,10 @@ func TestCreateIfMissing_LeavesExistingFileUntouched(t *testing.T) {
 
 func TestWidenIfNeeded_SkipsChmodWhenModeAlreadyCorrect(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
-	require.NoError(t, os.WriteFile(path, nil, 0o666)) //nolint:gosec
-	require.NoError(t, os.Chmod(path, 0o666)) //nolint:gosec
+	//nolint:gosec
+	require.NoError(t, os.WriteFile(path, nil, 0o666))
+	//nolint:gosec
+	require.NoError(t, os.Chmod(path, 0o666))
 
 	require.NoError(t, WidenIfNeeded(path, 0o666))
 }
