@@ -118,7 +118,7 @@ func copyDir(src, dst string) error {
 
 	// #nosec G122 -- src is a test-fixture path under this repo, supplied
 	// by test authors, not attacker-controlled; TOCTOU symlink races
-	// aren't a real concern here.
+	// are not a concern.
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

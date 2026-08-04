@@ -9,11 +9,6 @@ import (
 )
 
 func TestGetProjectImage_UnknownHostNeverFetches(t *testing.T) {
-	// getProjectImage is reachable with a user-supplied link (see
-	// resolveWorkspaceSource), so a host outside regexes' known keys must
-	// short-circuit before ever calling http.Get -- otherwise this is an
-	// SSRF: an attacker-controlled URL would be fetched regardless of
-	// whether the response is later discarded for an unrecognized host.
 	fetched := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fetched = true
