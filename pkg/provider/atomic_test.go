@@ -66,3 +66,20 @@ func atomicReader(stop *atomic.Bool, path string, out chan<- error) {
 		}
 	}
 }
+
+func TestWriteFileAtomic_SucceedsAndDataIsDurable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "durable.json")
+
+	if err := WriteFileAtomic(path, []byte(`{"durable":true}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	data, err := os.ReadFile(path) //nolint:gosec // test reads a path under t.TempDir
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != `{"durable":true}` {
+		t.Fatalf("got %q, want the written content", data)
+	}
+}

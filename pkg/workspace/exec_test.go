@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -178,5 +179,55 @@ func TestExecOneShot_PartialOutputOnError(t *testing.T) {
 	}
 	if stdout.String() != "partial" {
 		t.Fatalf("expected partial stdout %q to be preserved, got %q", "partial", stdout.String())
+	}
+}
+
+type fakeLockClient struct {
+	lockErr     error
+	lockCalls   int
+	unlockCalls int
+}
+
+func (f *fakeLockClient) Lock(_ context.Context) error {
+	f.lockCalls++
+	return f.lockErr
+}
+
+func (f *fakeLockClient) Unlock() {
+	f.unlockCalls++
+}
+
+func TestExecOneShot_LockedWorkspaceReturnsBusyError(t *testing.T) {
+	lockClient := &fakeLockClient{lockErr: fmt.Errorf("timed out waiting to lock workspace")}
+	err := acquireExecLock(context.Background(), lockClient, defaultExecLockTimeout)
+	if err == nil {
+		t.Fatal("expected lock error, got nil")
+	}
+	if lockClient.lockCalls != 1 {
+		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
+	}
+	if lockClient.unlockCalls != 0 {
+		t.Fatalf(
+			"unlock must not be called when lock itself failed, got %d calls",
+			lockClient.unlockCalls,
+		)
+	}
+}
+
+func TestExecOneShot_UnlocksAfterSuccessfulLock(t *testing.T) {
+	lockClient := &fakeLockClient{}
+	err := acquireExecLock(context.Background(), lockClient, defaultExecLockTimeout)
+	if err != nil {
+		t.Fatalf("unexpected lock error: %v", err)
+	}
+	if lockClient.lockCalls != 1 {
+		t.Fatalf("expected 1 lock call, got %d", lockClient.lockCalls)
+	}
+
+	// acquireExecLock never calls Unlock itself; the caller does (see
+	// resolveExecTarget/ExecOneShot), simulated here.
+	lockClient.Unlock()
+	if lockClient.unlockCalls != 1 {
+		t.Fatalf("expected 1 unlock call, got %d", lockClient.unlockCalls)
 	}
 }

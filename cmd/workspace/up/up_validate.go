@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 )
 
 const (
@@ -21,6 +23,8 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
+	cmd.applySkipLaunchIDEDefault()
+
 	if err := devcontainer.ResolveSourceSpec(&cmd.CLIOptions); err != nil {
 		return err
 	}
@@ -44,6 +48,15 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+// installIDE gates the container-side IDE server download on IDE name alone,
+// not IDELaunch, so skipping launch without also defaulting IDE to none
+// still downloads an unwanted binary.
+func (cmd *UpCmd) applySkipLaunchIDEDefault() {
+	if cmd.IDELaunch == opener.LaunchSkip && cmd.IDE == "" {
+		cmd.IDE = string(config.IDENone)
+	}
 }
 
 func (cmd *UpCmd) validateUserEnvProbe() error {

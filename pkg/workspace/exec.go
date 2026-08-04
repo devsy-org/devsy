@@ -31,9 +31,24 @@ const (
 // applies. Long enough for typical build/test, short enough to surface hangs.
 const defaultExecTimeoutSeconds = 300
 
-// ResolveDockerCommand returns the docker binary to invoke. Precedence:
-// override → provider config (agent.docker.path) → default. The override is
-// honored even when workspace is nil.
+type execLocker interface {
+	Lock(ctx context.Context) error
+	Unlock()
+}
+
+const defaultExecLockTimeout = 15 * time.Second
+
+// acquireExecLock returns nil on success (caller must Unlock) or an error.
+func acquireExecLock(ctx context.Context, client execLocker, timeout time.Duration) error {
+	lockCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := client.Lock(lockCtx); err != nil {
+		return fmt.Errorf("workspace busy (locked by a concurrent operation): %w", err)
+	}
+	return nil
+}
+
+// ResolveDockerCommand precedence: override -> provider config -> default.
 func ResolveDockerCommand(
 	workspace *provider2.Workspace,
 	override string,
@@ -451,6 +466,7 @@ func ExecOneShot(ctx context.Context, opts ExecOneShotOptions) (*ExecOneShotResu
 	if err != nil {
 		return nil, err
 	}
+	defer resolved.unlock()
 
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -502,6 +518,7 @@ type resolvedExecTarget struct {
 	target  ContainerTarget
 	workdir string
 	envMap  map[string]string
+	unlock  func()
 }
 
 func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedExecTarget, error) {
@@ -519,9 +536,15 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		return resolvedExecTarget{}, fmt.Errorf("resolve workspace: %w", err)
 	}
 
+	if err := acquireExecLock(ctx, client, defaultExecLockTimeout); err != nil {
+		return resolvedExecTarget{}, err
+	}
+	unlock := client.Unlock
+
 	workspaceConfig := client.WorkspaceConfig()
 	runtime, err := NewContainerRuntime(workspaceConfig, "")
 	if err != nil {
+		unlock()
 		return resolvedExecTarget{}, err
 	}
 
@@ -529,6 +552,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), opts.IDLabels,
 	)
 	if err != nil {
+		unlock()
 		return resolvedExecTarget{}, err
 	}
 
@@ -546,6 +570,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 		target:  target,
 		workdir: workdir,
 		envMap:  envMap,
+		unlock:  unlock,
 	}, nil
 }
 
