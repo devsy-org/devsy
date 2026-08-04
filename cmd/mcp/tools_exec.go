@@ -42,7 +42,7 @@ type execOutput struct {
 	Error *ErrorPayload `json:"error,omitempty"`
 }
 
-func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
+func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd, sem *opSemaphore) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_exec",
 		Description: "Run a one-shot command in a running workspace container. The " +
@@ -59,6 +59,13 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd) {
 		if len(in.Command) == 0 {
 			return errorResult(fmt.Errorf("command is required")), execOutput{}, nil
 		}
+
+		release, err := sem.acquire(ctx)
+		if err != nil {
+			return errorResult(err), execOutput{}, nil
+		}
+		defer release()
+
 		stdout := NewBoundedBuffer(cmd.ExecOutputCap)
 		stderr := NewBoundedBuffer(cmd.ExecOutputCap)
 

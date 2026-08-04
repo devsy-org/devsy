@@ -21,6 +21,9 @@ type ServeCmd struct {
 	ExecTimeoutDefault time.Duration
 	ExecTimeoutMax     time.Duration
 	ExecOutputCap      int
+	MaxConcurrentOps   int
+
+	opSem *opSemaphore
 }
 
 // NewServeCmd builds the `serve` subcommand.
@@ -54,14 +57,21 @@ func NewServeCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			100*1024,
 			"Per-stream byte cap for workspace_exec output; excess is replaced with a truncation marker",
 		),
+		cliflags.Int(
+			&cmd.MaxConcurrentOps,
+			names.MaxConcurrentOps,
+			8,
+			"Maximum number of concurrent workspace_exec/workspace_create/workspace_start "+
+				"operations; excess calls wait for a free slot",
+		),
 	)
 	return cobraCmd
 }
 
 // Run wires up the MCP server and serves over stdio until ctx is cancelled.
 func (cmd *ServeCmd) Run(ctx context.Context) error {
-	log.Debugf("starting MCP server (timeout default=%s max=%s cap=%dB)",
-		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap)
+	log.Debugf("starting MCP server (timeout default=%s max=%s cap=%dB maxops=%d)",
+		cmd.ExecTimeoutDefault, cmd.ExecTimeoutMax, cmd.ExecOutputCap, cmd.MaxConcurrentOps)
 
 	// Reserve real stdout for the JSON-RPC frame; redirect os.Stdout to stderr
 	// so any stray write elsewhere in the process can't corrupt the transport.
@@ -79,13 +89,14 @@ func (cmd *ServeCmd) Run(ctx context.Context) error {
 		Version: version.GetVersion(),
 	}, nil)
 
-	cmd.registerTools(server)
+	cmd.opSem = newOpSemaphore(cmd.MaxConcurrentOps)
+	cmd.registerTools(server, cmd.opSem)
 
 	return server.Run(ctx, transport)
 }
 
-func (cmd *ServeCmd) registerTools(s *sdkmcp.Server) {
-	registerWorkspaceTools(s, cmd.GlobalFlags)
-	registerExecTool(s, cmd)
+func (cmd *ServeCmd) registerTools(s *sdkmcp.Server, sem *opSemaphore) {
+	registerWorkspaceTools(s, cmd.GlobalFlags, sem)
+	registerExecTool(s, cmd, sem)
 	registerProviderTools(s, cmd.GlobalFlags)
 }

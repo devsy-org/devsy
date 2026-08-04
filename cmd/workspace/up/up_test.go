@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -439,4 +441,37 @@ func TestBuildUpCmd_DoesNotMutateCallerGlobalFlags(t *testing.T) {
 		g.ResultFormat,
 		"caller's ResultFormat must remain untouched even after copy defaulted it",
 	)
+}
+
+func TestUpCmd_IDELaunchSkipImpliesIDENoneWhenIDEUnset(t *testing.T) {
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.IDELaunch = opener.LaunchSkip
+	cmd.IDE = ""
+
+	err := cmd.validate()
+	require.NoError(t, err)
+	assert.Equal(t, string(config.IDENone), cmd.IDE,
+		"ide-launch=skip with no explicit --ide should default IDE to none, "+
+			"so the container never downloads an IDE server binary")
+}
+
+func TestUpCmd_IDELaunchSkipRespectsExplicitIDE(t *testing.T) {
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.IDELaunch = opener.LaunchSkip
+	cmd.IDE = "openvscode"
+
+	err := cmd.validate()
+	require.NoError(t, err)
+	assert.Equal(t, "openvscode", cmd.IDE,
+		"an explicit --ide value must not be overridden even when launch is skipped")
+}
+
+func TestUpCmd_IDELaunchAutoDoesNotTouchIDE(t *testing.T) {
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.IDELaunch = opener.LaunchAuto
+	cmd.IDE = ""
+
+	err := cmd.validate()
+	require.NoError(t, err)
+	assert.Equal(t, "", cmd.IDE, "auto launch must not force an IDE default in validate()")
 }
