@@ -105,6 +105,12 @@
       "matchFileNames": ["sites/images-devsy-sh/**"],
       "allowedVersions": "<4.7.4",
       "description": "images-devsy-sh: svelte-check 4.7.4 tightened its typescript peerDependency to ^5||^6, incompatible with typescript 7 used here; unpin when svelte-check supports TS 7"
+    },
+    {
+      "matchPackageNames": ["typescript"],
+      "matchFileNames": ["sites/docs-devsy-sh/**"],
+      "allowedVersions": "<7.0.0",
+      "description": "docs-devsy-sh: typescript 7 doesn't provide the compiler API Next.js's build-time type checking requires; unpin when Next.js supports TS 7"
     }
   ]
 }
