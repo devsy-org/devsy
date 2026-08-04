@@ -24,7 +24,7 @@ import (
 
 // EnsureMode ensures path exists with exactly mode permissions, creating it
 // if absent. Skips the chmod when the file's mode already matches: chmod
-// requires ownership (or root) even when the requested mode wouldn't
+// requires ownership (or root) even when the requested mode would not
 // change, so skipping it when unnecessary avoids EPERM for a non-owning
 // acquirer of an already-correctly-moded file.
 //
@@ -37,13 +37,10 @@ func EnsureMode(path string, mode os.FileMode) error {
 }
 
 // WidenIfNeeded chmods path to mode if its current mode differs, skipping
-// the chmod entirely when it's already correct. Opens path without
+// the chmod entirely when it is already correct. Opens path without
 // following a symlink and chmods the resulting descriptor rather than the
-// path, so a symlink swapped in after a check-then-chmod by path couldn't
-// redirect the chmod onto an arbitrary target — path is a fixed,
-// world-writable coordination file any container user could otherwise race.
-// Also rejects a FIFO or other non-regular file at path: opening a FIFO
-// with no writer would otherwise block this call forever.
+// path, so a symlink swapped in after a check-then-chmod by path could not
+// redirect the chmod onto an arbitrary target.
 func WidenIfNeeded(path string, mode os.FileMode) error {
 	f, err := openNoFollow(path)
 	if err != nil {
@@ -67,9 +64,8 @@ func WidenIfNeeded(path string, mode os.FileMode) error {
 	return nil
 }
 
-// createIfMissing creates path at mode if it doesn't already exist. Leaves
-// an existing file untouched — its mode is WidenIfNeeded's job — so this
-// never races a concurrent creator into truncating their write.
+// createIfMissing creates path at mode if it does not already exist. Leaves
+// an existing file untouched.
 func createIfMissing(path string, mode os.FileMode) error {
 	//nolint:gosec // callers intentionally create a fixed, world-accessible coordination file
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)

@@ -28,8 +28,7 @@ func TestEnsureMode_WidensExistingRestrictiveFile(t *testing.T) {
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
-	//nolint:gosec // test-owned temp path
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // test-owned temp path
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(content), "widening mode must not touch existing content")
 }
@@ -41,8 +40,7 @@ func TestCreateIfMissing_LeavesExistingFileUntouched(t *testing.T) {
 
 	require.NoError(t, createIfMissing(path, 0o666))
 
-	//nolint:gosec // test-owned temp path
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // test-owned temp path
 	require.NoError(t, err)
 	assert.Equal(t, "existing", string(content),
 		"createIfMissing must not truncate a file a concurrent creator just wrote")
@@ -50,25 +48,12 @@ func TestCreateIfMissing_LeavesExistingFileUntouched(t *testing.T) {
 
 func TestWidenIfNeeded_SkipsChmodWhenModeAlreadyCorrect(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
-	//nolint:gosec // test fixture, intentional
-	require.NoError(t, os.WriteFile(path, nil, 0o666))
-	//nolint:gosec // test fixture, intentional
-	require.NoError(t, os.Chmod(path, 0o666))
+	require.NoError(t, os.WriteFile(path, nil, 0o666)) //nolint:gosec
+	require.NoError(t, os.Chmod(path, 0o666)) //nolint:gosec
 
-	// Not directly observable from outside (the whole point is it's an
-	// internal fast path), so this only pins the externally visible
-	// contract: widening an already-correct mode still succeeds.
 	require.NoError(t, WidenIfNeeded(path, 0o666))
 }
 
-// TestWidenIfNeeded_SucceedsOnAlreadyCorrectModeWithoutWriteAccess is the
-// regression test for a bug where openNoFollow used O_WRONLY: confirming an
-// already-correct target mode must not itself require write access, since
-// the whole point of "already correct" is a non-owning caller (e.g.
-// coordination-file mode 0644, checked by a session that isn't the file's
-// owner) skipping a chmod it couldn't perform anyway. 0444 stands in for
-// "correct mode that doesn't grant this process write" without needing a
-// real cross-UID setup.
 func TestWidenIfNeeded_SucceedsOnAlreadyCorrectModeWithoutWriteAccess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
 	//nolint:gosec // test fixture, intentional
@@ -82,9 +67,7 @@ func TestWidenIfNeeded_SucceedsOnAlreadyCorrectModeWithoutWriteAccess(t *testing
 
 func TestWidenIfNeeded_WidensNarrowerMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
-	//nolint:gosec // test fixture, intentional
-	require.NoError(t, os.WriteFile(path, nil, 0o644))
-
+	require.NoError(t, os.WriteFile(path, nil, 0o644)) //nolint:gosec
 	require.NoError(t, WidenIfNeeded(path, 0o666))
 
 	info, err := os.Stat(path)
@@ -113,17 +96,11 @@ func TestWidenIfNeeded_RejectsSymlinkWithoutTouchingTarget(t *testing.T) {
 		"the symlink target's mode must be untouched, not widened")
 }
 
-// TestWidenIfNeeded_SymlinkSwappedAfterOpenCannotRedirectChmod is the
-// regression test for the TOCTOU this function closes: even if path is
-// replaced with a symlink after WidenIfNeeded has already opened it, the
-// chmod lands on the descriptor's original inode, not wherever the symlink
-// now points.
 func TestWidenIfNeeded_SymlinkSwappedAfterOpenCannotRedirectChmod(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "coord")
 	decoyTarget := filepath.Join(dir, "decoy")
-	//nolint:gosec // test fixture, intentional
-	require.NoError(t, os.WriteFile(path, nil, 0o644))
+	require.NoError(t, os.WriteFile(path, nil, 0o644)) //nolint:gosec
 	require.NoError(t, os.WriteFile(decoyTarget, nil, 0o600))
 
 	f, err := os.OpenFile(path, os.O_WRONLY, 0) //nolint:gosec // test-owned temp path

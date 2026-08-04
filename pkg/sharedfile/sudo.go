@@ -12,7 +12,7 @@ import (
 )
 
 // WidenWithSudoFallback behaves like WidenIfNeeded, but on EPERM (path
-// exists at the wrong mode and this process doesn't own it) falls back to
+// exists at the wrong mode and this process does not own it) falls back to
 // re-execing `<self> internal widen-shared-file` under a non-interactive
 // sudo, so the escalated mode change still goes through WidenIfNeeded's
 // O_NOFOLLOW open rather than a plain `sudo chmod <path>` — chmod(1) has no
@@ -39,7 +39,7 @@ func WidenWithSudoFallback(ctx context.Context, path string, mode os.FileMode) e
 	}
 
 	// -n: fail immediately instead of prompting if sudo needs a password,
-	// so a caller holding a timeout-bounded lock can't hang forever.
+	// so a caller holding a timeout-bounded lock cannot hang forever.
 	//nolint:gosec // execPath is the current binary; path is a fixed coordination-file path
 	cmd := exec.CommandContext(
 		ctx, "sudo", "-n", execPath, "internal", "widen-shared-file",

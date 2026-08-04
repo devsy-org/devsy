@@ -244,9 +244,7 @@ func isTransientBackhaulErr(err error) bool {
 
 // CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given
 // arguments. user both authenticates the session and is who every command
-// on it runs as — there's no separate privilege-drop step — so callers
-// whose later traffic needs specific file access must pick user
-// accordingly. Empty defaults to root.
+// on it runs as. Empty defaults to root.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,

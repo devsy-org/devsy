@@ -106,11 +106,6 @@ func TestSetupKubeConfig_NonEmptyPayloadEmitsInfoLog(t *testing.T) {
 	}
 }
 
-// TestWriteResultFileTo_ProducesWorldReadableFile guards the fix for a
-// SSH-session-user footgun: getContainerResult and portOptionsFromResult
-// read this file over sessions that may authenticate as root or the
-// workspace's remoteUser, so it must not be locked to whichever user's
-// process happened to create it first.
 func TestWriteResultFileTo_ProducesWorldReadableFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "result.json")
 
@@ -127,9 +122,6 @@ func TestWriteResultFileTo_ProducesWorldReadableFile(t *testing.T) {
 	}
 }
 
-// TestWriteResultFileTo_SkipsWriteWhenContentUnchanged locks in the
-// no-op-on-unchanged-content behavior so frequent writeResultFile calls
-// during setup don't repeatedly touch the file's mtime/mode for no reason.
 func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
 	content := []byte(`{"ok":true}`)
@@ -158,9 +150,6 @@ func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
 	}
 }
 
-// TestWriteResultFileTo_WidensExistingRestrictiveMode ensures a file left
-// behind by a pre-fix binary (0600) gets corrected on the next write, not
-// just newly-created files.
 func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
 	// #nosec G306 -- intentional: simulating a pre-fix file left at 0600
@@ -181,10 +170,6 @@ func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
 	}
 }
 
-// TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged guards
-// against the unchanged-content early return skipping the widen step: a
-// file at a stale restrictive mode must get corrected on the next call
-// even if the content it's writing happens to already match.
 func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
 	content := []byte(`{"ok":true}`)

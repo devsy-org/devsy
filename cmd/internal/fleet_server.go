@@ -61,7 +61,7 @@ func (c *FleetServerCmd) Run(cmd *cobra.Command, _ []string) error {
 			}
 
 			// check if we had at least one fleet client connection, before
-			// this point, we don't check for connected/disconnected strings
+			// this point, we do not check for connected/disconnected strings
 			initialized := firstConnection.FindStringSubmatch(string(log))
 			if len(initialized) == 0 {
 				continue

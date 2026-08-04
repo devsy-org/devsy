@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewWidenSharedFileCmd returns a hidden command that runs
+// NewWidenSharedFileCmd returns a internal command that runs
 // sharedfile.WidenIfNeeded. sharedfile.WidenWithSudoFallback re-execs this
 // (via sudo) so the actual mode change still goes through WidenIfNeeded's
 // open-with-O_NOFOLLOW-then-fchmod, even when it needs root — `sudo chmod
