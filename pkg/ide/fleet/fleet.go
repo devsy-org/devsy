@@ -49,6 +49,11 @@ var Options = ide.Options{
 	},
 }
 
+type FleetServer struct {
+	values   map[string]config.OptionValue
+	userName string
+}
+
 func NewFleetServer(
 	userName string,
 	values map[string]config.OptionValue,
@@ -57,11 +62,6 @@ func NewFleetServer(
 		values:   values,
 		userName: userName,
 	}
-}
-
-type FleetServer struct {
-	values   map[string]config.OptionValue
-	userName string
 }
 
 func (o *FleetServer) Install(projectDir string) error {

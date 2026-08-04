@@ -141,22 +141,7 @@ func portForwarding(
 		}
 	}()
 
-	if client != nil {
-		transportClosed := make(chan struct{})
-		go func() {
-			if werr := client.Wait(); werr != nil {
-				log.Debugf("ssh transport closed on %s: %v", srcAddr, werr)
-			}
-			close(transportClosed)
-		}()
-		go func() {
-			select {
-			case <-done:
-			case <-transportClosed:
-				cancel(ErrTransportClosed)
-			}
-		}()
-	}
+	watchTransportClosed(client, done, srcAddr, func() { cancel(ErrTransportClosed) })
 
 	counter := newConnectionCounter(fwdCtx, exitAfterTimeout, func() {
 		log.Infof(
@@ -189,6 +174,31 @@ func portForwarding(
 			forwardFn(connection, client, dstNetwork, dstAddr)
 		}()
 	}
+}
+
+// watchTransportClosed spawns a goroutine that waits for client's transport
+// to close and invokes onClosed, unless done fires first. A nil client is a
+// no-op.
+func watchTransportClosed(
+	client *ssh.Client, done <-chan struct{}, srcAddr string, onClosed func(),
+) {
+	if client == nil {
+		return
+	}
+	transportClosed := make(chan struct{})
+	go func() {
+		if werr := client.Wait(); werr != nil {
+			log.Debugf("ssh transport closed on %s: %v", srcAddr, werr)
+		}
+		close(transportClosed)
+	}()
+	go func() {
+		select {
+		case <-done:
+		case <-transportClosed:
+			onClosed()
+		}
+	}()
 }
 
 func forward(

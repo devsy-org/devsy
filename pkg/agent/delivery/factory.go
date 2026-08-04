@@ -25,38 +25,46 @@ type FactoryOptions struct {
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
-	switch driverType := opts.WorkspaceConfig.Agent.Driver; {
-	case driverType == provider.CustomDriver:
-		return legacyShellDelivery(opts, "custom driver")
+	driverType := opts.WorkspaceConfig.Agent.Driver
+	if d := namedDriverDelivery(driverType, opts); d != nil {
+		return d
+	}
 
-	case driverType == provider.KubernetesDriver:
-		return kubernetesDelivery(opts)
-
-	case driverType == provider.AppleDriver:
-		// Shell delivery launches the agent in one exec, which keeps the VM
-		// alive; it is the supported mechanism here, not a deprecated fallback.
-		log.Debugf("using shell-based delivery for apple driver")
-		return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
-
-	case driverType == provider.MicrosandboxDriver:
-		// Stream the agent binary over the SDK's guest exec (as kubernetes does);
-		// fall back to shell delivery when the driver exposes no argv exec.
-		if opts.PodExec == nil {
-			return legacyShellDelivery(opts, "microsandbox argv exec unavailable")
-		}
-		log.Debugf("using stream delivery (exec stream) for microsandbox")
-		return &KubernetesDelivery{Exec: opts.PodExec}
-
-	case opts.IsRemoteDocker:
+	if opts.IsRemoteDocker {
 		log.Debugf("using remote docker delivery (docker cp)")
 		return remoteDockerDelivery(opts)
-
-	case driverType == "" || driverType == provider.DockerDriver:
-		return dockerDelivery(opts)
-
-	default:
-		return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType))
 	}
+
+	if driverType == "" || driverType == provider.DockerDriver {
+		return dockerDelivery(opts)
+	}
+
+	return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType))
+}
+
+// namedDriverDelivery returns the delivery strategy for driver types that
+// dispatch on an exact name match, or nil if driverType matches none of them.
+func namedDriverDelivery(driverType string, opts FactoryOptions) AgentDelivery {
+	switch driverType {
+	case provider.CustomDriver:
+		return legacyShellDelivery(opts, "custom driver")
+	case provider.KubernetesDriver:
+		return kubernetesDelivery(opts)
+	case provider.AppleDriver:
+		return appleDelivery(opts)
+	case provider.MicrosandboxDriver:
+		return microsandboxDelivery(opts)
+	default:
+		return nil
+	}
+}
+
+// appleDelivery launches the agent in one shell exec, which keeps the VM
+// alive; it is the supported mechanism for this driver, not a deprecated
+// fallback.
+func appleDelivery(opts FactoryOptions) AgentDelivery {
+	log.Debugf("using shell-based delivery for apple driver")
+	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
 }
 
 func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
@@ -64,6 +72,17 @@ func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
 		return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
 	}
 	log.Debugf("using kubernetes-native delivery (exec stream)")
+	return &KubernetesDelivery{Exec: opts.PodExec}
+}
+
+// microsandboxDelivery streams the agent binary over the SDK's guest exec
+// (as kubernetes does), falling back to shell delivery when the driver
+// exposes no argv exec.
+func microsandboxDelivery(opts FactoryOptions) AgentDelivery {
+	if opts.PodExec == nil {
+		return legacyShellDelivery(opts, "microsandbox argv exec unavailable")
+	}
+	log.Debugf("using stream delivery (exec stream) for microsandbox")
 	return &KubernetesDelivery{Exec: opts.PodExec}
 }
 

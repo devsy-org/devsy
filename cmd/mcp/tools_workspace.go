@@ -33,7 +33,7 @@ type workspaceStatusInput struct {
 	Name string `json:"name" jsonschema:"required"`
 }
 
-func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
+func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags, sem *opSemaphore) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_list",
 		Description: "List all Devsy workspaces with their provider, IDE, and source. " +
@@ -64,7 +64,7 @@ func registerWorkspaceTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		return nil, out, nil
 	}))
 
-	registerWorkspaceLifecycleTools(s, g)
+	registerWorkspaceLifecycleTools(s, g, sem)
 }
 
 func handleWorkspaceList(ctx context.Context, g *flags.GlobalFlags) (workspaceListOutput, error) {
@@ -138,7 +138,14 @@ type createInput struct {
 	DevcontainerPath string `json:"devcontainer_path,omitempty"`
 }
 
-func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
+func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags, sem *opSemaphore) {
+	registerWorkspaceStartTool(s, g, sem)
+	registerWorkspaceStopTool(s, g)
+	registerWorkspaceDeleteTool(s, g)
+	registerWorkspaceCreateTool(s, g, sem)
+}
+
+func registerWorkspaceStartTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *opSemaphore) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_start",
 		Description: "Start (or resume) an existing workspace by name. The name must " +
@@ -150,13 +157,20 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		if in.Name == "" {
 			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
 		}
+		release, err := sem.acquire(ctx)
+		if err != nil {
+			return errorResult(err), opOK{}, nil
+		}
+		defer release()
 		return opResultHandler(func() error {
 			return streamLogsToSession(ctx, req.Session, func() error {
 				return startWorkspace(ctx, g, in.Name)
 			})
 		})
 	}))
+}
 
+func registerWorkspaceStopTool(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name:        "workspace_stop",
 		Description: "Stop a running workspace by name. The name must match a workspace from workspace_list.",
@@ -168,7 +182,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		}
 		return opResultHandler(func() error { return stopWorkspace(ctx, g, in.Name) })
 	}))
+}
 
+func registerWorkspaceDeleteTool(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_delete",
 		Description: "Delete a workspace by name (must match workspace_list). " +
@@ -181,7 +197,9 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 		}
 		return opResultHandler(func() error { return deleteWorkspace(ctx, g, in.Name, in.Force) })
 	}))
+}
 
+func registerWorkspaceCreateTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *opSemaphore) {
 	sdkmcp.AddTool(s, &sdkmcp.Tool{
 		Name: "workspace_create",
 		Description: "Create and start a new workspace. May take several minutes on " +
@@ -197,10 +215,16 @@ func registerWorkspaceLifecycleTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, req *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {
-		var (
-			out any
-			err error
-		)
+		if in.Source == "" {
+			return errorResult(fmt.Errorf("source is required")), nil, nil
+		}
+		release, err := sem.acquire(ctx)
+		if err != nil {
+			return errorResult(err), nil, nil
+		}
+		defer release()
+
+		var out any
 		streamErr := streamLogsToSession(ctx, req.Session, func() error {
 			out, err = createWorkspace(ctx, g, in)
 			return err

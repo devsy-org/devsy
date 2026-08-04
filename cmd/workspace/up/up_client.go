@@ -94,13 +94,23 @@ func (cmd *UpCmd) prepareClient(
 	if err != nil {
 		return nil, err
 	}
-	if !cmd.Platform.Enabled {
-		proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-		if err := workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance); err != nil {
-			return nil, err
-		}
+	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
+		return nil, err
 	}
 	return client, nil
+}
+
+// checkProviderUpdate checks for a provider update, unless running in platform mode.
+func (cmd *UpCmd) checkProviderUpdate(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	if cmd.Platform.Enabled {
+		return nil
+	}
+	proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
+	return workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance)
 }
 
 // ensureArgsForFromSnapshot returns args unchanged unless --from-snapshot is

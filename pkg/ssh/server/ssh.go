@@ -364,49 +364,44 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 		user = ""
 	}
 
-	// has user set?
 	if user != "" {
-		args := []string{}
-
-		// is pty?
-		if isPty {
-			args = append(args, "-")
-		}
-
-		// add user
-		args = append(args, sess.User())
-
-		// is there a command?
-		if len(sess.RawCommand()) > 0 {
-			args = append(args, "-c", sess.RawCommand())
-		}
-
-		cmd = exec.Command(
-			"su",
-			args...) // #nosec G204 -- args built from session request in the ssh server
+		//nolint:gosec // G204: args built from session request in the ssh server
+		cmd = exec.Command("su", buildSuArgs(sess, isPty)...)
 	} else {
-		args := []string{}
-		args = append(args, s.shell[1:]...)
-		if isPty {
-			args = append(args, "-l")
-		}
-
-		if len(sess.RawCommand()) == 0 {
-			cmd = exec.Command(
-				s.shell[0],
-				args...) // #nosec G204 -- shell configured by the ssh server, not user input
-		} else {
-			args = append(args, "-c", sess.RawCommand())
-			cmd = exec.Command(
-				s.shell[0],
-				args...) // #nosec G204 -- shell configured by the ssh server, not user input
-		}
+		//nolint:gosec // G204: shell configured by the ssh server, not user input
+		cmd = exec.Command(s.shell[0], buildShellArgs(s.shell[1:], sess, isPty)...)
 	}
 
 	cmd.Dir = findWorkdir(s.workdir, user)
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	cmd.Env = append(cmd.Env, sess.Environ()...)
 	return cmd
+}
+
+// buildSuArgs builds the "su" argv for running sess's command as sess.User().
+func buildSuArgs(sess ssh.Session, isPty bool) []string {
+	args := []string{}
+	if isPty {
+		args = append(args, "-")
+	}
+	args = append(args, sess.User())
+	if len(sess.RawCommand()) > 0 {
+		args = append(args, "-c", sess.RawCommand())
+	}
+	return args
+}
+
+// buildShellArgs builds the argv for running sess's command via the
+// server's configured shell, given its args beyond the executable itself.
+func buildShellArgs(shellArgs []string, sess ssh.Session, isPty bool) []string {
+	args := append([]string{}, shellArgs...)
+	if isPty {
+		args = append(args, "-l")
+	}
+	if len(sess.RawCommand()) > 0 {
+		args = append(args, "-c", sess.RawCommand())
+	}
+	return args
 }
 
 func (s *server) configureAgent(sess ssh.Session, cmd *exec.Cmd) (func(), bool, error) {

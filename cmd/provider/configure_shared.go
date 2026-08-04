@@ -195,14 +195,7 @@ func initProvider(
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	if devsyConfig.Current().Providers == nil {
-		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
-	}
-	if devsyConfig.Current().Providers[provider.Name] == nil {
-		devsyConfig.Current().Providers[provider.Name] = &config.ProviderConfig{}
-	}
-	entry := devsyConfig.Current().Providers[provider.Name]
-
+	entry := providerConfigEntry(devsyConfig, provider.Name)
 	entry.InitAttempted = true
 	entry.InitError = ""
 	entry.Initialized = false
@@ -229,6 +222,18 @@ func initProvider(
 
 	entry.Initialized = true
 	return nil
+}
+
+// providerConfigEntry returns the config.ProviderConfig entry for name,
+// creating the Providers map and/or the entry itself if either is unset.
+func providerConfigEntry(devsyConfig *config.Config, name string) *config.ProviderConfig {
+	if devsyConfig.Current().Providers == nil {
+		devsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
+	}
+	if devsyConfig.Current().Providers[name] == nil {
+		devsyConfig.Current().Providers[name] = &config.ProviderConfig{}
+	}
+	return devsyConfig.Current().Providers[name]
 }
 
 const maxInitErrorLen = 500

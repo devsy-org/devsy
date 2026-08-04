@@ -471,17 +471,7 @@ func (w WorkspaceSource) gitSourceType() string {
 
 func ParseWorkspaceSource(source string) *WorkspaceSource {
 	if after, ok := strings.CutPrefix(source, WorkspaceSourceGit); ok {
-		info := git.NormalizeRepository(after)
-		if !isPlausibleGitSource(info.Repository) {
-			return nil
-		}
-		return &WorkspaceSource{
-			GitRepository:  info.Repository,
-			GitPRReference: info.PR,
-			GitBranch:      info.Branch,
-			GitCommit:      info.Commit,
-			GitSubPath:     info.SubPath,
-		}
+		return parseGitWorkspaceSource(after)
 	} else if after, ok := strings.CutPrefix(source, WorkspaceSourceLocal); ok {
 		after = util.ExpandTilde(after)
 		return &WorkspaceSource{
@@ -502,6 +492,23 @@ func ParseWorkspaceSource(source string) *WorkspaceSource {
 	}
 
 	return nil
+}
+
+// parseGitWorkspaceSource builds a WorkspaceSource from the portion of a
+// source string following the git prefix, or nil if it's not a plausible
+// git repository.
+func parseGitWorkspaceSource(after string) *WorkspaceSource {
+	info := git.NormalizeRepository(after)
+	if !isPlausibleGitSource(info.Repository) {
+		return nil
+	}
+	return &WorkspaceSource{
+		GitRepository:  info.Repository,
+		GitPRReference: info.PR,
+		GitBranch:      info.Branch,
+		GitCommit:      info.Commit,
+		GitSubPath:     info.SubPath,
+	}
 }
 
 var gitURLSchemes = map[string]bool{"http": true, "https": true, "ssh": true, "git": true}

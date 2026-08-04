@@ -320,6 +320,7 @@ const (
 	Hidden                = "hidden"
 	Interval              = "interval"
 	KeyFile               = "key-file"
+	MaxConcurrentOps      = "mcp-max-concurrent-ops"
 	MaxDepth              = "max-depth"
 	Namespace             = "namespace"
 	Port                  = "port"

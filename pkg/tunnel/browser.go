@@ -71,7 +71,7 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			writer := log.Writer(log.LevelDebug)
 			defer func() { _ = writer.Close() }()
 
-			sshCmd, err := CreateSSHCommand(ctx, p.Client, []string{
+			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
 				names.FlagValue(names.LogOutput, "raw"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
@@ -242,10 +242,13 @@ func isTransientBackhaulErr(err error) bool {
 	return exitErr.ExitCode() == exitcode.Retryable
 }
 
-// CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given arguments.
+// CreateSSHCommand builds an exec.Cmd that runs `devsy ssh` with the given
+// arguments. user both authenticates the session and is who every command
+// on it runs as. Empty defaults to root.
 func CreateSSHCommand(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
+	user string,
 	extraArgs []string,
 ) (*exec.Cmd, error) {
 	execPath, err := os.Executable()
@@ -253,32 +256,47 @@ func CreateSSHCommand(
 		return nil, err
 	}
 
-	args := buildSSHCommandArgs(
-		client.Context(),
-		client.Workspace(),
-		log.DebugEnabled(),
-		extraArgs,
-	)
+	args := buildSSHCommandArgs(sshCommandArgsParams{
+		clientContext: client.Context(),
+		workspace:     client.Workspace(),
+		user:          user,
+		debug:         log.DebugEnabled(),
+		extraArgs:     extraArgs,
+	})
 
 	//nolint:gosec // execPath is the current binary, arguments are controlled
 	return exec.CommandContext(ctx, execPath, args...), nil
 }
 
+// sshCommandArgsParams bundles buildSSHCommandArgs' inputs so the function
+// takes one argument instead of five.
+type sshCommandArgsParams struct {
+	clientContext string
+	workspace     string
+	user          string
+	debug         bool
+	extraArgs     []string
+}
+
 // buildSSHCommandArgs constructs the argument list for `devsy ssh`.
-func buildSSHCommandArgs(clientContext, workspace string, debug bool, extraArgs []string) []string {
+func buildSSHCommandArgs(p sshCommandArgsParams) []string {
+	user := p.user
+	if user == "" {
+		user = "root"
+	}
 	args := []string{
 		"workspace",
 		"ssh",
-		names.FlagValue(names.User, "root"),
+		names.FlagValue(names.User, user),
 		names.FlagFalse(names.AgentForwarding),
 		names.FlagFalse(names.StartServices),
 		names.Flag(names.Context),
-		clientContext,
-		workspace,
+		p.clientContext,
+		p.workspace,
 	}
-	if debug {
+	if p.debug {
 		args = append(args, names.Flag(names.Debug))
 	}
-	args = append(args, extraArgs...)
+	args = append(args, p.extraArgs...)
 	return args
 }

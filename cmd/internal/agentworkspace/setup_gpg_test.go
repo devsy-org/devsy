@@ -3,6 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -100,4 +101,103 @@ func TestAcquireGPGSetupLock_ReturnsCancellationErrorWhenCallerCancels(t *testin
 		"caller cancellation must surface as context.Canceled, not a generic lock-timeout error: got %v",
 		err,
 	)
+}
+
+func TestAcquireGPGSetupLock_FileIsWorldLockable(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"lock file must be 0666 so any container user (root or the workspace's "+
+			"remoteUser) can create/open it; the default flock mode of 0600 lets "+
+			"whichever user runs setup-gpg first lock out every other user "+
+			"with EACCES")
+}
+
+func TestAcquireGPGSetupLock_SecondAcquireOfAlready0666FileDoesNotChmod(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+
+	reacquire, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err, "second acquisition of an already-0666 lock file must succeed")
+	reacquire()
+}
+
+func TestAcquireGPGSetupLock_FixesWrongMode(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	unlock()
+
+	// #nosec G302 -- intentional: simulating a wrong pre-existing mode
+	require.NoError(t, os.Chmod(gpgSetupLockPath, 0o644))
+
+	reacquire, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err)
+	defer reacquire()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"acquireGPGSetupLock must fix a wrong mode back to 0666")
+}
+
+func TestAcquireGPGSetupLock_WidensStaleRestrictiveLockFile(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	gpgSetupLockPath = filepath.Join(t.TempDir(), "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	require.NoError(t, os.WriteFile(gpgSetupLockPath, nil, 0o600))
+
+	unlock, err := acquireGPGSetupLock(context.Background())
+	require.NoError(t, err, "a stale restrictively-moded lock file must not block acquisition")
+	defer unlock()
+
+	info, err := os.Stat(gpgSetupLockPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+}
+
+func TestAcquireGPGSetupLock_RejectsSymlink(t *testing.T) {
+	origPath, origTimeout := gpgSetupLockPath, gpgSetupLockTimeout
+	dir := t.TempDir()
+	gpgSetupLockPath = filepath.Join(dir, "setup-gpg.lock")
+	gpgSetupLockTimeout = time.Second
+	defer func() { gpgSetupLockPath, gpgSetupLockTimeout = origPath, origTimeout }()
+
+	target := filepath.Join(dir, "target")
+	require.NoError(t, os.WriteFile(target, nil, 0o600))
+	require.NoError(t, os.Symlink(target, gpgSetupLockPath))
+
+	_, err := acquireGPGSetupLock(context.Background())
+	require.Error(t, err,
+		"opening the symlinked lock path with O_NOFOLLOW must fail, not follow it")
+
+	info, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
+		"the symlink target's mode must be untouched, not widened to 0666")
 }

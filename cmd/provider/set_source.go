@@ -10,6 +10,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -89,9 +90,17 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return nil
 	}
 
-	// Preserve previously user-provided values (default DiscardPriorValues=false).
-	// The resolver prunes keys absent from the new schema and re-resolves values
-	// that fail validation, so stale data cannot leak through this path.
+	return cmd.activateProvider(ctx, devsyConfig, providerConfig, reporter)
+}
+
+// activateProvider configures and activates a newly sourced provider,
+// preserving previously user-provided option values.
+func (cmd *SetSourceCmd) activateProvider(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerConfig *provider.ProviderConfig,
+	reporter status.Reporter,
+) error {
 	if err := ConfigureProvider(ctx, ProviderOptionsConfig{
 		Provider:    providerConfig,
 		ContextName: devsyConfig.DefaultContext,

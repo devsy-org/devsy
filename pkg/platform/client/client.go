@@ -180,36 +180,6 @@ func (c *client) Logout(ctx context.Context) error {
 	return nil
 }
 
-func (c *client) initConfig() error {
-	var retErr error
-	c.configOnce.Do(func() {
-		// load the config or create new one if not found
-		content, err := os.ReadFile(c.configPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				c.config = NewConfig()
-				return
-			}
-
-			retErr = err
-			return
-		}
-
-		config := &Config{
-			VirtualClusterAccessPointCertificates: make(map[string]VirtualClusterCertificatesEntry),
-		}
-		err = json.Unmarshal(content, config)
-		if err != nil {
-			retErr = err
-			return
-		}
-
-		c.config = config
-	})
-
-	return retErr
-}
-
 func (c *client) Save() error {
 	if c.configPath == "" {
 		return nil
@@ -379,6 +349,36 @@ func (c *client) LoginWithAccessKey(host, accessKey string, insecure bool, force
 	}
 
 	return c.Save()
+}
+
+func (c *client) initConfig() error {
+	var retErr error
+	c.configOnce.Do(func() {
+		// load the config or create new one if not found
+		content, err := os.ReadFile(c.configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				c.config = NewConfig()
+				return
+			}
+
+			retErr = err
+			return
+		}
+
+		config := &Config{
+			VirtualClusterAccessPointCertificates: make(map[string]VirtualClusterCertificatesEntry),
+		}
+		err = json.Unmarshal(content, config)
+		if err != nil {
+			retErr = err
+			return
+		}
+
+		c.config = config
+	})
+
+	return retErr
 }
 
 func (c *client) deleteOldAccessKey() {

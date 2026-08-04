@@ -15,6 +15,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/token"
 	"github.com/devsy-org/ssh"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func encodeTestToken(t *testing.T, tok token.Token) string {
@@ -183,4 +185,59 @@ func TestRunActivityHeartbeatExitsOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("heartbeat did not exit within 2s of context cancel")
 	}
+}
+
+func TestEnsureActivityFile_CreatesWorldWritableFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+
+	require.NoError(t, ensureActivityFile(path))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"the activity file must be 0666 so both the root browser-IDE tunnel and "+
+			"a non-root GPG-forwarding tunnel can touch it")
+}
+
+func TestEnsureActivityFile_NoOpsWhenFileAlreadyExists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+	require.NoError(t, os.WriteFile(path, []byte("existing"), 0o600))
+
+	require.NoError(t, ensureActivityFile(path))
+
+	data, err := os.ReadFile(path) //nolint:gosec // test-owned temp path
+	require.NoError(t, err)
+	assert.Equal(t, "existing", string(data),
+		"ensureActivityFile must not truncate a file that already exists")
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"a stale restrictive mode left by an existing file must still get widened")
+}
+
+func TestTouchActivityFile_CreatesFileAndUpdatesMtime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+
+	touchActivityFile(path)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second)
+}
+
+func TestTouchActivityFile_UpdatesMtimeOfExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devsy.activity")
+	old := time.Now().Add(-time.Hour)
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.WriteFile(path, nil, 0o666))
+	require.NoError(t, os.Chtimes(path, old, old))
+
+	touchActivityFile(path)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second,
+		"touchActivityFile must advance mtime on an already-existing file")
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 )
@@ -97,13 +98,26 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+// gpgSetupLockMode is 0666 — flock's default 0600 would lock out whichever
+// of root/remoteUser did not create the file.
+const gpgSetupLockMode = 0o666
+
 // acquireGPGSetupLock takes the cross-process lock guarding setup-gpg. On
 // success it returns a func that releases the lock.
 func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 	lockCtx, cancel := context.WithTimeout(ctx, gpgSetupLockTimeout)
 	defer cancel()
 
-	lock := flock.New(gpgSetupLockPath)
+	// Repairs a lock file a pre-existing binary left at a restrictive mode,
+	// which this process (running as whichever user didn't create it) can't
+	// fix itself once flock.TryLockContext below fails with EACCES.
+	if err := sharedfile.WidenWithSudoFallback(
+		lockCtx, gpgSetupLockPath, gpgSetupLockMode,
+	); err != nil {
+		return nil, fmt.Errorf("widen stale lock file: %w", err)
+	}
+
+	lock := flock.New(gpgSetupLockPath, flock.SetPermissions(gpgSetupLockMode))
 	locked, err := lock.TryLockContext(lockCtx, 200*time.Millisecond)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -119,6 +133,13 @@ func acquireGPGSetupLock(ctx context.Context) (func(), error) {
 			return nil, ctx.Err()
 		}
 		return nil, fmt.Errorf("timed out waiting for another gpg setup to finish")
+	}
+
+	// flock.SetPermissions is subject to the process umask on create;
+	// widen again to guarantee the mode regardless of who created it.
+	if err := sharedfile.WidenIfNeeded(gpgSetupLockPath, gpgSetupLockMode); err != nil {
+		_ = lock.Unlock()
+		return nil, fmt.Errorf("set lock file permissions: %w", err)
 	}
 
 	return func() { _ = lock.Unlock() }, nil

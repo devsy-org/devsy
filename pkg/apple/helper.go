@@ -349,15 +349,6 @@ func (h *AppleHelper) EnsureBuilderRunning(ctx context.Context) error {
 	return fmt.Errorf("start container builder: %s: %w", strings.TrimSpace(string(out)), err)
 }
 
-func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
-	//nolint:gosec // G204: operator-configured binary, internally-built args (as in pkg/docker)
-	cmd := exec.CommandContext(ctx, h.Command, args...)
-	if h.Environment != nil {
-		cmd.Env = append(os.Environ(), h.Environment...)
-	}
-	return cmd
-}
-
 // SystemRunning reports whether the container system service is running.
 func (h *AppleHelper) SystemRunning(ctx context.Context) bool {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -367,6 +358,15 @@ func (h *AppleHelper) SystemRunning(ctx context.Context) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(string(out)), stateRunning)
+}
+
+func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
+	//nolint:gosec // G204: operator-configured binary, internally-built args (as in pkg/docker)
+	cmd := exec.CommandContext(ctx, h.Command, args...)
+	if h.Environment != nil {
+		cmd.Env = append(os.Environ(), h.Environment...)
+	}
+	return cmd
 }
 
 func (h *AppleHelper) listContainers(ctx context.Context) ([]containerInspect, error) {
