@@ -42,7 +42,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/joho/godotenv v1.5.1
-	github.com/moby/buildkit v0.32.1
+	github.com/moby/buildkit v0.32.2
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/term v0.5.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
