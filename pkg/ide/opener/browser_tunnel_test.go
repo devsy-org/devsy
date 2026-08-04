@@ -13,13 +13,14 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/tunnel"
+	"github.com/stretchr/testify/assert"
 )
 
-// containsAdjacent returns true if args contains needle followed immediately
-// by value.
-func containsAdjacent(args []string, needle, value string) bool {
+// containsAdjacent reports whether flag appears immediately followed by
+// value in args, e.g. ["--user", "vscode"].
+func containsAdjacent(args []string, flag, value string) bool {
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == needle && args[i+1] == value {
+		if args[i] == flag && args[i+1] == value {
 			return true
 		}
 	}
@@ -103,6 +104,18 @@ func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 	if containsArg(withoutFlag, "--open-browser") {
 		t.Errorf("did not expect --open-browser in %v", withoutFlag)
 	}
+}
+
+func TestBuildHelperArgs_IncludesResolvedUser(t *testing.T) {
+	args := buildHelperArgs("default", "my-workspace", tunnel.BrowserTunnelParams{
+		User:      "vscode",
+		TargetURL: "http://localhost:1234",
+	}, false)
+
+	joined := strings.Join(args, " ")
+	assert.Contains(t, joined, "--user vscode",
+		"the detached browser-tunnel helper must run its RunServices/backhaul "+
+			"connections as the resolved workspace user, not be left empty/root")
 }
 
 // setupTempHome redirects the path manager to a temp HOME so the workspace

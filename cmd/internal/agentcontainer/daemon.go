@@ -20,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"github.com/devsy-org/devsy/pkg/ts"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -98,15 +99,8 @@ func (cmd *DaemonCmd) setupTimeout() (time.Duration, error) {
 		return 0, fmt.Errorf("failed to parse timeout duration: %w", err)
 	}
 	if timeoutDuration > 0 {
-		if err := os.WriteFile( // #nosec G306
-			config2.ContainerActivityFile,
-			nil,
-			0o666,
-		); err != nil {
-			return 0, fmt.Errorf("failed to create activity file: %w", err)
-		}
-		if err := os.Chmod(config2.ContainerActivityFile, 0o666); err != nil { // #nosec G302
-			return 0, fmt.Errorf("failed to set activity file permissions: %w", err)
+		if err := sharedfile.EnsureMode(config2.ContainerActivityFile, 0o666); err != nil {
+			return 0, fmt.Errorf("failed to ensure activity file: %w", err)
 		}
 	}
 

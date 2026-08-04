@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	sshserver "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ssh/server/port"
 	"github.com/devsy-org/devsy/pkg/stdio"
@@ -233,22 +233,18 @@ func runActivityHeartbeat(ctx context.Context, path string) {
 }
 
 func ensureActivityFile(path string) error {
-	_, err := os.Stat(path)
-	if err == nil {
-		return nil
+	return sharedfile.EnsureMode(path, activityFileMode)
+}
+
+// touchActivityFile is for callers reporting activity on discrete events
+// rather than runActivityHeartbeat's fixed interval (e.g. fleet-server).
+func touchActivityFile(path string) {
+	if err := ensureActivityFile(path); err != nil {
+		log.Errorf("touch activity file: ensure file: %v", err)
+		return
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stat: %w", err)
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		log.Errorf("touch activity file: %v", err)
 	}
-	if err := os.WriteFile(
-		path,
-		nil,
-		activityFileMode,
-	); err != nil { // #nosec G306 -- intentionally world-writable; multiple users update activity
-		return fmt.Errorf("create: %w", err)
-	}
-	if err := os.Chmod(path, activityFileMode); err != nil { // #nosec G302 -- ditto
-		return fmt.Errorf("chmod: %w", err)
-	}
-	return nil
 }

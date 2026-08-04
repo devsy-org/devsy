@@ -29,6 +29,23 @@ func TestBuildForwardArgs(t *testing.T) {
 	assert.Equal(t, expected, got)
 }
 
+func TestBuildForwardArgs_NonRootUser(t *testing.T) {
+	got := buildForwardArgs("vscode", "test-context", "test-workspace")
+	expected := []string{
+		"workspace",
+		"ssh",
+		"--ssh-gpg-forwarding=true",
+		"--agent-forwarding=true",
+		"--start-services=true",
+		"--user", "vscode",
+		"--context", "test-context",
+		"test-workspace",
+		"--log-output=raw",
+		"--command", "sleep infinity",
+	}
+	assert.Equal(t, expected, got)
+}
+
 func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
 	runs := filepath.Join(t.TempDir(), "runs")
 	ctx, cancel := context.WithCancel(context.Background())

@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -102,5 +103,90 @@ func TestSetupKubeConfig_NonEmptyPayloadEmitsInfoLog(t *testing.T) {
 			"expected at least one 'setup KubeConfig' log entry on non-empty payload, got 0 (all=%v)",
 			logs.All(),
 		)
+	}
+}
+
+func TestWriteResultFileTo_ProducesWorldReadableFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "result.json")
+
+	if err := writeResultFileTo(path, []byte(`{"ok":true}`)); err != nil {
+		t.Fatalf("writeResultFileTo: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("mode = %o, want 0644 (must be readable by any container user)", got)
+	}
+}
+
+func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "result.json")
+	content := []byte(`{"ok":true}`)
+
+	if err := writeResultFileTo(path, content); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	first, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	if err := writeResultFileTo(path, content); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	second, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	if !second.ModTime().Equal(first.ModTime()) {
+		t.Errorf(
+			"mtime changed on unchanged content: first=%v second=%v",
+			first.ModTime(), second.ModTime(),
+		)
+	}
+}
+
+func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "result.json")
+	// #nosec G306 -- intentional: simulating a pre-fix file left at 0600
+	if err := os.WriteFile(path, []byte(`{"old":true}`), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if err := writeResultFileTo(path, []byte(`{"new":true}`)); err != nil {
+		t.Fatalf("writeResultFileTo: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("mode = %o, want 0644 (a stale 0600 file must be widened)", got)
+	}
+}
+
+func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "result.json")
+	content := []byte(`{"ok":true}`)
+	// #nosec G306 -- intentional: simulating a pre-fix file left at 0600
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if err := writeResultFileTo(path, content); err != nil {
+		t.Fatalf("writeResultFileTo: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("mode = %o, want 0644 even though content was already up to date", got)
 	}
 }

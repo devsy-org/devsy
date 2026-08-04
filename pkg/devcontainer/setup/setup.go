@@ -23,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -210,21 +211,31 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 		return
 	}
 
-	existing, _ := os.ReadFile(pkgconfig.DevContainerResultPath)
-	if string(rawBytes) == string(existing) {
-		return
-	}
-
-	if err := os.MkdirAll( // #nosec G301
-		filepath.Dir(pkgconfig.DevContainerResultPath),
-		0o755,
-	); err != nil {
-		log.Warnf("error create %s: %v", filepath.Dir(pkgconfig.DevContainerResultPath), err)
-	}
-
-	if err := os.WriteFile(pkgconfig.DevContainerResultPath, rawBytes, 0o600); err != nil {
+	if err := writeResultFileTo(pkgconfig.DevContainerResultPath, rawBytes); err != nil {
 		log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
 	}
+}
+
+// writeResultFileTo writes rawBytes to path at 0644: readable by any
+// container user, not just root, since getContainerResult and
+// portOptionsFromResult read it over sessions authenticated as either.
+// Goes through sharedfile rather than raw os.ReadFile/os.WriteFile so a
+// symlink or FIFO planted at this fixed, predictable path is rejected
+// rather than followed or hung on, matching the coordination files this
+// package's other callers protect the same way.
+func writeResultFileTo(path string, rawBytes []byte) error {
+	existing, _ := sharedfile.ReadFile(path)
+	if string(rawBytes) == string(existing) {
+		// Widen even when skipping the write: a stale file left at a
+		// restrictive mode by a pre-fix binary must still get readable by
+		// the other session's user, not just on the next content change.
+		return sharedfile.WidenWithSudoFallback(context.Background(), path, 0o644)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+	return sharedfile.WriteFile(path, rawBytes, 0o644)
 }
 
 func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
