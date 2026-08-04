@@ -61,6 +61,25 @@ func TestWidenIfNeeded_SkipsChmodWhenModeAlreadyCorrect(t *testing.T) {
 	require.NoError(t, WidenIfNeeded(path, 0o666))
 }
 
+// TestWidenIfNeeded_SucceedsOnAlreadyCorrectModeWithoutWriteAccess is the
+// regression test for a bug where openNoFollow used O_WRONLY: confirming an
+// already-correct target mode must not itself require write access, since
+// the whole point of "already correct" is a non-owning caller (e.g.
+// coordination-file mode 0644, checked by a session that isn't the file's
+// owner) skipping a chmod it couldn't perform anyway. 0444 stands in for
+// "correct mode that doesn't grant this process write" without needing a
+// real cross-UID setup.
+func TestWidenIfNeeded_SucceedsOnAlreadyCorrectModeWithoutWriteAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coord")
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.WriteFile(path, nil, 0o444))
+	//nolint:gosec // test fixture, intentional
+	require.NoError(t, os.Chmod(path, 0o444))
+
+	require.NoError(t, WidenIfNeeded(path, 0o444),
+		"confirming an already-correct mode must not require write access to the file")
+}
+
 func TestWidenIfNeeded_WidensNarrowerMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "coord")
 	//nolint:gosec // test fixture, intentional
