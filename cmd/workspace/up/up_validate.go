@@ -50,9 +50,9 @@ func (cmd *UpCmd) validate() error {
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
 }
 
-// installIDE (cmd/internal/agentcontainer/setup.go) gates the container-side
-// IDE server download on IDE name alone, not IDELaunch, so skipping launch
-// without also defaulting IDE to none still downloads an unwanted binary.
+// installIDE gates the container-side IDE server download on IDE name alone,
+// not IDELaunch, so skipping launch without also defaulting IDE to none
+// still downloads an unwanted binary.
 func (cmd *UpCmd) applySkipLaunchIDEDefault() {
 	if cmd.IDELaunch == opener.LaunchSkip && cmd.IDE == "" {
 		cmd.IDE = string(config.IDENone)

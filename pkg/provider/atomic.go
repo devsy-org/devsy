@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// WriteFileAtomic writes data to path atomically via a temp file + rename,
+// WriteFileAtomic writes data to path atomically via a temp file and rename,
 // so concurrent readers never see a partial write. On POSIX it also fsyncs
 // the parent directory so the rename survives a crash; on Windows that sync
 // is a no-op, so callers there should still tolerate re-resolving state.

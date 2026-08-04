@@ -36,12 +36,9 @@ type execLocker interface {
 	Unlock()
 }
 
-// defaultExecLockTimeout is short relative to delete/create's 5-minute
-// lockTimeout, since an exec caller has its own exec timeout budget.
 const defaultExecLockTimeout = 15 * time.Second
 
-// acquireExecLock returns nil on success (caller must Unlock) or an error
-// (caller must not Unlock — nothing was acquired).
+// acquireExecLock returns nil on success (caller must Unlock) or an error.
 func acquireExecLock(ctx context.Context, client execLocker, timeout time.Duration) error {
 	lockCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

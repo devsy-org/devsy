@@ -12,11 +12,6 @@ import (
 
 const jsonRPCVersion = "2.0"
 
-// MCPClient drives a real `devsy mcp serve` subprocess over stdio JSON-RPC.
-// Not safe for concurrent CallTool calls: mu serializes the send+read round
-// trip so one call can't read another's response off the shared stream. If a
-// call's ctx is cancelled while its read is in flight, the client is
-// poisoned (see readResponseForCtx) and every later call fails fast.
 type MCPClient struct {
 	cmd      *exec.Cmd
 	stdin    *bufio.Writer

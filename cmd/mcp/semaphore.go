@@ -5,8 +5,6 @@ import (
 	"fmt"
 )
 
-// opSemaphore bounds how many expensive workspace operations run
-// concurrently in one MCP server process.
 type opSemaphore struct {
 	slots chan struct{}
 }
