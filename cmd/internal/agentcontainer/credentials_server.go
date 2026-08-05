@@ -317,11 +317,7 @@ type forwarder struct {
 	client tunnel.TunnelClient
 }
 
-// Forward relays the auto-discovered port to the client over gRPC. The
-// client invokes the client-side pkg/tunnel forwarder's Forward method,
-// which is where onAutoForward openBrowser/openBrowserOnce/openPreview
-// handling lives (see pkg/tunnel/forwarder.go), so this type does not
-// duplicate it.
+// Forward relays the auto-discovered port to the client over gRPC.
 func (f *forwarder) Forward(port string, attr netstat.PortForwardAttribute) error {
 	if attr.Label != "" {
 		log.Debugf("Forwarding port %s (%s, protocol=%s)", port, attr.Label, attr.Protocol)

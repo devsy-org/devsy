@@ -11,8 +11,7 @@ import (
 )
 
 // openedRecorder records opened URLs behind a mutex, since maybeOpenBrowser
-// invokes openURLFunc from a spawned goroutine. Snapshot() is the only
-// race-safe way to read the recorded URLs from a test goroutine.
+// invokes openURLFunc from a spawned goroutine.
 type openedRecorder struct {
 	mu   sync.Mutex
 	urls []string

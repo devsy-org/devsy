@@ -442,13 +442,12 @@ const (
 	ProtocolHTTPS              = "https"
 )
 
-// ResolvePortAttribute returns the PortAttribute for a given port number.
-// It checks portsAttributes in spec precedence order. It tries the exact
-// port key first, then a range key such as "8080-8090", then any other
-// key treated as a regex tested against the port number's decimal
-// string, and finally falls back to fallback. When multiple range or
+// ResolvePortAttribute checks portsAttributes in spec precedence order.
+// It tries the exact port key first, then a range key such as "8080-8090",
+// then any other key treated as a regex tested against the port number's
+// decimal string, and finally falls back to fallback. When multiple range or
 // regex keys match the same port, the lexicographically smallest key
-// wins, so repeated calls are deterministic.
+// wins.
 func ResolvePortAttribute(
 	port int,
 	portsAttrs map[string]PortAttribute,
@@ -490,7 +489,7 @@ func (p PortAttribute) ShouldAutoForward() bool {
 }
 
 // IsOpenBrowserAction reports whether the port should trigger a browser
-// open once forwarded. devsy has no in-app preview pane, so openPreview
+// open once forwarded. Devsy has no in-app preview pane, so openPreview
 // is treated the same as openBrowser.
 func (p PortAttribute) IsOpenBrowserAction() bool {
 	switch p.OnAutoForward {
@@ -507,10 +506,7 @@ func (p PortAttribute) IsOpenOnceAction() bool {
 
 // exactOrRangeKeyPattern matches portsAttributes keys that are an exact
 // port number or a "lo-hi" range per the dev container spec's
-// patternProperties grammar. These keys must be excluded from the regex
-// fallback pass. regexp.MatchString is unanchored, so a bare numeric key
-// would otherwise substring-match an unrelated port, for example "3000"
-// matching "13000" or "30001".
+// patternProperties grammar.
 var exactOrRangeKeyPattern = regexp.MustCompile(`^\d+(-\d+)?$`)
 
 func matchPortRange(key string, port int) bool {
@@ -529,11 +525,6 @@ func matchPortRange(key string, port int) bool {
 	return port >= lo && port <= hi
 }
 
-// matchPortRegex treats key as a regex and tests it against portStr, per
-// the dev container spec's portsAttributes patternProperties fallback.
-// An unparseable regex is treated as a non-match rather than an error,
-// because portsAttributes keys are free-form user input that cannot be
-// validated at devcontainer.json parse time.
 func matchPortRegex(key, portStr string) bool {
 	re, err := regexp.Compile(key)
 	if err != nil {

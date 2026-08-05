@@ -9,13 +9,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/open"
 )
 
-// openURLFunc is a test seam for pkg/open.Open, which shells out to a host
-// GUI opener and therefore can't run as-is in unit tests.
 var openURLFunc = open.Open
 
-// maybeOpenBrowser is called with f's lock held (see forwarder.Forward).
-// open.Open blocks polling the URL until reachable or ctx is done, so it
-// always runs in its own goroutine.
 func (f *forwarder) maybeOpenBrowser(ctx context.Context, port string, attr config2.PortAttribute) {
 	if !attr.IsOpenBrowserAction() {
 		return
