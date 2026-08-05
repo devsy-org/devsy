@@ -48,12 +48,12 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 		return nil, err
 	}
 
-	c, info, tmpDir, err := setupBuildKitClient(ctx, opts.Options)
+	bk, err := setupBuildKitClient(ctx, opts.Options)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-	defer func() { _ = c.Close() }()
+	defer func() { _ = os.RemoveAll(bk.CertsDir) }()
+	defer func() { _ = bk.Client.Close() }()
 
 	repo := strings.TrimSuffix(opts.Options.CLIOptions.Platform.Build.Repository, "/")
 	imageName := path.Join(repo, build.GetImageName(opts.LocalWorkspaceFolder, opts.PrebuildHash))
@@ -80,8 +80,8 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 
 	if err := executeBuild(executeBuildParams{
 		Ctx:       ctx,
-		Client:    c,
-		Info:      info,
+		Client:    bk.Client,
+		Info:      bk.Info,
 		SolveOpts: solveOpts,
 	}); err != nil {
 		return nil, err
@@ -149,18 +149,27 @@ func validateRemoteBuildOptions(options provider.BuildOptions) error {
 	return nil
 }
 
+// buildKitClient bundles the connection setupBuildKitClient establishes:
+// the client itself, the remote builder's info, and the local directory
+// holding the certs it was authenticated with (the caller owns cleanup).
+type buildKitClient struct {
+	Client   *client.Client
+	Info     *client.Info
+	CertsDir string
+}
+
 func setupBuildKitClient(
 	ctx context.Context,
 	options provider.BuildOptions,
-) (*client.Client, *client.Info, string, error) {
+) (*buildKitClient, error) {
 	remoteURL, err := url.Parse(options.CLIOptions.Platform.Build.RemoteAddress)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, err
 	}
 
 	certs, err := ensureCertPaths(options.CLIOptions.Platform.Build)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("ensure certificates: %w", err)
+		return nil, fmt.Errorf("ensure certificates: %w", err)
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -173,17 +182,17 @@ func setupBuildKitClient(
 	)
 	if err != nil {
 		_ = os.RemoveAll(certs.ParentDir)
-		return nil, nil, "", fmt.Errorf("get client: %w", err)
+		return nil, fmt.Errorf("get client: %w", err)
 	}
 
 	info, err := c.Info(timeoutCtx)
 	if err != nil {
 		_ = c.Close()
 		_ = os.RemoveAll(certs.ParentDir)
-		return nil, nil, "", fmt.Errorf("get remote builder info: %w", err)
+		return nil, fmt.Errorf("get remote builder info: %w", err)
 	}
 
-	return c, info, certs.ParentDir, nil
+	return &buildKitClient{Client: c, Info: info, CertsDir: certs.ParentDir}, nil
 }
 
 func resolveImageReference(

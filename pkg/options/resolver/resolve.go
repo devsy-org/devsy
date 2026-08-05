@@ -60,7 +60,7 @@ func (r *Resolver) resolveOption(
 	}
 
 	// get existing values
-	userValue, userValueOk, beforeValue, beforeValueOk, err := r.getValue(
+	existing, err := r.getValue(
 		optionName,
 		option,
 		resolvedOptionValues,
@@ -72,9 +72,9 @@ func (r *Resolver) resolveOption(
 	skip, err := r.shouldSkipResolve(skipResolveParams{
 		optionName:    optionName,
 		option:        option,
-		userValueOk:   userValueOk,
-		beforeValue:   beforeValue,
-		beforeValueOk: beforeValueOk,
+		userValueOk:   existing.userValueOk,
+		beforeValue:   existing.beforeValue,
+		beforeValueOk: existing.beforeValueOk,
 	})
 	if err != nil {
 		return err
@@ -86,19 +86,19 @@ func (r *Resolver) resolveOption(
 	if err := r.computeOptionValue(ctx, computeOptionValueParams{
 		optionName:           optionName,
 		option:               option,
-		userValue:            userValue,
-		userValueOk:          userValueOk,
-		beforeValue:          beforeValue,
+		userValue:            existing.userValue,
+		userValueOk:          existing.userValueOk,
+		beforeValue:          existing.beforeValue,
 		resolvedOptionValues: resolvedOptionValues,
 	}); err != nil {
 		return err
 	}
 
-	if err := r.resolveRequired(optionName, option, userValueOk, resolvedOptionValues); err != nil {
+	if err := r.resolveRequired(optionName, option, existing.userValueOk, resolvedOptionValues); err != nil {
 		return err
 	}
 
-	r.invalidateChangedChildren(optionName, beforeValue, resolvedOptionValues)
+	r.invalidateChangedChildren(optionName, existing.beforeValue, resolvedOptionValues)
 
 	return nil
 }
@@ -289,11 +289,21 @@ func (r *Resolver) invalidateChangedChildren(
 	}
 }
 
+// existingOptionValue bundles the user-provided and previously-resolved
+// values getValue looks up for an option, along with whether each was
+// present.
+type existingOptionValue struct {
+	userValue     string
+	userValueOk   bool
+	beforeValue   config.OptionValue
+	beforeValueOk bool
+}
+
 func (r *Resolver) getValue(
 	optionName string,
 	option *types.Option,
 	resolvedOptionValues map[string]config.OptionValue,
-) (string, bool, config.OptionValue, bool, error) {
+) (existingOptionValue, error) {
 	// check if user value exists
 	userValue, userValueOk := r.userOptions[optionName]
 
@@ -304,7 +314,7 @@ func (r *Resolver) getValue(
 	if userValueOk {
 		err := validateUserValue(optionName, userValue, option)
 		if err != nil {
-			return "", false, config.OptionValue{}, false, err
+			return existingOptionValue{}, err
 		}
 	}
 
@@ -319,7 +329,12 @@ func (r *Resolver) getValue(
 		}
 	}
 
-	return userValue, userValueOk, beforeValue, beforeValueOk, nil
+	return existingOptionValue{
+		userValue:     userValue,
+		userValueOk:   userValueOk,
+		beforeValue:   beforeValue,
+		beforeValueOk: beforeValueOk,
+	}, nil
 }
 
 func (r *Resolver) refreshSubOptions(
