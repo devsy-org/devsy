@@ -317,6 +317,7 @@ type forwarder struct {
 	client tunnel.TunnelClient
 }
 
+// Forward relays the auto-discovered port to the client over gRPC.
 func (f *forwarder) Forward(port string, attr netstat.PortForwardAttribute) error {
 	if attr.Label != "" {
 		log.Debugf("Forwarding port %s (%s, protocol=%s)", port, attr.Label, attr.Protocol)
