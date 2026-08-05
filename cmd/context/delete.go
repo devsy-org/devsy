@@ -3,6 +3,7 @@ package context
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -72,6 +73,22 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
+	return removeContextDir(context)
+}
+
+// removeContextDir removes the on-disk directory tree for a deleted context
+// (workspaces/, contents/, machines/, providers/, pro_instances/, locks/).
+// This runs last, after config.yaml is already saved without the context, so
+// a failure here leaves the context correctly unregistered even though some
+// disk cleanup may need a manual retry.
+func removeContextDir(contextName string) error {
+	dir, err := config.DefaultPathManager().ContextDir(contextName)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete context dir: %w", err)
+	}
 	return nil
 }
 
