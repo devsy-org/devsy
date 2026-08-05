@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -431,15 +432,20 @@ const (
 const SecretsMountDir = "/run/secrets"
 
 const (
-	AutoForwardIgnore = "ignore"
-	AutoForwardNotify = "notify"
-	AutoForwardSilent = "silent"
-	ProtocolHTTPS     = "https"
+	AutoForwardIgnore          = "ignore"
+	AutoForwardNotify          = "notify"
+	AutoForwardSilent          = "silent"
+	AutoForwardOpenBrowser     = "openBrowser"
+	AutoForwardOpenBrowserOnce = "openBrowserOnce"
+	AutoForwardOpenPreview     = "openPreview"
+	ProtocolHTTPS              = "https"
 )
 
 // ResolvePortAttribute returns the PortAttribute for a given port number.
-// It checks portsAttributes (including range keys like "8080-8090") first,
-// then falls back to otherPortsAttributes.
+// It checks portsAttributes in spec precedence order — exact port key,
+// then range key (e.g. "8080-8090"), then any other key treated as a
+// regex tested against the port number's decimal string — then falls
+// back to otherPortsAttributes.
 func ResolvePortAttribute(
 	port int,
 	portsAttrs map[string]PortAttribute,
@@ -455,6 +461,11 @@ func ResolvePortAttribute(
 				return attr
 			}
 		}
+		for key, attr := range portsAttrs {
+			if matchPortRegex(key, portStr) {
+				return attr
+			}
+		}
 	}
 	if fallback != nil {
 		return *fallback
@@ -465,6 +476,27 @@ func ResolvePortAttribute(
 // ShouldAutoForward returns true if the port attribute allows auto-forwarding.
 func (p PortAttribute) ShouldAutoForward() bool {
 	return p.OnAutoForward != AutoForwardIgnore
+}
+
+// IsOpenBrowserAction returns true if this port attribute's onAutoForward
+// action should trigger opening a browser once the port is forwarded
+// (openBrowser, openBrowserOnce, openPreview per the dev container spec).
+// devsy has no in-app preview pane, so openPreview is treated the same as
+// openBrowser.
+func (p PortAttribute) IsOpenBrowserAction() bool {
+	switch p.OnAutoForward {
+	case AutoForwardOpenBrowser, AutoForwardOpenBrowserOnce, AutoForwardOpenPreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsOpenOnceAction returns true only for openBrowserOnce, which should
+// trigger the browser open on the first forward of a given port per
+// process lifetime and stay silent on subsequent forwards of that port.
+func (p PortAttribute) IsOpenOnceAction() bool {
+	return p.OnAutoForward == AutoForwardOpenBrowserOnce
 }
 
 func matchPortRange(key string, port int) bool {
@@ -481,6 +513,20 @@ func matchPortRange(key string, port int) bool {
 		return false
 	}
 	return port >= lo && port <= hi
+}
+
+// matchPortRegex treats key as a regex and tests it against portStr, per
+// the dev container spec's portsAttributes patternProperties fallback
+// (any key that isn't a bare port number or a "lo-hi" range). An
+// unparseable regex is treated as a non-match rather than an error, since
+// portsAttributes keys are free-form user input we can't validate at
+// devcontainer.json parse time.
+func matchPortRegex(key, portStr string) bool {
+	re, err := regexp.Compile(key)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(portStr)
 }
 
 type DevsyCustomizations struct {
