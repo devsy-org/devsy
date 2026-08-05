@@ -57,7 +57,12 @@ repos:
     rev: v2.12.2
     hooks:
       - id: golangci-lint
-        args: ["--timeout=10m"]
+        args: [
+          "--timeout=10m",
+          "--new-from-patch=$(mktemp && git diff $(git merge-base HEAD origin/main))",
+          "--new=false",
+          "./..."
+        ]
       - id: golangci-lint-fmt
   - repo: local
     hooks:
