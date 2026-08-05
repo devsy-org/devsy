@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -445,7 +446,9 @@ const (
 // It checks portsAttributes in spec precedence order — exact port key,
 // then range key (e.g. "8080-8090"), then any other key treated as a
 // regex tested against the port number's decimal string — then falls
-// back to otherPortsAttributes.
+// back to fallback. When multiple range or regex keys match the same
+// port, the lexicographically smallest key wins, so repeated calls are
+// deterministic.
 func ResolvePortAttribute(
 	port int,
 	portsAttrs map[string]PortAttribute,
@@ -456,17 +459,22 @@ func ResolvePortAttribute(
 		if attr, ok := portsAttrs[portStr]; ok {
 			return attr
 		}
-		for key, attr := range portsAttrs {
+		keys := make([]string, 0, len(portsAttrs))
+		for key := range portsAttrs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
 			if matchPortRange(key, port) {
-				return attr
+				return portsAttrs[key]
 			}
 		}
-		for key, attr := range portsAttrs {
+		for _, key := range keys {
 			if exactOrRangeKeyPattern.MatchString(key) {
 				continue
 			}
 			if matchPortRegex(key, portStr) {
-				return attr
+				return portsAttrs[key]
 			}
 		}
 	}
@@ -481,11 +489,9 @@ func (p PortAttribute) ShouldAutoForward() bool {
 	return p.OnAutoForward != AutoForwardIgnore
 }
 
-// IsOpenBrowserAction returns true if this port attribute's onAutoForward
-// action should trigger opening a browser once the port is forwarded
-// (openBrowser, openBrowserOnce, openPreview per the dev container spec).
-// devsy has no in-app preview pane, so openPreview is treated the same as
-// openBrowser.
+// IsOpenBrowserAction reports whether the port should trigger a browser
+// open once forwarded. devsy has no in-app preview pane, so openPreview
+// is treated the same as openBrowser.
 func (p PortAttribute) IsOpenBrowserAction() bool {
 	switch p.OnAutoForward {
 	case AutoForwardOpenBrowser, AutoForwardOpenBrowserOnce, AutoForwardOpenPreview:
@@ -495,9 +501,6 @@ func (p PortAttribute) IsOpenBrowserAction() bool {
 	}
 }
 
-// IsOpenOnceAction returns true only for openBrowserOnce, which should
-// trigger the browser open on the first forward of a given port per
-// process lifetime and stay silent on subsequent forwards of that port.
 func (p PortAttribute) IsOpenOnceAction() bool {
 	return p.OnAutoForward == AutoForwardOpenBrowserOnce
 }

@@ -87,6 +87,12 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 		)
 		if err != nil {
 			log.Errorf("Error port forwarding %s: %v", port, err)
+			f.Lock()
+			if cancelCtx.Err() == nil && f.portMap[port] != nil {
+				cancel()
+				delete(f.portMap, port)
+			}
+			f.Unlock()
 		}
 	}(port)
 

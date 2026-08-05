@@ -102,6 +102,7 @@ func TestForwarder_Forward_OpenBrowserAction_TriggersOpen(t *testing.T) {
 		openedOnce: map[string]bool{},
 		resolver:   resolver,
 	}
+	t.Cleanup(func() { _ = f.StopForward("19999") })
 
 	err := f.Forward("19999", netstat.PortForwardAttribute{})
 	assert.NoError(t, err)
@@ -122,6 +123,7 @@ func TestForwarder_Forward_NotifyAction_DoesNotTriggerOpen(t *testing.T) {
 		openedOnce: map[string]bool{},
 		resolver:   resolver,
 	}
+	t.Cleanup(func() { _ = f.StopForward("19998") })
 
 	err := f.Forward("19998", netstat.PortForwardAttribute{})
 	assert.NoError(t, err)

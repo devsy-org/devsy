@@ -126,7 +126,7 @@ func TestMaybeOpenBrowser_NilOpenedOnceMap_DoesNotPanic(t *testing.T) {
 	f := &forwarder{}
 	assert.NotPanics(t, func() {
 		f.maybeOpenBrowser(context.Background(), "5000", config2.PortAttribute{
-			OnAutoForward: config2.AutoForwardOpenBrowser,
+			OnAutoForward: config2.AutoForwardOpenBrowserOnce,
 		})
 	})
 	// Wait for the spawned goroutine to finish before the test returns and

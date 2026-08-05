@@ -238,6 +238,34 @@ func TestResolvePortAttribute_RangeKeyDoesNotSubstringMatchOtherPorts(t *testing
 	}
 }
 
+func TestResolvePortAttribute_MultipleRegexMatchesAreDeterministic(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"^3\\d{3}$":  {Label: "First"},
+		"^30\\d\\d$": {Label: "Second"},
+	}
+	want := ResolvePortAttribute(3042, attrs, nil).Label
+	for range 20 {
+		got := ResolvePortAttribute(3042, attrs, nil).Label
+		if got != want {
+			t.Fatalf("ResolvePortAttribute is non-deterministic: got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestResolvePortAttribute_MultipleRangeMatchesAreDeterministic(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"3000-3100": {Label: "First"},
+		"3040-3050": {Label: "Second"},
+	}
+	want := ResolvePortAttribute(3042, attrs, nil).Label
+	for range 20 {
+		got := ResolvePortAttribute(3042, attrs, nil).Label
+		if got != want {
+			t.Fatalf("ResolvePortAttribute is non-deterministic: got %q, want %q", got, want)
+		}
+	}
+}
+
 func TestResolvePortAttribute_NonNumericRegexKeyStillMatches(t *testing.T) {
 	attrs := map[string]PortAttribute{
 		"^30\\d\\d$": {Label: "Three-thousands"},

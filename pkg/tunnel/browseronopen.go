@@ -13,12 +13,9 @@ import (
 // GUI opener and therefore can't run as-is in unit tests.
 var openURLFunc = open.Open
 
-// maybeOpenBrowser opens a browser at http://localhost:<port> when attr's
-// onAutoForward action is openBrowser, openBrowserOnce, or openPreview.
-// For openBrowserOnce it opens at most once per port for this forwarder's
-// lifetime (tracked in f.openedOnce, guarded by the caller's lock — see
-// forwarder.Forward). open.Open blocks (it polls the URL until reachable
-// or ctx is done), so this always launches it in its own goroutine.
+// maybeOpenBrowser is called with f's lock held (see forwarder.Forward).
+// open.Open blocks polling the URL until reachable or ctx is done, so it
+// always runs in its own goroutine.
 func (f *forwarder) maybeOpenBrowser(ctx context.Context, port string, attr config2.PortAttribute) {
 	if !attr.IsOpenBrowserAction() {
 		return
