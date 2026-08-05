@@ -18,12 +18,6 @@ type openedRecorder struct {
 	urls []string
 }
 
-func (r *openedRecorder) record(url string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.urls = append(r.urls, url)
-}
-
 func (r *openedRecorder) Snapshot() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -34,6 +28,12 @@ func (r *openedRecorder) Len() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.urls)
+}
+
+func (r *openedRecorder) record(url string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.urls = append(r.urls, url)
 }
 
 func withFakeOpener(t *testing.T) *openedRecorder {
@@ -118,7 +118,11 @@ func TestMaybeOpenBrowser_OpenBrowserOnce_OpensEachDistinctPortOnce(t *testing.T
 	assert.Eventually(t, func() bool {
 		return opened.Len() == 2
 	}, time.Second, 10*time.Millisecond)
-	assert.ElementsMatch(t, []string{"http://localhost:4000", "http://localhost:4001"}, opened.Snapshot())
+	assert.ElementsMatch(
+		t,
+		[]string{"http://localhost:4000", "http://localhost:4001"},
+		opened.Snapshot(),
+	)
 }
 
 func TestMaybeOpenBrowser_NilOpenedOnceMap_DoesNotPanic(t *testing.T) {

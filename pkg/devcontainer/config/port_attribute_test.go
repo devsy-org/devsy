@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+const (
+	labelThreeThousands    = "Three-thousands"
+	regexKeyThreeThousands = "^30\\d\\d$"
+)
+
 func TestResolvePortAttribute_ExactMatch(t *testing.T) {
 	const wantLabel = "Frontend"
 	attrs := map[string]PortAttribute{
@@ -107,7 +112,11 @@ func TestShouldAutoForward_OpenBrowserVariants(t *testing.T) {
 		want bool
 	}{
 		{"openBrowser forwards", PortAttribute{OnAutoForward: AutoForwardOpenBrowser}, true},
-		{"openBrowserOnce forwards", PortAttribute{OnAutoForward: AutoForwardOpenBrowserOnce}, true},
+		{
+			"openBrowserOnce forwards",
+			PortAttribute{OnAutoForward: AutoForwardOpenBrowserOnce},
+			true,
+		},
 		{"openPreview forwards", PortAttribute{OnAutoForward: AutoForwardOpenPreview}, true},
 	}
 	for _, tt := range tests {
@@ -130,7 +139,11 @@ func TestIsOpenBrowserAction(t *testing.T) {
 		{"ignore is not open-browser", PortAttribute{OnAutoForward: AutoForwardIgnore}, false},
 		{"empty is not open-browser", PortAttribute{}, false},
 		{"openBrowser is open-browser", PortAttribute{OnAutoForward: AutoForwardOpenBrowser}, true},
-		{"openBrowserOnce is open-browser", PortAttribute{OnAutoForward: AutoForwardOpenBrowserOnce}, true},
+		{
+			"openBrowserOnce is open-browser",
+			PortAttribute{OnAutoForward: AutoForwardOpenBrowserOnce},
+			true,
+		},
 		{"openPreview is open-browser", PortAttribute{OnAutoForward: AutoForwardOpenPreview}, true},
 	}
 	for _, tt := range tests {
@@ -164,17 +177,17 @@ func TestIsOpenOnceAction(t *testing.T) {
 
 func TestResolvePortAttribute_RegexKeyMatch(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^30\\d\\d$": {Label: "Three-thousands", OnAutoForward: AutoForwardSilent},
+		regexKeyThreeThousands: {Label: labelThreeThousands, OnAutoForward: AutoForwardSilent},
 	}
 	got := ResolvePortAttribute(3042, attrs, nil)
-	if got.Label != "Three-thousands" {
-		t.Errorf("Label = %q, want %q", got.Label, "Three-thousands")
+	if got.Label != labelThreeThousands {
+		t.Errorf("Label = %q, want %q", got.Label, labelThreeThousands)
 	}
 }
 
 func TestResolvePortAttribute_RegexKeyNoMatch(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^30\\d\\d$": {Label: "Three-thousands"},
+		regexKeyThreeThousands: {Label: labelThreeThousands},
 	}
 	got := ResolvePortAttribute(4042, attrs, nil)
 	if got.Label != "" {
@@ -184,8 +197,8 @@ func TestResolvePortAttribute_RegexKeyNoMatch(t *testing.T) {
 
 func TestResolvePortAttribute_ExactBeatsRegex(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^30\\d\\d$": {Label: "Regex match"},
-		"3042":       {Label: "Exact match"},
+		regexKeyThreeThousands: {Label: "Regex match"},
+		"3042":                 {Label: "Exact match"},
 	}
 	got := ResolvePortAttribute(3042, attrs, nil)
 	if got.Label != "Exact match" {
@@ -195,8 +208,8 @@ func TestResolvePortAttribute_ExactBeatsRegex(t *testing.T) {
 
 func TestResolvePortAttribute_RangeBeatsRegex(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^30\\d\\d$": {Label: "Regex match"},
-		"3040-3050":  {Label: "Range match"},
+		regexKeyThreeThousands: {Label: "Regex match"},
+		"3040-3050":            {Label: "Range match"},
 	}
 	got := ResolvePortAttribute(3042, attrs, nil)
 	if got.Label != "Range match" {
@@ -222,7 +235,12 @@ func TestResolvePortAttribute_BareNumericKeyDoesNotSubstringMatchOtherPorts(t *t
 	for _, port := range []int{13000, 30001} {
 		got := ResolvePortAttribute(port, attrs, nil)
 		if got.Label != "" {
-			t.Errorf("port %d: Label = %q, want empty (bare numeric key %q must not substring-match a different port)", port, got.Label, "3000")
+			t.Errorf(
+				"port %d: Label = %q, want empty (bare numeric key %q must not substring-match a different port)",
+				port,
+				got.Label,
+				"3000",
+			)
 		}
 	}
 }
@@ -234,14 +252,18 @@ func TestResolvePortAttribute_RangeKeyDoesNotSubstringMatchOtherPorts(t *testing
 
 	got := ResolvePortAttribute(180809, attrs, nil)
 	if got.Label != "" {
-		t.Errorf("Label = %q, want empty (range key %q must not substring-match a different port)", got.Label, "8080-8090")
+		t.Errorf(
+			"Label = %q, want empty (range key %q must not substring-match a different port)",
+			got.Label,
+			"8080-8090",
+		)
 	}
 }
 
 func TestResolvePortAttribute_MultipleRegexMatchesAreDeterministic(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^3\\d{3}$":  {Label: "First"},
-		"^30\\d\\d$": {Label: "Second"},
+		"^3\\d{3}$":            {Label: "First"},
+		regexKeyThreeThousands: {Label: "Second"},
 	}
 	want := ResolvePortAttribute(3042, attrs, nil).Label
 	for range 20 {
@@ -268,10 +290,14 @@ func TestResolvePortAttribute_MultipleRangeMatchesAreDeterministic(t *testing.T)
 
 func TestResolvePortAttribute_NonNumericRegexKeyStillMatches(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"^30\\d\\d$": {Label: "Three-thousands"},
+		regexKeyThreeThousands: {Label: labelThreeThousands},
 	}
 	got := ResolvePortAttribute(3042, attrs, nil)
-	if got.Label != "Three-thousands" {
-		t.Errorf("Label = %q, want %q (non-numeric regex key should still match)", got.Label, "Three-thousands")
+	if got.Label != labelThreeThousands {
+		t.Errorf(
+			"Label = %q, want %q (non-numeric regex key should still match)",
+			got.Label,
+			labelThreeThousands,
+		)
 	}
 }
