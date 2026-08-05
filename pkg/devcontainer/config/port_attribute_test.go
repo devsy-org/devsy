@@ -213,3 +213,37 @@ func TestResolvePortAttribute_InvalidRegexKeyIgnored(t *testing.T) {
 		t.Errorf("Label = %q, want empty (invalid regex must not panic or match)", got.Label)
 	}
 }
+
+func TestResolvePortAttribute_BareNumericKeyDoesNotSubstringMatchOtherPorts(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"3000": {Label: "should-not-leak"},
+	}
+
+	for _, port := range []int{13000, 30001} {
+		got := ResolvePortAttribute(port, attrs, nil)
+		if got.Label != "" {
+			t.Errorf("port %d: Label = %q, want empty (bare numeric key %q must not substring-match a different port)", port, got.Label, "3000")
+		}
+	}
+}
+
+func TestResolvePortAttribute_RangeKeyDoesNotSubstringMatchOtherPorts(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"8080-8090": {Label: "should-not-leak"},
+	}
+
+	got := ResolvePortAttribute(180809, attrs, nil)
+	if got.Label != "" {
+		t.Errorf("Label = %q, want empty (range key %q must not substring-match a different port)", got.Label, "8080-8090")
+	}
+}
+
+func TestResolvePortAttribute_NonNumericRegexKeyStillMatches(t *testing.T) {
+	attrs := map[string]PortAttribute{
+		"^30\\d\\d$": {Label: "Three-thousands"},
+	}
+	got := ResolvePortAttribute(3042, attrs, nil)
+	if got.Label != "Three-thousands" {
+		t.Errorf("Label = %q, want %q (non-numeric regex key should still match)", got.Label, "Three-thousands")
+	}
+}

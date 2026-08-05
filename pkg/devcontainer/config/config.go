@@ -462,6 +462,9 @@ func ResolvePortAttribute(
 			}
 		}
 		for key, attr := range portsAttrs {
+			if exactOrRangeKeyPattern.MatchString(key) {
+				continue
+			}
 			if matchPortRegex(key, portStr) {
 				return attr
 			}
@@ -498,6 +501,14 @@ func (p PortAttribute) IsOpenBrowserAction() bool {
 func (p PortAttribute) IsOpenOnceAction() bool {
 	return p.OnAutoForward == AutoForwardOpenBrowserOnce
 }
+
+// exactOrRangeKeyPattern matches portsAttributes keys that are an exact
+// port number or a "lo-hi" range per the dev container spec's
+// patternProperties grammar. Such keys are not regexes and must not be
+// tried in the regex fallback pass, since regexp.MatchString is
+// unanchored and a bare numeric key would otherwise substring-match
+// unrelated ports (e.g. "3000" matching "13000" or "30001").
+var exactOrRangeKeyPattern = regexp.MustCompile(`^\d+(-\d+)?$`)
 
 func matchPortRange(key string, port int) bool {
 	parts := strings.SplitN(key, "-", 2)
