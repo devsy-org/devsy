@@ -36,6 +36,8 @@ func UnzipFolder(source, destination string) error {
 }
 
 func unzipFile(f *zip.File, destination string) error {
+	// #nosec G305 -- the HasPrefix check below is exactly this guard; gosec
+	// can't verify it statically, but every write path is gated on it
 	filePath := filepath.Join(destination, f.Name)
 	if !strings.HasPrefix(filePath, filepath.Clean(destination)+string(os.PathSeparator)) {
 		return fmt.Errorf("invalid file path: %s", filePath)
