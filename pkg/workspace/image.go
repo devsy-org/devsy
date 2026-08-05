@@ -26,6 +26,15 @@ func getProjectImage(link string) string {
 		return ""
 	}
 
+	// Only fetch from hosts we know how to parse a social-share image out
+	// of; otherwise link is user-controlled and this would be an open
+	// fetch of an arbitrary URL (SSRF).
+	regEx := regexes[baseURL.Host]
+	if regEx == nil {
+		return ""
+	}
+
+	// #nosec G107 -- link's host is restricted to regexes' known keys above
 	res, err := http.Get(link)
 	if err != nil {
 		return ""
@@ -40,11 +49,6 @@ func getProjectImage(link string) string {
 	html := string(content)
 
 	// Find github social share image: https://css-tricks.com/essential-meta-tags-social-media/
-	regEx := regexes[baseURL.Host]
-	if regEx == nil {
-		return ""
-	}
-
 	meta := regEx.FindString(html)
 	parts := strings.Split(
 		contentRegEx.FindString(meta),
