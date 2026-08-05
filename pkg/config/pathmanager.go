@@ -38,6 +38,23 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 // PathManager centralises all filesystem path computation for the Devsy CLI.
 // Per-OS implementations supply the five top-level directory methods; every
 // sub-path is derived from those by the shared basePathManager.
+//
+// Canonical layout (all paths relative to the values these methods return —
+// never construct a DEVSY_HOME-relative path outside this file; see
+// pkg/provider/version_cache.go's history for why that rule exists):
+//
+//	ConfigDir()/DataDir()  (same directory today; both may be $DEVSY_HOME)
+//	├── config.yaml                        (ConfigFilePath, stamped with Config.SchemaVersion)
+//	└── contexts/<context>/                (ContextDir)
+//	    ├── workspaces/<id>/{agent,logs}    (WorkspaceDir, WorkspaceAgentDir, WorkspaceLogDir)
+//	    ├── contents/<id>                   (WorkspaceContentsDir/WorkspaceContentDir — parent never removed)
+//	    ├── machines/<id>                   (MachineDir)
+//	    ├── providers/<name>/{binaries,daemon} (ProviderDir)
+//	    ├── pro_instances/<id>              (ProInstanceDir)
+//	    └── locks/                          (LocksDir)
+//	CacheDir()                              (default $HOME/.cache/devsy, or $DEVSY_HOME/cache when set)
+//	├── agents/, providers/, features/<hash>/, platform/, keys/
+//	StateDir()/RuntimeDir()                 (default under DataDir()/temp; see pathmanager_darwin.go / pathmanager_linux.go)
 type PathManager interface {
 	// Top-level XDG category directories.
 	ConfigDir() (string, error)
