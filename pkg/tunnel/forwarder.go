@@ -43,7 +43,8 @@ type forwarder struct {
 	forwardedPorts []string
 	resolver       PortAttributeResolver
 
-	portMap map[string]context.CancelFunc
+	portMap    map[string]context.CancelFunc
+	openedOnce map[string]bool
 }
 
 // Forward opens an SSH channel in the existing connection with channel type "direct-tcpip" to forward the local port.
@@ -88,6 +89,8 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 			log.Errorf("Error port forwarding %s: %v", port, err)
 		}
 	}(port)
+
+	f.maybeOpenBrowser(cancelCtx, port, attr)
 
 	return nil
 }
