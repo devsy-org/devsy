@@ -129,10 +129,10 @@ func TestMaybeOpenBrowser_NilOpenedOnceMap_DoesNotPanic(t *testing.T) {
 			OnAutoForward: config2.AutoForwardOpenBrowserOnce,
 		})
 	})
-	// Wait for the spawned goroutine to finish before the test returns and
-	// t.Cleanup swaps openURLFunc back — otherwise a late-running goroutine
-	// could still be holding the old closure and leak an append into
-	// whichever test's opened slice is live when it finally executes.
+	// A late-running goroutine could still hold the old closure and leak
+	// an append into whichever test's opened slice is live when it
+	// finally executes, so wait for it to finish before t.Cleanup swaps
+	// openURLFunc back.
 	assert.Eventually(t, func() bool {
 		return opened.Len() == 1
 	}, time.Second, 10*time.Millisecond)
