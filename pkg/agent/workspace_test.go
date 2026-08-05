@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/util"
 )
 
 const explicitAgentDir = "/some/dir"
@@ -87,6 +90,33 @@ func TestIsHostAgentInvocation(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestCandidateAgentDirs_HonorsDevsyHomeOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+
+	dirs := candidateAgentDirs()
+
+	want := filepath.Join(home, "agent")
+	found := false
+	for _, d := range dirs {
+		if d == want {
+			found = true
+		}
+		// The raw-OS-home candidate must NOT appear when DEVSY_HOME is set —
+		// that's the coexisting-tree bug this test guards against.
+		realHome, _ := util.UserHomeDir()
+		if realHome != "" && realHome != home {
+			unwanted := filepath.Join(realHome, config.ConfigDirName, "agent")
+			if d == unwanted {
+				t.Fatalf("candidateAgentDirs() included raw-home candidate %q while DEVSY_HOME=%q was set", unwanted, home)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("candidateAgentDirs() = %v, want it to include %q", dirs, want)
 	}
 }
 
