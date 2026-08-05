@@ -51,15 +51,11 @@ type ProviderVersionCacheEntry struct {
 type ProviderVersionCache map[string]ProviderVersionCacheEntry
 
 func providerVersionCachePath() (string, error) {
-	// Check for DEVSY_HOME override (primarily used in tests).
-	if home := os.Getenv(config.EnvHome); home != "" {
-		return filepath.Join(home, "cache", "provider-versions.json"), nil
-	}
-	dir, err := config.GetConfigDir()
+	dir, err := config.DefaultPathManager().CacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "cache", "provider-versions.json"), nil
+	return filepath.Join(dir, "provider-versions.json"), nil
 }
 
 func LoadProviderVersionCache() (ProviderVersionCache, error) {
