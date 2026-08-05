@@ -59,6 +59,19 @@ func TestMaybeOpenBrowser_OpenBrowserAction_Opens(t *testing.T) {
 	assert.Equal(t, []string{"http://localhost:3000"}, opened.Snapshot())
 }
 
+func TestMaybeOpenBrowser_HTTPSProtocol_UsesHTTPSScheme(t *testing.T) {
+	opened := withFakeOpener(t)
+	f := &forwarder{openedOnce: map[string]bool{}}
+	f.maybeOpenBrowser(context.Background(), "3000", config2.PortAttribute{
+		OnAutoForward: config2.AutoForwardOpenBrowser,
+		Protocol:      config2.ProtocolHTTPS,
+	})
+	assert.Eventually(t, func() bool {
+		return opened.Len() == 1
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"https://localhost:3000"}, opened.Snapshot())
+}
+
 func TestMaybeOpenBrowser_NotifyAction_DoesNotOpen(t *testing.T) {
 	opened := withFakeOpener(t)
 	f := &forwarder{openedOnce: map[string]bool{}}

@@ -25,7 +25,11 @@ func (f *forwarder) maybeOpenBrowser(ctx context.Context, port string, attr conf
 		f.openedOnce[port] = true
 	}
 
-	url := fmt.Sprintf("http://localhost:%s", port)
+	scheme := "http"
+	if attr.Protocol == config2.ProtocolHTTPS {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://localhost:%s", scheme, port)
 	go func() {
 		if err := openURLFunc(ctx, url); err != nil {
 			log.Warnf("could not open browser for forwarded port %s: %v", port, err)
