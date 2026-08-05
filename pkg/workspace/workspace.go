@@ -93,7 +93,12 @@ func Resolve(
 		return nil, err
 	}
 
-	workspaceClient, err := getWorkspaceClient(devsyConfig, resolved.provider, workspace, resolved.machine)
+	workspaceClient, err := getWorkspaceClient(
+		devsyConfig,
+		resolved.provider,
+		workspace,
+		resolved.machine,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +201,12 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 			return nil, err
 		}
 
-		return getWorkspaceClient(opts.DevsyConfig, resolved.provider, resolved.workspace, resolved.machine)
+		return getWorkspaceClient(
+			opts.DevsyConfig,
+			resolved.provider,
+			resolved.workspace,
+			resolved.machine,
+		)
 	}
 
 	workspace, err := findWorkspaceByArgs(ctx, opts)
@@ -216,7 +226,12 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 		return nil, err
 	}
 
-	return getWorkspaceClient(opts.DevsyConfig, resolved.provider, resolved.workspace, resolved.machine)
+	return getWorkspaceClient(
+		opts.DevsyConfig,
+		resolved.provider,
+		resolved.workspace,
+		resolved.machine,
+	)
 }
 
 func findWorkspaceByArgs(ctx context.Context, opts GetOptions) (*providerpkg.Workspace, error) {
@@ -372,7 +387,11 @@ func createWorkspace(
 		return resolvedWorkspace{}, err
 	}
 
-	return resolvedWorkspace{provider: provider.Config, workspace: workspace, machine: machineConfig}, nil
+	return resolvedWorkspace{
+		provider:  provider.Config,
+		workspace: workspace,
+		machine:   machineConfig,
+	}, nil
 }
 
 func provisionWorkspaceBacking(

@@ -94,7 +94,12 @@ func (r *Resolver) resolveOption(
 		return err
 	}
 
-	if err := r.resolveRequired(optionName, option, existing.userValueOk, resolvedOptionValues); err != nil {
+	if err := r.resolveRequired(
+		optionName,
+		option,
+		existing.userValueOk,
+		resolvedOptionValues,
+	); err != nil {
 		return err
 	}
 
