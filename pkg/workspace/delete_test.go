@@ -42,3 +42,33 @@ func TestSweepOrphanWorkspaceDirs_MissingDirIsNoop(t *testing.T) {
 	// No workspaces dir created yet — sweep must not panic or error.
 	SweepOrphanWorkspaceDirs(testDefaultContext)
 }
+
+func TestSweepOrphanContentDirs_RemovesContentWithNoMatchingWorkspace(t *testing.T) {
+	setupTestPathManager(t)
+
+	contentsDir, err := provider.GetWorkspaceContentsDir(testDefaultContext)
+	require.NoError(t, err)
+	workspacesDir, err := provider.GetWorkspacesDir(testDefaultContext)
+	require.NoError(t, err)
+
+	// "orphaned" has content but no matching workspace dir at all.
+	orphanedContent := filepath.Join(contentsDir, "orphaned")
+	require.NoError(t, os.MkdirAll(orphanedContent, 0o750))
+
+	// "kept" has both a content dir and a matching workspace dir — must survive.
+	keptContent := filepath.Join(contentsDir, "kept")
+	require.NoError(t, os.MkdirAll(keptContent, 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(workspacesDir, "kept"), 0o750))
+
+	SweepOrphanContentDirs(testDefaultContext)
+
+	require.NoDirExists(t, orphanedContent)
+	require.DirExists(t, keptContent)
+}
+
+func TestSweepOrphanContentDirs_MissingDirIsNoop(t *testing.T) {
+	setupTestPathManager(t)
+
+	// No contents dir created yet — sweep must not panic or error.
+	SweepOrphanContentDirs(testDefaultContext)
+}
