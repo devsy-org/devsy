@@ -40,8 +40,11 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 // sub-path is derived from those by the shared basePathManager.
 //
 // Canonical layout (all paths relative to the values these methods return —
-// never construct a DEVSY_HOME-relative path outside this file; see
-// pkg/provider/version_cache.go's history for why that rule exists):
+// on the host CLI side, never construct a DEVSY_HOME-relative path outside
+// this file; see pkg/provider/version_cache.go's history for why that rule
+// exists. pkg/agent/workspace.go is a deliberate exception: it reimplements
+// this same layout for agent-side code running inside the container/machine,
+// where this package's PathManager singleton isn't available):
 //
 //	ConfigDir()/DataDir()  (same directory today; both may be $DEVSY_HOME)
 //	├── config.yaml                        (ConfigFilePath, stamped with Config.SchemaVersion)
@@ -54,7 +57,8 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 //	    └── locks/                          (LocksDir)
 //	CacheDir()                              (default $HOME/.cache/devsy, or $DEVSY_HOME/cache when set)
 //	├── agents/, providers/, features/<hash>/, platform/, keys/
-//	StateDir()/RuntimeDir()                 (default under DataDir()/temp; see pathmanager_darwin.go / pathmanager_linux.go)
+//	StateDir()                              (default under DataDir()/state)
+//	RuntimeDir()                            (default under DataDir()/run on darwin, OS temp dir on linux; see pathmanager_darwin.go / pathmanager_linux.go)
 type PathManager interface {
 	// Top-level XDG category directories.
 	ConfigDir() (string, error)

@@ -14,10 +14,12 @@ import (
 )
 
 // CurrentSchemaVersion is the on-disk layout version this build of devsy
-// understands. It is stamped into every config.yaml on load/save so a future
-// layout change (e.g. finishing the agent/host tree unification started in
-// this cleanup) has a documented baseline to detect and migrate from, the
-// same way pkg/snapshot.Manifest.SchemaVersion already versions snapshots.
+// understands. LoadConfig stamps it onto every config it reads (fresh or
+// pre-existing) so a future layout change (e.g. finishing the agent/host
+// tree unification started in this cleanup) has a documented baseline to
+// detect and migrate from, the same way pkg/snapshot.Manifest.SchemaVersion
+// already versions snapshots. SaveConfig does not stamp independently — it
+// persists whatever value is already on the in-memory Config.
 const CurrentSchemaVersion = 1
 
 type Config struct {

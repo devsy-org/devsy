@@ -360,8 +360,8 @@ func removeIfOrphan(workspaceDir string, entry os.DirEntry) {
 // directory at all. Unlike SweepOrphanWorkspaceDirs (which checks for a
 // missing workspace.json inside an existing workspace dir), an orphaned
 // content dir means the workspace dir itself is already gone — left behind
-// by a crash mid-delete, a killed process, or the agent-side skip for
-// user-owned local folders (cmd/internal/agentworkspace/delete.go).
+// by a crash mid-delete or a killed process partway through
+// DeleteWorkspaceFolder.
 func SweepOrphanContentDirs(contextName string) {
 	contentsDir, err := providerpkg.GetWorkspaceContentsDir(contextName)
 	if err != nil {
