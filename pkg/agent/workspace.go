@@ -68,7 +68,9 @@ func findDir(agentDir string, validate func(path string) bool) string {
 
 func candidateAgentDirs() []string {
 	var dirs []string
-	if home, _ := util.UserHomeDir(); home != "" {
+	if home := os.Getenv(config.EnvHome); home != "" {
+		dirs = append(dirs, filepath.Join(home, "agent"))
+	} else if home, _ := util.UserHomeDir(); home != "" {
 		dirs = append(dirs, filepath.Join(home, config.ConfigDirName, "agent"))
 	}
 	if root, _ := command.GetHome("root"); root != "" {
