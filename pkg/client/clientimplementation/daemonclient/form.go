@@ -29,43 +29,45 @@ func createInstanceInteractive(
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
-	selectedProject, selectedCluster, selectedTemplate, selectedTemplateVersion, err := selectProjectClusterTemplate(
-		ctx,
-		formCtx,
-		baseClient,
-		cancelForm,
-	)
+	selection, err := selectProjectClusterTemplate(ctx, formCtx, baseClient, cancelForm)
 	if err != nil {
 		return nil, err
 	}
 
 	renderedParameters, err := resolveNewInstanceParameters(
 		formCtx,
-		selectedTemplate,
-		selectedTemplateVersion,
+		selection.template,
+		selection.templateVersion,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildNewInstance(
-		id,
-		uid,
-		source,
-		picture,
-		selectedProject,
-		selectedCluster,
-		selectedTemplate,
-		selectedTemplateVersion,
-		renderedParameters,
-	), nil
+	return buildNewInstance(buildNewInstanceParams{
+		id:                      id,
+		uid:                     uid,
+		source:                  source,
+		picture:                 picture,
+		selectedProject:         selection.project,
+		selectedCluster:         selection.cluster,
+		selectedTemplate:        selection.template,
+		selectedTemplateVersion: selection.templateVersion,
+		renderedParameters:      renderedParameters,
+	}), nil
+}
+
+type projectClusterTemplateSelection struct {
+	project         *managementv1.Project
+	cluster         *managementv1.Cluster
+	template        *managementv1.DevsyWorkspaceTemplate
+	templateVersion string
 }
 
 func selectProjectClusterTemplate(
 	ctx, formCtx context.Context,
 	baseClient platformclient.Client,
 	cancelForm CancelFunc,
-) (*managementv1.Project, *managementv1.Cluster, *managementv1.DevsyWorkspaceTemplate, string, error) {
+) (projectClusterTemplateSelection, error) {
 	var selectedCluster *managementv1.Cluster
 	var selectedProject *managementv1.Project
 	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
@@ -73,7 +75,7 @@ func selectProjectClusterTemplate(
 
 	options, err := projectOptions(ctx, baseClient)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return projectClusterTemplateSelection{}, err
 	}
 
 	err = huh.NewForm(
@@ -105,10 +107,15 @@ func selectProjectClusterTemplate(
 		),
 	).RunWithContext(formCtx)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return projectClusterTemplateSelection{}, err
 	}
 
-	return selectedProject, selectedCluster, selectedTemplate, selectedTemplateVersion, nil
+	return projectClusterTemplateSelection{
+		project:         selectedProject,
+		cluster:         selectedCluster,
+		template:        selectedTemplate,
+		templateVersion: selectedTemplateVersion,
+	}, nil
 }
 
 func resolveNewInstanceParameters(
@@ -138,40 +145,43 @@ func resolveNewInstanceParameters(
 	return renderParameters(fieldParameters)
 }
 
-func buildNewInstance(
-	id, uid, source, picture string,
-	selectedProject *managementv1.Project,
-	selectedCluster *managementv1.Cluster,
-	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
-	selectedTemplateVersion, renderedParameters string,
-) *managementv1.DevsyWorkspaceInstance {
+type buildNewInstanceParams struct {
+	id, uid, source, picture string
+	selectedProject          *managementv1.Project
+	selectedCluster          *managementv1.Cluster
+	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
+	selectedTemplateVersion  string
+	renderedParameters       string
+}
+
+func buildNewInstance(p buildNewInstanceParams) *managementv1.DevsyWorkspaceInstance {
 	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(selectedProject.GetName()),
+			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
+			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
 			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  id,
-				storagev1.DevsyWorkspaceUIDLabel: uid,
-				config.K8sProjectLabel:           selectedProject.GetName(),
+				storagev1.DevsyWorkspaceIDLabel:  p.id,
+				storagev1.DevsyWorkspaceUIDLabel: p.uid,
+				config.K8sProjectLabel:           p.selectedProject.GetName(),
 			},
 			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  source,
+				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
 			},
 		},
 		Spec: managementv1.DevsyWorkspaceInstanceSpec{
 			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: id,
+				DisplayName: p.id,
 				TemplateRef: &storagev1.TemplateRef{
-					Name:    selectedTemplate.GetName(),
-					Version: selectedTemplateVersion,
+					Name:    p.selectedTemplate.GetName(),
+					Version: p.selectedTemplateVersion,
 				},
 				Target: storagev1.WorkspaceTarget{
 					Cluster: &storagev1.WorkspaceTargetName{
-						Name: selectedCluster.GetName(),
+						Name: p.selectedCluster.GetName(),
 					},
 				},
-				Parameters: renderedParameters,
+				Parameters: p.renderedParameters,
 			},
 		},
 	}

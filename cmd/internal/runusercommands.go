@@ -61,6 +61,45 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 	return runCmd
 }
 
+// NewRunUserCommandsCmdAlias creates the hidden camelCase alias for devcontainer CLI compat.
+func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
+	primary := NewRunUserCommandsCmd(f)
+	primary.Use = "runUserCommands"
+	primary.Hidden = true
+	return primary
+}
+
+const updateContentCommand = "updateContentCommand"
+
+// Run executes the run-user-commands logic.
+func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
+	if err := cmd.validate(); err != nil {
+		return err
+	}
+
+	if cmd.ContainerID != "" {
+		return cmd.runWithContainerID(ctx)
+	}
+
+	params, result, err := cmd.resolveContainer(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.runLifecycleHooks(params, result); err != nil {
+		return err
+	}
+
+	user := devcconfig.GetRemoteUser(result)
+	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
+	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+		ContainerID:           params.ContainerID,
+		RemoteUser:            user,
+		RemoteWorkspaceFolder: params.Workdir,
+	})
+	return nil
+}
+
 func (cmd *RunUserCommandsCmd) registerFlags(runCmd *cobra.Command) {
 	cmd.registerTargetFlags(runCmd)
 	cmd.registerConfigFlags(runCmd)
@@ -169,45 +208,6 @@ func (cmd *RunUserCommandsCmd) registerLifecycleFlags(runCmd *cobra.Command) {
 			"Skip running updateContentCommand",
 		),
 	)
-}
-
-// NewRunUserCommandsCmdAlias creates the hidden camelCase alias for devcontainer CLI compat.
-func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
-	primary := NewRunUserCommandsCmd(f)
-	primary.Use = "runUserCommands"
-	primary.Hidden = true
-	return primary
-}
-
-const updateContentCommand = "updateContentCommand"
-
-// Run executes the run-user-commands logic.
-func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
-	if err := cmd.validate(); err != nil {
-		return err
-	}
-
-	if cmd.ContainerID != "" {
-		return cmd.runWithContainerID(ctx)
-	}
-
-	params, result, err := cmd.resolveContainer(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.runLifecycleHooks(params, result); err != nil {
-		return err
-	}
-
-	user := devcconfig.GetRemoteUser(result)
-	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
-	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
-		ContainerID:           params.ContainerID,
-		RemoteUser:            user,
-		RemoteWorkspaceFolder: params.Workdir,
-	})
-	return nil
 }
 
 func (cmd *RunUserCommandsCmd) validate() error {

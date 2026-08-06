@@ -31,27 +31,36 @@ func CreateInstance(
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
-	selectedProject, selectedTemplate, selectedTemplateVersion, err := runCreateSelectionForm(
-		ctx, baseClient, formCtx, cancelForm,
-	)
+	selection, err := runCreateSelectionForm(ctx, baseClient, formCtx, cancelForm)
 	if err != nil {
 		return nil, err
 	}
 
 	renderedParameters, err := renderedParametersForCreate(
 		formCtx,
-		selectedTemplate,
-		selectedTemplateVersion,
+		selection.template,
+		selection.templateVersion,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildCreatedInstance(
-		id, uid, source, picture,
-		selectedProject, selectedTemplate, selectedTemplateVersion,
-		renderedParameters,
-	), nil
+	return buildCreatedInstance(buildCreatedInstanceParams{
+		id:                      id,
+		uid:                     uid,
+		source:                  source,
+		picture:                 picture,
+		selectedProject:         selection.project,
+		selectedTemplate:        selection.template,
+		selectedTemplateVersion: selection.templateVersion,
+		renderedParameters:      renderedParameters,
+	}), nil
+}
+
+type createSelection struct {
+	project         *managementv1.Project
+	template        *managementv1.DevsyWorkspaceTemplate
+	templateVersion string
 }
 
 func runCreateSelectionForm(
@@ -59,14 +68,14 @@ func runCreateSelectionForm(
 	baseClient client.Client,
 	formCtx context.Context,
 	cancelForm CancelFunc,
-) (*managementv1.Project, *managementv1.DevsyWorkspaceTemplate, string, error) {
+) (createSelection, error) {
 	var selectedCluster *managementv1.Cluster
 	var selectedProject *managementv1.Project
 	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
 	selectedTemplateVersion := ""
 	projectOptions, err := projectOptions(ctx, baseClient)
 	if err != nil {
-		return nil, nil, "", err
+		return createSelection{}, err
 	}
 	err = huh.NewForm(
 		huh.NewGroup(
@@ -97,10 +106,14 @@ func runCreateSelectionForm(
 		),
 	).RunWithContext(formCtx)
 	if err != nil {
-		return nil, nil, "", err
+		return createSelection{}, err
 	}
 
-	return selectedProject, selectedTemplate, selectedTemplateVersion, nil
+	return createSelection{
+		project:         selectedProject,
+		template:        selectedTemplate,
+		templateVersion: selectedTemplateVersion,
+	}, nil
 }
 
 func renderedParametersForCreate(
@@ -120,35 +133,37 @@ func renderedParametersForCreate(
 	return runParameterForm(formCtx, fieldParameters)
 }
 
-func buildCreatedInstance(
-	id, uid, source, picture string,
-	selectedProject *managementv1.Project,
-	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
-	selectedTemplateVersion string,
-	renderedParameters string,
-) *managementv1.DevsyWorkspaceInstance {
+type buildCreatedInstanceParams struct {
+	id, uid, source, picture string
+	selectedProject          *managementv1.Project
+	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
+	selectedTemplateVersion  string
+	renderedParameters       string
+}
+
+func buildCreatedInstance(p buildCreatedInstanceParams) *managementv1.DevsyWorkspaceInstance {
 	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(selectedProject.GetName()),
+			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
+			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
 			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  id,
-				storagev1.DevsyWorkspaceUIDLabel: uid,
-				config.K8sProjectLabel:           selectedProject.GetName(),
+				storagev1.DevsyWorkspaceIDLabel:  p.id,
+				storagev1.DevsyWorkspaceUIDLabel: p.uid,
+				config.K8sProjectLabel:           p.selectedProject.GetName(),
 			},
 			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  source,
+				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
 			},
 		},
 		Spec: managementv1.DevsyWorkspaceInstanceSpec{
 			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: id,
+				DisplayName: p.id,
 				TemplateRef: &storagev1.TemplateRef{
-					Name:    selectedTemplate.GetName(),
-					Version: selectedTemplateVersion,
+					Name:    p.selectedTemplate.GetName(),
+					Version: p.selectedTemplateVersion,
 				},
-				Parameters: renderedParameters,
+				Parameters: p.renderedParameters,
 			},
 		},
 	}

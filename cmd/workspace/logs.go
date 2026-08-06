@@ -79,7 +79,13 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 
 	return pb.RunPair(ctx,
 		func(ctx context.Context, stdin, stdout *os.File) error {
-			return injectLogsAgent(ctx, client, sshServerCmd, timeout, stdin, stdout)
+			return injectLogsAgent(ctx, injectLogsAgentParams{
+				client:       client,
+				sshServerCmd: sshServerCmd,
+				timeout:      timeout,
+				stdin:        stdin,
+				stdout:       stdout,
+			})
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
 			return runLogsSession(stdout, stdin, client)
@@ -111,35 +117,37 @@ func (cmd *LogsCmd) getWorkspaceClient(
 
 // injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
 // remote ssh-server that runLogsSession then connects to.
-func injectLogsAgent(
-	ctx context.Context,
-	client clientpkg.WorkspaceClient,
-	sshServerCmd string,
-	timeout time.Duration,
-	stdin, stdout *os.File,
-) error {
+func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	stderr := log.Writer(log.LevelDebug)
 	defer func() { _ = stderr.Close() }()
 
 	return agent.InjectAgent(&agent.InjectOptions{
 		Ctx: ctx,
 		Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
-			return client.Command(ctx, clientpkg.CommandOptions{
+			return params.client.Command(ctx, clientpkg.CommandOptions{
 				Command: command,
 				Stdin:   stdinR,
 				Stdout:  stdoutW,
 				Stderr:  stderrW,
 			})
 		},
-		IsLocal:         client.AgentLocal(),
-		RemoteAgentPath: client.AgentPath(),
-		DownloadURL:     client.AgentURL(),
-		Command:         sshServerCmd,
-		Stdin:           stdin,
-		Stdout:          stdout,
+		IsLocal:         params.client.AgentLocal(),
+		RemoteAgentPath: params.client.AgentPath(),
+		DownloadURL:     params.client.AgentURL(),
+		Command:         params.sshServerCmd,
+		Stdin:           params.stdin,
+		Stdout:          params.stdout,
 		Stderr:          stderr,
-		Timeout:         timeout,
+		Timeout:         params.timeout,
 	})
+}
+
+type injectLogsAgentParams struct {
+	client       clientpkg.WorkspaceClient
+	sshServerCmd string
+	timeout      time.Duration
+	stdin        *os.File
+	stdout       *os.File
 }
 
 func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {

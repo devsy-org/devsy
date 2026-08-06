@@ -273,21 +273,19 @@ func kubeConfigForVirtualClusterInstance(
 		return nil, fmt.Errorf("get virtual cluster instance: %w", err)
 	}
 
-	req := newVClusterKubeConfigRequest(
-		ctx,
-		managementClient,
-		namespace,
-		projectName,
-		virtualClusterInstance,
-	)
+	req := newVClusterKubeConfigRequest(ctx, newVClusterKubeConfigRequestParams{
+		managementClient:       managementClient,
+		namespace:              namespace,
+		projectName:            projectName,
+		virtualClusterInstance: virtualClusterInstance,
+	})
 
-	cfg, handled, err := directVirtualClusterKubeConfig(
-		ctx,
-		baseClient,
-		projectName,
-		virtualClusterInstance,
-		req,
-	)
+	cfg, handled, err := directVirtualClusterKubeConfig(ctx, directVirtualClusterKubeConfigParams{
+		baseClient:             baseClient,
+		projectName:            projectName,
+		virtualClusterInstance: virtualClusterInstance,
+		req:                    req,
+	})
 	if handled || err != nil {
 		return cfg, err
 	}
@@ -311,30 +309,42 @@ func kubeConfigForVirtualClusterInstance(
 	})
 }
 
+type newVClusterKubeConfigRequestParams struct {
+	managementClient       kube.Interface
+	namespace              string
+	projectName            string
+	virtualClusterInstance *managementv1.VirtualClusterInstance
+}
+
 // newVClusterKubeConfigRequest builds the scoped request shared by the
 // direct-ingress, direct-cluster-endpoint, and access-key kube config paths.
 func newVClusterKubeConfigRequest(
 	ctx context.Context,
-	managementClient kube.Interface,
-	namespace, projectName string,
-	virtualClusterInstance *managementv1.VirtualClusterInstance,
+	p newVClusterKubeConfigRequestParams,
 ) vClusterKubeConfigRequest {
 	scope := &storagev1.AccessKeyScope{
 		VirtualClusters: []storagev1.AccessKeyScopeVirtualCluster{{
-			Project:        projectName,
-			VirtualCluster: virtualClusterInstance.Name,
+			Project:        p.projectName,
+			VirtualCluster: p.virtualClusterInstance.Name,
 		}},
 	}
 
 	return vClusterKubeConfigRequest{
 		ctx:              ctx,
-		managementClient: managementClient,
-		namespace:        namespace,
-		projectName:      projectName,
+		managementClient: p.managementClient,
+		namespace:        p.namespace,
+		projectName:      p.projectName,
 		scope:            scope,
 		ttl:              int64(configTTL.Seconds()),
-		instance:         virtualClusterInstance,
+		instance:         p.virtualClusterInstance,
 	}
+}
+
+type directVirtualClusterKubeConfigParams struct {
+	baseClient             client.Client
+	projectName            string
+	virtualClusterInstance *managementv1.VirtualClusterInstance
+	req                    vClusterKubeConfigRequest
 }
 
 // directVirtualClusterKubeConfig resolves a kube config via direct ingress
@@ -343,24 +353,21 @@ func newVClusterKubeConfigRequest(
 // caller should fall back to access-key-based config.
 func directVirtualClusterKubeConfig(
 	ctx context.Context,
-	baseClient client.Client,
-	projectName string,
-	virtualClusterInstance *managementv1.VirtualClusterInstance,
-	req vClusterKubeConfigRequest,
+	p directVirtualClusterKubeConfigParams,
 ) (cfg *clientcmdapi.Config, handled bool, err error) {
 	// direct virtual cluster ingress access?
-	virtualCluster := virtualClusterInstance.Status.VirtualCluster
+	virtualCluster := p.virtualClusterInstance.Status.VirtualCluster
 	if virtualCluster != nil && virtualCluster.AccessPoint.Ingress.Enabled {
-		cfg, err = directIngressKubeConfig(req)
+		cfg, err = directIngressKubeConfig(p.req)
 		return cfg, true, err
 	}
 
 	// find cluster by clusterRef
 	hostCluster, err := findHostCluster(
 		ctx,
-		baseClient,
-		projectName,
-		virtualClusterInstance.Spec.ClusterRef.ClusterRef,
+		p.baseClient,
+		p.projectName,
+		p.virtualClusterInstance.Spec.ClusterRef.ClusterRef,
 	)
 	if err != nil {
 		return nil, true, fmt.Errorf("find host cluster: %w", err)
@@ -368,7 +375,7 @@ func directVirtualClusterKubeConfig(
 
 	// direct cluster access?
 	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
-		cfg, err = directClusterEndpointKubeConfig(req, hostCluster)
+		cfg, err = directClusterEndpointKubeConfig(p.req, hostCluster)
 		return cfg, true, err
 	}
 

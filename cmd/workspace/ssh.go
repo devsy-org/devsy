@@ -89,6 +89,48 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 	return sshCmd
 }
 
+// Run runs the command logic.
+func (cmd *SSHCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	cmd.addPrivateKeysToAgentIfEnabled(ctx, devsyConfig)
+
+	// get user
+	if cmd.User == "" {
+		var err error
+		cmd.User, err = devssh.GetUser(
+			client.WorkspaceConfig().ID,
+			client.WorkspaceConfig().SSHConfigPath,
+			client.WorkspaceConfig().SSHConfigIncludePath,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	// set default context if needed
+	if cmd.Context == "" {
+		cmd.Context = devsyConfig.DefaultContext
+	}
+
+	workspaceClient, ok := client.(client2.WorkspaceClient)
+	if ok {
+		return cmd.jumpContainer(ctx, devsyConfig, workspaceClient)
+	}
+	proxyClient, ok := client.(client2.ProxyClient)
+	if ok {
+		return cmd.startProxyTunnel(ctx, devsyConfig, proxyClient)
+	}
+	daemonClient, ok := client.(client2.DaemonClient)
+	if ok {
+		return cmd.jumpContainerTailscale(ctx, devsyConfig, daemonClient)
+	}
+
+	return nil
+}
+
 func (cmd *SSHCmd) registerFlags(sshCmd *cobra.Command) {
 	cmd.registerPortForwardingFlags(sshCmd)
 	cmd.registerEnvFlags(sshCmd)
@@ -190,48 +232,6 @@ func (cmd *SSHCmd) registerTerminalFlags(sshCmd *cobra.Command) {
 		cliflags.Bool(&cmd.InstallTerminfo, names.InstallTerminfo, false,
 			"Install local TERM terminfo on remote before PTY"),
 	)
-}
-
-// Run runs the command logic.
-func (cmd *SSHCmd) Run(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	client client2.BaseWorkspaceClient,
-) error {
-	cmd.addPrivateKeysToAgentIfEnabled(ctx, devsyConfig)
-
-	// get user
-	if cmd.User == "" {
-		var err error
-		cmd.User, err = devssh.GetUser(
-			client.WorkspaceConfig().ID,
-			client.WorkspaceConfig().SSHConfigPath,
-			client.WorkspaceConfig().SSHConfigIncludePath,
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	// set default context if needed
-	if cmd.Context == "" {
-		cmd.Context = devsyConfig.DefaultContext
-	}
-
-	workspaceClient, ok := client.(client2.WorkspaceClient)
-	if ok {
-		return cmd.jumpContainer(ctx, devsyConfig, workspaceClient)
-	}
-	proxyClient, ok := client.(client2.ProxyClient)
-	if ok {
-		return cmd.startProxyTunnel(ctx, devsyConfig, proxyClient)
-	}
-	daemonClient, ok := client.(client2.DaemonClient)
-	if ok {
-		return cmd.jumpContainerTailscale(ctx, devsyConfig, daemonClient)
-	}
-
-	return nil
 }
 
 func (cmd *SSHCmd) addPrivateKeysToAgentIfEnabled(ctx context.Context, devsyConfig *config.Config) {
@@ -457,14 +457,13 @@ func (cmd *SSHCmd) startTunnel(
 		})
 	}
 
-	return cmd.runInteractiveTunnelSession(
-		ctx,
-		devsyConfig,
-		containerClient,
-		command,
-		envVars,
-		writer,
-	)
+	return cmd.runInteractiveTunnelSession(ctx, runInteractiveTunnelSessionParams{
+		devsyConfig:     devsyConfig,
+		containerClient: containerClient,
+		command:         command,
+		envVars:         envVars,
+		writer:          writer,
+	})
 }
 
 // setupTunnelWriter wires up the JSON log pipe and GPG agent tunnel shared by
@@ -490,37 +489,43 @@ func (cmd *SSHCmd) setupTunnelWriter(
 	}
 }
 
+type runInteractiveTunnelSessionParams struct {
+	devsyConfig     *config.Config
+	containerClient *ssh.Client
+	command         string
+	envVars         map[string]string
+	writer          io.Writer
+}
+
 func (cmd *SSHCmd) runInteractiveTunnelSession(
 	ctx context.Context,
-	devsyConfig *config.Config,
-	containerClient *ssh.Client,
-	command string,
-	envVars map[string]string,
-	writer io.Writer,
+	params runInteractiveTunnelSessionParams,
 ) error {
 	return machine.StartSSHSession(ctx, machine.StartSSHSessionOptions{
 		User:    cmd.User,
 		Command: cmd.Command,
 		AgentForwarding: cmd.AgentForwarding &&
-			devsyConfig.ContextOption(config.ContextOptionSSHAgentForwarding) == config.BoolTrue,
+			params.devsyConfig.ContextOption(
+				config.ContextOptionSSHAgentForwarding,
+			) == config.BoolTrue,
 		SessionOptions: machine.SSHSessionOptions{
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
-				go startSSHKeepAlive(ctx, containerClient, cmd.SSHKeepAliveInterval)
+				go startSSHKeepAlive(ctx, params.containerClient, cmd.SSHKeepAliveInterval)
 			}
 			return devssh.Run(ctx, devssh.RunOptions{
-				Client:  containerClient,
-				Command: command,
+				Client:  params.containerClient,
+				Command: params.command,
 				Stdin:   stdin,
 				Stdout:  stdout,
 				Stderr:  stderr,
-				EnvVars: envVars,
+				EnvVars: params.envVars,
 			})
 		},
-		Stderr: writer,
+		Stderr: params.writer,
 	})
 }
 

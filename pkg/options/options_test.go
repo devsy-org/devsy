@@ -1,7 +1,6 @@
 package options
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -20,33 +19,40 @@ type assignmentTestCase struct {
 	ExpectedAssignments []string
 }
 
+const (
+	testEnvHostName   = "HOST"
+	testEnvHostAssign = "HOST=box"
+	testEnvSSHPrefix  = "DEVSY_PROVIDER_SSH_"
+	testEnvSSHHostVar = "DEVSY_PROVIDER_SSH_HOST"
+)
+
 var inheritFromEnvironmentTestCases = []assignmentTestCase{
 	{
 		Name: "assigned, not in the environment",
 		Names: []string{
-			"HOST",
+			testEnvHostName,
 		},
 		Assignments: []string{
-			"HOST=box",
+			testEnvHostAssign,
 		},
-		EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
+		EnvironmentVariablePrefix: testEnvSSHPrefix,
 		NotInEnvironment: []string{
-			"DEVSY_PROVIDER_SSH_HOST",
+			testEnvSSHHostVar,
 		},
 		Environment: map[string]string{},
 		ExpectedAssignments: []string{
-			"HOST=box",
+			testEnvHostAssign,
 		},
 	},
 	{
 		Name: "not assigned, not in the environment",
 		Names: []string{
-			"HOST",
+			testEnvHostName,
 		},
 		Assignments:               []string{},
-		EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
+		EnvironmentVariablePrefix: testEnvSSHPrefix,
 		NotInEnvironment: []string{
-			"DEVSY_PROVIDER_SSH_HOST",
+			testEnvSSHHostVar,
 		},
 		Environment:         map[string]string{},
 		ExpectedAssignments: []string{},
@@ -54,30 +60,30 @@ var inheritFromEnvironmentTestCases = []assignmentTestCase{
 	{
 		Name: "assigned, in the environment",
 		Names: []string{
-			"HOST",
+			testEnvHostName,
 		},
 		Assignments: []string{
-			"HOST=box",
+			testEnvHostAssign,
 		},
-		EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
+		EnvironmentVariablePrefix: testEnvSSHPrefix,
 		NotInEnvironment:          []string{},
 		Environment: map[string]string{
-			"DEVSY_PROVIDER_SSH_HOST": "another-box",
+			testEnvSSHHostVar: "another-box",
 		},
 		ExpectedAssignments: []string{
-			"HOST=box",
+			testEnvHostAssign,
 		},
 	},
 	{
 		Name: "not assigned, in the environment",
 		Names: []string{
-			"HOST",
+			testEnvHostName,
 		},
 		Assignments:               []string{},
-		EnvironmentVariablePrefix: "DEVSY_PROVIDER_SSH_",
+		EnvironmentVariablePrefix: testEnvSSHPrefix,
 		NotInEnvironment:          []string{},
 		Environment: map[string]string{
-			"DEVSY_PROVIDER_SSH_HOST": "another-box",
+			testEnvSSHHostVar: "another-box",
 		},
 		ExpectedAssignments: []string{
 			"HOST=another-box",
@@ -94,8 +100,6 @@ func TestInheritFromEnvironment(t *testing.T) {
 }
 
 func runInheritFromEnvironmentTestCase(t *testing.T, testCase assignmentTestCase) {
-	fmt.Println(testCase.Name)
-
 	for _, k := range testCase.NotInEnvironment {
 		err := os.Unsetenv(k)
 		if err != nil {

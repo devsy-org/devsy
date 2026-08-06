@@ -126,17 +126,14 @@ func (r *runner) buildAndExtendDockerCompose(
 		return composeExtendResult{}, err
 	}
 
-	buildImageName, dockerComposeFilePath, cleanup, err := r.resolveComposeBuildTarget(
-		prepared,
-		params,
-	)
-	defer cleanup()
+	target, err := r.resolveComposeBuildTarget(prepared, params)
+	defer target.cleanup()
 	if err != nil {
-		return composeExtendResult{buildImageName: buildImageName}, err
+		return composeExtendResult{buildImageName: target.buildImageName}, err
 	}
 
-	if err := r.runComposeExtendedBuild(ctx, params, dockerComposeFilePath); err != nil {
-		return composeExtendResult{buildImageName: buildImageName}, err
+	if err := r.runComposeExtendedBuild(ctx, params, target.dockerComposeFilePath); err != nil {
+		return composeExtendResult{buildImageName: target.buildImageName}, err
 	}
 
 	imageMetadata, err := metadata.GetDevContainerMetadata(
@@ -146,15 +143,23 @@ func (r *runner) buildAndExtendDockerCompose(
 		prepared.extendImageBuildInfo.Features,
 	)
 	if err != nil {
-		return composeExtendResult{buildImageName: buildImageName}, err
+		return composeExtendResult{buildImageName: target.buildImageName}, err
 	}
 
 	return composeExtendResult{
-		buildImageName:       buildImageName,
-		composeBuildFilePath: dockerComposeFilePath,
+		buildImageName:       target.buildImageName,
+		composeBuildFilePath: target.dockerComposeFilePath,
 		imageMetadata:        imageMetadata,
 		metadataLabel:        prepared.extendImageBuildInfo.MetadataLabel,
 	}, nil
+}
+
+// composeBuildTarget holds the resolved image name, override compose file
+// path (if any), and cleanup for the feature override compose file.
+type composeBuildTarget struct {
+	buildImageName        string
+	dockerComposeFilePath string
+	cleanup               func()
 }
 
 // resolveComposeBuildTarget determines the image name to build and, when the
@@ -163,25 +168,26 @@ func (r *runner) buildAndExtendDockerCompose(
 func (r *runner) resolveComposeBuildTarget(
 	prepared preparedComposeBuild,
 	params *buildAndExtendParams,
-) (buildImageName string, dockerComposeFilePath string, cleanup func(), err error) {
-	cleanup = func() {}
+) (composeBuildTarget, error) {
+	target := composeBuildTarget{cleanup: func() {}}
 
-	buildImageName, err = composeBuildImageName(
+	buildImageName, err := composeBuildImageName(
 		params.composeHelper,
 		params.project.Name,
 		params.composeService,
 		hasFeatureBuildInfo(prepared.extendImageBuildInfo),
 	)
+	target.buildImageName = buildImageName
 	if err != nil {
-		return buildImageName, "", cleanup, err
+		return target, err
 	}
 
-	dockerComposeFilePath, cleanup, err = r.composeFeatureOverride(
+	target.dockerComposeFilePath, target.cleanup, err = r.composeFeatureOverride(
 		prepared,
 		params.composeService,
 		buildImageName,
 	)
-	return buildImageName, dockerComposeFilePath, cleanup, err
+	return target, err
 }
 
 // runComposeExtendedBuild assembles the compose build arguments and runs

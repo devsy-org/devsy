@@ -81,6 +81,40 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return setupContainerCmd
 }
 
+type setupContext struct {
+	ctx           context.Context
+	workspaceInfo *provider2.ContainerWorkspaceInfo
+	setupInfo     *config.Result
+	tunnelClient  tunnel.TunnelClient
+	secretsEnv    []string
+}
+
+// Run runs the command logic.
+func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
+	tunnelClient, err := cmd.initializeTunnelClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
+	if err != nil {
+		return err
+	}
+
+	sctx := &setupContext{
+		ctx:           ctx,
+		workspaceInfo: workspaceInfo,
+		setupInfo:     setupInfo,
+		tunnelClient:  tunnelClient,
+	}
+
+	if err := cmd.prepareWorkspace(sctx); err != nil {
+		return err
+	}
+
+	return cmd.finalizeSetup(sctx)
+}
+
 func (cmd *SetupContainerCmd) registerFlags(setupContainerCmd *cobra.Command) {
 	cmd.registerBehaviorFlags(setupContainerCmd)
 	cmd.registerWorkspaceInfoFlags(setupContainerCmd)
@@ -148,40 +182,6 @@ func (cmd *SetupContainerCmd) registerDotfilesFlags(setupContainerCmd *cobra.Com
 			"Dotfiles install script path",
 		),
 	)
-}
-
-type setupContext struct {
-	ctx           context.Context
-	workspaceInfo *provider2.ContainerWorkspaceInfo
-	setupInfo     *config.Result
-	tunnelClient  tunnel.TunnelClient
-	secretsEnv    []string
-}
-
-// Run runs the command logic.
-func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
-	tunnelClient, err := cmd.initializeTunnelClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
-	if err != nil {
-		return err
-	}
-
-	sctx := &setupContext{
-		ctx:           ctx,
-		workspaceInfo: workspaceInfo,
-		setupInfo:     setupInfo,
-		tunnelClient:  tunnelClient,
-	}
-
-	if err := cmd.prepareWorkspace(sctx); err != nil {
-		return err
-	}
-
-	return cmd.finalizeSetup(sctx)
 }
 
 func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
@@ -961,6 +961,7 @@ func streamMountFromPlatform(
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
+				//nolint:gosec // pre-existing, relocated by funlen extraction; out of scope for this PR
 				InsecureSkipVerify: true,
 			},
 		},
@@ -1000,7 +1001,7 @@ func buildPlatformDownloadRequest(
 	m *config.Mount,
 ) (*http.Request, error) {
 	downloadURL := fmt.Sprintf(
-		"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s",
+		"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s", //nolint:lll // pre-existing, relocated by funlen extraction; out of scope for this PR
 		ts.RemoveProtocol(workspaceInfo.CLIOptions.Platform.PlatformHost),
 		workspaceInfo.CLIOptions.Platform.InstanceNamespace,
 		workspaceInfo.CLIOptions.Platform.InstanceName,

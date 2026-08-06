@@ -444,16 +444,16 @@ func newLogOutputStreams(reporter status.Reporter) *logOutputStreams {
 	}
 }
 
-func (s *logOutputStreams) stdout() io.Writer {
-	return s.statusWriter
-}
-
 func (s *logOutputStreams) Close() {
 	_ = s.statusWriter.Close()
 	_ = s.stdoutStreamer.Close()
 	_ = s.stderrStreamer.Close()
 	<-s.stdoutDone
 	<-s.stderrDone
+}
+
+func (s *logOutputStreams) stdout() io.Writer {
+	return s.statusWriter
 }
 
 // streamLogMessages reads NDJSON-encoded Message lines from scanner and
