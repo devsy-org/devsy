@@ -105,12 +105,6 @@ func TestCandidateAgentDirs_HonorsDevsyHomeOverride(t *testing.T) {
 		if d == want {
 			found = true
 		}
-		// The raw-OS-home candidate must NOT appear when DEVSY_HOME is set.
-		// This guards candidateAgentDirs' own EnvHome handling directly: both
-		// production callers (FindAgentHomeDir/PrepareAgentHomeDir) go through
-		// findDir, which already short-circuits on DEVSY_HOME before reaching
-		// this function, so this test hardens against a future caller that
-		// skips findDir rather than a currently-reachable bug.
 		realHome, _ := util.UserHomeDir()
 		if realHome != "" && realHome != home {
 			unwanted := filepath.Join(realHome, config.ConfigDirName, "agent")

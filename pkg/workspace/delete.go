@@ -359,7 +359,7 @@ func removeIfOrphan(workspaceDir string, entry os.DirEntry) {
 // (.../contexts/<ctx>/contents/) that have no corresponding workspace
 // directory at all. Unlike SweepOrphanWorkspaceDirs (which checks for a
 // missing workspace.json inside an existing workspace dir), an orphaned
-// content dir means the workspace dir itself is already gone — left behind
+// content dir means the workspace dir itself is already gone; left behind
 // by a crash mid-delete or a killed process partway through
 // DeleteWorkspaceFolder.
 func SweepOrphanContentDirs(contextName string) {

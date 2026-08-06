@@ -49,14 +49,12 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 		return err
 	}
 
-	// check for context
 	if context == "" {
 		context = devsyConfig.DefaultContext
 	} else if devsyConfig.Contexts[context] == nil {
 		return fmt.Errorf("context %q doesn't exist", context)
 	}
 
-	// check for default context
 	if context == "default" {
 		return fmt.Errorf("cannot delete 'default' context")
 	}
@@ -76,10 +74,9 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 	return removeContextDir(context)
 }
 
-// removeContextDir removes the on-disk directory tree for a deleted context
-// (workspaces/, contents/, machines/, providers/, pro_instances/, locks/).
+// removeContextDir removes the directory for a deleted context.
 // This runs last, after config.yaml is already saved without the context, so
-// a failure here leaves the context correctly unregistered even though some
+// a failure here leaves the context unregistered even though some
 // disk cleanup may need a manual retry.
 func removeContextDir(contextName string) error {
 	dir, err := config.DefaultPathManager().ContextDir(contextName)

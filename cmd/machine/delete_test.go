@@ -22,11 +22,6 @@ func TestDeleteCmd_RemovesMachineDirFromDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// NOTE: this test documents the expected end state. Wiring a full
-	// DeleteCmd.Run() call requires a fake machine provider/client; if that
-	// scaffolding is too heavy for this package, downgrade this to a direct
-	// test of a small extracted helper (see Step 3) instead of the full
-	// cobra command path.
 	if err := removeMachineDirIfPresent(pkgconfig.DefaultContext, "test-machine"); err != nil {
 		t.Fatal(err)
 	}

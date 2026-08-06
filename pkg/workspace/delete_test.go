@@ -68,7 +68,5 @@ func TestSweepOrphanContentDirs_RemovesContentWithNoMatchingWorkspace(t *testing
 
 func TestSweepOrphanContentDirs_MissingDirIsNoop(t *testing.T) {
 	setupTestPathManager(t)
-
-	// No contents dir created yet — sweep must not panic or error.
 	SweepOrphanContentDirs(testDefaultContext)
 }

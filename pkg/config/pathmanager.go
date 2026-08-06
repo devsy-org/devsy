@@ -35,16 +35,7 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 	return dir, true, err
 }
 
-// PathManager centralises all filesystem path computation for the Devsy CLI.
-// Per-OS implementations supply the five top-level directory methods; every
-// sub-path is derived from those by the shared basePathManager.
-//
-// Canonical layout (all paths relative to the values these methods return —
-// on the host CLI side, never construct a DEVSY_HOME-relative path outside
-// this file; see pkg/provider/version_cache.go's history for why that rule
-// exists. pkg/agent/workspace.go is a deliberate exception: it reimplements
-// this same layout for agent-side code running inside the container/machine,
-// where this package's PathManager singleton isn't available):
+// PathManager centralises filesystem paths. Layout:
 //
 //	ConfigDir()/DataDir()  (same directory today; both may be $DEVSY_HOME)
 //	├── config.yaml                        (ConfigFilePath, stamped with Config.SchemaVersion)

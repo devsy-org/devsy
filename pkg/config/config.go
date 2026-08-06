@@ -13,20 +13,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// CurrentSchemaVersion is the on-disk layout version this build of devsy
-// understands. LoadConfig stamps it onto every config it reads (fresh or
-// pre-existing) so a future layout change (e.g. finishing the agent/host
-// tree unification started in this cleanup) has a documented baseline to
-// detect and migrate from, the same way pkg/snapshot.Manifest.SchemaVersion
-// already versions snapshots. SaveConfig does not stamp independently — it
-// persists whatever value is already on the in-memory Config.
 const CurrentSchemaVersion = 1
 
 type Config struct {
-	// SchemaVersion is the DEVSY_HOME on-disk layout version. Absent/zero on
-	// configs written before this field existed; LoadConfig treats that the
-	// same as CurrentSchemaVersion (see normalizeConfig) since no versioned
-	// layout change has shipped yet.
 	SchemaVersion int `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty"`
 
 	// DefaultContext is the default context to use. Defaults to "default"

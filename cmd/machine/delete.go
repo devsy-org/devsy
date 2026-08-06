@@ -94,10 +94,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 }
 
 // removeMachineDirIfPresent removes the on-disk machine directory after a
-// successful remote delete. provider delete (cmd/provider/delete.go) and
-// pro logout (cmd/pro/logout.go) already remove their directories the same
-// way after their remote/config cleanup succeeds; the standalone machine
-// delete path never did.
+// successful remote delete.
 func removeMachineDirIfPresent(context, machineID string) error {
 	if err := clientimplementation.DeleteMachineFolder(context, machineID); err != nil {
 		return fmt.Errorf("delete machine dir: %w", err)
