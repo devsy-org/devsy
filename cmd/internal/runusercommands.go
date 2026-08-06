@@ -54,6 +54,21 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 		RunE:  runE,
 	}
 
+	cmd.registerFlags(runCmd)
+
+	runCmd.MarkFlagsOneRequired(names.WorkspaceFolder, names.ContainerID)
+
+	return runCmd
+}
+
+func (cmd *RunUserCommandsCmd) registerFlags(runCmd *cobra.Command) {
+	cmd.registerTargetFlags(runCmd)
+	cmd.registerConfigFlags(runCmd)
+	cmd.registerEnvFlags(runCmd)
+	cmd.registerLifecycleFlags(runCmd)
+}
+
+func (cmd *RunUserCommandsCmd) registerTargetFlags(runCmd *cobra.Command) {
 	cliflags.Add(
 		runCmd,
 		cliflags.String(
@@ -74,6 +89,12 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Path to the docker/podman executable (defaults to 'docker')",
 		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerConfigFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
 		cliflags.String(
 			&cmd.Config,
 			names.Config,
@@ -86,6 +107,12 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Path to an additional devcontainer.json file to override the primary configuration",
 		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerEnvFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
 		cliflags.StringArray(
 			&cmd.RemoteEnv,
 			names.RemoteEnv,
@@ -98,6 +125,12 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 			[]string{},
 			"Override the default container identification labels (format: key=value, can be specified multiple times)",
 		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerLifecycleFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
 		cliflags.Bool(
 			&cmd.Prebuild,
 			names.Prebuild,
@@ -136,10 +169,6 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 			"Skip running updateContentCommand",
 		),
 	)
-
-	runCmd.MarkFlagsOneRequired(names.WorkspaceFolder, names.ContainerID)
-
-	return runCmd
 }
 
 // NewRunUserCommandsCmdAlias creates the hidden camelCase alias for devcontainer CLI compat.

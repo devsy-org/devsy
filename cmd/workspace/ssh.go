@@ -84,6 +84,21 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
+	cmd.registerFlags(sshCmd)
+
+	return sshCmd
+}
+
+func (cmd *SSHCmd) registerFlags(sshCmd *cobra.Command) {
+	cmd.registerPortForwardingFlags(sshCmd)
+	cmd.registerEnvFlags(sshCmd)
+	cmd.registerSessionFlags(sshCmd)
+	cmd.registerAgentForwardingFlags(sshCmd)
+	cmd.registerServiceFlags(sshCmd)
+	cmd.registerTerminalFlags(sshCmd)
+}
+
+func (cmd *SSHCmd) registerPortForwardingFlags(sshCmd *cobra.Command) {
 	cliflags.Add(
 		sshCmd,
 		cliflags.StringArray(
@@ -102,16 +117,28 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 				"host are to be reverse forwarded to the given host and port, or Unix socket, on the remote side.",
 		).
 			Shorthand("R"),
-		cliflags.StringArray(&cmd.SendEnvVars, names.SendEnv, nil,
-			"Specifies which local env variables shall be sent to the container."),
-		cliflags.StringArray(&cmd.SetEnvVars, names.SetEnv, nil,
-			"Specifies env variables to be set in the container."),
 		cliflags.String(
 			&cmd.ForwardPortsTimeout,
 			names.ForwardPortsTimeout,
 			"",
 			"Specifies the timeout after which the command should terminate when the ports are unused.",
 		),
+	)
+}
+
+func (cmd *SSHCmd) registerEnvFlags(sshCmd *cobra.Command) {
+	cliflags.Add(
+		sshCmd,
+		cliflags.StringArray(&cmd.SendEnvVars, names.SendEnv, nil,
+			"Specifies which local env variables shall be sent to the container."),
+		cliflags.StringArray(&cmd.SetEnvVars, names.SetEnv, nil,
+			"Specifies env variables to be set in the container."),
+	)
+}
+
+func (cmd *SSHCmd) registerSessionFlags(sshCmd *cobra.Command) {
+	cliflags.Add(
+		sshCmd,
 		cliflags.String(
 			&cmd.Command,
 			names.Command,
@@ -120,6 +147,18 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		),
 		cliflags.String(&cmd.User, names.User, "", "The user of the workspace to use"),
 		cliflags.String(&cmd.WorkDir, names.Workdir, "", "The working directory in the container"),
+		cliflags.Bool(
+			&cmd.Stdio,
+			names.Stdio,
+			false,
+			"If true will tunnel connection through stdout and stdin",
+		),
+	)
+}
+
+func (cmd *SSHCmd) registerAgentForwardingFlags(sshCmd *cobra.Command) {
+	cliflags.Add(
+		sshCmd,
 		cliflags.Bool(&cmd.AgentForwarding, names.AgentForwarding, true,
 			"If true forward the local ssh keys to the remote machine"),
 		cliflags.String(&cmd.ReuseSSHAuthSock, names.ReuseSSHAuthSock, "",
@@ -128,25 +167,29 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 			Hidden(),
 		cliflags.Bool(&cmd.GPGAgentForwarding, names.SSHGPGForwarding, false,
 			"Forward the local gpg-agent to the remote machine"),
-		cliflags.Bool(
-			&cmd.Stdio,
-			names.Stdio,
-			false,
-			"If true will tunnel connection through stdout and stdin",
-		),
+		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "",
+			"The SSH signing key to use for git commit signing inside the workspace"),
+	)
+}
+
+func (cmd *SSHCmd) registerServiceFlags(sshCmd *cobra.Command) {
+	cliflags.Add(
+		sshCmd,
 		cliflags.Bool(&cmd.StartServices, names.StartServices, true,
 			"If false will not start any port-forwarding or git / docker credentials helper"),
 		cliflags.Duration(&cmd.SSHKeepAliveInterval, names.SSHKeepAliveInterval, 55*time.Second,
 			"How often should keepalive request be made (55s)"),
-		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "",
-			"The SSH signing key to use for git commit signing inside the workspace"),
+	)
+}
+
+func (cmd *SSHCmd) registerTerminalFlags(sshCmd *cobra.Command) {
+	cliflags.Add(
+		sshCmd,
 		cliflags.String(&cmd.TermMode, names.TermMode, machine.TermModeAuto,
 			"PTY TERM selection mode: auto, strict, fallback"),
 		cliflags.Bool(&cmd.InstallTerminfo, names.InstallTerminfo, false,
 			"Install local TERM terminfo on remote before PTY"),
 	)
-
-	return sshCmd
 }
 
 // Run runs the command logic.
@@ -388,17 +431,9 @@ func (cmd *SSHCmd) startTunnel(
 	}
 
 	cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
-	// buildSSHServerCommand runs `devsy internal ssh-server`, which always
-	// logs structured JSON on stderr; PipeJSONStream re-emits each line at
-	// its original level instead of double-wrapping it as another log entry.
-	writer, writerDone := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-writerDone
-	}()
 
-	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
-	defer runGPGTunnelInBackground(ctx, gpgTunnel, containerClient)()
+	writer, cleanup := cmd.setupTunnelWriter(ctx, devsyConfig, containerClient)
+	defer cleanup()
 
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
@@ -422,6 +457,47 @@ func (cmd *SSHCmd) startTunnel(
 		})
 	}
 
+	return cmd.runInteractiveTunnelSession(
+		ctx,
+		devsyConfig,
+		containerClient,
+		command,
+		envVars,
+		writer,
+	)
+}
+
+// setupTunnelWriter wires up the JSON log pipe and GPG agent tunnel shared by
+// both tunnel modes. buildSSHServerCommand runs `devsy internal ssh-server`,
+// which always logs structured JSON on stderr; PipeJSONStream re-emits each
+// line at its original level instead of double-wrapping it as another log
+// entry. The returned cleanup func stops the GPG tunnel before closing and
+// draining the writer, matching the original defer ordering.
+func (cmd *SSHCmd) setupTunnelWriter(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	containerClient *ssh.Client,
+) (io.Writer, func()) {
+	writer, writerDone := log.PipeJSONStream()
+
+	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
+	stopGPGTunnel := runGPGTunnelInBackground(ctx, gpgTunnel, containerClient)
+
+	return writer, func() {
+		stopGPGTunnel()
+		_ = writer.Close()
+		<-writerDone
+	}
+}
+
+func (cmd *SSHCmd) runInteractiveTunnelSession(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	containerClient *ssh.Client,
+	command string,
+	envVars map[string]string,
+	writer io.Writer,
+) error {
 	return machine.StartSSHSession(ctx, machine.StartSSHSessionOptions{
 		User:    cmd.User,
 		Command: cmd.Command,

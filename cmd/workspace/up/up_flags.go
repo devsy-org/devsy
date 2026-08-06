@@ -172,6 +172,12 @@ func (cmd *UpCmd) registerPodmanFlags(upCmd *cobra.Command) {
 }
 
 func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
+	cmd.registerWorkspaceIdentityFlags(upCmd)
+	cmd.registerWorkspaceSecretsFlags(upCmd)
+	cmd.registerWorkspaceRuntimeFlags(upCmd)
+}
+
+func (cmd *UpCmd) registerWorkspaceIdentityFlags(upCmd *cobra.Command) {
 	flags.Add(
 		upCmd,
 		flags.String(&cmd.ID, names.ID, "", "ID for the workspace"),
@@ -206,6 +212,12 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 				"report it instead"),
 		flags.StringSlice(&cmd.PrebuildRepositories, names.PrebuildRepo, nil,
 			"Docker repository hosting prebuilds for this workspace"),
+	)
+}
+
+func (cmd *UpCmd) registerWorkspaceSecretsFlags(upCmd *cobra.Command) {
+	flags.Add(
+		upCmd,
 		flags.StringArray(&cmd.WorkspaceEnv, names.WorkspaceEnv, nil,
 			"Env var for the workspace (KEY=VALUE, repeatable)"),
 		flags.StringSlice(&cmd.WorkspaceEnvFile, names.WorkspaceEnvFile, nil,
@@ -230,6 +242,12 @@ func (cmd *UpCmd) registerWorkspaceFlags(upCmd *cobra.Command) {
 			"Env var for workspace initialization (KEY=VALUE, repeatable)"),
 		flags.Bool(&cmd.DisableDaemon, names.DisableDaemon, false,
 			"Do not install the activity-tracking daemon on the target machine"),
+	)
+}
+
+func (cmd *UpCmd) registerWorkspaceRuntimeFlags(upCmd *cobra.Command) {
+	flags.Add(
+		upCmd,
 		flags.StringArray(&cmd.CacheFrom, names.CacheFrom, nil,
 			"Build cache source (e.g. myregistry.io/cache:latest or type=registry,ref=...); "+
 				"takes priority over devcontainer.json build.cacheFrom"),
