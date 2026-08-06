@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -246,6 +247,29 @@ func (t *gpgTunnel) ensureForwardBound(
 	return nil
 }
 
+// signalGPGForwardReady is a no-op unless this process was spawned by
+// pkg/gpg.ForwardAgent, which is the only caller that sets ForwardReadyFDEnv.
+func signalGPGForwardReady() {
+	fdStr := os.Getenv(gpg.ForwardReadyFDEnv)
+	if fdStr == "" {
+		return
+	}
+	fd, err := strconv.Atoi(fdStr)
+	if err != nil {
+		log.Debugf("invalid %s=%q: %v", gpg.ForwardReadyFDEnv, fdStr, err)
+		return
+	}
+	f := os.NewFile(uintptr(fd), "gpg-forward-ready")
+	if f == nil {
+		log.Debugf("invalid %s=%q: file descriptor is not open", gpg.ForwardReadyFDEnv, fdStr)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.Write([]byte{1}); err != nil {
+		log.Debugf("signal gpg forward ready: %v", err)
+	}
+}
+
 // runGPGTunnelInBackground runs the tunnel's first setup synchronously, so
 // the SSH command that follows does not race a still-forwarding gpg-agent,
 // then starts t.run's periodic health-check loop in a goroutine tied to a
@@ -261,6 +285,7 @@ func runGPGTunnelInBackground(
 ) (wait func()) {
 	if t.enabled {
 		t.ensure(ctx, sshClient)
+		signalGPGForwardReady()
 	}
 
 	tunnelCtx, cancel := context.WithCancel(ctx)
