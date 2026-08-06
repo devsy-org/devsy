@@ -326,13 +326,17 @@ func (s *WorkspaceServer) gitCredentialsHandler(
 		return
 	}
 
-	// Build the reverse proxy with a custom Director.
-	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
-	proxy.Director = func(req *http.Request) {
-		dest := *parsedURL
-		req.URL = &dest
-		req.Host = dest.Host
-		req.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
+	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
+	// forced to parsedURL rather than joined with the inbound path, matching
+	// the previous Director's behavior.
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			dest := *parsedURL
+			pr.Out.URL = &dest
+			pr.Out.Host = dest.Host
+			pr.Out.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
+			addForwardedFor(pr)
+		},
 	}
 	proxy.Transport = transport
 	proxy.ServeHTTP(w, r)
@@ -368,13 +372,17 @@ func (s *WorkspaceServer) dockerCredentialsHandler(
 		return
 	}
 
-	// Build the reverse proxy with a custom Director.
-	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
-	proxy.Director = func(req *http.Request) {
-		dest := *parsedURL
-		req.URL = &dest
-		req.Host = dest.Host
-		req.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
+	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
+	// forced to parsedURL rather than joined with the inbound path, matching
+	// the previous Director's behavior.
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			dest := *parsedURL
+			pr.Out.URL = &dest
+			pr.Out.Host = dest.Host
+			pr.Out.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
+			addForwardedFor(pr)
+		},
 	}
 	proxy.Transport = transport
 	proxy.ServeHTTP(w, r)
@@ -411,16 +419,20 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 	parsedURL.Host = "127.0.0.1:" + targetPort
 	log.Debugf("httpPortForwardHandler: final target URL=%s", parsedURL.String())
 
-	// Build the reverse proxy with a custom Director.
-	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
-	proxy.Director = func(req *http.Request) {
-		dest := *parsedURL
-		req.URL = &dest
-		req.Host = dest.Host
-		// Remove custom headers so they are not forwarded.
-		req.Header.Del("X-Loft-Forward-Port")
-		req.Header.Del("X-Loft-Forward-Url")
-		req.Header.Del("X-Loft-Forward-Authorization")
+	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
+	// forced to parsedURL rather than joined with the inbound path, matching
+	// the previous Director's behavior.
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			dest := *parsedURL
+			pr.Out.URL = &dest
+			pr.Out.Host = dest.Host
+			// Remove custom headers so they are not forwarded.
+			pr.Out.Header.Del("X-Loft-Forward-Port")
+			pr.Out.Header.Del("X-Loft-Forward-Url")
+			pr.Out.Header.Del("X-Loft-Forward-Authorization")
+			addForwardedFor(pr)
+		},
 	}
 	proxy.Transport = http.DefaultTransport
 
@@ -430,6 +442,24 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 		parsedURL.String(),
 	)
 	proxy.ServeHTTP(w, r)
+}
+
+// addForwardedFor sets X-Forwarded-For on the outbound proxy request,
+// replicating the behavior ReverseProxy applies automatically when using
+// the deprecated Director field but not when using Rewrite.
+func addForwardedFor(pr *httputil.ProxyRequest) {
+	clientIP, _, err := net.SplitHostPort(pr.In.RemoteAddr)
+	if err != nil {
+		return
+	}
+	prior, ok := pr.Out.Header["X-Forwarded-For"]
+	omit := ok && prior == nil
+	if len(prior) > 0 {
+		clientIP = strings.Join(prior, ", ") + ", " + clientIP
+	}
+	if !omit {
+		pr.Out.Header.Set("X-Forwarded-For", clientIP)
+	}
 }
 
 // handleSSHConnections continuously accepts SSH connections and handles each one.
