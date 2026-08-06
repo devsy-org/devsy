@@ -2,15 +2,12 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform"
-	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
 	"github.com/spf13/cobra"
 )
 
@@ -43,43 +40,13 @@ func (cmd *StopCmd) Run(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	baseClient, err := client.InitClientFromPath(ctx, cmd.Config)
-	if err != nil {
-		return err
-	}
-
-	info, err := platform.GetWorkspaceInfoFromEnv()
-	if err != nil {
-		return err
-	}
-	opts := platform.FindInstanceOptions{UID: info.UID, ProjectName: info.ProjectName}
-	workspace, err := platform.FindInstance(ctx, baseClient, opts)
-	if err != nil {
-		return err
-	} else if workspace == nil {
-		return fmt.Errorf("couldn't find workspace")
-	}
-
-	conn, err := platform.DialInstance(
-		baseClient,
-		workspace,
+	return dialAndExecute(
+		ctx,
+		cmd.Config,
 		"stop",
 		platform.OptionsFromEnv(storagev1.DevsyFlagsStop),
-	)
-	if err != nil {
-		return err
-	}
-
-	_, err = remotecommand.ExecuteConn(
-		ctx,
-		conn,
 		stdin,
 		stdout,
 		stderr,
 	)
-	if err != nil {
-		return fmt.Errorf("error executing: %w", err)
-	}
-
-	return nil
 }

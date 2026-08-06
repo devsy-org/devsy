@@ -24,6 +24,8 @@ type StatusCmd struct {
 }
 
 // NewStatusCmd creates a new command.
+//
+//nolint:dupl // structurally similar to NewNetcheckCmd; intentional sibling factory
 func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
 		GlobalFlags: flags,

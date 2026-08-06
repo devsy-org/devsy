@@ -214,7 +214,10 @@ func (suite *ResolverTestSuite) TestResolveOptions_ExpiredCache() {
 	suite.Equal("new_default", result["cached_option"].Value)
 }
 
-func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchanged() {
+// setupParentChildGraph creates a resolver graph with a "parent" option that
+// has a "child" option depending on it, used by tests that verify
+// user-provided-value precedence during resolution.
+func (suite *ResolverTestSuite) setupParentChildGraph() {
 	suite.resolver.graph = graph.NewGraph[*types.Option]()
 
 	parentOption := &types.Option{Description: "Parent", Default: "new_parent_value"}
@@ -223,6 +226,10 @@ func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchan
 	suite.Require().NoError(suite.resolver.graph.AddNode("parent", parentOption))
 	suite.Require().NoError(suite.resolver.graph.AddNode("child", childOption))
 	suite.Require().NoError(suite.resolver.graph.AddEdge("parent", "child"))
+}
+
+func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchanged() {
+	suite.setupParentChildGraph()
 
 	existingValues := map[string]config.OptionValue{
 		"parent": {Value: "old_parent_value", UserProvided: true},
@@ -237,14 +244,7 @@ func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchan
 }
 
 func (suite *ResolverTestSuite) TestResolveOptions_PreserveUserProvidedChild() {
-	suite.resolver.graph = graph.NewGraph[*types.Option]()
-
-	parentOption := &types.Option{Description: "Parent", Default: "new_parent_value"}
-	childOption := &types.Option{Description: "Child", Default: "child_default"}
-
-	suite.Require().NoError(suite.resolver.graph.AddNode("parent", parentOption))
-	suite.Require().NoError(suite.resolver.graph.AddNode("child", childOption))
-	suite.Require().NoError(suite.resolver.graph.AddEdge("parent", "child"))
+	suite.setupParentChildGraph()
 
 	existingValues := map[string]config.OptionValue{
 		"parent": {Value: "old_parent_value", UserProvided: true},

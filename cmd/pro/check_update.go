@@ -25,6 +25,8 @@ type CheckUpdateCmd struct {
 }
 
 // NewCheckUpdateCmd creates a new command.
+//
+//nolint:dupl // structurally similar to NewHealthCmd; intentional sibling factory
 func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CheckUpdateCmd{
 		GlobalFlags: globalFlags,
