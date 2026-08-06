@@ -36,12 +36,9 @@ func List(
 
 	proWorkspaces := []*providerpkg.Workspace{}
 	if !skipPro {
-		proWorkspaces, localWorkspaces, err = reconcileProWorkspaces(
+		proWorkspaces, localWorkspaces = reconcileProWorkspaces(
 			ctx, devsyConfig, localWorkspaces, owner,
 		)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return mergeWorkspaces(localWorkspaces, proWorkspaces), nil
@@ -52,11 +49,8 @@ func reconcileProWorkspaces(
 	devsyConfig *config.Config,
 	localWorkspaces []*providerpkg.Workspace,
 	owner platform.OwnerFilter,
-) ([]*providerpkg.Workspace, []*providerpkg.Workspace, error) {
-	proWorkspaceResults, err := listProWorkspaces(ctx, devsyConfig, owner)
-	if err != nil {
-		return nil, nil, err
-	}
+) ([]*providerpkg.Workspace, []*providerpkg.Workspace) {
+	proWorkspaceResults := listProWorkspaces(ctx, devsyConfig, owner)
 
 	proWorkspaces := []*providerpkg.Workspace{}
 	for _, result := range proWorkspaceResults {
@@ -76,7 +70,7 @@ func reconcileProWorkspaces(
 		cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspace)
 	}
 
-	return proWorkspaces, cleanedLocalWorkspaces, nil
+	return proWorkspaces, cleanedLocalWorkspaces
 }
 
 func deleteLocalWorkspace(devsyConfig *config.Config, localWorkspace *providerpkg.Workspace) {
@@ -186,7 +180,7 @@ func listProWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	owner platform.OwnerFilter,
-) (map[string]listProWorkspacesResult, error) {
+) map[string]listProWorkspacesResult {
 	results := map[string]listProWorkspacesResult{}
 
 	// lock around `results`
@@ -225,9 +219,9 @@ func listProWorkspaces(
 			}
 		})
 	}
-	wg.Wait()
 
-	return results, nil
+	wg.Wait()
+	return results
 }
 
 func listProWorkspacesForProvider(

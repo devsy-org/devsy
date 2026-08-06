@@ -36,7 +36,7 @@ var _ = ginkgo.Describe(
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir+"/bin", "docker")
+			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
 			framework.ExpectNoError(err)
 		})
 
@@ -199,7 +199,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			_, detail, err := tc.getAppContainer(ctx, workspace)
+			detail, err := tc.getAppContainer(ctx, workspace)
 			framework.ExpectNoError(err)
 			gomega.Expect(detail.Config.Entrypoint).
 				NotTo(gomega.ContainElement("bash"), "overrides container entry point")
@@ -336,7 +336,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			_, detail, err := tc.getAppContainer(ctx, workspace)
+			detail, err := tc.getAppContainer(ctx, workspace)
 			framework.ExpectNoError(err)
 			gomega.Expect(detail.HostConfig.Privileged).
 				To(gomega.BeTrue(), "container run with privileged true")
@@ -349,7 +349,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			_, detail, err := tc.getAppContainer(ctx, workspace)
+			detail, err := tc.getAppContainer(ctx, workspace)
 			framework.ExpectNoError(err)
 			gomega.Expect(detail.HostConfig.CapAdd).
 				To(gomega.Or(gomega.ContainElement("SYS_PTRACE"), gomega.ContainElement("CAP_SYS_PTRACE")),
@@ -366,7 +366,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			_, detail, err := tc.getAppContainer(ctx, workspace)
+			detail, err := tc.getAppContainer(ctx, workspace)
 			framework.ExpectNoError(err)
 			gomega.Expect(detail.HostConfig.SecurityOpt).
 				To(gomega.ContainElement("seccomp=unconfined"), "securityOpts contain seccomp=unconfined")
@@ -577,7 +577,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				btc.f, err = setupDockerProvider(
-					filepath.Join(btc.initialDir, "bin"), "docker",
+					filepath.Join(btc.initialDir, "bin"),
 				)
 				framework.ExpectNoError(err)
 			})

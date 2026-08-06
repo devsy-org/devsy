@@ -17,7 +17,7 @@ func Chown(path string, userName string) error {
 		return nil
 	}
 
-	uid, _ := parseUserSpec(userName)
+	uid := parseUserSpec(userName)
 	userID, err := lookupUser(uid)
 	if err != nil {
 		return fmt.Errorf("lookup user: %w", err)
@@ -33,7 +33,7 @@ func ChownR(path string, userName string) error {
 		return nil
 	}
 
-	uid, _ := parseUserSpec(userName)
+	uid := parseUserSpec(userName)
 	userID, err := lookupUser(uid)
 	if err != nil {
 		return fmt.Errorf("lookup user: %w", err)
@@ -215,10 +215,7 @@ func lookupUser(uid string) (*user.User, error) {
 	return userID, err
 }
 
-func parseUserSpec(userSpec string) (string, string) {
+func parseUserSpec(userSpec string) string {
 	parts := strings.SplitN(userSpec, ":", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return parts[0], ""
+	return parts[0]
 }

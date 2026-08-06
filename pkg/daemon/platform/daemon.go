@@ -60,10 +60,7 @@ func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
 		return nil, fmt.Errorf("create tailscale server: %w", err)
 	}
 
-	localServer, err := newLocalServer(lc, config.PlatformClient, config.Context)
-	if err != nil {
-		return nil, fmt.Errorf("create local server: %w", err)
-	}
+	localServer := newLocalServer(lc, config.PlatformClient, config.Context)
 
 	return &Daemon{
 		socketListener: socketListener,
