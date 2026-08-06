@@ -354,9 +354,10 @@ func (vc *versionChecker) buildExistsCheck(agentPath string) string {
 		agentPath, agentPath, vc.remoteVersion)
 }
 
+//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate
 func (vc *versionChecker) detectRemoteAgentVersion(
 	ctx context.Context,
-	exec inject.ExecFunc, //nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate to AgentDelivery
+	exec inject.ExecFunc,
 	agentPath string,
 ) (string, error) {
 	buf := &bytes.Buffer{}
