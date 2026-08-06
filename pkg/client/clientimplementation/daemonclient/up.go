@@ -357,7 +357,37 @@ func printLogs(
 	taskID string,
 	reporter status.Reporter,
 ) (int, error) {
-	// get logs reader
+	logsReader, err := openTaskLogsStream(ctx, managementClient, workspace, taskID)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = logsReader.Close() }()
+
+	scanner := newLogScanner(logsReader)
+
+	streams := newLogOutputStreams(reporter)
+	defer streams.Close()
+
+	exitCode, done, err := streamLogMessages(scanner, streams.stdout(), streams.stderrStreamer)
+	if done {
+		return exitCode, err
+	}
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return 0, nil
+		}
+		return -1, fmt.Errorf("logs reader error: %w", err)
+	}
+
+	return 0, nil
+}
+
+func openTaskLogsStream(
+	ctx context.Context,
+	managementClient kube.Interface,
+	workspace *managementv1.DevsyWorkspaceInstance,
+	taskID string,
+) (io.ReadCloser, error) {
 	log.Debugf("printing logs of task: %s", taskID)
 	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
@@ -370,12 +400,13 @@ func printLogs(
 		}, builders.ParameterCodec).
 		Stream(ctx)
 	if err != nil {
-		return -1, fmt.Errorf("error getting task logs: %w", err)
+		return nil, fmt.Errorf("error getting task logs: %w", err)
 	}
-	defer func() { _ = logsReader.Close() }()
+	return logsReader, nil
+}
 
-	// create scanner from logs reader
-	scanner := bufio.NewScanner(logsReader)
+func newLogScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
 
 	// Increase the maximum token size to handle very long lines.
 	// Here, we set a maximum capacity of 1MB.
@@ -383,48 +414,73 @@ func printLogs(
 	buf := make([]byte, 1024)       // starting buffer size of 1KB
 	scanner.Buffer(buf, maxCapacity)
 
-	// create json streamer
+	return scanner
+}
+
+// logOutputStreams bundles the stdout/stderr JSON streamers used to print
+// task logs, plus the status-sniffing writer wrapped around stdout.
+type logOutputStreams struct {
+	stdoutStreamer io.WriteCloser
+	stdoutDone     chan struct{}
+	stderrStreamer io.WriteCloser
+	stderrDone     chan struct{}
+	statusWriter   *statusSniffingWriter
+}
+
+func newLogOutputStreams(reporter status.Reporter) *logOutputStreams {
 	stdoutStreamer, stdoutDone := log.PipeJSONStream()
 	stderrStreamer, stderrDone := log.PipeJSONStream()
-	defer func() {
-		// close the streams
-		_ = stdoutStreamer.Close()
-		_ = stderrStreamer.Close()
-
-		// wait for the streams to be closed
-		<-stdoutDone
-		<-stderrDone
-	}()
 
 	// The remote task runs the same devsy CLI, so its stdout carries the
 	// same NDJSON status lines a local `up` does; sniff them out here.
 	statusWriter := newStatusSniffingWriter(stdoutStreamer, reporter)
-	defer func() { _ = statusWriter.Close() }()
-	stdout := io.Writer(statusWriter)
 
-	// loop over all lines
+	return &logOutputStreams{
+		stdoutStreamer: stdoutStreamer,
+		stdoutDone:     stdoutDone,
+		stderrStreamer: stderrStreamer,
+		stderrDone:     stderrDone,
+		statusWriter:   statusWriter,
+	}
+}
+
+func (s *logOutputStreams) stdout() io.Writer {
+	return s.statusWriter
+}
+
+func (s *logOutputStreams) Close() {
+	_ = s.statusWriter.Close()
+	_ = s.stdoutStreamer.Close()
+	_ = s.stderrStreamer.Close()
+	<-s.stdoutDone
+	<-s.stderrDone
+}
+
+// streamLogMessages reads NDJSON-encoded Message lines from scanner and
+// writes their payloads to stdout/stderr until an ExitCode message, a write
+// error, or EOF is reached. done reports whether the caller should return
+// immediately with (exitCode, err) rather than falling through to
+// scanner.Err().
+func streamLogMessages(scanner *bufio.Scanner, stdout, stderr io.Writer) (int, bool, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// parse message
 		message := &Message{}
 		if err := json.Unmarshal([]byte(line), message); err != nil {
-			return -1, fmt.Errorf("error parsing JSON from logs reader: %w, line: %s", err, line)
+			return -1, true, fmt.Errorf(
+				"error parsing JSON from logs reader: %w, line: %s",
+				err,
+				line,
+			)
 		}
 
-		exitCode, done, err := writeMessage(stdout, stderrStreamer, message)
+		exitCode, done, err := writeMessage(stdout, stderr, message)
 		if done {
-			return exitCode, err
+			return exitCode, true, err
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return 0, nil
-		}
-		return -1, fmt.Errorf("logs reader error: %w", err)
 	}
 
-	return 0, nil
+	return 0, false, nil
 }
 
 func writeMessage(stdout, stderr io.Writer, message *Message) (int, bool, error) {

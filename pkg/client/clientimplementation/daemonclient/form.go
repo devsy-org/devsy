@@ -29,19 +29,58 @@ func createInstanceInteractive(
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
+	selectedProject, selectedCluster, selectedTemplate, selectedTemplateVersion, err := selectProjectClusterTemplate(
+		ctx,
+		formCtx,
+		baseClient,
+		cancelForm,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	renderedParameters, err := resolveNewInstanceParameters(
+		formCtx,
+		selectedTemplate,
+		selectedTemplateVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildNewInstance(
+		id,
+		uid,
+		source,
+		picture,
+		selectedProject,
+		selectedCluster,
+		selectedTemplate,
+		selectedTemplateVersion,
+		renderedParameters,
+	), nil
+}
+
+func selectProjectClusterTemplate(
+	ctx, formCtx context.Context,
+	baseClient platformclient.Client,
+	cancelForm CancelFunc,
+) (*managementv1.Project, *managementv1.Cluster, *managementv1.DevsyWorkspaceTemplate, string, error) {
 	var selectedCluster *managementv1.Cluster
 	var selectedProject *managementv1.Project
 	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
 	selectedTemplateVersion := ""
-	projectOptions, err := projectOptions(ctx, baseClient)
+
+	options, err := projectOptions(ctx, baseClient)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, "", err
 	}
+
 	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[*managementv1.Project]().
 				Title("Project").
-				Options(projectOptions...).
+				Options(options...).
 				Value(&selectedProject),
 			huh.NewSelect[*managementv1.Cluster]().
 				Title("Cluster").
@@ -66,34 +105,47 @@ func createInstanceInteractive(
 		),
 	).RunWithContext(formCtx)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, "", err
 	}
 
+	return selectedProject, selectedCluster, selectedTemplate, selectedTemplateVersion, nil
+}
+
+func resolveNewInstanceParameters(
+	formCtx context.Context,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion string,
+) (string, error) {
 	parameters := selectedTemplate.Spec.Parameters
 	if len(selectedTemplate.GetVersions()) > 0 {
+		var err error
 		parameters, err = list.GetTemplateParameters(selectedTemplate, selectedTemplateVersion)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 	}
-
-	renderedParameters := ""
-	if len(parameters) > 0 {
-		fieldParameters := prepareParameters(parameters)
-		err = huh.NewForm(
-			huh.NewGroup(parameterFields(fieldParameters)...),
-		).RunWithContext(formCtx)
-		if err != nil {
-			return nil, err
-		}
-
-		renderedParameters, err = renderParameters(fieldParameters)
-		if err != nil {
-			return nil, err
-		}
+	if len(parameters) == 0 {
+		return "", nil
 	}
 
-	instance := &managementv1.DevsyWorkspaceInstance{
+	fieldParameters := prepareParameters(parameters)
+	if err := huh.NewForm(
+		huh.NewGroup(parameterFields(fieldParameters)...),
+	).RunWithContext(formCtx); err != nil {
+		return "", err
+	}
+
+	return renderParameters(fieldParameters)
+}
+
+func buildNewInstance(
+	id, uid, source, picture string,
+	selectedProject *managementv1.Project,
+	selectedCluster *managementv1.Cluster,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion, renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
+	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: encoding.SafeConcatNameMax([]string{id}, 53) + "-",
 			Namespace:    project.ProjectNamespace(selectedProject.GetName()),
@@ -123,8 +175,6 @@ func createInstanceInteractive(
 			},
 		},
 	}
-
-	return instance, nil
 }
 
 func updateInstanceInteractive(

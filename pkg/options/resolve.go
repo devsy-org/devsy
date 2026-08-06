@@ -198,28 +198,48 @@ func ResolveOptions(
 		return nil, err
 	}
 
-	// save options in dev config
-	if devConfig != nil {
-		devConfig = config.CloneConfig(devConfig)
-		if devConfig.Current().Providers == nil {
-			devConfig.Current().Providers = map[string]*config.ProviderConfig{}
-		}
-		if devConfig.Current().Providers[providerConfig.Name] == nil {
-			devConfig.Current().Providers[providerConfig.Name] = &config.ProviderConfig{}
-		}
-
-		providerCfg := devConfig.Current().Providers[providerConfig.Name]
-		providerCfg.Options = map[string]config.OptionValue{}
-		maps.Copy(providerCfg.Options, resolvedOptionValues)
-
-		providerCfg.DynamicOptions = config.OptionDefinitions{}
-		maps.Copy(providerCfg.DynamicOptions, dynamicOptionDefinitions)
-		if singleMachine != nil {
-			providerCfg.SingleMachine = *singleMachine
-		}
+	if devConfig == nil {
+		return devConfig, nil
 	}
 
-	return devConfig, nil
+	return applyResolvedProviderOptions(
+		devConfig,
+		providerConfig.Name,
+		resolvedOptionValues,
+		dynamicOptionDefinitions,
+		singleMachine,
+	), nil
+}
+
+// applyResolvedProviderOptions clones devConfig and records the resolved
+// option values, dynamic option definitions, and single-machine setting for
+// the given provider.
+func applyResolvedProviderOptions(
+	devConfig *config.Config,
+	providerName string,
+	resolvedOptionValues map[string]config.OptionValue,
+	dynamicOptionDefinitions config.OptionDefinitions,
+	singleMachine *bool,
+) *config.Config {
+	devConfig = config.CloneConfig(devConfig)
+	if devConfig.Current().Providers == nil {
+		devConfig.Current().Providers = map[string]*config.ProviderConfig{}
+	}
+	if devConfig.Current().Providers[providerName] == nil {
+		devConfig.Current().Providers[providerName] = &config.ProviderConfig{}
+	}
+
+	providerCfg := devConfig.Current().Providers[providerName]
+	providerCfg.Options = map[string]config.OptionValue{}
+	maps.Copy(providerCfg.Options, resolvedOptionValues)
+
+	providerCfg.DynamicOptions = config.OptionDefinitions{}
+	maps.Copy(providerCfg.DynamicOptions, dynamicOptionDefinitions)
+	if singleMachine != nil {
+		providerCfg.SingleMachine = *singleMachine
+	}
+
+	return devConfig
 }
 
 // ResolveAgentConfig resolves and returns the complete agent configuration for a provider.

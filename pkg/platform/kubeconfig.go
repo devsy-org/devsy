@@ -131,75 +131,126 @@ func kubeConfigForSpaceInstance(
 
 	// direct cluster access?
 	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
-		tok := &managementv1.DirectClusterEndpointToken{
-			Spec: managementv1.DirectClusterEndpointTokenSpec{
-				Scope: scope,
-				TTL:   ttl,
-			},
-		}
-		directClusterEndpointToken, err := managementClient.Loft().
-			ManagementV1().
-			DirectClusterEndpointTokens().
-			Create(ctx, tok, metav1.CreateOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
-		}
-
-		directClusterEndpoint := hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
-		host := fmt.Sprintf(
-			"https://%s/kubernetes/project/%s/space/%s",
-			directClusterEndpoint,
-			projectName,
-			spaceInstance.Name,
-		)
-
-		return newKubeConfig(
-			host,
-			directClusterEndpointToken.Status.Token,
-			spaceInstance.Spec.ClusterRef.Namespace,
-			true,
-		), nil
+		return directClusterEndpointKubeConfigForSpace(directClusterEndpointForSpaceParams{
+			ctx:              ctx,
+			managementClient: managementClient,
+			scope:            scope,
+			ttl:              ttl,
+			hostCluster:      hostCluster,
+			projectName:      projectName,
+			spaceInstance:    spaceInstance,
+		})
 	}
 
 	// access through management cluster + access key
-	key := &managementv1.OwnedAccessKey{
-		Spec: managementv1.OwnedAccessKeySpec{
-			AccessKeySpec: storagev1.AccessKeySpec{
-				User:  baseClient.Self().Status.User.Name,
-				Scope: scope,
-				TTL:   ttl,
-				DisplayName: fmt.Sprintf(
-					"Kube Config for Space %s/%s",
-					spaceInstance.Namespace,
-					spaceInstance.Name,
-				),
-			},
+	return kubeConfigViaAccessKey(accessKeyKubeConfigParams{
+		ctx:              ctx,
+		baseClient:       baseClient,
+		managementClient: managementClient,
+		scope:            scope,
+		ttl:              ttl,
+		displayName: fmt.Sprintf(
+			"Kube Config for Space %s/%s",
+			spaceInstance.Namespace,
+			spaceInstance.Name,
+		),
+		resourceType:        "space",
+		projectName:         projectName,
+		resourceName:        spaceInstance.Name,
+		clusterRefNamespace: spaceInstance.Spec.ClusterRef.Namespace,
+	})
+}
+
+type directClusterEndpointForSpaceParams struct {
+	ctx              context.Context
+	managementClient kube.Interface
+	scope            *storagev1.AccessKeyScope
+	ttl              int64
+	hostCluster      managementv1.Cluster
+	projectName      string
+	spaceInstance    *managementv1.SpaceInstance
+}
+
+func directClusterEndpointKubeConfigForSpace(
+	p directClusterEndpointForSpaceParams,
+) (*clientcmdapi.Config, error) {
+	tok := &managementv1.DirectClusterEndpointToken{
+		Spec: managementv1.DirectClusterEndpointTokenSpec{
+			Scope: p.scope,
+			TTL:   p.ttl,
 		},
 	}
-	ownedAccessKey, err := managementClient.Loft().
+	directClusterEndpointToken, err := p.managementClient.Loft().
 		ManagementV1().
-		OwnedAccessKeys().
-		Create(ctx, key, metav1.CreateOptions{})
+		DirectClusterEndpointTokens().
+		Create(p.ctx, tok, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("create access key: %w", err)
+		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
 	}
-	hostName := strings.TrimPrefix(
-		strings.TrimPrefix(baseClient.Config().Host, "https://"),
-		"https://",
-	)
+
+	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
 	host := fmt.Sprintf(
 		"https://%s/kubernetes/project/%s/space/%s",
-		hostName,
-		projectName,
-		spaceInstance.Name,
+		directClusterEndpoint,
+		p.projectName,
+		p.spaceInstance.Name,
 	)
 
 	return newKubeConfig(
 		host,
-		ownedAccessKey.Spec.Key,
-		spaceInstance.Spec.ClusterRef.Namespace,
+		directClusterEndpointToken.Status.Token,
+		p.spaceInstance.Spec.ClusterRef.Namespace,
 		true,
 	), nil
+}
+
+type accessKeyKubeConfigParams struct {
+	ctx                 context.Context
+	baseClient          client.Client
+	managementClient    kube.Interface
+	scope               *storagev1.AccessKeyScope
+	ttl                 int64
+	displayName         string
+	resourceType        string
+	projectName         string
+	resourceName        string
+	clusterRefNamespace string
+}
+
+// kubeConfigViaAccessKey builds a kube config authenticated via a
+// management-cluster-scoped OwnedAccessKey, used when no direct cluster
+// endpoint is available.
+func kubeConfigViaAccessKey(p accessKeyKubeConfigParams) (*clientcmdapi.Config, error) {
+	key := &managementv1.OwnedAccessKey{
+		Spec: managementv1.OwnedAccessKeySpec{
+			AccessKeySpec: storagev1.AccessKeySpec{
+				User:        p.baseClient.Self().Status.User.Name,
+				Scope:       p.scope,
+				TTL:         p.ttl,
+				DisplayName: p.displayName,
+			},
+		},
+	}
+	ownedAccessKey, err := p.managementClient.Loft().
+		ManagementV1().
+		OwnedAccessKeys().
+		Create(p.ctx, key, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("create access key: %w", err)
+	}
+	hostName := strings.TrimPrefix(
+		strings.TrimPrefix(p.baseClient.Config().Host, "https://"),
+		"https://",
+	)
+	host := fmt.Sprintf(
+		"https://%s/kubernetes/project/%s/%s/%s",
+		hostName,
+		p.projectName,
+		p.resourceType,
+		p.resourceName,
+	)
+
+	return newKubeConfig(host, ownedAccessKey.Spec.Key, p.clusterRefNamespace, true), nil
 }
 
 func kubeConfigForVirtualClusterInstance(
@@ -222,13 +273,60 @@ func kubeConfigForVirtualClusterInstance(
 		return nil, fmt.Errorf("get virtual cluster instance: %w", err)
 	}
 
+	req := newVClusterKubeConfigRequest(
+		ctx,
+		managementClient,
+		namespace,
+		projectName,
+		virtualClusterInstance,
+	)
+
+	cfg, handled, err := directVirtualClusterKubeConfig(
+		ctx,
+		baseClient,
+		projectName,
+		virtualClusterInstance,
+		req,
+	)
+	if handled || err != nil {
+		return cfg, err
+	}
+
+	// access through management cluster + access key
+	return kubeConfigViaAccessKey(accessKeyKubeConfigParams{
+		ctx:              ctx,
+		baseClient:       baseClient,
+		managementClient: managementClient,
+		scope:            req.scope,
+		ttl:              req.ttl,
+		displayName: fmt.Sprintf(
+			"Kube Config for Virtual Cluster %s/%s",
+			virtualClusterInstance.Namespace,
+			virtualClusterInstance.Name,
+		),
+		resourceType:        "virtualcluster",
+		projectName:         projectName,
+		resourceName:        virtualClusterInstance.Name,
+		clusterRefNamespace: virtualClusterInstance.Spec.ClusterRef.Namespace,
+	})
+}
+
+// newVClusterKubeConfigRequest builds the scoped request shared by the
+// direct-ingress, direct-cluster-endpoint, and access-key kube config paths.
+func newVClusterKubeConfigRequest(
+	ctx context.Context,
+	managementClient kube.Interface,
+	namespace, projectName string,
+	virtualClusterInstance *managementv1.VirtualClusterInstance,
+) vClusterKubeConfigRequest {
 	scope := &storagev1.AccessKeyScope{
 		VirtualClusters: []storagev1.AccessKeyScopeVirtualCluster{{
 			Project:        projectName,
 			VirtualCluster: virtualClusterInstance.Name,
 		}},
 	}
-	req := vClusterKubeConfigRequest{
+
+	return vClusterKubeConfigRequest{
 		ctx:              ctx,
 		managementClient: managementClient,
 		namespace:        namespace,
@@ -237,11 +335,24 @@ func kubeConfigForVirtualClusterInstance(
 		ttl:              int64(configTTL.Seconds()),
 		instance:         virtualClusterInstance,
 	}
+}
 
+// directVirtualClusterKubeConfig resolves a kube config via direct ingress
+// or a direct cluster endpoint, if either is available for this virtual
+// cluster. handled reports whether one of those paths applied; if not, the
+// caller should fall back to access-key-based config.
+func directVirtualClusterKubeConfig(
+	ctx context.Context,
+	baseClient client.Client,
+	projectName string,
+	virtualClusterInstance *managementv1.VirtualClusterInstance,
+	req vClusterKubeConfigRequest,
+) (cfg *clientcmdapi.Config, handled bool, err error) {
 	// direct virtual cluster ingress access?
 	virtualCluster := virtualClusterInstance.Status.VirtualCluster
 	if virtualCluster != nil && virtualCluster.AccessPoint.Ingress.Enabled {
-		return directIngressKubeConfig(req)
+		cfg, err = directIngressKubeConfig(req)
+		return cfg, true, err
 	}
 
 	// find cluster by clusterRef
@@ -252,53 +363,16 @@ func kubeConfigForVirtualClusterInstance(
 		virtualClusterInstance.Spec.ClusterRef.ClusterRef,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("find host cluster: %w", err)
+		return nil, true, fmt.Errorf("find host cluster: %w", err)
 	}
 
 	// direct cluster access?
 	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
-		return directClusterEndpointKubeConfig(req, hostCluster)
+		cfg, err = directClusterEndpointKubeConfig(req, hostCluster)
+		return cfg, true, err
 	}
 
-	// access through management cluster + access key
-	key := &managementv1.OwnedAccessKey{
-		Spec: managementv1.OwnedAccessKeySpec{
-			AccessKeySpec: storagev1.AccessKeySpec{
-				User:  baseClient.Self().Status.User.Name,
-				Scope: scope,
-				TTL:   req.ttl,
-				DisplayName: fmt.Sprintf(
-					"Kube Config for Virtual Cluster %s/%s",
-					virtualClusterInstance.Namespace,
-					virtualClusterInstance.Name,
-				),
-			},
-		},
-	}
-	ownedAccessKey, err := managementClient.Loft().
-		ManagementV1().
-		OwnedAccessKeys().
-		Create(ctx, key, metav1.CreateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("create access key: %w", err)
-	}
-	hostName := strings.TrimPrefix(
-		strings.TrimPrefix(baseClient.Config().Host, "https://"),
-		"https://",
-	)
-	host := fmt.Sprintf(
-		"https://%s/kubernetes/project/%s/virtualcluster/%s",
-		hostName,
-		projectName,
-		virtualClusterInstance.Name,
-	)
-
-	return newKubeConfig(
-		host,
-		ownedAccessKey.Spec.Key,
-		virtualClusterInstance.Spec.ClusterRef.Namespace,
-		true,
-	), nil
+	return nil, false, nil
 }
 
 type vClusterKubeConfigRequest struct {

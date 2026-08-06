@@ -125,28 +125,73 @@ func (r *runner) buildAndExtendDockerCompose(
 	if err != nil {
 		return composeExtendResult{}, err
 	}
-	extendImageBuildInfo := prepared.extendImageBuildInfo
 
-	buildImageName, err := composeBuildImageName(
-		params.composeHelper,
-		params.project.Name,
-		params.composeService,
-		hasFeatureBuildInfo(extendImageBuildInfo),
-	)
-	if err != nil {
-		return composeExtendResult{}, err
-	}
-
-	dockerComposeFilePath, cleanup, err := r.composeFeatureOverride(
+	buildImageName, dockerComposeFilePath, cleanup, err := r.resolveComposeBuildTarget(
 		prepared,
-		params.composeService,
-		buildImageName,
+		params,
 	)
 	defer cleanup()
 	if err != nil {
 		return composeExtendResult{buildImageName: buildImageName}, err
 	}
 
+	if err := r.runComposeExtendedBuild(ctx, params, dockerComposeFilePath); err != nil {
+		return composeExtendResult{buildImageName: buildImageName}, err
+	}
+
+	imageMetadata, err := metadata.GetDevContainerMetadata(
+		params.substitutionContext,
+		prepared.imageBuildInfo.Metadata,
+		params.parsedConfig,
+		prepared.extendImageBuildInfo.Features,
+	)
+	if err != nil {
+		return composeExtendResult{buildImageName: buildImageName}, err
+	}
+
+	return composeExtendResult{
+		buildImageName:       buildImageName,
+		composeBuildFilePath: dockerComposeFilePath,
+		imageMetadata:        imageMetadata,
+		metadataLabel:        prepared.extendImageBuildInfo.MetadataLabel,
+	}, nil
+}
+
+// resolveComposeBuildTarget determines the image name to build and, when the
+// build has features, writes the feature override compose file to build
+// against. The returned cleanup func is always non-nil and safe to defer.
+func (r *runner) resolveComposeBuildTarget(
+	prepared preparedComposeBuild,
+	params *buildAndExtendParams,
+) (buildImageName string, dockerComposeFilePath string, cleanup func(), err error) {
+	cleanup = func() {}
+
+	buildImageName, err = composeBuildImageName(
+		params.composeHelper,
+		params.project.Name,
+		params.composeService,
+		hasFeatureBuildInfo(prepared.extendImageBuildInfo),
+	)
+	if err != nil {
+		return buildImageName, "", cleanup, err
+	}
+
+	dockerComposeFilePath, cleanup, err = r.composeFeatureOverride(
+		prepared,
+		params.composeService,
+		buildImageName,
+	)
+	return buildImageName, dockerComposeFilePath, cleanup, err
+}
+
+// runComposeExtendedBuild assembles the compose build arguments and runs
+// "docker compose ... build" against the (possibly feature-extended) compose
+// override file.
+func (r *runner) runComposeExtendedBuild(
+	ctx context.Context,
+	params *buildAndExtendParams,
+	dockerComposeFilePath string,
+) error {
 	buildArgs := composeBuildArgs(&composeBuildArgsParams{
 		projectName:             params.project.Name,
 		globalArgs:              params.globalArgs,
@@ -157,26 +202,7 @@ func (r *runner) buildAndExtendDockerCompose(
 		runServices:             params.parsedConfig.Config.RunServices,
 	})
 
-	if err := r.runComposeBuild(ctx, params.composeHelper, buildArgs); err != nil {
-		return composeExtendResult{buildImageName: buildImageName}, err
-	}
-
-	imageMetadata, err := metadata.GetDevContainerMetadata(
-		params.substitutionContext,
-		prepared.imageBuildInfo.Metadata,
-		params.parsedConfig,
-		extendImageBuildInfo.Features,
-	)
-	if err != nil {
-		return composeExtendResult{buildImageName: buildImageName}, err
-	}
-
-	return composeExtendResult{
-		buildImageName:       buildImageName,
-		composeBuildFilePath: dockerComposeFilePath,
-		imageMetadata:        imageMetadata,
-		metadataLabel:        extendImageBuildInfo.MetadataLabel,
-	}, nil
+	return r.runComposeBuild(ctx, params.composeHelper, buildArgs)
 }
 
 // composeFeatureOverride builds the feature override compose file when the build
