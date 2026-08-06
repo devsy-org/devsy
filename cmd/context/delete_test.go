@@ -33,7 +33,10 @@ func TestDeleteCmd_RemovesContextDirFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(contextDir, "workspaces", "some-workspace"), 0o755); err != nil {
+	if err := os.MkdirAll(
+		filepath.Join(contextDir, "workspaces", "some-workspace"),
+		0o750,
+	); err != nil {
 		t.Fatal(err)
 	}
 

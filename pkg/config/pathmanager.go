@@ -58,7 +58,8 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 //	CacheDir()                              (default $HOME/.cache/devsy, or $DEVSY_HOME/cache when set)
 //	├── agents/, providers/, features/<hash>/, platform/, keys/
 //	StateDir()                              (default under DataDir()/state)
-//	RuntimeDir()                            (default under DataDir()/run on darwin, OS temp dir on linux; see pathmanager_darwin.go / pathmanager_linux.go)
+//	RuntimeDir()                            (default under DataDir()/run on darwin,
+//	                                         OS temp dir on linux; see pathmanager_darwin.go / pathmanager_linux.go)
 type PathManager interface {
 	// Top-level XDG category directories.
 	ConfigDir() (string, error)

@@ -115,7 +115,11 @@ func TestCandidateAgentDirs_HonorsDevsyHomeOverride(t *testing.T) {
 		if realHome != "" && realHome != home {
 			unwanted := filepath.Join(realHome, config.ConfigDirName, "agent")
 			if d == unwanted {
-				t.Fatalf("candidateAgentDirs() included raw-home candidate %q while DEVSY_HOME=%q was set", unwanted, home)
+				t.Fatalf(
+					"candidateAgentDirs() included raw-home candidate %q while DEVSY_HOME=%q was set",
+					unwanted,
+					home,
+				)
 			}
 		}
 	}

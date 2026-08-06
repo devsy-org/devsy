@@ -13,11 +13,12 @@ func TestDeleteCmd_RemovesMachineDirFromDisk(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(pkgconfig.EnvHome, home)
 
-	machineDir, err := pkgconfig.DefaultPathManager().MachineDir(pkgconfig.DefaultContext, "test-machine")
+	machineDir, err := pkgconfig.DefaultPathManager().
+		MachineDir(pkgconfig.DefaultContext, "test-machine")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(machineDir, 0o755); err != nil {
+	if err := os.MkdirAll(machineDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 

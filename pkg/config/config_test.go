@@ -13,7 +13,11 @@ func TestLoadConfig_StampsCurrentSchemaVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.SchemaVersion != CurrentSchemaVersion {
-		t.Fatalf("SchemaVersion = %d, want %d (a freshly created config must be stamped)", cfg.SchemaVersion, CurrentSchemaVersion)
+		t.Fatalf(
+			"SchemaVersion = %d, want %d (a freshly created config must be stamped)",
+			cfg.SchemaVersion,
+			CurrentSchemaVersion,
+		)
 	}
 
 	if err := SaveConfig(cfg); err != nil {
@@ -25,7 +29,11 @@ func TestLoadConfig_StampsCurrentSchemaVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reloaded.SchemaVersion != CurrentSchemaVersion {
-		t.Fatalf("reloaded SchemaVersion = %d, want %d", reloaded.SchemaVersion, CurrentSchemaVersion)
+		t.Fatalf(
+			"reloaded SchemaVersion = %d, want %d",
+			reloaded.SchemaVersion,
+			CurrentSchemaVersion,
+		)
 	}
 }
 
@@ -36,7 +44,12 @@ func TestLoadConfig_StampsMissingSchemaVersionOnExistingConfig(t *testing.T) {
 	t.Setenv(EnvHome, home)
 
 	// Simulate a pre-existing config.yaml written before this field existed.
-	if err := SaveConfig(&Config{DefaultContext: DefaultContext, Contexts: map[string]*ContextConfig{DefaultContext: {}}}); err != nil {
+	if err := SaveConfig(
+		&Config{
+			DefaultContext: DefaultContext,
+			Contexts:       map[string]*ContextConfig{DefaultContext: {}},
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,6 +58,10 @@ func TestLoadConfig_StampsMissingSchemaVersionOnExistingConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.SchemaVersion != CurrentSchemaVersion {
-		t.Fatalf("SchemaVersion = %d, want %d (an unstamped config loaded today must be treated as current)", cfg.SchemaVersion, CurrentSchemaVersion)
+		t.Fatalf(
+			"SchemaVersion = %d, want %d (an unstamped config loaded today must be treated as current)",
+			cfg.SchemaVersion,
+			CurrentSchemaVersion,
+		)
 	}
 }
