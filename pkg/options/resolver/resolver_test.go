@@ -214,20 +214,6 @@ func (suite *ResolverTestSuite) TestResolveOptions_ExpiredCache() {
 	suite.Equal("new_default", result["cached_option"].Value)
 }
 
-// setupParentChildGraph creates a resolver graph with a "parent" option that
-// has a "child" option depending on it, used by tests that verify
-// user-provided-value precedence during resolution.
-func (suite *ResolverTestSuite) setupParentChildGraph() {
-	suite.resolver.graph = graph.NewGraph[*types.Option]()
-
-	parentOption := &types.Option{Description: "Parent", Default: "new_parent_value"}
-	childOption := &types.Option{Description: "Child", Default: "child_default"}
-
-	suite.Require().NoError(suite.resolver.graph.AddNode("parent", parentOption))
-	suite.Require().NoError(suite.resolver.graph.AddNode("child", childOption))
-	suite.Require().NoError(suite.resolver.graph.AddEdge("parent", "child"))
-}
-
 func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchanged() {
 	suite.setupParentChildGraph()
 
@@ -320,4 +306,18 @@ func (suite *ResolverTestSuite) TestAddOptionsToGraph_MultipleCalls() {
 
 	nodes := g.GetNodes()
 	suite.Len(nodes, 2, "Multiple calls to addOptionsToGraph should not duplicate nodes.")
+}
+
+// setupParentChildGraph creates a resolver graph with a "parent" option that
+// has a "child" option depending on it, used by tests that verify
+// user-provided-value precedence during resolution.
+func (suite *ResolverTestSuite) setupParentChildGraph() {
+	suite.resolver.graph = graph.NewGraph[*types.Option]()
+
+	parentOption := &types.Option{Description: "Parent", Default: "new_parent_value"}
+	childOption := &types.Option{Description: "Child", Default: "child_default"}
+
+	suite.Require().NoError(suite.resolver.graph.AddNode("parent", parentOption))
+	suite.Require().NoError(suite.resolver.graph.AddNode("child", childOption))
+	suite.Require().NoError(suite.resolver.graph.AddEdge("parent", "child"))
 }

@@ -11,18 +11,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/remotecommand"
 )
 
+type dialAndExecuteParams struct {
+	configPath string
+	action     string
+	envFlags   url.Values
+	stdin      io.Reader
+	stdout     io.Writer
+	stderr     io.Writer
+}
+
 // dialAndExecute finds the current workspace, dials the given sub-resource
 // action on it, and streams the resulting connection through stdin/stdout/stderr.
-func dialAndExecute(
-	ctx context.Context,
-	configPath string,
-	action string,
-	envFlags url.Values,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	baseClient, err := client.InitClientFromPath(ctx, configPath)
+func dialAndExecute(ctx context.Context, params dialAndExecuteParams) error {
+	baseClient, err := client.InitClientFromPath(ctx, params.configPath)
 	if err != nil {
 		return err
 	}
@@ -39,12 +40,12 @@ func dialAndExecute(
 		return fmt.Errorf("couldn't find workspace")
 	}
 
-	conn, err := platform.DialInstance(baseClient, workspace, action, envFlags)
+	conn, err := platform.DialInstance(baseClient, workspace, params.action, params.envFlags)
 	if err != nil {
 		return err
 	}
 
-	_, err = remotecommand.ExecuteConn(ctx, conn, stdin, stdout, stderr)
+	_, err = remotecommand.ExecuteConn(ctx, conn, params.stdin, params.stdout, params.stderr)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
 	}

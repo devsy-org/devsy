@@ -1,3 +1,4 @@
+//nolint:dupl // structurally similar to stop.go; intentional sibling command sharing dialAndExecute
 package provider
 
 import (
@@ -40,13 +41,12 @@ func (cmd *SshCmd) Run(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	return dialAndExecute(
-		ctx,
-		cmd.Config,
-		"ssh",
-		platform.OptionsFromEnv(config.EnvFlagsSSH),
-		stdin,
-		stdout,
-		stderr,
-	)
+	return dialAndExecute(ctx, dialAndExecuteParams{
+		configPath: cmd.Config,
+		action:     "ssh",
+		envFlags:   platform.OptionsFromEnv(config.EnvFlagsSSH),
+		stdin:      stdin,
+		stdout:     stdout,
+		stderr:     stderr,
+	})
 }
