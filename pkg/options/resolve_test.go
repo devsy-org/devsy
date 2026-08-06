@@ -31,632 +31,632 @@ type testCase struct {
 	ExpectedDynamicOptions config.OptionDefinitions
 }
 
-func TestResolveOptions(t *testing.T) {
-	testCases := []testCase{
-		{
-			Name: "simple",
-			ExtraValues: map[string]string{
-				"WORKSPACE_ID": "test",
-			},
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "${WORKSPACE_ID}-test",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST": "test-test",
+var resolveOptionsTestCases = []testCase{
+	{
+		Name: "simple",
+		ExtraValues: map[string]string{
+			"WORKSPACE_ID": "test",
+		},
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "${WORKSPACE_ID}-test",
 			},
 		},
-		{
-			Name: "dependency",
-			ExtraValues: map[string]string{
-				"WORKSPACE_ID": "test",
+		ExpectedOptions: map[string]string{
+			"TEST": "test-test",
+		},
+	},
+	{
+		Name: "dependency",
+		ExtraValues: map[string]string{
+			"WORKSPACE_ID": "test",
+		},
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "${WORKSPACE_ID}-test-${COMMAND}-$COMMAND",
 			},
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "${WORKSPACE_ID}-test-${COMMAND}-$COMMAND",
-				},
-				"COMMAND": {
-					Command: "echo bar",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":    "test-test-bar-bar",
-				"COMMAND": "bar",
+			"COMMAND": {
+				Command: "echo bar",
 			},
 		},
-		{
-			Name: "No extra values",
-			ProviderOptions: map[string]*types.Option{
-				"COMMAND1": {
-					Command: "echo ${COMMAND2}-test",
-				},
-				"COMMAND2": {
-					Command: "echo bar",
-				},
+		ExpectedOptions: map[string]string{
+			"TEST":    "test-test-bar-bar",
+			"COMMAND": "bar",
+		},
+	},
+	{
+		Name: "No extra values",
+		ProviderOptions: map[string]*types.Option{
+			"COMMAND1": {
+				Command: "echo ${COMMAND2}-test",
 			},
-			ExpectedOptions: map[string]string{
-				"COMMAND1": "bar-test",
-				"COMMAND2": "bar",
+			"COMMAND2": {
+				Command: "echo bar",
 			},
 		},
-		{
-			Name: "Cyclic dep",
-			ProviderOptions: map[string]*types.Option{
-				"COMMAND1": {
-					Command: "echo ${COMMAND2}",
-				},
-				"COMMAND2": {
-					Command: "echo ${COMMAND1}",
-				},
-			},
-			ExpectErr: true,
+		ExpectedOptions: map[string]string{
+			"COMMAND1": "bar-test",
+			"COMMAND2": "bar",
 		},
-		{
-			Name: "Override",
-			ResolvedValues: map[string]config.OptionValue{
-				"COMMAND": {
-					Value:        "foo",
-					UserProvided: true,
-				},
+	},
+	{
+		Name: "Cyclic dep",
+		ProviderOptions: map[string]*types.Option{
+			"COMMAND1": {
+				Command: "echo ${COMMAND2}",
 			},
-			ProviderOptions: map[string]*types.Option{
-				"COMMAND": {
-					Command: "echo bar",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"COMMAND": "foo",
+			"COMMAND2": {
+				Command: "echo ${COMMAND1}",
 			},
 		},
-		{
-			Name: "Override",
-			ResolvedValues: map[string]config.OptionValue{
-				"COMMAND": {
-					Value:        "foo",
-					UserProvided: true,
-				},
-			},
-			ProviderOptions: map[string]*types.Option{
-				"COMMAND": {
-					Command: "echo bar",
-				},
-				"COMMAND1": {
-					Command: "echo ${COMMAND}-foo-${UNDEFINED}",
-				},
-				"DEFAULT1": {
-					Default: "${COMMAND}-foo-${UNDEFINED}",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"COMMAND":  "foo",
-				"COMMAND1": "foo-foo-",
-				"DEFAULT1": "foo-foo-${UNDEFINED}",
+		ExpectErr: true,
+	},
+	{
+		Name: "Override",
+		ResolvedValues: map[string]config.OptionValue{
+			"COMMAND": {
+				Value:        "foo",
+				UserProvided: true,
 			},
 		},
-		{
-			Name: "Expire",
-			ResolvedValues: map[string]config.OptionValue{
-				"EXPIRE": {
-					Value:  "foo",
-					Filled: &[]types.Time{types.NewTime(time.Time{})}[0],
-				},
-				"NOTEXPIRE": {
-					Value:  "foo",
-					Filled: &[]types.Time{types.Now()}[0],
-				},
-			},
-			ProviderOptions: map[string]*types.Option{
-				"EXPIRE": {
-					Command: "echo bar",
-					Cache:   "10m",
-				},
-				"NOTEXPIRE": {
-					Command: "echo bar",
-					Cache:   "10m",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"EXPIRE":    "bar",
-				"NOTEXPIRE": "foo",
+		ProviderOptions: map[string]*types.Option{
+			"COMMAND": {
+				Command: "echo bar",
 			},
 		},
-		{
-			Name: "Ignore self",
-			ProviderOptions: map[string]*types.Option{
-				"SELF": {
-					Command: "SELF=test; echo ${SELF}",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"SELF": "test",
+		ExpectedOptions: map[string]string{
+			"COMMAND": "foo",
+		},
+	},
+	{
+		Name: "Override",
+		ResolvedValues: map[string]config.OptionValue{
+			"COMMAND": {
+				Value:        "foo",
+				UserProvided: true,
 			},
 		},
-		{
-			Name: "Recompute children",
-			UserValues: map[string]string{
-				"PARENT": "foo",
+		ProviderOptions: map[string]*types.Option{
+			"COMMAND": {
+				Command: "echo bar",
 			},
-			ResolvedValues: map[string]config.OptionValue{
-				"PARENT": {
-					Value:        "test",
-					UserProvided: true,
-				},
-				"CHILD1": {
-					Value: "test-child1",
-				},
-				"CHILD2": {
-					Value: "test-child2",
-				},
+			"COMMAND1": {
+				Command: "echo ${COMMAND}-foo-${UNDEFINED}",
 			},
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {},
-				"CHILD1": {
-					Command: "echo ${PARENT}-child1",
-				},
-				"CHILD2": {
-					Default: "${PARENT}-child2",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"PARENT": "foo",
-				"CHILD1": "foo-child1",
-				"CHILD2": "foo-child2",
+			"DEFAULT1": {
+				Default: "${COMMAND}-foo-${UNDEFINED}",
 			},
 		},
-		{
-			Name: "Error local global",
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {
-					Default: "test",
-				},
-				"CHILD1": {
-					Global:  true,
-					Default: "${PARENT}",
-				},
-			},
-			ExpectErr: true,
+		ExpectedOptions: map[string]string{
+			"COMMAND":  "foo",
+			"COMMAND1": "foo-foo-",
+			"DEFAULT1": "foo-foo-${UNDEFINED}",
 		},
-		{
-			Name: "Error local var",
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {
-					Local:   true,
-					Default: "test",
-				},
-				"CHILD1": {
-					Default: "${PARENT}",
-				},
+	},
+	{
+		Name: "Expire",
+		ResolvedValues: map[string]config.OptionValue{
+			"EXPIRE": {
+				Value:  "foo",
+				Filled: &[]types.Time{types.NewTime(time.Time{})}[0],
 			},
-			ExpectErr: true,
-		},
-		{
-			Name: "Don't resolve local",
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {
-					Default: "test",
-				},
-				"CHILD1": {
-					Default: "${PARENT}",
-					Local:   true,
-				},
-			},
-			DontResolveLocal: true,
-			ExpectedOptions: map[string]string{
-				"PARENT": "test",
+			"NOTEXPIRE": {
+				Value:  "foo",
+				Filled: &[]types.Time{types.Now()}[0],
 			},
 		},
-		{
-			Name: "Resolve",
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {
-					Default: "test",
-				},
-				"CHILD1": {
-					Default: "${PARENT}",
-				},
+		ProviderOptions: map[string]*types.Option{
+			"EXPIRE": {
+				Command: "echo bar",
+				Cache:   "10m",
 			},
-			DontResolveLocal: true,
-			ExpectedOptions: map[string]string{
-				"PARENT": "test",
-				"CHILD1": "test",
+			"NOTEXPIRE": {
+				Command: "echo bar",
+				Cache:   "10m",
 			},
 		},
-		{
-			Name: "Skip Required",
-			ProviderOptions: map[string]*types.Option{
-				"PARENT": {
-					Required: true,
-				},
-				"CHILD1": {
-					Default: "${PARENT}",
-				},
-				"PARENT2": {
-					Required: true,
-					Default:  "test",
-				},
-				"CHILD2": {
-					Default: "${PARENT2}",
-				},
-			},
-			SkipRequired: true,
-			ExpectedOptions: map[string]string{
-				"PARENT2": "test",
-				"CHILD2":  "test",
+		ExpectedOptions: map[string]string{
+			"EXPIRE":    "bar",
+			"NOTEXPIRE": "foo",
+		},
+	},
+	{
+		Name: "Ignore self",
+		ProviderOptions: map[string]*types.Option{
+			"SELF": {
+				Command: "SELF=test; echo ${SELF}",
 			},
 		},
-		{
-			Name: "Nested dynamic options",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test2",
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		ExpectedOptions: map[string]string{
+			"SELF": "test",
+		},
+	},
+	{
+		Name: "Recompute children",
+		UserValues: map[string]string{
+			"PARENT": "foo",
+		},
+		ResolvedValues: map[string]config.OptionValue{
+			"PARENT": {
+				Value:        "test",
+				UserProvided: true,
 			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test",
-				"TEST2": "test2",
-				"FOO":   "bar",
+			"CHILD1": {
+				Value: "test-child1",
 			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Default: "test2",
-				},
+			"CHILD2": {
+				Value: "test-child2",
 			},
 		},
-		{
-			Name: "Dynamic options don't update",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test2",
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {},
+			"CHILD1": {
+				Command: "echo ${PARENT}-child1",
 			},
-			ResolvedDynamicDefinitions: map[string]*types.Option{
-				"TEST2": {
-					Default: "test5",
-				},
-			},
-			ResolvedValues: map[string]config.OptionValue{
-				"TEST":  {Value: "test3", Children: []string{"TEST2"}, UserProvided: true},
-				"TEST2": {Value: "test4", UserProvided: true},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test3",
-				"TEST2": "test4",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": {
-					Default: "test2",
-				},
+			"CHILD2": {
+				Default: "${PARENT}-child2",
 			},
 		},
-		{
-			Name: "Dynamic options update",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST3": &types.Option{
-							Default: "test2",
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		ExpectedOptions: map[string]string{
+			"PARENT": "foo",
+			"CHILD1": "foo-child1",
+			"CHILD2": "foo-child2",
+		},
+	},
+	{
+		Name: "Error local global",
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {
+				Default: "test",
 			},
-			UserValues: map[string]string{
-				"TEST": "test1",
-			},
-			ResolvedValues: map[string]config.OptionValue{
-				"TEST":  {Value: "test3", Children: []string{"TEST2"}},
-				"TEST2": {Value: "test4"},
-			},
-			ResolvedDynamicDefinitions: map[string]*types.Option{
-				"TEST2": {
-					Default: "test5",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST3": "test2",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST3": &types.Option{
-					Default: "test2",
-				},
+			"CHILD1": {
+				Global:  true,
+				Default: "${PARENT}",
 			},
 		},
-		{
-			Name: "Nested dynamic options",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test2",
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST3": &types.Option{
-									Default: "test3",
-									SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-										"TEST4": &types.Option{
-											Default: "${TEST3}-${FOO}-4",
-										},
-									}),
-								},
-							}),
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		ExpectErr: true,
+	},
+	{
+		Name: "Error local var",
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {
+				Local:   true,
+				Default: "test",
 			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST2": "test2",
-				"TEST3": "test3",
-				"TEST4": "test3-bar-4",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Default: "test2",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST3": &types.Option{
-							Default: "test3",
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST4": &types.Option{
-									Default: "${TEST3}-${FOO}-4",
-								},
-							}),
-						},
-					}),
-				},
-				"TEST3": &types.Option{
-					Default: "test3",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST4": &types.Option{
-							Default: "${TEST3}-${FOO}-4",
-						},
-					}),
-				},
-				"TEST4": &types.Option{
-					Default: "${TEST3}-${FOO}-4",
-				},
+			"CHILD1": {
+				Default: "${PARENT}",
 			},
 		},
-		{
-			Name: "Nested dynamic options skip required",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Required: true,
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST3": &types.Option{
-									Default: "test3",
-									SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-										"TEST4": &types.Option{
-											Default: "${TEST3}-${FOO}-4",
-										},
-									}),
-								},
-							}),
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		ExpectErr: true,
+	},
+	{
+		Name: "Don't resolve local",
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {
+				Default: "test",
 			},
-			SkipRequired: true,
-			ExpectedOptions: map[string]string{
-				"TEST": "test1",
-				"FOO":  "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Required: true,
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST3": &types.Option{
-							Default: "test3",
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST4": &types.Option{
-									Default: "${TEST3}-${FOO}-4",
-								},
-							}),
-						},
-					}),
-				},
+			"CHILD1": {
+				Default: "${PARENT}",
+				Local:   true,
 			},
 		},
-		{
-			Name: "Nested dynamic options use option",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Required: true,
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST3": &types.Option{
-									Default: "test3",
-									SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-										"TEST4": &types.Option{
-											Default: "${TEST2}-${FOO}-4",
-										},
-									}),
-								},
-							}),
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		DontResolveLocal: true,
+		ExpectedOptions: map[string]string{
+			"PARENT": "test",
+		},
+	},
+	{
+		Name: "Resolve",
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {
+				Default: "test",
 			},
-			SkipRequired: true,
-			UserValues: map[string]string{
-				"TEST2": "test2",
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST2": "test2",
-				"TEST3": "test3",
-				"TEST4": "test2-bar-4",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Required: true,
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST3": &types.Option{
-							Default: "test3",
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST4": &types.Option{
-									Default: "${TEST2}-${FOO}-4",
-								},
-							}),
-						},
-					}),
-				},
-				"TEST3": &types.Option{
-					Default: "test3",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST4": &types.Option{
-							Default: "${TEST2}-${FOO}-4",
-						},
-					}),
-				},
-				"TEST4": &types.Option{
-					Default: "${TEST2}-${FOO}-4",
-				},
+			"CHILD1": {
+				Default: "${PARENT}",
 			},
 		},
-		{
-			Name: "Nested dynamic options use option",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test2",
-							SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-								"TEST3": &types.Option{
-									Default: "test3",
-								},
-							}),
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		DontResolveLocal: true,
+		ExpectedOptions: map[string]string{
+			"PARENT": "test",
+			"CHILD1": "test",
+		},
+	},
+	{
+		Name: "Skip Required",
+		ProviderOptions: map[string]*types.Option{
+			"PARENT": {
+				Required: true,
 			},
-			ResolvedValues: map[string]config.OptionValue{
-				"TEST5": {
-					Value: "test5",
-				},
+			"CHILD1": {
+				Default: "${PARENT}",
 			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST2": "test2",
-				"TEST3": "test3",
-				"FOO":   "bar",
+			"PARENT2": {
+				Required: true,
+				Default:  "test",
 			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Default: "test2",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST3": &types.Option{
-							Default: "test3",
-						},
-					}),
-				},
-				"TEST3": &types.Option{
-					Default: "test3",
-				},
+			"CHILD2": {
+				Default: "${PARENT2}",
 			},
 		},
-		{
-			Name: "Dynamic options unused option",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test2",
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+		SkipRequired: true,
+		ExpectedOptions: map[string]string{
+			"PARENT2": "test",
+			"CHILD2":  "test",
+		},
+	},
+	{
+		Name: "Nested dynamic options",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test2",
+					},
+				}),
 			},
-			ResolvedValues: map[string]config.OptionValue{
-				"TEST5": {
-					Value: "test5",
-				},
-			},
-			ResolvedDynamicDefinitions: map[string]*types.Option{
-				"TEST5": {
-					Default: "test2",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST2": "test2",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Default: "test2",
-				},
+			"FOO": {Command: "echo bar"},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test",
+			"TEST2": "test2",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Default: "test2",
 			},
 		},
-		{
-			Name: "Dynamic options update default",
-			ProviderOptions: map[string]*types.Option{
-				"TEST": {
-					Default: "test1",
-					SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
-						"TEST2": &types.Option{
-							Default: "test3",
-						},
-					}),
-				},
-				"FOO": {Command: "echo bar"},
+	},
+	{
+		Name: "Dynamic options don't update",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test2",
+					},
+				}),
 			},
-			ResolvedValues: map[string]config.OptionValue{
-				"TEST": {
-					Value: "test1",
-				},
-				"TEST2": {
-					Value: "test2",
-				},
-			},
-			ResolvedDynamicDefinitions: map[string]*types.Option{
-				"TEST2": {
-					Default: "test2",
-				},
-			},
-			ExpectedOptions: map[string]string{
-				"TEST":  "test1",
-				"TEST2": "test3",
-				"FOO":   "bar",
-			},
-			ExpectedDynamicOptions: config.OptionDefinitions{
-				"TEST2": &types.Option{
-					Default: "test3",
-				},
+			"FOO": {Command: "echo bar"},
+		},
+		ResolvedDynamicDefinitions: map[string]*types.Option{
+			"TEST2": {
+				Default: "test5",
 			},
 		},
-	}
+		ResolvedValues: map[string]config.OptionValue{
+			"TEST":  {Value: "test3", Children: []string{"TEST2"}, UserProvided: true},
+			"TEST2": {Value: "test4", UserProvided: true},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test3",
+			"TEST2": "test4",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": {
+				Default: "test2",
+			},
+		},
+	},
+	{
+		Name: "Dynamic options update",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST3": &types.Option{
+						Default: "test2",
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		UserValues: map[string]string{
+			"TEST": "test1",
+		},
+		ResolvedValues: map[string]config.OptionValue{
+			"TEST":  {Value: "test3", Children: []string{"TEST2"}},
+			"TEST2": {Value: "test4"},
+		},
+		ResolvedDynamicDefinitions: map[string]*types.Option{
+			"TEST2": {
+				Default: "test5",
+			},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST3": "test2",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST3": &types.Option{
+				Default: "test2",
+			},
+		},
+	},
+	{
+		Name: "Nested dynamic options",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test2",
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST3": &types.Option{
+								Default: "test3",
+								SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+									"TEST4": &types.Option{
+										Default: "${TEST3}-${FOO}-4",
+									},
+								}),
+							},
+						}),
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST2": "test2",
+			"TEST3": "test3",
+			"TEST4": "test3-bar-4",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Default: "test2",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST3": &types.Option{
+						Default: "test3",
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST4": &types.Option{
+								Default: "${TEST3}-${FOO}-4",
+							},
+						}),
+					},
+				}),
+			},
+			"TEST3": &types.Option{
+				Default: "test3",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST4": &types.Option{
+						Default: "${TEST3}-${FOO}-4",
+					},
+				}),
+			},
+			"TEST4": &types.Option{
+				Default: "${TEST3}-${FOO}-4",
+			},
+		},
+	},
+	{
+		Name: "Nested dynamic options skip required",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Required: true,
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST3": &types.Option{
+								Default: "test3",
+								SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+									"TEST4": &types.Option{
+										Default: "${TEST3}-${FOO}-4",
+									},
+								}),
+							},
+						}),
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		SkipRequired: true,
+		ExpectedOptions: map[string]string{
+			"TEST": "test1",
+			"FOO":  "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Required: true,
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST3": &types.Option{
+						Default: "test3",
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST4": &types.Option{
+								Default: "${TEST3}-${FOO}-4",
+							},
+						}),
+					},
+				}),
+			},
+		},
+	},
+	{
+		Name: "Nested dynamic options use option",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Required: true,
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST3": &types.Option{
+								Default: "test3",
+								SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+									"TEST4": &types.Option{
+										Default: "${TEST2}-${FOO}-4",
+									},
+								}),
+							},
+						}),
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		SkipRequired: true,
+		UserValues: map[string]string{
+			"TEST2": "test2",
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST2": "test2",
+			"TEST3": "test3",
+			"TEST4": "test2-bar-4",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Required: true,
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST3": &types.Option{
+						Default: "test3",
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST4": &types.Option{
+								Default: "${TEST2}-${FOO}-4",
+							},
+						}),
+					},
+				}),
+			},
+			"TEST3": &types.Option{
+				Default: "test3",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST4": &types.Option{
+						Default: "${TEST2}-${FOO}-4",
+					},
+				}),
+			},
+			"TEST4": &types.Option{
+				Default: "${TEST2}-${FOO}-4",
+			},
+		},
+	},
+	{
+		Name: "Nested dynamic options use option",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test2",
+						SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+							"TEST3": &types.Option{
+								Default: "test3",
+							},
+						}),
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		ResolvedValues: map[string]config.OptionValue{
+			"TEST5": {
+				Value: "test5",
+			},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST2": "test2",
+			"TEST3": "test3",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Default: "test2",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST3": &types.Option{
+						Default: "test3",
+					},
+				}),
+			},
+			"TEST3": &types.Option{
+				Default: "test3",
+			},
+		},
+	},
+	{
+		Name: "Dynamic options unused option",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test2",
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		ResolvedValues: map[string]config.OptionValue{
+			"TEST5": {
+				Value: "test5",
+			},
+		},
+		ResolvedDynamicDefinitions: map[string]*types.Option{
+			"TEST5": {
+				Default: "test2",
+			},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST2": "test2",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Default: "test2",
+			},
+		},
+	},
+	{
+		Name: "Dynamic options update default",
+		ProviderOptions: map[string]*types.Option{
+			"TEST": {
+				Default: "test1",
+				SubOptionsCommand: optionsToSubCommand(config.OptionDefinitions{
+					"TEST2": &types.Option{
+						Default: "test3",
+					},
+				}),
+			},
+			"FOO": {Command: "echo bar"},
+		},
+		ResolvedValues: map[string]config.OptionValue{
+			"TEST": {
+				Value: "test1",
+			},
+			"TEST2": {
+				Value: "test2",
+			},
+		},
+		ResolvedDynamicDefinitions: map[string]*types.Option{
+			"TEST2": {
+				Default: "test2",
+			},
+		},
+		ExpectedOptions: map[string]string{
+			"TEST":  "test1",
+			"TEST2": "test3",
+			"FOO":   "bar",
+		},
+		ExpectedDynamicOptions: config.OptionDefinitions{
+			"TEST2": &types.Option{
+				Default: "test3",
+			},
+		},
+	},
+}
 
-	for _, tc := range testCases {
+func TestResolveOptions(t *testing.T) {
+	for _, tc := range resolveOptionsTestCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			runResolveTestCase(t, tc)
 		})
