@@ -458,29 +458,56 @@ func ResolvePortAttribute(
 		if attr, ok := portsAttrs[portStr]; ok {
 			return attr
 		}
-		keys := make([]string, 0, len(portsAttrs))
-		for key := range portsAttrs {
-			keys = append(keys, key)
+		keys := sortedPortAttrKeys(portsAttrs)
+		if attr, ok := findPortRangeMatch(keys, portsAttrs, port); ok {
+			return attr
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if matchPortRange(key, port) {
-				return portsAttrs[key]
-			}
-		}
-		for _, key := range keys {
-			if exactOrRangeKeyPattern.MatchString(key) {
-				continue
-			}
-			if matchPortRegex(key, portStr) {
-				return portsAttrs[key]
-			}
+		if attr, ok := findPortRegexMatch(keys, portsAttrs, portStr); ok {
+			return attr
 		}
 	}
 	if fallback != nil {
 		return *fallback
 	}
 	return PortAttribute{}
+}
+
+func sortedPortAttrKeys(portsAttrs map[string]PortAttribute) []string {
+	keys := make([]string, 0, len(portsAttrs))
+	for key := range portsAttrs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func findPortRangeMatch(
+	keys []string,
+	portsAttrs map[string]PortAttribute,
+	port int,
+) (PortAttribute, bool) {
+	for _, key := range keys {
+		if matchPortRange(key, port) {
+			return portsAttrs[key], true
+		}
+	}
+	return PortAttribute{}, false
+}
+
+func findPortRegexMatch(
+	keys []string,
+	portsAttrs map[string]PortAttribute,
+	portStr string,
+) (PortAttribute, bool) {
+	for _, key := range keys {
+		if exactOrRangeKeyPattern.MatchString(key) {
+			continue
+		}
+		if matchPortRegex(key, portStr) {
+			return portsAttrs[key], true
+		}
+	}
+	return PortAttribute{}, false
 }
 
 // ShouldAutoForward returns true if the port attribute allows auto-forwarding.
