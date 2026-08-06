@@ -326,9 +326,6 @@ func (s *WorkspaceServer) gitCredentialsHandler(
 		return
 	}
 
-	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
-	// forced to parsedURL rather than joined with the inbound path, matching
-	// the previous Director's behavior.
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			dest := *parsedURL
@@ -372,9 +369,6 @@ func (s *WorkspaceServer) dockerCredentialsHandler(
 		return
 	}
 
-	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
-	// forced to parsedURL rather than joined with the inbound path, matching
-	// the previous Director's behavior.
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			dest := *parsedURL
@@ -419,9 +413,6 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 	parsedURL.Host = "127.0.0.1:" + targetPort
 	log.Debugf("httpPortForwardHandler: final target URL=%s", parsedURL.String())
 
-	// Build the reverse proxy with Rewrite (Director is deprecated); dest is
-	// forced to parsedURL rather than joined with the inbound path, matching
-	// the previous Director's behavior.
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			dest := *parsedURL
@@ -444,9 +435,7 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 	proxy.ServeHTTP(w, r)
 }
 
-// addForwardedFor sets X-Forwarded-For on the outbound proxy request,
-// replicating the behavior ReverseProxy applies automatically when using
-// the deprecated Director field but not when using Rewrite.
+// addForwardedFor sets X-Forwarded-For on the outbound proxy request.
 func addForwardedFor(pr *httputil.ProxyRequest) {
 	clientIP, _, err := net.SplitHostPort(pr.In.RemoteAddr)
 	if err != nil {
