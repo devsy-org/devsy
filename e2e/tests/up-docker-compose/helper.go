@@ -110,13 +110,12 @@ func (tc *testContext) setupAndStartWorkspace(
 func (tc *testContext) getAppContainer(
 	ctx context.Context,
 	workspace *provider2.Workspace,
-) ([]string, *container.InspectResponse, error) {
+) (*container.InspectResponse, error) {
 	ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app")
-	if err != nil || len(ids) == 0 {
-		return ids, nil, err
+	if err != nil {
+		return nil, err
 	}
-	detail, err := tc.inspectContainer(ctx, ids)
-	return ids, detail, err
+	return tc.inspectContainer(ctx, ids)
 }
 
 func (tc *testContext) findAppAndSidecar(
@@ -158,7 +157,7 @@ func (tc *testContext) verifyWorkspaceMount(
 	workspace *provider2.Workspace,
 	tempDir string,
 ) error {
-	_, detail, err := tc.getAppContainer(ctx, workspace)
+	detail, err := tc.getAppContainer(ctx, workspace)
 	if err != nil {
 		return err
 	}
@@ -183,8 +182,8 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
+func setupDockerProvider(binDir string) (*framework.Framework, error) {
+	return framework.SetupDockerProvider(binDir, "docker")
 }
 
 func findComposeContainer(

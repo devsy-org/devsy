@@ -72,11 +72,7 @@ func BootstrapCLI(cmd *cobra.Command) CLICollector {
 		return &noopCollector{}
 	}
 
-	collector, err := newCLICollector(cmd)
-	if err != nil {
-		log.Infof("telemetry: %s", err.Error())
-		return &noopCollector{}
-	}
+	collector := newCLICollector(cmd)
 	return collector
 }
 
@@ -91,13 +87,11 @@ func ApplyCLIConfig(devsyConfig *config.Config, current CLICollector) CLICollect
 	return current
 }
 
-func newCLICollector(cmd *cobra.Command) (*cliCollector, error) {
-	defaultCollector := &cliCollector{
+func newCLICollector(cmd *cobra.Command) *cliCollector {
+	return &cliCollector{
 		analyticsClient: analytics.NewClient(),
 		cmd:             cmd,
 	}
-
-	return defaultCollector, nil
 }
 
 type cliCollector struct {

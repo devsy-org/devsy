@@ -143,10 +143,7 @@ func (k *KubernetesDriver) buildPod(
 		return nil, err
 	}
 
-	initContainers, err := k.getInitContainers(options, pod, initialize)
-	if err != nil {
-		return nil, fmt.Errorf("build init container: %w", err)
-	}
+	initContainers := k.getInitContainers(options, pod, initialize)
 
 	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
 	capabilities := buildCapabilities(options.CapAdd)
