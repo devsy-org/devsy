@@ -109,11 +109,11 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 	_, err = tunnelserver.ReportResult(
 		ctx,
 		tunnelClient,
-		func(_ context.Context) (*config.Result, error) {
-			if err := cmd.prepareWorkspace(ctx, state); err != nil {
+		func(reportCtx context.Context) (*config.Result, error) {
+			if err := cmd.prepareWorkspace(reportCtx, state); err != nil {
 				return nil, err
 			}
-			if err := cmd.finalizeSetup(ctx, state); err != nil {
+			if err := cmd.finalizeSetup(reportCtx, state); err != nil {
 				return nil, err
 			}
 			return state.setupInfo, nil
