@@ -441,7 +441,7 @@ func addForwardedFor(pr *httputil.ProxyRequest) {
 	if err != nil {
 		return
 	}
-	prior, ok := pr.Out.Header["X-Forwarded-For"]
+	prior, ok := pr.In.Header["X-Forwarded-For"]
 	omit := ok && prior == nil
 	if len(prior) > 0 {
 		clientIP = strings.Join(prior, ", ") + ", " + clientIP
