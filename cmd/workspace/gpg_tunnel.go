@@ -255,21 +255,19 @@ func (t *gpgTunnel) signalReadyOnce() {
 	t.readySignaled = signalGPGForwardReady()
 }
 
-// signalGPGForwardReady is a no-op unless this process was spawned by
-// pkg/gpg.ForwardAgent, which is the only caller that sets ForwardReadyFDEnv.
 func signalGPGForwardReady() bool {
-	fdStr := os.Getenv(gpg.ForwardReadyFDEnv)
+	fdStr := os.Getenv(gpg.EnvForwardReadyFD)
 	if fdStr == "" {
 		return false
 	}
 	fd, err := strconv.Atoi(fdStr)
 	if err != nil {
-		log.Debugf("invalid %s=%q: %v", gpg.ForwardReadyFDEnv, fdStr, err)
+		log.Debugf("invalid %s=%q: %v", gpg.EnvForwardReadyFD, fdStr, err)
 		return false
 	}
 	f := os.NewFile(uintptr(fd), "gpg-forward-ready")
 	if f == nil {
-		log.Debugf("invalid %s=%q: file descriptor is not open", gpg.ForwardReadyFDEnv, fdStr)
+		log.Debugf("invalid %s=%q: file descriptor is not open", gpg.EnvForwardReadyFD, fdStr)
 		return false
 	}
 	if _, err := f.Write([]byte{1}); err != nil {
