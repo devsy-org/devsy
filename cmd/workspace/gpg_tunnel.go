@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,13 @@ type gpgTunnel struct {
 	// failureReported prevents a repeated OSC 9977 notification while the
 	// tunnel stays down across health-check ticks.
 	failureReported bool
+
+	// readySignaled prevents signaling gpg forward readiness more than once.
+	readySignaled bool
+
+	// readyFile retains the *os.File wrapping the readiness fd across failed
+	// write attempts, preventing premature finalization/closure of the fd.
+	readyFile *os.File
 }
 
 // newGPGTunnel reports whether GPG-agent forwarding was requested via flag
@@ -93,27 +101,26 @@ func (t *gpgTunnel) run(ctx context.Context, sshClient *ssh.Client) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			t.ensure(ctx, sshClient)
+			if t.ensure(ctx, sshClient) {
+				t.signalReadyOnce()
+			}
 		}
 	}
 }
 
 // ensure checks whether the GPG tunnel is currently live and, if not,
-// (re-)establishes it. A setup failure is only reported if the tunnel is
-// still down immediately after: a concurrent terminal may have won the bind
-// race in the interim, which is not a real failure. The OSC failure
-// notification fires only on the healthy-to-failed transition, not on
-// every health-check tick.
-func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
+// (re-)establishes it. It reports whether the tunnel is live when it
+// returns.
+func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
 		log.Debugf("GPG tunnel is running, skipping setup")
 		t.failureReported = false
-		return
+		return true
 	}
 	err := t.setup(ctx, sshClient)
 	if err == nil {
 		t.failureReported = false
-		return
+		return true
 	}
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
 		log.Debugf(
@@ -121,24 +128,20 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) {
 			err,
 		)
 		t.failureReported = false
-		return
+		return true
 	}
 	if ctx.Err() != nil {
-		// ctx was cancelled (session ending); the failure above is an
-		// artifact of that, not a real forwarding problem worth reporting.
 		log.Debugf("GPG tunnel setup aborted by context cancellation: %v", err)
-		return
+		return false
 	}
 	log.Warnf("GPG agent forwarding failed (continuing without it): %v", err)
 	if t.failureReported {
-		return
+		return false
 	}
 	t.failureReported = true
-	// The desktop toast gets a fixed, concise reason rather than err.Error():
-	// the underlying error can wrap remote SSH exit output, which isn't
-	// something to surface verbatim in the UI. Full detail stays in the log
-	// line above (visible with --debug).
+	// Emit OSC code for UI to detect.
 	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
+	return false
 }
 
 // setup runs the remote setup-gpg command, which imports the host's owner trust
@@ -246,6 +249,43 @@ func (t *gpgTunnel) ensureForwardBound(
 	return nil
 }
 
+// signalReadyOnce signals gpg forward readiness at most once per gpgTunnel:
+// once the write actually succeeds, so a later health-check retry that also
+// succeeds does not write the readiness byte again.
+func (t *gpgTunnel) signalReadyOnce() {
+	if t.readySignaled {
+		return
+	}
+	t.readySignaled = t.signalGPGForwardReady()
+}
+
+func (t *gpgTunnel) signalGPGForwardReady() bool {
+	fdStr := os.Getenv(gpg.EnvForwardReadyFD)
+	if fdStr == "" {
+		return false
+	}
+	fd, err := strconv.Atoi(fdStr)
+	if err != nil {
+		log.Debugf("invalid %s=%q: %v", gpg.EnvForwardReadyFD, fdStr, err)
+		return false
+	}
+	if t.readyFile == nil {
+		t.readyFile = os.NewFile(uintptr(fd), "gpg-forward-ready")
+		if t.readyFile == nil {
+			log.Debugf("invalid %s=%q: file descriptor is not open", gpg.EnvForwardReadyFD, fdStr)
+			return false
+		}
+	}
+	if _, err := t.readyFile.Write([]byte{1}); err != nil {
+		log.Debugf("signal gpg forward ready: %v", err)
+		// the fd may still be usable for a later retry
+		return false
+	}
+	_ = t.readyFile.Close()
+	t.readyFile = nil
+	return true
+}
+
 // runGPGTunnelInBackground runs the tunnel's first setup synchronously, so
 // the SSH command that follows does not race a still-forwarding gpg-agent,
 // then starts t.run's periodic health-check loop in a goroutine tied to a
@@ -259,8 +299,8 @@ func runGPGTunnelInBackground(
 	t *gpgTunnel,
 	sshClient *ssh.Client,
 ) (wait func()) {
-	if t.enabled {
-		t.ensure(ctx, sshClient)
+	if t.enabled && t.ensure(ctx, sshClient) {
+		t.signalReadyOnce()
 	}
 
 	tunnelCtx, cancel := context.WithCancel(ctx)
