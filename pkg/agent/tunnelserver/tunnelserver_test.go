@@ -128,9 +128,6 @@ func TestRunWithResult_CancelAfterResult(t *testing.T) {
 	require.Same(t, want, result)
 }
 
-// TestRunWithResult_ConcurrentSendResult exercises SendResult's write racing
-// against RunWithResult's read under -race, guarding the getResult/setResult
-// mutex added to fix that unsynchronized access.
 func TestRunWithResult_ConcurrentSendResult(t *testing.T) {
 	srv := New()
 

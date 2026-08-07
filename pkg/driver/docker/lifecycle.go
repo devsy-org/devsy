@@ -49,8 +49,6 @@ func (d *dockerDriver) CommandDevContainer(
 		Stderr: params.Stderr,
 	})
 	if err != nil {
-		// A signal-killed exit looks identical whether it's from ctx
-		// cancellation or something else; attach ctx.Err() to disambiguate.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("run command in container: %w: %w", ctxErr, err)
 		}
