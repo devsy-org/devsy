@@ -154,8 +154,10 @@ func (t *tunnelServer) RunWithResult(
 		}
 		return nil, err
 	case <-ctx.Done():
-		// Only mask cancellation as success if a result already arrived;
-		// otherwise report ctx.Err() instead of a misleading (nil, nil).
+		// Every RunWithResult caller (up, build, setup) always sends a result
+		// over SendResult before its remote process exits, success or
+		// failure, so cancellation before one ever arrived means the run was
+		// cut short. Don't mask that as (nil, nil); report why.
 		if result := t.getResult(); result != nil {
 			return result, nil
 		}
@@ -163,8 +165,16 @@ func (t *tunnelServer) RunWithResult(
 	}
 }
 
+// Run adapts RunWithResult for callers with no result to report (e.g. the
+// long-lived services tunnel providing port forwarding/credentials): unlike
+// RunWithResult's callers, there's no explicit completion signal to wait for
+// here, so the caller's own cancellation is how this normally ends, not a
+// failure.
 func (t *tunnelServer) Run(ctx context.Context, reader io.Reader, writer io.WriteCloser) error {
 	_, err := t.RunWithResult(ctx, reader, writer)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
 	return err
 }
 

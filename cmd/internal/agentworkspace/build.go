@@ -7,7 +7,9 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -65,7 +67,7 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	// initialize the workspace
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	_, credentialsDir, err := initWorkspace(cancelCtx, initWorkspaceParams{
+	tunnelClient, credentialsDir, err := initWorkspace(cancelCtx, initWorkspaceParams{
 		workspaceInfo:       workspaceInfo,
 		debug:               cmd.Debug,
 		shouldInstallDaemon: false,
@@ -83,7 +85,14 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	return buildAndPushImages(ctx, runner, workspaceInfo)
+	_, err = tunnelserver.ReportResult(
+		ctx,
+		tunnelClient,
+		func(ctx context.Context) (*config2.Result, error) {
+			return nil, buildAndPushImages(ctx, runner, workspaceInfo)
+		},
+	)
+	return err
 }
 
 func buildAndPushImages(

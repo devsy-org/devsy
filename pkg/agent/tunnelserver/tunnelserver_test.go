@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -90,7 +89,23 @@ func TestRunWithResult_CancelBeforeResult(t *testing.T) {
 
 	result, err := srv.RunWithResult(ctx, reader, writer)
 	require.Nil(t, result)
-	require.True(t, errors.Is(err, context.Canceled), "got: %v", err)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRun_CancelBeforeResultIsExpected(t *testing.T) {
+	srv := New()
+
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	require.NoError(t, srv.Run(ctx, reader, writer))
 }
 
 func TestRunWithResult_CancelAfterResult(t *testing.T) {
