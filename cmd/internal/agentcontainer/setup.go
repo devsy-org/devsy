@@ -106,11 +106,20 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		tunnelClient:  tunnelClient,
 	}
 
-	if err := cmd.prepareWorkspace(ctx, state); err != nil {
-		return err
-	}
-
-	return cmd.finalizeSetup(ctx, state)
+	_, err = tunnelserver.ReportResult(
+		ctx,
+		tunnelClient,
+		func(_ context.Context) (*config.Result, error) {
+			if err := cmd.prepareWorkspace(ctx, state); err != nil {
+				return nil, err
+			}
+			if err := cmd.finalizeSetup(ctx, state); err != nil {
+				return nil, err
+			}
+			return state.setupInfo, nil
+		},
+	)
+	return err
 }
 
 func (cmd *SetupContainerCmd) registerFlags(setupContainerCmd *cobra.Command) {
@@ -262,7 +271,7 @@ func fetchSecrets(
 func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, state *containerState) error {
 	secretsEnv, secretsMount, err := fetchSecrets(ctx, state.tunnelClient)
 	if err != nil {
-		return cmd.reportSetupFailure(ctx, state, err)
+		return err
 	}
 	state.secretsEnv = secretsEnv
 
@@ -288,35 +297,16 @@ func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, state *containe
 
 	deferred, err := setup.SetupContainerPreAttach(ctx, cfg)
 	if err != nil {
-		return cmd.reportSetupFailure(ctx, state, err)
+		return err
 	}
 
 	if !cmd.Prebuild {
 		if err := cmd.setupPostAttach(state, deferred); err != nil {
-			return cmd.reportSetupFailure(ctx, state, err)
+			return err
 		}
 	}
 
-	return cmd.sendSetupResult(ctx, state.setupInfo, state.tunnelClient)
-}
-
-// reportSetupFailure forwards a structured error result through the tunnel
-// before returning the original error. Without this, the outer agent only
-// sees the SSH exit code and the underlying cause (e.g. an IDE install
-// failure) gets lost to a generic wrapper on the host side.
-func (cmd *SetupContainerCmd) reportSetupFailure(
-	ctx context.Context,
-	state *containerState,
-	cause error,
-) error {
-	errResult := &config.Result{Error: cause.Error()}
-	if sendErr := cmd.sendSetupResult(ctx, errResult, state.tunnelClient); sendErr != nil {
-		// Failure-on-failure: the host will see only the SSH exit code, so
-		// log the original cause alongside the send failure to leave a
-		// breadcrumb for debugging.
-		log.Errorf("failed to forward setup error %q to host: %v", cause, sendErr)
-	}
-	return cause
+	return nil
 }
 
 func (cmd *SetupContainerCmd) setupPostAttach(
@@ -649,23 +639,6 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(state *containerState) error 
 
 		return execCmd, nil
 	})
-}
-
-func (cmd *SetupContainerCmd) sendSetupResult(
-	ctx context.Context,
-	setupInfo *config.Result,
-	tunnelClient tunnel.TunnelClient,
-) error {
-	out, err := json.Marshal(setupInfo)
-	if err != nil {
-		return fmt.Errorf("marshal setup info: %w", err)
-	}
-
-	if _, err := tunnelClient.SendResult(ctx, &tunnel.Message{Message: string(out)}); err != nil {
-		return fmt.Errorf("send result: %w", err)
-	}
-
-	return nil
 }
 
 func fillContainerEnv(setupInfo *config.Result) error {

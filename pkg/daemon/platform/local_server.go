@@ -88,7 +88,7 @@ func newLocalServer(
 	lc *local.Client,
 	pc platformclient.Client,
 	devsyContext string,
-) (*localServer, error) {
+) *localServer {
 	l := &localServer{
 		lc:             lc,
 		pc:             pc,
@@ -124,7 +124,7 @@ func newLocalServer(
 	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
 	l.httpServer = &http.Server{Handler: handler}
 
-	return l, nil
+	return l
 }
 
 type panicLogger struct{}
@@ -137,8 +137,8 @@ func (l *localServer) ListenAndServe() error {
 	errChan := make(chan error, 1)
 	go func() {
 		log.Info("Start config watcher")
-		err := l.watchPlatform(l.stopChan)
-		errChan <- err
+		l.watchPlatform(l.stopChan)
+		errChan <- nil
 	}()
 	go func() {
 		err := l.httpServer.Serve(l.listener)
@@ -168,7 +168,7 @@ func (l *localServer) Dial(ctx context.Context, network, addr string) (net.Conn,
 	return l.listener.Dial(ctx, network, addr)
 }
 
-func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
+func (l *localServer) watchPlatform(stopChan <-chan struct{}) {
 	for {
 		log.Debug("Check platform status")
 
@@ -185,7 +185,7 @@ func (l *localServer) watchPlatform(stopChan <-chan struct{}) error {
 
 		select {
 		case <-stopChan:
-			return nil
+			return
 		case <-time.After(platformStatusCheckInterval):
 		}
 	}

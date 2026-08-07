@@ -200,7 +200,6 @@ func directClusterEndpointKubeConfigForSpace(
 		host,
 		directClusterEndpointToken.Status.Token,
 		p.spaceInstance.Spec.ClusterRef.Namespace,
-		true,
 	), nil
 }
 
@@ -250,7 +249,7 @@ func kubeConfigViaAccessKey(p accessKeyKubeConfigParams) (*clientcmdapi.Config, 
 		p.resourceName,
 	)
 
-	return newKubeConfig(host, ownedAccessKey.Spec.Key, p.clusterRefNamespace, true), nil
+	return newKubeConfig(host, ownedAccessKey.Spec.Key, p.clusterRefNamespace), nil
 }
 
 func kubeConfigForVirtualClusterInstance(
@@ -445,7 +444,6 @@ func directClusterEndpointKubeConfig(
 		host,
 		directClusterEndpointToken.Status.Token,
 		req.instance.Spec.ClusterRef.Namespace,
-		true,
 	), nil
 }
 
@@ -476,7 +474,7 @@ func findHostCluster(
 	return managementv1.Cluster{}, nil
 }
 
-func newKubeConfig(host, token, namespace string, insecure bool) *clientcmdapi.Config {
+func newKubeConfig(host, token, namespace string) *clientcmdapi.Config {
 	contextName := "loft"
 	kubeConfig := clientcmdapi.NewConfig()
 	kubeConfig.Contexts = map[string]*clientcmdapi.Context{
@@ -489,7 +487,7 @@ func newKubeConfig(host, token, namespace string, insecure bool) *clientcmdapi.C
 	kubeConfig.Clusters = map[string]*clientcmdapi.Cluster{
 		contextName: {
 			Server:                host,
-			InsecureSkipTLSVerify: insecure,
+			InsecureSkipTLSVerify: true,
 		},
 	}
 	kubeConfig.AuthInfos = map[string]*clientcmdapi.AuthInfo{
