@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -326,6 +327,40 @@ Host testhost
   User testuser
 # Devsy End testhost`,
 	},
+	{
+		name: "Host addition before existing Host * with ForwardAgent yes",
+		config: `Host *
+  ForwardAgent yes
+
+Host other
+  Hostname 1.2.3.4`,
+		execPath:        testExecPath,
+		host:            testHostBasic,
+		user:            testUser,
+		context:         testContextAlt,
+		workspace:       testWorkspaceAlt,
+		workdir:         "",
+		command:         "",
+		gpgagent:        false,
+		agentForwarding: false,
+		devsyHome:       "",
+		provider:        "",
+		expected: `# Devsy Start testhost
+Host testhost
+  ForwardAgent no
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
+  User testuser
+# Devsy End testhost
+Host *
+  ForwardAgent yes
+
+Host other
+  Hostname 1.2.3.4`,
+	},
 }
 
 func (s *SSHConfigTestSuite) TestAddHostSection() {
@@ -368,4 +403,38 @@ func (s *SSHConfigTestSuite) TestAddHostSection() {
 			}
 		})
 	}
+}
+
+func (s *SSHConfigTestSuite) TestAddHostSection_DevsyHostBeforeGenericHostWildcard() {
+	existingConfig := `Host *
+  ForwardAgent yes
+
+Host other
+  Hostname 1.2.3.4`
+
+	result, err := addHostSection(existingConfig, testExecPath, addHostParams{
+		host:            "myworkspace.devsy",
+		user:            testUser,
+		context:         testContext,
+		workspace:       "myworkspace",
+		agentForwarding: false,
+		provider:        "",
+	})
+
+	assert.NoError(s.T(), err)
+
+	// Verify the Devsy host block appears before the Host * block
+	devsyHostIndex := strings.Index(result, "Host myworkspace.devsy")
+	wildcardHostIndex := strings.Index(result, "Host *")
+
+	assert.NotEqual(s.T(), -1, devsyHostIndex, "Devsy host block should be present")
+	assert.NotEqual(s.T(), -1, wildcardHostIndex, "Host * block should be present")
+	assert.Less(s.T(), devsyHostIndex, wildcardHostIndex,
+		"Devsy host block must appear before Host * to ensure ForwardAgent precedence")
+
+	// Verify the Devsy block has ForwardAgent no
+	assert.Contains(s.T(), result, "ForwardAgent no")
+	// Verify the existing Host * block is preserved
+	assert.Contains(s.T(), result, "Host *")
+	assert.Contains(s.T(), result, "ForwardAgent yes")
 }
