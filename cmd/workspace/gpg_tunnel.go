@@ -65,9 +65,7 @@ type gpgTunnel struct {
 	// tunnel stays down across health-check ticks.
 	failureReported bool
 
-	// readySignaled prevents signaling gpg forward readiness more than once:
-	// it's sent the first time ensure reports the tunnel is live, whether
-	// that's the initial synchronous call or a later health-check retry.
+	// readySignaled prevents signaling gpg forward readiness more than once.
 	readySignaled bool
 }
 
@@ -108,11 +106,7 @@ func (t *gpgTunnel) run(ctx context.Context, sshClient *ssh.Client) {
 
 // ensure checks whether the GPG tunnel is currently live and, if not,
 // (re-)establishes it. It reports whether the tunnel is live when it
-// returns. A setup failure is only reported if the tunnel is still down
-// immediately after: a concurrent terminal may have won the bind race in
-// the interim, which is not a real failure. The OSC failure notification
-// fires only on the healthy-to-failed transition, not on every health-check
-// tick.
+// returns.
 func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
 		log.Debugf("GPG tunnel is running, skipping setup")
@@ -133,8 +127,6 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 		return true
 	}
 	if ctx.Err() != nil {
-		// ctx was cancelled (session ending); the failure above is an
-		// artifact of that, not a real forwarding problem worth reporting.
 		log.Debugf("GPG tunnel setup aborted by context cancellation: %v", err)
 		return false
 	}
@@ -143,10 +135,7 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 		return false
 	}
 	t.failureReported = true
-	// The desktop toast gets a fixed, concise reason rather than err.Error():
-	// the underlying error can wrap remote SSH exit output, which isn't
-	// something to surface verbatim in the UI. Full detail stays in the log
-	// line above (visible with --debug).
+	// Emit OSC code for UI to detect.
 	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
 	return false
 }
@@ -258,10 +247,7 @@ func (t *gpgTunnel) ensureForwardBound(
 
 // signalReadyOnce signals gpg forward readiness at most once per gpgTunnel:
 // once the write actually succeeds, so a later health-check retry that also
-// succeeds doesn't write the readiness byte again. If the write fails, it's
-// not recorded as signaled, so a later successful ensure retries it instead
-// of leaving ForwardAgent to wait out its full timeout despite the tunnel
-// being live.
+// succeeds does not write the readiness byte again.
 func (t *gpgTunnel) signalReadyOnce() {
 	if t.readySignaled {
 		return
@@ -271,7 +257,6 @@ func (t *gpgTunnel) signalReadyOnce() {
 
 // signalGPGForwardReady is a no-op unless this process was spawned by
 // pkg/gpg.ForwardAgent, which is the only caller that sets ForwardReadyFDEnv.
-// It reports whether the readiness byte was written successfully.
 func signalGPGForwardReady() bool {
 	fdStr := os.Getenv(gpg.ForwardReadyFDEnv)
 	if fdStr == "" {

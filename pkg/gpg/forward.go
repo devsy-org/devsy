@@ -19,20 +19,17 @@ type backoff struct {
 
 var forwardRestartBackoff = backoff{min: time.Second, max: 30 * time.Second}
 
-// ForwardReadyFDEnv is the contract with cmd/workspace/gpg_tunnel.go's
-// runGPGTunnelInBackground: the fd number it names is where that process
-// writes one byte once its gpg-agent tunnel setup finishes.
-const ForwardReadyFDEnv = "DEVSY_GPG_FORWARD_READY_FD"
+const EnvForwardReadyFD = "DEVSY_GPG_FORWARD_READY_FD"
 
-// forwardReadyTimeout bounds ForwardAgent's wait so a stuck forward can't
+// forwardReadyTimeout bounds ForwardAgent's wait so a stuck forward cannot
 // block the caller indefinitely.
 const forwardReadyTimeout = 30 * time.Second
 
 // ForwardAgent starts a supervised background SSH connection that forwards
 // the local GPG agent, restarting it until ctx is cancelled. It waits for the
 // first attempt's tunnel setup to finish so callers that immediately hand
-// control to the workspace (e.g. opening a browser IDE terminal) don't race
-// an agent that isn't forwarded yet.
+// control to the workspace (e.g. opening a browser IDE terminal) do not race
+// an agent that is not forwarded yet.
 func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error {
 	execPath, err := os.Executable()
 	if err != nil {
@@ -76,10 +73,6 @@ type forwardSpec struct {
 
 func superviseForward(ctx context.Context, spec forwardSpec, ready chan<- struct{}) {
 	delay := spec.backoff.min
-	// pendingReady stays non-nil across attempts (setup failures, crashes,
-	// restarts) until one attempt actually reports readiness: a failed first
-	// attempt must not make ForwardAgent give up waiting on a retry that
-	// would succeed within its timeout.
 	pendingReady := ready
 	for {
 		if ctx.Err() != nil {
@@ -111,7 +104,7 @@ func superviseForward(ctx context.Context, spec forwardSpec, ready chan<- struct
 
 // runForwardOnce runs a single attempt of the forwarding child. If ready is
 // non-nil, it reports whether the child actually signaled readiness via
-// ForwardReadyFDEnv (a written byte), so callers can keep offering the
+// EnvForwardReadyFD (a written byte), so callers can keep offering the
 // readiness pipe to later attempts when this one merely failed to set up or
 // exited without ever reporting.
 func runForwardOnce(
@@ -132,7 +125,7 @@ func runForwardOnce(
 		return false, cmd.Run()
 	}
 	cmd.ExtraFiles = []*os.File{w}
-	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=3", ForwardReadyFDEnv))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=3", EnvForwardReadyFD))
 
 	if err := cmd.Start(); err != nil {
 		_ = w.Close()
