@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testShellPath = "/bin/sh"
+
 func TestBuildForwardArgs(t *testing.T) {
 	got := buildForwardArgs("root", "test-context", "test-workspace")
 	expected := []string{
@@ -53,7 +55,7 @@ func TestSuperviseForward_RestartsUntilCancelled(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		superviseForward(ctx, forwardSpec{
-			execPath: "/bin/sh",
+			execPath: testShellPath,
 			args:     []string{"-c", "printf x >> " + runs},
 			backoff:  backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond},
 		}, make(chan struct{}, 1))
@@ -81,7 +83,7 @@ func TestSuperviseForward_StopsImmediatelyIfCancelled(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		superviseForward(ctx, forwardSpec{
-			execPath: "/bin/sh",
+			execPath: testShellPath,
 			args:     []string{"-c", "exit 0"},
 			backoff:  backoff{min: 10 * time.Millisecond, max: 20 * time.Millisecond},
 		}, make(chan struct{}, 1))
@@ -107,7 +109,7 @@ func TestRunForwardOnce_SignalsReadyOnChildWrite(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		reported, err := runForwardOnce(
-			ctx, "/bin/sh", []string{"-c", "printf x >&3; exec 3>&-; exec sleep 5"}, ready,
+			ctx, testShellPath, []string{"-c", "printf x >&3; exec 3>&-; exec sleep 5"}, ready,
 		)
 		done <- result{reported, err}
 	}()
@@ -137,7 +139,7 @@ func TestRunForwardOnce_SignalsReadyOnChildWrite(t *testing.T) {
 func TestRunForwardOnce_DoesNotSignalReadyOnChildExitWithoutWriting(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	reported, err := runForwardOnce(
-		context.Background(), "/bin/sh", []string{"-c", "exit 1"}, ready,
+		context.Background(), testShellPath, []string{"-c", "exit 1"}, ready,
 	)
 	require.Error(t, err)
 	assert.False(t, reported, "a child that exits without writing must not be treated as ready")
@@ -158,7 +160,7 @@ func TestSuperviseForward_ReportsReadyOnlyAfterSuccessfulRetry(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		superviseForward(ctx, forwardSpec{
-			execPath: "/bin/sh",
+			execPath: testShellPath,
 			args: []string{
 				"-c",
 				"printf x >> " + runs + "; " +
