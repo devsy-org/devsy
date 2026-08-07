@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -71,4 +72,80 @@ func TestStreamSnapshotVolumes_TarsMountTargets(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected tar entry %q not found", wantName)
+}
+
+func TestRunWithResult_CancelBeforeResult(t *testing.T) {
+	srv := New()
+
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	result, err := srv.RunWithResult(ctx, reader, writer)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRun_CancelBeforeResultIsExpected(t *testing.T) {
+	srv := New()
+
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	require.NoError(t, srv.Run(ctx, reader, writer))
+}
+
+func TestRunWithResult_CancelAfterResult(t *testing.T) {
+	srv := New()
+	want := &config.Result{}
+	srv.setResult(want)
+
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	result, err := srv.RunWithResult(ctx, reader, writer)
+	require.NoError(t, err)
+	require.Same(t, want, result)
+}
+
+func TestRunWithResult_ConcurrentSendResult(t *testing.T) {
+	srv := New()
+
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sendDone := make(chan error, 1)
+	go func() {
+		_, err := srv.SendResult(context.Background(), &tunnel.Message{Message: "{}"})
+		sendDone <- err
+		cancel()
+	}()
+
+	result, err := srv.RunWithResult(ctx, reader, writer)
+
+	require.NoError(t, <-sendDone)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }

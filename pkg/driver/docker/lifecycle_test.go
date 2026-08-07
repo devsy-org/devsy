@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -187,4 +188,44 @@ esac
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
 	err := d.CommitContainer(context.Background(), "missing-ws", "tag:latest")
 	require.Error(t, err)
+}
+
+func TestCommandDevContainer_CancelWrapsCtxErr(t *testing.T) {
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	script := `#!/bin/sh
+case "$1" in
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    ;;
+  exec)
+    touch "` + ready + `"
+    sleep 5
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin, ContainerID: "c1"}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	err := d.CommandDevContainer(ctx, &driver.CommandParams{
+		User:    rootUser,
+		Command: "true",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
 }
