@@ -127,9 +127,6 @@ echo "$@" > `+argsFile+`
 
 func TestFindContainerJSON_MatchesAllLabels(t *testing.T) {
 	tmp := t.TempDir()
-	// Fake docker: `ps -q -a` lists three containers; `inspect` returns each
-	// container's labels. c1 matches both query labels; c2 matches only the
-	// last label (an earlier label differs); c3 inspect returns an empty array.
 	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
 case "$1" in
   ps) printf 'c1\nc2\nc3\n' ;;
@@ -146,9 +143,6 @@ esac
 	got, err := h.FindContainerJSON(context.Background(), []string{"a=x", "b=y"})
 
 	require.NoError(t, err)
-	// Only c1 satisfies every label. c2 must be excluded (the AND-logic bug
-	// previously matched it on the last label alone), and c3's empty inspect
-	// result must not panic.
 	assert.Equal(t, []string{"c1"}, got)
 }
 
@@ -341,17 +335,6 @@ exit 1
 	assert.NotErrorIs(t, err, context.Canceled)
 }
 
-// TestRunCmd_CancelAfterReturnNotRetroactivelyAttributed verifies that a
-// cancellation arriving after the command already completed on its own
-// never gets attributed to that unrelated cancellation. This relies on
-// runCmd using cmd.Cancel — which os/exec itself only invokes if ctx becomes
-// done before the process is observed to have exited — rather than a
-// post-hoc ctx.Err() check racing an independent process failure. A properly
-// concurrent version of this test (cancelling from a goroutine with no
-// synchronization) was tried and always hit the pre-Start() rejection path
-// instead: os/exec's own synchronization makes the misattribution this test
-// guards against unreachable by construction, so there's no genuine race to
-// exercise here beyond this sequential check.
 func TestRunCmd_CancelAfterReturnNotRetroactivelyAttributed(t *testing.T) {
 	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
 exit 1

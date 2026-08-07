@@ -239,12 +239,6 @@ type PullOptions struct {
 	Stderr   io.Writer
 }
 
-// runCmd disambiguates a signal-killed command failure by attaching
-// ctx.Err() when this ctx is what caused the kill: "signal: killed" looks
-// identical whether it came from that or something else entirely. Checking
-// ctx.Err() only after cmd.Run() returns would race an unrelated concurrent
-// cancellation against the command's own, independent failure, so this hooks
-// cmd.Cancel to record only a cancellation this exec package itself acted on.
 func runCmd(ctx context.Context, cmd *exec.Cmd) error {
 	var cancelledByCtx atomic.Bool
 	cmd.Cancel = func() error {
