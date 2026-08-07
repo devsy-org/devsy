@@ -49,9 +49,6 @@ func (d *dockerDriver) CommandDevContainer(
 		Stderr: params.Stderr,
 	})
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("run command in container: %w: %w", ctxErr, err)
-		}
 		return fmt.Errorf("run command in container: %w", err)
 	}
 	return nil

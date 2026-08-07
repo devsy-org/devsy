@@ -279,3 +279,32 @@ exit 1
 	assert.NoError(t, err, "should not propagate error on command failure")
 	assert.False(t, got, "should fall back to no GPU on command failure")
 }
+
+func TestRunCmd_AttachesCtxErrOnFailure(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, []string{"exec", "c1", "cmd"}, streams)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRunCmd_NoCtxErrWhenNotCancelled(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(context.Background(), []string{"exec", "c1", "cmd"}, streams)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+}

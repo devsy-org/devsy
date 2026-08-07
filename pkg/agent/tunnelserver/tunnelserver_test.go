@@ -136,10 +136,16 @@ func TestRunWithResult_ConcurrentSendResult(t *testing.T) {
 	defer func() { _ = writer.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	sendDone := make(chan error, 1)
 	go func() {
-		_, _ = srv.SendResult(context.Background(), &tunnel.Message{Message: "{}"})
+		_, err := srv.SendResult(context.Background(), &tunnel.Message{Message: "{}"})
+		sendDone <- err
 		cancel()
 	}()
 
-	_, _ = srv.RunWithResult(ctx, reader, writer)
+	result, err := srv.RunWithResult(ctx, reader, writer)
+
+	require.NoError(t, <-sendDone)
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }
