@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/onsi/ginkgo/v2"
@@ -355,6 +356,83 @@ var _ = ginkgo.Describe(
 				gomega.Expect(combined).NotTo(gomega.ContainSubstring("continuing without it"),
 					"GPG agent forwarding must succeed end-to-end for a non-root remoteUser "+
 						"browser IDE; got:\n%s", combined)
+
+				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
+				defer cancelSSH()
+				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
+				framework.ExpectNoError(err)
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+			},
+		)
+
+		ginkgo.It(
+			"forwards GPG in browser IDE when enabled only via context option",
+			ginkgo.Label("gpg"),
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				f := framework.NewDefaultFramework(initialDir + "/bin")
+				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-gpg-nonroot")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+				contextName := fmt.Sprintf("gpg-ctx-%d", time.Now().UnixNano())
+				err = f.DevsyContextCreate(ctx, contextName)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyContextUse(cleanupCtx, config.DefaultContext)
+					_ = f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+
+				err = f.DevsyContextUse(ctx, contextName)
+				framework.ExpectNoError(err)
+				err = f.ExecCommand(ctx, false, true, "", []string{
+					"context", "set",
+					names.Flag(names.Option), config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
+				})
+				framework.ExpectNoError(err)
+
+				err = f.DevsyProviderAdd(ctx, "docker")
+				framework.ExpectNoError(err)
+				err = f.DevsyProviderUse(ctx, "docker")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
+				framework.ExpectNoError(
+					framework.ImportGpgKey(
+						filepath.Join(
+							initialDir,
+							"tests/ssh/testdata/gpg-forwarding/gpg-private.key",
+						),
+					),
+				)
+
+				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
+					"--ide=openvscode", "--ide-launch=headless", "--debug")
+				framework.ExpectNoError(err)
+				combined := stdout + stderr
+				gomega.Expect(combined).To(gomega.ContainSubstring("Starting vscode in browser mode at"),
+					"expected browser IDE opener path to execute; got:\n%s", combined)
+				gomega.Expect(combined).To(gomega.ContainSubstring("forwarding gpg-agent"),
+					"expected browser IDE GPG forward bootstrap to run; got:\n%s", combined)
+
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring("continuing without it"),
+					"GPG agent forwarding must succeed when enabled from context option only; got:\n%s", combined)
+				gomega.Expect(combined).NotTo(gomega.ContainSubstring(
+					"timed out waiting for gpg-agent forward to become ready",
+				), "GPG forward should be ready before handing off browser IDE session; got:\n%s", combined)
+
+				ws, err := f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+				state, err := opener.ReadTunnelState(ws.Context, ws.ID)
+				framework.ExpectNoError(err)
+				gomega.Expect(state).NotTo(gomega.BeNil(),
+					"expected browser tunnel state to exist for IDE session")
+				gomega.Expect(state.PID).To(gomega.BeNumerically(">", 0),
+					"expected detached browser tunnel process to be running")
 
 				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
 				defer cancelSSH()
