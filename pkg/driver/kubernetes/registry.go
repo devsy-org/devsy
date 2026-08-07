@@ -35,7 +35,7 @@ func validateIndexName(val string) string {
 	return val
 }
 
-// newIndexInfo returns IndexInfo configuration from indexName.
+// newIndexInfo returns the normalized registry name for indexName.
 func newIndexInfo(indexName string) string {
 	// Construct a non-configured index info.
 	return validateIndexName(indexName)

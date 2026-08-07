@@ -112,7 +112,7 @@ func (tc *testContext) getAppContainer(
 	workspace *provider2.Workspace,
 ) (*container.InspectResponse, error) {
 	ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app")
-	if err != nil || len(ids) == 0 {
+	if err != nil {
 		return nil, err
 	}
 	return tc.inspectContainer(ctx, ids)
