@@ -156,14 +156,14 @@ func TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &containerSetupState{
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
 		},
 	}
 
-	require.NoError(t, cmd.syncMounts(ctx, sctx))
+	require.NoError(t, cmd.syncMounts(ctx, state))
 
 	gotPath := filepath.Join(mountTarget, "hello.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
@@ -195,17 +195,14 @@ func TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &containerSetupState{
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
 		},
 	}
 
-	// No manifest is pushed for ref: if syncMounts attempted a restore here it
-	// would fail pulling the manifest, so a nil error proves the restore was
-	// skipped rather than attempted and silently swallowed.
-	require.NoError(t, cmd.syncMounts(context.Background(), sctx))
+	require.NoError(t, cmd.syncMounts(context.Background(), state))
 
 	gotPath := filepath.Join(mountTarget, "local-change.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
@@ -232,7 +229,7 @@ func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &containerSetupState{
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{
@@ -241,7 +238,7 @@ func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
 		},
 	}
 
-	err := cmd.syncMounts(context.Background(), sctx)
+	err := cmd.syncMounts(context.Background(), state)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not yet support multiple mounts")
 }

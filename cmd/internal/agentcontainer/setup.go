@@ -81,7 +81,7 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return setupContainerCmd
 }
 
-type containerSetupState struct {
+type containerState struct {
 	workspaceInfo *provider2.ContainerWorkspaceInfo
 	setupInfo     *config.Result
 	tunnelClient  tunnel.TunnelClient
@@ -100,17 +100,17 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	sctx := &containerSetupState{
+	state := &containerState{
 		workspaceInfo: workspaceInfo,
 		setupInfo:     setupInfo,
 		tunnelClient:  tunnelClient,
 	}
 
-	if err := cmd.prepareWorkspace(ctx, sctx); err != nil {
+	if err := cmd.prepareWorkspace(ctx, state); err != nil {
 		return err
 	}
 
-	return cmd.finalizeSetup(ctx, sctx)
+	return cmd.finalizeSetup(ctx, state)
 }
 
 func (cmd *SetupContainerCmd) registerFlags(setupContainerCmd *cobra.Command) {
@@ -184,22 +184,22 @@ func (cmd *SetupContainerCmd) registerDotfilesFlags(setupContainerCmd *cobra.Com
 
 func (cmd *SetupContainerCmd) prepareWorkspace(
 	ctx context.Context,
-	sctx *containerSetupState,
+	state *containerState,
 ) error {
-	if err := cmd.syncMounts(ctx, sctx); err != nil {
+	if err := cmd.syncMounts(ctx, state); err != nil {
 		return err
 	}
 
 	if err := agent.DockerlessBuild(agent.DockerlessBuildOptions{
 		Context:           ctx,
-		SetupInfo:         sctx.setupInfo,
-		DockerlessOptions: &sctx.workspaceInfo.Dockerless,
+		SetupInfo:         state.setupInfo,
+		DockerlessOptions: &state.workspaceInfo.Dockerless,
 		ImageConfigOutput: agent.DefaultImageConfigPath,
 		Debug:             cmd.Debug,
 		ConfigureCredentialsFunc: func(ctx context.Context) (string, error) {
 			serverPort, err := credentials.StartCredentialsServer(
 				ctx,
-				sctx.tunnelClient,
+				state.tunnelClient,
 			)
 			if err != nil {
 				return "", err
@@ -213,20 +213,20 @@ func (cmd *SetupContainerCmd) prepareWorkspace(
 		return fmt.Errorf("dockerless build: %w", err)
 	}
 
-	if err := fillContainerEnv(sctx.setupInfo); err != nil {
+	if err := fillContainerEnv(state.setupInfo); err != nil {
 		return err
 	}
 
 	cleanupFunc := cmd.setupGitCredentials(
 		ctx,
-		sctx.tunnelClient,
+		state.tunnelClient,
 	)
 
 	// Clone repository before cleaning up git credentials
 	cloneErr := cmd.cloneRepositoryIfNeeded(
 		ctx,
-		sctx.workspaceInfo,
-		sctx.setupInfo,
+		state.workspaceInfo,
+		state.setupInfo,
 	)
 
 	// Clean up git credentials after cloning
@@ -259,45 +259,45 @@ func fetchSecrets(
 	return env, mount, nil
 }
 
-func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, sctx *containerSetupState) error {
-	secretsEnv, secretsMount, err := fetchSecrets(ctx, sctx.tunnelClient)
+func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, state *containerState) error {
+	secretsEnv, secretsMount, err := fetchSecrets(ctx, state.tunnelClient)
 	if err != nil {
-		return cmd.reportSetupFailure(ctx, sctx, err)
+		return cmd.reportSetupFailure(ctx, state, err)
 	}
-	sctx.secretsEnv = secretsEnv
+	state.secretsEnv = secretsEnv
 
 	cfg := &setup.ContainerSetupConfig{
-		SetupInfo:         sctx.setupInfo,
-		ExtraWorkspaceEnv: sctx.workspaceInfo.CLIOptions.WorkspaceEnv,
+		SetupInfo:         state.setupInfo,
+		ExtraWorkspaceEnv: state.workspaceInfo.CLIOptions.WorkspaceEnv,
 		SecretsEnv:        secretsEnv,
 		SecretsMount:      secretsMount,
 		ChownProjects:     cmd.ChownWorkspace,
-		PlatformOptions:   &sctx.workspaceInfo.CLIOptions.Platform,
-		TunnelClient:      sctx.tunnelClient,
+		PlatformOptions:   &state.workspaceInfo.CLIOptions.Platform,
+		TunnelClient:      state.tunnelClient,
 		Prebuild:          cmd.Prebuild,
-		SkipPostCreate:    sctx.workspaceInfo.CLIOptions.SkipPostCreate,
-		SkipPostStart:     sctx.workspaceInfo.CLIOptions.SkipPostStart,
-		SkipPostAttach:    sctx.workspaceInfo.CLIOptions.SkipPostAttach,
-		WaitFor:           setup.LifecyclePhase(sctx.workspaceInfo.CLIOptions.WaitFor),
+		SkipPostCreate:    state.workspaceInfo.CLIOptions.SkipPostCreate,
+		SkipPostStart:     state.workspaceInfo.CLIOptions.SkipPostStart,
+		SkipPostAttach:    state.workspaceInfo.CLIOptions.SkipPostAttach,
+		WaitFor:           setup.LifecyclePhase(state.workspaceInfo.CLIOptions.WaitFor),
 		Dotfiles: setup.DotfilesConfig{
 			Repository:    cmd.DotfilesRepo,
 			InstallScript: cmd.DotfilesScript,
-			RemoteUser:    config.GetRemoteUser(sctx.setupInfo),
+			RemoteUser:    config.GetRemoteUser(state.setupInfo),
 		},
 	}
 
 	deferred, err := setup.SetupContainerPreAttach(ctx, cfg)
 	if err != nil {
-		return cmd.reportSetupFailure(ctx, sctx, err)
+		return cmd.reportSetupFailure(ctx, state, err)
 	}
 
 	if !cmd.Prebuild {
-		if err := cmd.setupPostAttach(sctx, deferred); err != nil {
-			return cmd.reportSetupFailure(ctx, sctx, err)
+		if err := cmd.setupPostAttach(state, deferred); err != nil {
+			return cmd.reportSetupFailure(ctx, state, err)
 		}
 	}
 
-	return cmd.sendSetupResult(ctx, sctx.setupInfo, sctx.tunnelClient)
+	return cmd.sendSetupResult(ctx, state.setupInfo, state.tunnelClient)
 }
 
 // reportSetupFailure forwards a structured error result through the tunnel
@@ -306,11 +306,11 @@ func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, sctx *container
 // failure) gets lost to a generic wrapper on the host side.
 func (cmd *SetupContainerCmd) reportSetupFailure(
 	ctx context.Context,
-	sctx *containerSetupState,
+	state *containerState,
 	cause error,
 ) error {
 	errResult := &config.Result{Error: cause.Error()}
-	if sendErr := cmd.sendSetupResult(ctx, errResult, sctx.tunnelClient); sendErr != nil {
+	if sendErr := cmd.sendSetupResult(ctx, errResult, state.tunnelClient); sendErr != nil {
 		// Failure-on-failure: the host will see only the SSH exit code, so
 		// log the original cause alongside the send failure to leave a
 		// breadcrumb for debugging.
@@ -320,23 +320,20 @@ func (cmd *SetupContainerCmd) reportSetupFailure(
 }
 
 func (cmd *SetupContainerCmd) setupPostAttach(
-	sctx *containerSetupState,
+	state *containerState,
 	deferred setup.DeferredHooks,
 ) error {
-	if err := cmd.installIDE(sctx.setupInfo, &sctx.workspaceInfo.IDE); err != nil {
+	if err := cmd.installIDE(state.setupInfo, &state.workspaceInfo.IDE); err != nil {
 		return err
 	}
 
-	shutdownAction := sctx.setupInfo.MergedConfig.ShutdownAction
-	if err := cmd.startContainerDaemon(sctx.workspaceInfo, shutdownAction); err != nil {
+	shutdownAction := state.setupInfo.MergedConfig.ShutdownAction
+	if err := cmd.startContainerDaemon(state.workspaceInfo, shutdownAction); err != nil {
 		return err
 	}
 
 	// Re-serialize the post-substitution setupInfo for background processes.
-	// fillContainerEnv() modifies sctx.setupInfo after initial parsing, so
-	// cmd.SetupInfo (the original CLI arg) has unresolved variables like
-	// ${containerEnv:PATH}. Background hooks need the resolved values.
-	resolvedSetupInfo, err := compressSetupInfo(sctx.setupInfo)
+	resolvedSetupInfo, err := compressSetupInfo(state.setupInfo)
 	if err != nil {
 		return fmt.Errorf("re-serialize setup info: %w", err)
 	}
@@ -344,14 +341,14 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	if !deferred.Empty() {
 		err = cmd.startDeferredHooks(
 			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
-			sctx.secretsEnv,
+			state.secretsEnv,
 		)
 		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
 
-	if err := cmd.startPostAttachHooks(sctx); err != nil {
+	if err := cmd.startPostAttachHooks(state); err != nil {
 		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
 
@@ -450,10 +447,10 @@ func (cmd *SetupContainerCmd) parseWorkspaceAndSetupInfo() (*provider2.Container
 	return workspaceInfo, setupInfo, nil
 }
 
-func (cmd *SetupContainerCmd) syncMounts(ctx context.Context, sctx *containerSetupState) error {
-	mounts := config.GetMounts(sctx.setupInfo)
-	if sctx.workspaceInfo.Source.Snapshot != "" {
-		return restoreSnapshotMounts(ctx, sctx, mounts)
+func (cmd *SetupContainerCmd) syncMounts(ctx context.Context, state *containerState) error {
+	mounts := config.GetMounts(state.setupInfo)
+	if state.workspaceInfo.Source.Snapshot != "" {
+		return restoreSnapshotMounts(ctx, state, mounts)
 	}
 
 	if !cmd.StreamMounts {
@@ -462,7 +459,7 @@ func (cmd *SetupContainerCmd) syncMounts(ctx context.Context, sctx *containerSet
 
 	log.Debugf("syncing mounts: %v", mounts)
 	for _, m := range mounts {
-		if !sctx.workspaceInfo.CLIOptions.Reset {
+		if !state.workspaceInfo.CLIOptions.Reset {
 			files, err := os.ReadDir(m.Target)
 			if err == nil && len(files) > 0 {
 				log.Debugf("skip stream mount %s because it is not empty", m.Target)
@@ -472,9 +469,9 @@ func (cmd *SetupContainerCmd) syncMounts(ctx context.Context, sctx *containerSet
 
 		if err := streamMount(
 			ctx,
-			sctx.workspaceInfo,
+			state.workspaceInfo,
 			m,
-			sctx.tunnelClient,
+			state.tunnelClient,
 		); err != nil {
 			return err
 		}
@@ -487,19 +484,19 @@ func (cmd *SetupContainerCmd) syncMounts(ctx context.Context, sctx *containerSet
 // skipping the restore if the sole mount target already has real content.
 func restoreSnapshotMounts(
 	ctx context.Context,
-	sctx *containerSetupState,
+	state *containerState,
 	mounts []*config.Mount,
 ) error {
-	if !sctx.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
+	if !state.workspaceInfo.CLIOptions.Reset && len(mounts) == 1 &&
 		skipSnapshotRestore(mounts[0].Target) {
 		return nil
 	}
-	log.Infof("restoring snapshot volumes from %s", sctx.workspaceInfo.Source.Snapshot)
+	log.Infof("restoring snapshot volumes from %s", state.workspaceInfo.Source.Snapshot)
 	if err := agentsnapshot.RestoreVolumes(
 		ctx,
-		sctx.workspaceInfo.Source.Snapshot,
+		state.workspaceInfo.Source.Snapshot,
 		mounts,
-		sctx.workspaceInfo.CLIOptions.Reset,
+		state.workspaceInfo.CLIOptions.Reset,
 	); err != nil {
 		return fmt.Errorf("restore snapshot volumes: %w", err)
 	}
@@ -628,8 +625,8 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	})
 }
 
-func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *containerSetupState) error {
-	if len(sctx.setupInfo.MergedConfig.PostAttachCommands) == 0 {
+func (cmd *SetupContainerCmd) startPostAttachHooks(state *containerState) error {
+	if len(state.setupInfo.MergedConfig.PostAttachCommands) == 0 {
 		return nil
 	}
 
@@ -648,7 +645,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *containerSetupState) er
 			Path: binaryPath,
 			Args: append([]string{binaryPath}, args...),
 		}
-		execCmd.Env = secretsEnvOverride(sctx.secretsEnv)
+		execCmd.Env = secretsEnvOverride(state.secretsEnv)
 
 		return execCmd, nil
 	})
