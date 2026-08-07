@@ -123,9 +123,10 @@ func (o *VsCodeServer) InstallExtensions() error {
 		return err
 	}
 
-	binPath := o.waitForServerBinary(location)
+	binPath := o.findServerBinaryPath(location)
 	if binPath == "" {
-		return fmt.Errorf("unable to locate server binary")
+		log.Infof("skipping extension install until %s server is available", o.flavor.DisplayName())
+		return nil
 	}
 
 	writer := log.Writer(log.LevelInfo)

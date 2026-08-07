@@ -24,6 +24,46 @@ func (s *DiscoverySuite) SetupTest() {
 	})
 }
 
+func (s *DiscoverySuite) TestInstallExtensions_SkipsWhenServerBinaryMissing() {
+	homeDir := s.T().TempDir()
+	s.T().Setenv("HOME", homeDir)
+
+	server := NewVSCodeServer(ServerOptions{
+		Extensions: []string{"ms-python.python"},
+		Flavor:     FlavorStable,
+	})
+
+	s.Require().NoError(server.InstallExtensions())
+}
+
+func (s *DiscoverySuite) TestInstallExtensions_UsesDiscoveredServerBinary() {
+	homeDir := s.T().TempDir()
+	s.T().Setenv("HOME", homeDir)
+
+	argsFile := filepath.Join(homeDir, "install-args.txt")
+	binDir := filepath.Join(homeDir, ".vscode-server", "cli", "servers", "Stable-abc", "server", "bin")
+	binPath := filepath.Join(binDir, "code-server")
+	s.Require().NoError(os.MkdirAll(binDir, 0o750))
+	s.Require().NoError(
+		os.WriteFile(
+			binPath,
+			[]byte("#!/bin/sh\nprintf '%s ' \"$@\" > \""+argsFile+"\"\n"),
+			0o700,
+		),
+	)
+
+	server := NewVSCodeServer(ServerOptions{
+		Extensions: []string{"ms-python.python"},
+		Flavor:     FlavorStable,
+	})
+
+	s.Require().NoError(server.InstallExtensions())
+
+	args, err := os.ReadFile(argsFile)
+	s.Require().NoError(err)
+	s.Equal("--install-extension ms-python.python ", string(args))
+}
+
 func (s *DiscoverySuite) TestMatchServerProcess_MatchesBinaryName() {
 	cmdline := []byte(
 		"/home/user/.vscode-server/cli/servers/Stable-abc123/server/bin/code-server\x00--host\x000.0.0.0",
