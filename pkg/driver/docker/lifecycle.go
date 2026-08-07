@@ -43,11 +43,20 @@ func (d *dockerDriver) CommandDevContainer(
 		args = append(args, "-i")
 	}
 	args = append(args, "-u", params.User, container.ID, "sh", "-c", params.Command)
-	return d.Docker.Run(ctx, args, docker.Streams{
+	err = d.Docker.Run(ctx, args, docker.Streams{
 		Stdin:  params.Stdin,
 		Stdout: params.Stdout,
 		Stderr: params.Stderr,
 	})
+	if err != nil {
+		// A signal-killed exit looks identical whether it's from ctx
+		// cancellation or something else; attach ctx.Err() to disambiguate.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("run command in container: %w: %w", ctxErr, err)
+		}
+		return fmt.Errorf("run command in container: %w", err)
+	}
+	return nil
 }
 
 // ensureContainerRunning checks that the given container is running, and if
