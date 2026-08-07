@@ -26,12 +26,32 @@ type GlobalFlags struct {
 func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 	globalFlags := &GlobalFlags{}
 
+	registerCoreFlags(flags, globalFlags)
+	registerOutputFlags(flags, globalFlags)
+	registerVerbosityFlags(flags, globalFlags)
+	registerHiddenFlags(flags, globalFlags)
+	bindGlobalEnvVars(flags)
+
+	return globalFlags
+}
+
+func registerCoreFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 	flags.StringVar(
 		&globalFlags.DevsyHome,
 		names.Home,
 		"",
 		"If defined will override the default devsy home",
 	)
+	flags.StringVar(&globalFlags.Context, names.Context, "", "The context to use")
+	flags.StringVar(
+		&globalFlags.Provider,
+		names.Provider,
+		"",
+		"The provider to use. Needs to be configured for the selected context",
+	)
+}
+
+func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 	flags.StringVar(
 		&globalFlags.ResultFormat,
 		names.ResultFormat,
@@ -46,13 +66,9 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 	)
 	flags.StringVar(&globalFlags.LogOutput, names.LogFormat, "text", "Alias for --log-output")
 	_ = flags.MarkHidden(names.LogFormat)
-	flags.StringVar(&globalFlags.Context, names.Context, "", "The context to use")
-	flags.StringVar(
-		&globalFlags.Provider,
-		names.Provider,
-		"",
-		"The provider to use. Needs to be configured for the selected context",
-	)
+}
+
+func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 	flags.CountVarP(
 		&globalFlags.Verbosity,
 		names.Verbose,
@@ -72,7 +88,9 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		false,
 		"Enable debug logging (equivalent to -vv)",
 	)
+}
 
+func registerHiddenFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 	flags.Var(&globalFlags.Owner, names.Owner, "Show pro workspaces for owner")
 	_ = flags.MarkHidden(names.Owner)
 	flags.StringVar(&globalFlags.UID, names.UID, "", "Set UID for workspace")
@@ -84,11 +102,11 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 		"The data folder where agent data is stored.",
 	)
 	_ = flags.MarkHidden(names.AgentDir)
+}
 
+func bindGlobalEnvVars(flags *flag.FlagSet) {
 	pkgflags.BindEnv(flags, names.Home)
 	pkgflags.BindEnv(flags, names.Context)
 	pkgflags.BindEnv(flags, names.Provider)
 	pkgflags.BindEnv(flags, names.Debug)
-
-	return globalFlags
 }

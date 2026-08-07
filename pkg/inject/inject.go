@@ -50,6 +50,8 @@ type InjectOptions struct {
 
 // Deprecated: Inject is part of the legacy shell injection path. Platform-native AgentDelivery
 // implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
+//
+//nolint:funlen // legacy shell injection path, frozen pending caller migration to AgentDelivery
 func Inject(opts InjectOptions) (bool, error) {
 	if err := validateInjectOptions(opts); err != nil {
 		return false, err

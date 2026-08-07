@@ -13,8 +13,6 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
@@ -61,66 +59,7 @@ func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(
-		c,
-		cliflags.String(
-			&cmd.Namespace,
-			names.Namespace,
-			"loft",
-			"The namespace to generate the service account in. The namespace will be created if it does not exist",
-		),
-		cliflags.String(
-			&cmd.ServiceAccount,
-			names.ServiceAccount,
-			"loft-admin",
-			"The service account name to create",
-		),
-		cliflags.String(
-			&cmd.DisplayName,
-			names.DisplayName,
-			"",
-			"The display name to show in the UI for this cluster",
-		),
-		cliflags.Bool(
-			&cmd.Wait,
-			names.Wait,
-			false,
-			"If true, will wait until the cluster is initialized",
-		),
-		cliflags.Bool(
-			&cmd.Insecure,
-			names.Insecure,
-			false,
-			"If true, deploys the agent in insecure mode",
-		),
-		cliflags.String(
-			&cmd.HelmChartVersion,
-			names.HelmChartVersion,
-			"",
-			"The agent chart version to deploy",
-		),
-		cliflags.String(&cmd.HelmChartPath, names.HelmChartPath, "", "The agent chart to deploy"),
-		cliflags.StringArray(
-			&cmd.HelmSet,
-			names.HelmSet,
-			[]string{},
-			"Extra helm values for the agent chart",
-		),
-		cliflags.StringArray(
-			&cmd.HelmValues,
-			names.HelmValues,
-			[]string{},
-			"Extra helm values for the agent chart",
-		),
-		cliflags.String(
-			&cmd.KubeContext,
-			names.KubeContext,
-			"",
-			"The kube context to use for installation",
-		),
-		cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"),
-	)
-	proflags.BindEnv(c.Flags(), names.Host)
+	cmd.registerFlags(c)
 
 	return c
 }

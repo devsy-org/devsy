@@ -38,19 +38,7 @@ func MergeConfiguration(
 	config *DevContainerConfig,
 	imageMetadataEntries []*ImageMetadata,
 ) (*MergedDevContainerConfig, error) {
-	// When no image metadata entries are provided, synthesize one from the
-	// supplied config so that lifecycle hooks, customizations, mounts, etc.
-	// declared directly in the devcontainer.json still propagate through the
-	// merge. Callers that build a proper metadata chain (single image, compose,
-	// etc.) call AddConfigToImageMetadata first and pass a non-empty list, in
-	// which case the user config is already represented there.
-	if len(imageMetadataEntries) == 0 && config != nil {
-		userMetadata := &ImageMetadata{}
-		userMetadata.DevContainerConfigBase = config.DevContainerConfigBase
-		userMetadata.DevContainerActions = config.DevContainerActions
-		userMetadata.NonComposeBase = config.NonComposeBase
-		imageMetadataEntries = []*ImageMetadata{userMetadata}
-	}
+	imageMetadataEntries = ensureImageMetadataEntries(config, imageMetadataEntries)
 
 	customizations := collectCustomizations(imageMetadataEntries)
 
@@ -59,8 +47,44 @@ func MergeConfiguration(
 	// reverse the order
 	reversed := ReverseSlice(imageMetadataEntries)
 
-	// merge config
-	mergedConfig := &MergedDevContainerConfig{
+	mergedConfig := newMergedDevContainerConfig(copiedConfig, customizations)
+
+	// adjust config
+	mergeRuntimeFields(mergedConfig, reversed)
+	mergedConfig.Mounts = mergeMounts(reversed)
+	mergeLifecycleHookFields(mergedConfig, reversed)
+	mergeUserAndEnvFields(mergedConfig, reversed, copiedConfig)
+	mergePortsAndShutdownFields(mergedConfig, reversed, copiedConfig)
+
+	return mergedConfig, nil
+}
+
+// ensureImageMetadataEntries synthesizes an ImageMetadata entry from the
+// supplied config when no image metadata entries are provided, so that
+// lifecycle hooks, customizations, mounts, etc. declared directly in the
+// devcontainer.json still propagate through the merge. Callers that build a
+// proper metadata chain (single image, compose, etc.) call
+// AddConfigToImageMetadata first and pass a non-empty list, in which case the
+// user config is already represented there.
+func ensureImageMetadataEntries(
+	config *DevContainerConfig,
+	imageMetadataEntries []*ImageMetadata,
+) []*ImageMetadata {
+	if len(imageMetadataEntries) != 0 || config == nil {
+		return imageMetadataEntries
+	}
+	userMetadata := &ImageMetadata{}
+	userMetadata.DevContainerConfigBase = config.DevContainerConfigBase
+	userMetadata.DevContainerActions = config.DevContainerActions
+	userMetadata.NonComposeBase = config.NonComposeBase
+	return []*ImageMetadata{userMetadata}
+}
+
+func newMergedDevContainerConfig(
+	copiedConfig *DevContainerConfig,
+	customizations map[string][]any,
+) *MergedDevContainerConfig {
+	return &MergedDevContainerConfig{
 		UpdatedConfigProperties: UpdatedConfigProperties{
 			Customizations: customizations,
 		},
@@ -75,8 +99,9 @@ func MergeConfiguration(
 		// devcontainer.json file.
 		Origin: copiedConfig.Origin,
 	}
+}
 
-	// adjust config
+func mergeRuntimeFields(mergedConfig *MergedDevContainerConfig, reversed []*ImageMetadata) {
 	mergedConfig.Init = some(reversed, func(entry *ImageMetadata) *bool { return entry.Init })
 	mergedConfig.Privileged = some(
 		reversed,
@@ -92,7 +117,9 @@ func MergeConfiguration(
 		reversed,
 		func(entry *ImageMetadata) string { return entry.Entrypoint },
 	)
-	mergedConfig.Mounts = mergeMounts(reversed)
+}
+
+func mergeLifecycleHookFields(mergedConfig *MergedDevContainerConfig, reversed []*ImageMetadata) {
 	mergedConfig.OnCreateCommands = mergeLifestyleHooks(
 		reversed,
 		func(entry *ImageMetadata) types.LifecycleHook { return entry.OnCreateCommand },
@@ -113,6 +140,13 @@ func MergeConfiguration(
 		reversed,
 		func(entry *ImageMetadata) types.LifecycleHook { return entry.PostAttachCommand },
 	)
+}
+
+func mergeUserAndEnvFields(
+	mergedConfig *MergedDevContainerConfig,
+	reversed []*ImageMetadata,
+	copiedConfig *DevContainerConfig,
+) {
 	mergedConfig.WaitFor = firstString(
 		reversed,
 		func(entry *ImageMetadata) string { return entry.WaitFor },
@@ -139,6 +173,13 @@ func MergeConfiguration(
 		reversed,
 		func(entry *ImageMetadata) map[string]string { return entry.ContainerEnv },
 	)
+}
+
+func mergePortsAndShutdownFields(
+	mergedConfig *MergedDevContainerConfig,
+	reversed []*ImageMetadata,
+	copiedConfig *DevContainerConfig,
+) {
 	mergedConfig.PortsAttributes = mergeMaps(
 		reversed,
 		func(entry *ImageMetadata) map[string]PortAttribute { return entry.PortsAttributes },
@@ -162,8 +203,6 @@ func MergeConfiguration(
 	if mergedConfig.ShutdownAction == "" {
 		mergedConfig.ShutdownAction = defaultShutdownAction(copiedConfig)
 	}
-
-	return mergedConfig, nil
 }
 
 func collectCustomizations(entries []*ImageMetadata) map[string][]any {

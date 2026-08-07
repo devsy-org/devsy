@@ -67,6 +67,13 @@ exit code of "devsy ci".`,
 }
 
 func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
+	cmd.registerRunFlags(ciCmd)
+	cmd.registerBuildFlags(ciCmd)
+	cmd.registerWorkspaceFlags(ciCmd)
+	cmd.registerSecretsFlags(ciCmd)
+}
+
+func (cmd *CICmd) registerRunFlags(ciCmd *cobra.Command) {
 	cliflags.Add(ciCmd,
 		cliflags.String(&cmd.RunCmdString, runCmdFlag, "",
 			"Shell command to run inside the container, executed via sh -c "+
@@ -75,14 +82,15 @@ func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 			"Environment variables to set in the container at run time (KEY=VALUE, repeatable)"),
 		cliflags.Bool(&cmd.Keep, keepFlag, false,
 			"Keep the workspace after running instead of tearing it down (useful for debugging)"),
+	)
+}
+
+func (cmd *CICmd) registerBuildFlags(ciCmd *cobra.Command) {
+	cliflags.Add(ciCmd,
 		cliflags.String(&cmd.DevContainerSource, names.DevContainer, "",
 			"Select the devcontainer config source, overriding project discovery: "+
 				`"none" (ignore the project config), "image:<ref>" (use only that image), `+
 				`"id:<name>" (a named .devcontainer/<name> profile), or a path to a devcontainer.json`),
-		cliflags.StringSlice(&cmd.ProviderOptions, names.ProviderOption, nil,
-			"Provider option in the form KEY=VALUE"),
-		cliflags.String(&cmd.Machine, names.Machine, "",
-			"The machine to use for this workspace. The machine needs to exist beforehand"),
 		cliflags.Bool(&cmd.NoCache, names.NoCache, false,
 			"Do not use the build cache when building the image"),
 		cliflags.String(&cmd.RunPlatform, names.Platform, "",
@@ -95,6 +103,18 @@ func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 		cliflags.StringArray(&cmd.CacheFrom, names.CacheFrom, nil,
 			"Cache sources for the build (e.g., myregistry.io/cache:latest). "+
 				"Reuse a pre-built image to warm the build"),
+	)
+	cliflags.RegisterDevContainerModifierFlags(ciCmd.Flags(), cliflags.DevContainerModifierFlags{
+		Features: &cmd.AdditionalFeatures,
+	})
+}
+
+func (cmd *CICmd) registerWorkspaceFlags(ciCmd *cobra.Command) {
+	cliflags.Add(ciCmd,
+		cliflags.StringSlice(&cmd.ProviderOptions, names.ProviderOption, nil,
+			"Provider option in the form KEY=VALUE"),
+		cliflags.String(&cmd.Machine, names.Machine, "",
+			"The machine to use for this workspace. The machine needs to exist beforehand"),
 		cliflags.StringArray(&cmd.WorkspaceEnv, names.WorkspaceEnv, nil,
 			"Env variables available at build/lifecycle time (KEY=VALUE, repeatable)"),
 		cliflags.StringSlice(&cmd.WorkspaceEnvFile, names.WorkspaceEnvFile, nil,
@@ -105,6 +125,11 @@ func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 			nil,
 			"Extra env variables to inject during workspace initialization (KEY=VALUE, repeatable)",
 		),
+	)
+}
+
+func (cmd *CICmd) registerSecretsFlags(ciCmd *cobra.Command) {
+	cliflags.Add(ciCmd,
 		cliflags.String(
 			&cmd.SecretsFile,
 			names.SecretsFile,
@@ -127,9 +152,6 @@ func (cmd *CICmd) registerFlags(ciCmd *cobra.Command) {
 		cliflags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 	)
-	cliflags.RegisterDevContainerModifierFlags(ciCmd.Flags(), cliflags.DevContainerModifierFlags{
-		Features: &cmd.AdditionalFeatures,
-	})
 }
 
 func splitArgs(
