@@ -153,7 +153,7 @@ func (t *tunnelServer) RunWithResult(
 			return result, nil
 		}
 		return nil, err
-	case <-ctx.Done():.
+	case <-ctx.Done():
 		if result := t.getResult(); result != nil {
 			return result, nil
 		}
