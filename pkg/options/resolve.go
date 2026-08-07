@@ -163,6 +163,10 @@ func ResolveOptions(
 	skipSubOptions bool,
 	singleMachine *bool,
 ) (*config.Config, error) {
+	if devConfig == nil {
+		return nil, nil
+	}
+
 	// get binary paths
 	binaryPaths, err := provider.GetBinaries(devConfig.DefaultContext, providerConfig)
 	if err != nil {
@@ -196,10 +200,6 @@ func ResolveOptions(
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	if devConfig == nil {
-		return devConfig, nil
 	}
 
 	return applyResolvedProviderOptions(devConfig, applyResolvedProviderOptionsParams{

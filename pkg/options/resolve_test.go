@@ -29,6 +29,9 @@ type testCase struct {
 	ExpectErr              bool
 	ExpectedOptions        map[string]string
 	ExpectedDynamicOptions config.OptionDefinitions
+
+	// FreshFilledKeys get Filled set to time.Now() right before Resolve runs.
+	FreshFilledKeys []string
 }
 
 const (
@@ -170,8 +173,7 @@ var resolveOptionsTestCases = []testCase{
 				Filled: &[]types.Time{types.NewTime(time.Time{})}[0],
 			},
 			testOptNoExp: {
-				Value:  testValFoo,
-				Filled: &[]types.Time{types.Now()}[0],
+				Value: testValFoo,
 			},
 		},
 		ProviderOptions: map[string]*types.Option{
@@ -188,6 +190,7 @@ var resolveOptionsTestCases = []testCase{
 			testOptExpire: testValBar,
 			testOptNoExp:  testValFoo,
 		},
+		FreshFilledKeys: []string{testOptNoExp},
 	},
 	{
 		Name: "Ignore self",
@@ -696,8 +699,18 @@ func TestResolveOptions(t *testing.T) {
 	}
 }
 
+func applyFreshFilledTimestamps(tc testCase) {
+	for _, key := range tc.FreshFilledKeys {
+		value := tc.ResolvedValues[key]
+		now := types.Now()
+		value.Filled = &now
+		tc.ResolvedValues[key] = value
+	}
+}
+
 func runResolveTestCase(t *testing.T, tc testCase) {
 	t.Helper()
+	applyFreshFilledTimestamps(tc)
 	r := resolver.New(tc.UserValues, tc.ExtraValues, buildResolverOpts(tc)...)
 	options, dynamicOptions, err := r.Resolve(
 		context.Background(),
