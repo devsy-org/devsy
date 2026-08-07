@@ -3,7 +3,7 @@ title: Add a Provider
 sidebar_label: Add a Provider
 ---
 
-The Devsy team maintains providers for popular services such as:
+Devsy providers include:
 
 - [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
@@ -14,18 +14,19 @@ The Devsy team maintains providers for popular services such as:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-These providers can be installed with the Devsy CLI in the following form:
+Providers can be installed with the Devsy CLI using:
+
 ```
 devsy provider add docker
 ```
 
-You can get a list of available 1st party providers by using the command:
+List available providers by using the command:
 
 ```
 devsy provider list --available
 ```
 
-## Via Devsy Desktop Application
+## Desktop Application
 
 Open the Providers view and click **Add**. The provider wizard has four steps:
 
@@ -133,27 +134,27 @@ devsy provider get <provider-name>
 An example output for the AWS Provider is:
 
 ```
-          NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
+          NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT           |          VALUE
 ----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
-                          |          | Devsy agent to.               |                         |
-AWS_ACCESS_KEY_ID         | false    | The AWS access key id          |                         |
-AWS_AMI                   | false    | The disk image to use.         |                         |
-AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 40
-AWS_INSTANCE_TYPE         | false    | The machine type to use.       | c5.xlarge               | c5.xlarge
-AWS_REGION                | true     | The AWS cloud region to create |                         | us-west-2
-                          |          | the VM in, e.g. us-west-1      |                         |
-AWS_SECRET_ACCESS_KEY     | false    | The AWS secret access key      |                         |
-AWS_VPC_ID                | false    | The vpc id to use.             |                         |
-INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
-                          |          | stop the VM after the          |                         |
-                          |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
+AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy    | /var/lib/toolbox/devsy
+                          |          | Devsy agent to.                |                           |
+AWS_ACCESS_KEY_ID         | false    | The AWS access key id          |                           |
+AWS_AMI                   | false    | The disk image to use.         |                           |
+AWS_DISK_SIZE             | false    | The disk size to use.          | 40                        | 40
+AWS_INSTANCE_TYPE         | false    | The machine type to use.       | c5.xlarge                 | c5.xlarge
+AWS_REGION                | true     | The AWS cloud region to create |                           | us-west-2
+                          |          | the VM in, e.g. us-west-1      |                           |
+AWS_SECRET_ACCESS_KEY     | false    | The AWS secret access key      |                           |
+AWS_VPC_ID                | false    | The vpc id to use.             |                           |
+INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                       | 10m
+                          |          | stop the VM after the          |                           |
+                          |          | inactivity period.             |                           |
+INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker  | true                       | true
+                          |          | credentials into the remote    |                           |
+                          |          | host.                          |                           |
+INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git     | true                       | true
+                          |          | credentials into the remote    |                           |
+                          |          | host.                          |                           |
 ```
 
 You can see this table as an overview, you can change each option using:
@@ -225,20 +226,8 @@ devsy provider use <provider-name>
 
 ## Community Providers
 
-The community maintains providers for additional services.
+Additional providers can be installed with the Devsy CLI using:
 
-- [Cloudbit (cloudbit-ch/devsy-provider-cloudbit)](https://github.com/cloudbit-ch/devsy-provider-cloudbit)
-- [Flow (flowswiss/devsy-provider-flow)](https://github.com/flowswiss/devsy-provider-flow)
-- [Hetzner (mrsimonemms/devsy-provider-hetzner)](https://github.com/mrsimonemms/devsy-provider-hetzner)
-- [OVHcloud (alexandrevilain/devsy-provider-ovhcloud)](https://github.com/alexandrevilain/devsy-provider-ovhcloud)
-- [Scaleway (dirien/devsy-provider-scaleway)](https://github.com/dirien/devsy-provider-scaleway)
-- [Exoscale (dirien/devsy-provider-exoscale)](https://github.com/dirien/devsy-provider-exoscale)
-- [Multipass (minhio/devsy-provider-multipass)](https://github.com/minhio/devsy-provider-multipass)
-- [Open Telekom Cloud (akyriako/devsy-provider-opentelekomcloud)](https://github.com/akyriako/devsy-provider-opentelekomcloud)
-- [Vultr (navaneeth-dev/devsy-provider-vultr)](https://github.com/navaneeth-dev/devsy-provider-vultr)
-- [STACKIT (stackitcloud/devsy-provider-stackit)](https://github.com/stackitcloud/devsy-provider-stackit)
-
-These providers can be installed with the Devsy CLI in the following form:
 ```
 devsy provider add <user/repository>
 ```
