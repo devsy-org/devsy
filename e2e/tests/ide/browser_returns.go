@@ -386,10 +386,18 @@ var _ = ginkgo.Describe(
 
 				err = f.DevsyContextUse(ctx, contextName)
 				framework.ExpectNoError(err)
-				err = f.ExecCommand(ctx, false, true, "", []string{
-					"context", "set",
-					names.Flag(names.Option), config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
-				})
+				err = f.ExecCommand(
+					ctx,
+					false,
+					true,
+					"",
+					[]string{
+						"context",
+						"set",
+						names.Flag(names.Option),
+						config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
+					},
+				)
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, "docker")
@@ -414,8 +422,9 @@ var _ = ginkgo.Describe(
 					"--ide=openvscode", "--ide-launch=headless", "--debug")
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
-				gomega.Expect(combined).To(gomega.ContainSubstring("Starting vscode in browser mode at"),
-					"expected browser IDE opener path to execute; got:\n%s", combined)
+				gomega.Expect(combined).
+					To(gomega.ContainSubstring("Starting vscode in browser mode at"),
+						"expected browser IDE opener path to execute; got:\n%s", combined)
 				gomega.Expect(combined).To(gomega.ContainSubstring("forwarding gpg-agent"),
 					"expected browser IDE GPG forward bootstrap to run; got:\n%s", combined)
 

@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const vscodeUser = "vscode"
+
 func TestBuildIDEParams_GPGAgentForwardingParity(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -52,7 +54,7 @@ func TestBuildIDEParams_GPGAgentForwardingParity(t *testing.T) {
 
 			devsyConfig := testConfigWithGPGForwardingOption(tt.contextOption)
 			wctx := &workspaceContext{
-				user:       "vscode",
+				user:       vscodeUser,
 				result:     &config2.Result{},
 				tunnelPort: 10800,
 			}
@@ -62,7 +64,7 @@ func TestBuildIDEParams_GPGAgentForwardingParity(t *testing.T) {
 			assert.Equal(t, tt.expected, params.GPGAgentForwarding)
 			assert.Equal(t, "sock-id", params.SSHAuthSockID)
 			assert.Equal(t, "ssh-sign-key", params.GitSSHSigningKey)
-			assert.Equal(t, "vscode", params.User)
+			assert.Equal(t, vscodeUser, params.User)
 			assert.Equal(t, wctx.result, params.Result)
 			assert.True(t, params.TunnelMode)
 			assert.Equal(t, opener.LaunchAuto, params.Launch)
