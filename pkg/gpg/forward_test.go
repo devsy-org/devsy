@@ -100,9 +100,16 @@ func TestRunForwardOnce_SignalsReadyOnChildWrite(t *testing.T) {
 	defer cancel()
 
 	ready := make(chan struct{}, 1)
-	done := make(chan error, 1)
+	type result struct {
+		reported bool
+		err      error
+	}
+	done := make(chan result, 1)
 	go func() {
-		done <- runForwardOnce(ctx, "/bin/sh", []string{"-c", "printf x >&3; exec 3>&-; exec sleep 5"}, ready)
+		reported, err := runForwardOnce(
+			ctx, "/bin/sh", []string{"-c", "printf x >&3; exec 3>&-; exec sleep 5"}, ready,
+		)
+		done <- result{reported, err}
 	}()
 
 	select {
@@ -120,23 +127,64 @@ func TestRunForwardOnce_SignalsReadyOnChildWrite(t *testing.T) {
 	cancel()
 
 	select {
-	case <-done:
+	case res := <-done:
+		assert.True(t, res.reported, "runForwardOnce should report readiness after a real write")
 	case <-time.After(2 * time.Second):
 		t.Fatal("runForwardOnce did not return after ctx cancel")
 	}
 }
 
-func TestRunForwardOnce_SignalsReadyOnChildExitWithoutWriting(t *testing.T) {
+func TestRunForwardOnce_DoesNotSignalReadyOnChildExitWithoutWriting(t *testing.T) {
 	ready := make(chan struct{}, 1)
-	err := runForwardOnce(context.Background(), "/bin/sh", []string{"-c", "exit 1"}, ready)
+	reported, err := runForwardOnce(
+		context.Background(), "/bin/sh", []string{"-c", "exit 1"}, ready,
+	)
 	require.Error(t, err)
+	assert.False(t, reported, "a child that exits without writing must not be treated as ready")
 
-	require.Eventually(t, func() bool {
-		select {
-		case <-ready:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 5*time.Millisecond, "ready should be signaled even though the child never wrote")
+	select {
+	case <-ready:
+		t.Fatal("ready must not be signaled when the child never wrote")
+	default:
+	}
+}
+
+func TestSuperviseForward_ReportsReadyOnlyAfterSuccessfulRetry(t *testing.T) {
+	runs := filepath.Join(t.TempDir(), "runs")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		superviseForward(ctx, forwardSpec{
+			execPath: "/bin/sh",
+			args: []string{
+				"-c",
+				"printf x >> " + runs + "; " +
+					"if [ $(wc -c < " + runs + ") -lt 2 ]; then exit 1; fi; " +
+					"printf x >&3; exec 3>&-; exec sleep 5",
+			},
+			backoff: backoff{min: 5 * time.Millisecond, max: 10 * time.Millisecond},
+		}, ready)
+		close(done)
+	}()
+
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ready was never signaled after a successful retry")
+	}
+
+	data, err := os.ReadFile(runs) //nolint:gosec // test path is created by the test
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, strings.Count(string(data), "x"), 2,
+		"the first (failing) attempt should not have consumed readiness reporting")
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("superviseForward did not stop after ctx cancel")
+	}
 }

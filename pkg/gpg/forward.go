@@ -76,15 +76,21 @@ type forwardSpec struct {
 
 func superviseForward(ctx context.Context, spec forwardSpec, ready chan<- struct{}) {
 	delay := spec.backoff.min
-	firstAttemptReady := ready
+	// pendingReady stays non-nil across attempts (setup failures, crashes,
+	// restarts) until one attempt actually reports readiness: a failed first
+	// attempt must not make ForwardAgent give up waiting on a retry that
+	// would succeed within its timeout.
+	pendingReady := ready
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 
 		start := time.Now()
-		runErr := runForwardOnce(ctx, spec.execPath, spec.args, firstAttemptReady)
-		firstAttemptReady = nil // only the first attempt reports readiness
+		reported, runErr := runForwardOnce(ctx, spec.execPath, spec.args, pendingReady)
+		if reported {
+			pendingReady = nil // readiness has been reported; no need to keep trying
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -104,25 +110,26 @@ func superviseForward(ctx context.Context, spec forwardSpec, ready chan<- struct
 }
 
 // runForwardOnce runs a single attempt of the forwarding child. If ready is
-// non-nil, it's signaled once the child reports readiness via
-// ForwardReadyFDEnv, or once the child exits without ever reporting.
+// non-nil, it reports whether the child actually signaled readiness via
+// ForwardReadyFDEnv (a written byte), so callers can keep offering the
+// readiness pipe to later attempts when this one merely failed to set up or
+// exited without ever reporting.
 func runForwardOnce(
 	ctx context.Context,
 	execPath string,
 	args []string,
 	ready chan<- struct{},
-) error {
+) (reported bool, err error) {
 	//nolint:gosec // execPath comes from os.Executable()
 	cmd := exec.CommandContext(ctx, execPath, args...)
 
 	if ready == nil {
-		return cmd.Run()
+		return false, cmd.Run()
 	}
 
 	r, w, err := os.Pipe()
 	if err != nil {
-		signalOnce(ready)
-		return cmd.Run()
+		return false, cmd.Run()
 	}
 	cmd.ExtraFiles = []*os.File{w}
 	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=3", ForwardReadyFDEnv))
@@ -130,19 +137,24 @@ func runForwardOnce(
 	if err := cmd.Start(); err != nil {
 		_ = w.Close()
 		_ = r.Close()
-		signalOnce(ready)
-		return err
+		return false, err
 	}
 	_ = w.Close() // the child holds the only remaining write end
 
+	signaled := make(chan bool, 1)
 	go func() {
 		buf := make([]byte, 1)
-		_, _ = r.Read(buf)
+		n, _ := r.Read(buf)
 		_ = r.Close()
-		signalOnce(ready)
+		ok := n > 0
+		if ok {
+			signalOnce(ready)
+		}
+		signaled <- ok
 	}()
 
-	return cmd.Wait()
+	err = cmd.Wait()
+	return <-signaled, err
 }
 
 func signalOnce(ready chan<- struct{}) {
