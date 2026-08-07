@@ -67,6 +67,10 @@ type gpgTunnel struct {
 
 	// readySignaled prevents signaling gpg forward readiness more than once.
 	readySignaled bool
+
+	// readyFile retains the *os.File wrapping the readiness fd across failed
+	// write attempts, preventing premature finalization/closure of the fd.
+	readyFile *os.File
 }
 
 // newGPGTunnel reports whether GPG-agent forwarding was requested via flag
@@ -252,10 +256,10 @@ func (t *gpgTunnel) signalReadyOnce() {
 	if t.readySignaled {
 		return
 	}
-	t.readySignaled = signalGPGForwardReady()
+	t.readySignaled = t.signalGPGForwardReady()
 }
 
-func signalGPGForwardReady() bool {
+func (t *gpgTunnel) signalGPGForwardReady() bool {
 	fdStr := os.Getenv(gpg.EnvForwardReadyFD)
 	if fdStr == "" {
 		return false
@@ -265,19 +269,23 @@ func signalGPGForwardReady() bool {
 		log.Debugf("invalid %s=%q: %v", gpg.EnvForwardReadyFD, fdStr, err)
 		return false
 	}
-	f := os.NewFile(uintptr(fd), "gpg-forward-ready")
-	if f == nil {
-		log.Debugf("invalid %s=%q: file descriptor is not open", gpg.EnvForwardReadyFD, fdStr)
-		return false
+	// Reuse the retained file if we've already wrapped this fd.
+	if t.readyFile == nil {
+		t.readyFile = os.NewFile(uintptr(fd), "gpg-forward-ready")
+		if t.readyFile == nil {
+			log.Debugf("invalid %s=%q: file descriptor is not open", gpg.EnvForwardReadyFD, fdStr)
+			return false
+		}
 	}
-	if _, err := f.Write([]byte{1}); err != nil {
+	if _, err := t.readyFile.Write([]byte{1}); err != nil {
 		log.Debugf("signal gpg forward ready: %v", err)
-		// Leave f open: the fd may still be usable for a later retry, and
-		// closing it here would risk the fd number being reused elsewhere
+		// Keep t.readyFile set: the fd may still be usable for a later retry,
+		// and releasing it here would let the runtime finalize and close the fd
 		// before that retry runs.
 		return false
 	}
-	_ = f.Close()
+	_ = t.readyFile.Close()
+	t.readyFile = nil
 	return true
 }
 
