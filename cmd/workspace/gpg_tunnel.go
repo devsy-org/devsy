@@ -269,7 +269,6 @@ func (t *gpgTunnel) signalGPGForwardReady() bool {
 		log.Debugf("invalid %s=%q: %v", gpg.EnvForwardReadyFD, fdStr, err)
 		return false
 	}
-	// Reuse the retained file if we've already wrapped this fd.
 	if t.readyFile == nil {
 		t.readyFile = os.NewFile(uintptr(fd), "gpg-forward-ready")
 		if t.readyFile == nil {
@@ -279,9 +278,7 @@ func (t *gpgTunnel) signalGPGForwardReady() bool {
 	}
 	if _, err := t.readyFile.Write([]byte{1}); err != nil {
 		log.Debugf("signal gpg forward ready: %v", err)
-		// Keep t.readyFile set: the fd may still be usable for a later retry,
-		// and releasing it here would let the runtime finalize and close the fd
-		// before that retry runs.
+		// the fd may still be usable for a later retry
 		return false
 	}
 	_ = t.readyFile.Close()

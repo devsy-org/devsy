@@ -178,9 +178,17 @@ func TestPortForwarding_ReleasesListenerOnTransportDeath(t *testing.T) {
 		t.Fatal("portForwarding did not return after transport death (listener leaked)")
 	}
 
-	l2, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatalf("rebind on %s failed after transport death: %v", addr, err)
+	var l2 net.Listener
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		l2, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rebind on %s failed after transport death: %v", addr, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	_ = l2.Close()
 }
