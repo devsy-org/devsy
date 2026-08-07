@@ -21,11 +21,12 @@ func ReportResult(
 	tunnelClient tunnel.TunnelClient,
 	fn func(ctx context.Context) (*config.Result, error),
 ) (*config.Result, error) {
-	result, err := fn(ctx)
+	result, err := runJob(ctx, fn)
 
-	toSend := result
-	if toSend == nil {
-		toSend = &config.Result{}
+	toSend := &config.Result{}
+	if result != nil {
+		copied := *result
+		toSend = &copied
 	}
 	if err != nil && toSend.Error == "" {
 		toSend.Error = err.Error()
@@ -40,6 +41,21 @@ func ReportResult(
 	}
 
 	return result, err
+}
+
+// runJob recovers a panic in fn so ReportResult's completion guarantee holds
+// even when the job crashes outright, instead of the host waiting forever
+// for a result that will never arrive.
+func runJob(
+	ctx context.Context,
+	fn func(ctx context.Context) (*config.Result, error),
+) (result *config.Result, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return fn(ctx)
 }
 
 func sendResult(tunnelClient tunnel.TunnelClient, result *config.Result) error {

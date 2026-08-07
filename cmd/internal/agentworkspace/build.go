@@ -86,7 +86,7 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	}
 
 	_, err = tunnelserver.ReportResult(
-		ctx,
+		cancelCtx,
 		tunnelClient,
 		func(ctx context.Context) (*config2.Result, error) {
 			return nil, buildAndPushImages(ctx, runner, workspaceInfo)

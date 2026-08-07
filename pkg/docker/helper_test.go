@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testFakeCommand = "cmd"
+
+var testExecArgs = []string{"exec", "c1", testFakeCommand}
+
 func writeScript(t *testing.T, dir, name, script string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -281,6 +285,34 @@ exit 1
 }
 
 func TestRunCmd_AttachesCtxErrOnFailure(t *testing.T) {
+	tmp := t.TempDir()
+	ready := filepath.Join(tmp, "ready")
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+touch `+ready+`
+exec sleep 30
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, testExecArgs, streams)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRunCmd_AlreadyCancelledBeforeStart(t *testing.T) {
 	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
 exit 1
 `)
@@ -290,7 +322,7 @@ exit 1
 	cancel()
 
 	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
-	err := h.Run(ctx, []string{"exec", "c1", "cmd"}, streams)
+	err := h.Run(ctx, testExecArgs, streams)
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
@@ -303,7 +335,35 @@ exit 1
 	h := &DockerHelper{DockerCommand: bin}
 
 	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
-	err := h.Run(context.Background(), []string{"exec", "c1", "cmd"}, streams)
+	err := h.Run(context.Background(), testExecArgs, streams)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+}
+
+// TestRunCmd_CancelAfterReturnNotRetroactivelyAttributed verifies that a
+// cancellation arriving after the command already completed on its own
+// never gets attributed to that unrelated cancellation. This relies on
+// runCmd using cmd.Cancel — which os/exec itself only invokes if ctx becomes
+// done before the process is observed to have exited — rather than a
+// post-hoc ctx.Err() check racing an independent process failure. A properly
+// concurrent version of this test (cancelling from a goroutine with no
+// synchronization) was tried and always hit the pre-Start() rejection path
+// instead: os/exec's own synchronization makes the misattribution this test
+// guards against unreachable by construction, so there's no genuine race to
+// exercise here beyond this sequential check.
+func TestRunCmd_CancelAfterReturnNotRetroactivelyAttributed(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, testExecArgs, streams)
+	cancel()
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, context.Canceled)

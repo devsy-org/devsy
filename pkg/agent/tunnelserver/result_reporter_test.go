@@ -131,6 +131,42 @@ func TestReportResult_SendFailure_JobErrorTakesPrecedence(t *testing.T) {
 	require.ErrorIs(t, err, jobErr)
 }
 
+func TestReportResult_PanicInFnIsReported(t *testing.T) {
+	client := &fakeSendResultClient{}
+
+	result, err := ReportResult(
+		context.Background(),
+		client,
+		func(context.Context) (*config.Result, error) {
+			panic("boom")
+		},
+	)
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "boom")
+	require.Contains(t, decodeSentResult(t, client).Error, "boom")
+}
+
+func TestReportResult_DoesNotMutateCallersResult(t *testing.T) {
+	client := &fakeSendResultClient{}
+	jobErr := errors.New("devcontainer up failed")
+	callerResult := &config.Result{}
+
+	_, err := ReportResult(
+		context.Background(),
+		client,
+		func(context.Context) (*config.Result, error) { return callerResult, jobErr },
+	)
+
+	require.ErrorIs(t, err, jobErr)
+	require.Empty(
+		t,
+		callerResult.Error,
+		"ReportResult must not mutate the caller-owned result struct",
+	)
+	require.Equal(t, jobErr.Error(), decodeSentResult(t, client).Error)
+}
+
 type erroringSendResultClient struct {
 	tunnel.TunnelClient
 	err error

@@ -111,7 +111,7 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 	_, err = tunnelserver.ReportResult(
 		ctx,
 		tunnelClient,
-		func(ctx context.Context) (*config.Result, error) {
+		func(_ context.Context) (*config.Result, error) {
 			if err := cmd.prepareWorkspace(sctx); err != nil {
 				return nil, err
 			}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -239,14 +240,21 @@ type PullOptions struct {
 }
 
 // runCmd disambiguates a signal-killed command failure by attaching
-// ctx.Err() when present: "signal: killed" looks identical whether it came
-// from this ctx being cancelled/timing out or from something else entirely.
+// ctx.Err() when this ctx is what caused the kill: "signal: killed" looks
+// identical whether it came from that or something else entirely. Checking
+// ctx.Err() only after cmd.Run() returns would race an unrelated concurrent
+// cancellation against the command's own, independent failure, so this hooks
+// cmd.Cancel to record only a cancellation this exec package itself acted on.
 func runCmd(ctx context.Context, cmd *exec.Cmd) error {
+	var cancelledByCtx atomic.Bool
+	cmd.Cancel = func() error {
+		cancelledByCtx.Store(true)
+		return cmd.Process.Kill()
+	}
+
 	err := cmd.Run()
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("%w: %w", ctxErr, err)
-		}
+	if err != nil && cancelledByCtx.Load() {
+		return fmt.Errorf("%w: %w", ctx.Err(), err)
 	}
 	return err
 }
