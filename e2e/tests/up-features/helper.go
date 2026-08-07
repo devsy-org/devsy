@@ -74,6 +74,7 @@ func addFileToTar(tarWriter *tar.Writer, filePath string) error {
 	return err
 }
 
+//nolint:unparam // dockerPath is "podman" for the windows-only caller in wsl.go
 func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
 	return framework.SetupDockerProvider(binDir, dockerPath)
 }

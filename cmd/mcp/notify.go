@@ -36,6 +36,7 @@ func streamLogsToSession(
 			if line == "" {
 				continue
 			}
+			//nolint:staticcheck // SA1019: deprecated per SEP-2577; no replacement in go-sdk v1.7.0
 			_ = session.Log(ctx, &sdkmcp.LoggingMessageParams{
 				Level:  "info",
 				Logger: "devsy",

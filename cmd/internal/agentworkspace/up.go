@@ -150,50 +150,33 @@ func (cmd *UpCmd) up(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
 ) error {
-	result, err := cmd.devsyUp(ctx, workspaceInfo, tunnelClient)
+	result, err := tunnelserver.ReportResult(
+		ctx,
+		tunnelClient,
+		func(ctx context.Context) (*config2.Result, error) {
+			result, err := cmd.devsyUp(ctx, workspaceInfo, tunnelClient)
+			if err != nil {
+				return &config2.Result{
+					Error:             err.Error(),
+					RecoveryAvailable: errors.Is(err, clierr.ErrBuildFailedRecoverable),
+				}, err
+			}
+			// Persist so the daemon, started before the build resolved the
+			// config, can read the workspace's shutdownAction on the first up.
+			persistResolvedConfig(workspaceInfo, result)
+			return result, nil
+		},
+	)
 	if err != nil {
-		errResult := &config2.Result{
-			Error:             err.Error(),
-			RecoveryAvailable: errors.Is(err, clierr.ErrBuildFailedRecoverable),
-		}
-		if sendErr := cmd.sendResult(ctx, errResult, tunnelClient); sendErr != nil {
-			log.Errorf("failed to forward up error %q to host: %v", err, sendErr)
-		}
 		return err
 	}
-
-	// Persist so the daemon, started before the build resolved the config, can
-	// read the workspace's shutdownAction on the first up.
-	persistResolvedConfig(workspaceInfo, result)
-
 	// runner.Up can return (result, nil) where result carries a structured
 	// Error forwarded from the inner container-setup step. Treat that as a
 	// failure so the agent process exits non-zero and the host doesn't try
 	// to proceed with a half-populated result.
-	if err := cmd.sendResult(ctx, result, tunnelClient); err != nil {
-		return err
-	}
 	if result != nil && result.Error != "" {
 		return fmt.Errorf("%s", result.Error)
 	}
-	return nil
-}
-
-func (cmd *UpCmd) sendResult(
-	ctx context.Context,
-	result *config2.Result,
-	tunnelClient tunnel.TunnelClient,
-) error {
-	out, err := json.Marshal(result)
-	if err != nil {
-		return err
-	}
-
-	_, err = tunnelClient.SendResult(ctx, &tunnel.Message{Message: string(out)})
-	if err != nil {
-		return fmt.Errorf("send result: %w", err)
-	}
-
 	return nil
 }
 

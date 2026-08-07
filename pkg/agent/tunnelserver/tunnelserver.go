@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -114,6 +115,7 @@ type tunnelServer struct {
 	allowDockerCredentials bool
 	allowKubeConfig        bool
 	allowPlatformOptions   bool
+	resultMu               sync.Mutex
 	result                 *config.Result
 	workspace              *provider2.Workspace
 
@@ -147,17 +149,23 @@ func (t *tunnelServer) RunWithResult(
 
 	select {
 	case err := <-errChan:
-		if t.result != nil {
-			return t.result, nil
+		if result := t.getResult(); result != nil {
+			return result, nil
 		}
 		return nil, err
 	case <-ctx.Done():
-		return t.result, nil
+		if result := t.getResult(); result != nil {
+			return result, nil
+		}
+		return nil, ctx.Err()
 	}
 }
 
 func (t *tunnelServer) Run(ctx context.Context, reader io.Reader, writer io.WriteCloser) error {
 	_, err := t.RunWithResult(ctx, reader, writer)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
 	return err
 }
 
@@ -409,7 +417,7 @@ func (t *tunnelServer) SendResult(
 		return nil, err
 	}
 
-	t.result = parsedResult
+	t.setResult(parsedResult)
 	return &tunnel.Empty{}, nil
 }
 
@@ -661,4 +669,16 @@ func (t *tunnelServer) workspaceIgnoreExcludes() []string {
 		}
 	}
 	return excludes
+}
+
+func (t *tunnelServer) getResult() *config.Result {
+	t.resultMu.Lock()
+	defer t.resultMu.Unlock()
+	return t.result
+}
+
+func (t *tunnelServer) setResult(result *config.Result) {
+	t.resultMu.Lock()
+	defer t.resultMu.Unlock()
+	t.result = result
 }

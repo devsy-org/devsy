@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -58,18 +59,9 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
-		DevsyConfig: devsyConfig,
-		Args:        args,
-		Owner:       cmd.Owner,
-	})
+	client, err := cmd.getWorkspaceClient(ctx, devsyConfig, args)
 	if err != nil {
-		return fmt.Errorf("get workspace for logs: %w", err)
-	}
-
-	client, ok := baseClient.(clientpkg.WorkspaceClient)
-	if !ok {
-		return fmt.Errorf("this command is not supported for proxy providers")
+		return err
 	}
 
 	sshServerCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
@@ -87,33 +79,75 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 
 	return pb.RunPair(ctx,
 		func(ctx context.Context, stdin, stdout *os.File) error {
-			stderr := log.Writer(log.LevelDebug)
-			defer func() { _ = stderr.Close() }()
-
-			return agent.InjectAgent(&agent.InjectOptions{
-				Ctx: ctx,
-				Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
-					return client.Command(ctx, clientpkg.CommandOptions{
-						Command: command,
-						Stdin:   stdinR,
-						Stdout:  stdoutW,
-						Stderr:  stderrW,
-					})
-				},
-				IsLocal:         client.AgentLocal(),
-				RemoteAgentPath: client.AgentPath(),
-				DownloadURL:     client.AgentURL(),
-				Command:         sshServerCmd,
-				Stdin:           stdin,
-				Stdout:          stdout,
-				Stderr:          stderr,
-				Timeout:         timeout,
+			return injectLogsAgent(ctx, injectLogsAgentParams{
+				client:       client,
+				sshServerCmd: sshServerCmd,
+				timeout:      timeout,
+				stdin:        stdin,
+				stdout:       stdout,
 			})
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
 			return runLogsSession(stdout, stdin, client)
 		},
 	)
+}
+
+// getWorkspaceClient resolves args to a WorkspaceClient, rejecting proxy providers
+// which don't support log streaming.
+func (cmd *LogsCmd) getWorkspaceClient(
+	ctx context.Context, devsyConfig *config.Config, args []string,
+) (clientpkg.WorkspaceClient, error) {
+	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get workspace for logs: %w", err)
+	}
+
+	client, ok := baseClient.(clientpkg.WorkspaceClient)
+	if !ok {
+		return nil, fmt.Errorf("this command is not supported for proxy providers")
+	}
+
+	return client, nil
+}
+
+// injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
+// remote ssh-server that runLogsSession then connects to.
+func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
+	stderr := log.Writer(log.LevelDebug)
+	defer func() { _ = stderr.Close() }()
+
+	return agent.InjectAgent(&agent.InjectOptions{
+		Ctx: ctx,
+		Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
+			return params.client.Command(ctx, clientpkg.CommandOptions{
+				Command: command,
+				Stdin:   stdinR,
+				Stdout:  stdoutW,
+				Stderr:  stderrW,
+			})
+		},
+		IsLocal:         params.client.AgentLocal(),
+		RemoteAgentPath: params.client.AgentPath(),
+		DownloadURL:     params.client.AgentURL(),
+		Command:         params.sshServerCmd,
+		Stdin:           params.stdin,
+		Stdout:          params.stdout,
+		Stderr:          stderr,
+		Timeout:         params.timeout,
+	})
+}
+
+type injectLogsAgentParams struct {
+	client       clientpkg.WorkspaceClient
+	sshServerCmd string
+	timeout      time.Duration
+	stdin        *os.File
+	stdout       *os.File
 }
 
 func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {

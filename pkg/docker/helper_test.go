@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testFakeCommand = "cmd"
+
+var testExecArgs = []string{"exec", "c1", testFakeCommand}
+
 func writeScript(t *testing.T, dir, name, script string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -123,9 +127,6 @@ echo "$@" > `+argsFile+`
 
 func TestFindContainerJSON_MatchesAllLabels(t *testing.T) {
 	tmp := t.TempDir()
-	// Fake docker: `ps -q -a` lists three containers; `inspect` returns each
-	// container's labels. c1 matches both query labels; c2 matches only the
-	// last label (an earlier label differs); c3 inspect returns an empty array.
 	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
 case "$1" in
   ps) printf 'c1\nc2\nc3\n' ;;
@@ -142,9 +143,6 @@ esac
 	got, err := h.FindContainerJSON(context.Background(), []string{"a=x", "b=y"})
 
 	require.NoError(t, err)
-	// Only c1 satisfies every label. c2 must be excluded (the AND-logic bug
-	// previously matched it on the last label alone), and c3's empty inspect
-	// result must not panic.
 	assert.Equal(t, []string{"c1"}, got)
 }
 
@@ -278,4 +276,78 @@ exit 1
 
 	assert.NoError(t, err, "should not propagate error on command failure")
 	assert.False(t, got, "should fall back to no GPU on command failure")
+}
+
+func TestRunCmd_AttachesCtxErrOnFailure(t *testing.T) {
+	tmp := t.TempDir()
+	ready := filepath.Join(tmp, "ready")
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+touch `+ready+`
+exec sleep 30
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, testExecArgs, streams)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRunCmd_AlreadyCancelledBeforeStart(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, testExecArgs, streams)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRunCmd_NoCtxErrWhenNotCancelled(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(context.Background(), testExecArgs, streams)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+}
+
+func TestRunCmd_CancelAfterReturnNotRetroactivelyAttributed(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	streams := Streams{Stdout: io.Discard, Stderr: io.Discard}
+	err := h.Run(ctx, testExecArgs, streams)
+	cancel()
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
 }

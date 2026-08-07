@@ -76,54 +76,7 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
-	cliflags.Add(
-		setupContainerCmd,
-		cliflags.Bool(
-			&cmd.StreamMounts,
-			names.StreamMounts,
-			false,
-			"If true, will try to stream the bind mounts from the host",
-		),
-		cliflags.Bool(
-			&cmd.Prebuild,
-			names.Prebuild,
-			false,
-			"If true, only run prebuild lifecycle hooks (onCreateCommand + updateContentCommand)",
-		),
-		cliflags.Bool(
-			&cmd.ChownWorkspace,
-			names.ChownWorkspace,
-			false,
-			"If Devsy should chown the workspace to the remote user",
-		),
-		cliflags.Bool(
-			&cmd.InjectGitCredentials,
-			names.InjectGitCredentials,
-			false,
-			"If Devsy should inject git credentials during setup",
-		),
-		cliflags.String(
-			&cmd.ContainerWorkspaceInfo,
-			names.ContainerWorkspaceInfo,
-			"",
-			"The container workspace info",
-		),
-		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
-		cliflags.String(&cmd.AccessKey, names.AccessKey, "", "Access Key to use"),
-		cliflags.String(&cmd.WorkspaceHost, names.WorkspaceHost, "", "Workspace hostname to use"),
-		cliflags.String(&cmd.PlatformHost, names.PlatformHost, "", "Platform host"),
-		cliflags.String(&cmd.DotfilesRepo, names.DotfilesRepo, "", "Dotfiles repository URL"),
-		cliflags.String(
-			&cmd.DotfilesScript,
-			names.DotfilesScript,
-			"",
-			"Dotfiles install script path",
-		),
-	)
-	_ = setupContainerCmd.MarkFlagRequired(names.SetupInfo)
-
-	cliflags.BindEnv(setupContainerCmd.Flags(), names.AccessKey)
-	cliflags.BindEnv(setupContainerCmd.Flags(), names.PlatformHost)
+	cmd.registerFlags(setupContainerCmd)
 
 	return setupContainerCmd
 }
@@ -155,11 +108,86 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		tunnelClient:  tunnelClient,
 	}
 
-	if err := cmd.prepareWorkspace(sctx); err != nil {
-		return err
-	}
+	_, err = tunnelserver.ReportResult(
+		ctx,
+		tunnelClient,
+		func(_ context.Context) (*config.Result, error) {
+			if err := cmd.prepareWorkspace(sctx); err != nil {
+				return nil, err
+			}
+			return cmd.finalizeSetup(sctx)
+		},
+	)
+	return err
+}
 
-	return cmd.finalizeSetup(sctx)
+func (cmd *SetupContainerCmd) registerFlags(setupContainerCmd *cobra.Command) {
+	cmd.registerBehaviorFlags(setupContainerCmd)
+	cmd.registerWorkspaceInfoFlags(setupContainerCmd)
+	cmd.registerDotfilesFlags(setupContainerCmd)
+}
+
+func (cmd *SetupContainerCmd) registerBehaviorFlags(setupContainerCmd *cobra.Command) {
+	cliflags.Add(
+		setupContainerCmd,
+		cliflags.Bool(
+			&cmd.StreamMounts,
+			names.StreamMounts,
+			false,
+			"If true, will try to stream the bind mounts from the host",
+		),
+		cliflags.Bool(
+			&cmd.Prebuild,
+			names.Prebuild,
+			false,
+			"If true, only run prebuild lifecycle hooks (onCreateCommand + updateContentCommand)",
+		),
+		cliflags.Bool(
+			&cmd.ChownWorkspace,
+			names.ChownWorkspace,
+			false,
+			"If Devsy should chown the workspace to the remote user",
+		),
+		cliflags.Bool(
+			&cmd.InjectGitCredentials,
+			names.InjectGitCredentials,
+			false,
+			"If Devsy should inject git credentials during setup",
+		),
+	)
+}
+
+func (cmd *SetupContainerCmd) registerWorkspaceInfoFlags(setupContainerCmd *cobra.Command) {
+	cliflags.Add(
+		setupContainerCmd,
+		cliflags.String(
+			&cmd.ContainerWorkspaceInfo,
+			names.ContainerWorkspaceInfo,
+			"",
+			"The container workspace info",
+		),
+		cliflags.String(&cmd.SetupInfo, names.SetupInfo, "", "The container setup info"),
+		cliflags.String(&cmd.AccessKey, names.AccessKey, "", "Access Key to use"),
+		cliflags.String(&cmd.WorkspaceHost, names.WorkspaceHost, "", "Workspace hostname to use"),
+		cliflags.String(&cmd.PlatformHost, names.PlatformHost, "", "Platform host"),
+	)
+	_ = setupContainerCmd.MarkFlagRequired(names.SetupInfo)
+
+	cliflags.BindEnv(setupContainerCmd.Flags(), names.AccessKey)
+	cliflags.BindEnv(setupContainerCmd.Flags(), names.PlatformHost)
+}
+
+func (cmd *SetupContainerCmd) registerDotfilesFlags(setupContainerCmd *cobra.Command) {
+	cliflags.Add(
+		setupContainerCmd,
+		cliflags.String(&cmd.DotfilesRepo, names.DotfilesRepo, "", "Dotfiles repository URL"),
+		cliflags.String(
+			&cmd.DotfilesScript,
+			names.DotfilesScript,
+			"",
+			"Dotfiles install script path",
+		),
+	)
 }
 
 func (cmd *SetupContainerCmd) prepareWorkspace(sctx *setupContext) error {
@@ -236,10 +264,10 @@ func fetchSecrets(
 	return env, mount, nil
 }
 
-func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
+func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) (*config.Result, error) {
 	secretsEnv, secretsMount, err := fetchSecrets(sctx.ctx, sctx.tunnelClient)
 	if err != nil {
-		return cmd.reportSetupFailure(sctx, err)
+		return nil, err
 	}
 	sctx.secretsEnv = secretsEnv
 
@@ -265,31 +293,16 @@ func (cmd *SetupContainerCmd) finalizeSetup(sctx *setupContext) error {
 
 	deferred, err := setup.SetupContainerPreAttach(sctx.ctx, cfg)
 	if err != nil {
-		return cmd.reportSetupFailure(sctx, err)
+		return nil, err
 	}
 
 	if !cmd.Prebuild {
 		if err := cmd.setupPostAttach(sctx, deferred); err != nil {
-			return cmd.reportSetupFailure(sctx, err)
+			return nil, err
 		}
 	}
 
-	return cmd.sendSetupResult(sctx.ctx, sctx.setupInfo, sctx.tunnelClient)
-}
-
-// reportSetupFailure forwards a structured error result through the tunnel
-// before returning the original error. Without this, the outer agent only
-// sees the SSH exit code and the underlying cause (e.g. an IDE install
-// failure) gets lost to a generic wrapper on the host side.
-func (cmd *SetupContainerCmd) reportSetupFailure(sctx *setupContext, cause error) error {
-	errResult := &config.Result{Error: cause.Error()}
-	if sendErr := cmd.sendSetupResult(sctx.ctx, errResult, sctx.tunnelClient); sendErr != nil {
-		// Failure-on-failure: the host will see only the SSH exit code, so
-		// log the original cause alongside the send failure to leave a
-		// breadcrumb for debugging.
-		log.Errorf("failed to forward setup error %q to host: %v", cause, sendErr)
-	}
-	return cause
+	return sctx.setupInfo, nil
 }
 
 func (cmd *SetupContainerCmd) setupPostAttach(
@@ -623,23 +636,6 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(sctx *setupContext) error {
 	})
 }
 
-func (cmd *SetupContainerCmd) sendSetupResult(
-	ctx context.Context,
-	setupInfo *config.Result,
-	tunnelClient tunnel.TunnelClient,
-) error {
-	out, err := json.Marshal(setupInfo)
-	if err != nil {
-		return fmt.Errorf("marshal setup info: %w", err)
-	}
-
-	if _, err := tunnelClient.SendResult(ctx, &tunnel.Message{Message: string(out)}); err != nil {
-		return fmt.Errorf("send result: %w", err)
-	}
-
-	return nil
-}
-
 func fillContainerEnv(setupInfo *config.Result) error {
 	// set remote-env
 	if setupInfo.MergedConfig.RemoteEnv == nil {
@@ -919,74 +915,96 @@ func streamMount(
 ) error {
 	// if we have a platform workspace socket we connect directly to it
 	if workspaceInfo.CLIOptions.Platform.Enabled {
-		// check if the runner proxy socket exists
-		httpClient := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-		}
-
-		// build the url
-		log.Infof("Download %s into DevContainer %s", m.Source, m.Target)
-		url := fmt.Sprintf(
-			"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s",
-			ts.RemoveProtocol(workspaceInfo.CLIOptions.Platform.PlatformHost),
-			workspaceInfo.CLIOptions.Platform.InstanceNamespace,
-			workspaceInfo.CLIOptions.Platform.InstanceName,
-			url.QueryEscape(m.Source),
-		)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return fmt.Errorf("create request: %w", err)
-		}
-		req.Header.Set(
-			"Authorization",
-			fmt.Sprintf("Bearer %s", workspaceInfo.CLIOptions.Platform.AccessKey),
-		)
-
-		// send the request
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("download workspace: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		// check if the response is ok
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf(
-				"download workspace: body = %s, status = %s",
-				string(body),
-				resp.Status,
-			)
-		}
-
-		// create progress reader
-		progressReader := &progressReader{
-			Reader: resp.Body,
-		}
-
-		// target folder
-		err = extract.Extract(progressReader, m.Target)
-		if err != nil {
-			return fmt.Errorf("stream mount %s: %w", m.String(), err)
-		}
-
-		return nil
+		return streamMountFromPlatform(ctx, workspaceInfo, m)
 	}
 
-	// stream mount
+	return streamMountFromTunnel(ctx, m, tunnelClient)
+}
+
+func streamMountFromPlatform(
+	ctx context.Context,
+	workspaceInfo *provider2.ContainerWorkspaceInfo,
+	m *config.Mount,
+) error {
+	log.Infof("Download %s into DevContainer %s", m.Source, m.Target)
+	req, err := buildPlatformDownloadRequest(ctx, workspaceInfo, m)
+	if err != nil {
+		return err
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				//nolint:gosec // pre-existing, relocated by funlen extraction; out of scope for this PR
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download workspace: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// check if the response is ok
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf(
+			"download workspace: body = %s, status = %s",
+			string(body),
+			resp.Status,
+		)
+	}
+
+	progressReader := &progressReader{
+		Reader: resp.Body,
+	}
+
+	if err := extract.Extract(progressReader, m.Target); err != nil {
+		return fmt.Errorf("stream mount %s: %w", m.String(), err)
+	}
+
+	return nil
+}
+
+// buildPlatformDownloadRequest builds the authenticated request to the
+// runner proxy socket that serves m.Source for download.
+func buildPlatformDownloadRequest(
+	ctx context.Context,
+	workspaceInfo *provider2.ContainerWorkspaceInfo,
+	m *config.Mount,
+) (*http.Request, error) {
+	downloadURL := fmt.Sprintf(
+		"https://%s/kubernetes/management/apis/management.devsy.sh/v1/namespaces/%s/devsyworkspaceinstances/%s/download?path=%s", //nolint:lll // pre-existing, relocated by funlen extraction; out of scope for this PR
+		ts.RemoveProtocol(workspaceInfo.CLIOptions.Platform.PlatformHost),
+		workspaceInfo.CLIOptions.Platform.InstanceNamespace,
+		workspaceInfo.CLIOptions.Platform.InstanceName,
+		url.QueryEscape(m.Source),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set(
+		"Authorization",
+		fmt.Sprintf("Bearer %s", workspaceInfo.CLIOptions.Platform.AccessKey),
+	)
+
+	return req, nil
+}
+
+func streamMountFromTunnel(
+	ctx context.Context,
+	m *config.Mount,
+	tunnelClient tunnel.TunnelClient,
+) error {
 	log.Infof("Copy %s into DevContainer %s", m.Source, m.Target)
 	stream, err := tunnelClient.StreamMount(ctx, &tunnel.StreamMountRequest{Mount: m.String()})
 	if err != nil {
 		return fmt.Errorf("init stream mount %s: %w", m.String(), err)
 	}
 
-	// target folder
-	err = extract.Extract(tunnelserver.NewStreamReader(stream), m.Target)
-	if err != nil {
+	if err := extract.Extract(tunnelserver.NewStreamReader(stream), m.Target); err != nil {
 		return fmt.Errorf("stream mount %s: %w", m.String(), err)
 	}
 

@@ -43,11 +43,15 @@ func (d *dockerDriver) CommandDevContainer(
 		args = append(args, "-i")
 	}
 	args = append(args, "-u", params.User, container.ID, "sh", "-c", params.Command)
-	return d.Docker.Run(ctx, args, docker.Streams{
+	err = d.Docker.Run(ctx, args, docker.Streams{
 		Stdin:  params.Stdin,
 		Stdout: params.Stdout,
 		Stderr: params.Stderr,
 	})
+	if err != nil {
+		return fmt.Errorf("run command in container: %w", err)
+	}
+	return nil
 }
 
 // ensureContainerRunning checks that the given container is running, and if

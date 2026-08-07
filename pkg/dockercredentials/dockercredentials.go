@@ -20,8 +20,16 @@ import (
 )
 
 const (
-	windowsOS = "windows"
+	windowsOS                        = "windows"
+	dockerCredentialsDirSuffixLength = 12
 )
+
+func newDockerCredentialsDir(targetFolder string) string {
+	return filepath.Join(
+		targetFolder,
+		"docker-credentials-"+random.String(dockerCredentialsDirSuffixLength),
+	)
+}
 
 func appendToPath(dir string) error {
 	pathSep := ":"
@@ -149,7 +157,7 @@ func buildHelperContent(binaryPath, shebang string, port int) []byte {
 }
 
 func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
-	dockerConfigDir := filepath.Join(targetFolder, ".cache", random.String(6))
+	dockerConfigDir := newDockerCredentialsDir(targetFolder)
 	err := configureCredentials(
 		"",
 		"#!/.dockerless/bin/sh",
@@ -178,7 +186,7 @@ func ConfigureCredentialsDockerless(targetFolder string, port int) (string, erro
 }
 
 func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) {
-	dockerConfigDir := filepath.Join(targetFolder, ".cache", random.String(12))
+	dockerConfigDir := newDockerCredentialsDir(targetFolder)
 	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port)
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)

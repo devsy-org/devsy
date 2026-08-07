@@ -13,10 +13,10 @@ func (k *KubernetesDriver) getInitContainers(
 	options *driver.RunOptions,
 	pod *corev1.Pod,
 	initialize bool,
-) ([]corev1.Container, error) {
+) []corev1.Container {
 	if !initialize {
 		// don't build init container and clean up existing one if defined
-		return filterOutInitContainer(pod.Spec.InitContainers), nil
+		return filterOutInitContainer(pod.Spec.InitContainers)
 	}
 
 	volumeMounts, commands := buildVolumeCopyCommands(options)
@@ -25,7 +25,7 @@ func (k *KubernetesDriver) getInitContainers(
 
 	// check if there is at least one mount
 	if len(volumeMounts) == 0 {
-		return retContainers, nil
+		return retContainers
 	}
 
 	securityContext := &corev1.SecurityContext{
@@ -55,7 +55,7 @@ func (k *KubernetesDriver) getInitContainers(
 	mergeContainer(&initContainer, existingInitContainer)
 
 	retContainers = append(retContainers, initContainer)
-	return retContainers, nil
+	return retContainers
 }
 
 func filterOutInitContainer(containers []corev1.Container) []corev1.Container {

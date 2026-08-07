@@ -54,88 +54,7 @@ func NewRunUserCommandsCmd(f *flags.GlobalFlags) *cobra.Command {
 		RunE:  runE,
 	}
 
-	cliflags.Add(
-		runCmd,
-		cliflags.String(
-			&cmd.WorkspaceFolder,
-			names.WorkspaceFolder,
-			"",
-			"Path to the workspace folder",
-		),
-		cliflags.String(
-			&cmd.ContainerID,
-			names.ContainerID,
-			"",
-			"Target a specific container by ID",
-		),
-		cliflags.String(
-			&cmd.DockerPath,
-			names.DockerPath,
-			"",
-			"Path to the docker/podman executable (defaults to 'docker')",
-		),
-		cliflags.String(
-			&cmd.Config,
-			names.Config,
-			"",
-			"Path to the devcontainer.json configuration file",
-		),
-		cliflags.String(
-			&cmd.OverrideConfig,
-			names.OverrideConfig,
-			"",
-			"Path to an additional devcontainer.json file to override the primary configuration",
-		),
-		cliflags.StringArray(
-			&cmd.RemoteEnv,
-			names.RemoteEnv,
-			[]string{},
-			"Environment variables to set in the container (KEY=VALUE format, can be specified multiple times)",
-		),
-		cliflags.StringArray(
-			&cmd.IDLabels,
-			names.IDLabel,
-			[]string{},
-			"Override the default container identification labels (format: key=value, can be specified multiple times)",
-		),
-		cliflags.Bool(
-			&cmd.Prebuild,
-			names.Prebuild,
-			false,
-			"Stop lifecycle execution after onCreateCommand and updateContentCommand",
-		),
-		cliflags.Bool(
-			&cmd.SkipNonBlockingCommands,
-			names.SkipNonBlockingCommands,
-			false,
-			"Skip non-blocking lifecycle commands (stop after the waitFor-configured command)",
-		),
-		cliflags.Bool(
-			&cmd.SkipPostCreate,
-			names.SkipPostCreate,
-			false,
-			"Skip running postCreateCommand",
-		),
-		cliflags.Bool(
-			&cmd.SkipPostStart,
-			names.SkipPostStart,
-			false,
-			"Skip running postStartCommand",
-		),
-		cliflags.Bool(
-			&cmd.SkipPostAttach,
-			names.SkipPostAttach,
-			false,
-			"Skip running postAttachCommand",
-		),
-		cliflags.Bool(&cmd.SkipOnCreate, names.SkipOnCreate, false, "Skip running onCreateCommand"),
-		cliflags.Bool(
-			&cmd.SkipUpdateContent,
-			names.SkipUpdateContent,
-			false,
-			"Skip running updateContentCommand",
-		),
-	)
+	cmd.registerFlags(runCmd)
 
 	runCmd.MarkFlagsOneRequired(names.WorkspaceFolder, names.ContainerID)
 
@@ -179,6 +98,116 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 		RemoteWorkspaceFolder: params.Workdir,
 	})
 	return nil
+}
+
+func (cmd *RunUserCommandsCmd) registerFlags(runCmd *cobra.Command) {
+	cmd.registerTargetFlags(runCmd)
+	cmd.registerConfigFlags(runCmd)
+	cmd.registerEnvFlags(runCmd)
+	cmd.registerLifecycleFlags(runCmd)
+}
+
+func (cmd *RunUserCommandsCmd) registerTargetFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
+		cliflags.String(
+			&cmd.WorkspaceFolder,
+			names.WorkspaceFolder,
+			"",
+			"Path to the workspace folder",
+		),
+		cliflags.String(
+			&cmd.ContainerID,
+			names.ContainerID,
+			"",
+			"Target a specific container by ID",
+		),
+		cliflags.String(
+			&cmd.DockerPath,
+			names.DockerPath,
+			"",
+			"Path to the docker/podman executable (defaults to 'docker')",
+		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerConfigFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
+		cliflags.String(
+			&cmd.Config,
+			names.Config,
+			"",
+			"Path to the devcontainer.json configuration file",
+		),
+		cliflags.String(
+			&cmd.OverrideConfig,
+			names.OverrideConfig,
+			"",
+			"Path to an additional devcontainer.json file to override the primary configuration",
+		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerEnvFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
+		cliflags.StringArray(
+			&cmd.RemoteEnv,
+			names.RemoteEnv,
+			[]string{},
+			"Environment variables to set in the container (KEY=VALUE format, can be specified multiple times)",
+		),
+		cliflags.StringArray(
+			&cmd.IDLabels,
+			names.IDLabel,
+			[]string{},
+			"Override the default container identification labels (format: key=value, can be specified multiple times)",
+		),
+	)
+}
+
+func (cmd *RunUserCommandsCmd) registerLifecycleFlags(runCmd *cobra.Command) {
+	cliflags.Add(
+		runCmd,
+		cliflags.Bool(
+			&cmd.Prebuild,
+			names.Prebuild,
+			false,
+			"Stop lifecycle execution after onCreateCommand and updateContentCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipNonBlockingCommands,
+			names.SkipNonBlockingCommands,
+			false,
+			"Skip non-blocking lifecycle commands (stop after the waitFor-configured command)",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostCreate,
+			names.SkipPostCreate,
+			false,
+			"Skip running postCreateCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostStart,
+			names.SkipPostStart,
+			false,
+			"Skip running postStartCommand",
+		),
+		cliflags.Bool(
+			&cmd.SkipPostAttach,
+			names.SkipPostAttach,
+			false,
+			"Skip running postAttachCommand",
+		),
+		cliflags.Bool(&cmd.SkipOnCreate, names.SkipOnCreate, false, "Skip running onCreateCommand"),
+		cliflags.Bool(
+			&cmd.SkipUpdateContent,
+			names.SkipUpdateContent,
+			false,
+			"Skip running updateContentCommand",
+		),
+	)
 }
 
 func (cmd *RunUserCommandsCmd) validate() error {

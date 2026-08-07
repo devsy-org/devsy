@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -238,6 +239,20 @@ type PullOptions struct {
 	Stderr   io.Writer
 }
 
+func runCmd(ctx context.Context, cmd *exec.Cmd) error {
+	var cancelledByCtx atomic.Bool
+	cmd.Cancel = func() error {
+		cancelledByCtx.Store(true)
+		return cmd.Process.Kill()
+	}
+
+	err := cmd.Run()
+	if err != nil && cancelledByCtx.Load() {
+		return fmt.Errorf("%w: %w", ctx.Err(), err)
+	}
+	return err
+}
+
 func (r *DockerHelper) Pull(ctx context.Context, opts PullOptions) error {
 	args := []string{"pull"}
 	if opts.Platform != "" {
@@ -248,7 +263,7 @@ func (r *DockerHelper) Pull(ctx context.Context, opts PullOptions) error {
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
-	return cmd.Run()
+	return runCmd(ctx, cmd)
 }
 
 func (r *DockerHelper) Remove(ctx context.Context, id string) error {
@@ -281,7 +296,7 @@ func (r *DockerHelper) RunWithDir(
 	cmd.Stdin = streams.Stdin
 	cmd.Stdout = streams.Stdout
 	cmd.Stderr = streams.Stderr
-	return cmd.Run()
+	return runCmd(ctx, cmd)
 }
 
 // RunWithEnv runs a command with extra environment variables for this
@@ -302,7 +317,7 @@ func (r *DockerHelper) RunWithEnv(
 	cmd.Stdin = streams.Stdin
 	cmd.Stdout = streams.Stdout
 	cmd.Stderr = streams.Stderr
-	return cmd.Run()
+	return runCmd(ctx, cmd)
 }
 
 func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) error {
@@ -536,7 +551,7 @@ func (r *DockerHelper) GetContainerLogs(
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
-	return cmd.Run()
+	return runCmd(ctx, cmd)
 }
 
 // containerStateError returns an error describing the container's state, including its
