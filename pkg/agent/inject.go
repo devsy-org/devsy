@@ -38,6 +38,7 @@ type InjectOptions struct {
 	// Ctx is the context for the injection operation. Required.
 	Ctx context.Context
 	// Exec is the function used to execute commands on the remote machine. Required.
+	//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate to AgentDelivery
 	Exec inject.ExecFunc
 
 	// IsLocal indicates if the injection target is the local machine.
@@ -228,6 +229,7 @@ func injectAgent(ctx *injectContext) error {
 	binaryLoader := createBinaryLoader(ctx)
 	scriptParams := buildScriptParams(ctx)
 
+	//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate to AgentDelivery
 	wasExecuted, err := inject.Inject(inject.InjectOptions{
 		Ctx:          opts.Ctx,
 		Exec:         opts.Exec,
@@ -352,6 +354,7 @@ func (vc *versionChecker) buildExistsCheck(agentPath string) string {
 		agentPath, agentPath, vc.remoteVersion)
 }
 
+//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate
 func (vc *versionChecker) detectRemoteAgentVersion(
 	ctx context.Context,
 	exec inject.ExecFunc,
