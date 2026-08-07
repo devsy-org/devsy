@@ -38,12 +38,13 @@ func TestSSHConfigTunnelSuite(t *testing.T) {
 
 func (s *SSHConfigTunnelTestSuite) TestAddHostSection_TunnelMode_Basic() {
 	params := addHostParams{
-		host:       testHost,
-		user:       testUser,
-		context:    testContext,
-		workspace:  testWorkspace,
-		tunnelPort: testTunnelPort,
-		provider:   testProvider,
+		host:            testHost,
+		user:            testUser,
+		context:         testContext,
+		workspace:       testWorkspace,
+		tunnelPort:      testTunnelPort,
+		provider:        testProvider,
+		agentForwarding: true,
 	}
 
 	result, err := addHostSection("", testDevsyBin, params)
@@ -141,12 +142,13 @@ func (s *SSHConfigTunnelTestSuite) TestAddHostSection_TunnelMode_ExistingConfig(
 
 func (s *SSHConfigTunnelTestSuite) TestAddHostSection_TunnelMode_FullExpectedOutput() {
 	params := addHostParams{
-		host:       testHostBasic,
-		user:       testUser,
-		context:    testContextAlt,
-		workspace:  testWorkspaceAlt,
-		tunnelPort: testTunnelPort,
-		provider:   "",
+		host:            testHostBasic,
+		user:            testUser,
+		context:         testContextAlt,
+		workspace:       testWorkspaceAlt,
+		tunnelPort:      testTunnelPort,
+		provider:        "",
+		agentForwarding: true,
 	}
 
 	result, err := addHostSection("", testExecPath, params)
@@ -169,12 +171,13 @@ Host testhost
 
 func (s *SSHConfigTunnelTestSuite) TestBuildTunnelConfigLines() {
 	params := addHostParams{
-		host:       testHost,
-		user:       testUser,
-		context:    testContext,
-		workspace:  testWorkspace,
-		tunnelPort: testTunnelPort,
-		provider:   testProvider,
+		host:            testHost,
+		user:            testUser,
+		context:         testContext,
+		workspace:       testWorkspace,
+		tunnelPort:      testTunnelPort,
+		provider:        testProvider,
+		agentForwarding: true,
 	}
 
 	lines := buildTunnelConfigLines(params)
