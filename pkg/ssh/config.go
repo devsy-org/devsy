@@ -34,6 +34,7 @@ type SSHConfigParams struct {
 	Workdir              string
 	Command              string
 	GPGAgent             bool
+	AgentForwarding      bool
 	DevsyHome            string
 	Provider             string
 	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
@@ -49,17 +50,18 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	}
 
 	newFile, err := addHost(addHostParams{
-		path:       targetPath,
-		host:       params.Workspace + config.SSHHostSuffix,
-		user:       params.User,
-		context:    params.Context,
-		workspace:  params.Workspace,
-		workdir:    params.Workdir,
-		command:    params.Command,
-		gpgagent:   params.GPGAgent,
-		devsyHome:  params.DevsyHome,
-		provider:   params.Provider,
-		tunnelPort: params.TunnelPort,
+		path:            targetPath,
+		host:            params.Workspace + config.SSHHostSuffix,
+		user:            params.User,
+		context:         params.Context,
+		workspace:       params.Workspace,
+		workdir:         params.Workdir,
+		command:         params.Command,
+		gpgagent:        params.GPGAgent,
+		agentForwarding: params.AgentForwarding,
+		devsyHome:       params.DevsyHome,
+		provider:        params.Provider,
+		tunnelPort:      params.TunnelPort,
 	})
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -75,17 +77,18 @@ type DevsySSHEntry struct {
 }
 
 type addHostParams struct {
-	path       string
-	host       string
-	user       string
-	context    string
-	workspace  string
-	workdir    string
-	command    string
-	gpgagent   bool
-	devsyHome  string
-	provider   string
-	tunnelPort int
+	path            string
+	host            string
+	user            string
+	context         string
+	workspace       string
+	workdir         string
+	command         string
+	gpgagent        bool
+	agentForwarding bool
+	devsyHome       string
+	provider        string
+	tunnelPort      int
 }
 
 func addHost(params addHostParams) (string, error) {
@@ -172,9 +175,13 @@ func newSSHConfigBuilder(host string) *sshConfigBuilder {
 	}
 }
 
-func (b *sshConfigBuilder) addSSHOptions(provider string) *sshConfigBuilder {
+func (b *sshConfigBuilder) addSSHOptions(provider string, agentForwarding bool) *sshConfigBuilder {
+	forwardAgent := "no"
+	if agentForwarding {
+		forwardAgent = "yes"
+	}
 	b.lines = append(b.lines,
-		"  ForwardAgent yes",
+		"  ForwardAgent "+forwardAgent,
 		"  LogLevel error",
 		"  StrictHostKeyChecking no",
 		"  UserKnownHostsFile /dev/null",
@@ -233,7 +240,7 @@ func buildProxyCommand(execPath string, params addHostParams) string {
 // buildSSHConfigLines creates the SSH config entry lines.
 func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
 	return newSSHConfigBuilder(params.host).
-		addSSHOptions(params.provider).
+		addSSHOptions(params.provider, params.agentForwarding).
 		addProxyCommand(proxyCmd).
 		addUser(params.user, params.host).
 		build()
@@ -242,7 +249,7 @@ func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
 // buildTunnelConfigLines creates the SSH config entry lines for TCP tunnel mode.
 func buildTunnelConfigLines(params addHostParams) []string {
 	return newSSHConfigBuilder(params.host).
-		addSSHOptions(params.provider).
+		addSSHOptions(params.provider, params.agentForwarding).
 		addTunnelConnection(params.tunnelPort).
 		addUser(params.user, params.host).
 		build()

@@ -27,6 +27,7 @@ func (cmd *UpCmd) configureWorkspace(
 		setupGPGAgentForwarding := cmd.GPGAgentForwarding ||
 			devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding)
 		sshConfigIncludePath := devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+		agentForwarding := devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding)
 
 		if err := configureSSH(client, configureSSHParams{
 			sshConfigPath:        cmd.SSHConfigPath,
@@ -34,6 +35,7 @@ func (cmd *UpCmd) configureWorkspace(
 			user:                 wctx.user,
 			workdir:              wctx.workdir,
 			gpgagent:             setupGPGAgentForwarding,
+			agentForwarding:      agentForwarding,
 			devsyHome:            devsyHome,
 		}); err != nil {
 			return err
@@ -119,6 +121,7 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		User:                 wctx.user,
 		Workdir:              wctx.workdir,
 		TunnelPort:           wctx.tunnelPort,
+		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
 	})
 }
@@ -129,6 +132,7 @@ type configureSSHParams struct {
 	user                 string
 	workdir              string
 	gpgagent             bool
+	agentForwarding      bool
 	devsyHome            string
 }
 
@@ -156,6 +160,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		User:                 params.user,
 		Workdir:              params.workdir,
 		GPGAgent:             params.gpgagent,
+		AgentForwarding:      params.agentForwarding,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
 	})
