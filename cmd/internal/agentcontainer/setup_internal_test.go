@@ -25,8 +25,6 @@ import (
 )
 
 func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
-	// Simulate post-substitution state: PATH is a real value, not a
-	// ${containerEnv:PATH} literal.
 	info := &config.Result{
 		MergedConfig: &config.MergedDevContainerConfig{
 			DevContainerConfigBase: config.DevContainerConfigBase{
@@ -48,14 +46,12 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, compressed)
 
-	// Round-trip: decompress and unmarshal.
 	decompressed, err := compress.Decompress(compressed)
 	require.NoError(t, err)
 
 	var roundTripped config.Result
 	require.NoError(t, json.Unmarshal([]byte(decompressed), &roundTripped))
 
-	// The resolved PATH must come through, not a literal variable reference.
 	gotPath := roundTripped.MergedConfig.RemoteEnv["PATH"]
 	require.NotNil(t, gotPath)
 	assert.Equal(t, "/usr/local/bin:/usr/bin:/bin", *gotPath)
@@ -67,8 +63,6 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 }
 
 func TestSecretsEnvRoundTripPreservesMultilineValues(t *testing.T) {
-	// PEM keys and certs carry newlines; the DEVSY_SECRETS_ENV round-trip must
-	// preserve them exactly rather than truncating at the first newline.
 	entries := []string{
 		"TLS_KEY=-----BEGIN KEY-----\nline1\nline2\n-----END KEY-----",
 		"SIMPLE=value",
@@ -82,8 +76,6 @@ func TestSecretsEnvRoundTripPreservesMultilineValues(t *testing.T) {
 	assert.Equal(t, entries, got)
 }
 
-// buildSnapshotTestTar writes a tiny single-file tar+gzip archive in memory,
-// mirroring the shape produced by pkg/extract.WriteTarExclude.
 func buildSnapshotTestTar(t *testing.T, name, content string) []byte {
 	t.Helper()
 
@@ -104,13 +96,6 @@ func buildSnapshotTestTar(t *testing.T, name, content string) []byte {
 	return buf.Bytes()
 }
 
-// TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse guards against a
-// regression where the snapshot-restore branch lived behind the
-// `!cmd.StreamMounts` early return. StreamMounts is only forced true for
-// non-docker drivers, so on the default docker driver a snapshot-sourced
-// workspace would silently skip restoring its volumes. This test drives the
-// real syncMounts entry point (not RestoreVolumes directly) with
-// StreamMounts=false to prove the restore still runs.
 func TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse(t *testing.T) {
 	srv := httptest.NewServer(registry.New())
 	defer srv.Close()
@@ -156,15 +141,14 @@ func TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &setupContext{
-		ctx:       ctx,
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
 		},
 	}
 
-	require.NoError(t, cmd.syncMounts(sctx))
+	require.NoError(t, cmd.syncMounts(ctx, state))
 
 	gotPath := filepath.Join(mountTarget, "hello.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
@@ -172,10 +156,6 @@ func TestSyncMounts_SnapshotRestoresEvenWithStreamMountsFalse(t *testing.T) {
 	assert.Equal(t, "hi", string(got))
 }
 
-// TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty guards against
-// re-extracting a snapshot's volumes over an already-populated mount (e.g. on
-// container restart), which would silently discard local changes made since
-// the last restore.
 func TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty(t *testing.T) {
 	ref, err := pkgsnapshot.NewRef("example.com/acme/snapshots", "my-ws", time.Now())
 	require.NoError(t, err)
@@ -196,18 +176,14 @@ func TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &setupContext{
-		ctx:       context.Background(),
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{Snapshot: ref.String()},
 		},
 	}
 
-	// No manifest is pushed for ref: if syncMounts attempted a restore here it
-	// would fail pulling the manifest, so a nil error proves the restore was
-	// skipped rather than attempted and silently swallowed.
-	require.NoError(t, cmd.syncMounts(sctx))
+	require.NoError(t, cmd.syncMounts(context.Background(), state))
 
 	gotPath := filepath.Join(mountTarget, "local-change.txt")
 	got, err := os.ReadFile(gotPath) //nolint:gosec // mountTarget is t.TempDir()
@@ -215,9 +191,6 @@ func TestSyncMounts_SnapshotSkipsRestoreWhenMountNotEmpty(t *testing.T) {
 	assert.Equal(t, "keep me", string(got))
 }
 
-// TestSyncMounts_SnapshotMultiMountFailsLoudly asserts that a snapshot
-// source with more than one mount fails explicitly instead of silently
-// restoring only the first mount and dropping the rest.
 func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
 	dest := t.TempDir()
 	setupInfo := &config.Result{
@@ -234,8 +207,7 @@ func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
 	}
 
 	cmd := &SetupContainerCmd{StreamMounts: false}
-	sctx := &setupContext{
-		ctx:       context.Background(),
+	state := &containerState{
 		setupInfo: setupInfo,
 		workspaceInfo: &provider2.ContainerWorkspaceInfo{
 			Source: provider2.WorkspaceSource{
@@ -244,7 +216,7 @@ func TestSyncMounts_SnapshotMultiMountFailsLoudly(t *testing.T) {
 		},
 	}
 
-	err := cmd.syncMounts(sctx)
+	err := cmd.syncMounts(context.Background(), state)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not yet support multiple mounts")
 }
