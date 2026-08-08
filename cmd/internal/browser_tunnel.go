@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -25,14 +26,15 @@ import (
 type BrowserTunnelCmd struct {
 	*flags.GlobalFlags
 
-	Workspace        string
-	TargetURL        string
-	AuthSockID       string
-	ForwardPorts     bool
-	ExtraPorts       []string
-	User             string
-	GitSSHSigningKey string
-	InheritListeners []string
+	Workspace          string
+	TargetURL          string
+	AuthSockID         string
+	ForwardPorts       bool
+	ExtraPorts         []string
+	User               string
+	GitSSHSigningKey   string
+	GPGAgentForwarding bool
+	InheritListeners   []string
 	// OpenBrowser tells the helper to probe TargetURL and open the host
 	// browser once the listener accepts. The parent CLI exits in
 	// milliseconds after spawning the helper, so the auto-open must be
@@ -61,6 +63,7 @@ func NewBrowserTunnelCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		cliflags.StringArray(&cmd.ExtraPorts, names.ExtraPorts, nil, "Extra ports to forward"),
 		cliflags.String(&cmd.User, names.User, "", "Remote user"),
 		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "", "Git SSH signing key"),
+		cliflags.Bool(&cmd.GPGAgentForwarding, names.SSHGPGForwarding, false, "Whether to forward the local GPG agent"),
 		cliflags.StringArray(
 			&cmd.InheritListeners,
 			names.InheritListener,
@@ -181,6 +184,12 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("parse inherited listeners: %w", err)
 	}
 
+	if cmd.GPGAgentForwarding {
+		if err := gpg.ForwardAgent(ctx, client); err != nil {
+			return fmt.Errorf("forward gpg agent: %w", err)
+		}
+	}
+
 	// Launch the probe-then-open goroutine before the blocking
 	// StartBrowserTunnel call so the TCP probe runs concurrently with
 	// SSH dial + listener bind. The probe observes ctx so it unwinds
@@ -190,15 +199,16 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 	}
 
 	return tunnel.StartBrowserTunnel(ctx, tunnel.BrowserTunnelParams{
-		DevsyConfig:      devsyConfig,
-		Client:           client,
-		User:             cmd.User,
-		TargetURL:        cmd.TargetURL,
-		ForwardPorts:     cmd.ForwardPorts,
-		ExtraPorts:       cmd.ExtraPorts,
-		AuthSockID:       cmd.AuthSockID,
-		GitSSHSigningKey: cmd.GitSSHSigningKey,
-		ExtraListeners:   extraListeners,
+		DevsyConfig:        devsyConfig,
+		Client:             client,
+		User:               cmd.User,
+		TargetURL:          cmd.TargetURL,
+		ForwardPorts:       cmd.ForwardPorts,
+		ExtraPorts:         cmd.ExtraPorts,
+		AuthSockID:         cmd.AuthSockID,
+		GitSSHSigningKey:   cmd.GitSSHSigningKey,
+		GPGAgentForwarding: cmd.GPGAgentForwarding,
+		ExtraListeners:     extraListeners,
 		// Helper lifecycle is owned by opener.KillBrowserTunnel and
 		// devsy stop/delete; the EXIT_AFTER_TIMEOUT idle shutdown
 		// would otherwise close the port-forward shortly after the
