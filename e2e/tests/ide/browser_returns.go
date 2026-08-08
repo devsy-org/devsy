@@ -353,7 +353,10 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				// After functional GPG forwarding succeeded, inspect both CLI and helper logs for issues.
-				tunnelLogs := getTunnelLogs(combined)()
+				getTunnelLogsFn, err := getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				tunnelLogs, err := getTunnelLogsFn()
+				framework.ExpectNoError(err)
 				allLogs := combined + "\n--- helper logs ---\n" + tunnelLogs
 
 				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("permission denied"),
@@ -431,7 +434,9 @@ var _ = ginkgo.Describe(
 						"expected browser IDE opener path to execute; got:\n%s", combined)
 
 				// Since forwarding runs asynchronously in the helper process, poll its logs for readiness.
-				gomega.Eventually(getTunnelLogs(combined)).
+				getTunnelLogsFn, err := getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				gomega.Eventually(getTunnelLogsFn).
 					WithTimeout(15*time.Second).
 					WithPolling(200*time.Millisecond).
 					Should(gomega.ContainSubstring("forwarding gpg-agent"),
@@ -442,7 +447,10 @@ var _ = ginkgo.Describe(
 				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
 				framework.ExpectNoError(err)
 
-				tunnelLogs := getTunnelLogs(combined)()
+				getTunnelLogsFn, err = getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				tunnelLogs, err := getTunnelLogsFn()
+				framework.ExpectNoError(err)
 				allLogs := combined + "\n--- helper logs ---\n" + tunnelLogs
 
 				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("continuing without it"),
@@ -489,22 +497,24 @@ var _ = ginkgo.Describe(
 
 // getTunnelLogs parses the log file location from the combined stdout/stderr output of the CLI,
 // and returns a function that dynamically reads and returns the contents of that log file when called.
-func getTunnelLogs(combined string) func() string {
+// Returns an error if the log path cannot be parsed from the combined output.
+// The returned closure propagates os.ReadFile errors instead of swallowing them.
+func getTunnelLogs(combined string) (func() (string, error), error) {
 	idx := strings.Index(combined, "Logs: ")
 	if idx < 0 {
-		return func() string { return "" }
+		return nil, fmt.Errorf("failed to find 'Logs: ' marker in combined output")
 	}
 	start := idx + len("Logs: ")
 	end := strings.Index(combined[start:], ". Run 'devsy")
 	if end < 0 {
-		return func() string { return "" }
+		return nil, fmt.Errorf("failed to find '. Run 'devsy' marker after 'Logs: ' in combined output")
 	}
 	logPath := combined[start : start+end]
-	return func() string {
+	return func() (string, error) {
 		data, err := os.ReadFile(logPath) // #nosec G304: path derived from test workspace
 		if err != nil {
-			return ""
+			return "", err
 		}
-		return string(data)
-	}
+		return string(data), nil
+	}, nil
 }
