@@ -214,6 +214,16 @@ tasks:
       (PEM contents) or DEVSY_GITHUB_APP_PRIVATE_KEY_PATH (PEM file path).
     cmd: go run ./hack/gen_github_app_jwt
 
+  github:app:sign-commit:
+    # usage: task github:app:sign-commit -- -m "subject" [-b "body"] [files...]
+    desc: |
+      create a commit signed by the Devsy GitHub App (devsy-app[bot]) on the
+      current branch. Authenticates as the app installation and creates the
+      commit through GitHub so it signs it (committer: web-flow, verified).
+      With no file paths, commits all changed files vs origin/main.
+      Reuses DEVSY_GITHUB_APP_ID / DEVSY_GITHUB_APP_PRIVATE_KEY[_PATH].
+    cmd: go run ./hack/sign_commit {{.CLI_ARGS}}
+
   setup:agent:
     desc: prepare the development environment fully for coding agents
     cmds:

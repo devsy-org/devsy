@@ -123,33 +123,7 @@ Biome formats and checks web frontend files.
 
 1. **Contributor License Agreement (CLA)**: All contributors sign the CLA. A CLA bot posts instructions on the PR after it is opened.
 2. **Commit messages**: Conventional Commits, with a concise subject line (50 characters max).
-3. **Commit signing**: All commits are signed. Without a GPG or SSH key, [gitsign](https://github.com/sigstore/gitsign) (keyless signing with an OpenID Connect identity) is an alternative.
-   - Installation (macOS):
-
-     ```bash
-     brew install gitsign
-     ```
-
-   - Installation (Ubuntu/Linux):
-
-     ```bash
-     go install github.com/sigstore/gitsign@latest
-     ```
-
-   - Configuration:
-
-     ```bash
-     git config --global commit.gpgsign true
-     git config --global gpg.format x509
-     git config --global gpg.x509.program gitsign
-     ```
-
-   - Signing existing commits:
-
-     ```bash
-     git rebase --exec 'git commit -S --amend --no-edit -n' @{upstream}
-     git push --force-with-lease
-     ```
+3. **Commit signing**: Commits are signed by the Devsy GitHub App. Push or create commits through the app installation (see [GitHub App Authentication](#github-app-authentication)); GitHub signs commits made through the app.
 4. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a fast pre-commit hook manager) manages them.
    - Installation (Linux and macOS):
 
@@ -186,3 +160,27 @@ task github:app:jwt
 ```
 
 `task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements. The `iat` claim is backdated 60 seconds to tolerate clock drift, while `exp` expires 10 minutes after JWT generation (GitHub's maximum). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
+
+### Discovering the App ID
+
+When `DEVSY_GITHUB_APP_ID` is unavailable, discover it by listing installations for the organization. Authenticate with an existing app JWT (or any token with read access):
+
+```bash
+curl -H "Authorization: Bearer <your-token>" \
+     -H "Accept: application/vnd.github+json" \
+     https://api.github.com/orgs/{org}/installations
+```
+
+The response includes the `app_id` and `app_slug`:
+
+```json
+{
+  "id": 555555,
+  "app_id": 123456,
+  "app_slug": "example-app",
+  "target_id": 98765,
+  "target_type": "Organization"
+}
+```
+
+Use the returned `app_id` as the `iss` claim when minting an installation token from the private key. To confirm a private key matches an app, sign a JWT with `iss=<app_id>` and call `GET /app` — a 200 confirms the pairing.
