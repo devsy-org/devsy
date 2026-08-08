@@ -52,7 +52,7 @@ func parseAndVerifyClaims(t *testing.T, tokenStr string, pub *rsa.PublicKey) *jw
 	t.Helper()
 	claims := &jwt.RegisteredClaims{}
 	parsed, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		if token.Method.Alg() != jwt.SigningMethodRS256.Alg() {
 			t.Fatalf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return pub, nil

@@ -5,7 +5,7 @@
 //
 //   - iss: the GitHub App client ID (numeric app ID or client ID string)
 //   - iat: issued-at time, backdated 60 seconds to tolerate clock drift
-//   - exp: expiration, at most 10 minutes after iat (GitHub's maximum)
+//   - exp: expiration, 10 minutes after JWT generation (GitHub's maximum)
 //
 // See the GitHub docs on generating a JWT for a GitHub App:
 // https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/

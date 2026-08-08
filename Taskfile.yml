@@ -219,7 +219,14 @@ tasks:
     cmds:
       - |
         if command -v apt-get >/dev/null 2>&1; then
-          sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler xvfb
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update -qq && apt-get install -y protobuf-compiler xvfb
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler xvfb
+          else
+            echo "Error: Installing packages requires root privileges or sudo" >&2
+            exit 1
+          fi
         fi
       - go install github.com/goreleaser/goreleaser/v2@latest
       - task: cli:tidy

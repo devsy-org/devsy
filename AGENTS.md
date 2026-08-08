@@ -17,7 +17,7 @@ task setup:agent
 ```
 
 This task:
-1. Installs system dependencies (`protobuf-compiler`, `xvfb`) when `apt-get` is available.
+1. Installs system dependencies (`protobuf-compiler`, `xvfb`) when `apt-get` is available (requires root or sudo privileges).
 2. Installs the `goreleaser/v2` Go release tool.
 3. Tidies Go modules (`task cli:tidy`).
 4. Builds gRPC code (`task cli:build:grpc`, under `pkg/agent/tunnel`).
@@ -185,4 +185,4 @@ export DEVSY_GITHUB_APP_PRIVATE_KEY=$(cat path/to/private-key.pem)
 task github:app:jwt
 ```
 
-`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements (10-minute maximum lifetime, issued 60 seconds in the past). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
+`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements. The `iat` claim is backdated 60 seconds to tolerate clock drift, while `exp` expires 10 minutes after JWT generation (GitHub's maximum). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
