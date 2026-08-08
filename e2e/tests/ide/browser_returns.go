@@ -347,20 +347,27 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 
-				gomega.Expect(combined).NotTo(gomega.ContainSubstring("permission denied"),
-					"root and vscode sessions must not collide on /tmp/devsy-gpg-setup.lock; "+
-						"got:\n%s", combined)
-				gomega.Expect(combined).NotTo(gomega.ContainSubstring("operation not permitted"),
-					"root and vscode sessions must not collide on /tmp/devsy.activity; "+
-						"got:\n%s", combined)
-				gomega.Expect(combined).NotTo(gomega.ContainSubstring("continuing without it"),
-					"GPG agent forwarding must succeed end-to-end for a non-root remoteUser "+
-						"browser IDE; got:\n%s", combined)
-
 				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
 				defer cancelSSH()
 				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
 				framework.ExpectNoError(err)
+
+				// After functional GPG forwarding succeeded, inspect both CLI and helper logs for issues.
+				getTunnelLogsFn, err := getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				tunnelLogs, err := getTunnelLogsFn()
+				framework.ExpectNoError(err)
+				allLogs := combined + "\n--- helper logs ---\n" + tunnelLogs
+
+				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("permission denied"),
+					"root and vscode sessions must not collide on /tmp/devsy-gpg-setup.lock; "+
+						"got:\n%s", allLogs)
+				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("operation not permitted"),
+					"root and vscode sessions must not collide on /tmp/devsy.activity; "+
+						"got:\n%s", allLogs)
+				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("continuing without it"),
+					"GPG agent forwarding must succeed end-to-end for a non-root remoteUser "+
+						"browser IDE; got:\n%s", allLogs)
 
 				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
 			},
@@ -423,16 +430,34 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 				gomega.Expect(combined).
-					To(gomega.ContainSubstring("Starting vscode in browser mode at"),
+					To(gomega.ContainSubstring("starting vscode in browser mode at"),
 						"expected browser IDE opener path to execute; got:\n%s", combined)
-				gomega.Expect(combined).To(gomega.ContainSubstring("forwarding gpg-agent"),
-					"expected browser IDE GPG forward bootstrap to run; got:\n%s", combined)
 
-				gomega.Expect(combined).NotTo(gomega.ContainSubstring("continuing without it"),
-					"GPG agent forwarding must succeed when enabled from context option only; got:\n%s", combined)
-				gomega.Expect(combined).NotTo(gomega.ContainSubstring(
+				// Since forwarding runs asynchronously in the helper process, poll its logs for readiness.
+				getTunnelLogsFn, err := getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				gomega.Eventually(getTunnelLogsFn).
+					WithTimeout(15*time.Second).
+					WithPolling(200*time.Millisecond).
+					Should(gomega.ContainSubstring("forwarding gpg-agent"),
+						"expected browser IDE GPG forward bootstrap to run; got:\n%s", combined)
+
+				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
+				defer cancelSSH()
+				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
+				framework.ExpectNoError(err)
+
+				getTunnelLogsFn, err = getTunnelLogs(combined)
+				framework.ExpectNoError(err)
+				tunnelLogs, err := getTunnelLogsFn()
+				framework.ExpectNoError(err)
+				allLogs := combined + "\n--- helper logs ---\n" + tunnelLogs
+
+				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring("continuing without it"),
+					"GPG agent forwarding must succeed when enabled from context option only; got:\n%s", allLogs)
+				gomega.Expect(allLogs).NotTo(gomega.ContainSubstring(
 					"timed out waiting for gpg-agent forward to become ready",
-				), "GPG forward should be ready before handing off browser IDE session; got:\n%s", combined)
+				), "GPG forward should be ready before handing off browser IDE session; got:\n%s", allLogs)
 
 				ws, err := f.FindWorkspace(ctx, tempDir)
 				framework.ExpectNoError(err)
@@ -442,11 +467,6 @@ var _ = ginkgo.Describe(
 					"expected browser tunnel state to exist for IDE session")
 				gomega.Expect(state.PID).To(gomega.BeNumerically(">", 0),
 					"expected detached browser tunnel process to be running")
-
-				sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
-				defer cancelSSH()
-				err = f.DevsySSHGpgSecretKeyForwarded(sshCtx, tempDir, gpgTestKeyFingerprint)
-				framework.ExpectNoError(err)
 
 				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
 			},
@@ -474,3 +494,29 @@ var _ = ginkgo.Describe(
 		)
 	},
 )
+
+// getTunnelLogs parses the log file location from the combined stdout/stderr output of the CLI,
+// and returns a function that dynamically reads and returns the contents of that log file when called.
+// Returns an error if the log path cannot be parsed from the combined output.
+// The returned closure propagates os.ReadFile errors instead of swallowing them.
+func getTunnelLogs(combined string) (func() (string, error), error) {
+	idx := strings.Index(combined, "Logs: ")
+	if idx < 0 {
+		return nil, fmt.Errorf("failed to find 'Logs: ' marker in combined output")
+	}
+	start := idx + len("Logs: ")
+	end := strings.Index(combined[start:], ". Run 'devsy")
+	if end < 0 {
+		return nil, fmt.Errorf(
+			"failed to find '. Run 'devsy' marker after 'Logs: ' in combined output",
+		)
+	}
+	logPath := combined[start : start+end]
+	return func() (string, error) {
+		data, err := os.ReadFile(logPath) // #nosec G304: path derived from test workspace
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}, nil
+}

@@ -382,6 +382,9 @@ func buildHelperArgs(
 		names.Flag(names.User), tunnelParams.User,
 		names.Flag(names.GitSSHSigningKey), tunnelParams.GitSSHSigningKey,
 	}
+	if tunnelParams.GPGAgentForwarding {
+		args = append(args, names.FlagTrue(names.SSHGPGForwarding))
+	}
 	if tunnelParams.ForwardPorts {
 		args = append(args, names.Flag(names.ForwardPorts))
 	}

@@ -22,14 +22,15 @@ import (
 
 // BrowserTunnelParams bundles the arguments for browser-based IDE tunnels.
 type BrowserTunnelParams struct {
-	DevsyConfig      *config.Config
-	Client           client2.BaseWorkspaceClient
-	User             string
-	TargetURL        string
-	ForwardPorts     bool
-	ExtraPorts       []string
-	AuthSockID       string
-	GitSSHSigningKey string
+	DevsyConfig        *config.Config
+	Client             client2.BaseWorkspaceClient
+	User               string
+	TargetURL          string
+	ForwardPorts       bool
+	ExtraPorts         []string
+	AuthSockID         string
+	GitSSHSigningKey   string
+	GPGAgentForwarding bool
 
 	// ExtraListeners holds pre-bound listeners for ExtraPorts entries,
 	// keyed by host addr (e.g. "localhost:10800"). Set by the parent so the
