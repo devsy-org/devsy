@@ -148,7 +148,6 @@ let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
 let operationLabel = $state("")
 let operationRunning = $state(false)
-let lastOperationStatus: string | undefined = undefined
 let buildFailed = $state(false)
 let inRecovery = $state(false)
 // True only for a buildFailed loaded from persistence, so the reconciliation
@@ -431,7 +430,6 @@ function startStreamingOp(label: string, pendingStatus?: string): string {
   commandId = newCmdId
   operationLabel = label
   operationRunning = true
-  lastOperationStatus = workspace?.status
   buildFailed = false
   persistRecovery()
   outputLines = []
@@ -700,7 +698,7 @@ async function handleRenameConfirmed() {
             variant="destructive"
             size="sm"
             onclick={handleStop}
-            disabled={!isRunning && !isBusy}
+            disabled={operationRunning || (!isRunning && !isBusy)}
           >
             {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
             Stop

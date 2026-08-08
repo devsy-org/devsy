@@ -362,10 +362,10 @@ export class CliRunner {
 
     const waits: Promise<void>[] = []
     for (const child of bucket) {
+      let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
           let settled = false
-          let timedOut = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
             settled = true

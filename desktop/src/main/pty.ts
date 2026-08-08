@@ -102,12 +102,14 @@ export class PtyManager {
     for (const id of sessionIds) {
       const proc = this.sessions.get(id)
       if (!proc) continue
+      let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
           let settled = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
             settled = true
+            timedOut = true
             disposable.dispose()
             resolve()
           }, 2000)
@@ -123,7 +125,7 @@ export class PtyManager {
           })
         }).then(() => {
           // If PTY did not exit in time, forcefully kill and suppress late callbacks
-          if (!proc.pid) return
+          if (!timedOut) return
           try {
             // Run lifecycle cleanup BEFORE removing listeners so terminal:exit is sent
             const stillInSessions = this.sessions.has(id)
