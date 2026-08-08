@@ -63,7 +63,12 @@ func NewBrowserTunnelCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		cliflags.StringArray(&cmd.ExtraPorts, names.ExtraPorts, nil, "Extra ports to forward"),
 		cliflags.String(&cmd.User, names.User, "", "Remote user"),
 		cliflags.String(&cmd.GitSSHSigningKey, names.GitSSHSigningKey, "", "Git SSH signing key"),
-		cliflags.Bool(&cmd.GPGAgentForwarding, names.SSHGPGForwarding, false, "Whether to forward the local GPG agent"),
+		cliflags.Bool(
+			&cmd.GPGAgentForwarding,
+			names.SSHGPGForwarding,
+			false,
+			"Whether to forward the local GPG agent",
+		),
 		cliflags.StringArray(
 			&cmd.InheritListeners,
 			names.InheritListener,
