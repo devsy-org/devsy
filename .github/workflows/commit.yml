@@ -24,7 +24,7 @@ jobs:
             exit 1
           fi
 
-          unsigned_commits="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$COMMITS_URL" | jq '.[] | select(.commit.verification.verified == false and (.commit.author.email | contains(\"google-labs-jules\") | not) and (.commit.author.name | contains(\"google-labs-jules\") | not)) | .commit.message')"
+          unsigned_commits="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$COMMITS_URL" | jq '.[] | select(.commit.verification.verified == false and (.commit.author.email | contains("google-labs-jules") | not) and (.commit.author.name | contains("google-labs-jules") | not)) | .commit.message')"
           if [[ -z "$unsigned_commits" ]]; then
             echo "🎉 No unsigned commits found (excluding bot commits)"
             exit 0
