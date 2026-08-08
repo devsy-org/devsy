@@ -228,15 +228,60 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     const tunnelProc = tunnelProcesses.get(workspaceId)
     if (tunnelProc) {
       tunnelProcesses.delete(workspaceId)
+      let settled = false
       const tunnelExit = new Promise<void>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+          timer = null
+          settled = true
+          resolve()
+        }, 2000)
+
         if (tunnelProc.exitCode !== null || tunnelProc.signalCode !== null) {
+          if (timer) clearTimeout(timer)
+          settled = true
           resolve()
           return
         }
-        tunnelProc.once("close", () => resolve())
+        tunnelProc.once("close", () => {
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
+          }
+          settled = true
+          resolve()
+        })
       })
       tunnelProc.kill("SIGTERM")
       await tunnelExit
+      // If process did not close in time, forcefully kill and suppress any late callbacks
+      if (!settled || (tunnelProc.exitCode === null && tunnelProc.signalCode === null)) {
+        // Suppress workspace callbacks from the onLine handler
+        const suppressWorkspaceFn = (tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks
+        if (suppressWorkspaceFn) suppressWorkspaceFn()
+
+        // Suppress callbacks at the readline level
+        const suppressFn = (tunnelProc as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+        if (suppressFn) suppressFn()
+
+        // Close readline interfaces
+        const rlStdout = (tunnelProc as unknown as { _rlStdout?: { close: () => void } })._rlStdout
+        const rlStderr = (tunnelProc as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+        if (rlStdout) rlStdout.close()
+        if (rlStderr) rlStderr.close()
+
+        // Destroy streams to stop emitting data events
+        if (tunnelProc.stdout) {
+          tunnelProc.stdout.removeAllListeners()
+          tunnelProc.stdout.destroy()
+        }
+        if (tunnelProc.stderr) {
+          tunnelProc.stderr.removeAllListeners()
+          tunnelProc.stderr.destroy()
+        }
+
+        tunnelProc.removeAllListeners()
+        tunnelProc.kill("SIGKILL")
+      }
     }
   }
 
@@ -908,6 +953,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         prebuildRepository?: string
         platform?: string
         recovery?: boolean
+        commandId?: string
       },
     ) => {
       trackEvent("workspace_create", {
@@ -929,7 +975,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.recovery) cliArgs.push("--recovery")
 
       const wsId = args.workspaceId ?? args.source
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
       const sink = createLogSink(
         deps.getMainWindow,
@@ -975,12 +1021,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         }
 
         let signalledDone = false
+        let suppressCallbacks = false
         let child: import("node:child_process").ChildProcess
         try {
           child = await cli.runStreaming(
             ["workspace", "task", "logs", taskId, "--follow"],
             (line, stream) => {
-              if (signalledDone) return
+              if (signalledDone || suppressCallbacks) return
 
               // Structured NDJSON envelopes only ever appear on stdout; stderr
               // carries freeform zap log lines.
@@ -1027,7 +1074,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               if (tunnelProcesses.get(wsId) === child) {
                 tunnelProcesses.delete(wsId)
               }
-              if (signalledDone) return
+              if (signalledDone || suppressCallbacks) return
               void sink.done(
                 formatLogLine(
                   `Exit code: ${code}`,
@@ -1040,6 +1087,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             },
             wsId,
           )
+          // Expose a method to suppress callbacks from cancelActiveUp
+          ;(child as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks = () => {
+            suppressCallbacks = true
+          }
         } catch (error) {
           // The task is already submitted; keep it registered so a later
           // cancel can still reach it, and close the sink so the UI isn't
@@ -1064,12 +1115,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_stop",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_stop", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
       await quiesceWorkspace(args.workspaceId)
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1104,7 +1155,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_delete",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_delete", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
@@ -1114,7 +1165,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       // stdout/stderr lands on a log file the CLI is about to unlink, causing
       // an ENOENT crash in the main process.
       await quiesceWorkspace(args.workspaceId)
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1160,11 +1211,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_rebuild",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_rebuild", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1201,11 +1252,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_reset",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_reset", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,

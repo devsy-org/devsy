@@ -104,10 +104,47 @@ export class PtyManager {
       if (!proc) continue
       waits.push(
         new Promise<void>((resolve) => {
+          let settled = false
+          let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+            timer = null
+            settled = true
+            disposable.dispose()
+            resolve()
+          }, 2000)
+
           const disposable = proc.onExit(() => {
+            if (timer) {
+              clearTimeout(timer)
+              timer = null
+            }
+            settled = true
             disposable.dispose()
             resolve()
           })
+        }).then(() => {
+          // If PTY did not exit in time, forcefully kill and suppress late callbacks
+          if (!proc.pid) return
+          try {
+            // Run lifecycle cleanup BEFORE removing listeners so terminal:exit is sent
+            const stillInSessions = this.sessions.has(id)
+            if (stillInSessions) {
+              this.sessions.delete(id)
+              if (workspaceId) {
+                const bucket = this.sessionsByWorkspace.get(workspaceId)
+                if (bucket) {
+                  bucket.delete(id)
+                  if (bucket.size === 0) this.sessionsByWorkspace.delete(workspaceId)
+                }
+              }
+              this.send("terminal:exit", { sessionId: id, exitCode: -1, signal: "SIGKILL" })
+            }
+
+            proc.kill("SIGKILL")
+            // Remove all event handlers to suppress late data/exit callbacks
+            ;(proc as unknown as { removeAllListeners?: () => void }).removeAllListeners?.()
+          } catch {
+            // Process may have already exited
+          }
         }),
       )
       proc.kill()

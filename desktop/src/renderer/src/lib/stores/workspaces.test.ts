@@ -114,6 +114,30 @@ describe("workspaces store", () => {
     expect(current[0].status).toBeUndefined()
   })
 
+  it("preserves an existing workspace status when updates omit it", async () => {
+    mockListen.mockImplementation((_channel, cb) => {
+      return Promise.resolve(() => {})
+    })
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "workspace_list") return Promise.resolve([{ id: "ws-1" }])
+      if (cmd === "workspace_status") return Promise.resolve('{"state":"Running"}')
+      return Promise.resolve(undefined)
+    })
+
+    workspaces.set([{ id: "ws-1", status: "Running" }])
+    await initWorkspaces()
+
+    const eventHandler = mockListen.mock.calls[0][1] as (event: {
+      payload: { workspaces: Array<{ id: string }>; jobs: Record<string, never> }
+    }) => void
+    eventHandler({
+      payload: { workspaces: [{ id: "ws-1" }], jobs: {} },
+    })
+
+    const current = get(workspaces)
+    expect(current[0].status).toBe("Running")
+  })
+
   it("destroyWorkspaces cleans up listener", async () => {
     const mockUnlisten = vi.fn()
     mockListen.mockResolvedValue(mockUnlisten)
