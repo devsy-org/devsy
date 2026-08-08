@@ -426,7 +426,9 @@ function isDebug(): boolean {
   return loadLocalOptions().debugFlag
 }
 
-function startStreamingOp(label: string, pendingStatus?: string) {
+function startStreamingOp(label: string, pendingStatus?: string): string {
+  const newCmdId = crypto.randomUUID()
+  commandId = newCmdId
   operationLabel = label
   operationRunning = true
   lastOperationStatus = workspace?.status
@@ -442,19 +444,21 @@ function startStreamingOp(label: string, pendingStatus?: string) {
     setWorkspaceStatus(pendingStatus)
   }
   activeTab = "logs"
+  return newCmdId
 }
 
 async function handleStart() {
   const ide = currentIde
   const folder = customFolder || undefined
   const previousStatus = workspace?.status
-  startStreamingOp("Start", "starting")
+  const cmdId = startStreamingOp("Start", "starting")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -486,14 +490,15 @@ async function handleRecovery() {
   const ide = currentIde
   const folder = customFolder || undefined
   const previousStatus = workspace?.status
-  startStreamingOp("Recovery", "busy")
+  const cmdId = startStreamingOp("Recovery", "busy")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       recovery: true,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -509,14 +514,15 @@ async function handleOpenIde() {
   const folder = customFolder || undefined
   const previousStatus = workspace?.status
   trackEngagement("ide_open", { ide })
-  startStreamingOp("Open IDE", "busy")
+  const cmdId = startStreamingOp("Open IDE", "busy")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       ideLaunch: "auto",
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -527,9 +533,9 @@ async function handleOpenIde() {
 
 async function handleStop() {
   const previousStatus = workspace?.status
-  startStreamingOp("Stop", "stopping")
+  const cmdId = startStreamingOp("Stop", "stopping")
   try {
-    commandId = await workspaceStop(id, isDebug())
+    await workspaceStop(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     setWorkspaceStatus(previousStatus)
@@ -540,9 +546,9 @@ async function handleStop() {
 async function handleRebuild() {
   confirmRebuildOpen = false
   const previousStatus = workspace?.status
-  startStreamingOp("Rebuild", "busy")
+  const cmdId = startStreamingOp("Rebuild", "busy")
   try {
-    commandId = await workspaceRebuild(id, isDebug())
+    await workspaceRebuild(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     setWorkspaceStatus(previousStatus)
@@ -553,9 +559,9 @@ async function handleRebuild() {
 async function handleReset() {
   confirmResetOpen = false
   const previousStatus = workspace?.status
-  startStreamingOp("Reset", "busy")
+  const cmdId = startStreamingOp("Reset", "busy")
   try {
-    commandId = await workspaceReset(id, isDebug())
+    await workspaceReset(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     setWorkspaceStatus(previousStatus)
@@ -566,10 +572,10 @@ async function handleReset() {
 async function handleDelete() {
   confirmDeleteOpen = false
   const previousStatus = workspace?.status
-  startStreamingOp("Delete", "deleting")
+  const cmdId = startStreamingOp("Delete", "deleting")
   deleting = true
   try {
-    commandId = await workspaceDelete(id, isDebug())
+    await workspaceDelete(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     deleting = false
