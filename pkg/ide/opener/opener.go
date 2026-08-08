@@ -15,7 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/ide/codeserver"
 	"github.com/devsy-org/devsy/pkg/ide/fleet"
 	"github.com/devsy-org/devsy/pkg/ide/jetbrains"
@@ -323,12 +322,6 @@ type browserIDESpec struct {
 }
 
 func openBrowserIDE(ctx context.Context, params IDEParams, spec browserIDESpec) (string, error) {
-	if params.GPGAgentForwarding {
-		if err := gpg.ForwardAgent(ctx, params.Client); err != nil {
-			return "", err
-		}
-	}
-
 	addr, port, err := ParseAddressAndPort(spec.BindAddrOption, spec.DefaultPort)
 	if err != nil {
 		return "", err
@@ -338,18 +331,19 @@ func openBrowserIDE(ctx context.Context, params IDEParams, spec browserIDESpec) 
 	targetURL := spec.TargetURLFn(port, folder)
 	openBrowser := params.Launch == LaunchAuto
 
-	pkglog.Infof("Starting %s in browser mode at %s", spec.LogName, targetURL)
+	pkglog.Infof("starting %s in browser mode at %s", spec.LogName, targetURL)
 	extraPorts := []string{fmt.Sprintf("%s:%d", addr, spec.DefaultPort)}
 	effectiveURL, err := startDetachedBrowserTunnel(ctx, params, tunnel.BrowserTunnelParams{
-		DevsyConfig:      params.DevsyConfig,
-		Client:           params.Client,
-		User:             params.User,
-		TargetURL:        targetURL,
-		ForwardPorts:     spec.ForwardPorts,
-		ExtraPorts:       extraPorts,
-		AuthSockID:       params.SSHAuthSockID,
-		GitSSHSigningKey: params.GitSSHSigningKey,
-		DaemonStartFunc:  makeDaemonStartFunc(params, spec.ForwardPorts, extraPorts),
+		DevsyConfig:        params.DevsyConfig,
+		Client:             params.Client,
+		User:               params.User,
+		TargetURL:          targetURL,
+		ForwardPorts:       spec.ForwardPorts,
+		ExtraPorts:         extraPorts,
+		AuthSockID:         params.SSHAuthSockID,
+		GitSSHSigningKey:   params.GitSSHSigningKey,
+		GPGAgentForwarding: params.GPGAgentForwarding,
+		DaemonStartFunc:    makeDaemonStartFunc(params, spec.ForwardPorts, extraPorts),
 	}, browserIDEInvocation{Label: spec.Label, OpenBrowser: openBrowser})
 	if err != nil {
 		return "", err

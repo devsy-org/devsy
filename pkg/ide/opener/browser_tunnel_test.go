@@ -106,6 +106,24 @@ func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 	}
 }
 
+func TestBuildHelperArgs_GPGAgentForwarding(t *testing.T) {
+	withFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
+		TargetURL:          "http://localhost:1234",
+		GPGAgentForwarding: true,
+	}, false)
+	if !containsArg(withFlag, "--ssh-gpg-forwarding=true") {
+		t.Errorf("expected --ssh-gpg-forwarding=true in %v", withFlag)
+	}
+
+	withoutFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
+		TargetURL:          "http://localhost:1234",
+		GPGAgentForwarding: false,
+	}, false)
+	if containsArg(withoutFlag, "--ssh-gpg-forwarding=true") {
+		t.Errorf("did not expect --ssh-gpg-forwarding=true in %v", withoutFlag)
+	}
+}
+
 func TestBuildHelperArgs_IncludesResolvedUser(t *testing.T) {
 	args := buildHelperArgs("default", "my-workspace", tunnel.BrowserTunnelParams{
 		User:      "vscode",
