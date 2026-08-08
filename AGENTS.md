@@ -55,18 +55,6 @@ Manual installation, when needed:
 - **Run desktop unit tests**: `task desktop:test`
 - **Run desktop E2E (Playwright) tests**: `task desktop:test:e2e`
 
-### GitHub App Authentication
-
-The release, CLA, and CI workflows authenticate as the Devsy GitHub App through a signed JWT. Local generation, after setting the app credentials:
-
-```bash
-export DEVSY_GITHUB_APP_ID=<app-client-id>
-export DEVSY_GITHUB_APP_PRIVATE_KEY=$(cat path/to/private-key.pem)
-task github:app:jwt
-```
-
-`task github:app:jwt` runs `hack/githubapp`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements (10-minute maximum lifetime, issued 60 seconds in the past). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags. Reference: [GitHub App JWT docs](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app).
-
 ### Local Development: Agent Binary URL (`DEVSY_AGENT_URL`)
 
 `DEVSY_AGENT_URL` overrides the URL the host downloads the agent binary from. By default the host fetches the agent binary from the published GitHub release; for local development testing, point it at a locally served binary instead.
@@ -186,3 +174,15 @@ Biome formats and checks web frontend files.
      ```bash
      prek install
      ```
+
+## GitHub App Authentication
+
+The release, CLA, and CI workflows authenticate as the Devsy GitHub App through a signed JWT. Local generation, after setting the app credentials:
+
+```bash
+export DEVSY_GITHUB_APP_ID=<app-client-id>
+export DEVSY_GITHUB_APP_PRIVATE_KEY=$(cat path/to/private-key.pem)
+task github:app:jwt
+```
+
+`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements (10-minute maximum lifetime, issued 60 seconds in the past). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags. Reference: [GitHub App JWT docs](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app).
