@@ -154,7 +154,7 @@ async function handleDelete() {
     confirmDeleteOpen = false
     confirmDeleteId = null
   } catch (err) {
-    setWorkspaceStatus(confirmDeleteId, previousStatus)
+    if (confirmDeleteId) setWorkspaceStatus(confirmDeleteId, previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
