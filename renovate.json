@@ -8,6 +8,7 @@
   "pre-commit": {
     "enabled": true
   },
+  "minimumReleaseAge": "30 days",
   "dependencyDashboard": false,
   "prConcurrentLimit": 1,
   "platformAutomerge": true,
