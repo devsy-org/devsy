@@ -31,13 +31,51 @@ func CreateInstance(
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
+	selection, err := runCreateSelectionForm(ctx, baseClient, formCtx, cancelForm)
+	if err != nil {
+		return nil, err
+	}
+
+	renderedParameters, err := renderedParametersForCreate(
+		formCtx,
+		selection.template,
+		selection.templateVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCreatedInstance(buildCreatedInstanceParams{
+		id:                      id,
+		uid:                     uid,
+		source:                  source,
+		picture:                 picture,
+		selectedProject:         selection.project,
+		selectedTemplate:        selection.template,
+		selectedTemplateVersion: selection.templateVersion,
+		renderedParameters:      renderedParameters,
+	}), nil
+}
+
+type createSelection struct {
+	project         *managementv1.Project
+	template        *managementv1.DevsyWorkspaceTemplate
+	templateVersion string
+}
+
+func runCreateSelectionForm(
+	ctx context.Context,
+	baseClient client.Client,
+	formCtx context.Context,
+	cancelForm CancelFunc,
+) (createSelection, error) {
 	var selectedCluster *managementv1.Cluster
 	var selectedProject *managementv1.Project
 	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
 	selectedTemplateVersion := ""
 	projectOptions, err := projectOptions(ctx, baseClient)
 	if err != nil {
-		return nil, err
+		return createSelection{}, err
 	}
 	err = huh.NewForm(
 		huh.NewGroup(
@@ -68,60 +106,93 @@ func CreateInstance(
 		),
 	).RunWithContext(formCtx)
 	if err != nil {
-		return nil, err
+		return createSelection{}, err
 	}
 
+	return createSelection{
+		project:         selectedProject,
+		template:        selectedTemplate,
+		templateVersion: selectedTemplateVersion,
+	}, nil
+}
+
+func renderedParametersForCreate(
+	formCtx context.Context,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion string,
+) (string, error) {
+	parameters, err := resolveTemplateParameters(selectedTemplate, selectedTemplateVersion)
+	if err != nil {
+		return "", err
+	}
+	if len(parameters) == 0 {
+		return "", nil
+	}
+
+	fieldParameters := prepareParameters(parameters)
+	return runParameterForm(formCtx, fieldParameters)
+}
+
+type buildCreatedInstanceParams struct {
+	id, uid, source, picture string
+	selectedProject          *managementv1.Project
+	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
+	selectedTemplateVersion  string
+	renderedParameters       string
+}
+
+func buildCreatedInstance(p buildCreatedInstanceParams) *managementv1.DevsyWorkspaceInstance {
+	return &managementv1.DevsyWorkspaceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
+			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
+			Labels: map[string]string{
+				storagev1.DevsyWorkspaceIDLabel:  p.id,
+				storagev1.DevsyWorkspaceUIDLabel: p.uid,
+				config.K8sProjectLabel:           p.selectedProject.GetName(),
+			},
+			Annotations: map[string]string{
+				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
+			},
+		},
+		Spec: managementv1.DevsyWorkspaceInstanceSpec{
+			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
+				DisplayName: p.id,
+				TemplateRef: &storagev1.TemplateRef{
+					Name:    p.selectedTemplate.GetName(),
+					Version: p.selectedTemplateVersion,
+				},
+				Parameters: p.renderedParameters,
+			},
+		},
+	}
+}
+
+func resolveTemplateParameters(
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion string,
+) ([]storagev1.AppParameter, error) {
 	parameters := selectedTemplate.Spec.Parameters
 	if len(selectedTemplate.GetVersions()) > 0 {
+		var err error
 		parameters, err = list.GetTemplateParameters(selectedTemplate, selectedTemplateVersion)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	renderedParameters := ""
-	if len(parameters) > 0 {
-		fieldParameters := prepareParameters(parameters)
-		err = huh.NewForm(
-			huh.NewGroup(parameterFields(fieldParameters)...),
-		).RunWithContext(formCtx)
-		if err != nil {
-			return nil, err
-		}
+	return parameters, nil
+}
 
-		renderedParameters, err = renderParameters(fieldParameters)
-		if err != nil {
-			return nil, err
-		}
+func runParameterForm(formCtx context.Context, fieldParameters []*FieldParameter) (string, error) {
+	if err := huh.NewForm(
+		huh.NewGroup(parameterFields(fieldParameters)...),
+	).RunWithContext(formCtx); err != nil {
+		return "", err
 	}
 
-	instance := &managementv1.DevsyWorkspaceInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(selectedProject.GetName()),
-			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  id,
-				storagev1.DevsyWorkspaceUIDLabel: uid,
-				config.K8sProjectLabel:           selectedProject.GetName(),
-			},
-			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  source,
-			},
-		},
-		Spec: managementv1.DevsyWorkspaceInstanceSpec{
-			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: id,
-				TemplateRef: &storagev1.TemplateRef{
-					Name:    selectedTemplate.GetName(),
-					Version: selectedTemplateVersion,
-				},
-				Parameters: renderedParameters,
-			},
-		},
-	}
-
-	return instance, nil
+	return renderParameters(fieldParameters)
 }
 
 func UpdateInstance(
@@ -132,39 +203,12 @@ func UpdateInstance(
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
-	projectName := project.ProjectFromNamespace(instance.GetNamespace())
-	projectTemplates, err := list.Templates(ctx, baseClient, projectName)
-	if err != nil {
-		return nil, err
-	}
-	templateOptions, selectedTemplate := templateOptionsForInstance(
-		projectTemplates.DevsyWorkspaceTemplates,
+	selectedTemplate, selectedTemplateVersion, err := selectUpdateTemplate(
+		ctx,
+		baseClient,
+		formCtx,
 		instance,
 	)
-	if selectedTemplate == nil {
-		return nil, fmt.Errorf("template not found: %#v", instance.Spec.TemplateRef)
-	}
-
-	var selectedTemplateVersion string
-	if instance.Spec.TemplateRef != nil {
-		selectedTemplateVersion = instance.Spec.TemplateRef.Version
-	}
-
-	err = huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[*managementv1.DevsyWorkspaceTemplate]().
-				Title("Template").
-				Options(templateOptions...).
-				Value(&selectedTemplate),
-			huh.NewSelect[string]().
-				Title("Template Version").
-				OptionsFunc(func() []huh.Option[string] {
-					return getTemplateVersionOptions(selectedTemplate)
-				}, &selectedTemplate).
-				Value(&selectedTemplateVersion).
-				WithHeight(8),
-		),
-	).RunWithContext(formCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +233,52 @@ func UpdateInstance(
 	})
 
 	return newInstance, nil
+}
+
+func selectUpdateTemplate(
+	ctx context.Context,
+	baseClient client.Client,
+	formCtx context.Context,
+	instance *managementv1.DevsyWorkspaceInstance,
+) (*managementv1.DevsyWorkspaceTemplate, string, error) {
+	projectName := project.ProjectFromNamespace(instance.GetNamespace())
+	projectTemplates, err := list.Templates(ctx, baseClient, projectName)
+	if err != nil {
+		return nil, "", err
+	}
+	templateOptions, selectedTemplate := templateOptionsForInstance(
+		projectTemplates.DevsyWorkspaceTemplates,
+		instance,
+	)
+	if selectedTemplate == nil {
+		return nil, "", fmt.Errorf("template not found: %#v", instance.Spec.TemplateRef)
+	}
+
+	var selectedTemplateVersion string
+	if instance.Spec.TemplateRef != nil {
+		selectedTemplateVersion = instance.Spec.TemplateRef.Version
+	}
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[*managementv1.DevsyWorkspaceTemplate]().
+				Title("Template").
+				Options(templateOptions...).
+				Value(&selectedTemplate),
+			huh.NewSelect[string]().
+				Title("Template Version").
+				OptionsFunc(func() []huh.Option[string] {
+					return getTemplateVersionOptions(selectedTemplate)
+				}, &selectedTemplate).
+				Value(&selectedTemplateVersion).
+				WithHeight(8),
+		),
+	).RunWithContext(formCtx)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return selectedTemplate, selectedTemplateVersion, nil
 }
 
 func templateOptionsForInstance(
@@ -219,13 +309,9 @@ func renderedParametersForUpdate(
 	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
 	selectedTemplateVersion string,
 ) (string, error) {
-	parameters := selectedTemplate.Spec.Parameters
-	if len(selectedTemplate.GetVersions()) > 0 {
-		var err error
-		parameters, err = list.GetTemplateParameters(selectedTemplate, selectedTemplateVersion)
-		if err != nil {
-			return "", err
-		}
+	parameters, err := resolveTemplateParameters(selectedTemplate, selectedTemplateVersion)
+	if err != nil {
+		return "", err
 	}
 	if len(parameters) == 0 {
 		return "", nil
@@ -241,14 +327,7 @@ func renderedParametersForUpdate(
 		return "", err
 	}
 
-	err = huh.NewForm(
-		huh.NewGroup(parameterFields(fieldParameters)...),
-	).RunWithContext(formCtx)
-	if err != nil {
-		return "", err
-	}
-
-	return renderParameters(fieldParameters)
+	return runParameterForm(formCtx, fieldParameters)
 }
 
 func buildFieldParameters(

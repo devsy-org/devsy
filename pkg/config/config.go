@@ -13,7 +13,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const CurrentSchemaVersion = 1
+
 type Config struct {
+	SchemaVersion int `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty"`
+
 	// DefaultContext is the default context to use. Defaults to "default"
 	DefaultContext string `json:"defaultContext,omitempty"`
 
@@ -261,6 +265,7 @@ func newMissingConfig(configOrigin, contextOverride, providerOverride string) *C
 	}
 
 	return &Config{
+		SchemaVersion:  CurrentSchemaVersion,
 		DefaultContext: context,
 		Contexts: map[string]*ContextConfig{
 			context: {
@@ -275,6 +280,9 @@ func newMissingConfig(configOrigin, contextOverride, providerOverride string) *C
 }
 
 func normalizeConfig(config *Config, contextOverride, providerOverride string) {
+	if config.SchemaVersion == 0 {
+		config.SchemaVersion = CurrentSchemaVersion
+	}
 	if contextOverride != "" {
 		config.OriginalContext = config.DefaultContext
 		config.DefaultContext = contextOverride

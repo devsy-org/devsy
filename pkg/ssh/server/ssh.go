@@ -171,44 +171,12 @@ func NewServer(
 		return nil, err
 	}
 
-	forwardHandler := &ssh.ForwardedTCPHandler{}
-	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
-	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
 	server := &server{
 		shell:       sh,
 		workdir:     workdir,
 		reuseSock:   reuseSock,
 		currentUser: currentUser.Username,
-		sshServer: ssh.Server{
-			Addr:                addr,
-			ClientAliveInterval: keepAliveInterval,
-			ClientAliveCountMax: keepAliveCountMax,
-			LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
-				log.Debugf("Accepted forward: %s:%d", dhost, dport)
-				return true
-			},
-			ReversePortForwardingCallback: func(ctx ssh.Context, host string, port uint32) bool {
-				log.Debugf("attempt to bind %s:%d - %s", host, port, "granted")
-				return true
-			},
-			ReverseUnixForwardingCallback: reverseUnixForwardingCallback,
-			ChannelHandlers: map[string]ssh.ChannelHandler{
-				"direct-tcpip":                   ssh.DirectTCPIPHandler,
-				"direct-streamlocal@openssh.com": ssh.DirectStreamLocalHandler,
-				"session":                        ssh.DefaultSessionHandler,
-			},
-			RequestHandlers: map[string]ssh.RequestHandler{
-				"tcpip-forward":                          forwardHandler.HandleSSHRequest,
-				"streamlocal-forward@openssh.com":        forwardedUnixHandler.HandleSSHRequest,
-				"cancel-streamlocal-forward@openssh.com": forwardedUnixHandler.HandleSSHRequest,
-				"cancel-tcpip-forward":                   forwardHandler.HandleSSHRequest,
-			},
-			SubsystemHandlers: map[string]ssh.SubsystemHandler{
-				"sftp": func(s ssh.Session) {
-					sftpHandler(s, currentUser.Username)
-				},
-			},
-		},
+		sshServer:   buildSSHServer(addr, currentUser.Username),
 	}
 
 	if len(keys) > 0 {
@@ -226,6 +194,45 @@ func NewServer(
 	server.sshServer.ConnCallback = server.connCallback
 	server.sshServer.ConnectionClosingCallback = cleanupAgentOnConnClosing
 	return server, nil
+}
+
+// buildSSHServer constructs the underlying ssh.Server with its port
+// forwarding, channel, request, and SFTP subsystem handlers wired up.
+func buildSSHServer(addr, currentUsername string) ssh.Server {
+	forwardHandler := &ssh.ForwardedTCPHandler{}
+	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
+	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
+
+	return ssh.Server{
+		Addr:                addr,
+		ClientAliveInterval: keepAliveInterval,
+		ClientAliveCountMax: keepAliveCountMax,
+		LocalPortForwardingCallback: func(ctx ssh.Context, dhost string, dport uint32) bool {
+			log.Debugf("Accepted forward: %s:%d", dhost, dport)
+			return true
+		},
+		ReversePortForwardingCallback: func(ctx ssh.Context, host string, port uint32) bool {
+			log.Debugf("attempt to bind %s:%d - %s", host, port, "granted")
+			return true
+		},
+		ReverseUnixForwardingCallback: reverseUnixForwardingCallback,
+		ChannelHandlers: map[string]ssh.ChannelHandler{
+			"direct-tcpip":                   ssh.DirectTCPIPHandler,
+			"direct-streamlocal@openssh.com": ssh.DirectStreamLocalHandler,
+			"session":                        ssh.DefaultSessionHandler,
+		},
+		RequestHandlers: map[string]ssh.RequestHandler{
+			"tcpip-forward":                          forwardHandler.HandleSSHRequest,
+			"streamlocal-forward@openssh.com":        forwardedUnixHandler.HandleSSHRequest,
+			"cancel-streamlocal-forward@openssh.com": forwardedUnixHandler.HandleSSHRequest,
+			"cancel-tcpip-forward":                   forwardHandler.HandleSSHRequest,
+		},
+		SubsystemHandlers: map[string]ssh.SubsystemHandler{
+			"sftp": func(s ssh.Session) {
+				sftpHandler(s, currentUsername)
+			},
+		},
+	}
 }
 
 func reverseUnixForwardingCallback(_ ssh.Context, socketPath string) bool {

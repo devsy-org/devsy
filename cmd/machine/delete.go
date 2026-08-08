@@ -6,6 +6,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -89,5 +90,14 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	return removeMachineDirIfPresent(devsyConfig.DefaultContext, machineClient.Machine())
+}
+
+// removeMachineDirIfPresent removes the on-disk machine directory after a
+// successful remote delete.
+func removeMachineDirIfPresent(context, machineID string) error {
+	if err := clientimplementation.DeleteMachineFolder(context, machineID); err != nil {
+		return fmt.Errorf("delete machine dir: %w", err)
+	}
 	return nil
 }

@@ -8,20 +8,22 @@ import (
 	"gotest.tools/assert"
 )
 
-func TestLifecycleHookUnmarshalJSON(t *testing.T) {
-	type input struct {
-		Input types.LifecycleHook `json:"input,omitempty"`
-	}
+type lifecycleHookUnmarshalInput struct {
+	Input types.LifecycleHook `json:"input,omitempty"`
+}
 
-	testCases := []struct {
-		Name   string
-		Input  string
-		Expect input
-	}{
+type lifecycleHookUnmarshalCase struct {
+	Name   string
+	Input  string
+	Expect lifecycleHookUnmarshalInput
+}
+
+func lifecycleHookUnmarshalTestCases() []lifecycleHookUnmarshalCase {
+	return []lifecycleHookUnmarshalCase{
 		{
 			Name:  "string",
 			Input: `{"input": "some-string"}`,
-			Expect: input{
+			Expect: lifecycleHookUnmarshalInput{
 				Input: types.LifecycleHook{
 					"": []string{"some-string"},
 				},
@@ -30,7 +32,7 @@ func TestLifecycleHookUnmarshalJSON(t *testing.T) {
 		{
 			Name:  "array of strings",
 			Input: `{"input": ["string1", "string2"]}`,
-			Expect: input{
+			Expect: lifecycleHookUnmarshalInput{
 				Input: types.LifecycleHook{
 					"": []string{
 						"string1",
@@ -42,7 +44,7 @@ func TestLifecycleHookUnmarshalJSON(t *testing.T) {
 		{
 			Name:  "object of strings",
 			Input: `{"input": {"key1": "value1", "key2": "value2"}}`,
-			Expect: input{
+			Expect: lifecycleHookUnmarshalInput{
 				Input: types.LifecycleHook{
 					"key1": []string{
 						"value1",
@@ -56,7 +58,7 @@ func TestLifecycleHookUnmarshalJSON(t *testing.T) {
 		{
 			Name:  "object of array of strings",
 			Input: `{"input": {"key1": ["value1","value2"], "key2": ["value3","value4"]}}`,
-			Expect: input{
+			Expect: lifecycleHookUnmarshalInput{
 				Input: types.LifecycleHook{
 					"key1": []string{
 						"value1",
@@ -70,10 +72,12 @@ func TestLifecycleHookUnmarshalJSON(t *testing.T) {
 			},
 		},
 	}
+}
 
-	for _, testCase := range testCases {
+func TestLifecycleHookUnmarshalJSON(t *testing.T) {
+	for _, testCase := range lifecycleHookUnmarshalTestCases() {
 		t.Run(testCase.Name, func(t *testing.T) {
-			var data input
+			var data lifecycleHookUnmarshalInput
 
 			err := json.Unmarshal([]byte(testCase.Input), &data)
 			assert.NilError(t, err, testCase.Name)

@@ -58,6 +58,7 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	id, err := deleteWorkspace(ctx, client, opts)
 	if err == nil {
 		SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
+		SweepOrphanContentDirs(opts.DevsyConfig.DefaultContext)
 	}
 	return id, err
 }
@@ -352,4 +353,51 @@ func removeIfOrphan(workspaceDir string, entry os.DirEntry) {
 		return
 	}
 	log.Debugf("removed orphan workspace dir without config: workspace=%s", entry.Name())
+}
+
+// SweepOrphanContentDirs removes entries under the context's content dir
+// (.../contexts/<ctx>/contents/) that have no corresponding workspace
+// directory at all. Unlike SweepOrphanWorkspaceDirs (which checks for a
+// missing workspace.json inside an existing workspace dir), an orphaned
+// content dir means the workspace dir itself is already gone; left behind
+// by a crash mid-delete or a killed process partway through
+// DeleteWorkspaceFolder.
+func SweepOrphanContentDirs(contextName string) {
+	contentsDir, err := providerpkg.GetWorkspaceContentsDir(contextName)
+	if err != nil {
+		log.Debugf("sweep orphan content dirs: get contents dir: %v", err)
+		return
+	}
+
+	entries, err := os.ReadDir(contentsDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Debugf("sweep orphan content dirs: read dir: %v", err)
+		}
+		return
+	}
+
+	for _, entry := range entries {
+		removeIfContentOrphan(contextName, contentsDir, entry)
+	}
+}
+
+func removeIfContentOrphan(contextName, contentsDir string, entry os.DirEntry) {
+	if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+		return
+	}
+
+	workspaceDir, err := providerpkg.GetWorkspaceDir(contextName, entry.Name())
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(workspaceDir); err == nil || !os.IsNotExist(err) {
+		return
+	}
+
+	if err := os.RemoveAll(filepath.Join(contentsDir, entry.Name())); err != nil {
+		log.Warnf("remove orphan content dir %s: %v", entry.Name(), err)
+		return
+	}
+	log.Debugf("removed orphan content dir with no matching workspace: workspace=%s", entry.Name())
 }

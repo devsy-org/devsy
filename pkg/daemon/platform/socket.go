@@ -37,6 +37,6 @@ func listen(addr string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(addr, 0o666)
+	_ = os.Chmod(addr, 0o600)
 	return pipe, err
 }

@@ -9,8 +9,12 @@ import (
 // Note that these tests document the status quo and not the ideal state.
 // I've created follow up tickets to adjust the ToID function and update the tests but because
 // this is a potentially breaking change we'll have to wait for the next major version.
-func TestToID(t *testing.T) {
-	tests := []struct {
+func toIDTestCases() []struct {
+	name  string
+	input string
+	want  string
+} {
+	return []struct {
 		name  string
 		input string
 		want  string
@@ -66,8 +70,10 @@ func TestToID(t *testing.T) {
 			want:  "devsyreallylongreponamethatexceeds48charactersto",
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestToID(t *testing.T) {
+	for _, tt := range toIDTestCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ToID(tt.input)
 			if got != tt.want {

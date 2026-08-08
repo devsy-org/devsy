@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -431,15 +433,21 @@ const (
 const SecretsMountDir = "/run/secrets"
 
 const (
-	AutoForwardIgnore = "ignore"
-	AutoForwardNotify = "notify"
-	AutoForwardSilent = "silent"
-	ProtocolHTTPS     = "https"
+	AutoForwardIgnore          = "ignore"
+	AutoForwardNotify          = "notify"
+	AutoForwardSilent          = "silent"
+	AutoForwardOpenBrowser     = "openBrowser"
+	AutoForwardOpenBrowserOnce = "openBrowserOnce"
+	AutoForwardOpenPreview     = "openPreview"
+	ProtocolHTTPS              = "https"
 )
 
-// ResolvePortAttribute returns the PortAttribute for a given port number.
-// It checks portsAttributes (including range keys like "8080-8090") first,
-// then falls back to otherPortsAttributes.
+// ResolvePortAttribute checks portsAttributes in spec precedence order.
+// It tries the exact port key first, then a range key such as "8080-8090",
+// then any other key treated as a regex tested against the port number's
+// decimal string, and finally falls back to fallback. When multiple range or
+// regex keys match the same port, the lexicographically smallest key
+// wins.
 func ResolvePortAttribute(
 	port int,
 	portsAttrs map[string]PortAttribute,
@@ -450,10 +458,12 @@ func ResolvePortAttribute(
 		if attr, ok := portsAttrs[portStr]; ok {
 			return attr
 		}
-		for key, attr := range portsAttrs {
-			if matchPortRange(key, port) {
-				return attr
-			}
+		keys := sortedPortAttrKeys(portsAttrs)
+		if attr, ok := findPortRangeMatch(keys, portsAttrs, port); ok {
+			return attr
+		}
+		if attr, ok := findPortRegexMatch(keys, portsAttrs, portStr); ok {
+			return attr
 		}
 	}
 	if fallback != nil {
@@ -462,10 +472,69 @@ func ResolvePortAttribute(
 	return PortAttribute{}
 }
 
+func sortedPortAttrKeys(portsAttrs map[string]PortAttribute) []string {
+	keys := make([]string, 0, len(portsAttrs))
+	for key := range portsAttrs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func findPortRangeMatch(
+	keys []string,
+	portsAttrs map[string]PortAttribute,
+	port int,
+) (PortAttribute, bool) {
+	for _, key := range keys {
+		if matchPortRange(key, port) {
+			return portsAttrs[key], true
+		}
+	}
+	return PortAttribute{}, false
+}
+
+func findPortRegexMatch(
+	keys []string,
+	portsAttrs map[string]PortAttribute,
+	portStr string,
+) (PortAttribute, bool) {
+	for _, key := range keys {
+		if exactOrRangeKeyPattern.MatchString(key) {
+			continue
+		}
+		if matchPortRegex(key, portStr) {
+			return portsAttrs[key], true
+		}
+	}
+	return PortAttribute{}, false
+}
+
 // ShouldAutoForward returns true if the port attribute allows auto-forwarding.
 func (p PortAttribute) ShouldAutoForward() bool {
 	return p.OnAutoForward != AutoForwardIgnore
 }
+
+// IsOpenBrowserAction reports whether the port should trigger a browser
+// open once forwarded. Devsy has no in-app preview pane, so openPreview
+// is treated the same as openBrowser.
+func (p PortAttribute) IsOpenBrowserAction() bool {
+	switch p.OnAutoForward {
+	case AutoForwardOpenBrowser, AutoForwardOpenBrowserOnce, AutoForwardOpenPreview:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p PortAttribute) IsOpenOnceAction() bool {
+	return p.OnAutoForward == AutoForwardOpenBrowserOnce
+}
+
+// exactOrRangeKeyPattern matches portsAttributes keys that are an exact
+// port number or a "lo-hi" range per the dev container spec's
+// patternProperties grammar.
+var exactOrRangeKeyPattern = regexp.MustCompile(`^\d+(-\d+)?$`)
 
 func matchPortRange(key string, port int) bool {
 	parts := strings.SplitN(key, "-", 2)
@@ -481,6 +550,14 @@ func matchPortRange(key string, port int) bool {
 		return false
 	}
 	return port >= lo && port <= hi
+}
+
+func matchPortRegex(key, portStr string) bool {
+	re, err := regexp.Compile(key)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(portStr)
 }
 
 type DevsyCustomizations struct {

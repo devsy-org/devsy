@@ -74,14 +74,14 @@ func Resolve(
 		return nil, err
 	}
 
-	provider, workspace, machine, err := resolveWorkspace(ctx, devsyConfig, params)
+	resolved, err := resolveWorkspace(ctx, devsyConfig, params)
 	if err != nil {
 		return nil, err
 	}
 
-	workspace, err = ideparse.RefreshIDEOptions(
+	workspace, err := ideparse.RefreshIDEOptions(
 		devsyConfig,
-		workspace,
+		resolved.workspace,
 		params.IDE,
 		params.IDEOptions,
 	)
@@ -93,7 +93,12 @@ func Resolve(
 		return nil, err
 	}
 
-	workspaceClient, err := getWorkspaceClient(devsyConfig, provider, workspace, machine)
+	workspaceClient, err := getWorkspaceClient(
+		devsyConfig,
+		resolved.provider,
+		workspace,
+		resolved.machine,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +188,7 @@ type GetOptions struct {
 // are given.
 func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, error) {
 	if len(opts.Args) == 0 {
-		provider, workspace, machine, err := selectWorkspace(
+		resolved, err := selectWorkspace(
 			ctx,
 			opts.DevsyConfig,
 			selectWorkspaceParams{
@@ -196,7 +201,12 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 			return nil, err
 		}
 
-		return getWorkspaceClient(opts.DevsyConfig, provider, workspace, machine)
+		return getWorkspaceClient(
+			opts.DevsyConfig,
+			resolved.provider,
+			resolved.workspace,
+			resolved.machine,
+		)
 	}
 
 	workspace, err := findWorkspaceByArgs(ctx, opts)
@@ -207,7 +217,7 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 		return nil, fmt.Errorf("%w for args: %v", ErrWorkspaceNotFound, opts.Args)
 	}
 
-	provider, workspace, machine, err := loadExistingWorkspace(
+	resolved, err := loadExistingWorkspace(
 		opts.DevsyConfig,
 		workspace.ID,
 		opts.ChangeLastUsed,
@@ -216,7 +226,12 @@ func Get(ctx context.Context, opts GetOptions) (client.BaseWorkspaceClient, erro
 		return nil, err
 	}
 
-	return getWorkspaceClient(opts.DevsyConfig, provider, workspace, machine)
+	return getWorkspaceClient(
+		opts.DevsyConfig,
+		resolved.provider,
+		resolved.workspace,
+		resolved.machine,
+	)
 }
 
 func findWorkspaceByArgs(ctx context.Context, opts GetOptions) (*providerpkg.Workspace, error) {
@@ -249,10 +264,9 @@ func resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	params ResolveParams,
-) (*providerpkg.ProviderConfig, *providerpkg.Workspace, *providerpkg.Machine, error) {
+) (resolvedWorkspace, error) {
 	if len(params.Args) == 0 {
-		rw, err := resolveWorkspaceWithoutArgs(ctx, devsyConfig, params)
-		return rw.provider, rw.workspace, rw.machine, err
+		return resolveWorkspaceWithoutArgs(ctx, devsyConfig, params)
 	}
 
 	isLocalPath, name := file.IsLocalDir(params.Args[0])
@@ -269,7 +283,7 @@ func resolveWorkspace(
 		return loadExistingWorkspace(devsyConfig, workspaceID, params.ChangeLastUsed)
 	}
 
-	provider, workspace, machine, err := createWorkspace(ctx, devsyConfig, createWorkspaceParams{
+	resolved, err := createWorkspace(ctx, devsyConfig, createWorkspaceParams{
 		workspaceID:          workspaceID,
 		name:                 name,
 		desiredMachine:       params.DesiredMachine,
@@ -289,10 +303,10 @@ func resolveWorkspace(
 				SSHConfigIncludePath: params.SSHConfigIncludePath,
 			},
 		)
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
-	return provider, workspace, machine, nil
+	return resolved, nil
 }
 
 type resolvedWorkspace struct {
@@ -314,19 +328,15 @@ func resolveWorkspaceWithoutArgs(
 		if workspace == nil {
 			return resolvedWorkspace{}, fmt.Errorf("workspace %s doesn't exist", params.DesiredID)
 		}
-		provider, ws, machine, err := loadExistingWorkspace(
-			devsyConfig, workspace.ID, params.ChangeLastUsed,
-		)
-		return resolvedWorkspace{provider, ws, machine}, err
+		return loadExistingWorkspace(devsyConfig, workspace.ID, params.ChangeLastUsed)
 	}
 
-	provider, ws, machine, err := selectWorkspace(ctx, devsyConfig, selectWorkspaceParams{
+	return selectWorkspace(ctx, devsyConfig, selectWorkspaceParams{
 		changeLastUsed:       params.ChangeLastUsed,
 		sshConfigPath:        params.SSHConfigPath,
 		sshConfigIncludePath: params.SSHConfigIncludePath,
 		owner:                params.Owner,
 	})
-	return resolvedWorkspace{provider, ws, machine}, err
 }
 
 type createWorkspaceParams struct {
@@ -347,10 +357,10 @@ func createWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	params createWorkspaceParams,
-) (*providerpkg.ProviderConfig, *providerpkg.Workspace, *providerpkg.Machine, error) {
+) (resolvedWorkspace, error) {
 	provider, err := loadInitializedProvider(devsyConfig)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
 	workspace := resolveWorkspaceConfig(ctx, provider, devsyConfig, resolveWorkspaceConfigParams{
@@ -364,7 +374,7 @@ func createWorkspace(
 	})
 
 	if err := assignDesiredMachine(provider, workspace, params.desiredMachine); err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
 	workspace, machineConfig, err := provisionWorkspaceBacking(ctx, machineProvisionParams{
@@ -374,10 +384,14 @@ func createWorkspace(
 		providerUserOptions: params.providerUserOptions,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
-	return provider.Config, workspace, machineConfig, nil
+	return resolvedWorkspace{
+		provider:  provider.Config,
+		workspace: workspace,
+		machine:   machineConfig,
+	}, nil
 }
 
 func provisionWorkspaceBacking(
@@ -731,32 +745,32 @@ func selectWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	params selectWorkspaceParams,
-) (*providerpkg.ProviderConfig, *providerpkg.Workspace, *providerpkg.Machine, error) {
+) (resolvedWorkspace, error) {
 	if !terminal.IsTerminalIn {
-		return nil, nil, nil, errProvideWorkspaceArg
+		return resolvedWorkspace{}, errProvideWorkspaceArg
 	}
 
 	workspaces, err := listSelectableWorkspaces(ctx, devsyConfig, params)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 	if len(workspaces) == 0 {
-		return nil, nil, nil, errors.Join(ErrNoWorkspaceFound, errProvideWorkspaceArg)
+		return resolvedWorkspace{}, errors.Join(ErrNoWorkspaceFound, errProvideWorkspaceArg)
 	}
 
 	selectedWorkspace, err := promptWorkspaceSelection(workspaces)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
 	sel, err := selectProWorkspace(
 		devsyConfig, workspaces, selectedWorkspace, params,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 	if sel.handled {
-		return sel.provider, sel.workspace, nil, nil
+		return resolvedWorkspace{provider: sel.provider, workspace: sel.workspace}, nil
 	}
 
 	return loadExistingWorkspace(devsyConfig, selectedWorkspace.ID, params.changeLastUsed)
@@ -879,21 +893,21 @@ func loadExistingWorkspace(
 	devsyConfig *config.Config,
 	workspaceID string,
 	changeLastUsed bool,
-) (*providerpkg.ProviderConfig, *providerpkg.Workspace, *providerpkg.Machine, error) {
+) (resolvedWorkspace, error) {
 	workspaceConfig, err := providerpkg.LoadWorkspaceConfig(devsyConfig.DefaultContext, workspaceID)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
 	providerWithOptions, err := FindProvider(devsyConfig, workspaceConfig.Provider.Name)
 	if err != nil {
-		return nil, nil, nil, err
+		return resolvedWorkspace{}, err
 	}
 
 	if changeLastUsed {
 		workspaceConfig.LastUsedTimestamp = types.Now()
 		if err := providerpkg.SaveWorkspaceConfig(workspaceConfig); err != nil {
-			return nil, nil, nil, err
+			return resolvedWorkspace{}, err
 		}
 	}
 
@@ -904,11 +918,15 @@ func loadExistingWorkspace(
 			workspaceConfig.Machine.ID,
 		)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("load machine config: %w", err)
+			return resolvedWorkspace{}, fmt.Errorf("load machine config: %w", err)
 		}
 	}
 
-	return providerWithOptions.Config, workspaceConfig, machineConfig, nil
+	return resolvedWorkspace{
+		provider:  providerWithOptions.Config,
+		workspace: workspaceConfig,
+		machine:   machineConfig,
+	}, nil
 }
 
 type proInstanceParams struct {

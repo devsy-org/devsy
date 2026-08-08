@@ -51,12 +51,7 @@ func ProbeUserEnv(
 	probe string,
 	userName string,
 ) (map[string]string, error) {
-	userEnvProbe, err := NewUserEnvProbe(probe)
-	if err != nil {
-		log.Warnf("Get user env probe: %v", err)
-		log.Warnf("Falling back to default user env probe: %s", DefaultUserEnvProbe)
-		userEnvProbe = DefaultUserEnvProbe
-	}
+	userEnvProbe := resolveUserEnvProbe(probe)
 	if userEnvProbe == NoneProbe {
 		return map[string]string{}, nil
 	}
@@ -66,6 +61,31 @@ func ProbeUserEnv(
 		return nil, fmt.Errorf("find shell for user %s: %w", userName, err)
 	}
 
+	probedEnv := probeUserEnvWithFallback(ctx, userEnvProbe, preferredShell, userName)
+	if probedEnv == nil {
+		probedEnv = map[string]string{}
+	}
+
+	return probedEnv, nil
+}
+
+func resolveUserEnvProbe(probe string) UserEnvProbe {
+	userEnvProbe, err := NewUserEnvProbe(probe)
+	if err != nil {
+		log.Warnf("Get user env probe: %v", err)
+		log.Warnf("Falling back to default user env probe: %s", DefaultUserEnvProbe)
+		return DefaultUserEnvProbe
+	}
+
+	return userEnvProbe
+}
+
+func probeUserEnvWithFallback(
+	ctx context.Context,
+	userEnvProbe UserEnvProbe,
+	preferredShell []string,
+	userName string,
+) map[string]string {
 	log.Debugf(
 		"running user env probe with shell %q, probe %q, user %q and command %q",
 		strings.Join(preferredShell, " "),
@@ -82,34 +102,32 @@ func ProbeUserEnv(
 		"cat /proc/self/environ",
 		'\x00',
 	)
-	if err != nil {
-		log.Debugf(
-			"running user env probe with shell %q, probe %q, user %q and command %q",
-			strings.Join(preferredShell, " "),
-			string(userEnvProbe),
-			userName,
-			"printenv",
-		)
-
-		newProbedEnv, newErr := doProbe(
-			ctx,
-			userEnvProbe,
-			preferredShell,
-			userName,
-			"printenv",
-			'\n',
-		)
-		if newErr != nil {
-			log.Warnf("failed to probe user environment variables: %v, %v", err, newErr)
-		} else {
-			probedEnv = newProbedEnv
-		}
-	}
-	if probedEnv == nil {
-		probedEnv = map[string]string{}
+	if err == nil {
+		return probedEnv
 	}
 
-	return probedEnv, nil
+	log.Debugf(
+		"running user env probe with shell %q, probe %q, user %q and command %q",
+		strings.Join(preferredShell, " "),
+		string(userEnvProbe),
+		userName,
+		"printenv",
+	)
+
+	newProbedEnv, newErr := doProbe(
+		ctx,
+		userEnvProbe,
+		preferredShell,
+		userName,
+		"printenv",
+		'\n',
+	)
+	if newErr != nil {
+		log.Warnf("failed to probe user environment variables: %v, %v", err, newErr)
+		return probedEnv
+	}
+
+	return newProbedEnv
 }
 
 func parseProbeOutput(out []byte, sep byte) map[string]string {

@@ -24,8 +24,6 @@ import (
 	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machineid"
@@ -108,99 +106,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(
-		startCmd,
-		cliflags.Bool(
-			&cmd.Docker,
-			names.Docker,
-			false,
-			"If enabled will try to deploy Devsy Pro to the local docker installation.",
-		),
-		cliflags.String(&cmd.DockerImage, names.DockerImage, "", "The docker image to install."),
-		cliflags.StringArray(&cmd.DockerArgs, names.DockerArg, []string{}, "Extra docker args"),
-		cliflags.String(
-			&cmd.Context,
-			names.Context,
-			"",
-			"The kube context to use for installation",
-		),
-		cliflags.String(
-			&cmd.Namespace,
-			names.Namespace,
-			config.ProReleaseName,
-			"The namespace to install into",
-		),
-		cliflags.String(
-			&cmd.Host,
-			names.Host,
-			"",
-			"Provide a hostname to enable ingress and configure its hostname",
-		),
-		cliflags.String(
-			&cmd.Password,
-			names.Password,
-			"",
-			"The password to use for the admin account. (If empty this will be the namespace UID)",
-		),
-		cliflags.String(&cmd.Version, names.Version, "", "The version to install"),
-		cliflags.String(
-			&cmd.Values,
-			names.Values,
-			"",
-			"Path to a file for extra helm chart values",
-		),
-		cliflags.Bool(
-			&cmd.ReuseValues,
-			names.ReuseValues,
-			true,
-			"Reuse previous helm values on upgrade",
-		),
-		cliflags.Bool(
-			&cmd.Upgrade,
-			names.Upgrade,
-			false,
-			"If true, will try to upgrade the release",
-		),
-		cliflags.String(&cmd.Email, names.Email, "", "The email to use for the installation"),
-		cliflags.Bool(
-			&cmd.Reset,
-			names.Reset,
-			false,
-			"If true, an existing instance will be deleted before installing Devsy Pro",
-		),
-		cliflags.Bool(
-			&cmd.NoWait,
-			names.NoWait,
-			false,
-			"If true, will not wait after installing it",
-		),
-		cliflags.Bool(
-			&cmd.NoTunnel,
-			names.NoTunnel,
-			false,
-			"If true, will not create a loft.host tunnel for this installation",
-		),
-		cliflags.Bool(
-			&cmd.NoLogin,
-			names.NoLogin,
-			false,
-			"If true, will not login to a Devsy Pro instance on start",
-		),
-		cliflags.String(
-			&cmd.ChartPath,
-			names.ChartPath,
-			"",
-			"The local chart path to deploy Devsy Pro",
-		),
-		cliflags.String(
-			&cmd.ChartRepo,
-			names.ChartRepo,
-			"https://charts.devsy.sh/",
-			"The chart repo to deploy Devsy Pro",
-		),
-	)
-
-	proflags.BindEnv(startCmd.Flags(), names.Host)
+	cmd.registerFlags(startCmd)
 
 	return startCmd
 }
@@ -538,15 +444,35 @@ func (cmd *StartCmd) confirmPortForwardIfUnreachable(
 }
 
 func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
-	printSuccess := func() {
-		url := "https://" + host
+	ready, err := isHostReachable(ctx, host)
+	if err != nil {
+		return err
+	} else if ready {
+		cmd.printRemoteSuccessMessage(host)
+		return nil
+	}
 
-		password := cmd.Password
-		if password == "" {
-			password = passwordChangedHint
-		}
+	printDNSConfigurationRequired(host)
 
-		fmt.Fprintf(os.Stderr, `
+	if err := waitForHostReachable(ctx, host); err != nil {
+		return err
+	}
+
+	log.Info("Devsy Pro is reachable at https://" + host)
+
+	cmd.printRemoteSuccessMessage(host)
+	return nil
+}
+
+func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
+	url := "https://" + host
+
+	password := cmd.Password
+	if password == "" {
+		password = passwordChangedHint
+	}
+
+	fmt.Fprintf(os.Stderr, `
 
 ##########################   LOGIN   ############################
 
@@ -566,20 +492,13 @@ Devsy Pro was successfully installed and can now be reached at: %s
 
 Thanks for using Devsy Pro!
 `,
-			greenBold(url),
-			greenBold("devsy pro login "+url),
-			"https://devsy.sh/docs/administration/ssl",
-			url)
-	}
-	ready, err := isHostReachable(ctx, host)
-	if err != nil {
-		return err
-	} else if ready {
-		printSuccess()
-		return nil
-	}
+		greenBold(url),
+		greenBold("devsy pro login "+url),
+		"https://devsy.sh/docs/administration/ssl",
+		url)
+}
 
-	// Print DNS Configuration
+func printDNSConfigurationRequired(host string) {
 	fmt.Fprint(os.Stderr, `
 
 ###################################     DNS CONFIGURATION REQUIRED     ##################################
@@ -604,7 +523,10 @@ The command will wait until Devsy Pro is reachable under the host.
 	log.Info(
 		"Waiting for you to configure DNS, so Devsy Pro can be reached on https://" + host,
 	)
-	err = wait.PollUntilContextTimeout(
+}
+
+func waitForHostReachable(ctx context.Context, host string) error {
+	return wait.PollUntilContextTimeout(
 		ctx,
 		5*time.Second,
 		platform.Timeout(),
@@ -613,14 +535,6 @@ The command will wait until Devsy Pro is reachable under the host.
 			return isHostReachable(ctx, host)
 		},
 	)
-	if err != nil {
-		return err
-	}
-
-	log.Info("Devsy Pro is reachable at https://" + host)
-
-	printSuccess()
-	return nil
 }
 
 func (cmd *StartCmd) successLocal() error {
@@ -1539,6 +1453,26 @@ func uninstall(
 	restConfig *rest.Config,
 	kubeContext, namespace string,
 ) error {
+	if err := runHelmUninstall(ctx, kubeClient, kubeContext, namespace); err != nil {
+		return err
+	}
+
+	if err := cleanupProResources(ctx, kubeClient, restConfig, namespace); err != nil {
+		return err
+	}
+
+	fmt.Fprint(os.Stderr, "\n")
+	log.Info("uninstalled Devsy Pro")
+	fmt.Fprint(os.Stderr, "\n")
+
+	return nil
+}
+
+func runHelmUninstall(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	kubeContext, namespace string,
+) error {
 	releaseName, err := resolveReleaseName(ctx, kubeClient, namespace)
 	if err != nil {
 		return err
@@ -1559,7 +1493,15 @@ func uninstall(
 		log.Errorf("error during helm command: %s (%v)", string(output), err)
 	}
 
-	// we also cleanup the validating webhook configuration and apiservice
+	return nil
+}
+
+func cleanupProResources(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	restConfig *rest.Config,
+	namespace string,
+) error {
 	apiRegistrationClient, err := clientset.NewForConfig(restConfig)
 	if err != nil {
 		return err
@@ -1574,12 +1516,20 @@ func uninstall(
 		return err
 	}
 
-	err = deleteUser(ctx, restConfig, "admin")
-	if err != nil {
+	if err := deleteUser(ctx, restConfig, "admin"); err != nil {
 		return err
 	}
 
-	err = deleteIgnoreNotFound(
+	return deleteRemainingAgentResources(ctx, kubeClient, apiRegistrationClient, namespace)
+}
+
+func deleteRemainingAgentResources(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	apiRegistrationClient *clientset.Clientset,
+	namespace string,
+) error {
+	return deleteIgnoreNotFound(
 		func() error {
 			return kubeClient.CoreV1().
 				Secrets(namespace).
@@ -1616,15 +1566,6 @@ func uninstall(
 				Delete(ctx, "loft-applied-defaults", metav1.DeleteOptions{})
 		},
 	)
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprint(os.Stderr, "\n")
-	log.Info("uninstalled Devsy Pro")
-	fmt.Fprint(os.Stderr, "\n")
-
-	return nil
 }
 
 func resolveReleaseName(

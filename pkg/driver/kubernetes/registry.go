@@ -15,10 +15,7 @@ func GetRegistryFromImageName(imageName string) (string, error) {
 		return "", err
 	}
 
-	repoInfo, err := newIndexInfo(reference.Domain(ref))
-	if err != nil {
-		return "", err
-	}
+	repoInfo := newIndexInfo(reference.Domain(ref))
 
 	if !strings.ContainsRune(reference.FamiliarName(ref), '/') || repoInfo == "hub.docker.com" ||
 		repoInfo == "docker.io" {
@@ -30,22 +27,16 @@ func GetRegistryFromImageName(imageName string) (string, error) {
 
 // validateIndexName validates an index name. It is used by the daemon to
 // validate the daemon configuration.
-func validateIndexName(val string) (string, error) {
+func validateIndexName(val string) string {
 	// TODO: upstream this to check to reference package
 	if val == "index.docker.io" {
 		val = "docker.io"
 	}
-	return val, nil
+	return val
 }
 
-// newIndexInfo returns IndexInfo configuration from indexName.
-func newIndexInfo(indexName string) (string, error) {
-	var err error
-	indexName, err = validateIndexName(indexName)
-	if err != nil {
-		return "", err
-	}
-
+// newIndexInfo returns the normalized registry name for indexName.
+func newIndexInfo(indexName string) string {
 	// Construct a non-configured index info.
-	return indexName, nil
+	return validateIndexName(indexName)
 }

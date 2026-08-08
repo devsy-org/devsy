@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 func TestCacheRoundtrip(t *testing.T) {
@@ -29,16 +31,30 @@ func TestCacheRoundtrip(t *testing.T) {
 	if loaded["foo"].SourceHash != testNameABC {
 		t.Fatalf("roundtrip mismatch: %+v", loaded)
 	}
-	if _, err := os.Stat(
-		filepath.Join(dir, "."+"devsy", "cache", "provider-versions.json"),
-	); err != nil {
-		// Path layout: DEVSY_HOME is the devsy config dir directly (per `config.GetConfigDir()`),
-		// so cache lives at $DEVSY_HOME/cache/provider-versions.json. If the assertion above fails,
-		// adjust to filepath.Join(dir, "cache", "provider-versions.json") instead.
-		alt := filepath.Join(dir, "cache", "provider-versions.json")
-		if _, err2 := os.Stat(alt); err2 != nil {
-			t.Fatalf("cache file not found at either expected location: %v / %v", err, err2)
-		}
+
+	wantPath := filepath.Join(dir, "cache", "provider-versions.json")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("expected cache file at %s (via PathManager.CacheDir()): %v", wantPath, err)
+	}
+}
+
+func TestProviderVersionCachePath_UsesPathManagerCacheDir(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	got, err := providerVersionCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, err := config.DefaultPathManager().CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(cacheDir, "provider-versions.json")
+	if got != want {
+		t.Fatalf("providerVersionCachePath() = %q, want %q (PathManager.CacheDir())", got, want)
 	}
 }
 
