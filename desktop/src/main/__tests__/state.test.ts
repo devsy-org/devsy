@@ -36,6 +36,17 @@ describe("DaemonState", () => {
     expect(state.workspaceList()).toHaveLength(1)
   })
 
+  it("preserves a cached workspace status when later updates omit it", () => {
+    const state = new DaemonState()
+    expect(
+      state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-01", status: "Running" }]),
+    ).toBe(true)
+    expect(
+      state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-02" }]),
+    ).toBe(true)
+    expect(state.workspaceList()[0].status).toBe("Running")
+  })
+
   it("detects provider changes", () => {
     const state = new DaemonState()
     const providers = [makeProvider("docker")]

@@ -204,19 +204,28 @@ function handleSsh() {
   process.exit(0)
 }
 
-// Adds a completed workspace to state.
-function materializeWorkspace(wsId, source, providerFlag, ideFlag) {
-  state.workspaces.push({
+// Adds or updates a workspace in state, preserving the existing workspace
+// shape when the same id already exists so lifecycle transitions are stable.
+function materializeWorkspace(wsId, source, providerFlag, ideFlag, status = "Running") {
+  const existingIndex = state.workspaces.findIndex((w) => w.id === wsId)
+  const now = new Date().toISOString()
+  const entry = {
     id: wsId,
-    uid: `ws-${Date.now()}`,
+    uid: existingIndex >= 0 ? state.workspaces[existingIndex].uid : `ws-${Date.now()}`,
     source: { gitRepository: source },
     provider: { name: providerFlag || "docker" },
     ide: { name: ideFlag || "none" },
-    status: "Running",
-    lastUsed: new Date().toISOString(),
-    created: new Date().toISOString(),
+    status,
+    lastUsed: now,
+    created: existingIndex >= 0 ? state.workspaces[existingIndex].created : now,
     context: "default",
-  })
+  }
+
+  if (existingIndex >= 0) {
+    state.workspaces[existingIndex] = entry
+  } else {
+    state.workspaces.push(entry)
+  }
   saveState(state)
 }
 
@@ -256,7 +265,7 @@ function handleUp(args) {
   out("Pulling image")
   out("Starting workspace")
   out("Workspace ready")
-  materializeWorkspace(wsId, source, providerFlag, ideFlag)
+  materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
   process.exit(0)
 }
 
@@ -404,6 +413,18 @@ function handleStop(args) {
   process.exit(0)
 }
 
+function handleStart(args) {
+  const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
+  const source = positional[0]
+  const wsId = idFlag || source || "workspace"
+  out("Resolving source")
+  out("Pulling image")
+  out("Starting workspace")
+  out("Workspace ready")
+  materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
+  process.exit(0)
+}
+
 function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
@@ -448,6 +469,7 @@ const workspaceHandlers = {
   ssh: handleSsh,
   up: handleUp,
   task: handleTask,
+  start: handleStart,
   stop: handleStop,
   delete: handleDelete,
   rename: handleRename,

@@ -96,6 +96,12 @@ function isStopped(ws: Workspace) {
   )
 }
 
+function setWorkspaceStatus(id: string, status?: string) {
+  workspaces.update((current) =>
+    current.map((ws) => (ws.id === id ? { ...ws, status } : ws)),
+  )
+}
+
 // The delete job wins over the polled status until the next poll catches up.
 // A failed delete drops out of "deleting" so the row isn't stuck forever.
 function isDeleting(ws: Workspace): boolean {
@@ -108,11 +114,14 @@ function deleteError(ws: Workspace): string | undefined {
 }
 
 async function handleStart(ws: Workspace) {
+  const previousStatus = ws.status
   actingOn = ws.id
+  setWorkspaceStatus(ws.id, "starting")
   try {
     await workspaceUp({ source: ws.id })
-    toasts.success(`Starting ${ws.id}...`)
+    toasts.success(`Starting ${ws.id}`)
   } catch (err) {
+    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -120,11 +129,14 @@ async function handleStart(ws: Workspace) {
 }
 
 async function handleStop(ws: Workspace) {
+  const previousStatus = ws.status
   actingOn = ws.id
+  setWorkspaceStatus(ws.id, "stopping")
   try {
     await workspaceStop(ws.id)
-    toasts.success(`Stopping ${ws.id}...`)
+    toasts.success(`Stopping ${ws.id}`)
   } catch (err) {
+    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -133,13 +145,16 @@ async function handleStop(ws: Workspace) {
 
 async function handleDelete() {
   if (!confirmDeleteId) return
+  const previousStatus = $workspaces.find((ws) => ws.id === confirmDeleteId)?.status
   deleting = true
+  setWorkspaceStatus(confirmDeleteId, "deleting")
   try {
     await workspaceDelete(confirmDeleteId)
     toasts.success(`Deleted ${confirmDeleteId}`)
     confirmDeleteOpen = false
     confirmDeleteId = null
   } catch (err) {
+    setWorkspaceStatus(confirmDeleteId, previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
@@ -155,7 +170,7 @@ async function handleDelete() {
 
   <div class="flex gap-2">
     <Input
-      placeholder="Search by name, source, provider, IDE..."
+      placeholder="Search by name, source, provider, IDE"
       value={search}
       oninput={(e) => (search = e.currentTarget.value)}
       class="flex-1"
@@ -237,8 +252,9 @@ async function handleDelete() {
                   <span class={badgeVariants({ variant: "destructive" })} title={deleteError(ws)}>
                     Delete failed
                   </span>
-                {:else if ws.status}
-                  <span class={badgeVariants({ variant: statusVariant(ws.status) })}>{ws.status}</span>
+                {:else}
+                  {@const statusLabel = ws.status ?? "Checking"}
+                  <span class={badgeVariants({ variant: statusVariant(statusLabel) })}>{statusLabel}</span>
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
@@ -271,7 +287,7 @@ async function handleDelete() {
                     {/if}
                     <DropdownMenu.Separator />
                     <DropdownMenu.Item
-                      class="text-destructive data-[highlighted]:text-destructive"
+                      class="text-destructive data-highlighted:text-destructive"
                       onclick={() => { confirmDeleteId = ws.id; confirmDeleteOpen = true }}
                       disabled={busy}
                     >
@@ -292,7 +308,7 @@ async function handleDelete() {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete workspace"
-  description="This will permanently delete workspace '{confirmDeleteId}' and all associated data. This action cannot be undone."
+  description="This action permanently deletes workspace '{confirmDeleteId}' and all associated data. This action cannot be undone."
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}

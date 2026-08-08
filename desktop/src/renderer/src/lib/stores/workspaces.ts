@@ -16,11 +16,19 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 
 const STATUS_POLL_MS = 10_000
 
+function mergeWorkspaceStatuses(current: Workspace[], updated: Workspace[]) {
+  const statusMap = new Map(current.map((ws) => [ws.id, ws.status]))
+  return updated.map((ws) => ({
+    ...ws,
+    status: ws.status ?? statusMap.get(ws.id),
+  }))
+}
+
 export async function initWorkspaces() {
   workspacesLoading.set(true)
   try {
     const list = await workspaceList()
-    workspaces.set(list)
+    workspaces.set(mergeWorkspaceStatuses(get(workspaces), list))
     fetchStatuses(list)
   } catch {
     // IPC not available (e.g. during browser preview)
@@ -30,7 +38,7 @@ export async function initWorkspaces() {
 
   try {
     unlisten = await onWorkspacesChanged((updated, jobs) => {
-      workspaces.set(updated)
+      workspaces.update((current) => mergeWorkspaceStatuses(current, updated))
       workspaceJobs.set(jobs)
       fetchStatuses(updated)
     })

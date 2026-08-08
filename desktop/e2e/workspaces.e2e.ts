@@ -89,6 +89,101 @@ test.describe("Workspace lifecycle badges", () => {
   })
 })
 
+test.describe("Workspace detail flow", () => {
+  test.beforeEach(async () => {
+    await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
+    await page.locator("table").waitFor({ timeout: 10000 })
+  })
+
+  const api = async (channel: string, args: Record<string, unknown>) =>
+    page.evaluate(
+      ([c, a]) =>
+        (
+          window as unknown as {
+            electronAPI: {
+              invoke: (
+                c: string,
+                a?: Record<string, unknown>,
+              ) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke(c as string, a as Record<string, unknown>),
+      [channel, args] as const,
+    )
+
+  test("supports a start/stop playthrough from the workspaces list", async () => {
+    const workspaceName = "flow-playthrough"
+    await api("workspace_up", {
+      source: "https://example.com/flow-playthrough.git",
+      workspaceId: workspaceName,
+    })
+
+    await expect(page.locator("table")).toContainText(workspaceName, {
+      timeout: 10000,
+    })
+
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: workspaceName })
+      .first()
+      .click()
+
+    await expect(
+      page.getByRole("heading", { name: workspaceName }),
+    ).toBeVisible({ timeout: 10000 })
+
+    const main = page.locator('[data-slot="sidebar-inset"] main')
+    await expect(main).toContainText("Running")
+
+    await page.getByRole("button", { name: /^stop$/i }).click()
+    await expect(main).toContainText("Stopping", { timeout: 3000 })
+    await expect(main).toContainText("Stopped", { timeout: 10000 })
+
+    await page.getByRole("button", { name: /^start$/i }).click()
+    await expect(main).toContainText("Starting", { timeout: 3000 })
+    await expect(main).toContainText("Running", { timeout: 10000 })
+  })
+
+  test("shows rebuild and delete confirmation flows from the detail page", async () => {
+    const workspaceName = "flow-delete-rebuild"
+    await api("workspace_up", {
+      source: "https://example.com/flow-delete-rebuild.git",
+      workspaceId: workspaceName,
+    })
+
+    await page.locator("table").waitFor({ timeout: 10000 })
+    await expect(
+      page.locator("tbody tr").filter({ hasText: workspaceName }).first(),
+    ).toBeVisible({ timeout: 10000 })
+
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: workspaceName })
+      .first()
+      .click()
+
+    await expect(
+      page.getByRole("heading", { name: workspaceName }),
+    ).toBeVisible({ timeout: 10000 })
+
+    await page.getByRole("button", { name: /more actions/i }).click()
+    await page.getByRole("menuitem", { name: /rebuild/i }).click()
+
+    const rebuildDialog = page.locator('[role="dialog"]').filter({ hasText: /rebuild workspace/i }).first()
+    await expect(rebuildDialog).toBeVisible({ timeout: 5000 })
+    await expect(rebuildDialog).toContainText("Rebuild workspace")
+    await rebuildDialog.getByRole("button", { name: /^cancel$/i }).click()
+
+    await page.getByRole("button", { name: /more actions/i }).click()
+    await page.getByRole("menuitem", { name: /delete/i }).click()
+
+    const deleteDialog = page.locator('[role="dialog"]').filter({ hasText: /delete workspace/i }).first()
+    await expect(deleteDialog).toBeVisible({ timeout: 5000 })
+    await expect(deleteDialog).toContainText("Delete workspace")
+    await deleteDialog.getByRole("button", { name: /^cancel$/i }).click()
+  })
+})
+
 test.describe.serial("Create Workspace Wizard", () => {
   test("should open the wizard and show step 1 (provider)", async () => {
     await page.getByRole("button", { name: /create workspace/i }).click()
