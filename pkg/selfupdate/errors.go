@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
-	"github.com/google/go-github/v89/github"
+	"github.com/google/go-github/v90/github"
 )
 
 func classifyGitHubError(err error) error {
