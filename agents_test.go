@@ -23,7 +23,7 @@ func agentsDir(t *testing.T) string {
 
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- path is a test fixture under .agents
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
@@ -36,17 +36,16 @@ func parseFrontmatter(body string) (map[string]string, bool) {
 		return nil, false
 	}
 	out := make(map[string]string)
-	for _, line := range strings.Split(m[1], "\n") {
+	for line := range strings.SplitSeq(m[1], "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		idx := strings.IndexByte(line, ':')
-		if idx < 0 {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(line[:idx])
-		out[strings.ToLower(key)] = strings.TrimSpace(line[idx+1:])
+		out[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(val)
 	}
 	return out, true
 }
@@ -146,11 +145,28 @@ func TestTaskAgentLinkage(t *testing.T) {
 
 func pkgPartition() map[string][]string {
 	return map[string][]string{
-		"pkg-ssh-git":         {"ssh", "gitsshsigning", "gitcredentials", "credentials", "pty", "shell", "dotfiles", "gpg"},
-		"pkg-container":       {"docker", "dockerinstall", "dockercredentials", "dockerfile", "compose", "image", "extract", "flatpak", "driver"},
-		"pkg-tunnel-network":  {"tunnel", "http", "netstat", "port", "inject"},
-		"pkg-core-agent":      {"agent", "client", "command", "options", "config", "devsyconfig", "task", "workspace", "template", "provider"},
-		"pkg-system-platform": {"platform", "machineid", "apple", "selfupdate", "version", "status", "snapshot", "daemon", "sharedfile", "open", "scanner", "language", "log", "output", "stdio", "terminal", "theme", "table", "survey", "secrets", "token", "telemetry", "exitcode", "flags", "hash", "id", "random", "util", "types", "ts", "envfile", "encoding", "compress", "copy", "file", "download", "clierr", "clihelp", "git", "ide", "devcontainer"},
+		"pkg-ssh-git": {
+			"ssh", "gitsshsigning", "gitcredentials", "credentials",
+			"pty", "shell", "dotfiles", "gpg",
+		},
+		"pkg-container": {
+			"docker", "dockerinstall", "dockercredentials", "dockerfile",
+			"compose", "image", "extract", "flatpak", "driver",
+		},
+		"pkg-tunnel-network": {"tunnel", "http", "netstat", "port", "inject"},
+		"pkg-core-agent": {
+			"agent", "client", "command", "options", "config",
+			"devsyconfig", "task", "workspace", "template", "provider",
+		},
+		"pkg-system-platform": {
+			"platform", "machineid", "apple", "selfupdate", "version",
+			"status", "snapshot", "daemon", "sharedfile", "open", "scanner",
+			"language", "log", "output", "stdio", "terminal", "theme", "table",
+			"survey", "secrets", "token", "telemetry", "exitcode", "flags",
+			"hash", "id", "random", "util", "types", "ts", "envfile",
+			"encoding", "compress", "copy", "file", "download", "clierr",
+			"clihelp", "git", "ide", "devcontainer",
+		},
 	}
 }
 
@@ -192,7 +208,7 @@ func TestPackageScopePartition(t *testing.T) {
 	actual := dirNames(t, filepath.Join(root, "..", "pkg"))
 	for _, p := range actual {
 		if _, ok := declared[p]; !ok {
-			t.Errorf("package pkg/%s is not assigned to any pkg-* agent; update .agents/agents.md and the partition", p)
+			t.Errorf("pkg/%s has no pkg-* agent; update .agents/agents.md and the partition", p)
 		}
 	}
 	for p := range declared {
