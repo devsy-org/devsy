@@ -77,8 +77,23 @@ func (cmd *UpCmd) openIDE(
 	}
 
 	ideConfig := client.WorkspaceConfig().IDE
-	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, opener.IDEParams{
-		GPGAgentForwarding: cmd.GPGAgentForwarding,
+	return opener.Open(ctx, ideConfig.Name, ideConfig.Options, cmd.buildIDEParams(
+		devsyConfig,
+		client,
+		wctx,
+	))
+}
+
+func (cmd *UpCmd) buildIDEParams(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	wctx *workspaceContext,
+) opener.IDEParams {
+	setupGPGAgentForwarding := cmd.GPGAgentForwarding ||
+		devsyConfig.ContextOptionBool(config.ContextOptionGPGAgentForwarding)
+
+	return opener.IDEParams{
+		GPGAgentForwarding: setupGPGAgentForwarding,
 		SSHAuthSockID:      cmd.SSHAuthSockID,
 		GitSSHSigningKey:   cmd.GitSSHSigningKey,
 		DevsyConfig:        devsyConfig,
@@ -87,7 +102,7 @@ func (cmd *UpCmd) openIDE(
 		Result:             wctx.result,
 		TunnelMode:         wctx.tunnelPort > 0,
 		Launch:             cmd.IDELaunch,
-	})
+	}
 }
 
 func (cmd *UpCmd) reconfigureSSHWithTunnel(
