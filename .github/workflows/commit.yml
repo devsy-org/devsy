@@ -13,25 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Check Signed Commits in PR (with Bot Exclusions)
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMITS_URL: ${{ github.event.pull_request.commits_url }}
-        run: |
-          if [[ -z "$COMMITS_URL" ]]; then
-            echo "❌ Could not find commits to check. Make sure the action is run on pull_request or pull_request_target"
-            exit 1
-          fi
-
-          unsigned_commits="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$COMMITS_URL" | jq '.[] | select(.commit.verification.verified == false and (.commit.author.email | contains("google-labs-jules") | not) and (.commit.author.name | contains("google-labs-jules") | not)) | .commit.message')"
-          if [[ -z "$unsigned_commits" ]]; then
-            echo "🎉 No unsigned commits found (excluding bot commits)"
-            exit 0
-          fi
-
-          echo "🚨 Found unsigned commits:"
-          echo "$unsigned_commits"
-          exit 1
+      - uses: 1Password/check-signed-commits-action@ed2885f3ed2577a4f5d3c3fe895432a557d23d52 # v1
 
       - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6
