@@ -507,7 +507,9 @@ func getTunnelLogs(combined string) (func() (string, error), error) {
 	start := idx + len("Logs: ")
 	end := strings.Index(combined[start:], ". Run 'devsy")
 	if end < 0 {
-		return nil, fmt.Errorf("failed to find '. Run 'devsy' marker after 'Logs: ' in combined output")
+		return nil, fmt.Errorf(
+			"failed to find '. Run 'devsy' marker after 'Logs: ' in combined output",
+		)
 	}
 	logPath := combined[start : start+end]
 	return func() (string, error) {
