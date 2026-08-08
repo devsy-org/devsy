@@ -3,7 +3,7 @@ title: Manage Providers
 sidebar_label: Manage Providers
 ---
 
-The Devsy team maintains providers for popular services such as:
+Devsy providers include:
 
 - [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
@@ -19,11 +19,12 @@ The Devsy team maintains providers for popular services such as:
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
 Install these providers with the Devsy CLI:
+
 ```
 devsy provider add docker
 ```
 
-You can get a list of available 1st party providers by using the command:
+List available providers using the command:
 
 ```
 devsy provider list --available
@@ -43,7 +44,7 @@ Open the Providers view and click **Add**. The provider wizard has four steps:
 The ProviderSheet (click any provider in the list) exposes edit settings, switch version, update, delete, rename, set as default, and re-initialize.
 
 <Callout>
-The Desktop Application calls `devsy provider add PROVIDER` under the hood.
+  The Desktop Application calls `devsy provider add PROVIDER` under the hood.
 </Callout>
 
 #### Custom Providers
@@ -55,6 +56,7 @@ In the Select step, type one of the following into the **Provider Source** field
 - A file path to a `provider.yaml`
 
 ### Devsy CLI
+
 Install any provider from the list with:
 
 ```sh
@@ -73,7 +75,9 @@ devsy provider add digitalocean
 ```
 
 <Callout title="Multiple providers at the same time">
-You can use the `--name` flag to add multiple providers of the same type with different options, for example `devsy provider add aws --name aws-gpu -o AWS_INSTANCE_TYPE=p3.8xlarge`
+  You can use the `--name` flag to add multiple providers of the same type with
+  different options, for example `devsy provider add aws --name aws-gpu -o
+  AWS_INSTANCE_TYPE=p3.8xlarge`
 </Callout>
 
 #### From GitHub
@@ -88,6 +92,7 @@ devsy provider add devsy-org/devsy-provider-terraform
 Devsy will search the latest release for a `provider.yaml` and download that automatically. This should work for private GitHub repositories where Devsy will use the local https credentials to connect to the GitHub repository.
 
 If you want to install the provider from a different release, you can do the following:
+
 ```sh
 devsy provider add my-org/my-repo@v0.0.1
 ```
@@ -131,7 +136,6 @@ or
 ```sh
 devsy provider init <provider-name> -o KEY=value
 ```
-
 
 To manage options later, list the current values with:
 
@@ -275,10 +279,9 @@ devsy provider delete <provider name>
 ```
 
 <Callout type="warn">
-⚠️ **BE CAREFUL**:⚠️
-Remember first to delete any workspace related to this provider first, or move
-them to another provider, else you'll not be able to interact with the workspace
-until you re-install the provider used.
+  Remember first to delete any workspace related to this provider first, or move
+  them to another provider, else you'll not be able to interact with the
+  workspace until you re-install the provider used.
 </Callout>
 
 ## Renaming a Provider
@@ -319,23 +322,3 @@ devsy provider rename my-docker local-docker
 4. Click **Update Options** to save.
 
 Devsy will update the provider and all associated workspaces automatically.
-
-## Community Providers
-
-The community maintains providers for additional services.
-
-- [Cloudbit (cloudbit-ch/devsy-provider-cloudbit)](https://github.com/cloudbit-ch/devsy-provider-cloudbit)
-- [Flow (flowswiss/devsy-provider-flow)](https://github.com/flowswiss/devsy-provider-flow)
-- [Hetzner (mrsimonemms/devsy-provider-hetzner)](https://github.com/mrsimonemms/devsy-provider-hetzner)
-- [OVHcloud (alexandrevilain/devsy-provider-ovhcloud)](https://github.com/alexandrevilain/devsy-provider-ovhcloud)
-- [Scaleway (dirien/devsy-provider-scaleway)](https://github.com/dirien/devsy-provider-scaleway)
-- [Exoscale (dirien/devsy-provider-exoscale)](https://github.com/dirien/devsy-provider-exoscale)
-- [Multipass (minhio/devsy-provider-multipass)](https://github.com/minhio/devsy-provider-multipass)
-- [Open Telekom Cloud (akyriako/devsy-provider-opentelekomcloud)](https://github.com/akyriako/devsy-provider-opentelekomcloud)
-- [Vultr (navaneeth-dev/devsy-provider-vultr)](https://github.com/navaneeth-dev/devsy-provider-vultr)
-- [STACKIT (stackitcloud/devsy-provider-stackit)](https://github.com/stackitcloud/devsy-provider-stackit)
-
-Install these providers with the Devsy CLI:
-```
-devsy provider add <user/repository>
-```
