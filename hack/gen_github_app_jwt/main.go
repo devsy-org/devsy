@@ -25,16 +25,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// maxExpiration matches GitHub's documented maximum JWT lifetime of 10 minutes.
-const maxExpiration = 10 * time.Minute
-
-// issuedAtSkew backdates the issued-at claim to tolerate clock drift, mirroring
-// the example scripts in GitHub's documentation.
-const issuedAtSkew = 60 * time.Second
-
-// Environment variable names mirror the GitHub Actions secrets used across the
-// release and CI workflows, so the helper runs with no arguments in CI.
 const (
+	maxExpiration     = 10 * time.Minute
+	issuedAtSkew      = 60 * time.Second
 	envAppID          = "DEVSY_GITHUB_APP_ID"
 	envPrivateKey     = "DEVSY_GITHUB_APP_PRIVATE_KEY"
 	envPrivateKeyPath = "DEVSY_GITHUB_APP_PRIVATE_KEY_PATH"
@@ -74,7 +67,6 @@ func run(clientID, privateKeyPath, privateKeyVar string) error {
 	return nil
 }
 
-// generateJWT builds and signs a GitHub App JWT using RS256.
 func generateJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Issuer:    clientID,
@@ -86,9 +78,6 @@ func generateJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, e
 	return token.SignedString(key)
 }
 
-// loadPrivateKey resolves the RSA private key from either an inline PEM
-// string (preferred, e.g. a secret injected into the environment) or a PEM
-// file path.
 func loadPrivateKey(path, contents string) (*rsa.PrivateKey, error) {
 	pemBytes, err := keyBytes(path, contents)
 	if err != nil {
@@ -102,7 +91,6 @@ func loadPrivateKey(path, contents string) (*rsa.PrivateKey, error) {
 	return parsePEMBlock(pemBytes)
 }
 
-// keyBytes selects the PEM bytes from the inline contents or a file path.
 func keyBytes(path, contents string) ([]byte, error) {
 	switch {
 	case contents != "":
@@ -121,8 +109,6 @@ func keyBytes(path, contents string) ([]byte, error) {
 	}
 }
 
-// parsePEMBlock falls back to PKCS8 / PKCS1 parsing for PEM blocks the jwt
-// helper does not accept directly.
 func parsePEMBlock(pemBytes []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {

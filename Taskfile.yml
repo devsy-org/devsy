@@ -212,22 +212,16 @@ tasks:
       generate a signed GitHub App JWT (RS256) for app authentication.
       Requires DEVSY_GITHUB_APP_ID and either DEVSY_GITHUB_APP_PRIVATE_KEY
       (PEM contents) or DEVSY_GITHUB_APP_PRIVATE_KEY_PATH (PEM file path).
-      See https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
     cmd: go run ./hack/gen_github_app_jwt
 
   setup:agent:
     desc: prepare the development environment fully for coding agents
     cmds:
-      # Install system dependencies (protobuf-compiler, xvfb)
       - |
         if command -v apt-get >/dev/null 2>&1; then
           sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler xvfb
         fi
-      # Install Go prerequisites (Goreleaser, Protobuf plugins)
       - go install github.com/goreleaser/goreleaser/v2@latest
-      # Run tidy on Go modules
       - task: cli:tidy
-      # Build gRPC tunnel code
       - task: cli:build:grpc
-      # Setup electron/desktop environment
       - task: desktop:setup

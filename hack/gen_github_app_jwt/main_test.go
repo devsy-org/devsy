@@ -48,8 +48,6 @@ func TestGenerateJWT(t *testing.T) {
 	assertClaimTimes(t, claims, now)
 }
 
-// parseAndVerifyClaims parses the token, verifies its RS256 signature against
-// the given public key, and returns the registered claims.
 func parseAndVerifyClaims(t *testing.T, tokenStr string, pub *rsa.PublicKey) *jwt.RegisteredClaims {
 	t.Helper()
 	claims := &jwt.RegisteredClaims{}
@@ -68,8 +66,6 @@ func parseAndVerifyClaims(t *testing.T, tokenStr string, pub *rsa.PublicKey) *jw
 	return claims
 }
 
-// assertClaimTimes checks iat/exp respect the GitHub 10-minute maximum and
-// the issuedAtSkew backdating.
 func assertClaimTimes(t *testing.T, claims *jwt.RegisteredClaims, now time.Time) {
 	t.Helper()
 	expectedIAT := now.Add(-issuedAtSkew).Truncate(time.Second)
