@@ -694,7 +694,7 @@ async function handleRenameConfirmed() {
             variant="destructive"
             size="sm"
             onclick={handleStop}
-            disabled={operationRunning || (!isRunning && !isBusy)}
+            disabled={!isRunning && !isBusy}
           >
             {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
             Stop

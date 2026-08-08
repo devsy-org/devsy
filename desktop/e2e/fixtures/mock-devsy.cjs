@@ -209,21 +209,28 @@ function handleSsh() {
 function materializeWorkspace(wsId, source, providerFlag, ideFlag, status = "Running") {
   const existingIndex = state.workspaces.findIndex((w) => w.id === wsId)
   const now = new Date().toISOString()
-  const entry = {
-    id: wsId,
-    uid: existingIndex >= 0 ? state.workspaces[existingIndex].uid : `ws-${Date.now()}`,
-    source: { gitRepository: source },
-    provider: { name: providerFlag || "docker" },
-    ide: { name: ideFlag || "none" },
-    status,
-    lastUsed: now,
-    created: existingIndex >= 0 ? state.workspaces[existingIndex].created : now,
-    context: "default",
-  }
 
   if (existingIndex >= 0) {
-    state.workspaces[existingIndex] = entry
+    // For existing workspaces, merge only lifecycle fields; preserve metadata
+    const existing = state.workspaces[existingIndex]
+    state.workspaces[existingIndex] = {
+      ...existing,
+      status,
+      lastUsed: now,
+    }
   } else {
+    // For new workspaces, build all fields from arguments
+    const entry = {
+      id: wsId,
+      uid: `ws-${Date.now()}`,
+      source: { gitRepository: source },
+      provider: { name: providerFlag || "docker" },
+      ide: { name: ideFlag || "none" },
+      status,
+      lastUsed: now,
+      created: now,
+      context: "default",
+    }
     state.workspaces.push(entry)
   }
   saveState(state)

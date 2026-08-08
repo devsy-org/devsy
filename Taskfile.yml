@@ -149,7 +149,8 @@ tasks:
           sudo apt-get install -y
           libglib2.0-0 libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0
           libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0
-          libcairo2 libxshmfence1 libgtk-3-0 libxss1 libatspi2.0-0 xvfb
+          libcairo2 libxshmfence1 libgtk-3-0 libxss1 libatspi2.0-0 libnotify4 libxtst6 xdg-utils
+          libuuid1 xvfb
 
   desktop:setup:
     desc: setup Electron desktop application
@@ -193,8 +194,15 @@ tasks:
     dir: desktop
     cmd: |
       export DISPLAY=:99
-      if ! pgrep -x Xvfb >/dev/null 2>&1; then
+      if [ ! -f /tmp/.X99-lock ]; then
         Xvfb :99 -screen 0 1280x720x24 >/tmp/devsy-xvfb.log 2>&1 &
+        # Wait for Xvfb to be ready (max 10 seconds)
+        for i in $(seq 1 50); do
+          if [ -f /tmp/.X99-lock ]; then
+            break
+          fi
+          sleep 0.2
+        done
       fi
       npm run test:e2e
 
