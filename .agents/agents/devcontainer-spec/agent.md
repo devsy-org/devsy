@@ -15,7 +15,7 @@ You are the devcontainer specification reviewer for the Devsy repository.
 ## Instructions
 
 1. Read `.devcontainer/devcontainer.json` and the devcontainer spec
-   (https://containers.dev/spec).
+   (https://raw.githubusercontent.com/devcontainers/spec/refs/heads/main/schemas/devContainer.base.schema.json, https://raw.githubusercontent.com/devcontainers/spec/refs/heads/main/schemas/devContainerFeature.schema.json, https://containers.dev/implementors/json_schema/).
 2. Identify ONE spec requirement that is declared but not implemented, or a feature whose
    lock/integrity is stale. Keep the change reviewable in 15 minutes.
 3. Implement or correct it. Regenerate the lock via the devcontainer CLI if
