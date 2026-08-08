@@ -432,8 +432,8 @@ var _ = ginkgo.Describe(
 
 				// Since forwarding runs asynchronously in the helper process, poll its logs for readiness.
 				gomega.Eventually(getTunnelLogs(combined)).
-					WithTimeout(15 * time.Second).
-					WithPolling(200 * time.Millisecond).
+					WithTimeout(15*time.Second).
+					WithPolling(200*time.Millisecond).
 					Should(gomega.ContainSubstring("forwarding gpg-agent"),
 						"expected browser IDE GPG forward bootstrap to run; got:\n%s", combined)
 
@@ -501,7 +501,7 @@ func getTunnelLogs(combined string) func() string {
 	}
 	logPath := combined[start : start+end]
 	return func() string {
-		data, err := os.ReadFile(logPath)
+		data, err := os.ReadFile(logPath) // #nosec G304: path derived from test workspace
 		if err != nil {
 			return ""
 		}
