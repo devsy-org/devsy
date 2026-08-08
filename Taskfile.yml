@@ -43,20 +43,26 @@ tasks:
     desc: build devsy CLI
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
-    cmd: goreleaser build --id devsy --snapshot --clean
+    cmd: |
+      export PATH="$(go env GOPATH)/bin:$PATH"
+      goreleaser build --id devsy --snapshot --clean
 
   cli:build:dev:
     desc: build devsy CLI for development
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_CLI_VERSION: v0.0.0
-    cmd: goreleaser build --id devsy-dev --snapshot --clean
+    cmd: |
+      export PATH="$(go env GOPATH)/bin:$PATH"
+      goreleaser build --id devsy-dev --snapshot --clean
 
   cli:build:dev:pro:
     desc: build devsy CLI for pro feature
     vars:
       NS: '{{.NS | default "default"}}'
-    cmd: goreleaser build --id devsy-pro-dev --snapshot --clean
+    cmd: |
+      export PATH="$(go env GOPATH)/bin:$PATH"
+      goreleaser build --id devsy-pro-dev --snapshot --clean
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_PRO_NS: "{{.NS}}"
@@ -82,6 +88,7 @@ tasks:
       # sudo apt install protobuf-compiler
       go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
       go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+      export PATH="$(go env GOPATH)/bin:$PATH"
       protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative
 
   cli:test:
@@ -199,3 +206,29 @@ tasks:
           cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 "$TMP_DIR/devsy-linux-amd64"
           gh release upload v0.0.0-10 dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 --repo devsy-org/devsy --clobber
           rm -rf "$TMP_DIR"
+
+  github:app:jwt:
+    desc: |
+      generate a signed GitHub App JWT (RS256) for app authentication.
+      Requires DEVSY_GITHUB_APP_ID and either DEVSY_GITHUB_APP_PRIVATE_KEY
+      (PEM contents) or DEVSY_GITHUB_APP_PRIVATE_KEY_PATH (PEM file path).
+    cmd: go run ./hack/gen_github_app_jwt
+
+  setup:agent:
+    desc: prepare the development environment fully for coding agents
+    cmds:
+      - |
+        if command -v apt-get >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update -qq && apt-get install -y protobuf-compiler xvfb
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler xvfb
+          else
+            echo "Error: Installing packages requires root privileges or sudo" >&2
+            exit 1
+          fi
+        fi
+      - go install github.com/goreleaser/goreleaser/v2@latest
+      - task: cli:tidy
+      - task: cli:build:grpc
+      - task: desktop:setup
